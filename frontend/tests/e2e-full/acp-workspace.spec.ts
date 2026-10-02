@@ -158,6 +158,15 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByRole("log").getByRole("img", { name: "screenshot.png" })).toBeVisible();
     await page.reload();
     await expect(chat.getByRole("log").getByRole("img", { name: "screenshot.png" })).toBeVisible();
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("Show screenshot");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    const screenshot = chat.getByRole("img", { name: "Panel screenshot" });
+    await expect(screenshot).toBeVisible();
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
+    await page.reload();
+    await expect(screenshot).toBeVisible();
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
+    await page.screenshot({ path: testInfo.outputPath("acp-view-image-reloaded.png") });
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect the workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(
@@ -193,6 +202,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
         await mobile.getByRole("option", { name: /Workspace Chat/ }).click();
       }
       await expect(mobileChat).toBeVisible();
+      await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Effort: High" })).toBeVisible();
       await expect(mobile.getByRole("button", { name: "Open terminal composer" })).toHaveCount(0);

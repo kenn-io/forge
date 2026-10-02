@@ -57,6 +57,14 @@ test("hub chat exchanges ACP events with the owning spoke", async ({ page }) => 
     await chat.getByRole("button", { name: "Model: Fast" }).click();
     await page.getByRole("menuitemradio", { name: "Deep" }).click();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("Show screenshot");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    const screenshot = chat.getByRole("img", { name: "Panel screenshot" });
+    await expect(screenshot).toBeVisible();
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
+    await page.reload();
+    await expect(screenshot).toBeVisible();
+    await expect.poll(() => screenshot.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(640);
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Inspect this spoke workspace");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(

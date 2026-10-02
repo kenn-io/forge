@@ -20,10 +20,6 @@
     const container = document.createElement("template")
     container.innerHTML = html
     const fragment = container.content
-    // Embedded images can render without fetching agent-provided addresses.
-    for (const image of fragment.querySelectorAll("img")) {
-      if (!/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=\s]+$/i.test(image.getAttribute("src") ?? "")) image.remove()
-    }
     for (const table of fragment.querySelectorAll("table")) {
       const scroll = document.createElement("div")
       scroll.className = "table-scroll"

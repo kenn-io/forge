@@ -118,7 +118,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				if err != nil {
 					data, _ = json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type})
 				}
-				if conn.Write(ctx, websocket.MessageText, data) != nil {
+				if conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
 					return
 				}
 			case "prompt", "config":
@@ -138,7 +138,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 			return
 		case <-changes:
 			data, err := agent.Snapshot()
-			if err != nil || conn.Write(ctx, websocket.MessageText, data) != nil {
+			if err != nil || conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
 				return
 			}
 		}

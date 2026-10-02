@@ -2,11 +2,14 @@ package workspaceapi
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json/v2"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/rpc"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -200,6 +203,66 @@ type stallingChat struct {
 	release   chan struct{}
 	cancelled chan struct{}
 	done      chan struct{}
+}
+
+type imageReferenceChat struct {
+	stallingChat
+	snapshot []byte
+	history  []byte
+}
+
+func (c *imageReferenceChat) Snapshot() ([]byte, error)        { return c.snapshot, nil }
+func (c *imageReferenceChat) History(int, int) ([]byte, error) { return c.history, nil }
+func (c *imageReferenceChat) Subscribe() (<-chan struct{}, func()) {
+	changes := make(chan struct{}, 1)
+	changes <- struct{}{}
+	return changes, func() {}
+}
+
+func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	root := t.TempDir()
+	image := []byte(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120"><rect width="320" height="120" fill="blue"/></svg>`)
+	path := filepath.Join(root, "screenshot image.svg")
+	require.NoError(os.WriteFile(path, image, 0o600))
+	input, err := json.Marshal(map[string]string{"path": path})
+	require.NoError(err)
+	message := localruntime.ACPMessage{Role: "tool", Text: "View Image " + path, Kind: "read", RawInput: string(input), Locations: []localruntime.ACPToolLocation{{Path: path}}, ToolContent: []localruntime.ACPToolContent{{Type: "content", Content: &localruntime.ACPContent{Type: "resource_link", URI: path, Name: "screenshot.svg"}}}}
+	snapshot, err := json.Marshal(localruntime.ACPState{Messages: []localruntime.ACPMessage{message}, Connected: true})
+	require.NoError(err)
+	message.ToolContent[0].Content = &localruntime.ACPContent{Type: "resource_link", URI: (&url.URL{Scheme: "file", Path: path}).String(), Name: "screenshot.svg"}
+	history, err := json.Marshal(map[string]localruntime.ACPHistory{"history": {Offset: 3, Messages: []localruntime.ACPMessage{message}}})
+	require.NoError(err)
+	chat := &imageReferenceChat{snapshot: snapshot, history: history}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
+	defer server.Close()
+	for range 2 {
+		conn, _, dialErr := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+		require.NoError(dialErr)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		_, data, readErr := conn.Read(ctx)
+		require.NoError(readErr)
+		var state localruntime.ACPState
+		require.NoError(json.Unmarshal(data, &state))
+		require.Len(state.Messages, 1)
+		content := state.Messages[0].ToolContent[0].Content
+		assert.Equal("image", content.Type)
+		assert.Equal("image/svg+xml", content.MimeType)
+		assert.Equal(base64.StdEncoding.EncodeToString(image), content.Data)
+		assert.Equal(path, content.URI)
+		assert.True(state.Connected)
+		require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"history","before":4,"limit":1}`)))
+		_, data, readErr = conn.Read(ctx)
+		require.NoError(readErr)
+		var page map[string]localruntime.ACPHistory
+		require.NoError(json.Unmarshal(data, &page))
+		assert.Equal(3, page["history"].Offset)
+		require.Len(page["history"].Messages, 1)
+		assert.Equal(base64.StdEncoding.EncodeToString(image), page["history"].Messages[0].ToolContent[0].Content.Data)
+		cancel()
+		require.NoError(conn.CloseNow())
+	}
 }
 
 func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }

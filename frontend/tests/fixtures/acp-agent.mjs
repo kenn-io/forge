@@ -1,9 +1,15 @@
-import { realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 const write = (message) => process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
 const update = (value) => write({ method: "session/update", params: { sessionId: "workspace-chat", update: value } });
 let prompt;
+let screenshotDirectory;
+process.on("exit", () => {
+  if (screenshotDirectory) rmSync(screenshotDirectory, { recursive: true, force: true });
+});
 let configOptions = [
   {
     id: "model",
@@ -85,6 +91,27 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     case "session/prompt":
       prompt = request.id;
+      if (request.params.prompt[0]?.text === "Show screenshot") {
+        screenshotDirectory ??= mkdtempSync(join(tmpdir(), "acp-screenshot-"));
+        const path = join(screenshotDirectory, "panel screenshot.svg");
+        writeFileSync(
+          path,
+          '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="#172033"/><text x="32" y="60" fill="#ffffff" font-size="28">Panel screenshot</text><rect x="32" y="100" width="576" height="200" rx="8" fill="#334155"/><text x="56" y="150" fill="#ffffff" font-size="20">Image delivered from the agent host</text></svg>',
+        );
+        // Match Codex ImageViewReporter: a file reference, with no image bytes.
+        update({
+          sessionUpdate: "tool_call",
+          toolCallId: "view-image",
+          title: `View Image ${path}`,
+          kind: "read",
+          status: "completed",
+          rawInput: { path },
+          locations: [{ path }],
+          content: [{ type: "content", content: { type: "resource_link", name: "Panel screenshot", uri: path } }],
+        });
+        write({ id: prompt, result: { stopReason: "end_turn" } });
+        break;
+      }
       if (request.params.prompt.some((block) => block.type === "image")) {
         const image = request.params.prompt.find((block) => block.type === "image");
         update({

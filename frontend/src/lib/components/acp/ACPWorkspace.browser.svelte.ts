@@ -121,12 +121,13 @@ describe("ACPWorkspace message gutter (browser)", () => {
 });
 
 describe("ACPWorkspace image output (browser)", () => {
-  it("decodes tool and Markdown images while tools stay collapsed", async () => {
+  it("loads embedded and HTTP Markdown images while tools stay collapsed", async () => {
     await page.viewport(1000, 720);
     const { host } = await renderChat(900);
     const data = btoa(
       '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120"><rect width="320" height="120" fill="#2563eb"/><text x="24" y="68" fill="white" font-size="24">Image from agent</text></svg>',
     );
+    const imageURL = new URL("../../../../public/favicon.svg", import.meta.url).href;
     socket.options!.onMessage(
       JSON.stringify({
         messages: [
@@ -140,7 +141,10 @@ describe("ACPWorkspace image output (browser)", () => {
               { type: "content", content: { type: "image", mimeType: "image/svg+xml", data, title: "Tool image" } },
             ],
           },
-          { role: "assistant", text: `![Markdown image](data:image/svg+xml;base64,${data})` },
+          {
+            role: "assistant",
+            text: `![Markdown image](data:image/svg+xml;base64,${data})\n\n![URL image](${imageURL})`,
+          },
         ],
         messageOffset: 0,
         messageCount: 3,
@@ -154,7 +158,17 @@ describe("ACPWorkspace image output (browser)", () => {
     );
     await expect.element(page.getByRole("img", { name: "Tool image" })).toBeVisible();
     await expect.element(page.getByRole("img", { name: "Markdown image" })).toBeVisible();
-    await expect.poll(() => [...host.querySelectorAll("img")].map((image) => image.naturalWidth)).toEqual([320, 320]);
+    await expect.element(page.getByRole("img", { name: "URL image" })).toBeVisible();
+    const urlImage = host.querySelector<HTMLImageElement>('img[alt="URL image"]')!;
+    expect(urlImage.getAttribute("src")).toBe(imageURL);
+    await expect.poll(() => urlImage.naturalWidth).toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        [...host.querySelectorAll('img:not([alt="URL image"])')].map(
+          (image) => (image as HTMLImageElement).naturalWidth,
+        ),
+      )
+      .toEqual([320, 320]);
     expect(host.querySelector('button[aria-controls$="-list"]')?.getAttribute("aria-expanded")).toBe("false");
   });
 });

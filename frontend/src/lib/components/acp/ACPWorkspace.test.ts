@@ -689,13 +689,16 @@ describe("ACPWorkspace rich content", () => {
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeTruthy();
   });
 
-  it("keeps sanitized Markdown image embeds in assistant messages", async () => {
-    await openChat({
-      messages: [{ role: "assistant", text: "![Panel screenshot](data:image/png;base64,iVBORw0KGgo=)" }],
-    });
-    const image = await screen.findByRole("img", { name: "Panel screenshot" });
-    expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
-  });
+  it.each(["data:image/png;base64,iVBORw0KGgo=", "https://example.com/panel.png"])(
+    "renders Markdown image %s in assistant messages",
+    async (src) => {
+      await openChat({
+        messages: [{ role: "assistant", text: `![Panel screenshot](${src})` }],
+      });
+      const image = await screen.findByRole("img", { name: "Panel screenshot" });
+      expect(image.getAttribute("src")).toBe(src);
+    },
+  );
 
   it("renders images from data and opens them in the image viewer", async () => {
     await openChat({

@@ -191,6 +191,43 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await chat.getByRole("button", { name: "Allow once" }).click();
     await expect(chat.getByRole("button", { name: "Stop reply" })).toHaveCount(0);
 
+    // The fixture agent authors a component and calls the real Forge publishing
+    // tool. Its resource content travels through ACP and reads the seeded cache.
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("Build a PR dashboard");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    const dashboard = page.frameLocator('iframe[title="PR attention dashboard"]').frameLocator("iframe");
+    await expect(dashboard.getByRole("button", { name: "Refresh cache view" })).toBeVisible();
+    await dashboard.getByRole("combobox", { name: "Repository" }).selectOption({ label: "github · acme/widgets" });
+    await expect(dashboard.locator(".pull").first()).toBeVisible();
+    const seededCI = await api.post("/__e2e/pr-ci-state/pending");
+    expect(seededCI.status()).toBe(200);
+    await expect(dashboard.locator("#freshness")).toContainText("open PRs shown");
+    const refreshRead = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/mcp-apps/call-tool") &&
+        response.request().postDataJSON().name === "kenn_forge_list_pull_contexts",
+    );
+    await dashboard.getByRole("button", { name: "Refresh cache view" }).click();
+    expect((await refreshRead).status()).toBe(200);
+    await expect(dashboard.locator("#problem")).toBeEmpty();
+    const firstPR = dashboard.locator(".pull").filter({ has: dashboard.getByRole("button", { name: /^#1 / }) });
+    await expect(firstPR).toContainText("CI: pending");
+    expect((await api.post("/__e2e/pr-ci-state/success")).status()).toBe(200);
+    await dashboard.getByRole("button", { name: "Refresh cache view" }).click();
+    await expect(firstPR).toContainText("CI: success");
+    expect(
+      await dashboard.locator("body").evaluate(() => {
+        try {
+          return window.top?.document.title;
+        } catch {
+          return "isolated";
+        }
+      }),
+    ).toBe("isolated");
+    await page.screenshot({ path: testInfo.outputPath("mcp-app-dashboard.png") });
+    await page.reload();
+    await expect(dashboard.locator(".pull").first()).toBeVisible();
+
     const phone = await browser.newContext({ ...devices["iPhone 13"] });
     try {
       const mobile = await phone.newPage();

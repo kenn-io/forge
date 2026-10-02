@@ -16,11 +16,11 @@
   } from "./chat-content.js";
   import type { ChatContent } from "./chat-types.js";
 
-  // Agent-provided values only ever reach the DOM as text nodes, attribute
-  // values, or validated data: URLs on <img>/<audio>; embedded text goes
-  // through kit CodeBlock, which escapes or Shiki-highlights it.
+  import McpApp from "./McpApp.svelte";
+  import { decodeAppDescriptor } from "./mcp-app.js";
   let { content }: { content: ChatContent } = $props();
 
+  const app = $derived(decodeAppDescriptor(content));
   const label = $derived(content.title || content.name || content.uri || "");
   const meta = $derived([content.mimeType, formatBytes(content.size)].filter(Boolean).join(" · "));
   const imageSrc = $derived(isImageContent(content) ? mediaDataURL(content, "image") : undefined);
@@ -53,7 +53,9 @@
   </div>
 {/snippet}
 
-{#if content.type === "text"}
+{#if app}
+  <McpApp {app} />
+{:else if content.type === "text"}
   <p class="text">{content.text ?? ""}</p>
 {:else if isImageContent(content)}
   {#if imageSrc}

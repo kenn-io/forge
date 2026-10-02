@@ -36,11 +36,13 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/workspaceapi"
@@ -1303,6 +1305,8 @@ type e2eFederationRuntime struct {
 // Playwright tests can reuse the process (and its port) instead of
 // paying a full spawn/teardown per test.
 type appState struct {
+	agentMCPHTTP *httptest.Server
+	agentMCP     *mcpserver.Server
 	tmpDir       string
 	database     *db.DB
 	srv          *server.Server
@@ -1536,6 +1540,8 @@ func (st *appState) stopTmux() {
 // handlers and background goroutines before the workspace cleanup
 // and database close, mirroring the old process-exit defer ordering.
 func (st *appState) close() {
+	st.agentMCPHTTP.Close()
+	_ = st.agentMCP.Close()
 	// tmux is an isolated test resource, not durable product state. Tear it
 	// down before graceful HTTP draining so a stuck handler cannot strand the
 	// daemon after SIGTERM or a reset.
@@ -2181,10 +2187,34 @@ func buildAppState(
 			serverSyncer = nil
 		}
 	}
+	// Match production's dedicated agent endpoint. Browser tests can now
+	// exercise MCP tool results over ACP instead of injecting mock content.
+	if serverOptions.DaemonAccess.Token == "" {
+		serverOptions.DaemonAccess.Token = cryptorand.Text()
+	}
+	mcpSwitch := hostapi.NewSwitchHandler(http.NotFoundHandler())
+	agentMCPHTTP := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+serverOptions.DaemonAccess.Token {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		mcpSwitch.ServeHTTP(w, r)
+	}))
+	defer func() {
+		if !built {
+			agentMCPHTTP.Close()
+		}
+	}()
+	serverOptions.AgentMCPURL = agentMCPHTTP.URL + "/mcp"
 	srv := server.NewWithConfig(
 		database, serverSyncer, diffRepo.Manager, assets, cfg, cfgPath,
 		serverOptions,
 	)
+	agentMCP, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "e2e"})
+	if err != nil {
+		return nil, err
+	}
+	mcpSwitch.Swap(agentMCP.HTTPHandler())
 	// Mirror production status events so connected clients observe sync completion.
 	if serverSyncer != nil {
 		wasRunning := syncer.Status().Running
@@ -3433,16 +3463,18 @@ func buildAppState(
 
 	built = true
 	return &appState{
-		tmpDir:      tmpDir,
-		database:    database,
-		srv:         srv,
-		handler:     rootHandler,
-		cfgPath:     cfgPath,
-		worktreeDir: e2eWorktreeDir,
-		tmuxCommand: tmuxCommand,
-		tmuxGate:    tmuxGate,
-		ptyOwner:    opts.preferPtyOwner,
-		clones:      diffRepo.Manager,
+		agentMCPHTTP: agentMCPHTTP,
+		agentMCP:     agentMCP,
+		tmpDir:       tmpDir,
+		database:     database,
+		srv:          srv,
+		handler:      rootHandler,
+		cfgPath:      cfgPath,
+		worktreeDir:  e2eWorktreeDir,
+		tmuxCommand:  tmuxCommand,
+		tmuxGate:     tmuxGate,
+		ptyOwner:     opts.preferPtyOwner,
+		clones:       diffRepo.Manager,
 	}, nil
 }
 

@@ -34,6 +34,7 @@ func (s *Server) registerAPI(api huma.API) {
 		httpapi.DocumentOperation("list-activity-authors", "List activity authors", "Activity"))
 	s.kataAPI.Register(api)
 	s.docsAPI.Register(api)
+	s.registerMCPAppsAPI(api)
 	s.archiveapi.RegisterArchiveAPI(api)
 	huma.Register(api, huma.Operation{
 		OperationID:   "list-notifications",

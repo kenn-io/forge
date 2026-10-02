@@ -105,3 +105,28 @@ Handoff flow:
    workspace ID and runtime session key. It submits the message to that running
    agent and does not launch or resume anything.
 ```
+
+## Generated interactive components (prototype)
+
+When asked for a dashboard or another rich component, compose it yourself and
+call `kenn_forge_render_app` with a title and a self-contained HTML fragment.
+Forge supplies a generic renderer, not predefined dashboard layouts. Inline
+scripts execute after `window.app` is connected. Use
+`await window.app.callServerTool({name, arguments})` and read the returned
+`structuredContent`; check `isError` before using the data. Use
+`window.app.openLink({url})` for HTTP(S) links initiated by a user click.
+External imports and direct network requests are unavailable.
+
+Apps may read repositories, bulk PR contexts, item contexts, activity, search,
+review candidates, stacks, and workflow lists. They may not change workflow
+state, merge PRs, launch agents, read local workspace sessions, or write diffs.
+Use the schemas from those tools rather than guessing field names. Discover
+stable repository IDs with `kenn_forge_list_repos` and preserve pagination.
+Refresh means rereading the cache. Show freshness and missing evidence; cached
+mergeability does not grant merge permission. Insert tool-returned strings
+with `textContent`, not HTML interpolation.
+
+MCP Apps hosts discover the renderer from the tool's `ui.resourceUri` metadata.
+Forge ACP chat also recognizes the tool's embedded component descriptor, so
+agents must preserve its resource content. Include a text explanation for
+clients without widget rendering. Generated HTML stays in the transcript.

@@ -7514,6 +7514,31 @@ func (o *CreateKataWorkspaceRequestOptions) GetHeader() (map[string]string, erro
 	return nil, nil
 }
 
+// CallMcpAppToolRequestOptions is the options needed to make a request to CallMcpAppTool.
+type CallMcpAppToolRequestOptions struct {
+	Body *CallMcpAppToolBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *CallMcpAppToolRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *CallMcpAppToolRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *CallMcpAppToolRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *CallMcpAppToolRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // ListNotificationsRequestOptions is the options needed to make a request to ListNotifications.
 type ListNotificationsRequestOptions struct {
 	Query *ListNotificationsQuery
@@ -12225,6 +12250,8 @@ type ClientInterface interface {
 	ListKataReferencesWithResponse(ctx context.Context, options *ListKataReferencesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListKataReferencesResp, error)
 	GetKataProjectMappingsWithResponse(ctx context.Context, options *GetKataProjectMappingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetKataProjectMappingsResp, error)
 	CreateKataWorkspaceWithResponse(ctx context.Context, options *CreateKataWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateKataWorkspaceResp, error)
+	CallMcpAppToolWithResponse(ctx context.Context, options *CallMcpAppToolRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CallMcpAppToolResp, error)
+	GetMcpAppResourceWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetMcpAppResourceResp, error)
 	ListNotificationsWithResponse(ctx context.Context, options *ListNotificationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListNotificationsResp, error)
 	MarkNotificationsDoneWithResponse(ctx context.Context, options *MarkNotificationsDoneRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkNotificationsDoneResp, error)
 	MarkNotificationsReadWithResponse(ctx context.Context, options *MarkNotificationsReadRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkNotificationsReadResp, error)
@@ -25146,6 +25173,118 @@ func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *C
 	}
 }
 
+// CallMcpAppTool Read cached Forge data for a generated component
+func (c *Client) CallMcpAppToolWithResponse(ctx context.Context, options *CallMcpAppToolRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CallMcpAppToolResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/mcp-apps/call-tool",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/mcp-apps/call-tool")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &CallMcpAppToolResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(CallMcpAppToolErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(CallMcpAppToolResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CallMcpAppToolResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetMcpAppResource Get the generated MCP App renderer
+func (c *Client) GetMcpAppResourceWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetMcpAppResourceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/mcp-apps/resource",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/mcp-apps/resource")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetMcpAppResourceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetMcpAppResourceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetMcpAppResourceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetMcpAppResourceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // ListNotifications List notifications
 func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *ListNotificationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListNotificationsResp, error) {
 	var err error
@@ -37985,6 +38124,36 @@ func (c *Client) CreateKataWorkspaceRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// CallMcpAppToolRaw returns an unread response. The caller must close its body.
+func (c *Client) CallMcpAppToolRaw(ctx context.Context, httpClient *http.Client, options *CallMcpAppToolRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/mcp-apps/call-tool",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetMcpAppResourceRaw returns an unread response. The caller must close its body.
+func (c *Client) GetMcpAppResourceRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/mcp-apps/resource",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListNotificationsRaw returns an unread response. The caller must close its body.
 func (c *Client) ListNotificationsRaw(ctx context.Context, httpClient *http.Client, options *ListNotificationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44931,6 +45100,38 @@ func NewCreateKataWorkspaceRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewCallMcpAppToolRequest constructs a typed request for a caller-owned transport.
+func NewCallMcpAppToolRequest(ctx context.Context, baseURL string, options *CallMcpAppToolRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/mcp-apps/call-tool",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetMcpAppResourceRequest constructs a typed request for a caller-owned transport.
+func NewGetMcpAppResourceRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/mcp-apps/resource",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewListNotificationsRequest constructs a typed request for a caller-owned transport.
 func NewListNotificationsRequest(ctx context.Context, baseURL string, options *ListNotificationsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -50428,6 +50629,8 @@ type CreateIssueWorkspaceBody = CreateIssueWorkspaceInputBody
 
 type CreateKataWorkspaceBody = KataWorkspaceTaskRequest
 
+type CallMcpAppToolBody = AppToolInputBody
+
 type MarkNotificationsDoneBody = NotificationBulkInputBody
 
 type MarkNotificationsReadBody = NotificationBulkInputBody
@@ -52112,6 +52315,14 @@ type GetKataProjectMappingsErrorResponse = ProblemError
 type CreateKataWorkspaceResponse = WorkspaceResponse
 
 type CreateKataWorkspaceErrorResponse = ProblemError
+
+type CallMcpAppToolResponse map[string]struct{}
+
+type CallMcpAppToolErrorResponse = ProblemError
+
+type GetMcpAppResourceResponse = AppResourceOutputBody
+
+type GetMcpAppResourceErrorResponse = ProblemError
 
 type ListNotificationsResponse = NotificationsResponse
 
@@ -54587,6 +54798,22 @@ type CreateKataWorkspaceResp struct {
 	JSON202      *CreateKataWorkspaceResponse
 }
 
+type CallMcpAppToolResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *CallMcpAppToolErrorResponse
+	JSON200      *CallMcpAppToolResponse
+}
+
+type GetMcpAppResourceResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetMcpAppResourceErrorResponse
+	JSON200      *GetMcpAppResourceResponse
+}
+
 type ListNotificationsResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -56000,6 +56227,19 @@ type AgentInitialMessageStatusResponse struct {
 	ReservedAt   time.Time  `json:"reserved_at"`
 	State        string     `json:"state"`
 	TargetKey    string     `json:"target_key"`
+}
+
+type AppResourceOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+	HTML   string  `json:"html"`
+}
+
+type AppToolInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string             `json:"$schema,omitempty"`
+	Arguments map[string]struct{} `json:"arguments"`
+	Name      string              `json:"name"`
 }
 
 type ApplyReviewSuggestionHostInputBody struct {

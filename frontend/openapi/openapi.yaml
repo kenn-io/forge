@@ -413,6 +413,41 @@ components:
         - message_bytes
         - reserved_at
       type: object
+    AppResourceOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AppResourceOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        html:
+          type: string
+      required:
+        - html
+      type: object
+    AppToolInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/AppToolInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        arguments:
+          additionalProperties: {}
+          type: object
+        name:
+          minLength: 1
+          type: string
+      required:
+        - name
+        - arguments
+      type: object
     ApplyReviewSuggestionHostInputBody:
       additionalProperties: false
       properties:
@@ -21839,6 +21874,51 @@ paths:
       summary: Create Kata workspace
       tags:
         - Kata
+  /mcp-apps/call-tool:
+    post:
+      operationId: call-mcp-app-tool
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppToolInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                additionalProperties: {}
+                type: object
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read cached Forge data for a generated component
+      tags:
+        - MCP Apps
+  /mcp-apps/resource:
+    get:
+      operationId: get-mcp-app-resource
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppResourceOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get the generated MCP App renderer
+      tags:
+        - MCP Apps
   /notifications:
     get:
       operationId: list-notifications

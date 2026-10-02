@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; font: 14px system-ui, sans-serif; }
+  body { margin: 12px; color: var(--color-text-primary, CanvasText); background: var(--color-background-primary, Canvas); }
+  button, select, input { font: inherit; }
+  #error { color: #d45454; white-space: pre-wrap; }
+</style></head>
+<body><div id="content">Waiting for the generated component…</div><pre id="error" role="alert"></pre>
+<script>
+// A small MCP Apps client for the generic renderer. The host owns the sandbox
+// and tool permissions. Generated scripts share this already-connected bridge.
+(() => {
+  let sequence = 0;
+  let rendered = false;
+  const pending = new Map();
+  const send = (message) => parent.postMessage({jsonrpc: "2.0", ...message}, "*");
+  function request(method, params) {
+    return new Promise((resolve, reject) => {
+      const id = ++sequence;
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("The app host did not respond. Try refreshing the component."));
+      }, 30000);
+      pending.set(id, {resolve, reject, timer});
+      send({id, method, params});
+    });
+  }
+  function showError(error) {
+    document.getElementById("error").textContent = error instanceof Error ? error.message : String(error);
+  }
+  function applyContext(context) {
+    if (context?.theme === "light" || context?.theme === "dark") document.documentElement.style.colorScheme = context.theme;
+    for (const [name, value] of Object.entries(context?.styles?.variables ?? {})) {
+      if (name.startsWith("--") && typeof value === "string") document.documentElement.style.setProperty(name, value);
+    }
+  }
+  window.app = Object.freeze({
+    callServerTool: (params) => request("tools/call", params),
+    openLink: (params) => request("ui/open-link", params),
+  });
+  function render(data) {
+    if (rendered || !data || typeof data.html !== "string") return;
+    rendered = true;
+    document.title = typeof data.title === "string" ? data.title : "Generated component";
+    const root = document.getElementById("content");
+    // This is intentionally executable model-authored code, confined by the
+    // MCP Apps host. Data returned by tools must be rendered with textContent.
+    root.innerHTML = data.html;
+    for (const original of root.querySelectorAll("script")) {
+      const script = document.createElement("script");
+      // Only inline classic scripts are part of the authoring contract.
+      script.textContent = original.textContent;
+      original.replaceWith(script);
+    }
+  }
+  addEventListener("error", (event) => showError(event.message));
+  addEventListener("unhandledrejection", (event) => showError(event.reason));
+  addEventListener("message", (event) => {
+    if (event.source !== parent || event.data?.jsonrpc !== "2.0") return;
+    const message = event.data;
+    if (message.id != null && !message.method) {
+      const callback = pending.get(message.id);
+      if (!callback) return;
+      clearTimeout(callback.timer);
+      pending.delete(message.id);
+      if (message.error) callback.reject(new Error(message.error.message));
+      else callback.resolve(message.result);
+    } else if (message.method === "ui/notifications/tool-result") {
+      render(message.params?.structuredContent);
+    } else if (message.method === "ui/notifications/host-context-changed") {
+      applyContext(message.params);
+    } else if (message.method === "ui/resource-teardown") {
+      for (const callback of pending.values()) {
+        clearTimeout(callback.timer);
+        callback.reject(new Error("Component closed"));
+      }
+      pending.clear();
+      send({id: message.id, result: {}});
+    } else if (message.id != null && message.method) {
+      send({id: message.id, error: {code: -32601, message: "Unsupported method"}});
+    }
+  });
+  request("ui/initialize", {
+    appInfo: {name: "kenn-forge-generated-app", version: "prototype"},
+    appCapabilities: {}, protocolVersion: "2026-01-26",
+  }).then((result) => {
+    applyContext(result.hostContext);
+    send({method: "ui/notifications/initialized", params: {}});
+    new ResizeObserver(() => send({method: "ui/notifications/size-changed", params: {
+      height: document.documentElement.scrollHeight,
+    }})).observe(document.body);
+  }).catch(showError);
+})();
+</script></body></html>

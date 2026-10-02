@@ -1,0 +1,101 @@
+<!-- Prototype example of agent-authored content. Forge does not ship this layout. -->
+<style>
+  .toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+  select, button { border:1px solid GrayText; border-radius:5px; padding:6px 10px; color:inherit; background:transparent; }
+  button { cursor:pointer; }
+  button:disabled { opacity:.55; cursor:wait; }
+  .note { font-size:12px; opacity:.8; line-height:1.5; }
+  .pull { border-top:1px solid color-mix(in srgb, CanvasText 20%, transparent); padding:12px 0; }
+  .title { display:block; font-weight:600; text-align:left; border:0; padding:0; }
+  .signals { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .signal { border:1px solid GrayText; border-radius:4px; padding:2px 6px; font-size:12px; }
+  .failure { color:light-dark(#a52020,#ff9797); }
+  .success { color:light-dark(#23602d,#97dba1); }
+  #problem { color:light-dark(#a52020,#ff9797); }
+</style>
+<div class="toolbar">
+  <label>Repository <select id="repo" aria-label="Repository"></select></label>
+  <button id="refresh">Refresh cache view</button>
+</div>
+<p class="note">Cached evidence, not merge permission. Refresh reads Forge's cache; it does not contact providers.</p>
+<p id="freshness" class="note" role="status">Loading repositories…</p>
+<p id="problem" role="alert"></p>
+<div id="pulls"></div>
+<button id="more" hidden>Load more PRs</button>
+<script>
+(async () => {
+  const repoSelect = document.getElementById('repo');
+  const refresh = document.getElementById('refresh');
+  const more = document.getElementById('more');
+  const pulls = document.getElementById('pulls');
+  const freshness = document.getElementById('freshness');
+  const problem = document.getElementById('problem');
+  let repos = [];
+  let nextOffset;
+  async function call(name, args = {}) {
+    const result = await window.app.callServerTool({name, arguments: args});
+    if (result.isError) throw new Error(result.content?.map(item => item.text ?? '').join('\n') || 'Cache read failed');
+    return result.structuredContent;
+  }
+  function tag(parent, text, tone = '') {
+    const span = document.createElement('span');
+    span.className = 'signal ' + tone;
+    span.textContent = text;
+    parent.append(span);
+  }
+  async function load(append = false) {
+    refresh.disabled = repoSelect.disabled = more.disabled = true;
+    problem.textContent = '';
+    try {
+      const repo = repos[Number(repoSelect.value)];
+      if (!repo) { freshness.textContent = 'No tracked repositories.'; return; }
+      const {provider, platform_host, platform_repo_id, bitbucket_repository_uuid, owner, name, repo_path} = repo;
+      const identity = {provider, platform_host, platform_repo_id, bitbucket_repository_uuid, owner, name, repo_path};
+      const result = await call('kenn_forge_list_pull_contexts', {repo:identity, limit:25, offset:append ? nextOffset : 0});
+      if (!append) pulls.replaceChildren();
+      for (const row of result.items) {
+        const article = document.createElement('article');
+        article.className = 'pull';
+        const title = document.createElement('button');
+        title.className = 'title';
+        title.textContent = '#' + row.item.number + ' ' + row.item.title;
+        title.onclick = () => window.app.openLink({url:row.item.url}).catch(error => { problem.textContent = error.message; });
+        article.append(title);
+        const signals = document.createElement('div');
+        signals.className = 'signals';
+        const status = row.pull_status ?? {};
+        const ci = status.ci_status || 'unknown';
+        tag(signals, 'CI: ' + ci, ['failure','failed','error'].includes(ci) ? 'failure' : ci === 'success' ? 'success' : '');
+        tag(signals, 'Merge: ' + (status.mergeable_state || 'unknown'));
+        tag(signals, 'Review: ' + (status.review_decision || 'unknown'));
+        if (row.item.is_draft) tag(signals, 'Draft');
+        if (row.stack?.present) tag(signals, 'Stack ' + row.stack.position + '/' + row.stack.size);
+        article.append(signals);
+        const cache = document.createElement('p');
+        cache.className = 'note';
+        cache.textContent = row.cache.detail_loaded ? 'Details cached: ' + (row.cache.detail_fetched_at || 'time unknown') : 'Detailed cache not loaded';
+        article.append(cache);
+        pulls.append(article);
+      }
+      nextOffset = result.next_offset;
+      more.hidden = nextOffset == null;
+      freshness.textContent = (pulls.children.length ? pulls.children.length + ' open PRs shown' : 'No open PRs') + ' · Cache read at ' + new Date().toLocaleTimeString() + ' · Repository sync: ' + (repo.last_sync_completed_at || 'unknown');
+    } catch (error) { problem.textContent = error.message; }
+    finally { refresh.disabled = repoSelect.disabled = more.disabled = false; }
+  }
+  refresh.onclick = () => load();
+  repoSelect.onchange = () => load();
+  more.onclick = () => load(true);
+  try {
+    repos = (await call('kenn_forge_list_repos')).repos;
+    for (const [index, repo] of repos.entries()) {
+      const option = document.createElement('option');
+      option.value = String(index);
+      option.textContent = repo.provider + ' · ' + repo.owner + '/' + repo.name;
+      repoSelect.append(option);
+    }
+    repoSelect.value = String(Math.max(0, repos.findIndex(repo => repo.open_pr_count > 0)));
+    await load();
+  } catch (error) { freshness.textContent = ''; problem.textContent = error.message; }
+})();
+</script>

@@ -30,6 +30,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "list-workspace-targets", Owner: NodeLocal},
 	{OperationID: "list-fleet-workspace-targets", Owner: NodeLocal},
 	{OperationID: "list-devbox-workspace-targets", Owner: NodeLocal},
+	{OperationID: "get-mcp-app-resource", Owner: NodeLocal},
+	{OperationID: "call-mcp-app-tool", Owner: NodeLocal},
 	{OperationID: "test-acp-agent", Owner: NodeLocal},
 	{OperationID: "update-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "get-workspace-view-state", Owner: NodeLocal},

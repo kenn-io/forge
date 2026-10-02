@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -10,6 +10,7 @@ let screenshotDirectory;
 process.on("exit", () => {
   if (screenshotDirectory) rmSync(screenshotDirectory, { recursive: true, force: true });
 });
+let forgeServer;
 let configOptions = [
   {
     id: "model",
@@ -68,6 +69,7 @@ for await (const line of createInterface({ input: process.stdin })) {
         throw new Error("Wrong workspace directory");
       for (const server of request.params.mcpServers) {
         if (server.name !== "kenn-forge") throw new Error("Unexpected MCP server");
+        forgeServer = server;
         const response = await fetch(server.url, {
           method: "POST",
           headers: {
@@ -117,6 +119,47 @@ for await (const line of createInterface({ input: process.stdin })) {
         update({
           sessionUpdate: "agent_message_chunk",
           content: { type: "text", text: `Received image: ${image.mimeType} ${image.data}` },
+        });
+        write({ id: prompt, result: { stopReason: "end_turn" } });
+        break;
+      }
+      if (request.params.prompt[0]?.text === "Build a PR dashboard") {
+        const response = await fetch(forgeServer.url, {
+          method: "POST",
+          headers: {
+            ...Object.fromEntries(forgeServer.headers.map((header) => [header.name, header.value])),
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 2,
+            method: "tools/call",
+            params: {
+              name: "kenn_forge_render_app",
+              arguments: {
+                title: "PR attention dashboard",
+                html: readFileSync(new URL("../../../examples/mcp-apps/pr-dashboard.html", import.meta.url), "utf8"),
+              },
+            },
+          }),
+        });
+        const wire = await response.text();
+        const rpc = JSON.parse(
+          wire.startsWith("event:")
+            ? wire
+                .split("\n")
+                .find((line) => line.startsWith("data:"))
+                .slice(5)
+            : wire,
+        );
+        if (rpc.error || rpc.result.isError) throw new Error(wire);
+        update({
+          sessionUpdate: "tool_call",
+          toolCallId: "render-app",
+          title: "Render generated component",
+          status: "completed",
+          content: rpc.result.content.map((content) => ({ type: "content", content })),
         });
         write({ id: prompt, result: { stopReason: "end_turn" } });
         break;

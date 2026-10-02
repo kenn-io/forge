@@ -6,6 +6,7 @@
   import ChatToolDetails from "./ChatToolDetails.svelte"
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { isImageContent } from "./chat-content.js"
+  import { decodeAppDescriptor } from "./mcp-app.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
@@ -141,7 +142,7 @@
   {/if}
   {#each messages as message, messageIndex (messageIndex)}
     {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
-      {#if item.content && isImageContent(item.content)}
+      {#if item.content && (isImageContent(item.content) || decodeAppDescriptor(item.content))}
         <ChatContentBlock content={item.content} />
       {/if}
     {/each}

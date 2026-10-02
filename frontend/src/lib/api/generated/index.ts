@@ -7,6 +7,7 @@ export * as ExternalContextService from "./external-context/external-context.ts"
 export * as FleetService from "./fleet/fleet.ts";
 export * as IssuesService from "./issues/issues.ts";
 export * as KataService from "./kata/kata.ts";
+export * as McpAppsService from "./mcp-apps/mcp-apps.ts";
 export * as ProjectsService from "./projects/projects.ts";
 export * as PullRequestsService from "./pull-requests/pull-requests.ts";
 export * as RepositoriesService from "./repositories/repositories.ts";

@@ -40,6 +40,7 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_list_workspace_agent_sessions",
 		"kenn_forge_list_workspace_targets",
 		"kenn_forge_remove_workspace_target",
+		"kenn_forge_render_app",
 		"kenn_forge_search_items",
 		"kenn_forge_send_agent_message",
 		"kenn_forge_set_item_workflow_state",
@@ -48,8 +49,8 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 
 	resources, err := cs.ListResources(t.Context(), nil)
 	require.NoError(err)
-	require.Len(resources.Resources, 1)
-	assert.Equal("kenn-forge://mcp/guidance", resources.Resources[0].URI)
+	require.Len(resources.Resources, 2)
+	assert.Contains([]string{resources.Resources[0].URI, resources.Resources[1].URI}, "kenn-forge://mcp/guidance")
 	read, err := cs.ReadResource(t.Context(), &mcp.ReadResourceParams{URI: "kenn-forge://mcp/guidance"})
 	require.NoError(err)
 	require.Len(read.Contents, 1)

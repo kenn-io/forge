@@ -77,6 +77,9 @@ order. Those values change in the library, and its own suite covers them.
 Test Forge's wiring: which content gets the control, the URLs Forge builds,
 modal-frame and layer stacking, and that the flow opens and closes
 (`frontend/tests/e2e/edit-pr-content.spec.ts`).
+The same applies to Go kit: telemetry tests cover only the install identity
+and event routing Forge hands kit, not kit's property stamping, filtering,
+install-age tagging, or env opt-out (`internal/telemetry/telemetry_kit_test.go`).
 
 ## Provider work
 

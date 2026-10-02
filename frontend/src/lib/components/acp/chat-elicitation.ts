@@ -4,7 +4,10 @@ import type { Elicitation } from "./chat-types.js";
 // primitive properties. Anything outside that vocabulary degrades to a plain
 // text field whose string value is sent as typed.
 
-export type ElicitationChoice = { value: string; label: string };
+// An option's description and preview are secondary text shown with the
+// choice; preview carries mockups or snippets from the Claude ACP adapter's
+// AskUserQuestion bridge.
+export type ElicitationChoice = { value: string; label: string; description: string; preview: string };
 export type ElicitationTextFormat = "email" | "uri" | "date" | "date-time";
 type FieldBase = { key: string; label: string; description: string; required: boolean };
 export type ElicitationField =
@@ -55,14 +58,20 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+const optionMetaKey = "_claude/askUserQuestionOption";
+
+function optionPreview(option: Json | undefined): string {
+  return text(record(record(option?._meta)?.[optionMetaKey])?.preview) ?? "";
+}
+
 // Single and multi-select schemas spell choices as `enum` (+ optional
-// `enumNames`) or as `oneOf`/`anyOf` lists of `{const, title}`.
+// `enumNames`) or as `oneOf`/`anyOf` lists of `{const, title, description}`.
 function choicesOf(schema: Json): ElicitationChoice[] | undefined {
   if (Array.isArray(schema.enum)) {
     const names: unknown[] = Array.isArray(schema.enumNames) ? schema.enumNames : [];
     return schema.enum.flatMap((value: unknown, index) => {
       if (typeof value !== "string") return [];
-      return [{ value, label: text(names[index]) || value }];
+      return [{ value, label: text(names[index]) || value, description: "", preview: "" }];
     });
   }
   const titled = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : undefined;
@@ -71,7 +80,14 @@ function choicesOf(schema: Json): ElicitationChoice[] | undefined {
     const option = record(entry);
     const value = text(option?.const);
     if (value === undefined) return [];
-    return [{ value, label: text(option?.title) || value }];
+    return [
+      {
+        value,
+        label: text(option?.title) || value,
+        description: text(option?.description) ?? "",
+        preview: optionPreview(option),
+      },
+    ];
   });
 }
 

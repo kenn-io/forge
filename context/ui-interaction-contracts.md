@@ -177,6 +177,9 @@ Interactive surfaces must agree on which item is selected.
 - Everything in the ACP pane (conversation, questions, notices, composer) shares one reading
   column; agent questions render inline in it. Turn status above the composer is one line of
   chips that expand on demand (`frontend/src/lib/components/acp/ChatDockRail.svelte`).
+- ACP elicitation choices render as an always-visible radio/checkbox list showing each
+  option's description and the picked option's `_meta` preview; never a dropdown
+  (`frontend/src/lib/components/acp/ChatElicitation.svelte`).
 - Composer popovers such as the slash menu are kit popover cards sized to their content and
   anchored to the composer edge, never composer-wide; rows are one line
   (`frontend/src/lib/components/acp/ChatCommandMenu.svelte`).

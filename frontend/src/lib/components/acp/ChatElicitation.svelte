@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { Button, Checkbox, SelectDropdown, TextInput, type SelectDropdownOption } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, TextInput } from "@kenn-io/kit-ui";
   import type { Elicitation } from "./chat-types.js";
   import {
     canSubmit,
@@ -42,10 +42,6 @@
       .map((choice) => choice.value)
       .filter((choice) => (choice === value ? checked : current.includes(choice)));
   }
-  function selectOptions(field: ElicitationField & { choices: ElicitationChoice[] }): SelectDropdownOption[] {
-    const empty = field.required ? { value: "", label: "Choose…", disabled: true } : { value: "", label: "None" };
-    return [empty, ...field.choices];
-  }
   function submit(event: SubmitEvent) {
     event.preventDefault();
     if (disabled || !ready) return;
@@ -55,6 +51,13 @@
 
 {#snippet labelText(field: ElicitationField)}
   {field.label}{#if field.required}<span class="required" aria-hidden="true"> *</span>{/if}
+{/snippet}
+
+{#snippet choiceText(choice: ElicitationChoice)}
+  <span class="choice-text">
+    <span class="choice-title">{choice.label}</span>
+    {#if choice.description}<span class="choice-description">{choice.description}</span>{/if}
+  </span>
 {/snippet}
 
 <form class="elicitation" aria-labelledby={`${uid}-message`} novalidate onsubmit={submit}>
@@ -72,31 +75,45 @@
           {...described}
           onchange={(checked) => { values[field.key] = checked; }}
         >{@render labelText(field)}</Checkbox>
-      {:else if field.kind === "multi"}
-        <fieldset aria-describedby={describedBy || undefined}>
+      {:else if field.kind === "multi" || field.kind === "select"}
+        {@const picked = field.kind === "multi" ? picksOf(field.key) : [textOf(field.key)]}
+        {@const preview = field.kind === "select" ? field.choices.find((choice) => choice.value === picked[0])?.preview : ""}
+        <fieldset
+          aria-describedby={describedBy || undefined}
+          role={field.kind === "select" ? "radiogroup" : undefined}
+          aria-required={field.kind === "select" && field.required ? "true" : undefined}
+        >
           <legend>{@render labelText(field)}</legend>
           <div class="choices">
             {#each field.choices as choice (choice.value)}
-              <Checkbox
-                checked={picksOf(field.key).includes(choice.value)}
-                label={choice.label}
-                {disabled}
-                onchange={(checked) => toggle(field, choice.value, checked)}
-              />
+              {@const checked = picked.includes(choice.value)}
+              {@const row = ["choice", checked && "choice--selected", disabled && "choice--disabled"].filter(Boolean).join(" ")}
+              {#if field.kind === "multi"}
+                <Checkbox class={row} {checked} {disabled} onchange={(next) => toggle(field, choice.value, next)}>
+                  {@render choiceText(choice)}
+                </Checkbox>
+              {:else}
+                <label class={row}>
+                  <input
+                    type="radio"
+                    name={id}
+                    value={choice.value}
+                    {checked}
+                    {disabled}
+                    onchange={() => { values[field.key] = choice.value; }}
+                  />
+                  {@render choiceText(choice)}
+                </label>
+              {/if}
             {/each}
           </div>
+          {#if preview}<pre class="preview" aria-label={`${field.label} preview`}>{preview}</pre>{/if}
+          {#if field.kind === "select" && !field.required && picked[0]}
+            <div class="clear">
+              <Button size="sm" {disabled} onclick={() => { values[field.key] = ""; }}>Clear selection</Button>
+            </div>
+          {/if}
         </fieldset>
-      {:else if field.kind === "select"}
-        <span class="label">{@render labelText(field)}</span>
-        <div class="select">
-          <SelectDropdown
-            title={field.required ? `${field.label} (required)` : field.label}
-            value={textOf(field.key)}
-            options={selectOptions(field)}
-            {disabled}
-            onchange={(value) => { values[field.key] = value; }}
-          />
-        </div>
       {:else}
         <label class="label" for={id}>{@render labelText(field)}</label>
         <TextInput
@@ -126,20 +143,30 @@
 <style>
   .elicitation { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
   .message { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
-  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 24rem; }
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 40rem; }
   .label, legend { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   legend { padding: 0; margin-bottom: var(--space-2); }
-  .choices { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); }
+  .choices { display: flex; flex-direction: column; border: 1px solid var(--border-muted); border-radius: var(--radius-md); overflow: hidden; }
+  .choices :global(.choice) { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-muted); cursor: pointer; }
+  .choices :global(.choice:last-child) { border-bottom: 0; }
+  .choices :global(.choice:hover) { background: var(--bg-surface-hover); }
+  .choices :global(.choice--selected) { background: color-mix(in srgb, var(--accent-blue) 8%, transparent); }
+  .choices :global(.choice--disabled) { cursor: not-allowed; opacity: 0.62; }
+  .choices :global(.kit-checkbox__box) { margin-top: 2px; }
+  .choice input { margin: 3px 0 0; flex-shrink: 0; accent-color: var(--accent-blue); }
+  .choice-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .choice-title { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); overflow-wrap: anywhere; }
+  .choice-description { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
+  .preview { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 16rem; overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--bg-inset); font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-primary); white-space: pre; }
+  .clear { margin-top: var(--space-2); }
   .required { color: var(--accent-red); }
   small { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
   .problem { color: var(--accent-red); }
-  .select :global(.kit-select-dropdown),
-  .select :global(.kit-select-dropdown__trigger) { width: 100%; min-width: 0; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
   @media (pointer: coarse) {
     .actions :global(button),
-    .select :global(.kit-select-dropdown__trigger),
+    .choices :global(.choice),
     .field :global(.kit-text-input),
     .field :global(.kit-checkbox) { min-height: var(--mobile-chrome-hit-target); }
     .actions :global(button) { min-width: var(--mobile-chrome-hit-target); }

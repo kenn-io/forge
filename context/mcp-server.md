@@ -8,8 +8,8 @@
 - The first-party ACP app descriptor selects a renderer, not an authority. It
   does not establish third-party MCP server identity (`frontend/src/lib/components/acp/mcp-app.ts`).
 - Generated anchors must cross the same host-confirmed link path as `openLink`;
-  provider item links then use Forge's shared resolver, including dynamically
-  inserted links (`internal/mcpserver/app.html`, `frontend/src/lib/utils/itemRefHandler.ts`).
+  confirmation links explicitly open a new tab and retain native browser navigation
+  (`internal/mcpserver/app.html`, `frontend/src/lib/components/acp/McpApp.svelte`).
 - Generated apps reread cached evidence and cannot perform mutations; freshness
   and cached mergeability never certify permission to merge (`internal/mcpserver/apps.go::CallAppTool`).
 

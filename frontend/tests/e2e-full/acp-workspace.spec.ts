@@ -229,9 +229,16 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(dashboard.locator(".pull").first()).toBeVisible();
 
     await dashboard.getByRole("button", { name: /^#1 / }).click();
+    const widgetURL = "https://github.com/acme/tools/pull/1";
+    await page
+      .context()
+      .route(widgetURL, (route) => route.fulfill({ contentType: "text/html", body: "Provider destination" }));
+    const widgetPopup = page.waitForEvent("popup");
     await chat.locator(".link-request a").click();
-    await expect(page.locator(".pull-detail .detail-title")).toBeVisible();
-    await expect(page.locator(".pull-detail")).toContainText("#1");
+    const providerPage = await widgetPopup;
+    await expect(providerPage).toHaveURL(widgetURL);
+    await expect(providerPage.locator("body")).toHaveText("Provider destination");
+    await providerPage.close();
     await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
 
     for (const url of ["https://example.com/documentation", "https://github.com/untracked/repo/pull/9"]) {

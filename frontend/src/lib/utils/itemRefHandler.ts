@@ -157,6 +157,7 @@ export function initItemRefHandler(
 
     const anchor = findAnchor(e.target);
     if (!anchor || anchor.hasAttribute("download")) return;
+    if (anchor.target && anchor.target.toLowerCase() !== "_self") return;
 
     const provider = anchor.dataset.provider;
     const platformHost = anchor.dataset.platformHost;

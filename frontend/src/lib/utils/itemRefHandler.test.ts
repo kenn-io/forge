@@ -52,7 +52,6 @@ async function clickItemRef(
   anchor.className = "item-ref";
   anchor.href = attributes.href ?? "/issues/github/acme/widgets/12";
   anchor.textContent = "#12";
-  anchor.target = "_blank";
   for (const [name, value] of Object.entries(attributes)) {
     if (name === "href") continue;
     anchor.setAttribute(name, value);
@@ -136,6 +135,21 @@ describe("itemRefHandler", () => {
       `/${itemType === "pr" ? "pulls" : "issues"}/${provider}/acme/widgets/12`,
     );
     expect(open).not.toHaveBeenCalled();
+  });
+
+  it.each(["_blank", "details"])("leaves explicit target %s to the browser", async (target) => {
+    const result = await clickItemRef({ class: "", href: "https://github.com/acme/widgets/pull/12", target });
+    expect(result.captured).toBe(false);
+    expect(result.target).toBe(target);
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("routes explicit current-page links inside Forge", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
+    const result = await clickItemRef({ class: "", href: "https://github.com/acme/widgets/pull/12", target: "_self" });
+    expect(result.captured).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledWith("/pulls/github/acme/widgets/12");
   });
 
   it.each([

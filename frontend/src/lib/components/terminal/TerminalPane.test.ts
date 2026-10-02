@@ -1162,6 +1162,7 @@ describe("TerminalPane", () => {
 
     await waitFor(() => expect(mockSockets).toHaveLength(1));
     await waitForSocketConnected(mockSockets[0]!);
+    await waitForInitialGeometry(mockSockets[0]!);
     mockSockets[0]!.sent = [];
 
     fitDimensions = undefined;

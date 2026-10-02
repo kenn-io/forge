@@ -64,6 +64,7 @@ only routes to them.
 ## Conventions
 
 - Prefer stdlib over external dependencies
+- Before hand-rolling file-safety or filesystem helpers, reuse `go.kenn.io/kit` (for example `fslink.ReadFile` for regular-file-only reads, `safefileio` for private files); do not reimplement what Kit already owns
 - Never make backward-incompatible changes to the activity relay wire format. Relays and Forge clients upgrade independently; preserve existing field types, meanings, and events, and verify changes against fixed wire fixtures from deployed versions.
 - The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)

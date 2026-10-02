@@ -5,9 +5,10 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
+
+	"go.kenn.io/kit/fslink"
 
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -76,7 +77,13 @@ func acpContentImagePreview(content *localruntime.ACPContent) bool {
 		}
 		path = uri.Path
 	}
-	data, err := os.ReadFile(path)
+	// Accept symlinks, then read only a regular file: a pipe or device could
+	// block or never end.
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false
+	}
+	data, err := fslink.ReadFile(resolved)
 	if err != nil {
 		return false
 	}

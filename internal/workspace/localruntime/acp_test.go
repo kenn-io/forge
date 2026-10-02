@@ -820,6 +820,30 @@ func TestACPStopClosesStdoutReader(t *testing.T) {
 	require.NoError(t, agent.Stop(ctx))
 }
 
+func TestACPStopTrustsWaiterWhenKillFails(t *testing.T) {
+	newAgent := func() *ACP {
+		stdinReader, stdinWriter := io.Pipe()
+		stdoutReader, stdoutWriter := io.Pipe()
+		t.Cleanup(func() {
+			_ = stdinReader.Close()
+			_ = stdoutWriter.Close()
+		})
+		return &ACP{
+			cmd: &exec.Cmd{}, stdin: stdinWriter, stdout: stdoutReader, done: make(chan struct{}),
+			kill: func(*os.Process) error { return errors.New("TerminateProcess: Access is denied.") },
+		}
+	}
+
+	exited := newAgent()
+	close(exited.done)
+	require.NoError(t, exited.Stop(t.Context()), "a confirmed exit is a successful stop")
+
+	pending := newAgent()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, pending.Stop(ctx), context.Canceled)
+}
+
 func TestACPReportsNaturalExitCode(t *testing.T) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")

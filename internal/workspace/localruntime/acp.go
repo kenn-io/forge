@@ -52,6 +52,7 @@ type ACP struct {
 	state           ACPState
 	imagesSupported bool
 	saveConfig      func(map[string]string) error
+	kill            func(*os.Process) error // nil uses killSessionProcess
 	sessionID       string
 	exitCode        int
 	promptIndex     *int
@@ -353,12 +354,26 @@ func (m *Manager) TestACP(ctx context.Context, command []string) (string, error)
 	return warning, agent.Stop(context.Background())
 }
 
+const acpStopExitGrace = 5 * time.Second
+
 func (a *ACP) Stop(ctx context.Context) error {
 	_ = a.stdin.Close()
-	err := killSessionProcess(a.cmd.Process)
+	kill := a.kill
+	if kill == nil {
+		kill = killSessionProcess
+	}
+	err := kill(a.cmd.Process)
 	_ = a.stdout.Close()
 	if err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
+		// An agent that exits once stdin closes can fail the kill (Windows reports access denied), so let the waiter confirm the exit.
+		select {
+		case <-a.done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(acpStopExitGrace):
+			return err
+		}
 	}
 	select {
 	case <-a.done:

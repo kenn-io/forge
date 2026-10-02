@@ -30,12 +30,13 @@ func TestRenderAppUsesPortableResourceAndACPDescriptor(t *testing.T) {
 	})
 	require.NoError(err)
 	require.False(result.IsError)
-	require.Len(result.Content, 2)
-	descriptor, ok := result.Content[1].(*mcp.EmbeddedResource)
+	require.Len(result.Content, 1)
+	descriptor, ok := result.Content[0].(*mcp.TextContent)
 	require.True(ok)
-	assert.Equal(AppDescriptorURI, descriptor.Resource.URI)
-	var generated renderAppInput
-	require.NoError(json.Unmarshal([]byte(descriptor.Resource.Text), &generated))
+	var generated renderAppOutput
+	require.NoError(json.Unmarshal([]byte(descriptor.Text), &generated))
+	assert.Equal(AppDescriptorKind, generated.Kind)
+	assert.Equal(AppDescriptorKind, result.StructuredContent.(map[string]any)["kind"])
 	assert.Equal("<button>Refresh</button>", generated.HTML)
 	assert.Equal("My component", generated.Title)
 }

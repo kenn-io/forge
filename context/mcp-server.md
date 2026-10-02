@@ -2,6 +2,9 @@
 
 - Interactive components are agent-authored; Forge supplies generic rendering and
   cached data primitives, not built-in dashboard layouts (`internal/mcpserver/apps.go`).
+- Keep the ACP app kind marker in text and structured output: real agent adapters
+  flatten resources and may discard text in favor of structured data.
+  (`internal/mcpserver/apps.go::AppDescriptorKind`)
 - The first-party ACP app descriptor selects a renderer, not an authority. It
   does not establish third-party MCP server identity (`frontend/src/lib/components/acp/mcp-app.ts`).
 - Generated apps reread cached evidence and cannot perform mutations; freshness

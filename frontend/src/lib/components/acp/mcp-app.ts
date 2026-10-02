@@ -8,25 +8,25 @@ import type { ChatContent } from "./chat-types.js";
 
 const AppDescriptor = Schema.Struct({ title: Schema.String, html: Schema.String });
 export type AppDescriptor = typeof AppDescriptor.Type;
+const TaggedAppDescriptor = Schema.Struct({
+  kind: Schema.Literal("kenn-forge://apps/generated"),
+  title: Schema.String,
+  html: Schema.String,
+});
 export function decodeAppDescriptor(content: ChatContent): AppDescriptor | undefined {
-  if (
-    content.type !== "resource" ||
-    content.uri !== "kenn-forge://apps/generated" ||
-    content.mimeType !== "application/json"
-  )
-    return;
-  return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.fromJsonString(AppDescriptor))(content.text));
+  if (content.type !== "text") return;
+  return Option.getOrUndefined(Schema.decodeUnknownOption(Schema.fromJsonString(TaggedAppDescriptor))(content.text));
 }
 
-// data: establishes an opaque origin independently of the sandbox flags. The
-// inner document can never share Forge's origin, even with allow-same-origin.
+// data: isolates the proxy from Forge. The inner frame also omits
+// allow-same-origin so generated code cannot alter or execute in the proxy.
 export const sandboxProxyURL = `data:text/html;base64,${btoa(String.raw`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self' about:; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}iframe{display:block}</style></head><body><script>
 let view;
 addEventListener('message', event => {
   if (event.source === parent) {
     if (event.data?.method === 'ui/notifications/sandbox-resource-ready' && !view) {
       view = document.createElement('iframe');
-      view.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      view.setAttribute('sandbox', 'allow-scripts');
       view.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:; connect-src \'none\'; form-action \'none\'; base-uri \'none\'">' + event.data.params.html;
       document.body.append(view);
     } else if (view) view.contentWindow.postMessage(event.data, '*');
@@ -46,6 +46,7 @@ export const hostApp = Effect.fn("McpApp.host")(function* (
   descriptor: AppDescriptor,
   runtime: AppRuntime,
   update: (status: string, height?: number) => void,
+  requestLink: (url: string) => void,
 ) {
   const scope = yield* Effect.scope;
   const { html } = yield* executeGeneratedRequest("load MCP App", (signal) => getMcpAppResource({ signal }));
@@ -105,8 +106,8 @@ export const hostApp = Effect.fn("McpApp.host")(function* (
     );
   bridge.onopenlink = async ({ url }) => {
     const parsed = new URL(url);
-    if (!navigator.userActivation.isActive || !["http:", "https:"].includes(parsed.protocol)) return { isError: true };
-    window.open(parsed.href, "_blank", "noopener,noreferrer");
+    if (!["http:", "https:"].includes(parsed.protocol)) return { isError: true };
+    requestLink(parsed.href);
     return {};
   };
   bridge.onsizechange = ({ height }) => update("Ready", Math.max(120, Math.min(height ?? 320, 900)));

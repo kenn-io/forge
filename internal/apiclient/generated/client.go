@@ -52316,7 +52316,7 @@ type CreateKataWorkspaceResponse = WorkspaceResponse
 
 type CreateKataWorkspaceErrorResponse = ProblemError
 
-type CallMcpAppToolResponse map[string]struct{}
+type CallMcpAppToolResponse map[string]any
 
 type CallMcpAppToolErrorResponse = ProblemError
 
@@ -56237,9 +56237,9 @@ type AppResourceOutputBody struct {
 
 type AppToolInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string             `json:"$schema,omitempty"`
-	Arguments map[string]struct{} `json:"arguments"`
-	Name      string              `json:"name"`
+	Schema    *string        `json:"$schema,omitempty"`
+	Arguments map[string]any `json:"arguments"`
+	Name      string         `json:"name"`
 }
 
 type ApplyReviewSuggestionHostInputBody struct {

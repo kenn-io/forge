@@ -22,8 +22,8 @@ To reproduce this example precisely, ask the agent to read
 `examples/mcp-apps/pr-dashboard.html` and pass its contents as `html` to
 `kenn_forge_render_app`, with a short `title`. That file uses
 `window.app.callServerTool` and `window.app.openLink`, which the renderer supplies.
-The agent must preserve the returned embedded resource in its ACP tool output.
-Agents that flatten tool results to text will not render the component.
+The tool returns a tagged text descriptor in its ACP tool output. This preserves
+the component through agents that flatten embedded MCP resources into text.
 
 Refresh rereads the live Forge cache; it does not trigger provider sync.
 Generated code is retained in the chat transcript and runs again when the

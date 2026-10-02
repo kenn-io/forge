@@ -13,9 +13,9 @@ import (
 
 const AppResourceURI = "ui://kenn-forge/generated-app"
 
-// AppDescriptorURI identifies the first-party ACP handoff, not an MCP Apps
-// resource. Portable MCP Apps hosts discover AppResourceURI from tool metadata.
-const AppDescriptorURI = "kenn-forge://apps/generated"
+// AppDescriptorKind marks the descriptor in both MCP output representations.
+// Agents may forward text content or stringify structuredContent into ACP.
+const AppDescriptorKind = "kenn-forge://apps/generated"
 
 //go:embed app.html
 var AppHTML string
@@ -23,6 +23,11 @@ var AppHTML string
 type renderAppInput struct {
 	Title string `json:"title" jsonschema:"short title for the generated component"`
 	HTML  string `json:"html" jsonschema:"self-contained HTML fragment with inline style and script; use window.app.callServerTool({name,arguments}) for cached Forge reads and window.app.openLink({url}) for links; no imports or external network"`
+}
+
+type renderAppOutput struct {
+	renderAppInput
+	Kind string `json:"kind"`
 }
 
 func (s *Server) registerAppTools() {
@@ -36,23 +41,21 @@ func (s *Server) registerAppTools() {
 			"window.app.openLink({url}) asks the host to open an HTTP(S) link. Scripts run after the app bridge is ready. " +
 			"Include a useful text explanation for clients without widgets. Prototype: generated components are retained in the chat transcript.",
 		Meta: mcp.Meta{"ui": map[string]any{"resourceUri": AppResourceURI, "visibility": []string{"model"}}},
-	}, func(_ context.Context, _ *mcp.CallToolRequest, in renderAppInput) (*mcp.CallToolResult, renderAppInput, error) {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in renderAppInput) (*mcp.CallToolResult, renderAppOutput, error) {
+		out := renderAppOutput{renderAppInput: in, Kind: AppDescriptorKind}
 		if strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.HTML) == "" {
-			return nil, in, errors.New("title and html are required")
+			return nil, out, errors.New("title and html are required")
 		}
 		if len(in.HTML) > 256<<10 || len(in.Title) > 200 {
-			return nil, in, errors.New("app exceeds the 256 KiB HTML or 200-byte title limit")
+			return nil, out, errors.New("app exceeds the 256 KiB HTML or 200-byte title limit")
 		}
-		data, err := json.Marshal(in)
+		data, err := json.Marshal(out)
 		if err != nil {
-			return nil, in, err
+			return nil, out, err
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{
-			&mcp.TextContent{Text: "Generated interactive component: " + in.Title},
-			&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
-				URI: AppDescriptorURI, MIMEType: "application/json", Text: string(data),
-			}},
-		}}, in, nil
+			&mcp.TextContent{Text: string(data)},
+		}}, out, nil
 	})
 	s.mcp.AddResource(&mcp.Resource{
 		URI: AppResourceURI, Name: "kenn-forge-generated-app", Title: "Generated component renderer",

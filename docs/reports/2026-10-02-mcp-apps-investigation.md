@@ -27,8 +27,8 @@ messages. The renderer executes inline scripts after the bridge initializes.
 This is a standard MCP Apps outer contract with a Forge-specific HTML authoring
 contract. [2][9]
 
-The same tool returns an embedded JSON resource identified by
-`kenn-forge://apps/generated`. Forge's ACP chat recognizes that descriptor and
+The tool returns the same JSON descriptor in text and structured output, with
+`kind: "kenn-forge://apps/generated"`. Forge's ACP chat recognizes it and
 renders the component through the official `AppBridge` and
 `PostMessageTransport` SDK classes. The descriptor carries the code in the
 transcript; there is no component registry, generated ID, separate app server,
@@ -39,7 +39,8 @@ establish provenance or grant privileges. All component code remains untrusted.
 Generated scripts receive two operations:
 
 - `window.app.callServerTool({name, arguments})` reads cached Forge data.
-- `window.app.openLink({url})` requests an HTTP(S) link through the host.
+- `window.app.openLink({url})` displays an HTTP(S) link in Forge's confirmation
+  area. The user must click that host-owned link to open it.
 
 Forge's backend independently restricts widget calls to eight existing cached
 read tools: repositories, PR contexts, item context, activity, search, review
@@ -64,7 +65,29 @@ chat. A refresh changed the displayed CI status from pending to success after
 the isolated test updated the SQLite-backed cache. The component rendered again
 after a page reload. A browser probe using the official AppBridge also observed
 host-DOM access denied and a CSP `connect-src` violation for a reachable URL.
+An additional browser probe attempted inner-frame navigation to a reachable
+URL; the parent proxy blocked it with `frame-src`. A follow-up probe reproduced
+script injection into the proxy when the inner frame had `allow-same-origin`.
+The inner frame now omits that flag to separate its origin from the proxy;
+repeating the injection failed with a cross-origin `SecurityError`.
+Link requests now display a
+host-owned confirmation link rather than relying on global user activation.
 No real external chat client has been tested in this investigation.
+
+A real Claude ACP session discovered the Forge tools, read the real repository
+and PR cache, and authored its own dashboard without the example file. This
+exposed a delivery bug the fixture did not cover: the Claude adapter flattened
+embedded resources into descriptive text and preferred structured output over
+text when both were present. The tool now puts the discriminator in both output
+representations. Neither client parsing of adapter-specific prose nor a legacy
+resource fallback is needed.
+
+With a fresh session, the real agent generated an attention board from the
+cache and published it in chat. Browser interaction verified that Refresh
+reread the cached PRs, category filters changed the displayed results, and the
+generated component returned after reloading the chat. The isolated preview
+uses a snapshot of the real cache with provider sync disabled. The fixture test
+alone is not evidence that an actual ACP adapter preserves the app result.
 
 An external-host test must prove resource loading, execution, a cached read,
 refresh after a cache change, and links with that host's connection policy.
@@ -108,7 +131,7 @@ in this branch; the ranges below cover work beyond inspected implementation.
 
 | Work | Estimate | Main uncertainty |
 | --- | --- | --- |
-| Exercise common real ACP agents and finish lifecycle/permission coverage | 1–3 engineer-days | Agents preserving rich tool content, cancellation, and link gestures |
+| Broaden real ACP-agent and lifecycle coverage | 1–3 engineer-days | Adapter behavior, cancellation, and link gestures |
 | Validate the same resource in one external chat host | 1–3 additional days | Host access and MCP transport-version interoperability |
 | Bring Forge's sandbox deployment into full spec conformance | 3–7 additional days | HTTPS/remote separate-origin deployment and CSP headers |
 | Host arbitrary third-party MCP Apps in ACP chat | 2–4 additional engineer-weeks | Server identity, resource discovery, routing, permissions, lifecycle |

@@ -6,6 +6,7 @@ import renderer from "../../../../../internal/mcpserver/app.html?raw";
 
 it("renders generated content through the app bridge and reads tools without accessing the host document", async () => {
   const calls: unknown[] = [];
+  const links: string[] = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
     if (request.url.endsWith("/mcp-apps/resource")) return Response.json({ html: renderer });
@@ -25,16 +26,23 @@ it("renders generated content through the app bridge and reads tools without acc
           title: "Attention",
           html: `<p id="result"></p><script>
       let isolated = false;
+      let proxyIsolated = false;
       try { parent.parent.document.body.innerText; } catch { isolated = true; }
-      app.callServerTool({name: "kenn_forge_list_pull_requests", arguments: {isolated}}).then(result => {
+      try { parent.document.body.appendChild(parent.document.createElement("script")); } catch { proxyIsolated = true; }
+      app.callServerTool({name: "kenn_forge_list_pull_requests", arguments: {isolated, proxyIsolated}}).then(result => {
         document.getElementById("result").textContent = result.content[0].text;
         return app.callServerTool({name: "rendered", arguments: {text: document.getElementById("result").textContent}});
+      }).then(() => {
+        return app.openLink({url: "https://example.com/pr/42"});
       });
     </script>`,
         },
         runtime,
         (next) => {
           status = next;
+        },
+        (url) => {
+          links.push(url);
         },
       ),
     ),
@@ -50,10 +58,11 @@ it("renders generated content through the app bridge and reads tools without acc
     await expect
       .poll(() => calls)
       .toEqual([
-        { name: "kenn_forge_list_pull_requests", arguments: { isolated: true } },
+        { name: "kenn_forge_list_pull_requests", arguments: { isolated: true, proxyIsolated: true } },
         { name: "rendered", arguments: { text: "PR #42: passing" } },
       ]);
     expect(status).toBe("Ready");
+    await expect.poll(() => links).toEqual(["https://example.com/pr/42"]);
   } finally {
     execution.interrupt();
     await execution.exit;
@@ -65,12 +74,16 @@ it("renders generated content through the app bridge and reads tools without acc
 
 it("only promotes valid Forge app descriptors to executable widgets", () => {
   const content = {
-    type: "resource",
-    uri: "kenn-forge://apps/generated",
-    mimeType: "application/json",
-    text: JSON.stringify({ title: "Attention", html: "<p>Ready</p>" }),
+    type: "text",
+    text: JSON.stringify({ kind: "kenn-forge://apps/generated", title: "Attention", html: "<p>Ready</p>" }),
   };
-  expect(decodeAppDescriptor(content)).toEqual({ title: "Attention", html: "<p>Ready</p>" });
-  expect(decodeAppDescriptor({ ...content, uri: "https://example.com/app" })).toBeUndefined();
+  expect(decodeAppDescriptor(content)).toEqual({
+    kind: "kenn-forge://apps/generated",
+    title: "Attention",
+    html: "<p>Ready</p>",
+  });
+  expect(
+    decodeAppDescriptor({ ...content, text: JSON.stringify({ title: "Attention", html: "<p>Ready</p>" }) }),
+  ).toBeUndefined();
   expect(decodeAppDescriptor({ ...content, text: "invalid" })).toBeUndefined();
 });

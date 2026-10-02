@@ -20,14 +20,20 @@ type appResourceOutput struct {
 type appToolInput struct {
 	Body struct {
 		Name      string         `json:"name" minLength:"1"`
-		Arguments map[string]any `json:"arguments"`
+		Arguments appToolPayload `json:"arguments"`
 	}
+}
+
+type appToolPayload map[string]any
+
+func (appToolPayload) Schema(huma.Registry) *huma.Schema {
+	return &huma.Schema{Type: "object", AdditionalProperties: true}
 }
 
 // The result follows the MCP schema, including heterogeneous content blocks.
 // Keep that external protocol payload intact rather than duplicating it here.
 type appToolOutput struct {
-	Body map[string]any
+	Body appToolPayload
 }
 
 func (s *Server) registerMCPAppsAPI(api huma.API) {

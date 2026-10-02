@@ -439,7 +439,7 @@ components:
           readOnly: true
           type: string
         arguments:
-          additionalProperties: {}
+          additionalProperties: true
           type: object
         name:
           minLength: 1
@@ -21888,7 +21888,7 @@ paths:
           content:
             application/json:
               schema:
-                additionalProperties: {}
+                additionalProperties: true
                 type: object
           description: OK
         default:

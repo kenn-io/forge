@@ -24,6 +24,7 @@ var allowedAPITags = map[string]struct{}{
 	"Fleet":            {},
 	"Issues":           {},
 	"Kata":             {},
+	"MCP Apps":         {},
 	"Projects":         {},
 	"Pull Requests":    {},
 	"Repositories":     {},

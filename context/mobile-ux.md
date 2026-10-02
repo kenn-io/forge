@@ -35,16 +35,23 @@ Think about mobile work in this order:
 ## Design rules
 
 - Build dedicated phone routes/components when the desktop interaction model does not fit. A `/m` route must not simply mount the desktop view inside a narrow wrapper.
-- The phone top bar may expose the same direct Forge selector as desktop. Keep
-  it within the phone viewport, retain the product name when only one Forge is
-  available, and navigate with ordinary origin links so other tabs are not
+- The phone shell has no top bar. Each phone screen's own first row (the list
+  search bar, the workspace list actions, the terminal toolbar, and the detail
+  headers) ends with one Menu button that opens a bottom sheet with the phone
+  modes, the Forge selector when the fleet has another Forge, and Open desktop
+  view. Only screens mounted inside the phone shell receive the menu context, so
+  desktop and desktop-narrow views that reuse those rows render no menu. A new
+  phone screen must put the menu in its first row or the user has no way to
+  switch modes (`frontend/src/lib/components/mobile/MobileNavMenu.svelte`,
+  `frontend/src/lib/components/mobile/mobile-nav-menu.ts`).
+- The Forge selector navigates with ordinary origin links so other tabs are not
   retargeted (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Preserve human-facing product copy. Remove text that sounds like an implementation note or model instruction.
 - Keep repository/provider identity visible enough to disambiguate similarly named repos, especially on activity cards and detail headers.
-- Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally. Phone-like focus presentation, whether reached from `/m` lists, the activity feed, `/focus/...`, or a narrow canonical URL, renders inside the same `.mobile-shell` top bar as every other phone view, and detail routes add a header with the item badge and a Back control. Desktop-narrow focus presentation stays chrome-free (`frontend/src/App.svelte::phoneDetailItem`).
+- Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally. Phone-like focus presentation, whether reached from `/m` lists, the activity feed, `/focus/...`, or a narrow canonical URL, renders inside the same `.mobile-shell` as every other phone view, and detail routes add a header with the item badge, a Back control, and the shell menu. Desktop-narrow focus presentation stays chrome-free (`frontend/src/App.svelte::phoneDetailItem`).
 - The phone PR header status row is one control family: state, CI, diff stat, review decision, labels, assignees, and reviewers all render at the action-grid height with the same corner radius, one size, one weight, and plain case. Tone tints still carry status; pills and uppercase labels are desktop density devices. Branch names keep the app mono face at the inline-code ratio so the mono line reads the same size as the sans repository line (`frontend/src/App.svelte` phone `.chips-row` rules).
 - Phone-like PR and issue detail branches in `App.svelte` all receive the phone workspace callbacks (`phoneDetailProps` / `phoneIssueDetailProps`), and both detail components open a freshly created workspace through `onOpenWorkspace` when the host provides it; the desktop `/terminal` route is only the fallback for hosts without a callback (`frontend/src/lib/components/detail/IssueDetail.svelte`, `frontend/src/lib/components/detail/PullDetail.svelte`).
-- Back on a phone detail returns to the list that opened it, at the same rows. Phone lists record their origin in history state when they open an item (through the navigate callback's `state` option, never as a bare second argument) and park their scroll offset and loaded chunk size before every path that leaves the list, timeline events included. Parking stamps the list's own history entry, so only a remount on that entry (header Back or browser Back) restores the offset; a fresh visit from the mode picker or a deep link discards it and starts at the top. A deep link with no origin falls back to the matching `/m` list. A detail that navigates again (a tab switch, a stack member) carries the origin onto the new entry with a back depth, so the header Back pops straight to the list while browser back still steps through the tabs (`frontend/src/lib/stores/mobile-list-return.ts::carryMobileListOrigin`, `frontend/src/lib/views/FocusListView.svelte::parkListPosition`, `frontend/src/App.svelte::leavePhoneDetail`).
+- Back on a phone detail returns to the list that opened it, at the same rows. Phone lists record their origin in history state when they open an item (through the navigate callback's `state` option, never as a bare second argument) and park their scroll offset and loaded chunk size before every path that leaves the list, timeline events included. Parking stamps the list's own history entry, so only a remount on that entry (header Back or browser Back) restores the offset; a fresh visit from the shell menu or a deep link discards it and starts at the top. A deep link with no origin falls back to the matching `/m` list. A detail that navigates again (a tab switch, a stack member) carries the origin onto the new entry with a back depth, so the header Back pops straight to the list while browser back still steps through the tabs (`frontend/src/lib/stores/mobile-list-return.ts::carryMobileListOrigin`, `frontend/src/lib/views/FocusListView.svelte::parkListPosition`, `frontend/src/App.svelte::leavePhoneDetail`).
 - Mobile escape hatches to desktop views are allowed, but they must be intentional and not the default path.
 
 ## Responsive route and presentation model
@@ -71,7 +78,7 @@ In code and tests, name predicates so this distinction is visible. Avoid generic
 - Phone type comes from the `--font-size-*` scale. `frontend/src/app.css` overrides kit-ui's touch scale (under `kit-type-touch` and the `(hover: none) and (pointer: coarse)` query) with a denser phone scale: 15px body, 13px metadata, 17px titles. The larger kit scale cost too many rows on triage screens.
 - Phone text fields stay at `1rem`. iOS zooms the page when a focused field renders below 16px, so the denser scale must not reach `input`, `textarea`, or `select` (`frontend/src/app.css`, `frontend/tests/e2e-full/mobile-routes.spec.ts::expectReadableFocusList`).
 - Phone detail prose (descriptions, comments, markdown insets) renders at 14px (`--font-size-phone-prose`) with markdown headings on the 15px body step, so long text does not dwarf the 13px detail chrome (`frontend/src/App.svelte::.focus-layout--phone`).
-- Phone controls stay compact next to the denser type: 40px for chrome and list controls (top bar, search, filters), 38px for detail buttons, and 32px for the header status chips (`frontend/src/app.css::--mobile-chrome-hit-target`, `frontend/src/App.svelte::--focus-detail-hit-target`, `--focus-detail-chip-height`). Larger 44-49px targets made the buttons feel clunky.
+- Phone controls stay compact next to the denser type: 40px for chrome and list controls (shell menu, search, filters), 38px for detail buttons, and 32px for the header status chips (`frontend/src/app.css::--mobile-chrome-hit-target`, `frontend/src/App.svelte::--focus-detail-hit-target`, `--focus-detail-chip-height`). Larger 44-49px targets made the buttons feel clunky.
 - Phone list rows size to their content with only the hit-target floor as a minimum; fixed multi-line minimum heights waste rows (`frontend/src/lib/components/sidebar/PullItem.svelte`).
 - Mobile typography, spacing, radii, and hit targets should be mostly `rem`-based. Reuse shared phone tokens directly; components must not define private aliases or fallback sizes. Phone prose, input type, and chrome targets live in `frontend/src/app.css`, shared by detail and ACP views.
 - The app intentionally keeps the global root font size small for desktop/terminal stability. Do not change the global `html` root just to make mobile readable.
@@ -127,7 +134,7 @@ Avoid by default:
 
 ## Mobile workspace workflow
 
-- Workspaces is a first-class phone mode selected from the shared mobile mode picker; `/m/workspaces` uses a dedicated card list and never mounts the desktop workspace layout.
+- Workspaces is a first-class phone mode selected from the shell menu; `/m/workspaces` uses a dedicated card list and never mounts the desktop workspace layout.
 - Keep search and workspace creation inline. Put the existing sort, grouping, organization-name, and diff-stat controls in a touch-sized View sheet backed by the same persisted settings as desktop.
 - Phone workspace rows show hook- or ACP-reported Working, Approval, Input, and Done states as visible compact badges; color-only status dots are insufficient for agent state (`frontend/src/lib/components/mobile/MobileWorkspaceList.svelte::agentStatePresentation`).
 - Phone PR detail must not reflow while a background sync runs: the inline "Syncing" meta item wraps to its own row on a phone and pushes the page down, so phone presentation renders a 2px absolutely positioned progress bar at the top of `.pull-detail` instead (`role="status"`, reduced-motion safe). Desktop keeps the inline indicator.

@@ -160,9 +160,7 @@ test.describe("phone routes", () => {
 
     await expectPathname(page, "/");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    await expect(page.getByRole("combobox", { name: /Phone mode/ })).toHaveText("Activity");
-    await expect(page.locator(".mobile-topbar .mobile-app-icon")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open desktop view" })).toBeVisible();
+    await expect(page.locator(".mobile-triage-search-bar").getByRole("button", { name: "Menu" })).toBeVisible();
     await expect(page.locator(".app-top-bar")).toHaveCount(0);
     await expect(page.locator("footer")).toHaveCount(0);
 
@@ -228,11 +226,7 @@ test.describe("phone routes", () => {
       const eventLabel = document.querySelector(".mobile-activity-event__body strong");
       const eventAuthor = document.querySelector(".mobile-activity-event__body span");
       const eventTime = document.querySelector(".mobile-activity-event time");
-      const mobileBrandLabel = document.querySelector(".forge-selector-fallback");
-      const mobileModePicker = document.querySelector(".mobile-mode-picker .kit-select-dropdown__trigger");
-      const desktopButton = document.querySelector(".mobile-desktop-link");
-      const desktopIcon = document.querySelector(".mobile-desktop-link svg");
-      const appIcon = document.querySelector(".mobile-app-icon");
+      const menuButton = document.querySelector(".mobile-triage-search-bar button[aria-label='Menu']");
       const itemTypeToggle = document.querySelector(".mobile-item-type-toggle .kit-toggle");
       const rangeSelect = document.querySelector(".mobile-filter-dropdown button[aria-label^='Time range']");
       const repoSelect = document.querySelector(".mobile-filter-select--repo .typeahead-trigger");
@@ -294,12 +288,7 @@ test.describe("phone routes", () => {
         eventLabelFontSize: fontSize(eventLabel),
         eventAuthorFontSize: fontSize(eventAuthor),
         eventTimeFontSize: fontSize(eventTime),
-        mobileBrandFontSize: fontSize(mobileBrandLabel),
-        mobileModePickerFontSize: fontSize(mobileModePicker),
-        desktopButtonText: desktopButton?.textContent?.trim() ?? "",
-        desktopButtonRect: compactRect(desktopButton),
-        desktopIconPresent: Boolean(desktopIcon),
-        appIconPresent: Boolean(appIcon),
+        menuButtonRect: compactRect(menuButton),
         inboxBackground: styleFor(document.querySelector(".mobile-activity-inbox"))?.backgroundColor ?? "",
         cardBackground: styleFor(firstCard)?.backgroundColor ?? "",
         cardBorderColor: styleFor(firstCard)?.borderColor ?? "",
@@ -341,12 +330,9 @@ test.describe("phone routes", () => {
     expect(metrics.eventLabelFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.eventAuthorFontSize).toBeGreaterThanOrEqual(12);
     expect(metrics.eventTimeFontSize).toBeGreaterThanOrEqual(12);
-    expect(metrics.mobileBrandFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.mobileModePickerFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.desktopButtonText).toBe("");
-    expect(metrics.desktopButtonRect?.height ?? 0).toBeGreaterThanOrEqual(40);
-    expect(metrics.desktopIconPresent).toBe(true);
-    expect(metrics.appIconPresent).toBe(true);
+    // The search row is the first row of the phone shell; the menu shares it.
+    expect(metrics.toolbarRect?.top ?? -1).toBe(0);
+    expect(metrics.menuButtonRect?.height ?? 0).toBeGreaterThanOrEqual(40);
     expect(metrics.inboxBackground).toBe(metrics.themeBgPrimary);
     expect(metrics.cardBackground).toBe(metrics.themeBgSurface);
     expect(metrics.cardBorderColor).toBe(metrics.themeBorder);
@@ -543,7 +529,7 @@ test.describe("phone routes", () => {
       page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
     await expectReadableDetail(page);
-    await expect(page.locator(".mobile-shell .mobile-topbar")).toBeVisible();
+    await expect(page.locator(".mobile-detail-header").getByRole("button", { name: "Menu" })).toBeVisible();
     await expect(page.locator(".mobile-detail-header__back")).toHaveText("Activity");
 
     await page.locator(".mobile-detail-header__back").click();
@@ -573,7 +559,7 @@ test.describe("phone routes", () => {
     await expect(
       page.locator(".focus-layout .pull-detail .detail-title, .focus-layout .issue-detail .detail-title"),
     ).toBeVisible();
-    await expect(page.locator(".mobile-shell .mobile-topbar")).toBeVisible();
+    await expect(page.locator(".mobile-detail-header").getByRole("button", { name: "Menu" })).toBeVisible();
     await expect(page.locator(".mobile-detail-header__back")).toHaveText("Activity");
   });
 
@@ -724,8 +710,6 @@ test.describe("phone routes", () => {
   test("mobile mode picker uses dedicated PR and issue routes", async ({ page }) => {
     await page.goto("/m/pulls");
     await expect(page.locator(".mobile-shell")).toBeVisible();
-    const modePicker = page.getByRole("combobox", { name: /Phone mode/ });
-    await expect(modePicker).toHaveText("PRs");
     await expect(page.locator(".focus-list")).toBeVisible();
     const pullSearch = page.getByRole("searchbox", { name: "Search PRs" });
     const pullFilters = page.getByRole("button", { name: "Filters" });
@@ -741,10 +725,12 @@ test.describe("phone routes", () => {
     await expect(page.locator(".filter-bar")).toBeVisible();
     await expectReadableFocusList(page, ".pull-item");
 
-    await modePicker.click();
-    await page.getByRole("option", { name: "Issues" }).click();
+    await page.getByRole("button", { name: "Menu" }).click();
+    const phoneModes = page.getByRole("navigation", { name: "Phone mode" });
+    await expect(phoneModes.getByRole("button", { name: "PRs" })).toHaveAttribute("aria-current", "page");
+    await phoneModes.getByRole("button", { name: "Issues" }).click();
     await expect(page).toHaveURL(/\/m\/issues(?:\?|$)/);
-    await expect(modePicker).toHaveText("Issues");
+    await expect(phoneModes).toHaveCount(0);
     await expect(page.locator(".focus-list")).toBeVisible();
     const issueSearch = page.getByRole("searchbox", { name: "Search issues" });
     const issueFilters = page.getByRole("button", { name: "Filters" });
@@ -834,8 +820,8 @@ test.describe("phone routes", () => {
       await expect(page.locator(".pull-item .repo-name", { hasText: "gitea/github.com/acme/widgets" })).toHaveCount(1);
       await expect(page.locator(".pull-item .repo-name", { hasText: /^tools$/ }).first()).toHaveText("tools");
 
-      await page.getByRole("combobox", { name: /Phone mode/ }).click();
-      await page.getByRole("option", { name: "Issues" }).click();
+      await page.getByRole("button", { name: "Menu" }).click();
+      await page.getByRole("navigation", { name: "Phone mode" }).getByRole("button", { name: "Issues" }).click();
       await expect(page.locator(".issue-item .repo-name", { hasText: "github/github.com/acme/widgets" })).toHaveCount(
         3,
       );
@@ -900,7 +886,6 @@ test.describe("high-density phone routes", () => {
         filterFontSize: fontSize(".mobile-item-type-toggle .kit-toggle__label"),
         filterOptionFontSize: fontSize(".mobile-filter-dropdown .kit-select-dropdown__option"),
         filterOptionHeight: firstOption?.height ?? 0,
-        modePickerFontSize: fontSize(".mobile-mode-picker .kit-select-dropdown__trigger"),
         searchHeight: search?.height ?? 0,
         searchLeft: search?.left ?? 0,
         searchRight: search?.right ?? 0,
@@ -917,7 +902,6 @@ test.describe("high-density phone routes", () => {
     expect(metrics.filterFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.filterOptionFontSize).toBeGreaterThanOrEqual(13);
     expect(metrics.filterOptionHeight).toBeGreaterThanOrEqual(40);
-    expect(metrics.modePickerFontSize).toBeGreaterThanOrEqual(15);
     expect(metrics.searchHeight).toBeGreaterThanOrEqual(40);
     expect(metrics.searchLeft).toBeGreaterThanOrEqual(0);
     expect(metrics.searchRight).toBeLessThanOrEqual(metrics.viewportWidth);

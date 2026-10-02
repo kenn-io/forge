@@ -10,16 +10,17 @@ test("phone PR detail renders the primary actions as one kit action grid", async
 
   await page.goto("/pulls/github/acme/widgets/42");
 
-  // The detail lives in the phone shell: the shared top bar sits above a
-  // detail header that names the PR and offers Back to the list.
-  const topbar = page.locator(".mobile-shell .mobile-topbar");
-  await expect(topbar).toBeVisible();
+  // The detail lives in the phone shell: its header is the first row, names
+  // the PR, offers Back to the list, and carries the shell menu at its end.
+  const header = page.locator(".mobile-shell .mobile-detail-header");
   await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
   await expect(page.locator(".mobile-detail-header__back")).toHaveText("Pull requests");
-  const topbarBox = await topbar.boundingBox();
-  expect(topbarBox).not.toBeNull();
-  expect(topbarBox!.y).toBeGreaterThanOrEqual(0);
-  expect(topbarBox!.x + topbarBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  const headerBox = await header.boundingBox();
+  expect(headerBox).not.toBeNull();
+  expect(headerBox!.y).toBe(0);
+  const menuBox = await header.getByRole("button", { name: "Menu" }).boundingBox();
+  expect(menuBox).not.toBeNull();
+  expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
 
   const grid = page.getByRole("group", { name: "Pull request actions" });
   await expect(grid).toBeVisible();
@@ -49,14 +50,14 @@ test("phone PR list keyboard focus moves row to row and the search field shows o
   const rows = page.locator(".mobile-shell .pull-item");
   await expect(rows.nth(1)).toBeVisible();
 
-  // Tab from the search field reaches the Filters toggle, the labelled
-  // scroll region, the first row, then the second row: the row's hover-only
-  // star control must not take a tab stop of its own.
+  // Tab from the search field reaches the Filters toggle, the shell menu, the
+  // labelled scroll region, the first row, then the second row: the row's
+  // hover-only star control must not take a tab stop of its own.
   const wrapper = page.locator(".mobile-triage-search-bar__search .kit-text-input");
   const restingBorder = await wrapper.evaluate((el) => getComputedStyle(el).borderTopColor);
 
-  await page.locator("button[aria-label='Open desktop view']").focus();
-  await page.keyboard.press("Tab");
+  await page.getByRole("button", { name: "Filters" }).focus();
+  await page.keyboard.press("Shift+Tab");
   const search = page.getByRole("searchbox", { name: "Search PRs" });
   await expect(search).toBeFocused();
 
@@ -67,6 +68,8 @@ test("phone PR list keyboard focus moves row to row and the search field shows o
 
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Filters" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Menu" })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("region", { name: "Focus list" })).toBeFocused();
   await page.keyboard.press("Tab");
@@ -83,9 +86,9 @@ test("phone PR detail tabs are one tab stop and switch with the arrow keys", asy
   const files = page.getByRole("tab", { name: /Files changed/ });
   await expect(conversation).toHaveAttribute("aria-selected", "true");
 
-  // Tab from the detail header's Back control lands on the active tab, and
+  // Tab from the detail header's last control lands on the active tab, and
   // the next Tab leaves the strip for the panel instead of walking the tabs.
-  await page.locator(".mobile-detail-header__back").focus();
+  await page.locator(".mobile-detail-header").getByRole("button", { name: "Menu" }).focus();
   await page.keyboard.press("Tab");
   await expect(conversation).toBeFocused();
   await page.keyboard.press("Tab");

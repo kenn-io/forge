@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
+  import MobileNavMenu from "./MobileNavMenu.svelte";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import ArrowRightIcon from "@lucide/svelte/icons/arrow-right";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
@@ -876,6 +877,7 @@
       >
         <MoreHorizontalIcon size="20" strokeWidth="2" aria-hidden="true" />
       </button>
+      <MobileNavMenu />
     </div>
   </header>
 

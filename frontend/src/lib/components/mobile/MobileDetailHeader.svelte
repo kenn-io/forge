@@ -1,5 +1,6 @@
 <script lang="ts">
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import MobileNavMenu from "./MobileNavMenu.svelte";
 
   interface Props {
     itemType: "pr" | "issue";
@@ -21,8 +22,11 @@
     <ArrowLeftIcon size="20" strokeWidth="2" aria-hidden="true" />
     <strong>{backLabel}</strong>
   </button>
-  <span class="mobile-detail-header__badge" class:issue={itemType === "issue"}>
-    {itemType === "pr" ? "PR" : "Issue"} #{number}
+  <span class="mobile-detail-header__end">
+    <span class="mobile-detail-header__badge" class:issue={itemType === "issue"}>
+      {itemType === "pr" ? "PR" : "Issue"} #{number}
+    </span>
+    <MobileNavMenu />
   </span>
 </header>
 
@@ -66,6 +70,13 @@
   .mobile-detail-header__back:focus-visible {
     outline: 2px solid var(--accent-blue);
     outline-offset: 2px;
+  }
+
+  .mobile-detail-header__end {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .mobile-detail-header__badge {

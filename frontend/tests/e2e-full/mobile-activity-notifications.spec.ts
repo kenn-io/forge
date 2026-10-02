@@ -105,7 +105,7 @@ test.describe("mobile activity notifications", () => {
     }
   });
 
-  test("keeps a failed notification action below the mobile header", async ({ page }) => {
+  test("shows a failed notification action at the top of the phone shell", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
       await page.goto(`${server.info.base_url}/m`);
@@ -128,11 +128,11 @@ test.describe("mobile activity notifications", () => {
       await expect(flash).toContainText("Failed to mark notification as read.");
       await expect(seen.first()).toBeVisible();
 
-      const [headerBottom, flashTop] = await Promise.all([
-        page.locator(".mobile-topbar").evaluate((node) => node.getBoundingClientRect().bottom),
+      const [shellTop, flashTop] = await Promise.all([
+        page.locator(".mobile-shell").evaluate((node) => node.getBoundingClientRect().top),
         page.locator(".kit-flash-stack").evaluate((node) => node.getBoundingClientRect().top),
       ]);
-      expect(Math.abs(flashTop - headerBottom)).toBeLessThan(1);
+      expect(Math.abs(flashTop - shellTop)).toBeLessThan(1);
     } finally {
       await server.stop();
     }

@@ -1,5 +1,6 @@
 <script lang="ts">
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
+  import MobileNavMenu from "./MobileNavMenu.svelte";
   import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
   import { buildCanonicalProviderItemURL } from "../../utils/item-reference.js";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
@@ -502,6 +503,7 @@
         <PlusIcon size="18" strokeWidth="2" aria-hidden="true" />
         New
       </button>
+      <MobileNavMenu />
     </div>
     <QuerySearchInput
       value={searchQuery}

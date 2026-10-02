@@ -2,6 +2,7 @@
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Spinner } from "@kenn-io/kit-ui";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
+  import MobileNavMenu from "./MobileNavMenu.svelte";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import { Effect } from "effect";
   import { untrack } from "svelte";
@@ -144,11 +145,14 @@
         {#if backDestination === "terminal" && sessionLabel}<small>{sessionLabel}</small>{/if}
       </span>
     </button>
-    {#if linkedItem}
-      <span class:issue={linkedItem.itemType === "issue"} class="mobile-workspace-item__badge">
-        {linkedItem.itemType === "pr" ? "PR" : "Issue"} #{linkedItem.number}
-      </span>
-    {/if}
+    <span class="mobile-workspace-item__end">
+      {#if linkedItem}
+        <span class:issue={linkedItem.itemType === "issue"} class="mobile-workspace-item__badge">
+          {linkedItem.itemType === "pr" ? "PR" : "Issue"} #{linkedItem.number}
+        </span>
+      {/if}
+      <MobileNavMenu />
+    </span>
   </header>
 
   {#if loadError}
@@ -226,6 +230,7 @@
   .mobile-workspace-item__back strong, .mobile-workspace-item__back small { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-item__back strong { color: var(--text-primary); font-size: var(--font-size-md); }
   .mobile-workspace-item__back small { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); }
+  .mobile-workspace-item__end { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.5rem; }
   .mobile-workspace-item__badge { flex: 0 0 auto; padding: 0.25rem 0.625rem; border-radius: 999px; color: var(--text-on-accent); background: var(--accent-green); font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 700; }
   .mobile-workspace-item__badge.issue { background: var(--accent-amber); }
   .mobile-workspace-item__back:focus-visible, .mobile-workspace-item__tabs button:focus-visible, .mobile-workspace-item__state button:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }

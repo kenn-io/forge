@@ -1074,7 +1074,7 @@ test("phone workspace list keeps its selected terminal alive through linked PR n
 
   await page.goto("/m/workspaces");
 
-  await expect(page.getByRole("combobox", { name: /Phone mode/ })).toHaveText("Workspaces");
+  await expect(page.locator(".mobile-workspace-list").getByRole("button", { name: "Menu" })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Filter workspaces" })).toBeVisible();
   await page.getByRole("button", { name: "View workspace options" }).click();
   await expect(page.getByRole("dialog", { name: "View workspace options" })).toBeVisible();

@@ -1,5 +1,6 @@
 <script lang="ts">
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
+  import MobileNavMenu from "./MobileNavMenu.svelte";
   import { IconButton } from "@kenn-io/kit-ui";
   import FunnelIcon from "@lucide/svelte/icons/funnel";
   import type { Snippet } from "svelte";
@@ -61,6 +62,8 @@
       </IconButton>
     {/if}
   </div>
+
+  <MobileNavMenu />
 </div>
 
 <style>

@@ -47,7 +47,7 @@ describe("phone detail header", () => {
 
     await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .pull-detail")).toBe(1), WAIT);
     expect(window.location.pathname).toMatch(/^\/focus\/pulls\//);
-    expect(count(".mobile-shell .mobile-topbar")).toBe(1);
+    expect(count(".mobile-detail-header button[aria-label='Menu']")).toBe(1);
     expect(count(".app-top-bar")).toBe(0);
     expect(text(".mobile-detail-header__badge")).toMatch(/^PR #\d+$/);
     expect(text(".mobile-detail-header__back")).toBe("Pull requests");
@@ -76,7 +76,7 @@ describe("phone detail header", () => {
 
   it("restores the list's scroll offset through Back and starts a fresh visit at the top", async () => {
     // Short enough that the five fixture rows overflow the list viewport.
-    await page.viewport(390, 300);
+    await page.viewport(390, 240);
     mounted = await mountBrowserApp("/m/pulls");
     await vi.waitFor(() => expect(count(".mobile-shell .pull-item")).toBeGreaterThan(0), WAIT);
     const rows = count(".mobile-shell .pull-item");
@@ -114,7 +114,7 @@ describe("phone detail header", () => {
     await vi.waitFor(() => expect(count(".mobile-shell .focus-layout--phone .issue-detail")).toBe(1), WAIT);
 
     expect(window.location.pathname).toBe("/issues/github/acme/widgets/7");
-    expect(count(".mobile-shell .mobile-topbar")).toBe(1);
+    expect(count(".mobile-detail-header button[aria-label='Menu']")).toBe(1);
     expect(text(".mobile-detail-header__badge")).toBe("Issue #7");
     expect(count(".mobile-detail-header__badge.issue")).toBe(1);
     expect(text(".mobile-detail-header__back")).toBe("Issues");
@@ -147,6 +147,6 @@ describe("phone detail header", () => {
     mounted = await mountBrowserApp("/pulls");
     await vi.waitFor(() => expect(count(".mobile-shell .focus-list")).toBe(1), WAIT);
     expect(count(".mobile-detail-header")).toBe(0);
-    expect(count(".mobile-topbar")).toBe(1);
+    expect(count(".mobile-triage-search-bar button[aria-label='Menu']")).toBe(1);
   });
 });

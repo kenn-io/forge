@@ -75,17 +75,17 @@ describe("flash rendering across app shells", () => {
     expectBelowHeader(await visibleFlash("compact header flash"));
   });
 
-  it("tracks the rendered height of the phone-route header", async () => {
+  it("starts phone-route flashes at the top of the shell, over the first row", async () => {
     await page.viewport(390, 844);
     mounted = await mountBrowserApp("/m");
-    const header = await vi.waitFor(() => {
-      const element = document.querySelector<HTMLElement>(".mobile-topbar");
+    const shell = await vi.waitFor(() => {
+      const element = document.querySelector<HTMLElement>(".mobile-shell");
       expect(element).not.toBeNull();
       return element!;
     }, WAIT);
 
-    const stack = await visibleFlash("phone header flash");
-    expect(Math.abs(stack.getBoundingClientRect().top - header.getBoundingClientRect().bottom)).toBeLessThan(1);
+    const stack = await visibleFlash("phone shell flash");
+    expect(Math.abs(stack.getBoundingClientRect().top - shell.getBoundingClientRect().top)).toBeLessThan(1);
   });
 
   it("keeps flashes above an open modal backdrop", async () => {

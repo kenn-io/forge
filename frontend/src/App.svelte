@@ -2,16 +2,15 @@
   import type { TabbedPanelLeaf } from "./lib/components/shared/tabbed-panel-layout.js";
   import { onDestroy, setContext, untrack } from "svelte";
   import { Effect } from "effect";
-  import type { Attachment } from "svelte/attachments";
   import type { AppExecution, AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
-  import { observeResize } from "./lib/browser/observers.js";
   import { createAppStores } from "./lib/app-stores.svelte.js";
   import PRListView from "./lib/views/PRListView.svelte";
   import IssueListView from "./lib/views/IssueListView.svelte";
   import ActivityFeedView from "./lib/views/ActivityFeedView.svelte";
   import MobileActivityView from "./lib/views/MobileActivityView.svelte";
-  import MobileModePicker from "./lib/components/mobile/MobileModePicker.svelte";
+  import MobileNavScope from "./lib/components/mobile/MobileNavScope.svelte";
+  import type { MobileNavMenuContext } from "./lib/components/mobile/mobile-nav-menu.js";
   import MobileWorkspaceList from "./lib/components/mobile/MobileWorkspaceList.svelte";
   import MobileWorkspaceTerminal from "./lib/components/mobile/MobileWorkspaceTerminal.svelte";
   import MobileWorkspaceItem from "./lib/components/mobile/MobileWorkspaceItem.svelte";
@@ -42,7 +41,6 @@
   } from "./lib/context.js";
 
   import AppHeader from "./lib/components/layout/AppHeader.svelte";
-  import ForgeSelector from "./lib/components/layout/ForgeSelector.svelte";
   import StatusBar from "./lib/components/layout/StatusBar.svelte";
   import Palette from "./lib/components/keyboard/Palette.svelte";
   import Cheatsheet from "./lib/components/keyboard/Cheatsheet.svelte";
@@ -68,7 +66,6 @@
   } from "./lib/api/kata/integration.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
-  import { MonitorIcon } from "./lib/icons.ts";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
@@ -212,7 +209,6 @@
   let appReady = $state(false);
   let viewportWidth = $state(window.innerWidth);
   let renderedHeaderHeight = $state(0);
-  let renderedMobileHeaderHeight = $state(0);
   let hasCoarsePointer = $state(window.matchMedia("(pointer: coarse)").matches);
   let DocsFeature = $state<DocsFeatureComponent | null>(null);
   let docsLoading = $state(false);
@@ -228,28 +224,6 @@
   let cleanupFullAppShell: (() => void) | undefined;
   const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
 
-  const trackMobileHeaderHeight: Attachment<HTMLElement> = (node) => {
-    const update = () => {
-      renderedMobileHeaderHeight = node.getBoundingClientRect().height;
-    };
-    const execution = appRuntime.runCommand(
-      Effect.scoped(
-        Effect.sync(update).pipe(
-          Effect.andThen(observeResize(node, update)),
-          Effect.andThen(Effect.never),
-        ),
-      ),
-      {
-        operation: "observe mobile application header",
-        safeContext: {},
-        onFailure: () => {},
-      },
-    );
-    return () => {
-      execution.interrupt();
-      renderedMobileHeaderHeight = 0;
-    };
-  };
   const docsAPI = createDocsAPI();
   const onboardingActive = $derived(
     appReady
@@ -622,12 +596,14 @@
   function flashTopOffset(): string {
     if (onboardingActive) return "0";
     if (shouldUseFocusPresentation() && !useFocusLayoutClass()) return "0";
+    // The phone shell has no application header; each screen's first row
+    // starts below the device safe area.
     if (
       isMobilePage(getPage())
       || shouldUseResponsiveMobileActivityPresentation()
       || shouldUseFocusPresentation()
     ) {
-      return renderedMobileHeaderHeight > 0 ? `${renderedMobileHeaderHeight}px` : "0";
+      return "env(safe-area-inset-top, 0px)";
     }
     return renderedHeaderHeight > 0 ? `${renderedHeaderHeight}px` : "var(--header-height)";
   }
@@ -713,6 +689,15 @@
 
   function navigateMobile(path: string): void {
     navigate(path === "/m/workspaces" ? path : `${path}${window.location.search}`);
+  }
+
+  function mobileNav(page: () => Page): MobileNavMenuContext {
+    return {
+      page,
+      isModeVisible,
+      onNavigate: navigateMobile,
+      onDesktopView: useDesktopView,
+    };
   }
 
   type MobileWorkspaceOrigin = "list" | "terminal" | "direct";
@@ -1295,30 +1280,6 @@
   </svelte:element>
 {/snippet}
 
-{#snippet mobileTopBar(pickerPage: Page)}
-      <header class="mobile-topbar" {@attach trackMobileHeaderHeight}>
-        <span class="mobile-brand">
-          <img class="mobile-app-icon" src={appIconSrc} alt="" aria-hidden="true" />
-          <ForgeSelector compact fallbackLabel="kenn-forge" />
-        </span>
-
-        <MobileModePicker
-          page={pickerPage}
-          {isModeVisible}
-          onNavigate={navigateMobile}
-        />
-
-        <button
-          class="mobile-desktop-link"
-          type="button"
-          aria-label="Open desktop view"
-          title="Open desktop view"
-          onclick={useDesktopView}
-        >
-          <MonitorIcon size="18" strokeWidth="1.75" aria-hidden="true" />
-        </button>
-      </header>
-{/snippet}
 
 <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
@@ -1335,7 +1296,7 @@
   {:else if shouldUseFocusPresentation() && useFocusLayoutClass()}
     {@const detailItem = phoneDetailItem()}
     <section class="mobile-shell" aria-label="Phone view">
-      {@render mobileTopBar(mobileModePickerPage())}
+      <MobileNavScope nav={mobileNav(mobileModePickerPage)}>
       <main class="mobile-main">
         {#if detailItem}
           <MobileDetailHeader
@@ -1347,12 +1308,13 @@
         {/if}
         {@render focusPresentation(true)}
       </main>
+      </MobileNavScope>
     </section>
   {:else if shouldUseFocusPresentation()}
     {@render focusPresentation(false)}
   {:else if isMobilePage(getPage()) || shouldUseResponsiveMobileActivityPresentation()}
     <section class="mobile-shell" aria-label="Phone view">
-      {@render mobileTopBar(getPage())}
+      <MobileNavScope nav={mobileNav(getPage)}>
 
       <main class="mobile-main">
         {#if !appReady}
@@ -1425,6 +1387,7 @@
           {/if}
         {/if}
       </main>
+      </MobileNavScope>
       <SessionTerminalPool />
     </section>
   {:else}
@@ -1661,50 +1624,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    padding-top: env(safe-area-inset-top);
     background: var(--bg-primary);
-  }
-
-  .mobile-topbar {
-    min-height: calc(var(--mobile-chrome-hit-target) + var(--mobile-chrome-space-xs));
-    flex-shrink: 0;
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--mobile-chrome-space-sm);
-    padding:
-      max(var(--mobile-chrome-space-sm), env(safe-area-inset-top))
-      var(--mobile-chrome-space-sm)
-      var(--mobile-chrome-space-sm);
-    border-bottom: thin solid var(--border-default);
-    background: var(--bg-surface);
-  }
-
-  .mobile-brand {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--mobile-chrome-space-xs);
-    min-width: 0;
-  }
-
-  .mobile-app-icon {
-    display: block;
-    width: 19px;
-    height: 19px;
-    flex: 0 0 auto;
-  }
-
-  .mobile-desktop-link {
-    width: var(--mobile-chrome-hit-target);
-    min-width: var(--mobile-chrome-hit-target);
-    min-height: var(--mobile-chrome-hit-target);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    border: thin solid var(--border-default);
-    border-radius: var(--radius-sm);
-    color: var(--text-secondary);
-    background: var(--bg-surface);
   }
 
   .mobile-main {

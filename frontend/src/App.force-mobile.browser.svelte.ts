@@ -55,7 +55,7 @@ describe("force-mobile routes", () => {
     expect(rect.width).toBeGreaterThan(0);
     expect(rect.height).toBeGreaterThan(0);
     expect(window.location.pathname).toBe("/issues");
-    expect(count(".mobile-shell .mobile-topbar")).toBe(1);
+    expect(count(".mobile-shell button[aria-label='Menu']")).toBe(1);
     expect(count(".app-top-bar")).toBe(0);
   });
 

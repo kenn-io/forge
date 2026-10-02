@@ -631,9 +631,15 @@ TELEMETRY_ENABLED=0 kenn-forge daemon start
 
 ## Container startup
 
-Stable releases publish `ghcr.io/kenn-io/forge:<version>` and `:latest` for Linux
-amd64 and arm64. The image runs `kenn-forge serve` directly as uid/gid 1000,
-with git, tmux, OpenSSH client, curl, and CA certificates.
+Build a local image from the repository root:
+
+```sh
+docker build -t kenn-forge:local .
+```
+
+The image runs `kenn-forge serve` directly as uid/gid 1000, with git, tmux,
+OpenSSH client, curl, and CA certificates. Release image publication is managed
+by the external release pipeline.
 
 Persist `/home/forge` so configuration, repositories, and the automatically
 minted bearer token survive container replacement. Bind-mounted directories
@@ -649,7 +655,7 @@ docker run -d --name forge \
   -v forge-home:/home/forge \
   -e KENN_FORGE_ALLOWED_HOSTS=127.0.0.1:8091,forge.example \
   -e KENN_FORGE_TRUST_REVERSE_PROXY=true \
-  ghcr.io/kenn-io/forge:latest
+  kenn-forge:local
 ```
 
 Configure the proxy to terminate HTTPS for `forge.example`, forward to

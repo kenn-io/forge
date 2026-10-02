@@ -75,15 +75,12 @@ and the root event stream.
 - Foreground listener flags belong only to `serve`; preserve explicit changed-state
   above environment values and redact endpoint credentials from startup source logs
   (`internal/cli/serve/serve.go::NewCommand`, `cmd/kenn-forge/main.go::logRuntimeConfig`).
-- The upstream image starts the binary directly with authenticated wildcard defaults;
+- The locally built image starts the binary directly with authenticated wildcard defaults;
   persist its uid-1000 home and keep deployment-owned agent CLIs and Roborev separate
   (`Dockerfile`).
 - The image's listener is plain HTTP: publish it only on host loopback or a private
   proxy network, and use HTTPS for external browser access and token bootstrap
   (`Dockerfile`, `docs/configuration.md::Container startup`).
-- Serialize stable image promotion across releases and reconcile the current stable
-  tag, independent of the triggering release; CI may coalesce pending promotion jobs
-  (`scripts/container-promote.sh`).
 - `daemon start` is idempotent: reuse requires verified identity for the same
   resolved `data_dir`; incompatible versions require `daemon restart`
   (`internal/daemonruntime/lifecycle.go::NewManager`).

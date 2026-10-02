@@ -58,6 +58,9 @@ Rules:
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
   asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
+- A degraded but usable ACP start (no Forge tools, no session reload) is a `notices`
+  entry, never `error`; the chat shows it only as a header warning icon with a tooltip,
+  not a persistent alert (maintainer decision; `frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 - Pasted images stay attached through ACP queueing, steering, retries, and saved history;
   image-only prompts are valid, and composer attachments clear only on acceptance
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte::settlePending`).

@@ -99,22 +99,22 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 // continues the conversation in a new session instead of failing to start.
 func TestACPReloadsSavedSessionOnlyAfterOwnerExit(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		noLoad    string
-		sessions  string
-		errorText string
+		name       string
+		noLoad     string
+		sessions   string
+		noticeText string
 	}{
 		{name: "load", sessions: "session/new\nsession/load\n"},
-		{name: "no load capability", noLoad: "1", sessions: "session/new\nsession/new\n", errorText: "cannot reload its previous session"},
+		{name: "no load capability", noLoad: "1", sessions: "session/new\nsession/new\n", noticeText: "cannot reload its previous session"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("KENN_FORGE_ACP_NO_LOAD", tc.noLoad)
-			testACPReloadsSavedSession(t, tc.sessions, tc.errorText)
+			testACPReloadsSavedSession(t, tc.sessions, tc.noticeText)
 		})
 	}
 }
 
-func testACPReloadsSavedSession(t *testing.T, sessions, errorText string) {
+func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	dir := t.TempDir()
@@ -157,13 +157,16 @@ func testACPReloadsSavedSession(t *testing.T, sessions, errorText string) {
 	assert.Equal("remember", state.Messages[0].Text)
 	assert.Equal("Hello workspace", state.Messages[1].Text)
 	assert.NotContains(string(data), "restored answer")
-	if errorText == "" {
-		assert.Empty(state.Error)
+	// A new session in place of the saved one is a notice, not an error.
+	assert.Empty(state.Error)
+	if noticeText == "" {
+		assert.Empty(state.Notices)
 		// Commands the agent advertises during the reload are current state,
 		// not replayed history.
 		assert.Equal([]ACPCommandInfo{{Name: "review", Description: "Review changes"}}, state.Commands)
 	} else {
-		assert.Contains(state.Error, errorText)
+		require.Len(t, state.Notices, 1)
+		assert.Contains(state.Notices[0], noticeText)
 	}
 	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
 	require.NoError(t, err)

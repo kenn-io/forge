@@ -9,7 +9,8 @@
   import ListPlus from "@lucide/svelte/icons/list-plus";
   import ChatOptionMenu from "./ChatOptionMenu.svelte";
   import ChatSessionOptions from "./ChatSessionOptions.svelte";
-  import { Button, Card, Spinner } from "@kenn-io/kit-ui";
+  import { Button, Card, Spinner, Tooltip } from "@kenn-io/kit-ui";
+  import { AlertIcon } from "../../icons.js";
   import { kbdGlyph } from "../keyboard/useKbdLabel.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import ChatMessageView from "./ChatMessageView.svelte";
@@ -53,6 +54,7 @@
   const uid = $props.id();
   const commandMenuId = `${uid}-commands`;
   const elicitations = $derived(chatState?.elicitations ?? []);
+  const notices = $derived(chatState?.notices ?? []);
   const commands = $derived(chatState?.commands ?? []);
   const slash = $derived(slashToken(draft, caret));
   const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && chatState?.connected ? matchCommands(commands, slash.query) : []);
@@ -257,14 +259,26 @@
 </script>
 
 <section class="acp-workspace" aria-label={`${label} chat`}>
-  <div class="chat-status" role="status">
+  <div class="chat-status">
     <div class="chat-status__inner">
-      {#if !connected && status === "running"}<Spinner size={14} />Connecting agent…
-      {:else if !chatState?.connected}Agent disconnected
-      {:else if stopping}Stopping…
-      {:else if chatState.permissions.length || elicitations.length}Needs your answer
-      {:else if running}<Spinner size={14} />{label} is replying…
-      {:else}{label}{/if}
+      <span class="chat-status__text" role="status">
+        {#if !connected && status === "running"}<Spinner size={14} />Connecting agent…
+        {:else if !chatState?.connected}Agent disconnected
+        {:else if stopping}Stopping…
+        {:else if chatState.permissions.length || elicitations.length}Needs your answer
+        {:else if running}<Spinner size={14} />{label} is replying…
+        {:else}{label}{/if}
+      </span>
+      <!-- A degraded start stays quiet in the header: the chat works, so it is
+           not an error and never takes space from the conversation. -->
+      {#if notices.length}
+        <span class="chat-notice">
+          <Tooltip align="end" focusable openDelayMs={0}>
+            <AlertIcon size={14} role="img" aria-label={notices.join(" ")} />
+            {#snippet content()}{#each notices as notice, index (index)}<p class="chat-notice__text">{notice}</p>{/each}{/snippet}
+          </Tooltip>
+        </span>
+      {/if}
     </div>
   </div>
   <div class="conversation" bind:this={scroll} onscroll={onConversationScroll}>
@@ -399,7 +413,12 @@
      requests, and the composer share its width and edges. */
   .acp-workspace { --acp-column: 52rem; --acp-gutter: 5.5rem; container: acp-pane / inline-size; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
   .chat-status { padding-block: var(--space-4); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
-  .chat-status__inner { display: flex; align-items: center; gap: var(--space-3); }
+  .chat-status__inner, .chat-status__text { display: flex; align-items: center; gap: var(--space-3); }
+  .chat-status__text { min-width: 0; }
+  .chat-notice { display: flex; margin-left: auto; color: var(--accent-amber); }
+  .chat-notice :global(.kit-tooltip-trigger) { align-items: center; justify-content: center; }
+  .chat-notice__text { margin: 0; }
+  .chat-notice__text + .chat-notice__text { margin-top: var(--space-3); }
   .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
@@ -407,7 +426,9 @@
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .permission-title { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
-  .error { color: var(--accent-red); margin: 0; padding: var(--space-4) var(--space-6); overflow-wrap: anywhere; }
+  /* Block axis only: the shared column rule above centers errors with
+     margin-inline and owns their inline padding. */
+  .error { color: var(--accent-red); margin-block: 0; padding-block: var(--space-4); overflow-wrap: anywhere; }
   .error p { margin: 0; }
   .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
   .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
@@ -416,6 +437,7 @@
   @media (pointer: coarse) {
     .messages, .dock, .error, .chat-status__inner { padding-inline: var(--space-4); }
     .earlier :global(button) { min-height: var(--mobile-chrome-hit-target); }
+    .chat-notice :global(.kit-tooltip-trigger) { min-width: 24px; min-height: 24px; }
   }
   /* Reserve the message time/copy gutter (ChatMessageView .gutter) only when
      the pane is wide enough; narrow panes go without it. Declared after the

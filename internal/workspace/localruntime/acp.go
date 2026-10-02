@@ -57,8 +57,6 @@ type ACP struct {
 	promptIndex     *int
 	recordPath      string
 	revision        uint64
-	// startupNotice explains a degraded but usable session start.
-	startupNotice string
 	// turnCompleted records a finished prompt turn in this process. A loaded
 	// session starts idle so reopening it never announces a new completion.
 	turnCompleted bool
@@ -186,9 +184,12 @@ type ACPState struct {
 	Elicitations  []ACPElicitation `json:"elicitations"`
 	Busy          bool             `json:"busy"`
 	// Stopping is true from a stop request until the turn ends.
-	Stopping  bool   `json:"stopping"`
-	Connected bool   `json:"connected"`
-	Error     string `json:"error"`
+	Stopping  bool `json:"stopping"`
+	Connected bool `json:"connected"`
+	// Notices explain a degraded but usable session start. They are not
+	// errors: the chat works, and they last for the life of the session.
+	Notices []string `json:"notices,omitempty"`
+	Error   string   `json:"error"`
 	// ErrorCode and ErrorData keep an agent's JSON-RPC error details.
 	ErrorCode *int   `json:"errorCode,omitempty"`
 	ErrorData string `json:"errorData,omitempty"`
@@ -319,10 +320,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	}
 	a.mu.Lock()
 	a.state.Connected = true
-	if len(notices) > 0 {
-		a.startupNotice = strings.Join(notices, " ")
-		a.state.Error = a.startupNotice
-	}
+	a.state.Notices = notices
 	a.changedLocked()
 	a.mu.Unlock()
 	return a, nil
@@ -349,7 +347,10 @@ func (m *Manager) TestACP(ctx context.Context, command []string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return agent.startupNotice, agent.Stop(context.Background())
+	agent.mu.Lock()
+	warning := strings.Join(agent.state.Notices, " ")
+	agent.mu.Unlock()
+	return warning, agent.Stop(context.Background())
 }
 
 func (a *ACP) Stop(ctx context.Context) error {

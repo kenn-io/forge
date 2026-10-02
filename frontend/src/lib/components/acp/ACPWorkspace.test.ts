@@ -698,6 +698,25 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.getByRole("alert").querySelector("pre")).toBeNull();
   });
 
+  it("shows a degraded start as a header icon, not an error", async () => {
+    const notices = [
+      "This agent does not accept HTTP MCP servers, so Forge tools are unavailable in its chats.",
+      "This agent cannot reload its previous session, so it continues in a new session without that context.",
+    ];
+    await openChat({ notices });
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText(notices[0]!)).toBeNull();
+    expect(statusText()).toBe("Agent");
+    const icon = screen.getByRole("img", { name: notices.join(" ") });
+    await fireEvent.focusIn(icon);
+    const lines = [...screen.getByRole("tooltip").querySelectorAll("p")].map((line) => line.textContent);
+    expect(lines).toEqual(notices);
+
+    await push({});
+    expect(screen.queryByRole("img", { name: notices.join(" ") })).toBeNull();
+  });
+
   it("keeps the log quiet and announces only the finished reply", async () => {
     await openChat({
       busy: true,

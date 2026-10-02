@@ -132,6 +132,8 @@ export const ChatStateSchema = Schema.Struct({
   ),
   busy: Schema.Boolean,
   connected: Schema.Boolean,
+  // Degraded but usable session start, such as Forge tools being unavailable.
+  notices: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   error: Schema.String,
   // Present when the agent answered with a JSON-RPC error; data is pretty JSON.
   errorCode: Schema.optional(Schema.NullOr(Schema.Number)),

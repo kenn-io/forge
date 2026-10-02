@@ -120,6 +120,41 @@ describe("ACPWorkspace message gutter (browser)", () => {
   });
 });
 
+describe("ACPWorkspace notices and errors (browser)", () => {
+  it("keeps errors and the notice icon in the reading column", async () => {
+    const { host } = await renderChat(1400);
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [],
+        messageOffset: 0,
+        messageCount: 0,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        notices: ["Forge tools are unavailable."],
+        error: "Agent exited",
+      }),
+    );
+    await expect.element(page.getByRole("alert")).toBeVisible();
+    // The error box shares the composer dock's column, not the pane's left edge.
+    const error = host.querySelector<HTMLElement>(".error")!.getBoundingClientRect();
+    const dock = host.querySelector<HTMLElement>(".dock")!.getBoundingClientRect();
+    expect(dock.left).toBeGreaterThan(host.getBoundingClientRect().left + 100);
+    expect(Math.abs(error.left - dock.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(error.right - dock.right)).toBeLessThanOrEqual(1);
+    // The notice icon ends the header row at the column's right edge.
+    const headerElement = host.querySelector<HTMLElement>(".chat-status__inner")!;
+    const header = headerElement.getBoundingClientRect();
+    const contentRight = header.right - parseFloat(getComputedStyle(headerElement).paddingRight);
+    const icon = page.getByRole("img", { name: "Forge tools are unavailable." }).element().getBoundingClientRect();
+    expect(Math.abs(icon.right - contentRight)).toBeLessThanOrEqual(1);
+    expect(icon.top).toBeGreaterThanOrEqual(header.top);
+    expect(icon.bottom).toBeLessThanOrEqual(header.bottom);
+  });
+});
+
 describe("ACPWorkspace image output (browser)", () => {
   it("decodes tool and Markdown images while tools stay collapsed", async () => {
     await page.viewport(1000, 720);

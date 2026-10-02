@@ -16,7 +16,7 @@
   on the execution host, independent of browser Host/proxy policy and companion settings;
   native harness servers and skills stay agent-owned (`cmd/kenn-forge/agent_mcp.go::newAgentMCPHTTP`).
 - Forge MCP tools are optional for ACP agents: one without HTTP MCP support starts without
-  them and gets a warning, never a failed test or launch (`internal/workspace/localruntime/acp.go::startACPSession`).
+  them and gets a session notice, never an error or a failed test or launch (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Durable ACP owners retain their injected MCP address across daemon restarts;
   reattachment updates the daemon URL and credential behind that address
   (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy.Bind`).

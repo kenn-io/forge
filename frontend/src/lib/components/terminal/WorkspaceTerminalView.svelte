@@ -1253,8 +1253,9 @@
   // the collapsed row is the only honest rendering of "no terminals here". Not
   // while a launch is in flight - toggling the panel open auto-launches, and
   // closing it under that race would flicker the dock shut on its own opening.
+  // The external launcher also needs the dock height until it is dismissed.
   $effect(() => {
-    if (!runtimeLive || terminalLaunching) return;
+    if (!runtimeLive || terminalLaunching || (externalDockVisible && launcherOpen)) return;
     // Bottom only. Docked to the top the dock is a workflow TAB, and an empty one
     // is the drop target for moving a session into the terminal region - closing
     // it there takes away the affordance instead of a hole.

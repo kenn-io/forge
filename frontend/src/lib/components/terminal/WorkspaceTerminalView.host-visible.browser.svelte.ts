@@ -235,13 +235,15 @@ describe("WorkspaceTerminalView hostVisible", () => {
   });
 
   it.each([
-    ["prs", false],
-    ["prs", true],
-    ["activity", false],
-    ["activity", true],
+    ["prs", false, false],
+    ["prs", true, false],
+    ["prs", true, true],
+    ["activity", false, false],
+    ["activity", true, false],
+    ["activity", true, true],
   ] as const)(
-    "opens the launcher over the visible %s dock with a promoted ACP session: %s",
-    async (surface, promotedAgent) => {
+    "opens the launcher over the visible %s dock with promoted ACP: %s, all sessions promoted: %s",
+    async (surface, promotedAgent, allPromoted) => {
       resetPaneLayoutStoresForTest();
       resetWorkspaceHostForTest();
       navigate(surface === "prs" ? "/pulls" : "/activity");
@@ -287,7 +289,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
             ? jsonResponse({
                 launch_targets: [{ key: "helper", label: "Helper", kind: "agent", available: true }],
                 sessions: promotedAgent
-                  ? [{ ...agentRuntime.sessions[0], kind: "acp" }, shell]
+                  ? [{ ...agentRuntime.sessions[0], kind: "acp" }, ...(allPromoted ? [] : [shell])]
                   : [shell, { ...shell, key: "ws-1:shell-2", label: "Shell 2" }],
               })
             : null,
@@ -316,7 +318,9 @@ describe("WorkspaceTerminalView hostVisible", () => {
       });
 
       try {
-        await vi.waitFor(() => expect(controller.workspacePaneRowOnly()).toBe(true), WAIT);
+        await vi.waitFor(() => {
+          expect(allPromoted ? controller.workspacePaneEmpty() : controller.workspacePaneRowOnly()).toBe(true);
+        }, WAIT);
         const parkedView = target.querySelector<HTMLElement>(".terminal-view");
         if (parkedView === null) throw new Error("Missing workspace view");
         parkedView.style.display = "none";
@@ -327,8 +331,17 @@ describe("WorkspaceTerminalView hostVisible", () => {
         const launcher = page.getByRole("dialog", { name: "Launch a session" });
         await expect.element(launcher).toBeVisible();
         await expect.element(launcher.getByRole("button", { name: "Helper", exact: true })).toBeVisible();
-        await launcher.getByRole("button", { name: "Close", exact: true }).click();
+        if (allPromoted) {
+          await launcher.getByRole("button", { name: "Helper Running", exact: true }).click();
+        } else {
+          await launcher.getByRole("button", { name: "Close", exact: true }).click();
+        }
         await expect.element(launcher).not.toBeInTheDocument();
+        if (allPromoted) {
+          await vi.waitFor(() => {
+            expect(target.querySelector(".workspace-dock-launcher-host .terminal-panel.open")).toBeNull();
+          }, WAIT);
+        }
       } finally {
         flushSync(() => unmount(instance));
         target.remove();

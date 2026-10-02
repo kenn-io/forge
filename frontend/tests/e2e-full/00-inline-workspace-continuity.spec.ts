@@ -1413,7 +1413,7 @@ test.describe("inline workspace pane continuity", () => {
       await expect(promotedTerminal).toBeVisible();
       await promotedTerminal.evaluate((element) => element.setAttribute("data-continuity", "row-only-promoted"));
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
-      const surfaceDock = page.locator(".detail-host > .terminal-panel");
+      const surfaceDock = page.locator(".detail-host").getByRole("region", { name: "Terminal panel" });
       await expect(surfaceDock).toBeVisible();
 
       const diffArea = page.locator(".diff-area .kit-scrollbox__viewport");
@@ -1489,7 +1489,7 @@ test.describe("inline workspace pane continuity", () => {
       await expect(surfaceDock.locator(".terminal-leaf")).toHaveCount(2);
       const surfaceGeometry = await page.locator(".detail-host").evaluate((host) => {
         const detail = host.querySelector(":scope > .detail-pane-layout");
-        const dock = host.querySelector(":scope > .terminal-panel");
+        const dock = host.querySelector('[aria-label="Terminal panel"]');
         if (!(detail instanceof HTMLElement) || !(dock instanceof HTMLElement)) return null;
         const hostRect = host.getBoundingClientRect();
         const detailRect = detail.getBoundingClientRect();
@@ -1514,6 +1514,10 @@ test.describe("inline workspace pane continuity", () => {
         workspace.worktree_path,
         "row-only-dropped-into-terminal",
       );
+      await surfaceDock.getByRole("button", { name: "Launch session", exact: true }).click();
+      await expect(launcher).toBeVisible();
+      await launcher.getByRole("button", { name: "Close", exact: true }).click();
+      await expect(launcher).toBeHidden();
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();
@@ -1659,7 +1663,7 @@ test.describe("inline workspace pane continuity", () => {
       // the empty workspace container stays retired behind its external dock.
       await page.getByRole("button", { name: "Focus Terminal" }).click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
-      await expect(page.locator(".detail-host > .terminal-panel")).toBeVisible();
+      await expect(page.locator(".detail-host").getByRole("region", { name: "Terminal panel" })).toBeVisible();
       await expect(restored).toBeVisible();
       await typeMarkerCommand(page, restored, workspace.worktree_path, "marker-after-collapse");
     } finally {
@@ -1715,7 +1719,7 @@ test.describe("inline workspace pane continuity", () => {
 
       await page.getByRole("button", { name: "Focus Terminal" }).click();
       await expect(page.locator(".detail-pane-workspace-slot")).toHaveCount(0);
-      await expect(page.locator(".detail-host > .terminal-panel")).toBeVisible();
+      await expect(page.locator(".detail-host").getByRole("region", { name: "Terminal panel" })).toBeVisible();
       await expect(promoted).toBeVisible();
       await typeMarkerCommand(page, promoted, workspace.worktree_path, "cross-marker-after");
     } finally {

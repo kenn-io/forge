@@ -265,10 +265,16 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 
 	failingSession := launchSession("coding-failure", true)
 	owner.pty.setWriteError(errors.New("write failed"))
-	failedResult, err := handler.SubmitInitialMessageService(ctx, InitialMessageRequest{
-		WorkspaceID: workspaceID, RuntimeSessionKey: failingSession.Key,
-		TargetKey: "codex", Message: "try once",
-	})
+	var failedResult InitialMessageResult
+	// Launch returns before the terminal reader observes the paste mode.
+	// Wait for that readiness signal before asserting the write failure.
+	require.Eventually(func() bool {
+		failedResult, err = handler.SubmitInitialMessageService(ctx, InitialMessageRequest{
+			WorkspaceID: workspaceID, RuntimeSessionKey: failingSession.Key,
+			TargetKey: "codex", Message: "try once",
+		})
+		return !errors.Is(err, ErrInitialMessageInputModeNotReady)
+	}, 5*time.Second, 10*time.Millisecond)
 	require.Error(err)
 	assert.Equal(initialMessageUncertain, failedResult.State)
 	failedAttempt, found := handler.initialMessageAttempt(workspaceID, failingSession.Key)
@@ -289,9 +295,12 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 
 	owner.setEmitBracketedPaste(true)
 	unreportedSession := launchSession("coding-unreported", false)
-	response = post(
-		endpointFor(unreportedSession.Key), "codex", "do not send",
-	)
+	require.Eventually(func() bool {
+		response = post(
+			endpointFor(unreportedSession.Key), "codex", "do not send",
+		)
+		return response.Code != http.StatusBadRequest
+	}, 5*time.Second, 10*time.Millisecond)
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 	_, found = handler.initialMessageAttempt(workspaceID, unreportedSession.Key)
 	assert.True(found)

@@ -73,9 +73,20 @@ func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
 	assert.Equal("live-agent", sessionsResponse.JSON200.Sessions[0].SessionID)
 	assert.Equal(launch.JSON200.Key, sessionsResponse.JSON200.Sessions[0].RuntimeSessionKey)
 
-	messageResponse, err := fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx, &generated.SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions{PathParams: &generated.SubmitWorkspaceRuntimeSessionInitialMessagePath{ID: ws.ID, SessionKey: launch.JSON200.Key}, Body: &generated.SubmitInitialMessageInputBody{
-		TargetKey: "hook-agent", Message: "review this",
-	}})
+	var messageResponse *generated.SubmitWorkspaceRuntimeSessionInitialMessageResp
+	// The fixture process can start before its paste-mode output is read.
+	require.Eventually(func() bool {
+		messageResponse, err = fixture.client.HTTP.SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx, &generated.SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions{PathParams: &generated.SubmitWorkspaceRuntimeSessionInitialMessagePath{ID: ws.ID, SessionKey: launch.JSON200.Key}, Body: &generated.SubmitInitialMessageInputBody{
+			TargetKey: "hook-agent", Message: "review this",
+		}})
+		if messageResponse != nil && messageResponse.StatusCode == http.StatusBadRequest {
+			require.NotNil(messageResponse.Error)
+			require.NotNil(messageResponse.Error.Detail)
+			require.Equal("agent terminal input mode is not ready", *messageResponse.Error.Detail)
+			return false
+		}
+		return true
+	}, 5*time.Second, 10*time.Millisecond)
 	require.NoError(err)
 	require.Equal(http.StatusOK, messageResponse.StatusCode, string(messageResponse.Body))
 	require.NotNil(messageResponse.JSON200)

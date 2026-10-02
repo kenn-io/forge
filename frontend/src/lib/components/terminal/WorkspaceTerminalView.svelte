@@ -5206,7 +5206,7 @@
      retired. Its own visible placement, not the parked host wrapper, owns whether
      terminal slots may attach. -->
 {#snippet workspaceDockRow()}
-  <div class="workspace-dock-launcher-host">
+  <div class={["workspace-dock-launcher-host", terminalLayout.dock]}>
     {@render workspaceDockRowBody(true, true)}
     {@render workspaceLauncher()}
   </div>
@@ -5798,6 +5798,10 @@
   .workspace-dock-launcher-host {
     position: relative;
     flex-shrink: 0;
+  }
+
+  .workspace-dock-launcher-host.top {
+    height: 100%;
   }
 
   .workspace-stage {

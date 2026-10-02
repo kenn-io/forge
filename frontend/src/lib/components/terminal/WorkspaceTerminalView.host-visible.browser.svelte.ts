@@ -16,6 +16,7 @@ import "../../../app.css";
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
 import WorkspaceTerminalView from "./WorkspaceTerminalViewTestHarness.svelte";
+import { defaultTerminalLayout } from "./terminal-layout.js";
 
 const WAIT = 10_000;
 const eventsStore = {
@@ -235,15 +236,17 @@ describe("WorkspaceTerminalView hostVisible", () => {
   });
 
   it.each([
-    ["prs", false, false],
-    ["prs", true, false],
-    ["prs", true, true],
-    ["activity", false, false],
-    ["activity", true, false],
-    ["activity", true, true],
+    ["prs", false, false, "bottom"],
+    ["prs", true, false, "bottom"],
+    ["prs", true, true, "bottom"],
+    ["prs", true, true, "top"],
+    ["activity", false, false, "bottom"],
+    ["activity", true, false, "bottom"],
+    ["activity", true, true, "bottom"],
+    ["activity", true, true, "top"],
   ] as const)(
-    "opens the launcher over the visible %s dock with promoted ACP: %s, all sessions promoted: %s",
-    async (surface, promotedAgent, allPromoted) => {
+    "opens the launcher over the visible %s dock with promoted ACP: %s, all sessions promoted: %s, dock: %s",
+    async (surface, promotedAgent, allPromoted, dock) => {
       resetPaneLayoutStoresForTest();
       resetWorkspaceHostForTest();
       navigate(surface === "prs" ? "/pulls" : "/activity");
@@ -300,9 +303,16 @@ describe("WorkspaceTerminalView hostVisible", () => {
       globalThis.fetch = api.fetch;
       globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
       vi.stubGlobal("WebSocket", ControlledWebSocket);
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        JSON.stringify({ ...defaultTerminalLayout(), dock, open: true }),
+      );
       const target = document.createElement("div");
       target.style.width = "900px";
       target.style.height = "600px";
+      target.style.display = "flex";
+      target.style.flexDirection = "column";
+      target.style.overflow = "hidden";
       document.body.appendChild(target);
       const instance = mount(WorkspaceTerminalView, {
         target,
@@ -324,6 +334,12 @@ describe("WorkspaceTerminalView hostVisible", () => {
         const parkedView = target.querySelector<HTMLElement>(".terminal-view");
         if (parkedView === null) throw new Error("Missing workspace view");
         parkedView.style.display = "none";
+        if (dock === "top") {
+          await vi.waitFor(() => {
+            const panel = target.querySelector(".workspace-dock-launcher-host .terminal-panel");
+            expect(panel?.getBoundingClientRect().height).toBeCloseTo(target.clientHeight, 0);
+          }, WAIT);
+        }
         await page
           .getByRole("region", { name: "Terminal panel" })
           .getByRole("button", { name: "Launch session" })
@@ -337,7 +353,7 @@ describe("WorkspaceTerminalView hostVisible", () => {
           await launcher.getByRole("button", { name: "Close", exact: true }).click();
         }
         await expect.element(launcher).not.toBeInTheDocument();
-        if (allPromoted) {
+        if (allPromoted && dock === "bottom") {
           await vi.waitFor(() => {
             expect(target.querySelector(".workspace-dock-launcher-host .terminal-panel.open")).toBeNull();
           }, WAIT);

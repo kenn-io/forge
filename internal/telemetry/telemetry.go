@@ -66,6 +66,9 @@ var newKitReporter = func(opts kittelemetry.PostHogOptions, options ...kitteleme
 	return kittelemetry.NewPostHogReporter(opts, options...)
 }
 
+// EnabledFromEnv reports whether the environment allows telemetry. Kit honors
+// both the documented generic TELEMETRY_ENABLED=0 opt-out and the prefixed
+// KENN_FORGE_TELEMETRY_ENABLED=0 one.
 func EnabledFromEnv() bool {
 	return kittelemetry.PostHogTelemetryEnabledFromEnv(envPrefix)
 }

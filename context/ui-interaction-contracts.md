@@ -161,6 +161,9 @@ Interactive surfaces must agree on which item is selected.
 - Empty workspaces offer the launcher inside their terminal frame, without a page-wide
   backdrop or focus trap. Launching a session dismisses it; other panes remain usable
   (`frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`).
+- A surface-hosted terminal dock owns its visible launcher; the workspace view can
+  be parked behind a promoted session and cannot display the dock's launch choices
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceDockRow`).
 - Closing the last workspace session tab reopens the launcher even after a prior dismissal;
   closing one of several sessions leaves the remaining session visible
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).

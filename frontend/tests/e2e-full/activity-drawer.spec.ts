@@ -632,6 +632,12 @@ test.describe("activity split view", () => {
     const detailGets = new Map<string, number>();
     const syncPosts = new Map<string, number>();
     const asyncSyncPosts = new Map<string, number>();
+    // Hold background sync acknowledgements until the assertions run. A
+    // stubbed sync never changes the detail, so once acknowledged the store
+    // polls for convergence on a fixed schedule, and on a slow runner those
+    // polls land inside the observation window. Convergence polling has its
+    // own unit coverage; this test watches foreground request fanout only.
+    const releaseAsyncSync = Promise.withResolvers<void>();
 
     await page.route(
       (url) => isPRRoute(url),
@@ -685,7 +691,8 @@ test.describe("activity split view", () => {
 
         const detailUrl = providerItemKey(new URL(route.request().url()));
         asyncSyncPosts.set(detailUrl, (asyncSyncPosts.get(detailUrl) ?? 0) + 1);
-        await route.fulfill({ status: 202, body: "" });
+        await releaseAsyncSync.promise;
+        await route.fulfill({ status: 202, body: "" }).catch(() => undefined);
       },
     );
 
@@ -721,6 +728,7 @@ test.describe("activity split view", () => {
     // Detail requests can still be in flight when the assertions finish.
     // Detach the interceptors before Playwright closes the page so Firefox
     // does not report route.fetch rejections after the test has ended.
+    releaseAsyncSync.resolve();
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 

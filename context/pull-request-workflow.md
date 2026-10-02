@@ -9,6 +9,8 @@ request metadata, comments, or review threads.
   from the diff, commits, and pull request metadata.
 - Do not watch or poll pull request GitHub Actions checks unless the user asks,
   or the work is running through the `$kenn:refine-pr` skill.
+- Fix known failing CI checks before requesting optional review input or
+  screenshot-upload approval. Do not hand off a PR for review while checks fail.
 - Public CI profiles use Namespace's [Restricted access level](https://namespace.so/docs/solutions/github-actions/runner-controls/access-levels),
   which disables workload access to Namespace features and APIs. GitHub fork
   approvals, token permissions, and secrets are separate controls.

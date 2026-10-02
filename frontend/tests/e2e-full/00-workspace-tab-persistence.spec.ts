@@ -586,8 +586,9 @@ test.describe("workspace tab persistence", () => {
       await page.locator(".panel-toggle-group .panel-toggle-btn", { hasText: "Diff" }).click();
       await expect(page.getByRole("region", { name: "Workspace Diff" })).toBeVisible();
 
-      const detailsFocusTarget = page.locator(".right-sidebar button").first();
+      const detailsFocusTarget = page.getByRole("region", { name: "Workspace Diff" }).getByRole("button").first();
       await detailsFocusTarget.focus();
+      await expect(detailsFocusTarget).toBeFocused();
       await expect(page.locator(".right-sidebar")).toHaveClass(/input-active/);
 
       // DOM activation preserves the focused details control through the

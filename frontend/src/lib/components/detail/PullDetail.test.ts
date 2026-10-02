@@ -1103,7 +1103,7 @@ describe("PullDetail activity refresh", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Refresh detail" }));
     expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByLabelText("Refreshing detail")).toBeTruthy();
-    expect(document.querySelector(".sync-indicator")).toBeNull();
+    expect(screen.queryByRole("status", { name: "Syncing from GitHub" })).toBeNull();
 
     settleRefresh();
     await waitFor(() => {
@@ -1116,7 +1116,7 @@ describe("PullDetail activity refresh", () => {
 
     expect((screen.getByRole("button", { name: "Refresh detail" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByLabelText("Refreshing detail")).toBeNull();
-    expect(document.querySelector(".sync-indicator")?.textContent).toContain("Syncing");
+    expect(screen.getByRole("status", { name: "Syncing from GitHub" })).toBeTruthy();
   });
 
   it("blocks manual refresh while pull-request detail navigation is loading or stale", async () => {
@@ -1257,7 +1257,7 @@ describe("PullDetail approvals", () => {
       detailSyncing: true,
     });
 
-    expect(document.querySelector(".sync-indicator")?.textContent).toContain("Syncing");
+    expect(screen.getByRole("status", { name: "Syncing from GitHub" })).toBeTruthy();
     expect(document.querySelector(".refresh-banner")).toBeNull();
     expect(screen.queryByText("Refreshing...")).toBeNull();
   });
@@ -3382,21 +3382,10 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).toHaveBeenCalledWith("/terminal/ws-1");
   });
 
-  it("phone presentation shows sync as a top bar instead of an inline row", async () => {
-    const detail = pullDetail();
-    renderPullDetail(detail, undefined, undefined, { phonePresentation: true, detailSyncing: true });
+  it.each([false, true])("shows background sync progress with phonePresentation=%s", (phonePresentation) => {
+    renderPullDetail(pullDetail(), undefined, undefined, { phonePresentation, detailSyncing: true });
 
-    const bar = screen.getByRole("status", { name: "Syncing from GitHub" });
-    expect(bar.classList.contains("sync-bar")).toBe(true);
-    expect(document.querySelector(".sync-indicator")).toBeNull();
-  });
-
-  it("desktop presentation keeps the inline syncing indicator", async () => {
-    const detail = pullDetail();
-    renderPullDetail(detail, undefined, undefined, { detailSyncing: true });
-
-    expect(document.querySelector(".sync-indicator")).not.toBeNull();
-    expect(document.querySelector(".sync-bar")).toBeNull();
+    expect(screen.getByRole("status", { name: "Syncing from GitHub" })).toBeTruthy();
   });
 
   it("without a controller open renders a single Open Workspace button that navigates", async () => {

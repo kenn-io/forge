@@ -32,8 +32,11 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
   surface and hover in both themes. The light contrast and both row orders are
   checked in `frontend/tests/e2e-full/sidebar-scroll-indicator.spec.ts`.
   Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
-- Detail background refresh uses the metadata-row `Syncing` indicator; a manual
-  Activity refresh reports progress only in its initiating icon button. Do not
+- PR background refresh uses an out-of-flow top progress bar at every width so
+  narrow workspace panels do not reflow (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
+- Issue background refresh uses the metadata-row `Syncing` indicator
+  (`frontend/src/lib/components/detail/IssueDetail.svelte::.sync-indicator`).
+- Manual Activity refresh reports progress only in its initiating icon button. Do not
   add stale-data banners or other progress surfaces. Keep the manual control
   disabled while detail is loading, stale for the current route, or already
   syncing (`frontend/src/lib/components/detail/PullDetail.svelte::refreshDetail`,

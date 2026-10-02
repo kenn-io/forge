@@ -2272,10 +2272,9 @@
           onscroll={handlePullDetailScroll}
         >
         <div class="pull-detail">
-          {#if phonePresentation && detailStore.isDetailSyncing() && !manualRefreshPending}
-            <!-- Phones get a top progress bar instead of the inline "Syncing" row:
-                 the row wraps under the branch line and shifts the whole page. -->
-            <div class="sync-bar" role="status" aria-label="Syncing from GitHub"></div>
+          {#if detailStore.isDetailSyncing() && !manualRefreshPending}
+            <!-- Keep background progress out of the layout, including narrow desktop panels. -->
+            <div class="sync-indicator" role="status" aria-label="Syncing from GitHub"></div>
           {/if}
           <div
             class="pull-detail-content"
@@ -2409,13 +2408,6 @@
                 onclick={() => copyBranch(pr.BaseBranch)}
               >{pr.BaseBranch}</button>
             </span>
-          </span>
-        {/if}
-        {#if detailStore.isDetailSyncing() && !manualRefreshPending && !phonePresentation}
-          <span class="meta-sep meta-sep--sync">·</span>
-          <span class="sync-indicator" title="Syncing from GitHub">
-            <Spinner size={12} label="Syncing" />
-            Syncing
           </span>
         {/if}
       </div>
@@ -3720,7 +3712,7 @@
     color: var(--text-muted);
   }
 
-  .sync-bar {
+  .sync-indicator {
     position: absolute;
     top: 0;
     left: 0;
@@ -3731,7 +3723,7 @@
     background: color-mix(in srgb, var(--accent-blue) 25%, transparent);
   }
 
-  .sync-bar::before {
+  .sync-indicator::before {
     content: "";
     position: absolute;
     top: 0;
@@ -3752,18 +3744,10 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .sync-bar::before {
+    .sync-indicator::before {
       animation: none;
       width: 100%;
     }
-  }
-
-  .sync-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: var(--font-size-xs);
-    color: var(--accent-blue);
   }
 
   .meta-branch {
@@ -4450,7 +4434,6 @@
     .meta-sep,
     .meta-branch,
     .branch-name-btn,
-    .sync-indicator,
     .section-title,
     .section-title-inline,
     .files-stat,
@@ -4461,8 +4444,7 @@
       line-height: 1.35;
     }
 
-    .meta-sep--branch,
-    .meta-sep--sync {
+    .meta-sep--branch {
       display: none;
     }
 

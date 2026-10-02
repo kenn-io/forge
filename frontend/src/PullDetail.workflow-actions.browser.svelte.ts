@@ -188,9 +188,10 @@ afterEach(async () => {
 });
 
 async function renderWorkflowDetail() {
-  const state = $state<{ detail: PullDetail; loading: boolean; error: string | null }>({
+  const state = $state<{ detail: PullDetail; loading: boolean; syncing: boolean; error: string | null }>({
     detail: pullDetail(),
     loading: false,
+    syncing: false,
     error: null,
   });
   const detail = state.detail;
@@ -240,7 +241,7 @@ async function renderWorkflowDetail() {
     isDetailFromCache: () => false,
     isDetailLoading: () => state.loading,
     getDetailError: () => state.error,
-    isDetailSyncing: () => false,
+    isDetailSyncing: () => state.syncing,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
@@ -304,6 +305,40 @@ async function renderWorkflowDetail() {
 }
 
 describe("PullDetail provider workflow actions", () => {
+  it("keeps the header and actions stationary when background sync toggles in narrow panels", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 900);
+    try {
+      const { state, wrapper } = await renderWorkflowDetail();
+      await vi.waitFor(() => expect(visibleButton("Run workflow")).not.toBeNull(), WAIT);
+      await document.fonts.ready;
+
+      const metadata = wrapper.querySelector<HTMLElement>(".meta-row")!;
+      const chips = wrapper.querySelector<HTMLElement>(".chips-row")!;
+      for (let width = 320; width <= 900; width += 20) {
+        wrapper.style.width = `${width}px`;
+        await new Promise(requestAnimationFrame);
+        const metadataHeight = metadata.getBoundingClientRect().height;
+        const chipsTop = chips.getBoundingClientRect().top;
+
+        state.syncing = true;
+        await tick();
+        await expect.element(page.getByRole("status", { name: "Syncing from GitHub" })).toBeVisible();
+        expect(metadata.getBoundingClientRect().height, `metadata height at ${width}px`).toBe(metadataHeight);
+        expect(chips.getBoundingClientRect().top).toBe(chipsTop);
+
+        state.syncing = false;
+        await tick();
+        await expect.element(page.getByRole("status", { name: "Syncing from GitHub" })).not.toBeInTheDocument();
+        expect(metadata.getBoundingClientRect().height).toBe(metadataHeight);
+        expect(chips.getBoundingClientRect().top).toBe(chipsTop);
+      }
+      wrapper.remove();
+    } finally {
+      await page.viewport(viewport.width, viewport.height);
+    }
+  });
+
   it("keeps review menus usable across compact and phone layouts", async () => {
     const { state, detailProps, wrapper } = await renderWorkflowDetail();
     state.detail.repo.capabilities.supported_review_actions = ["comment", "request_changes"];

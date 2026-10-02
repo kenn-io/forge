@@ -373,7 +373,10 @@ func (s *Handler) runWorkspaceSetup(ws *workspace.Workspace) {
 	s.runWorkspaceSetupWithBasePath(ws, "")
 }
 
-func (s *Handler) runWorkspaceSetupWithBasePath(ws *workspace.Workspace, basePath string) {
+func (s *Handler) runWorkspaceSetupWithBasePath(caller *workspace.Workspace, basePath string) {
+	// Setup reloads the workspace in the background; callers keep reading theirs.
+	owned := *caller
+	ws := &owned
 	done, start := s.beginWorkspaceSetup(ws.ID)
 	if done == nil {
 		return

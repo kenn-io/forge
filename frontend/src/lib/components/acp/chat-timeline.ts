@@ -11,7 +11,7 @@ export function chatRows(messages: readonly ChatMessage[], offset = 0): ChatRow[
   const rows: ChatRow[] = [];
   messages.forEach((message, position) => {
     const index = offset + position;
-    if (message.role !== "tool") {
+    if (message.role !== "tool" && message.role !== "thought") {
       rows.push({ kind: "message", id: index, message });
       return;
     }

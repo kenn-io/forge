@@ -170,6 +170,9 @@ Interactive surfaces must agree on which item is selected.
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- ACP thoughts and interleaved tool calls share a collapsed activity group with separate
+  counts; reasoning stays opt-in even while streaming so intermediate work does not crowd
+  the conversation (`frontend/src/lib/components/acp/chat-timeline.ts::chatRows`).
 - ACP message time and copy live in a hover/focus gutter left of the message in panes wide
   enough to reserve it; the gutter never shifts layout. Narrower panes (including phones)
   show them instead as one always-visible muted line under each message on its text edge,

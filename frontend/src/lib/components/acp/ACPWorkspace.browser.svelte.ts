@@ -194,6 +194,48 @@ describe("ACPWorkspace image output (browser)", () => {
   });
 });
 
+describe("ACPWorkspace grouped activity (browser)", () => {
+  it("expands interleaved thoughts with the keyboard in a narrow pane", async () => {
+    await page.viewport(420, 720);
+    const { host } = await renderChat(420);
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [
+          { role: "tool", text: "Read options", status: "completed", toolCallId: "read" },
+          { role: "thought", text: "Compare the available options." },
+          { role: "tool", text: "Check result", status: "failed", toolCallId: "check" },
+          { role: "assistant", text: "Here is the result." },
+        ],
+        messageOffset: 0,
+        messageCount: 4,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    const group = page.getByRole("button", { name: "2 tools · 1 thought · 1 failed" });
+    await expect.element(group).toHaveAttribute("aria-expanded", "false");
+    await expect.element(page.getByText("Compare the available options.")).not.toBeInTheDocument();
+    (group.element() as HTMLButtonElement).focus();
+    await userEvent.keyboard("{Enter}");
+    const thought = page.getByRole("button", { name: "Thinking" });
+    await expect.element(thought).toBeVisible();
+    (thought.element() as HTMLButtonElement).focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(page.getByText("Compare the available options.")).toBeVisible();
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    expect(conversation.scrollWidth).toBeLessThanOrEqual(conversation.clientWidth);
+    await group.click();
+    await expect.element(page.getByText("Compare the available options.")).not.toBeInTheDocument();
+    await expect
+      .element(page.getByRole("article", { name: "Assistant", exact: true }).getByText("Here is the result."))
+      .toBeVisible();
+  });
+});
+
 describe("ACPWorkspace transcript paging (browser)", () => {
   const message = (index: number) => ({
     role: index % 2 ? "assistant" : "user",

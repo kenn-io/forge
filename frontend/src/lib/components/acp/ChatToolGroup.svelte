@@ -1,7 +1,8 @@
 <!-- Copied from the shared console chat; imports and touch sizing adapted for Forge. -->
 <script lang="ts">
-  import { Ban, Bot, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
+  import { Ban, Bot, Brain, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
   import { Spinner } from "@kenn-io/kit-ui"
+  import ChatMessageView from "./ChatMessageView.svelte"
   import ChatToolDetails from "./ChatToolDetails.svelte"
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { isImageContent } from "./chat-content.js"
@@ -28,22 +29,25 @@
     )
   }
 
+  const tools = $derived(messages.filter((message) => message.role === "tool"))
+  const thoughts = $derived(messages.length - tools.length)
   const failed = $derived(
-    messages.filter((message) => toolStatus(message) === "failed").length,
+    tools.filter((message) => toolStatus(message) === "failed").length,
   )
   const running = $derived(
-    messages.some(
+    tools.some(
       (message) =>
         toolStatus(message) === "pending" ||
         toolStatus(message) === "in_progress",
     ),
   )
   const subagents = $derived(
-    messages.filter((message) => message.subagent).length,
+    tools.filter((message) => message.subagent).length,
   )
   const summary = $derived(
     [
-      `${messages.length} ${messages.length === 1 ? "tool" : "tools"}`,
+      tools.length ? `${tools.length} ${tools.length === 1 ? "tool" : "tools"}` : "",
+      thoughts ? `${thoughts} ${thoughts === 1 ? "thought" : "thoughts"}` : "",
       subagents ? `${subagents} ${subagents === 1 ? "sub-agent" : "sub-agents"}` : "",
       failed ? `${failed} failed` : "",
       running ? "running" : "",
@@ -65,7 +69,7 @@
     {#if running}<Spinner size={12} label="Tools running" />{:else if subagents}<Bot
         size={12}
         aria-hidden="true"
-      />{:else}<Wrench
+      />{:else if !tools.length}<Brain size={12} aria-hidden="true" />{:else}<Wrench
         size={12}
         aria-hidden="true"
       />{/if}
@@ -75,6 +79,9 @@
   {#if open}
     <ul id={`${id}-list`} class="list">
       {#each messages as message, index (index)}
+        {#if message.role === "thought"}
+          <li class="thought-row"><ChatMessageView {message} /></li>
+        {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}
         <li class={`status-${status}`}>
@@ -125,6 +132,7 @@
             <div class="row">{@render row()}</div>
           {/if}
         </li>
+        {/if}
       {/each}
     </ul>
   {/if}
@@ -199,6 +207,9 @@
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-md);
     font-size: var(--font-size-xs);
+  }
+  .thought-row {
+    padding: var(--space-3) var(--space-5);
   }
   .row {
     display: grid;

@@ -763,29 +763,50 @@ describe("ACPWorkspace message gutter", () => {
 describe("ACPWorkspace rich content", () => {
   const assistant = (content: Record<string, unknown>, text = "") => ({ role: "assistant", text, content });
 
-  it("keeps a live thought open and folds it once the turn moves on", async () => {
-    const thought = { role: "thought", text: "Weighing the two approaches" };
-    await openChat({ busy: true, messages: [{ role: "user", text: "Pick one" }, thought] });
-
-    const toggle = screen.getByRole("button", { name: "Thinking" });
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(await screen.findByText("Weighing the two approaches")).toBeTruthy();
-
-    await push({
-      busy: true,
-      messages: [{ role: "user", text: "Pick one" }, thought, { role: "assistant", text: "The first." }],
-    });
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  it("groups interleaved tools and thoughts while keeping replies outside", async () => {
+    const messages = [
+      { role: "user", text: "Pick one" },
+      { role: "thought", text: "Weighing the two approaches" },
+      {
+        role: "tool",
+        text: "Read options",
+        toolCallId: "read",
+        status: "completed",
+        rawInput: JSON.stringify({ path: "options.txt" }),
+      },
+      { role: "thought", text: "Checking the result" },
+      { role: "tool", text: "Check options", toolCallId: "check", status: "in_progress" },
+    ];
+    await openChat({ busy: true, messages });
+    const group = screen.getByRole("button", { name: /2 tools · 2 thoughts · running/ });
+    expect(group.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull();
     expect(screen.queryByText("Weighing the two approaches")).toBeNull();
 
-    await fireEvent.click(toggle);
-    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    await fireEvent.click(group);
+    const list = document.getElementById(group.getAttribute("aria-controls")!)!;
+    expect([...list.children].map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Thinking"),
+      expect.stringContaining("Read options"),
+      expect.stringContaining("Thinking"),
+      expect.stringContaining("Check options"),
+    ]);
+    await fireEvent.click(screen.getAllByRole("button", { name: "Thinking" })[0]!);
     expect(await screen.findByText("Weighing the two approaches")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /Read options/ }));
+    expect(await screen.findByText(/options.txt/)).toBeTruthy();
+
+    await push({ busy: false, messages: [...messages, { role: "assistant", text: "The first." }] });
+    expect(group.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("article", { name: "Assistant", exact: true })).toBeTruthy();
+    await fireEvent.click(group);
+    expect(screen.queryByText("Weighing the two approaches")).toBeNull();
+    expect(screen.getByRole("article", { name: "Assistant", exact: true })).toBeTruthy();
   });
 
-  it("starts a finished thought collapsed", async () => {
+  it("starts a thought-only group collapsed", async () => {
     await openChat({ messages: [{ role: "thought", text: "Done thinking" }] });
-    expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByRole("button", { name: "1 thought" }).getAttribute("aria-expanded")).toBe("false");
   });
 
   it("shows tool images without expanding tools and keeps one preview when details open", async () => {
@@ -1133,14 +1154,14 @@ describe("ACPWorkspace transcript paging", () => {
     expect(historyRequests()).toHaveLength(2);
   });
 
-  it("uses transcript indices for the live tail of a paged window", async () => {
+  it("keeps live thoughts collapsed in a paged window", async () => {
     await openChat({
       busy: true,
       messageOffset: 500,
       messageCount: 502,
       messages: [user(500), { role: "thought", text: "Planning the edit" }],
     });
-    expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "1 thought" }).getAttribute("aria-expanded")).toBe("false");
   });
 
   it("starts over from the new window after reconnecting", async () => {

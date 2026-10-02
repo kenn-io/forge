@@ -656,6 +656,47 @@ describe("ACPWorkspace rich content", () => {
     expect(screen.getByRole("button", { name: "Thinking" }).getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("shows tool images without expanding tools and keeps one preview when details open", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "Generate screenshots",
+          toolCallId: "images",
+          status: "completed",
+          toolContent: [
+            { type: "content", content: { type: "text", text: "Captured two panels" } },
+            {
+              type: "content",
+              content: { type: "image", mimeType: "image/png", data: "iVBORw0KGgo=", title: "Settings" },
+            },
+            {
+              type: "content",
+              content: { type: "resource", mimeType: "image/png", data: "iVBORw0KGgo=", name: "Permissions" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getAllByRole("img").map((image) => image.getAttribute("alt"))).toEqual(["Settings", "Permissions"]);
+    expect(screen.queryByText("Captured two panels")).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "1 tool" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Generate screenshots/ }));
+    expect(screen.getByText("Captured two panels")).toBeTruthy();
+    expect(screen.getAllByRole("img")).toHaveLength(2);
+    await fireEvent.click(screen.getByRole("button", { name: /Open image in expanded view: Settings/ }));
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeTruthy();
+  });
+
+  it("keeps sanitized Markdown image embeds in assistant messages", async () => {
+    await openChat({
+      messages: [{ role: "assistant", text: "![Panel screenshot](data:image/png;base64,iVBORw0KGgo=)" }],
+    });
+    const image = await screen.findByRole("img", { name: "Panel screenshot" });
+    expect(image.getAttribute("src")).toBe("data:image/png;base64,iVBORw0KGgo=");
+  });
+
   it("renders images from data and opens them in the image viewer", async () => {
     await openChat({
       messages: [assistant({ type: "image", mimeType: "image/png", data: "iVBORw0KGgo=", title: "Chart" })],

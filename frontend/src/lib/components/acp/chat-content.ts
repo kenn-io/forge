@@ -4,6 +4,13 @@ import { parseDiffFromFile } from "@pierre/diffs";
 
 const base64Pattern = /^[A-Za-z0-9+/=\s]*$/;
 
+export function isImageContent(content: ChatContent): boolean {
+  return (
+    content.type === "image" ||
+    (content.type === "resource" && !!content.data && !!content.mimeType?.toLowerCase().startsWith("image/"))
+  );
+}
+
 // data: URLs are only ever built for <img>/<audio> sources, from a validated
 // media type and base64 payload. SVG is allowed: an <img> renders it without
 // scripts or external loads.

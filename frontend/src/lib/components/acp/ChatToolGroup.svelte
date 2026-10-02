@@ -3,6 +3,8 @@
   import { Ban, Bot, Check, ChevronDown, Clock, Wrench, X } from "@lucide/svelte"
   import { Spinner } from "@kenn-io/kit-ui"
   import ChatToolDetails from "./ChatToolDetails.svelte"
+  import ChatContentBlock from "./ChatContentBlock.svelte"
+  import { isImageContent } from "./chat-content.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
@@ -126,6 +128,13 @@
       {/each}
     </ul>
   {/if}
+  {#each messages as message, messageIndex (messageIndex)}
+    {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
+      {#if item.content && isImageContent(item.content)}
+        <ChatContentBlock content={item.content} />
+      {/if}
+    {/each}
+  {/each}
 </div>
 
 <style>

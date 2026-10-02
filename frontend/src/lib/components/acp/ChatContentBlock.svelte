@@ -8,6 +8,7 @@
   import {
     decodeBase64,
     formatBytes,
+    isImageContent,
     mediaDataURL,
     resourceFilename,
     resourceHref,
@@ -22,10 +23,7 @@
 
   const label = $derived(content.title || content.name || content.uri || "");
   const meta = $derived([content.mimeType, formatBytes(content.size)].filter(Boolean).join(" · "));
-  const isImageBlob = $derived(content.type === "resource" && !!content.data && !!content.mimeType?.toLowerCase().startsWith("image/"));
-  const imageSrc = $derived(
-    content.type === "image" || isImageBlob ? mediaDataURL(content, "image") : undefined,
-  );
+  const imageSrc = $derived(isImageContent(content) ? mediaDataURL(content, "image") : undefined);
   const audioSrc = $derived(content.type === "audio" ? mediaDataURL(content, "audio") : undefined);
   const href = $derived(resourceHref(content.uri));
   const languageProp = $derived.by((): { language?: string } => {
@@ -57,7 +55,7 @@
 
 {#if content.type === "text"}
   <p class="text">{content.text ?? ""}</p>
-{:else if content.type === "image" || isImageBlob}
+{:else if isImageContent(content)}
   {#if imageSrc}
     <div class="image"><ImagePreview src={imageSrc} alt={label || "Image from agent"} maxHeight="24rem" /></div>
   {:else}

@@ -1,12 +1,13 @@
 <script lang="ts">
   import Terminal from "@lucide/svelte/icons/terminal";
   import ChatContentBlock from "./ChatContentBlock.svelte";
-  import { lineDiff, stripAnsi } from "./chat-content.js";
+  import { isImageContent, lineDiff, stripAnsi } from "./chat-content.js";
   import type { ChatMessage } from "./chat-types.js";
 
   let { message, id }: { message: ChatMessage; id: string } = $props();
 
-  const content = $derived(message.toolContent ?? []);
+  // Image outputs are already visible below the tool group.
+  const content = $derived((message.toolContent ?? []).filter((item) => !item.content || !isImageContent(item.content)));
   const diffPaths = $derived(new Set(content.flatMap((item) => (item.type === "diff" && item.path ? [item.path] : []))));
   // A location a diff already names adds nothing; its line number moves into the diff caption.
   const locations = $derived((message.locations ?? []).filter((location) => !diffPaths.has(location.path)));

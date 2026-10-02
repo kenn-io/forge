@@ -4,7 +4,7 @@
 
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
 import "../../../app.css";
@@ -117,6 +117,45 @@ describe("ACPWorkspace message gutter (browser)", () => {
     expect(copy.getBoundingClientRect().width).toBeGreaterThan(0);
     expect(gutter.getBoundingClientRect().top).toBeGreaterThanOrEqual(body.getBoundingClientRect().bottom);
     expect(Math.abs(gutter.getBoundingClientRect().left - body.getBoundingClientRect().left)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("ACPWorkspace image output (browser)", () => {
+  it("decodes tool and Markdown images while tools stay collapsed", async () => {
+    await page.viewport(1000, 720);
+    const { host } = await renderChat(900);
+    const data = btoa(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="120"><rect width="320" height="120" fill="#2563eb"/><text x="24" y="68" fill="white" font-size="24">Image from agent</text></svg>',
+    );
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [
+          { role: "user", text: "Show the image in chat" },
+          {
+            role: "tool",
+            text: "Create image",
+            toolCallId: "image",
+            status: "completed",
+            toolContent: [
+              { type: "content", content: { type: "image", mimeType: "image/svg+xml", data, title: "Tool image" } },
+            ],
+          },
+          { role: "assistant", text: `![Markdown image](data:image/svg+xml;base64,${data})` },
+        ],
+        messageOffset: 0,
+        messageCount: 3,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await expect.element(page.getByRole("img", { name: "Tool image" })).toBeVisible();
+    await expect.element(page.getByRole("img", { name: "Markdown image" })).toBeVisible();
+    await expect.poll(() => [...host.querySelectorAll("img")].map((image) => image.naturalWidth)).toEqual([320, 320]);
+    expect(host.querySelector('button[aria-controls$="-list"]')?.getAttribute("aria-expanded")).toBe("false");
   });
 });
 

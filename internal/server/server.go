@@ -851,12 +851,14 @@ func newServer(
 	}
 	var providerWorkspaceAutomation workspaceapi.ProviderWorkspaceAutomation
 	var mergeRequestWorktreeSource workspaceapi.MergeRequestWorktreeSource
+	var workspaceTargetSource workspaceapi.WorkspaceTargetSource
 	var resolveRepository func(
 		context.Context, providerplane.RepositoryRoute, platform.RepositoryKey,
 	) (*db.Repo, error)
 	if s.providerSource != nil {
 		providerWorkspaceAutomation = s.providerSource
 		mergeRequestWorktreeSource = s.providerSource
+		workspaceTargetSource = s.providerSource
 		if s.providerSource.Client != nil {
 			resolveRepository = s.providerSource.ResolveRepositoryRoute
 		}
@@ -891,6 +893,7 @@ func newServer(
 		PullCandidates:              workspacePullCandidates,
 		ProviderWorkspaceAutomation: providerWorkspaceAutomation,
 		MergeRequestWorktreeSource:  mergeRequestWorktreeSource,
+		WorkspaceTargetSource:       workspaceTargetSource,
 	})
 	if !options.ExecutionWorker {
 		s.kataAPI = kata.New(kata.Deps{
@@ -903,6 +906,7 @@ func newServer(
 			ConfigRepoPath:         settingsapi.ConfigRepoPath,
 			OnCatalogTokenEnvNames: s.streamapi.UpdateCatalogStripEnvVars,
 		})
+		s.workspaceAPI.SetKataTargets(s.kataAPI)
 		// Kata catalogs load lazily per request; feed their token env names
 		// into stripping at boot too so terminals created before the first
 		// Kata route never see cataloged credentials. Decoded-but-invalid

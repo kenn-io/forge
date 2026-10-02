@@ -205,7 +205,7 @@ func RenderAgentContext(ctx AgentContext) string {
 		writeMarkdownLine(&b, "Associated PR", itemNumberLabel(ctx.AssociatedPR.Number))
 		writeMarkdownLine(&b, "Associated PR URL", ctx.AssociatedPR.URL)
 	}
-	b.WriteString("\n## PR Registration\nWhen Forge MCP is available, call kenn_forge_link_workspace_pull_request after creating or working on the PR for this workspace. Pass the Workspace ID above, the PR number, and its full canonical URL. Repeating the same link is safe. Only one PR can be associated with this workspace; report a conflict or failed registration instead of claiming it is linked. Do not register unrelated background references.\n")
+	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, register PRs and issues you create or work on with kenn_forge_add_workspace_target. Use the Workspace ID above, the verified repository and item identity from Forge reads, and the canonical URL. Register every PR in a stack. When kenn_forge_add_workspace_kata_target is available, link Kata tasks by daemon, project and issue identity. Repeating a link is safe. Before finishing, call kenn_forge_list_workspace_targets and register missing targets. Report failed registrations and do not register unrelated background references. Tracking does not change the workspace owner or Git push destination.\n")
 	return b.String()
 }
 

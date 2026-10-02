@@ -22,7 +22,10 @@ type ProviderBackend interface {
 
 // LocalBackend owns data and execution that belong to the connected node.
 type LocalBackend interface {
-	LinkWorkspacePullRequest(context.Context, string, int, string) (bool, error)
+	KataTargetsAvailable() bool
+	AddWorkspaceTarget(context.Context, string, WorkspaceTargetRequest) (WorkspaceTarget, error)
+	ListWorkspaceTargets(context.Context, string) (WorkspaceTargets, error)
+	RemoveWorkspaceTarget(context.Context, string, string, int64) error
 	GetPullDiff(context.Context, ItemIdentity, bool) (Diff, error)
 	ListLaunchTargets(context.Context) ([]LaunchTarget, error)
 	PreferredWorkspaceAgentTarget(context.Context, time.Time, []string) (string, bool, error)
@@ -398,3 +401,32 @@ type Error struct {
 }
 
 func (e *Error) Error() string { return e.Message }
+
+// Workspace targets are tracking references; their provider or Kata owns the item.
+type WorkspaceKataTarget struct {
+	DaemonID   string `json:"daemon_id"`
+	ProjectUID string `json:"project_uid"`
+	IssueUID   string `json:"issue_uid"`
+	Reference  string `json:"reference,omitempty"`
+}
+type WorkspaceTargetRequest struct {
+	Item ItemIdentity
+	URL  string
+	Kata *WorkspaceKataTarget
+}
+type WorkspaceTarget struct {
+	ID          int64                `json:"id"`
+	Repository  *RepositoryIdentity  `json:"repository,omitempty"`
+	Type        string               `json:"type"`
+	Number      int                  `json:"number,omitempty"`
+	URL         string               `json:"url,omitempty"`
+	Title       string               `json:"title"`
+	State       string               `json:"state"`
+	Source      string               `json:"source"`
+	Unavailable bool                 `json:"unavailable"`
+	Kata        *WorkspaceKataTarget `json:"kata,omitempty"`
+}
+type WorkspaceTargets struct {
+	Targets       []WorkspaceTarget `json:"targets"`
+	KataAvailable bool              `json:"kata_available"`
+}

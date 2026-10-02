@@ -111,6 +111,7 @@ type Deps struct {
 	PullCandidates              workspace.PullCandidateSource
 	ProviderWorkspaceAutomation ProviderWorkspaceAutomation
 	MergeRequestWorktreeSource  MergeRequestWorktreeSource
+	WorkspaceTargetSource       WorkspaceTargetSource
 }
 
 // Handler implements both the workspace and local-project services so their
@@ -145,6 +146,8 @@ type Handler struct {
 	pullCandidates                 workspace.PullCandidateSource
 	providerWorkspaceAutomation    ProviderWorkspaceAutomation
 	mergeRequestWorktreeSource     MergeRequestWorktreeSource
+	workspaceTargetSource          WorkspaceTargetSource
+	kataTargets                    WorkspaceKataTargets
 	hub                            *eventHubAdapter
 	workspacePRMonitor             *workspace.PRMonitor
 	workspacePushedHeadObserver    *workspace.PushedHeadObserver
@@ -229,6 +232,7 @@ func New(deps Deps) *Handler {
 		pullCandidates:                 deps.PullCandidates,
 		providerWorkspaceAutomation:    deps.ProviderWorkspaceAutomation,
 		mergeRequestWorktreeSource:     deps.MergeRequestWorktreeSource,
+		workspaceTargetSource:          deps.WorkspaceTargetSource,
 		hub:                            &eventHubAdapter{broadcast: deps.Broadcast, subscribe: deps.Subscribe, generation: deps.Generation},
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
 		workspaceEnrichmentInFlight:    make(map[string]uint64),
@@ -330,6 +334,9 @@ func (s *Handler) RegisterExecution(api huma.API) {
 		httpapi.DocumentOperation("list-workspaces", "List workspaces", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
 		httpapi.DocumentOperation("get-workspace", "Get workspace", "Workspaces"))
+	huma.Get(api, "/workspaces/{id}/targets", s.listWorkspaceTargets, httpapi.DocumentOperation("list-workspace-targets", "List workspace targets", "Workspaces"))
+	huma.Post(api, "/workspaces/{id}/targets", s.addWorkspaceTarget, httpapi.DocumentOperation("add-workspace-target", "Add workspace target", "Workspaces"))
+	huma.Delete(api, "/workspaces/{id}/targets/{target_id}", s.removeWorkspaceTarget, httpapi.DocumentOperation("remove-workspace-target", "Remove workspace target", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/view-state", s.getWorkspaceViewState,
 		httpapi.DocumentOperation("get-workspace-view-state", "Get workspace view state", "Workspaces"))
 	huma.Put(api, "/workspaces/{id}/view-state", s.updateWorkspaceViewState,

@@ -305,6 +305,12 @@ embedder protocol for arbitrary host state.
 
 ## Data Model Intent
 
+- Tracking targets never change workspace ownership, branch association, push routing, or cleanup eligibility; merged targets do not close workspaces
+  (`internal/server/workspaceapi/targets.go::Handler.AddWorkspaceTargetService`).
+- Target lists combine explicit links with implicit owner/branch links; removing an explicit link cannot remove its implicit association, and unavailable metadata retains the link
+  (`internal/server/workspaceapi/targets.go::Handler.ListWorkspaceTargetsService`).
+
+
 - `item_type`: whether the workspace belongs to a `pull_request`, provider
   `issue`, or `kata_task`.
 - `item_key`: the canonical owner key within the repo/workspace namespace. PR

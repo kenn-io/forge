@@ -418,6 +418,7 @@
   const deleteTriggerElements = new Map<string, HTMLElement | null>();
   let emptyLaunchTargetsExecution: { interrupt: () => void } | null = null;
   let sidebarRefreshToken = $state(0);
+  let targetsRefreshToken = $state(0);
   let diffRefreshToken = $state(0);
   let lastDiffSnapshotVersion = "";
   let forcePromptMessage = $state<string | null>(null);
@@ -2403,6 +2404,7 @@
         if (nextWorkspace.status === "creating" && workspaceLive && workspace?.status === "ready" &&
           readinessGeneration !== workspaceReadinessGeneration) return workspace;
         workspace = nextWorkspace;
+        targetsRefreshToken += 1;
         syncSidebarTabForWorkspace(nextWorkspace);
         loadError = null;
 
@@ -4972,11 +4974,14 @@
                   ownerItemType={workspace.item_type}
                   ownerItemNumber={workspace.item_number}
                   associatedPRNumber={getWorkspacePRNumber(workspace)}
+                  onselect={selectWorkspaceItem}
+                  onselectkata={() => setSidebarTab("kata")}
                   viewedPR={viewedItems.pr}
                   viewedIssue={viewedItems.issue}
                   branch={workspace.git_head_ref}
                   roborevBaseUrl={basePath + "/api/roborev"}
                   refreshToken={sidebarRefreshToken}
+                  {targetsRefreshToken}
                   {diffRefreshToken}
                   disabled={actionsBlocked}
                   gitState={{

@@ -30,9 +30,10 @@
     active: boolean;
     disabled?: boolean;
     apiClient?: GeneratedClient;
+    selection?: { daemonID: string; issueUID: string } | undefined;
   }
 
-  let { subject, active, disabled = false, apiClient = runtimeClient }: Props = $props();
+  let { subject, active, disabled = false, apiClient = runtimeClient, selection }: Props = $props();
 
   const navigate = getNavigate();
   const store = createKataLinksStore({
@@ -51,6 +52,15 @@
 
   onDestroy(() => {
     componentDestroyed = true;
+  });
+
+  let appliedTargetSelection: Props["selection"];
+  $effect(() => {
+    const target = selection;
+    if (active && target && target !== appliedTargetSelection && store.links().some((link) => link.daemon_id === target.daemonID && link.issue_uid === target.issueUID)) {
+      appliedTargetSelection = target;
+      untrack(() => { void store.select(target.daemonID, target.issueUID); });
+    }
   });
 
   const selected = $derived(store.selected());

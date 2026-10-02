@@ -27,17 +27,19 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	}
 	slices.Sort(toolNames)
 	assert.Equal([]string{
+		"kenn_forge_add_workspace_target",
 		"kenn_forge_find_review_candidates",
 		"kenn_forge_get_item_context",
 		"kenn_forge_get_item_diff",
 		"kenn_forge_get_stack_context",
-		"kenn_forge_link_workspace_pull_request",
 		"kenn_forge_list_activity",
 		"kenn_forge_list_agent_targets",
 		"kenn_forge_list_items_by_workflow_state",
 		"kenn_forge_list_pull_contexts",
 		"kenn_forge_list_repos",
 		"kenn_forge_list_workspace_agent_sessions",
+		"kenn_forge_list_workspace_targets",
+		"kenn_forge_remove_workspace_target",
 		"kenn_forge_search_items",
 		"kenn_forge_send_agent_message",
 		"kenn_forge_set_item_workflow_state",

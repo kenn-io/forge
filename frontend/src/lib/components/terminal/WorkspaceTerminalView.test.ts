@@ -209,6 +209,7 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
   };
   const client = makeGeneratedClient({
     WorkspacesService: {
+      listWorkspaceTargets: async () => ({ targets: [], kata_available: false }),
       getWorkspaceRuntime: ({ id }: { id: string }) => getRuntime(id),
       launchWorkspaceRuntimeSession: (
         { id }: { id: string },
@@ -222,6 +223,7 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
         mocks.stopWorkspaceSession(id, sessionKey, undefined),
     },
     FleetService: {
+      listFleetWorkspaceTargets: async () => ({ targets: [], kata_available: false }),
       getFleetWorkspaceRuntime: ({ hostKey, id }: { hostKey: string; id: string }) => getRuntime(id, hostKey),
       launchFleetWorkspaceRuntimeSession: (
         { hostKey, id }: { hostKey: string; id: string },

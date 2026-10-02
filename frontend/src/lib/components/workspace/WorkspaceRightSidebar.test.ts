@@ -166,6 +166,91 @@ describe("WorkspaceRightSidebar", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("selects tracked provider targets and disables unavailable Kata targets", async () => {
+    const onselect = vi.fn();
+    const repo = {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 1002,
+      owner: "acme",
+      name: "other",
+      repo_path: "acme/other",
+    };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({
+        kata_available: false,
+        targets: [
+          {
+            id: 1,
+            type: "pr",
+            number: 42,
+            repo,
+            title: "Stack base",
+            state: "open",
+            source: "tracked",
+            url: "https://github.com/acme/other/pull/42",
+            unavailable: false,
+          },
+          {
+            id: 2,
+            type: "issue",
+            number: 42,
+            repo,
+            title: "Follow up",
+            state: "open",
+            source: "tracked",
+            url: "https://github.com/acme/other/issues/42",
+            unavailable: false,
+          },
+          {
+            id: 3,
+            type: "kata",
+            number: 0,
+            title: "Task",
+            state: "open",
+            source: "tracked",
+            url: "",
+            unavailable: true,
+            kata: { daemon_id: "local", project_uid: "project-a", issue_uid: "task-a", reference: "Task A" },
+          },
+        ],
+      }),
+    );
+    render(WorkspaceRightSidebarTestHarness, {
+      props: {
+        runtime,
+        sidebarProps: {
+          activeTab: "pr",
+          workspaceID: "ws-targets",
+          worktreePath: "",
+          provider: "github",
+          repoOwner: "acme",
+          repoName: "widget",
+          repoPath: "acme/widget",
+          ownerItemType: "adhoc",
+          ownerItemNumber: 0,
+          associatedPRNumber: null,
+          branch: "work",
+          roborevBaseUrl: "/api/roborev",
+          onselect,
+        },
+      },
+      context: new Map([[STORES_KEY, makeStores()]]),
+    });
+    await waitFor(() => expect(screen.getByText("Targets").textContent).toContain("3"));
+    await fireEvent.click(screen.getByText("Targets"));
+    // jsdom does not implement the native details toggle.
+    screen.getByText("Targets").closest("details")!.open = true;
+    await fireEvent.click(screen.getByRole("button", { name: /PR #42/ }));
+    expect(onselect).toHaveBeenLastCalledWith(
+      "pr",
+      expect.objectContaining({ owner: "acme", name: "other", number: 42 }),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: /Issue #42/ }));
+    expect(onselect).toHaveBeenLastCalledWith("issue", expect.objectContaining({ number: 42 }));
+    expect((screen.getByRole("button", { name: /Task A/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("displays a selected PR without changing the workspace's linked PR", async () => {
     const api = createMockApiFetch();
     vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);

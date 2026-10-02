@@ -1,4 +1,7 @@
 <script lang="ts">
+  import WorkspaceTargets from "./WorkspaceTargets.svelte";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
+  import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
   import { EmptyState } from "@kenn-io/kit-ui";
   import type { NumberedRouteItemRef } from "../../routes.js";
   import PullDetail from "../detail/PullDetail.svelte";
@@ -28,10 +31,13 @@
     branch: string;
     roborevBaseUrl: string;
     refreshToken?: number;
+    targetsRefreshToken?: number;
     diffRefreshToken?: number;
     disabled?: boolean;
     visible?: boolean;
     gitState?: WorkspaceDiffGitState;
+    onselect?: (kind: "pr" | "issue", item: NumberedRouteItemRef) => void;
+    onselectkata?: () => void;
   }
 
   let {
@@ -53,11 +59,25 @@
     branch,
     roborevBaseUrl,
     refreshToken = 0,
+    targetsRefreshToken = 0,
     diffRefreshToken = 0,
     disabled = false,
     visible = true,
     gitState = {},
+    onselect,
+    onselectkata,
   }: Props = $props();
+
+  let selectedKata = $state<{ daemonID: string; issueUID: string } | undefined>();
+  function selectTarget(target: WorkspaceTarget): void {
+    if (target.type === "kata" && target.kata) {
+      selectedKata = { daemonID: target.kata.daemon_id, issueUID: target.kata.issue_uid };
+      onselectkata?.();
+    } else if ((target.type === "pr" || target.type === "issue") && target.repo) {
+      const repo = target.repo;
+      onselect?.(target.type, { provider: repo.provider, platformHost: repo.platform_host, repositoryKey: repositoryKeyFromWire(repo), owner: repo.owner, name: repo.name, repoPath: repo.repo_path, number: target.number });
+    }
+  }
 
   // Determine if we have valid context
   const hasRepo = $derived(
@@ -86,6 +106,11 @@
 </script>
 
 <div class="right-sidebar-content">
+  {#if onselect}
+    {#key `${workspaceHostKey ?? "self"}:${workspaceID}`}
+      <WorkspaceTargets {workspaceID} {workspaceHostKey} refreshToken={targetsRefreshToken + refreshToken} {disabled} onselect={selectTarget} />
+    {/key}
+  {/if}
   {#if activeTab === "diff"}
     {#key `diff:${workspaceHostKey ?? "self"}:${workspaceID}`}
       <WorkspaceDiffPanel
@@ -136,6 +161,7 @@
     {:else}
       <KataLinksPanel
         subject={{ kind: "workspace", workspaceID }}
+        selection={selectedKata}
         active={activeTab === "kata"}
         {disabled}
       />

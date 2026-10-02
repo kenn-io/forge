@@ -60,7 +60,8 @@
   stable ID; route-only fallback must not redirect an existing selection
   (`internal/server/mcp_backend.go::mcpBackend.resolveProviderRepository`).
 - Target MCP `2026-07-28`; do not advertise deprecated logging or catalog
-  change notifications for the static surface (`internal/mcpserver/server.go::New`).
+  notifications on stateless HTTP; Kata tool availability refreshes on each request
+  (`internal/mcpserver/server.go::Server.httpHandler`).
 - Use only canonical `kenn-forge` command/resource/prompt names and
   `kenn_forge_*` tools; do not add aliases (`internal/mcpserver/server.go::Server.registerTools`).
 - Workflow reads and writes are hub-owned provider-adjacent state;
@@ -158,5 +159,5 @@
   `initial_message.state`; never add a separate `message_delivered` output or
   error detail (`internal/mcpserver/tools_agent_spawn.go::spawnWorkspaceWithAgentOutput`).
 
-- Agent PR registration shares branch discovery's single workspace association; never replace it or change source ownership. ACP binds the workspace through its owner proxy; terminal MCP clients supply the launch-context ID
-  (`internal/server/workspaceapi/pull_link.go::Handler.LinkWorkspacePullRequestService`, `internal/workspace/localruntime/acp_mcp_proxy.go::newACPMCPProxy`).
+- ACP target tools bind the workspace through its owner proxy; terminal MCP clients supply the launch-context ID. Register every worked-on stack layer explicitly
+  (`internal/mcpserver/tools_workspace_targets.go::workspaceScope`).

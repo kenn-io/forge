@@ -50,6 +50,10 @@ in [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
 
 ## Daemon Discovery And Reads
 
+- Workspace task targets reuse Kata links, never provider rows. Enable target mutations and the Kata MCP add tool only for a resolved remote catalog entry or a discovered configured local daemon
+  (`internal/server/kata/workspace_targets.go::Handler.WorkspaceKataTargetsAvailable`).
+
+
 - `$KATA_HOME/config.toml` is the daemon catalog. Forge config and legacy URL
   environment variables are not daemon authorities
   (`internal/kata/catalog.go::LoadCatalog`).

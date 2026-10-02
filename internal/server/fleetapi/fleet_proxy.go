@@ -161,6 +161,40 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			},
 		},
 		{
+			operationID:  "list-fleet-workspace-targets",
+			method:       http.MethodGet,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+			summary:      "List workspace targets on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceTargetsResponse](),
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/targets"
+			},
+		},
+		{
+			operationID:  "add-fleet-workspace-targets",
+			method:       http.MethodPost,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+			summary:      "Add workspace targets on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			responseType: reflect.TypeFor[workspaceapi.WorkspaceTarget](),
+			body:         true,
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/targets"
+			},
+		},
+		{
+			operationID: "remove-fleet-workspace-targets",
+			queryParams: []*huma.Param{{Name: "type", In: "query", Required: true, Schema: &huma.Schema{Type: "string", Enum: []any{"pr", "issue", "kata"}}}},
+			method:      http.MethodDelete,
+			path:        "/fleet/hosts/{host_key}/workspaces/{id}/targets/{target_id}",
+			summary:     "Remove workspace targets on fleet host",
+			pathParams:  []string{"host_key", "id", "target_id"},
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/targets" + "/" + escapePath(r.PathValue("target_id"))
+			},
+		},
+		{
 			operationID:  "get-fleet-workspace-view-state",
 			responseType: reflect.TypeFor[workspaceapi.WorkspaceViewState](),
 			method:       http.MethodGet,

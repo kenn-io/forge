@@ -47,6 +47,9 @@ type DevboxProxyRoute struct{ Method, Path, Operation string }
 var DevboxProxyRoutes = []DevboxProxyRoute{
 	{"GET", "/workspaces", "list-devbox-workspaces"},
 	{"GET", "/workspaces/{id}", "get-devbox-workspace"},
+	{"GET", "/workspaces/{id}/targets", "list-devbox-workspace-targets"},
+	{"POST", "/workspaces/{id}/targets", "add-devbox-workspace-targets"},
+	{"DELETE", "/workspaces/{id}/targets/{target_id}", "remove-devbox-workspace-targets"},
 	{"GET", "/workspaces/{id}/view-state", "get-devbox-workspace-view-state"},
 	{"PUT", "/workspaces/{id}/view-state", "update-devbox-workspace-view-state"},
 	{"GET", "/workspaces/{id}/agent-sessions", "list-devbox-agent-sessions"},

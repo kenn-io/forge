@@ -27,6 +27,15 @@ type ProviderRouteRule struct {
 // This table is intentionally exhaustive. A newly registered operation must
 // make an explicit ownership decision before the coverage gate passes.
 var ProviderRouteDeclarations = []ProviderRouteRule{
+	{OperationID: "list-workspace-targets", Owner: NodeLocal},
+	{OperationID: "add-workspace-target", Owner: NodeLocal},
+	{OperationID: "remove-workspace-target", Owner: NodeLocal},
+	{OperationID: "list-fleet-workspace-targets", Owner: NodeLocal},
+	{OperationID: "add-fleet-workspace-targets", Owner: NodeLocal},
+	{OperationID: "remove-fleet-workspace-targets", Owner: NodeLocal},
+	{OperationID: "list-devbox-workspace-targets", Owner: NodeLocal},
+	{OperationID: "add-devbox-workspace-targets", Owner: NodeLocal},
+	{OperationID: "remove-devbox-workspace-targets", Owner: NodeLocal},
 	{OperationID: "test-acp-agent", Owner: NodeLocal},
 	{OperationID: "update-workspace-view-state", Owner: NodeLocal},
 	{OperationID: "get-workspace-view-state", Owner: NodeLocal},

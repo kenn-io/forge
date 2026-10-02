@@ -39,10 +39,12 @@ vi.mock("../../app/runtime-context.js", async () => {
   runtimeState.appRuntime = makeAppRuntime(
     makeGeneratedClient({
       WorkspacesService: {
+        listWorkspaceTargets: async () => ({ targets: [], kata_available: false }),
         getWorkspace: mocks.runtimeClient.getWorkspace,
         refreshWorkspace: mocks.runtimeClient.refreshWorkspace,
       },
       FleetService: {
+        listFleetWorkspaceTargets: async () => ({ targets: [], kata_available: false }),
         getFleetWorkspace: mocks.runtimeClient.getFleetWorkspace,
       },
     }),

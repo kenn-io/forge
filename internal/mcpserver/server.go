@@ -22,6 +22,8 @@ type Options struct {
 
 type Server struct {
 	backend                  Backend
+	kataToolMu               sync.Mutex
+	kataToolEnabled          bool
 	mcp                      *mcp.Server
 	agentHandoffPollInterval time.Duration
 	diffCacheBytes           int64
@@ -65,7 +67,8 @@ func (s *Server) registerTools() {
 	s.registerStackTools()
 	s.registerWorkflowTools()
 	s.registerAgentTools()
-	s.registerWorkspacePullTools()
+	s.registerWorkspaceTargetTools()
+	s.syncKataTargetTool()
 	s.registerGuidance()
 }
 
@@ -94,6 +97,7 @@ func (s *Server) httpHandler(options *mcp.StreamableHTTPOptions) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		s.syncKataTargetTool()
 		ctx := context.WithValue(r.Context(), workspaceScopeKey{}, r.Header.Get("X-Kenn-Forge-Workspace-ID"))
 		stream.ServeHTTP(w, r.WithContext(ctx))
 	})

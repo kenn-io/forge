@@ -897,3 +897,24 @@ func providerSettingsRequestBody(update UpdateSettingsRequest) *generated.Provid
 	}
 	return body
 }
+
+func (s *HubProviderSource) ReadWorkspaceTarget(ctx context.Context, repo db.Repo, kind string, number int) (workspaceapi.WorkspaceTargetMetadata, error) {
+	if kind == db.WorkspaceItemTypePullRequest {
+		detail, err := s.GetPull(ctx, pullapi.ItemIdentity{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name, Number: number})
+		if err != nil {
+			return workspaceapi.WorkspaceTargetMetadata{}, err
+		}
+		if detail.MergeRequest == nil || detail.Repo.Identity() != (platform.RepositoryIdentity{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key}).Canonical() {
+			return workspaceapi.WorkspaceTargetMetadata{}, InvalidHubDescriptor(errors.New("workspace target repository identity changed"))
+		}
+		return workspaceapi.WorkspaceTargetMetadata{URL: detail.MergeRequest.URL, Title: detail.MergeRequest.Title, State: string(detail.MergeRequest.State)}, nil
+	}
+	detail, err := s.GetIssue(ctx, issueapi.ItemIdentity{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name, Number: number})
+	if err != nil {
+		return workspaceapi.WorkspaceTargetMetadata{}, err
+	}
+	if detail.Issue == nil || detail.Repo.Identity() != (platform.RepositoryIdentity{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key}).Canonical() {
+		return workspaceapi.WorkspaceTargetMetadata{}, InvalidHubDescriptor(errors.New("workspace target repository identity changed"))
+	}
+	return workspaceapi.WorkspaceTargetMetadata{URL: detail.Issue.URL, Title: detail.Issue.Title, State: detail.Issue.State}, nil
+}

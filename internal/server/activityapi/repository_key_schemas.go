@@ -34,6 +34,7 @@ var repositoryKeyAPITypes = []reflect.Type{
 	reflect.TypeFor[httpapi.RepoRefResponse](),
 	reflect.TypeFor[ghclient.ConfiguredRepoStatus](),
 	reflect.TypeFor[workspaceapi.ProviderWorkspaceItemRequest](),
+	reflect.TypeFor[workspaceapi.WorkspaceTargetRepository](),
 	reflect.TypeFor[externalcontext.PullRequest](),
 	reflect.TypeFor[spokeapi.ProviderRepositoryObservation](),
 	reflect.TypeFor[itemapi.ActivityRepoRefResponse](),

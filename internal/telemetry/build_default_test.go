@@ -16,6 +16,7 @@ func TestTelemetryEnabledInDefaultBuild(t *testing.T) {
 
 func TestNewReporterUnderGoTestWithTelemetryOn(t *testing.T) {
 	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
 
 	reporter, err := NewReporter(Options{})
 	require.NoError(t, err)

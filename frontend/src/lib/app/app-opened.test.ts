@@ -1,9 +1,10 @@
 import { assert, it } from "@effect/vitest";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { afterEach, vi } from "vite-plus/test";
 import { makeGeneratedApiLayer } from "../api/generated-api.js";
 import * as client from "../api/generated/index.js";
+import { StreamingFetchLive } from "../browser/streaming-fetch.js";
 import { reportAppOpened } from "./app-opened.js";
 
 interface RecordedRequest {
@@ -14,7 +15,7 @@ interface RecordedRequest {
 }
 
 const lastMinuteOfDay = Date.UTC(2026, 9, 1, 23, 59);
-const apiLayer = makeGeneratedApiLayer(client);
+const apiLayer = Layer.mergeAll(makeGeneratedApiLayer(client), StreamingFetchLive);
 
 // Real timers let the stubbed fetch promises and fiber hand-offs settle.
 const tick = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
@@ -22,10 +23,14 @@ const settle = tick.pipe(Effect.andThen(tick), Effect.andThen(tick));
 
 const focusWindow = Effect.sync(() => window.dispatchEvent(new Event("focus"))).pipe(Effect.andThen(settle));
 
-function recordFetch(respond: (index: number) => Promise<Response> = () => accepted()): RecordedRequest[] {
+function recordFetch(
+  respond: (index: number) => Promise<Response> = () => accepted(),
+  health: () => Response = () => Response.json({ status: "ok" }),
+): RecordedRequest[] {
   const requests: RecordedRequest[] = [];
   vi.stubGlobal("fetch", (async (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/healthz")) return health();
     requests.push({
       method: request.method,
       pathname: new URL(request.url).pathname,
@@ -63,6 +68,22 @@ it.effect("posts app_opened once on load", () =>
         body: '{"event":"app_opened"}',
       },
     ]);
+    yield* Fiber.interrupt(fiber);
+  }),
+);
+
+it.effect("waits for the daemon to finish starting before posting", () =>
+  Effect.gen(function* () {
+    let probes = 0;
+    const requests = recordFetch(undefined, () =>
+      ++probes === 1 ? new Response("starting", { status: 503 }) : Response.json({ status: "ok" }),
+    );
+    const fiber = yield* startReporter;
+    assert.strictEqual(requests.length, 0);
+
+    yield* TestClock.adjust("750 millis");
+    yield* settle;
+    assert.strictEqual(requests.length, 1);
     yield* Fiber.interrupt(fiber);
   }),
 );

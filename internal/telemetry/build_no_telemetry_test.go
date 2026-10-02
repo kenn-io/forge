@@ -18,6 +18,7 @@ func TestTelemetryDisabledByBuildTag(t *testing.T) {
 func TestBuildTagOptOutKeepsAllowlist(t *testing.T) {
 	assert := assert.New(t)
 	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
 
 	reporter, err := newReporter(Options{}, time.Now())
 	require.NoError(t, err)

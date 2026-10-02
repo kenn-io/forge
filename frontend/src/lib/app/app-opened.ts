@@ -1,5 +1,6 @@
 import { Clock, Effect, Queue, Ref, Stream } from "effect";
 import { executeOpaqueGeneratedApiRequest } from "../api/generated-api.js";
+import { waitUntilBackendReady } from "../utils/backendReadiness.js";
 
 const windowFocus = Stream.callback<void>(
   (queue) =>
@@ -15,7 +16,7 @@ const windowFocus = Stream.callback<void>(
 
 const utcDay = (millis: number) => new Date(millis).toISOString().slice(0, 10);
 
-/** Reports app_opened now and on the first window focus of each later UTC day, for the app's lifetime. */
+/** Reports app_opened once the daemon is ready and on the first window focus of each later UTC day, for the app's lifetime. */
 export const reportAppOpened = Effect.gen(function* () {
   const lastDay = yield* Ref.make("");
   const reportIfNewDay = Effect.gen(function* () {
@@ -28,6 +29,8 @@ export const reportAppOpened = Effect.gen(function* () {
       ).pipe(Effect.ignore),
     );
   });
+  // A daemon still starting answers 503, which would spend the day on a lost event.
+  yield* waitUntilBackendReady;
   yield* reportIfNewDay;
   yield* Stream.runForEach(windowFocus, () => reportIfNewDay);
 });

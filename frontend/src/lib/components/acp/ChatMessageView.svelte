@@ -91,6 +91,18 @@
   {#if message.content}<ChatContentBlock content={message.content} />{/if}
 {/snippet}
 
+{#snippet copyAction()}
+  <CopyButton
+    {copied}
+    onclick={() => copy()}
+    ariaLabel="Copy message"
+    copiedAriaLabel="Copy message"
+    title="Copy message"
+  />
+  <span class="kit-sr-only" role="status">{copied ? "Copied" : ""}</span>
+  {#if copyError}<span class="copy-error" role="alert">{copyError}</span>{/if}
+{/snippet}
+
 <article
   class:user
   aria-label={user ? "You" : thought ? "Assistant thinking" : "Assistant"}
@@ -103,6 +115,8 @@
       {/each}
     {:else if thought}
       <div class="thought">
+        <div class="thought-heading">
+        {#if !streaming && message.text}{@render copyAction()}{/if}
         <button
           type="button"
           class="thought-toggle"
@@ -116,6 +130,7 @@
             aria-hidden="true"
           />
         </button>
+        </div>
         {#if thoughtOpen}
           <div class="message-body thought-body" id={`${id}-thought`}>
             {@render body()}
@@ -128,7 +143,7 @@
     <!-- Time and copy. Wide panes reveal them on hover or focus in a gutter
          left of the cell, laid over reserved space so nothing reflows; panes
          too narrow for the gutter show them as a quiet line below the message. -->
-    {#if timestamp || (!streaming && message.text) || copyError}
+    {#if timestamp || (!thought && ((!streaming && message.text) || copyError))}
     <div class="gutter" class:pinned={!!copyError || copied}>
     {#if timestamp}
       <time datetime={message.createdAt} title={timestamp.toLocaleString()}
@@ -138,17 +153,7 @@
         })}</time
       >
     {/if}
-    {#if !streaming && message.text}
-      <CopyButton
-        {copied}
-        onclick={() => copy()}
-        ariaLabel="Copy message"
-        copiedAriaLabel="Copy message"
-        title="Copy message"
-      />
-    {/if}
-    <span class="kit-sr-only" role="status">{copied ? "Copied" : ""}</span>
-    {#if copyError}<span class="copy-error" role="alert">{copyError}</span>{/if}
+    {#if !thought && !streaming && message.text}{@render copyAction()}{/if}
     </div>
     {/if}
   </div>
@@ -192,6 +197,11 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
+  }
+  .thought-heading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
   }
   .thought-toggle {
     display: inline-flex;
@@ -297,7 +307,8 @@
     .thought-toggle {
       min-height: var(--mobile-chrome-hit-target);
     }
-    .gutter :global(button) {
+    .gutter :global(button),
+    .thought-heading :global(button) {
       min-width: var(--mobile-chrome-hit-target);
       min-height: var(--mobile-chrome-hit-target);
     }

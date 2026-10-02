@@ -223,6 +223,15 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     await userEvent.keyboard("{Enter}");
     const thought = page.getByRole("button", { name: "Thinking" });
     await expect.element(thought).toBeVisible();
+    const thoughtCopy = page
+      .getByRole("article", { name: "Assistant thinking", exact: true })
+      .getByRole("button", { name: "Copy message" });
+    const copyBounds = thoughtCopy.element().getBoundingClientRect();
+    const toggleBounds = thought.element().getBoundingClientRect();
+    expect(copyBounds.right).toBeLessThanOrEqual(toggleBounds.left);
+    expect(Math.abs(copyBounds.top + copyBounds.height / 2 - toggleBounds.top - toggleBounds.height / 2)).toBeLessThan(
+      1,
+    );
     (thought.element() as HTMLButtonElement).focus();
     await userEvent.keyboard("{Enter}");
     await expect.element(page.getByText("Compare the available options.")).toBeVisible();

@@ -7,13 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"strings"
 	"testing"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
-	kittelemetry "go.kenn.io/kit/telemetry"
+	"go.kenn.io/kit/telemetry/posthog"
 )
 
 const (
@@ -31,28 +30,22 @@ const HeartbeatInterval = 24 * time.Hour
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
-type propertyFilter func(any) (any, bool)
-
-var allowedEvents = map[string]map[string]propertyFilter{
-	"app_loaded": {
-		"view": safeTelemetryToken,
+var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"app_opened": {
+		"surface": posthog.AllowStringValues("web"),
 	},
 	"daemon_active": {
-		"repo_count": safeTelemetryNumber,
+		"repo_count": posthog.AllowNumber,
 	},
 }
 
-type Client interface {
-	Capture(event string, properties map[string]any) error
-	Close() error
-	Enabled() bool
-}
+type Client = posthog.Client
 
 // Reporter routes each event to the kit reporter for its source, since kit
 // fixes the source property per reporter.
 type Reporter struct {
-	daemon  kittelemetry.PostHogClient
-	backend kittelemetry.PostHogClient
+	daemon  posthog.Client
+	backend posthog.Client
 }
 
 type Options struct {
@@ -62,15 +55,15 @@ type Options struct {
 }
 
 // newKitReporter builds one kit reporter; tests replace it.
-var newKitReporter = func(opts kittelemetry.PostHogOptions, options ...kittelemetry.PostHogOption) (kittelemetry.PostHogClient, error) {
-	return kittelemetry.NewPostHogReporter(opts, options...)
+var newKitReporter = func(opts posthog.Options, options ...posthog.Option) (posthog.Client, error) {
+	return posthog.NewReporter(opts, options...)
 }
 
 // EnabledFromEnv reports whether the environment allows telemetry. Kit honors
 // both the documented generic TELEMETRY_ENABLED=0 opt-out and the prefixed
 // KENN_FORGE_TELEMETRY_ENABLED=0 one.
 func EnabledFromEnv() bool {
-	return kittelemetry.PostHogTelemetryEnabledFromEnv(envPrefix)
+	return posthog.EnabledFromEnv(envPrefix)
 }
 
 func EventAllowed(event string) bool {
@@ -78,27 +71,9 @@ func EventAllowed(event string) bool {
 	return ok
 }
 
-func SanitizeProperties(event string, properties map[string]any) (map[string]any, error) {
-	allowedProperties, ok := allowedEvents[strings.TrimSpace(event)]
-	if !ok {
-		return nil, ErrUnsupportedEvent
-	}
-
-	safeProperties := map[string]any{}
-	for key, value := range properties {
-		key = strings.TrimSpace(key)
-		filter, ok := allowedProperties[key]
-		if !ok {
-			continue
-		}
-		if safeValue, ok := filter(value); ok {
-			safeProperties[key] = safeValue
-		}
-	}
-	safeProperties["$process_person_profile"] = false
-	safeProperties["$geoip_disable"] = true
-	safeProperties["application"] = applicationSlug
-	return safeProperties, nil
+// UIEventAllowed reports whether the web UI may send event; daemon events stay daemon-only.
+func UIEventAllowed(event string) bool {
+	return EventAllowed(event) && sourceForEvent(strings.TrimSpace(event)) == "backend"
 }
 
 func NewReporter(opts Options) (*Reporter, error) {
@@ -122,7 +97,7 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 		return nil, err
 	}
 
-	base := kittelemetry.PostHogOptions{
+	base := posthog.Options{
 		APIKey:      postHogAPIKey,
 		Endpoint:    postHogEndpoint,
 		Application: applicationSlug,
@@ -148,17 +123,17 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 }
 
 // kitAllowedEvents builds kit's allowlist for one source from allowedEvents.
-func kitAllowedEvents(source string) []kittelemetry.PostHogOption {
-	var options []kittelemetry.PostHogOption
+func kitAllowedEvents(source string) []posthog.Option {
+	var options []posthog.Option
 	for event, properties := range allowedEvents {
 		if sourceForEvent(event) != source {
 			continue
 		}
-		allowed := make([]kittelemetry.AllowedTelemetryProperty, 0, len(properties))
+		allowed := make([]posthog.AllowedProperty, 0, len(properties))
 		for name, filter := range properties {
-			allowed = append(allowed, kittelemetry.AllowTelemetryProperty(name, kittelemetry.TelemetryPropertyFilter(filter)))
+			allowed = append(allowed, posthog.AllowProperty(name, filter))
 		}
-		options = append(options, kittelemetry.WithAllowedEvent(event, allowed...))
+		options = append(options, posthog.WithAllowedEvent(event, allowed...))
 	}
 	return options
 }
@@ -218,51 +193,12 @@ func (r *Reporter) Close() error {
 		return nil
 	}
 	var err error
-	for _, client := range []kittelemetry.PostHogClient{r.daemon, r.backend} {
+	for _, client := range []posthog.Client{r.daemon, r.backend} {
 		if client != nil {
 			err = errors.Join(err, client.Close())
 		}
 	}
 	return err
-}
-
-func safeTelemetryToken(value any) (any, bool) {
-	text, ok := value.(string)
-	if !ok {
-		return nil, false
-	}
-	text = strings.TrimSpace(text)
-	if text == "" || len(text) > 64 {
-		return nil, false
-	}
-	for i := range len(text) {
-		b := text[i]
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
-			(b >= '0' && b <= '9') || b == '_' || b == '-' || b == '.' {
-			continue
-		}
-		return nil, false
-	}
-	return text, true
-}
-
-func safeTelemetryNumber(value any) (any, bool) {
-	switch v := value.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return v, true
-	case float32:
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-			return nil, false
-		}
-		return v, true
-	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return nil, false
-		}
-		return v, true
-	default:
-		return nil, false
-	}
 }
 
 // loadOrCreateInstallID returns the install ID and when it was created. A zero

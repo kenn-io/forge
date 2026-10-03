@@ -2,7 +2,6 @@ package telemetryapi
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -37,22 +36,10 @@ func (s *Handlers) CaptureTelemetryEvent(
 			httpapi.CodeBadRequest, "telemetry event is too long", nil,
 		)
 	}
-	if !telemetrypkg.EventAllowed(event) {
+	if !telemetrypkg.UIEventAllowed(event) {
 		return nil, httpapi.BadRequest(
 			httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 		)
-	}
-
-	safeProperties, err := telemetrypkg.SanitizeProperties(
-		event, input.Body.Properties,
-	)
-	if err != nil {
-		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
-			return nil, httpapi.BadRequest(
-				httpapi.CodeBadRequest, "unsupported telemetry event", nil,
-			)
-		}
-		return nil, httpapi.Internal("sanitize telemetry event failed")
 	}
 
 	if s.Telemetry == nil || !s.Telemetry.Enabled() {
@@ -62,12 +49,8 @@ func (s *Handlers) CaptureTelemetryEvent(
 		}, nil
 	}
 
-	if err := s.Telemetry.Capture(event, safeProperties); err != nil {
-		if errors.Is(err, telemetrypkg.ErrUnsupportedEvent) {
-			return nil, httpapi.BadRequest(
-				httpapi.CodeBadRequest, "unsupported telemetry event", nil,
-			)
-		}
+	// The reporter drops properties its allowlist omits.
+	if err := s.Telemetry.Capture(event, input.Body.Properties); err != nil {
 		return nil, httpapi.Internal("capture telemetry event failed")
 	}
 	return &telemetryEventOutput{

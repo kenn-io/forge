@@ -25,7 +25,7 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
-		strings.NewReader(`{"event":"app_loaded","properties":{"view":"pulls","distinct_id":"ignored"}}`),
+		strings.NewReader(`{"event":"app_opened","properties":{"surface":"web"}}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
@@ -33,10 +33,8 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 	srv.ServeHTTP(rr, req)
 
 	assert.Equal(http.StatusAccepted, rr.Code)
-	assert.Equal("app_loaded", telemetry.Event)
-	assert.Equal("pulls", telemetry.Properties["view"])
-	assert.NotContains(telemetry.Properties, "distinct_id")
-	assert.True(telemetry.Properties["$geoip_disable"].(bool))
+	assert.Equal("app_opened", telemetry.Event)
+	assert.Equal(map[string]any{"surface": "web"}, telemetry.Properties)
 
 	var body telemetryapi.TelemetryEventResponse
 	err := json.NewDecoder(rr.Body).Decode(&body)
@@ -53,7 +51,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
 		"/api/v1/telemetry/events",
-		strings.NewReader(`{"event":"app_loaded"}`),
+		strings.NewReader(`{"event":"app_opened"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()

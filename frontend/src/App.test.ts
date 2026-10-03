@@ -484,6 +484,30 @@ describe("App feature routes", () => {
     expect(finalized).toHaveBeenCalledOnce();
   });
 
+  it("reports app_opened through the daemon route", async () => {
+    localStorage.removeItem("kit-ui.app-opened.web");
+    const posts: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      posts.push({ url: request.url, body: await request.json() });
+      return Response.json({ status: "queued" }, { status: 202 });
+    });
+    let appOpens: { interruptUnsafe: () => void } | undefined;
+    const runtime: OwnedAppRuntime = {
+      ...testAppRuntime(() => {}),
+      runCommand: <A, E>(program: unknown, options: { readonly operation: string }): AppExecution<A, E> => {
+        if (options.operation === "report app opens") appOpens = Effect.runFork(program as Effect.Effect<A, E>);
+        return { interrupt: () => appOpens?.interruptUnsafe(), await: Effect.never, exit: new Promise(() => {}) };
+      },
+    };
+    const mounted = mountApplication(createAppTarget(), runtime);
+
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]?.url).toMatch(/\/api\/v1\/telemetry\/events$/);
+    expect(posts[0]?.body).toEqual({ event: "app_opened", properties: { surface: "web" } });
+    await Effect.runPromise(mounted.dispose);
+  });
+
   it("reports a non-interruption root finalizer defect", async () => {
     const target = createAppTarget();
     const reportFailure = vi.fn();

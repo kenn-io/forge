@@ -79,7 +79,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 		wantBackend int
 	}{
 		{name: "daemon_active goes to daemon", event: "daemon_active", wantDaemon: 1},
-		{name: "app_loaded goes to backend", event: " app_loaded ", wantBackend: 1},
+		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},
 		{name: "empty event", event: " "},
 	}
@@ -128,29 +128,12 @@ func TestDisabledReporterIsNoOp(t *testing.T) {
 	}
 }
 
-func TestSanitizePropertiesAddsNonOverridablePrivacyAndApplication(t *testing.T) {
+func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {
 	assert := assert.New(t)
-	require := require.New(t)
 
-	properties, err := SanitizeProperties("app_loaded", map[string]any{
-		"$geoip_disable":          false,
-		"$process_person_profile": true,
-		"application":             "caller-app",
-		"view":                    "pulls",
-	})
-	require.NoError(err)
-
-	assert.Equal("pulls", properties["view"])
-	assert.False(properties["$process_person_profile"].(bool))
-	assert.True(properties["$geoip_disable"].(bool))
-	assert.Equal("kenn-forge", properties["application"])
-}
-
-func TestSanitizePropertiesDropsUnsafePropertyValues(t *testing.T) {
-	properties, err := SanitizeProperties("app_loaded", map[string]any{"view": "owner/repo"})
-	require.NoError(t, err)
-
-	assert.NotContains(t, properties, "view")
+	assert.True(UIEventAllowed(" app_opened "))
+	assert.False(UIEventAllowed("daemon_active"))
+	assert.False(UIEventAllowed("app_loaded"))
 }
 
 func TestLoadOrCreateInstallIDRecordsCreationTimeOnce(t *testing.T) {

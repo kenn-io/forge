@@ -1,9 +1,11 @@
 import { initMarkdownImageViewer } from "@kenn-io/kit-ui";
+import { startAppOpenedReporting } from "@kenn-io/kit-ui/utils/app-opened";
 import { initMarkdownMermaidRendering } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { Cause, Effect, Exit, Fiber } from "effect";
 import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
+import { orvalRequest } from "../api/runtime.js";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 
@@ -47,6 +49,22 @@ const observeMarkdownMermaidRendering = (target: HTMLElement) =>
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 
+const reportAppOpens = Effect.acquireRelease(
+  Effect.sync(() =>
+    startAppOpenedReporting({
+      route: "/telemetry/events",
+      surface: "web",
+      post: (route, event) =>
+        orvalRequest(route, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(event),
+        }),
+    }),
+  ),
+  (stop) => Effect.sync(stop),
+).pipe(Effect.andThen(Effect.never));
+
 export function mountApplication(
   target: HTMLElement,
   runtime: OwnedAppRuntime,
@@ -62,9 +80,15 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
+  const appOpens = runtime.runCommand(Effect.scoped(reportAppOpens), {
+    operation: "report app opens",
+    safeContext: {},
+    onFailure: () => {},
+  });
   const root = Effect.scoped(appProgram(target, runtime)).pipe(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
+    Effect.ensuring(Effect.sync(appOpens.interrupt)),
     Effect.ensuring(runtime.disposeEffect),
   );
   const rootFiber = Effect.runFork(root);

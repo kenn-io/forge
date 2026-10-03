@@ -87,13 +87,6 @@ func TestMain(m *testing.M) {
 	os.Exit(serverfake.RunMain(m, func() int { return gitsafe.RunIsolatedMain(m) }))
 }
 
-func runParallelServerTest(t *testing.T) {
-	t.Helper()
-	t.Parallel()
-	require.NoError(t, serverfake.ParallelServerTestSlots.Acquire(t.Context(), 1))
-	t.Cleanup(func() { serverfake.ParallelServerTestSlots.Release(1) })
-}
-
 func runSerialPTYE2E(t *testing.T) {
 	t.Helper()
 	releasePTYSlot := acquirePTYE2ESlot(t)
@@ -403,7 +396,7 @@ func insertTestActivityPR(
 }
 
 func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	var providerCalls atomic.Int64
 	mock := &serverfake.MockGH{
@@ -462,7 +455,7 @@ func TestAPIQueuedPRSyncRechecksRemovedUpstreamBeforeProviderCall(t *testing.T) 
 // frontend's default detail-load flow uses this path, so without
 // persistence the Approve Workflows button never appears.
 func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &serverfake.MockGH{
@@ -524,7 +517,7 @@ func TestAPIEnqueuePRSyncPersistsWorkflowApproval(t *testing.T) {
 }
 
 func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -636,7 +629,7 @@ func TestAPIGitLabConfiguredRepoSyncThroughProviderRegistry(t *testing.T) {
 }
 
 func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -729,7 +722,7 @@ func TestAPIGitLabClosedSyncPersistsMergedActorForImmediateDetail(t *testing.T) 
 }
 
 func TestAPIScheduledMergedActorRepairRefreshesOpenDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -896,7 +889,7 @@ name = "widget"
 // SourceSet, sync runs are triggered over HTTP, and the credential git
 // actually receives is captured per invocation. The reload rotates the
 // Forgejo host's token, and git fetches must follow it.
-func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) {
+func TestAPIForgejoHostCloneFetchFollowsReloadedToken(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_FORGEJO_TOKEN_A, KENN_FORGE_FORGEJO_TOKEN_B, PATH, KENN_FORGE_TEST_GIT_CAPTURE, KENN_FORGE_TEST_REAL_GIT through installCredentialCapturingGit
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1102,7 +1095,7 @@ func parseCapturedCredentials(raw string) []string {
 }
 
 func TestAPICloseIssue(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, database, _ := setupTestServer(t)
@@ -1128,7 +1121,7 @@ func TestAPICloseIssue(t *testing.T) {
 // mergeable state observation time is the mutation request time whenever the
 // response reports a concrete state and nil for unknown/empty.
 func TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	mutationRequestedAt := time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC)
 	reviewObservedAt := time.Date(2026, 9, 5, 8, 0, 0, 0, time.UTC)
 	ciObservedAt := time.Date(2026, 9, 6, 9, 0, 0, 0, time.UTC)
@@ -1243,7 +1236,7 @@ func TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI(t *testing.T
 // observation time is the mutation request time whenever the response
 // reports a concrete state and nil for unknown.
 func TestAPISetPRGitHubStateStampsMergeableStateAndCarriesReviewAndCI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	mutationRequestedAt := time.Date(2026, 9, 21, 11, 0, 0, 0, time.UTC)
 	reviewObservedAt := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
 	ciObservedAt := time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC)
@@ -1325,7 +1318,7 @@ func TestAPISetPRGitHubStateStampsMergeableStateAndCarriesReviewAndCI(t *testing
 // observation time is the refetch request time whenever the refetched PR
 // reports a concrete state and nil for unknown.
 func TestAPISetPRGitHubState422RefetchStampsMergeableStateAndCarriesReviewAndCI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	refetchRequestedAt := time.Date(2026, 9, 22, 12, 0, 0, 0, time.UTC)
 	reviewObservedAt := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
 	ciObservedAt := time.Date(2026, 9, 4, 9, 0, 0, 0, time.UTC)
@@ -1409,7 +1402,7 @@ func TestAPISetPRGitHubState422RefetchStampsMergeableStateAndCarriesReviewAndCI(
 }
 
 func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1496,7 +1489,7 @@ func TestAPIGetIssueWorkspaceUsesProviderScopedLookup(t *testing.T) {
 }
 
 func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1585,7 +1578,7 @@ func TestAPIGetPRWorkspaceUsesProviderScopedLookup(t *testing.T) {
 }
 
 func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -1642,7 +1635,7 @@ func TestAPICreateWorkspaceRejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 }
 
 func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -1696,7 +1689,7 @@ func TestAPICreateWorkspaceRejectsOmittedProviderForUnambiguousRepo(t *testing.T
 // the HTTP API. Exercises: GraphQL HTTP → adapter → NormalizeIssue →
 // UpsertIssue → HTTP API handler → JSON response.
 func TestMRListIncludesWorktreeLinks(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	prID := serverfake.SeedPR(t, database, "acme", "widget", 1)
@@ -1728,7 +1721,7 @@ func TestMRListIncludesWorktreeLinks(t *testing.T) {
 }
 
 func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	prID := serverfake.SeedPR(t, database, "acme", "widget", 1)
@@ -1758,7 +1751,7 @@ func TestMRDetailIncludesWorktreeLinks(t *testing.T) {
 }
 
 func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupGitLabCapabilityServer(t)
@@ -1874,7 +1867,7 @@ func TestAPIGitLabProviderCapabilitiesExposeOnResponses(t *testing.T) {
 }
 
 func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupGitLabCapabilityServer(t)
 
 	tests := []struct {
@@ -2015,7 +2008,7 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 // `code = "unsupportedCapability"` and `details.capability` carrying the
 // capability the route required. Frontend callers branch on `code`.
 func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupGitLabCapabilityServer(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -2039,7 +2032,7 @@ func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
 }
 
 func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2147,7 +2140,7 @@ func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 }
 
 func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2273,7 +2266,7 @@ func TestAPIDiffReviewDraftRejectsInvalidLineCoordinates(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -2325,7 +2318,7 @@ func TestAPIPublishReviewDraftRejectsStoredCommentWithoutDiffHeadSHA(t *testing.
 }
 
 func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2378,7 +2371,7 @@ func TestAPIPublishReviewDraftUsesPlatformHeadSHAWhenDiffHeadIsUnavailable(t *te
 }
 
 func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2460,7 +2453,7 @@ func TestAPIPublishReviewDraftMapsStaleProviderErrorToConflict(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2542,7 +2535,7 @@ func TestAPIPublishReviewDraftMapsPartialStaleProviderErrorToConflict(t *testing
 }
 
 func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -2594,7 +2587,7 @@ func TestAPIPublishReviewDraftRejectsMultilineRangeWithoutCapability(t *testing.
 }
 
 func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2679,7 +2672,7 @@ func TestAPIGitLabPublishReviewDraftApprovesWithDiffPositionSHAs(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -2745,7 +2738,7 @@ func TestAPIPublishReviewDraftPreservesDraftWhenPartialStatusIsUnknown(t *testin
 }
 
 func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -2905,7 +2898,7 @@ func TestAPIPublishReviewDraftPersistsProviderReviewThreads(t *testing.T) {
 }
 
 func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -3001,7 +2994,7 @@ func TestAPIGitLabSyncKeepsCanonicalReviewThreadWhenProviderReturnsReplies(t *te
 }
 
 func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:  true,
@@ -3077,7 +3070,7 @@ func TestAPIGitLabSyncRemovesMissingReviewThreadTimelineEvents(t *testing.T) {
 }
 
 func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -3149,7 +3142,7 @@ func TestAPIGitLabSyncPrunesLegacyPositionedNoteCommentEvents(t *testing.T) {
 }
 
 func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -3275,7 +3268,7 @@ func TestAPIPublishReviewDraftReconcilesAfterTransientThreadIngestFailure(t *tes
 }
 
 func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	caps := platform.Capabilities{
@@ -3349,7 +3342,7 @@ func TestAPIResolveReviewThreadPersistsProviderState(t *testing.T) {
 }
 
 func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:       true,
@@ -3414,7 +3407,7 @@ func TestAPIResolveReviewThreadReturnsServerErrorForCorruptStoredThread(t *testi
 }
 
 func TestAPIPullDetailAttachesReviewThreadMetadata(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupGitLabCapabilityServer(t)
@@ -3504,7 +3497,7 @@ func seedApplySuggestionReviewThread(t *testing.T, database *db.DB, mrID int64) 
 }
 
 func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3585,7 +3578,7 @@ func TestAPIApplyReviewSuggestionPassesStoredThreadRangeToProvider(t *testing.T)
 }
 
 func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3638,7 +3631,7 @@ func TestAPIApplyReviewSuggestionRejectsNonOpenPullRequest(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3688,7 +3681,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedWithoutCommitMetadata(t *testing.
 }
 
 func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3738,7 +3731,7 @@ func TestAPIApplyReviewSuggestionReturnsAppliedForNilProviderResult(t *testing.T
 }
 
 func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3788,7 +3781,7 @@ func TestAPIApplyReviewSuggestionProviderErrorQueuesDetailSync(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -3836,7 +3829,7 @@ func TestAPIApplyReviewSuggestionBroadcastsAfterDetailSync(t *testing.T) {
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3901,7 +3894,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementOutsideStoredSuggestion(t *te
 }
 
 func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -3994,7 +3987,7 @@ func TestAPIApplyReviewSuggestionRejectsReplacementInsideIndentedExampleFence(t 
 }
 
 func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailSync(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -4045,7 +4038,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 }
 
 func TestAPIApplyReviewSuggestionRejectsStaleHead(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
 		ReadRepositories:            true,
@@ -4245,6 +4238,7 @@ func assertUnsupportedCapabilityProblem(
 // Should contain an empty array, not null.
 
 func TestAPIGetPullDetailIncludesAssociatedWorkspace(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -4349,7 +4343,7 @@ func setupTestServerWithClonesAndServer(t *testing.T) (
 }
 
 func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	_, _, _, _, _, srv := setupTestServerWithClonesAndServer(t)
@@ -4377,7 +4371,7 @@ func TestAPIGetRepoCommitDiffRejectsOptionLikeSHA(t *testing.T) {
 }
 
 func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -4432,7 +4426,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 }
 
 func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -4488,7 +4482,7 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 }
 
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -4556,7 +4550,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 }
 
 func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
 	key := db.WorkspaceSubjectKey{
@@ -4598,7 +4592,7 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 }
 
 func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, syncer := setupTestServer(t)
@@ -4655,7 +4649,7 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -4704,7 +4698,7 @@ func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {
 }
 
 func TestAPIListActivityScopesNotificationsToTrackedRepos(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupNotificationsEnabledTestServer(t)
@@ -5217,6 +5211,7 @@ func waitForWorkspaceStatus(
 }
 
 func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	client, database, _, _ := setupTestServerWithWorkspaces(t)
@@ -5330,6 +5325,7 @@ func TestListWorkspacesIncludesItemLastActivityAt(t *testing.T) {
 }
 
 func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	if testing.Short() {
 		t.Skip("workspace e2e tests skipped in short mode")
@@ -5375,6 +5371,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -5450,7 +5447,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 }
 
 func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -5963,7 +5960,7 @@ func cleanupPtyOwnerWorkspace(
 }
 
 func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -6006,6 +6003,7 @@ func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *tes
 }
 
 func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -6104,6 +6102,7 @@ exit 0
 }
 
 func TestWorkspaceRuntimeLaunchAgentCreatesProbeableTmuxSessionE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -6220,7 +6219,7 @@ exit 0
 		return listed != nil && listed.TmuxWorking &&
 			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
 			listed.TmuxPaneTitle != nil
-	}, 2*time.Second, 10*time.Millisecond)
+	}, 5*time.Second, 10*time.Millisecond)
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
@@ -6239,6 +6238,7 @@ exit 0
 func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("stored runtime tmux probing is Unix-only")
 	}
@@ -6345,6 +6345,7 @@ exit 0
 func TestWorkspaceRuntimeLaunchTmuxOwnerMarkerFailureRejectsSessionE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -6547,6 +6548,7 @@ func tmuxNewSessionPaneCommand(argv []string) string {
 func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -6614,6 +6616,7 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -6665,6 +6668,7 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 func TestWorkspaceRuntimeStopTmuxCleanupFailureRetainsStoredSessionE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -6755,7 +6759,7 @@ exit 0
 }
 
 func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -6922,6 +6926,7 @@ func pinWorkspaceMergeRequestForReview(
 }
 
 func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -6956,6 +6961,7 @@ func TestMergeWorkspaceCleanupDeletesWorkspaceAfterConfirmedMerge(t *testing.T) 
 }
 
 func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	if testing.Short() {
@@ -7028,7 +7034,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 	assert.Equal(runtimeSession, runtimeRows[0].TmuxSession)
 }
 
-func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) {
+func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_FAKE_TMUX_STATE, KENN_FORGE_FAKE_TMUX_ATTACH_GATE, KENN_FORGE_FAKE_TMUX_ATTACH_EXIT through writeFakeWorkspaceRuntimeTmux
 	if runtime.GOOS == "windows" {
 		t.Skip("fake tmux fixture uses Unix shell semantics")
 	}
@@ -7063,7 +7069,7 @@ func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) {
 	assert.Empty(stored)
 }
 
-func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *testing.T) {
+func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_FAKE_TMUX_STATE, KENN_FORGE_FAKE_TMUX_ATTACH_GATE, KENN_FORGE_FAKE_TMUX_ATTACH_EXIT through writeFakeWorkspaceRuntimeTmux
 	if runtime.GOOS == "windows" {
 		t.Skip("fake tmux fixture uses Unix shell semantics")
 	}
@@ -7153,7 +7159,7 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
+func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_FAKE_TMUX_STATE, KENN_FORGE_FAKE_TMUX_ATTACH_GATE, KENN_FORGE_FAKE_TMUX_ATTACH_EXIT through writeFakeWorkspaceRuntimeTmux
 	if runtime.GOOS == "windows" {
 		t.Skip("fake tmux fixture uses Unix shell semantics")
 	}
@@ -7234,7 +7240,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) {
 	)
 }
 
-func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(t *testing.T) {
+func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_FAKE_TMUX_STATE, KENN_FORGE_FAKE_TMUX_ATTACH_GATE, KENN_FORGE_FAKE_TMUX_ATTACH_EXIT through writeFakeWorkspaceRuntimeTmux
 	if runtime.GOOS == "windows" {
 		t.Skip("fake tmux fixture uses Unix shell semantics")
 	}
@@ -7391,6 +7397,7 @@ func workspaceTerminalDialWithQuery(
 func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Skip("tmux not available")
@@ -7725,7 +7732,7 @@ func serverRuntimeHelperCommand(mode string) []string {
 	}
 }
 
-func TestServerRuntimeHelperProcess(t *testing.T) {
+func TestServerRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	args := os.Args
 	if sep := slices.Index(args, "--"); sep >= 0 {
 		args = args[sep+1:]
@@ -7783,7 +7790,7 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 	}
 }
 
-func TestServerPtyOwnerHelperProcess(t *testing.T) {
+func TestServerPtyOwnerHelperProcess(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	args := os.Args
 	sep := slices.Index(args, "--")
 	if sep >= 0 {
@@ -7870,7 +7877,7 @@ type rawIssueDetailResponse struct {
 }
 
 func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8017,7 +8024,7 @@ func TestWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 }
 
 func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8168,7 +8175,7 @@ func TestKataWorkspaceManualRefreshDiscoversAndSyncsAssociatedPR(t *testing.T) {
 }
 
 func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -8256,7 +8263,7 @@ func TestWorkspaceManualRefreshSkipsRemovedIssueProviderDetail(t *testing.T) {
 // association discovery proceeds, the targeted PR-detail update still runs,
 // and the tolerated partial failure stays recorded in repo sync health.
 func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8348,7 +8355,7 @@ func TestWorkspaceRefreshProceedsThroughIssueScopePartialSyncFailure(t *testing.
 // association/PR-detail refresh must not continue — while sync health still
 // records the failure.
 func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8442,7 +8449,7 @@ func TestWorkspaceRefreshAbortsOnMergeRequestScopePartialSyncFailure(t *testing.
 }
 
 func TestWorkspaceManualRefreshReturnsAssociationInspectionError(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8557,7 +8564,7 @@ func readEventMatching(
 func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 	t *testing.T,
 ) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8618,7 +8625,7 @@ func TestWorkspaceCreateWithLocalBaseUsesPullRefWhenHeadBranchDeleted(
 func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 	t *testing.T,
 ) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8693,7 +8700,7 @@ func TestWorkspaceCreateGitLabUsesSpecificMergeRequestHeadRefE2E(
 }
 
 func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8751,7 +8758,7 @@ func TestWorkspaceCreateReusesExistingWorktreeThroughAPI(t *testing.T) {
 }
 
 func TestWorkspaceRetryReusesExistingLocalHeadBranchThroughAPI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8874,7 +8881,7 @@ func setupHTTPWorktreeBaseForServerTest(
 }
 
 func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -8923,7 +8930,7 @@ func TestWorkspaceCreatePortQualifiedHostTracksOriginBranchE2E(t *testing.T) {
 }
 
 func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -8996,6 +9003,7 @@ func TestWorkspaceDeleteDoesNotCleanupReplacementCloneFromStaleLocalBaseE2E(t *t
 // observation ages out the projection returns to branch inference, which
 // restores the open predecessor the merge safeguard must block on.
 func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{})
@@ -9012,7 +9020,7 @@ func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 }
 
 func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)

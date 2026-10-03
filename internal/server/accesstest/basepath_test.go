@@ -34,6 +34,7 @@ func setupWithBasePath(t *testing.T, basePath string, frontend fs.FS) *server.Se
 }
 
 func TestBasePathAPIRouting(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -72,6 +73,7 @@ func TestBasePathAPIRouting(t *testing.T) {
 }
 
 func TestBasePathInjectsScript(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -88,6 +90,7 @@ func TestBasePathInjectsScript(t *testing.T) {
 }
 
 func TestBasePathRewritesAssetURLs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head><link href="/assets/index.css"></head><body><script src="/assets/index.js"></script></body></html>`),
@@ -107,6 +110,7 @@ func TestBasePathRewritesAssetURLs(t *testing.T) {
 }
 
 func TestCrossOriginProtectionRejectsCrossSite(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupWithBasePath(t, "/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
@@ -120,6 +124,7 @@ func TestCrossOriginProtectionRejectsCrossSite(t *testing.T) {
 }
 
 func TestCrossOriginProtectionAllowsSameOrigin(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupWithBasePath(t, "/", nil)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/sync", nil)
@@ -132,6 +137,7 @@ func TestCrossOriginProtectionAllowsSameOrigin(t *testing.T) {
 }
 
 func TestCrossOriginProtectionAllowsNativeClient(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupWithBasePath(t, "/", nil)
 
 	// Native clients do not send browser origin metadata.
@@ -143,6 +149,7 @@ func TestCrossOriginProtectionAllowsNativeClient(t *testing.T) {
 }
 
 func TestCrossOriginProtectionAppliesUnderBasePath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 
 	body := strings.NewReader(`{"body":"test"}`)
@@ -159,6 +166,7 @@ func TestCrossOriginProtectionAppliesUnderBasePath(t *testing.T) {
 }
 
 func TestBasePathDocsAndOpenAPIUsePrefixedURLs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{

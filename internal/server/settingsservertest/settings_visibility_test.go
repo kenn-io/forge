@@ -16,6 +16,7 @@ import (
 )
 
 func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
@@ -54,6 +55,7 @@ func TestHandleUpdateRepoUIVisibilityFollowsRenamedRoute(t *testing.T) {
 }
 
 func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
@@ -125,6 +127,7 @@ func TestRepoUIVisibilityDoesNotFollowReusedRoute(t *testing.T) {
 }
 
 func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)
@@ -168,6 +171,7 @@ func TestRepoUIVisibilityRejectsStaleTrackedIdentity(t *testing.T) {
 }
 
 func TestHandleUpdateRepoUIVisibilityReportsRouteOnlyTrackedRef(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := servertest.SetupTestServerWithConfig(t)

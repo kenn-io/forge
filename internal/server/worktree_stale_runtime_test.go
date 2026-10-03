@@ -16,6 +16,7 @@ import (
 )
 
 func TestRemoveStaleWorktreeRouteStopsRuntimeSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	require := require.New(t)
 	assert := assert.New(t)

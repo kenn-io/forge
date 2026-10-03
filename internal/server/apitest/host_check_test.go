@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -44,6 +45,7 @@ import (
 // (127.0.0.1:8091) reaches the handler and returns 200 with the
 // seeded PR list.
 func TestHostValidationE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := setupHostValidationServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 
@@ -78,6 +80,7 @@ func TestHostValidationE2E(t *testing.T) {
 }
 
 func TestHostValidationUsesConfigDerivedTrustedProxyE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := setupHostValidationServerFromConfig(t, `host = "127.0.0.1"
 port = 8091
 allowed_hosts = ["proxy.local:8091", "forge.example"]
@@ -104,6 +107,7 @@ trust_reverse_proxy = true
 }
 
 func TestHostValidationTrustedProxyE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := setupHostValidationServer(t, authapi.HostCheckOptions{
 		Bind: config.HostKey{Host: "127.0.0.1", Port: "8091"},
 		Allowed: []config.HostKey{

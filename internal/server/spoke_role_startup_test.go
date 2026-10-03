@@ -27,6 +27,7 @@ func (t *countingNodeRoleTransport) RoundTrip(*http.Request) (*http.Response, er
 }
 
 func TestInactiveFleetNodeKeepsLocalServicesWithoutProviderPlane(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &countingNodeRoleTransport{}

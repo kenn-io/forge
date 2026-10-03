@@ -11,6 +11,7 @@ import (
 )
 
 func TestWorkspaceMergeTargetBranchRejectsRemovedPullRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	ctx := t.Context()

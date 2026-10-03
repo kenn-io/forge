@@ -267,6 +267,7 @@ func readRuntimeLaunchIDs(t *testing.T, path string) []string {
 }
 
 func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	tests := []struct {
 		name             string
@@ -425,6 +426,7 @@ func TestCommandSameKeyPersistenceOwnership(t *testing.T) {
 }
 
 func TestProjectWorktreeShellPersistenceOwnership(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -500,6 +502,7 @@ func TestProjectWorktreeShellPersistenceOwnership(t *testing.T) {
 func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -545,6 +548,7 @@ func TestHostRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 func TestHostRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -590,6 +594,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 func TestHostRuntimeLaunchPersistenceFailurePreservesReattachedTmuxBackend(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -636,7 +641,7 @@ func TestHostRuntimeLaunchPersistenceFailurePreservesReattachedTmuxBackend(
 	assert.Equal(original.TmuxSession, rows[0].SessionName)
 }
 
-func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersistenceError(
+func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersistenceError( //nolint:paralleltest // swaps slog.Default to capture logs
 	t *testing.T,
 ) {
 	requirePTYAvailable(t)
@@ -684,6 +689,7 @@ func TestHostRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersi
 func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	tests := []struct {
 		name string
@@ -775,6 +781,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureRollsBackNewTmuxSession(
 func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSession(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	tests := []struct {
 		name string
@@ -860,6 +867,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReusedTmuxSessio
 func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReattachedCommandBackend(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -917,7 +925,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailurePreservesReattachedComman
 	assert.Equal(original.TmuxSession, rows[0].SessionName)
 }
 
-func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersistenceError(
+func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPreservesPersistenceError( //nolint:paralleltest // swaps slog.Default to capture logs
 	t *testing.T,
 ) {
 	requirePTYAvailable(t)
@@ -972,6 +980,7 @@ func TestProjectWorktreeRuntimeLaunchPersistenceFailureLogsRollbackFailureAndPre
 }
 
 func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	tests := []struct {
 		name      string
@@ -1113,6 +1122,7 @@ func TestRuntimeSessionExitDuringPersistenceLeavesNoDurableRow(t *testing.T) {
 func TestForgetHostRuntimeCommandSessionIfExitedKeepsLiveAndNewerRows(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	assert := assert.New(t)
 	require := require.New(t)

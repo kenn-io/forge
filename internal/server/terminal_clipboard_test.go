@@ -29,6 +29,7 @@ func (c *recordingTerminalClipboard) WriteText(
 }
 
 func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name       string
 		remoteAddr string
@@ -88,6 +89,7 @@ func TestTerminalClipboardWriteRequiresLoopbackAndCSRF(t *testing.T) {
 }
 
 func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	const text = "clipboard — Unicode\u00a0text"
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
@@ -114,6 +116,7 @@ func TestTerminalClipboardWritePreservesUnicode(t *testing.T) {
 }
 
 func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	clipboard := &recordingTerminalClipboard{}
 	srv := New(
 		serverfake.OpenTestDB(t), nil, nil, "/", nil,
@@ -141,6 +144,7 @@ func TestTerminalClipboardWriteRejectsOversizedText(t *testing.T) {
 }
 
 func TestTerminalClipboardWriteReportsNativeFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	clipboard := &recordingTerminalClipboard{
 		err: errors.New("clipboard unavailable"),
 	}

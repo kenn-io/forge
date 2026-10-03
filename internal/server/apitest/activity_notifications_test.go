@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -85,6 +86,7 @@ func activityItemKey(it generated.ActivityItemResponse) string {
 // serialization -> generated client) that the DB-unit and Svelte-component
 // tests cannot give on their own.
 func TestActivityNotificationsFullStack(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

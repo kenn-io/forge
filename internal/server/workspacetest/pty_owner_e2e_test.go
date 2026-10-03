@@ -43,7 +43,7 @@ var rustPtyManagerBuild struct {
 	err  error
 }
 
-func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
+func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMPDIR through setLongUnixTempDirForTest
 	requirePTYAvailable(t)
 
 	require := require.New(t)
@@ -108,7 +108,7 @@ func TestWorkspaceCreatesRustPtyManagerSessionE2E(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
-func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
+func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMPDIR through setLongUnixTempDirForTest
 	requirePTYAvailable(t)
 
 	require := require.New(t)
@@ -165,7 +165,7 @@ func TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E(t *testing.T) {
 	deleteWorkspaceForPtyOwnerTest(t, ctx, fixture, ws.ID)
 }
 
-func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.T) {
+func TestWorkspaceRuntimeResizeOwnerFollowsLatestDeliberateClientE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMPDIR through setLongUnixTempDirForTest
 	if runtime.GOOS == "windows" {
 		t.Skip("stty-based terminal size probe requires a Unix PTY")
 	}
@@ -1464,7 +1464,7 @@ func workspaceRuntimeHelperCommand(mode string) []string {
 	}
 }
 
-func TestWorkspaceRuntimeHelperProcess(t *testing.T) {
+func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	args := os.Args
 	sep := slices.Index(args, "--")
 	if sep < 0 || len(args) <= sep+2 || args[sep+1] != workspaceRuntimeHelperMarker {

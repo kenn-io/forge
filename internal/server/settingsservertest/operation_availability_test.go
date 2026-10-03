@@ -28,6 +28,7 @@ import (
 )
 
 func TestDeriveOperationAvailability(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	allCaps := httpapi.ProviderCapabilitiesResponse{
 		ReadRepositories:            true,
 		ReadMergeRequests:           true,
@@ -320,6 +321,7 @@ func TestDeriveOperationAvailability(t *testing.T) {
 }
 
 func TestOperationRateLimitChecksAllBuckets(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
 	restRate := operationapi.RateLimitAvailability{
 		Limited: true,
@@ -347,6 +349,7 @@ func TestOperationRateLimitChecksAllBuckets(t *testing.T) {
 }
 
 func TestFormatRateLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	resetAt := time.Date(2026, 5, 19, 14, 35, 0, 0, time.UTC)
@@ -383,6 +386,7 @@ func newServerWithRateTracker(t *testing.T) (*server.Server, *db.DB, *ratelimit.
 }
 
 func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -405,6 +409,7 @@ func TestAPIRepoResponseIncludesOperationsHealthy(t *testing.T) {
 }
 
 func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, name := range []string{"provider reset", "unknown quota"} {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
@@ -439,6 +444,7 @@ func TestAPIRepoResponseIncludesOperationsRateLimited(t *testing.T) {
 }
 
 func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -488,6 +494,7 @@ func TestAPIRepoResponseIncludesOperationsGraphQLPauseDoesNotBlockREST(t *testin
 }
 
 func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	resetAt := time.Now().UTC().Add(30 * time.Minute)
 
 	t.Run("github reports rest and graphql apply suggestion buckets", func(t *testing.T) {
@@ -671,6 +678,7 @@ func TestAPIRepoResponseApplySuggestionRateBucketsFollowProvider(t *testing.T) {
 }
 
 func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -746,7 +754,7 @@ func TestAPIRepoResponseOperationsGateOnWriteTrackerWhenSplit(t *testing.T) {
 	assert.Equal(operationapi.AvailabilityCodeRateLimited, draft.Code)
 }
 
-func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) {
+func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) { //nolint:paralleltest // t.Setenv writes SPLIT_WRITE_CRED_PAT, SPLIT_WRITE_CRED_PAT_NEW
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -800,6 +808,7 @@ func TestAPIRepoResponseOperationsRequireWriteCredentialWhenSplit(t *testing.T) 
 }
 
 func TestAPIRepoResponseOperationsDistinguishWriteCredentialErrors(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -836,6 +845,7 @@ func (c *writeCredentialProbeClient) ProbeWriteCredential(context.Context) error
 }
 
 func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -873,6 +883,7 @@ func TestAPIRepoResponseProbesRestartBoundWriteCredential(t *testing.T) {
 }
 
 func TestAPIRepoResponseDisablesWritesWhenConfiguredRouterHasNoRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -958,6 +969,7 @@ func newSplitTestServerWithMock(
 }
 
 func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -985,6 +997,7 @@ func TestAPIRepoResponseIncludesOperationsViewerCannotMerge(t *testing.T) {
 }
 
 func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

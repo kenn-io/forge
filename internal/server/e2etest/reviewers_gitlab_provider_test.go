@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 	gitlabprovider "go.kenn.io/forge/platform/gitlab"
 )
@@ -129,6 +130,7 @@ func (f *fakeGitLabReviewerAPI) handler(t *testing.T) http.Handler {
 // second reviewer must keep the existing one by reusing the ID the
 // merge request already reported, not by re-resolving through search.
 func TestGitLabSetPullReviewersRetainsReviewerAbsentFromUserSearch(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -177,6 +179,7 @@ func TestGitLabSetPullReviewersRetainsReviewerAbsentFromUserSearch(t *testing.T)
 // keeping them while adding someone else must reuse the ID the merge
 // request reports.
 func TestGitLabSetPullAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -221,6 +224,7 @@ func TestGitLabSetPullAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T)
 // And the issue route: the retained issue assignee comes from
 // GET /issues/{iid}, not from /users search.
 func TestGitLabSetIssueAssigneesRetainsAssigneeAbsentFromUserSearch(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)

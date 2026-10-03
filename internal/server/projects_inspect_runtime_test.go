@@ -16,6 +16,7 @@ import (
 )
 
 func TestInspectProjectWorktreeCountsStoredTmuxSessionsWithRuntime(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

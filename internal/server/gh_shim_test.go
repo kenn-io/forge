@@ -22,6 +22,7 @@ import (
 )
 
 func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, hubDB, _ := setupTestServer(t)
@@ -89,6 +90,7 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 }
 
 func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, tc := range []struct {
 		name       string
 		providerID platform.RepositoryKey
@@ -119,6 +121,7 @@ func TestGHShimHubRequiresConfiguredProviderIdentity(t *testing.T) {
 }
 
 func TestGHShimTreatsStoredMergeTimeAsMerged(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, database, _ := setupTestServer(t)
@@ -155,6 +158,7 @@ func TestGHShimTreatsStoredMergeTimeAsMerged(t *testing.T) {
 // later. Historical lists are served only after the initial full archive has
 // loaded every discovered pull request.
 func TestGHShimServesHistoricalListsOnlyAfterFullArchiveLoads(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, database, _ := setupTestServer(t)

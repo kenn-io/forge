@@ -7,9 +7,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/routepolicy"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestNormalizeTransportRoutesRejectsInvalidContracts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name   string
 		routes []routepolicy.TransportRoute
@@ -58,6 +60,7 @@ func TestNormalizeTransportRoutesRejectsInvalidContracts(t *testing.T) {
 }
 
 func TestNormalizeTransportRoutesSortsDeterministically(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	routes, err := routepolicy.NormalizeTransportRoutes([]routepolicy.TransportRoute{
 		{Method: http.MethodPost, Path: "/z", Transport: routepolicy.TransportHTTPStream, Accept: "text/event-stream"},
 		{Method: http.MethodGet, Path: "/b", Transport: routepolicy.TransportWebSocket},

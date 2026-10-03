@@ -26,10 +26,12 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
 func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
@@ -45,6 +47,7 @@ func TestAPIArchiveRoutesRemainRegisteredWithoutController(t *testing.T) {
 }
 
 func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, provider, wakeCount, ref := setupArchiveTestServer(t, nil)
@@ -192,6 +195,7 @@ func TestAPIArchiveStartPauseStatusAndReport(t *testing.T) {
 }
 
 func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
 	client := setupTestClient(t, srv)
@@ -293,6 +297,7 @@ func TestAPIArchiveReportExcludesOnlyRemovedUpstreamParents(t *testing.T) {
 }
 
 func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _, _, ref := setupArchiveTestServer(t, nil)
@@ -376,6 +381,7 @@ func TestAPIArchiveValidationAndLimitProblemDetails(t *testing.T) {
 }
 
 func TestAPIArchiveRoutesObeyHostAuthAndCSRFGuards(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _, _, _ := setupArchiveTestServer(t, nil)
@@ -516,6 +522,7 @@ func archiveGeneratedRef(ref platform.RepoRef) generated.ArchiveRepositoryRef {
 }
 
 func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -571,6 +578,7 @@ func TestAPIArchivePacingReportsProviderHeadroom(t *testing.T) {
 }
 
 func TestAPIArchivePacingEmptyWithoutKnownPools(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -597,6 +605,7 @@ func TestAPIArchivePacingEmptyWithoutKnownPools(t *testing.T) {
 // exactly the identities archive admission defers as "provider quota
 // unknown", and omitting them would hide why hydration is blocked.
 func TestAPIArchivePacingReportsPartiallyKnownCredentials(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -638,6 +647,7 @@ func TestAPIArchivePacingReportsPartiallyKnownCredentials(t *testing.T) {
 // per-pool headroom: a large pool at its own limit/5 floor zeroes archive
 // availability even though the smallest pool still has headroom.
 func TestAPIArchivePacingUsesPerPoolReserves(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -689,6 +699,7 @@ func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.R
 }
 
 func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)
@@ -749,6 +760,7 @@ func TestAPIArchiveSnapshotReadsCache(t *testing.T) {
 }
 
 func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, provider, _, ref := setupArchiveTestServer(t, nil)

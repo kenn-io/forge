@@ -11,6 +11,7 @@ import (
 )
 
 func TestPublishWorkspacePRAssociationUpdatesBroadcastsInvalidation(t *testing.T) {
+	t.Parallel()
 	var events []Event
 	h := New(Deps{Broadcast: func(event Event) uint64 {
 		events = append(events, event)
@@ -28,6 +29,7 @@ func TestPublishWorkspacePRAssociationUpdatesBroadcastsInvalidation(t *testing.T
 }
 
 func TestPublishWorkspacePushedHeadResultBroadcastsDomainEvents(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	var events []Event

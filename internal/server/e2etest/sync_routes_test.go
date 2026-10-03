@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -27,6 +28,7 @@ import (
 )
 
 func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -71,6 +73,7 @@ func TestSyncRoutesWithoutProviderSyncerE2E(t *testing.T) {
 // If an accepted queued sync reports completion before its provider pass,
 // clients stop waiting while SQLite still holds the earlier snapshot.
 func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	firstSnapshot := make(chan struct{})
@@ -199,6 +202,7 @@ func TestAcceptedFullSyncStaysRunningUntilQueuedProviderDataPersistsE2E(t *testi
 // If an HTTP-scoped refresh loses its repository binding while coalescing
 // with background work, unrelated repositories bypass their cadence gate.
 func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	selectedEntered := make(chan struct{})
@@ -348,6 +352,7 @@ func TestQueuedScopedHTTPRefreshKeepsBypassRepositoryBoundE2E(t *testing.T) {
 }
 
 func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -482,6 +487,7 @@ func TestSyncListNotModifiedDoesNotChangeRateLimitBudgetE2E(t *testing.T) {
 }
 
 func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var commentRequests atomic.Int32
@@ -584,6 +590,7 @@ func TestSyncItemBudgetExhaustionIdentifiesLocalCeilingE2E(t *testing.T) {
 }
 
 func TestGitLabSyncBudgetExhaustionIncludesWindowE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	var requests atomic.Int32
 	gitlabAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

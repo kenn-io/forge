@@ -16,10 +16,12 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
 func TestNotificationsTriageFlowE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfigContent(t, `
@@ -161,6 +163,7 @@ name = "tools"
 }
 
 func TestNotificationSyncReconcilesReusedRouteE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -323,6 +326,7 @@ name = "widget"
 }
 
 func TestNotificationReadPropagationDefersQueuedAcksOnRefetchRateLimitE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	resetAt := time.Now().UTC().Add(time.Hour).Round(0)
@@ -459,6 +463,7 @@ name = "widget"
 // repository identity to its current route instead of being dropped with the
 // upstream thread left unread.
 func TestNotificationAckPropagatesAfterRepositoryRenameE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

@@ -15,6 +15,7 @@ import (
 )
 
 func TestWorkspaceAgentActivityFlowsThroughHTTPResponsesE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	disableTmuxAgentSessions := false

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -72,6 +73,7 @@ func setupPersistentDocsRouteServer(t *testing.T) (*server.Server, string, strin
 }
 
 func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
@@ -94,6 +96,7 @@ func TestDocsFoldersEndpointListsConfiguredFolders(t *testing.T) {
 }
 
 func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupPersistentDocsRouteServer(t)
@@ -147,6 +150,7 @@ func TestDocsFolderConfigEndpointsAddRenameRemoveAndPersist(t *testing.T) {
 }
 
 func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupPersistentDocsRouteServer(t)
@@ -170,6 +174,7 @@ func TestDocsFolderAddRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupPersistentDocsRouteServer(t)
@@ -264,6 +269,7 @@ func TestDocsFolderAddDerivesIDAndRejectsInvalidRequests(t *testing.T) {
 }
 
 func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -310,6 +316,7 @@ func TestDocsFolderMutationsRequireConfigPersistenceAndRollbackOnSaveFailure(t *
 }
 
 func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -339,7 +346,7 @@ func TestDocsBrowseEndpointListsDirectoriesOnly(t *testing.T) {
 	assert.False(hasFile)
 }
 
-func TestDocsBrowseEndpointExpandsHomeShortcut(t *testing.T) {
+func TestDocsBrowseEndpointExpandsHomeShortcut(t *testing.T) { //nolint:paralleltest // t.Setenv writes HOME
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -355,6 +362,7 @@ func TestDocsBrowseEndpointExpandsHomeShortcut(t *testing.T) {
 }
 
 func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -373,6 +381,7 @@ func TestDocsBrowseEndpointRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsTreeEndpointListsMarkdownOnly(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -390,6 +399,7 @@ func TestDocsTreeEndpointListsMarkdownOnly(t *testing.T) {
 }
 
 func TestDocsFileEndpointReadsAndWritesMarkdown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
@@ -416,6 +426,7 @@ func TestDocsFileEndpointReadsAndWritesMarkdown(t *testing.T) {
 }
 
 func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -439,6 +450,7 @@ func TestDocsSearchEndpointsReturnArrays(t *testing.T) {
 }
 
 func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
@@ -499,6 +511,7 @@ func TestDocsFileCreateDeleteRenameAndBlob(t *testing.T) {
 }
 
 func TestDocsBlobOpenAPIResponseIsBinary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	doc := server.NewOpenAPI()
@@ -517,6 +530,7 @@ func TestDocsBlobOpenAPIResponseIsBinary(t *testing.T) {
 }
 
 func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _ := setupDocsRouteServer(t)
 
@@ -540,6 +554,7 @@ func TestDocsFileEndpointRejectsInvalidPathsAndTypes(t *testing.T) {
 }
 
 func TestDocsSearchEndpointOmitsLineForFilenameOnlyHits(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, root := setupDocsRouteServer(t)
@@ -562,6 +577,7 @@ func TestDocsSearchEndpointOmitsLineForFilenameOnlyHits(t *testing.T) {
 }
 
 func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -576,6 +592,7 @@ func TestDocsSearchEndpointEmptyQueryReturnsEmptyArray(t *testing.T) {
 }
 
 func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -603,6 +620,7 @@ func TestDocsSearchEndpointTruncationAndFailure(t *testing.T) {
 }
 
 func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	goodRoot := t.TempDir()
@@ -631,6 +649,7 @@ func TestDocsSearchEndpointSerializesPartialWarnings(t *testing.T) {
 }
 
 func TestDocsSearchEndpointFindsHitsAcrossFolders(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	rootA := t.TempDir()
@@ -659,6 +678,7 @@ func TestDocsSearchEndpointFindsHitsAcrossFolders(t *testing.T) {
 }
 
 func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -719,6 +739,7 @@ func TestDocsFileMutationsRejectNonLoopback(t *testing.T) {
 }
 
 func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -790,6 +811,7 @@ func TestDocsMutationsRejectBodyTooLarge(t *testing.T) {
 }
 
 func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)
@@ -814,6 +836,7 @@ func TestDocsFileWriteAllowsBodyBelowEditorLimit(t *testing.T) {
 }
 
 func TestDocsReadEndpointsRejectNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _ := setupDocsRouteServer(t)

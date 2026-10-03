@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/syncevents"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // sseFrame is one parsed SSE record. The hub's daemon-level tests parse
@@ -59,6 +60,7 @@ func waitForSubscribe(t *testing.T, srv *server.Server, want int) {
 }
 
 func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -125,6 +127,7 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 }
 
 func TestE2E_SSESinceQueryWorks(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -153,6 +156,7 @@ func TestE2E_SSESinceQueryWorks(t *testing.T) {
 }
 
 func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -194,6 +198,7 @@ func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
 }
 
 func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -229,6 +234,7 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 }
 
 func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -260,6 +266,7 @@ func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
 }
 
 func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -288,6 +295,7 @@ func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {
 }
 
 func TestE2E_SSEFramesAlwaysIncludeID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

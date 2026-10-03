@@ -93,6 +93,7 @@ func authGet(
 }
 
 func TestAPIAuthCookieBootstrapUsesTrustedHTTPS(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts := newTrustedProxyAuthTestServer(t)
@@ -108,6 +109,7 @@ func TestAPIAuthCookieBootstrapUsesTrustedHTTPS(t *testing.T) {
 }
 
 func TestAPIAuthCookieBootstrapIgnoresUntrustedHTTPSHeader(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts := newAuthTestServer(t, "secret-token")
@@ -122,6 +124,7 @@ func TestAPIAuthCookieBootstrapIgnoresUntrustedHTTPSHeader(t *testing.T) {
 }
 
 func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, srv := newTailscaleAuthTestServer(t)
@@ -204,6 +207,7 @@ func TestTailscaleServeIdentityRejectsUntrustedRequests(t *testing.T) {
 }
 
 func TestRemovedFleetMemberCredentialFailsOnNextRequest(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	const (
 		hubID        = "0123456789abcdef0123456789abcdef"
@@ -281,6 +285,7 @@ func TestRemovedFleetMemberCredentialFailsOnNextRequest(t *testing.T) {
 }
 
 func TestPendingHubCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
@@ -342,6 +347,7 @@ func TestPendingHubCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 }
 
 func TestPendingHubCredentialCanRevokeLocalEnrollmentBeforeRoleTransition(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	const (
 		hubID        = "0123456789abcdef0123456789abcdef"
@@ -390,6 +396,7 @@ func TestPendingHubCredentialCanRevokeLocalEnrollmentBeforeRoleTransition(t *tes
 }
 
 func TestPendingSpokeCredentialCannotRevokeSiblingEnrollment(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	const (
 		hubID          = "0123456789abcdef0123456789abcdef"
@@ -452,6 +459,7 @@ func TestPendingSpokeCredentialCannotRevokeSiblingEnrollment(t *testing.T) {
 }
 
 func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	const (
 		hubID        = "0123456789abcdef0123456789abcdef"
@@ -547,6 +555,7 @@ func TestLeaseUnawareHubEnrollmentCredentialIsInactive(t *testing.T) {
 }
 
 func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	const (
 		hubID        = "0123456789abcdef0123456789abcdef"
 		nodeID       = "fedcba9876543210fedcba9876543210"
@@ -637,6 +646,7 @@ func TestActiveHubCredentialRequiresActiveSpokeStartup(t *testing.T) {
 }
 
 func TestFederationAuthenticationKeepsBootTopologyUntilRestart(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const (
@@ -690,6 +700,7 @@ func TestFederationAuthenticationKeepsBootTopologyUntilRestart(t *testing.T) {
 }
 
 func TestRevokedSpokeCredentialOnlyRetriesRevocation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	const (
@@ -751,6 +762,7 @@ func TestRevokedSpokeCredentialOnlyRetriesRevocation(t *testing.T) {
 }
 
 func TestPendingSpokeCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
@@ -814,6 +826,7 @@ func TestPendingSpokeCredentialExpiresUntilPreparationIsPinned(t *testing.T) {
 }
 
 func TestPendingSpokeCredentialOnlyAccessesPreparationProviderRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
@@ -902,6 +915,7 @@ func TestPendingSpokeCredentialOnlyAccessesPreparationProviderRoutes(t *testing.
 }
 
 func TestFederationProviderSettingsUseDedicatedProjection(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))

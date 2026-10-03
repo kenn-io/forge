@@ -26,7 +26,7 @@ import (
 // processes. The test uses a test-scoped socket rather than the shared
 // package server so the spawn happens inside this test with the token
 // variables present in the daemon (test process) environment.
-func TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E(t *testing.T) {
+func TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes GITHUB_TOKEN, WORKSPACETEST_CUSTOM_TOKEN, KATA_AUTH_TOKEN, KENN_FORGE_FORGEJO_TOKEN, WORKSPACETEST_UNDECLARED_SECRET, XDG_WORKSPACETEST_TOKEN, WKSP_BENIGN_PROXY
 	if len(workspaceTestTmuxCommand) == 0 {
 		t.Skip("tmux is required")
 	}

@@ -95,6 +95,7 @@ func TestIssueWorkspaceDirectoryRecoveryRejectsMissingPath(t *testing.T) {
 }
 
 func TestIssueWorkspaceDirectoryRecoveryReasons(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	tests := []struct {
 		name          string
 		prepare       func(t *testing.T, fixture workspaceServerFixture, path string)

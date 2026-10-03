@@ -10,9 +10,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
@@ -50,6 +53,7 @@ func TestHealthEndpointsE2E_ReturnOKWhenReady(t *testing.T) {
 }
 
 func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupWithBasePath(t, "/kenn-forge/", nil)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
@@ -87,6 +91,7 @@ func TestHealthEndpointsE2E_RemainAvailableAtRootWithBasePath(t *testing.T) {
 }
 
 func TestHealthzE2E_ReturnsServiceUnavailableWhenDatabaseClosed(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

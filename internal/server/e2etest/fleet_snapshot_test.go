@@ -37,6 +37,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -186,6 +187,7 @@ func patchJSON(
 }
 
 func TestFleetSnapshotLocalE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
@@ -244,6 +246,7 @@ func TestFleetSnapshotLocalE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
@@ -303,6 +306,7 @@ func TestFleetSnapshotRetainsWorktreeWithoutRemovedPullMetadataE2E(t *testing.T)
 }
 
 func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
@@ -352,6 +356,7 @@ func TestFleetSnapshotIssueWorkspaceLinksIssueOnlyE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotFanOutE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -367,7 +372,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 		BasePath: "/",
 		Fleet: config.Fleet{
 			Enabled:     true,
-			PeerTimeout: "1s",
+			PeerTimeout: "5s",
 			Members: []config.FleetMember{
 				{NodeID: e2eMemberNodeID, Name: "peer", BaseURL: peerTS.URL, State: federation.EnrollmentActive},
 				{NodeID: e2eDownNodeID, Name: "down", BaseURL: "https://127.0.0.1:1", State: federation.EnrollmentActive}, // refused fast
@@ -411,6 +416,7 @@ func TestFleetSnapshotFanOutE2E(t *testing.T) {
 }
 
 func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -473,6 +479,7 @@ func TestFleetDisabledBlocksRemoteSnapshotAndProxyE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	fakeTmux := writeFleetSnapshotFakeTmux(t)
 	cfg := &config.Config{
@@ -543,6 +550,7 @@ func TestFleetSnapshotLiveTmuxEnrichmentE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	fakeTmux := writeFleetSnapshotProjectRuntimeTmux(t)
 	cfg := &config.Config{
@@ -606,6 +614,7 @@ func TestFleetSnapshotProjectWorktreeRuntimeE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotEmptyTmuxServerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	fakeTmux := writeFleetSnapshotNoServerTmux(t)
 	cfg := &config.Config{
@@ -647,6 +656,7 @@ func TestFleetSnapshotEmptyTmuxServerE2E(t *testing.T) {
 }
 
 func TestFleetSnapshotTmuxProbeFailureE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	fakeTmux := writeFleetSnapshotFailingTmux(t)
 	cfg := &config.Config{
@@ -818,6 +828,7 @@ exit 0
 }
 
 func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1019,6 +1030,7 @@ func TestFleetOperationProxyRoutesMutationsToPeerE2E(t *testing.T) {
 }
 
 func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	hubCfg := &config.Config{
 		BasePath: "/",
 		Fleet: config.Fleet{
@@ -1034,6 +1046,7 @@ func TestFleetOperationProxyUnknownHostE2E(t *testing.T) {
 }
 
 func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	// Keep the peer port reserved while forcing a transport failure. Closing
 	// the listener first lets a later test server reuse its address.
@@ -1069,6 +1082,7 @@ func TestFleetOperationProxyPeerDispatchFailureE2E(t *testing.T) {
 }
 
 func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubCfg := &config.Config{
@@ -1124,7 +1138,7 @@ func TestFleetOperationProxyRoutesSelfNestedOwnerE2E(t *testing.T) {
 	assert.Equal(dbpkg.WorkspaceItemTypeIssue, got.ItemType)
 }
 
-func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
+func TestFleetTerminalWebSocketProxyE2E(t *testing.T) { //nolint:paralleltest // swaps the otel global tracer provider and propagator
 	assert := assert.New(t)
 	require := require.New(t)
 	recorder := tracetest.NewSpanRecorder()
@@ -1233,6 +1247,7 @@ func TestFleetTerminalWebSocketProxyE2E(t *testing.T) {
 }
 
 func TestFleetTerminalWebSocketProxyPeerDialFailureE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	peerTS := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1393,6 +1408,7 @@ func worktreeByScopedKey(ws []fleet.WorktreeSummary, key string) *fleet.Worktree
 // "draft". Both come from the same worktreeFromWorkspace path, so this guards
 // the conditional end-to-end, not just at the adapter unit boundary.
 func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	ctx := t.Context()
@@ -1458,6 +1474,7 @@ func TestFleetSnapshotDraftFoldE2E(t *testing.T) {
 // contract (routed capable peer mutations available, unrouted mutations
 // suppressed, offline peer reports "Host is offline.").
 func TestFleetSnapshotPeerRichFieldsE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	prState := "OPEN"
 	prUpdated := "2026-05-30T10:00:00Z"

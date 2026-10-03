@@ -20,6 +20,7 @@ import (
 )
 
 func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
@@ -75,6 +76,7 @@ func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 }
 
 func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
@@ -94,6 +96,7 @@ func TestHumaResponseCompressionSkipsSmallResponses(t *testing.T) {
 }
 
 func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
@@ -115,6 +118,7 @@ func TestHumaResponseCompressionPreservesHumagoUnwrap(t *testing.T) {
 }
 
 func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))
@@ -148,6 +152,7 @@ func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 }
 
 func TestResponseCompressionSpillsBufferedChunks(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, tc := range []struct {
 		name, cacheControl, wantEncoding string
 	}{
@@ -179,6 +184,7 @@ func TestResponseCompressionSpillsBufferedChunks(t *testing.T) {
 }
 
 func TestHumaResponseCompressionIncludesMultiMiBPayloads(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(128))

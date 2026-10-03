@@ -18,6 +18,7 @@ import (
 )
 
 func TestItemWorkspaceCreationRejectsReplacedRepositoryIdentity(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)

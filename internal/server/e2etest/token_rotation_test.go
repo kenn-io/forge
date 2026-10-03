@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -34,6 +35,7 @@ import (
 )
 
 func TestTokenFileRotationE2EConfigStartupAndHTTPSync(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -178,7 +180,7 @@ token_file = %q
 	)
 }
 
-func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) {
+func TestInvalidReloadKeepsLiveTokenSourceE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_INVALID_RELOAD_E2E_REPO_TOKEN, KENN_FORGE_INVALID_RELOAD_E2E_MISSING_REPO_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -341,6 +343,7 @@ func requireMissingTokenBadRequest(t *testing.T, resp *http.Response) {
 }
 
 func TestMissingRuntimeTokenSyncReturnsBadRequestE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	httpServer := startMissingGitLabTokenServerE2E(t)
 
 	resp := doServerJSON(
@@ -357,6 +360,7 @@ func TestMissingRuntimeTokenSyncReturnsBadRequestE2E(t *testing.T) {
 }
 
 func TestMissingTokenRepoPreviewReturnsBadRequestE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	httpServer := startMissingGitLabTokenServerE2E(t)
 
 	resp := doServerJSON(
@@ -378,6 +382,7 @@ func TestMissingTokenRepoPreviewReturnsBadRequestE2E(t *testing.T) {
 }
 
 func TestMissingTokenBulkAddReposReturnsBadRequestE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	httpServer := startMissingGitLabTokenServerE2E(t)
 
 	resp := doServerJSON(
@@ -414,7 +419,7 @@ host = "gitlab.example.com"
 `, tokenEnvLine)
 }
 
-func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
+func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_E2E_PLATFORM_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -488,7 +493,7 @@ func TestPlatformTokenRemovalAppliesWithoutRestartE2E(t *testing.T) {
 		"no provider request may carry the removed credential")
 }
 
-func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) {
+func TestRuntimeLaunchStripsReloadedAndImplicitTokenEnvsE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_OLD_REPO_TOKEN, KENN_FORGE_NEW_REPO_TOKEN, KENN_FORGE_FORGEJO_TOKEN, KENN_FORGE_GITEA_TOKEN, KENN_FORGE_VISIBLE_VALUE
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -588,6 +593,7 @@ token_env = "SHARED"
 `
 
 func TestEquivalentCloneTokenChainsReloadStaysValidE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -645,7 +651,7 @@ host = "code.example.com"
 `, tokenLine)
 }
 
-func TestForgejoHostCloneAuthFollowsRotatedTokenE2E(t *testing.T) {
+func TestForgejoHostCloneAuthFollowsRotatedTokenE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_E2E_FORGEJO_TOKEN, KENN_FORGE_E2E_ROTATED_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()

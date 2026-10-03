@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/configreload"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func writeConfigToml(t *testing.T, path string, content string) {
@@ -30,6 +31,7 @@ name = "widget"
 `
 
 func TestValidateReloadCloneTokenSourcesUsesRepoDescriptorForProviderHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	writeConfigToml(t, cfgPath, `
 github_token_env = "KENN_FORGE_GITHUB_TOKEN"
@@ -53,6 +55,7 @@ token_env = "REPO_TOKEN"
 }
 
 func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnSharedHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	// Credentials are provider-scoped, so providers sharing one hostname may
 	// carry different fallback tokens; the ownerless host fallback is
 	// disabled in that case rather than the reload being rejected.
@@ -65,6 +68,7 @@ func TestValidateReloadCloneTokenSourcesAllowsDifferentProviderFallbacksOnShared
 }
 
 func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cfg := &config.Config{Repos: []config.Repo{
 		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "one", TokenEnv: "TOKEN_A"},
 		{Platform: "gitlab", PlatformHost: "gitlab.com", Owner: "group", Name: "two", TokenEnv: "TOKEN_B"},
@@ -76,6 +80,7 @@ func TestValidateReloadCloneTokenSourcesRejectsConflictingRepoOverrides(t *testi
 }
 
 func TestValidateReloadCloneTokenSourcesAllowsEquivalentChainsOnSameHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	// Two providers share a self-hosted host. The forgejo repo's token_env
 	// repeats its platform fallback, producing the chain env:SHARED ->
@@ -107,6 +112,7 @@ token_env = "SHARED"
 }
 
 func TestValidateReloadCloneTokenSourcesIgnoresCredentiallessPlatformHosts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cfgPath := filepath.Join(t.TempDir(), "config.toml")
 	// The forgejo entry has no token config and a non-default host, so its
 	// candidate chain is empty. It imposes no clone credential and must not
@@ -128,6 +134,7 @@ token_env = "SHARED"
 }
 
 func TestSanitizeConfigErrorRedactsTokenMaterial(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	got := configreload.SanitizeConfigError(
@@ -144,6 +151,7 @@ func TestSanitizeConfigErrorRedactsTokenMaterial(t *testing.T) {
 // TestRestartRequiredForAuthFleetRoleAndSessions pins startup-bound settings
 // while member and timeout edits remain live.
 func TestRestartRequiredForAuthFleetRoleAndSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	base := func() *config.Config {
 		cfg := &config.Config{}
@@ -197,6 +205,7 @@ func TestRestartRequiredForAuthFleetRoleAndSessions(t *testing.T) {
 }
 
 func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	base := &config.Config{
 		Fleet: config.Fleet{
@@ -244,6 +253,7 @@ func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 }
 
 func TestRestartRequiredForMCPConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128}}
 	snap := configreload.SnapshotStartupConfig(base)
@@ -263,6 +273,7 @@ func TestRestartRequiredForMCPConfig(t *testing.T) {
 }
 
 func TestRestartRequiredForGitHubArchiveRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	base := &config.Config{
 		Repos: []config.Repo{{Owner: "acme", Name: "widget"}},
@@ -282,6 +293,7 @@ func TestRestartRequiredForGitHubArchiveRoutes(t *testing.T) {
 }
 
 func TestRestartRequiredForPlatformTransportChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	base := func() *config.Config {
 		return &config.Config{Platforms: []config.PlatformConfig{
@@ -307,6 +319,7 @@ func TestRestartRequiredForPlatformTransportChange(t *testing.T) {
 }
 
 func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	base := &config.Config{Roborev: config.Roborev{
 		Endpoint: "http://127.0.0.1:7373",
@@ -323,6 +336,7 @@ func TestRestartRequiredForRoborevEndpointButNotManagedCloneInit(t *testing.T) {
 }
 
 func TestRestartRequiredForNotificationIntervals(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	base := func() *config.Config {
 		cfg := &config.Config{}

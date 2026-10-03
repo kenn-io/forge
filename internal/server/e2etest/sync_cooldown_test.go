@@ -21,12 +21,14 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func TestTriggerSyncE2EBypassesCooldown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var syncCalls atomic.Int32
@@ -69,6 +71,7 @@ name = "widget"
 }
 
 func TestTriggerSyncE2ERefreshesSnapshotBeforeRateBackoff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	synced := make(chan struct{})
@@ -124,6 +127,7 @@ name = "widget"
 }
 
 func TestTriggerSyncE2EPrioritizesFilteredRepos(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -188,6 +192,7 @@ name = "third"
 }
 
 func TestTriggerSyncE2EPrioritizesNonDefaultHostFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if testing.Short() {
 		t.Skip("sync prioritization e2e runs in the full Go test lane")
 	}
@@ -257,6 +262,7 @@ platform_host = "gitea"
 }
 
 func TestTriggerSyncE2EPrioritizesProviderQualifiedFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var mu sync.Mutex
@@ -335,6 +341,7 @@ name = "third"
 }
 
 func TestAddRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	baseURL, client, database := startSyncCooldownE2EServer(t, `
@@ -370,6 +377,7 @@ name = "widget"
 }
 
 func TestRefreshRepoE2ETriggersImmediateSyncDuringCooldown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var includeRefreshRepo atomic.Bool

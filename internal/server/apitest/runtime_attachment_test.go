@@ -12,6 +12,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -21,6 +22,7 @@ import (
 // about, but it is cleaner to drive it with controlled channels than to depend
 // on backend-specific PTY behavior in an e2e helper.
 func TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	closedOutput := make(chan []byte)
 	close(closedOutput)
@@ -105,6 +107,7 @@ func TestBridgeRuntimeAttachmentOutputClosedEmitsExitFrameBeforeDone(t *testing.
 // TCP send buffer faster than the bridge can drain it), so this is
 // a focused unit test on the bridge's branching logic.
 func TestBridgeRuntimeAttachmentSubscriberDropDoesNotEmitExitFrame(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	closedOutput := make(chan []byte)
 	close(closedOutput)

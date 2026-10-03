@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/forgejo"
 )
@@ -31,6 +32,7 @@ import (
 // later than the moment the fake received the request, so this still
 // catches a before/after regression at this call site.
 func TestForgejoSetPRStateStampsMergeableStateObservedAt(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

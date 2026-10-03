@@ -50,7 +50,7 @@ func installGitSpawnCounter(t *testing.T) func() int {
 	}
 }
 
-func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) {
+func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installGitSpawnCounter
 	require := require.New(t)
 	assert := assert.New(t)
 	gitSpawns := installGitSpawnCounter(t)
@@ -143,6 +143,7 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) {
 }
 
 func TestListReadSchedulesTmuxOnlyWorkWhenDivergenceIsStillFresh(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := newEnrichmentTestHandler(t, "")
@@ -176,7 +177,7 @@ func TestListReadSchedulesTmuxOnlyWorkWhenDivergenceIsStillFresh(t *testing.T) {
 	assert.Equal(workspaceEnrichmentTmux, job.kind, "only tmux is due, so only tmux work may be queued")
 }
 
-func TestChangeAwareRefreshLeavesFreshDivergenceUntouched(t *testing.T) {
+func TestChangeAwareRefreshLeavesFreshDivergenceUntouched(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installGitSpawnCounter
 	assert := assert.New(t)
 	require := require.New(t)
 	gitSpawns := installGitSpawnCounter(t)
@@ -218,6 +219,7 @@ func TestChangeAwareRefreshLeavesFreshDivergenceUntouched(t *testing.T) {
 }
 
 func TestElapsedForcedIntervalMakesDivergenceDueDespiteRecentRevalidation(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 	entry := workspaceEnrichmentCacheEntry{

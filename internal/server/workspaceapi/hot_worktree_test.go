@@ -21,6 +21,7 @@ import (
 )
 
 func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
+	t.Parallel()
 	for _, previousWorkspace := range []string{"existing", "deleted"} {
 		t.Run(previousWorkspace, func(t *testing.T) {
 			require := require.New(t)

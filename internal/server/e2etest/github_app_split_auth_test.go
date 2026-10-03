@@ -39,7 +39,7 @@ import (
 // carry the minted installation token while a user-facing mutation
 // (posting a PR comment) must carry the user's PAT so GitHub
 // attributes it to the user instead of the app bot.
-func TestGitHubAppSplitAuthE2E(t *testing.T) {
+func TestGitHubAppSplitAuthE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "user-pat-e2e")
@@ -467,7 +467,7 @@ repository_selection = "all"
 		"PAT writes and notification reads must be attributed to the user pool")
 }
 
-func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) {
+func TestGitHubAppGlobDiscoveryUsesInstallationRepositoriesE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "user-pat-e2e")
@@ -705,7 +705,7 @@ func decodeRepoOperations(t *testing.T, body io.Reader) map[string]repoOperation
 // attributed to the user), so with no PAT or gh credential behind the
 // app every write must be reported unavailable up front and the
 // mutation endpoint must refuse rather than write as the app bot.
-func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) {
+func TestGitHubAppNoUserCredentialGatesWritesE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	// The configured PAT env var is present but empty: only the app

@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -124,6 +125,7 @@ func seedRepoLabelCatalog(
 }
 
 func TestAPIListRepoLabelsRefreshesStaleCatalogFromProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -141,6 +143,7 @@ func TestAPIListRepoLabelsRefreshesStaleCatalogFromProvider(t *testing.T) {
 }
 
 func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	baseClient := testutil.NewFixtureClient().(*testutil.FixtureClient)
@@ -195,6 +198,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalogWhileRefreshRuns(t *testing.T) {
 }
 
 func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
@@ -212,6 +216,7 @@ func TestAPIListRepoLabelsReturnsCachedCatalog(t *testing.T) {
 }
 
 func TestAPISetPullLabelsReplacesAssignedLabelsFromCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, syncer := setupLabelTestServer(t)
 	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{Name: "bug", Color: "d73a4a"}})
@@ -244,6 +249,7 @@ func TestAPISetPullLabelsReplacesAssignedLabelsFromCatalog(t *testing.T) {
 }
 
 func TestAPISetPullLabelsChecksVisibilityBeforeCatalogRefresh(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -270,6 +276,7 @@ func TestAPISetPullLabelsChecksVisibilityBeforeCatalogRefresh(t *testing.T) {
 }
 
 func TestAPISetIssueLabelsReplacesAssignedLabelsViaProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupLabelTestServer(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
@@ -290,6 +297,7 @@ func TestAPISetIssueLabelsReplacesAssignedLabelsViaProvider(t *testing.T) {
 }
 
 func TestAPISetIssueLabelsRejectsLabelsOutsideCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
@@ -302,6 +310,7 @@ func TestAPISetIssueLabelsRejectsLabelsOutsideCatalog(t *testing.T) {
 }
 
 func TestAPISetPullLabelsRejectsMissingLabelsField(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -312,6 +321,7 @@ func TestAPISetPullLabelsRejectsMissingLabelsField(t *testing.T) {
 }
 
 func TestAPISetPullLabelsRejectsNullLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupLabelTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)

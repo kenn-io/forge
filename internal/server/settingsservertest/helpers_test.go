@@ -7,9 +7,11 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestParseRepoFiltersAcceptsProviderQualifiedRepoPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert.Equal(t, []db.RepoFilter{{
 		Platform:     "gitea",
 		PlatformHost: "github.com",
@@ -18,11 +20,13 @@ func TestParseRepoFiltersAcceptsProviderQualifiedRepoPath(t *testing.T) {
 }
 
 func TestParseRepoFiltersRejectsUnqualifiedRepoPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert.Empty(t, itemapi.ParseRepoFilters("gitea/acme/team/widgets"))
 	assert.Empty(t, itemapi.ParseRepoFilters("acme/widgets"))
 }
 
 func TestWorkspaceRefForActivityItemUsesStableRepositoryIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	issueKey := db.WorkspaceSubjectKey{
 		RepoID: 41, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7,
 	}

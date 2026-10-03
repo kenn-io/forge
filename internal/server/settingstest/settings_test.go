@@ -104,7 +104,7 @@ func installSettingsTmuxRecorder(t *testing.T) string {
 	return record
 }
 
-func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T) {
+func TestServerStartupAppliesTmuxSettingsToExistingDedicatedServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder
 	require := require.New(t)
 	assert := assert.New(t)
 	record := installSettingsTmuxRecorder(t)
@@ -127,6 +127,7 @@ tmux_mouse = false
 }
 
 func TestHandleGetSettingsEncodesEmptyKataProjectsAsArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	// No [[kata_projects]] configured, so cfg.KataProjects is nil.
@@ -154,6 +155,7 @@ name = "widget"
 }
 
 func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
@@ -168,6 +170,7 @@ func TestHandleGetSettingsEncodesEmptyRepoPresetsAsArray(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsDefaultExecutionTarget(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -227,6 +230,7 @@ func TestHandleUpdateSettingsDefaultExecutionTarget(t *testing.T) {
 }
 
 func TestHandleAddRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	body := map[string]string{
@@ -246,6 +250,7 @@ func TestHandleAddRepo(t *testing.T) {
 }
 
 func TestHandleAddRepoTriggersImmediateSyncDuringCooldown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	dir := t.TempDir()
@@ -326,6 +331,7 @@ name = "widget"
 }
 
 func TestHandleAddRepoDuplicate(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
 	body := map[string]string{
@@ -341,6 +347,7 @@ func TestHandleAddRepoDuplicate(t *testing.T) {
 }
 
 func TestHandleDeleteRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
@@ -369,6 +376,7 @@ func TestHandleDeleteRepo(t *testing.T) {
 }
 
 func TestHandleDeleteLastRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(
@@ -382,7 +390,7 @@ func TestHandleDeleteLastRepo(t *testing.T) {
 	assert.Empty(t, cfg2.Repos)
 }
 
-func TestHandlePreviewReposReportsUnconfiguredGitHubProvider(t *testing.T) {
+func TestHandlePreviewReposReportsUnconfiguredGitHubProvider(t *testing.T) { //nolint:paralleltest // t.Setenv writes MIDDLEMAN_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("MIDDLEMAN_GITHUB_TOKEN", "")
@@ -421,6 +429,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposReportsMissingOwnerRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	router, err := ghclient.NewHostRouter(
@@ -467,6 +476,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
@@ -493,6 +503,7 @@ func TestHandlePreviewReposRejectsInvalidPattern(t *testing.T) {
 }
 
 func TestHandleBulkAddReposReturnsAlreadyConfiguredWhenAllSkippedBeforeValidation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
@@ -532,6 +543,7 @@ name = "api"
 // use: PUT /api/v1/ui/active-worktree records the focused worktree
 // key, the served SPA config carries it, and an empty key clears it.
 func TestSetActiveWorktreeRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _ := servertest.SetupTestServer(t)
 	ts := httptest.NewServer(srv)
@@ -567,6 +579,7 @@ func TestSetActiveWorktreeRoute(t *testing.T) {
 }
 
 func TestFleetSettingsExposePendingEnrollmentWithoutCredentialMaterial(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	dataDir := t.TempDir()
@@ -622,6 +635,7 @@ base_url = "https://hub.example"
 // drive the merge safeguard until each repository next synced, and forever for
 // repositories no longer tracked.
 func TestNewServerRestoresProjectionWhenNativeStacksBootDisabled(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -680,6 +694,7 @@ prefer_github_native_stacks = false
 }
 
 func TestHandleGetSettingsReportsEmptyQuickActionsArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)

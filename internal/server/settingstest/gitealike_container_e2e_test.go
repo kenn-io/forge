@@ -81,6 +81,7 @@ type giteaLikeContainerManifest struct {
 }
 
 func TestForgejoContainerSync(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if os.Getenv("KENN_FORGE_FORGEJO_CONTAINER_TESTS") != "1" {
 		t.Skip("set KENN_FORGE_FORGEJO_CONTAINER_TESTS=1 to run Forgejo container e2e")
 	}
@@ -121,6 +122,7 @@ func TestForgejoContainerSync(t *testing.T) {
 }
 
 func TestGiteaContainerSync(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if os.Getenv("KENN_FORGE_GITEA_CONTAINER_TESTS") != "1" {
 		t.Skip("set KENN_FORGE_GITEA_CONTAINER_TESTS=1 to run Gitea container e2e")
 	}

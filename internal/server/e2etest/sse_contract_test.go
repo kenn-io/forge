@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/syncevents"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // TestSSEContractPinDeliversCachedSyncStatusFrame is a paving wire-level test:
@@ -30,6 +31,7 @@ import (
 // before the server starts removes the broadcast / read race a non-cached
 // first event would introduce.
 func TestSSEContractPinDeliversCachedSyncStatusFrame(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

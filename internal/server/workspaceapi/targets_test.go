@@ -17,6 +17,7 @@ import (
 )
 
 func TestWorkspaceTargetsPreserveOwnerAndBranch(t *testing.T) {
+	t.Parallel()
 	for _, provider := range []string{"github", "gitlab", "forgejo", "gitea", "bitbucket", "bitbucket-cloud"} {
 		t.Run(provider, func(t *testing.T) {
 			database := dbtest.Open(t)
@@ -81,6 +82,7 @@ func TestWorkspaceTargetsPreserveOwnerAndBranch(t *testing.T) {
 }
 
 func TestWorkspaceTargetsKeepDistinctTypesAndRepositories(t *testing.T) {
+	t.Parallel()
 	database := dbtest.Open(t)
 	ctx := t.Context()
 	h := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), EnrichmentDisabled: true})

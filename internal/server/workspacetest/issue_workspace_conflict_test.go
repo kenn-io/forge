@@ -27,6 +27,7 @@ import (
 // home because setupWorkspaceServerFixture already wires up a real git
 // remote, which apitest/ does not.
 func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -79,6 +80,7 @@ func TestIssueWorkspaceConflictExposesTyped409ThroughGeneratedClient(t *testing.
 }
 
 func TestIssueWorkspaceReuseExistingBranchDoesNotReportCreated(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -105,6 +107,7 @@ func TestIssueWorkspaceReuseExistingBranchDoesNotReportCreated(t *testing.T) {
 }
 
 func TestIssueWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -125,6 +128,7 @@ func TestIssueWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
 }
 
 func TestIssueWorkspaceCreateIgnoresBrokenCallerCwdForBranchValidation(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

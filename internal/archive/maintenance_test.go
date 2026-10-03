@@ -14,6 +14,7 @@ import (
 )
 
 func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -66,6 +67,7 @@ func TestPromptMaintenanceCommitsPagesBeforeAdvancingScanWatermark(t *testing.T)
 }
 
 func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -96,6 +98,7 @@ func TestPromptMaintenanceFailureRetainsPriorWatermarkAndCommittedPages(t *testi
 }
 
 func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name       string
 		deny       bool
@@ -155,6 +158,7 @@ func TestPromptMaintenanceResumesDurableCursorAfterBudgetDeferral(t *testing.T) 
 }
 
 func TestPromptMaintenanceAdmissionReservesProviderConfirmationAttempts(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -175,6 +179,7 @@ func TestPromptMaintenanceAdmissionReservesProviderConfirmationAttempts(t *testi
 }
 
 func TestPromptMaintenanceCompletesDisabledRepositoryFeature(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -213,6 +218,7 @@ func TestPromptMaintenanceCompletesDisabledRepositoryFeature(t *testing.T) {
 }
 
 func TestPromptMaintenancePauseRejectsInFlightAvailabilityReconciliation(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

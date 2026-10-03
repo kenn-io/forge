@@ -8,9 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/routepolicy"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestTransportInventoryIncludesRegisteredLongLivedRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	inventory, err := server.NewTransportInventory()
 	require.NoError(t, err)
 

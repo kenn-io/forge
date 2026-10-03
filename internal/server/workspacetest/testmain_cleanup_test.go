@@ -45,7 +45,7 @@ func runAbruptWorkspaceTestTmuxOwnerHelper() {
 	select {}
 }
 
-func TestWorkspaceTestTmuxStopsServerAfterAbruptOwnerExit(t *testing.T) {
+func TestWorkspaceTestTmuxStopsServerAfterAbruptOwnerExit(t *testing.T) { //nolint:paralleltest // spawns a second tmux owner on the binary's private tmux root
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("private test tmux owners require Darwin or Linux")
 	}

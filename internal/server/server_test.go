@@ -27,6 +27,7 @@ func newTestServer(t *testing.T) *Server {
 }
 
 func TestWorkspaceClockDoesNotReplaceRootServerClock(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	workspaceNow := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
 	srv := New(serverfake.OpenTestDB(t), nil, nil, "/", nil, ServerOptions{
@@ -39,6 +40,7 @@ func TestWorkspaceClockDoesNotReplaceRootServerClock(t *testing.T) {
 }
 
 func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	prefer := preferPtyOwnerForWorkspaces("windows", true, ServerOptions{
@@ -49,6 +51,7 @@ func TestPreferPtyOwnerForWorkspacesOnWindows(t *testing.T) {
 }
 
 func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := newTestServer(t)
 	srv.allowedHostMu.Lock()
 	srv.allowedHosts = map[string]struct{}{
@@ -119,6 +122,7 @@ func TestServeHTTPRejectsLoopbackHostFromNonLoopbackPeer(t *testing.T) {
 }
 
 func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -177,6 +181,7 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 }
 
 func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -204,6 +209,7 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 }
 
 func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
 
@@ -231,6 +237,7 @@ func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
 }
 
 func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	s := newTestServer(t)
@@ -253,6 +260,7 @@ func TestSSE_ExitsCleanlyOnHubClose(t *testing.T) {
 }
 
 func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -323,6 +331,7 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 }
 
 func TestSSE_SlowConsumerDisconnect(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -370,6 +379,7 @@ func (w *deadlineControlWriter) Unwrap() http.ResponseWriter {
 }
 
 func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 
 	rec := httptest.NewRecorder()
@@ -390,6 +400,7 @@ func TestSSE_TerminatesOnInitialDeadlineFailure(t *testing.T) {
 }
 
 func TestSSE_TerminatesOnMidStreamDeadlineFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 	// Cached sync_status delivered on subscribe triggers mid-stream write
 	s.hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": false}})
@@ -509,6 +520,7 @@ func readSSEFrameWithin(
 }
 
 func TestSSE_FrameIncludesID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -539,6 +551,7 @@ func TestSSE_FrameIncludesID(t *testing.T) {
 }
 
 func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -569,6 +582,7 @@ func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
 }
 
 func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -592,6 +606,7 @@ func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
 }
 
 func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -618,6 +633,7 @@ func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
 }
 
 func TestSSE_InvalidCursorTreatedAsNoCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -644,6 +660,7 @@ func TestSSE_InvalidCursorTreatedAsNoCursor(t *testing.T) {
 }
 
 func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -712,6 +729,7 @@ func (c *blockingFlushController) Flush() error {
 }
 
 func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -770,6 +788,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 }
 
 func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

@@ -15,6 +15,7 @@ import (
 )
 
 func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -51,6 +52,7 @@ func TestArchiveSchedulerDoesNotSerializeSameHostOutsideAdmission(t *testing.T) 
 }
 
 func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -88,6 +90,7 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 }
 
 func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	assert.Less(PriorityNormalIndex, PriorityNotificationRefresh)
 	assert.Less(PriorityNotificationRefresh, PriorityActiveDetail)
@@ -96,6 +99,7 @@ func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {
 }
 
 func TestRunEligibleSkipsUnresolvableConfiguredRef(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -125,6 +129,7 @@ func TestRunEligibleSkipsUnresolvableConfiguredRef(t *testing.T) {
 }
 
 func TestRunEligiblePropagatesStoreFailure(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := archiveTestTime()
@@ -146,6 +151,7 @@ func TestRunEligiblePropagatesStoreFailure(t *testing.T) {
 }
 
 func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -182,6 +188,7 @@ func TestArchiveBootstrapFeatureDeferralSkipsToNextRepository(t *testing.T) {
 }
 
 func TestArchiveMaintenanceFeatureDeferralSkipsToNextRepository(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

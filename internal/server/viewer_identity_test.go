@@ -17,6 +17,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -94,6 +95,7 @@ func newViewerIdentityTestServer(
 }
 
 func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	selected := &viewerIdentityProvider{
 		kind: platform.KindGitHub, host: "github.com",
@@ -120,7 +122,7 @@ func TestResolveAuthenticatedViewerLoginsRestrictsProviderCallsToRepoFilters(t *
 }
 
 func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackground(t *testing.T) {
-	assert := assert.New(t)
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	provider := &viewerIdentityProvider{
 		kind: platform.KindGitHub, host: "github.com",
@@ -152,18 +154,24 @@ func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackgr
 
 	second, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
-	assert.Equal(first, second)
+	require.Equal(first, second)
 	require.Eventually(func() bool { return provider.callCount() == 2 }, time.Second, 10*time.Millisecond)
 
-	third, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
-	require.NoError(err)
-	assert.Equal([]db.RepoViewerLogin{
-		{RepoID: first[0].RepoID, Login: "bob"},
-		{RepoID: first[1].RepoID, Login: "bob"},
-	}, third)
+	// The provider call returns before the background refresh writes the cache.
+	require.EventuallyWithT(func(c *assert.CollectT) {
+		third, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
+		if !assert.NoError(c, err) {
+			return
+		}
+		assert.Equal(c, []db.RepoViewerLogin{
+			{RepoID: first[0].RepoID, Login: "bob"},
+			{RepoID: first[1].RepoID, Login: "bob"},
+		}, third)
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	provider := &viewerIdentityProvider{
@@ -187,6 +195,7 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 }
 
 func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	provider := &viewerIdentityProvider{
 		kind: platform.KindGitHub, host: "github.com",
 		cacheKeys: map[string]string{
@@ -223,6 +232,7 @@ func (p *unkeyedViewerIdentityProvider) AuthenticatedUser(
 }
 
 func TestResolveAuthenticatedViewerLoginsKeepsUnkeyedGitHubReposSeparate(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	base := &viewerIdentityProvider{

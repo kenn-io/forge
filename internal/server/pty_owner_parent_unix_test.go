@@ -22,6 +22,7 @@ import (
 )
 
 func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	root := t.TempDir()
 	session := "test-parent-loss"
@@ -77,7 +78,7 @@ func TestServerPtyOwnerHelperStopsWhenParentKilled(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond, "owner survived parent loss: %s", output.String())
 }
 
-func TestServerPtyOwnerParentHelperProcess(t *testing.T) {
+func TestServerPtyOwnerParentHelperProcess(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	args := os.Args
 	sep := slices.Index(args, "--")
 	if sep < 0 || len(args) <= sep+1 ||

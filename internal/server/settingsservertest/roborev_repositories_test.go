@@ -22,9 +22,11 @@ import (
 	"go.kenn.io/forge/internal/projects"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/roborevapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestRoborevRepositoryProbeCachesDefinitiveResultsAndDeduplicatesIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var inventoryCalls atomic.Int32
@@ -72,6 +74,7 @@ func TestRoborevRepositoryProbeCachesDefinitiveResultsAndDeduplicatesIdentity(t 
 }
 
 func TestRoborevRepositoryProbeInvalidateReloadsInventoryAndDefinitiveResults(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var calls atomic.Int32
@@ -110,6 +113,7 @@ func TestRoborevRepositoryProbeInvalidateReloadsInventoryAndDefinitiveResults(t 
 }
 
 func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	started := make(chan struct{})
 	freshStarted := make(chan struct{})
@@ -161,6 +165,7 @@ func TestRoborevRepositoryProbeInvalidateFencesInFlightRefresh(t *testing.T) {
 }
 
 func TestRoborevRepositoryProbeCoalescesConcurrentRequests(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	started := make(chan struct{})
@@ -207,6 +212,7 @@ func TestRoborevRepositoryProbeCoalescesConcurrentRequests(t *testing.T) {
 }
 
 func TestRoborevRepositoryProbeCallerCancellationDoesNotPoisonWaiters(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -247,6 +253,7 @@ func TestRoborevRepositoryProbeCallerCancellationDoesNotPoisonWaiters(t *testing
 }
 
 func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
@@ -285,6 +292,7 @@ func TestRoborevRepositoryProbeBoundsHookResolution(t *testing.T) {
 }
 
 func TestRoborevRepositoryProbeRetriesTransientCheckoutFailureAfterCooldown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -323,6 +331,7 @@ func TestRoborevRepositoryProbeRetriesTransientCheckoutFailureAfterCooldown(t *t
 }
 
 func TestRoborevRepositoryProbeStartsCheckoutCooldownWhenFailureCompletes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	start := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
@@ -359,6 +368,7 @@ func TestRoborevRepositoryProbeStartsCheckoutCooldownWhenFailureCompletes(t *tes
 }
 
 func TestInspectRoborevPostCommitHook(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name    string
 		content string
@@ -400,6 +410,7 @@ func TestInspectRoborevPostCommitHook(t *testing.T) {
 }
 
 func TestLoadRoborevRepositoryInventoryValidatesCompleteEnvelope(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name string
 		body string

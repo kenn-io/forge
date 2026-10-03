@@ -6,9 +6,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/httpapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestRepoOperationsWireShape(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	// The set of operation field names on httpapi.RepoOperations is a wire
 	// contract. Renaming a json tag here breaks any frontend pinned
 	// to an older schema, so the test enumerates the full set as a

@@ -23,7 +23,7 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *testing.T) {
+func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_AGENT_SESSION_HELPER
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_AGENT_SESSION_HELPER", "1")
@@ -166,7 +166,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 	assert.Nil(handler.workspaceReference(summary).AgentState)
 }
 
-func TestWorkspaceAgentSessionHelper(t *testing.T) {
+func TestWorkspaceAgentSessionHelper(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	if os.Getenv("KENN_FORGE_AGENT_SESSION_HELPER") != "1" {
 		return
 	}

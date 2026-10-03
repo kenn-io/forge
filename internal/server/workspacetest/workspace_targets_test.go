@@ -16,6 +16,7 @@ import (
 )
 
 func TestWorkspaceTargetHTTPListsStableRepositoryIdentity(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	srv, database := servertest.SetupTestServer(t)
 	ctx := t.Context()
 	repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "target"))

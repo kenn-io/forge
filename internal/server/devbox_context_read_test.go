@@ -32,6 +32,7 @@ import (
 )
 
 func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 	assert := assert.New(t)
 	require := require.New(t)

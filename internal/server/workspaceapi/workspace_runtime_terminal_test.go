@@ -21,6 +21,7 @@ import (
 )
 
 func TestServeRuntimeTerminalNegotiatesCompression(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	attachment := localruntime.NewAttachmentForTesting(
 		localruntime.AttachmentForTestingOptions{
@@ -58,6 +59,7 @@ func TestServeRuntimeTerminalNegotiatesCompression(t *testing.T) {
 }
 
 func TestServeRuntimeTerminalAnswersHeartbeat(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	attachment := localruntime.NewAttachmentForTesting(
 		localruntime.AttachmentForTestingOptions{
@@ -96,6 +98,7 @@ func TestServeRuntimeTerminalAnswersHeartbeat(t *testing.T) {
 }
 
 func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	replay := []byte("buffered replay")
 	output := make(chan []byte, 1)
@@ -162,6 +165,7 @@ func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
 }
 
 func TestForwardAvailableRuntimeOutputReturnsWriteError(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	wantErr := errors.New("write failed")
 	replay := []byte("buffered replay")
@@ -180,6 +184,7 @@ func TestForwardAvailableRuntimeOutputReturnsWriteError(t *testing.T) {
 }
 
 func TestForwardAvailableRuntimeOutputBoundsBlockedWrite(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte, 1)
 	output <- []byte("buffered replay")
@@ -196,6 +201,7 @@ func TestForwardAvailableRuntimeOutputBoundsBlockedWrite(t *testing.T) {
 }
 
 func TestServeRuntimeTerminalTranslatesReplayBoundary(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte, 1)
 	output <- nil
@@ -231,6 +237,7 @@ func TestServeRuntimeTerminalTranslatesReplayBoundary(t *testing.T) {
 }
 
 func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte, 1)
 	output <- nil
@@ -275,6 +282,7 @@ func TestServeRuntimeTerminalReplayBoundaryDefersInitialResize(t *testing.T) {
 }
 
 func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	events := make([]string, 0, 4)
 	attachment := localruntime.NewAttachmentForTesting(
@@ -312,6 +320,7 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 }
 
 func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	input := make(chan []byte, 1)
 	attachment := localruntime.NewAttachmentForTesting(
@@ -365,6 +374,7 @@ func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testin
 }
 
 func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte)
 	close(output)
@@ -412,6 +422,7 @@ func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
 }
 
 func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		output func() <-chan []byte
@@ -475,6 +486,7 @@ func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T)
 }
 
 func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte, 1)
 	done := make(chan struct{})
@@ -550,6 +562,7 @@ func runtimeTerminalTestServer(
 }
 
 func TestParseRuntimeTerminalGeometry(t *testing.T) {
+	t.Parallel()
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodGet,
 		"/?cols=132&rows=43&pixel_width=1056&pixel_height=688",

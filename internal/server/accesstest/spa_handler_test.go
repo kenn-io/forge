@@ -14,11 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 // TestBootstrapActiveWorktreeKey covers daemon-side focus state in the SPA bootstrap.
 func TestBootstrapActiveWorktreeKey(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -52,6 +54,7 @@ func TestBootstrapActiveWorktreeKey(t *testing.T) {
 }
 
 func TestSPACacheHeaders(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -125,6 +128,7 @@ func TestSPACacheHeaders(t *testing.T) {
 }
 
 func TestSPAAssetsServePrecompressedRepresentations(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
 	var brotliBody bytes.Buffer
 	brotliWriter := brotli.NewWriterLevel(&brotliBody, brotli.BestCompression)

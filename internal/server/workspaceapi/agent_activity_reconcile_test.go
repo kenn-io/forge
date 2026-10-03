@@ -18,6 +18,7 @@ import (
 // missing tmux session before restoration runs, is removed by restoration,
 // while a report backed by a persisted row survives.
 func TestRestoreRuntimeSessionsDropsReportsOfPrunedRuntimes(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

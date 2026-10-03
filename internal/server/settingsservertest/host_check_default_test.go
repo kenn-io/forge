@@ -15,7 +15,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
-func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) {
+func TestNewRejectsUnvalidatedConfigWithNonLoopbackHost(t *testing.T) { //nolint:paralleltest // writes package variable streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests
 	old := streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests
 	streamapi.AllowUnvalidatedConfigHostCheckFallbackForTests = false
 	t.Cleanup(func() {

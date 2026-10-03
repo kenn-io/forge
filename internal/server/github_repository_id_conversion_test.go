@@ -24,6 +24,7 @@ import (
 )
 
 func TestFederationResolveGitHubRepositoryIDReportsHostWithoutCredential(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
@@ -43,6 +44,7 @@ func TestFederationResolveGitHubRepositoryIDReportsHostWithoutCredential(t *test
 }
 
 func TestSpokeConvertsPendingGitHubRepositoriesThroughHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

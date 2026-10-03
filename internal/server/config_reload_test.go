@@ -410,6 +410,7 @@ path = %q
 }
 
 func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -433,7 +434,7 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	assert.Equal("30d", gotActivity.TimeRange)
 }
 
-func TestConfigReloadAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+func TestConfigReloadAppliesMouseToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &serverfake.MockGH{}, ServerOptions{
@@ -458,7 +459,7 @@ tmux_mouse = false
 	}, readSettingsTmuxMouseCommands(t, record))
 }
 
-func TestConfigReloadAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
+func TestConfigReloadAppliesGraphicsToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(t, validReloadConfig, &serverfake.MockGH{}, ServerOptions{
@@ -486,6 +487,7 @@ graphics = false
 }
 
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfigContent(
 		t, validReloadConfig, &serverfake.MockGH{},
@@ -525,6 +527,7 @@ use_workspace_activity_for_recency = true
 // instead of panicking in the watcher goroutine. Regression test for a nil
 // TrackedRepos dereference that crashed the whole test binary in CI.
 func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -556,6 +559,7 @@ func TestConfigReload_NilSyncerAppliesHotReloadWithoutPanic(t *testing.T) {
 }
 
 func TestConfigReloadPreservesCanonicalDataDirIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	root := t.TempDir()
@@ -581,6 +585,7 @@ func TestConfigReloadPreservesCanonicalDataDirIdentity(t *testing.T) {
 }
 
 func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -603,6 +608,7 @@ func TestConfigReload_UpdatesBranchActivityLimits(t *testing.T) {
 }
 
 func TestConfigReload_UpdatesModes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -636,6 +642,7 @@ func TestConfigReload_UpdatesModes(t *testing.T) {
 }
 
 func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -714,6 +721,7 @@ func TestConfigReload_UpdatesDocFoldersAndRegistry(t *testing.T) {
 }
 
 func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	initialRoot := t.TempDir()
 	reloadedRoot := t.TempDir()
@@ -764,6 +772,7 @@ func TestConfigReloadSerializesDocsFolderMutation(t *testing.T) {
 }
 
 func TestConfigReload_WatcherFiresOnAtomicRename(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -781,6 +790,7 @@ func TestConfigReload_WatcherFiresOnAtomicRename(t *testing.T) {
 }
 
 func TestConfigReload_RestartRequiredOnStartupFieldChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -798,6 +808,7 @@ func TestConfigReload_RestartRequiredOnStartupFieldChange(t *testing.T) {
 }
 
 func TestConfigReload_RestartRequiredOnHostCheckPolicyChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -814,7 +825,7 @@ func TestConfigReload_RestartRequiredOnHostCheckPolicyChange(t *testing.T) {
 	assert.True(ev.RestartRequired, "host-check policy change should mark restart_required")
 }
 
-func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T) {
+func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_REPO_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "old")
@@ -848,7 +859,7 @@ func TestConfigReload_TokenSourceChangeForExistingHostUpdatesSource(t *testing.T
 	assert.Equal("old", currentToken)
 }
 
-func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
+func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_NEW_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "old")
@@ -895,6 +906,7 @@ func TestConfigReload_GitHubTokenEnvChangeUpdatesConfigSnapshot(t *testing.T) {
 }
 
 func TestConfigReloadPublishesCommittedWorkspaceSnapshot(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, cfgPath, _ := setupTestServerWithConfigContent(t, `
@@ -938,7 +950,7 @@ command = ["sh"]
 	assert.NotContains(keys, "before")
 }
 
-func TestConfigReload_InvalidTokenSourceKeepsLastKnownGoodSource(t *testing.T) {
+func TestConfigReload_InvalidTokenSourceKeepsLastKnownGoodSource(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_REPO_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
@@ -988,6 +1000,7 @@ token_env = "KENN_FORGE_MISSING_REPO_TOKEN"
 }
 
 func TestConfigReload_AirplaneModeOmitsUnresolvedPinnedRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	initialConfig := "airplane_mode = true\n" + validReloadConfig +
 		"platform_repo_id = 1001\n"
@@ -1044,7 +1057,7 @@ platform_repo_id = 1002
 		"removing another entry must keep the renamed pinned repository")
 }
 
-func TestConfigReload_PreservesCachedReposForProviderMissingAtStartup(t *testing.T) {
+func TestConfigReload_PreservesCachedReposForProviderMissingAtStartup(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_FAILED_GITLAB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1142,7 +1155,7 @@ func reloadTestTokenSources(
 	return sourceSet, src
 }
 
-func TestConfigReload_RemovingGitHubOwnerTokenClearsLiveRoute(t *testing.T) {
+func TestConfigReload_RemovingGitHubOwnerTokenClearsLiveRoute(t *testing.T) { //nolint:paralleltest // t.Setenv writes OWNER_PAT
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv("OWNER_PAT", "owner-token")
@@ -1187,7 +1200,7 @@ port = 8091
 		"the live bounded router keeps its boot credential until restart")
 }
 
-func TestConfigReload_ChangingGitHubOwnerSourceFreezesBootRoute(t *testing.T) {
+func TestConfigReload_ChangingGitHubOwnerSourceFreezesBootRoute(t *testing.T) { //nolint:paralleltest // t.Setenv writes OWNER_PAT, NEW_OWNER_PAT
 	require := require.New(t)
 	assert := assert.New(t)
 	t.Setenv("OWNER_PAT", "owner-token")
@@ -1257,7 +1270,7 @@ owner = "acme"
 name = "widget"
 `
 
-func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) {
+func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_PLATFORM_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1289,7 +1302,7 @@ func TestConfigReload_RemovingPlatformTokenClearsLiveSource(t *testing.T) {
 	require.ErrorIs(err, tokenauth.ErrMissingToken)
 }
 
-func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
+func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_PLATFORM_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1322,7 +1335,7 @@ func TestConfigReload_TokenAddedForUnbuiltClientRequiresRestart(t *testing.T) {
 	assert.Equal("platform-token", newToken)
 }
 
-func TestConfigReload_GitHubAppAddedRequiresRestart(t *testing.T) {
+func TestConfigReload_GitHubAppAddedRequiresRestart(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1367,6 +1380,7 @@ repository_selection = "all"
 }
 
 func TestValidateReloadProviderTokenSourcesReusesGitHubAppTokenAcrossRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
@@ -1414,6 +1428,7 @@ selected_repos = ["acme/widget-one", "acme/widget-two"]
 }
 
 func TestValidateReloadProviderSourcesUsesArchiveDescriptorForArchiveOnlyRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	cfg := &config.Config{
 		SyncInterval: "5m",
@@ -1474,7 +1489,7 @@ func newReloadServerWithTokenSources(
 	return srv, set
 }
 
-func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) {
+func TestConfigReloadFreezesGitHubChainOnSplitTopologyChange(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_NEW_GITHUB_TOKEN
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
 
 	githubKey := tokenauth.Key{Platform: "github", Host: "github.com"}
@@ -1578,7 +1593,7 @@ name = "widget"
 `, tokenLine)
 }
 
-func TestConfigReload_ForgejoHostCloneSourceFollowsRotatedToken(t *testing.T) {
+func TestConfigReload_ForgejoHostCloneSourceFollowsRotatedToken(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_FORGEJO_TOKEN_A, KENN_FORGE_FORGEJO_TOKEN_B
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1616,7 +1631,7 @@ func TestConfigReload_ForgejoHostCloneSourceFollowsRotatedToken(t *testing.T) {
 	assert.Equal("rotated-token", newToken)
 }
 
-func TestConfigReload_ForgejoHostCloneSourceClearsWhenTokenRemoved(t *testing.T) {
+func TestConfigReload_ForgejoHostCloneSourceClearsWhenTokenRemoved(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_FORGEJO_TOKEN_A
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "github-token")
@@ -1648,7 +1663,7 @@ func TestConfigReload_ForgejoHostCloneSourceClearsWhenTokenRemoved(t *testing.T)
 	require.ErrorIs(err, tokenauth.ErrMissingToken)
 }
 
-func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *testing.T) {
+func TestConfigReload_RepoTokenOverrideWithPlatformFallbackUpdatesSource(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_PLATFORM_TOKEN, KENN_FORGE_REPO_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_PLATFORM_TOKEN", "platform-token")
@@ -1739,6 +1754,7 @@ func (p *fakeRuntimePTY) Close() {
 }
 
 func TestConfigReload_RuntimeStripsBootAndReloadedStartupBoundTokenEnvs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1800,6 +1816,7 @@ command = ["/bin/echo"]
 }
 
 func TestConfigReload_InvalidConfigKeepsLastKnownGood(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -1831,6 +1848,7 @@ func TestConfigReload_InvalidConfigKeepsLastKnownGood(t *testing.T) {
 }
 
 func TestConfigReload_MalformedTomlDoesNotCrash(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -1849,6 +1867,7 @@ func TestConfigReload_MalformedTomlDoesNotCrash(t *testing.T) {
 }
 
 func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1880,6 +1899,7 @@ func TestConfigReload_NewRepoEntersSyncerTrackedSet(t *testing.T) {
 }
 
 func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1945,6 +1965,7 @@ func TestConfigReload_ResolvedArchivedStateReplacesFallbackDuplicate(t *testing.
 }
 
 func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, _, cfgPath, syncer := setupTestServerWithConfigContent(
@@ -1988,6 +2009,7 @@ func TestConfigReload_FallbackKeepsRenamedArchivedTrackedRepo(t *testing.T) {
 }
 
 func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2072,6 +2094,7 @@ func TestConfigReload_RouteReuseRefreshThenFailedReloadTracksRenamedRepoOnce(t *
 }
 
 func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2105,6 +2128,7 @@ func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 }
 
 func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -2146,6 +2170,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 }
 
 func TestConfigReload_SubscriberAfterParseErrorGetsCachedEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
@@ -2170,6 +2195,7 @@ func TestConfigReload_SubscriberAfterParseErrorGetsCachedEvent(t *testing.T) {
 }
 
 func TestActiveFleetConfigSnapshotDefersHotEnableUntilRuntimeAuth(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	boot := &config.Config{}
 	srv := wiredServer(&Server{
@@ -2193,6 +2219,7 @@ func TestActiveFleetConfigSnapshotDefersHotEnableUntilRuntimeAuth(t *testing.T) 
 }
 
 func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	boot := &config.Config{Fleet: config.Fleet{
 		Role: config.FleetRoleSpoke, BaseURL: "https://spoke.example",
@@ -2230,6 +2257,7 @@ func TestActiveFleetConfigSnapshotKeepsBootIdentity(t *testing.T) {
 }
 
 func TestFleetMemberPersistenceUsesBootIdentityAfterReload(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, `
 host = "127.0.0.1"
@@ -2357,6 +2385,7 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 // restart_required on the user-visible config.changed event, not
 // silently apply nothing.
 func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2388,6 +2417,7 @@ func TestConfigReload_RestartRequiredOnAuthGateChange(t *testing.T) {
 }
 
 func TestConfigReload_RestartRequiredOnFleetSessionsChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2417,6 +2447,7 @@ func TestConfigReload_RestartRequiredOnFleetSessionsChange(t *testing.T) {
 }
 
 func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -2469,7 +2500,7 @@ func TestConfigReload_SettingsSavePreservesRestartRequiredFields(t *testing.T) {
 // A rejected reload must still accumulate the candidate's token env
 // names: the user just declared them credentials, and a later base
 // terminal pane must not inherit them from the daemon environment.
-func TestConfigReloadRejectedCandidateStillStripsItsTokenNames(t *testing.T) {
+func TestConfigReloadRejectedCandidateStillStripsItsTokenNames(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_GITHUB_TOKEN, KENN_FORGE_REPO_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_GITHUB_TOKEN", "")
@@ -2514,6 +2545,7 @@ token_env = "WKSP_CANDIDATE_ONLY_TOKEN"
 func TestConfigReloadStructurallyInvalidCandidateStillStripsItsTokenNames(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(
@@ -2546,6 +2578,7 @@ name = "widget"
 func TestConfigReloadDeprecatedKeyCandidateStillStripsItsTokenNames(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(
@@ -2579,6 +2612,7 @@ path = "/tmp/notes"
 func TestConfigReloadRejectedCollisionDoesNotPoisonStripSets(
 	t *testing.T,
 ) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(
@@ -2605,6 +2639,7 @@ name = "widget"
 }
 
 func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	entered := make(chan struct{})
@@ -2634,6 +2669,7 @@ func TestInitializeProviderRepositoriesKeepsHTTPReadyDuringDiscovery(t *testing.
 }
 
 func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	entered := make(chan struct{})
@@ -2669,7 +2705,7 @@ func TestInitializeProviderRepositoriesKeepsRepoAddedDuringDiscovery(t *testing.
 	require.ElementsMatch([]string{"acme/widget", "other-org/other-repo"}, names)
 }
 
-func TestConfigReloadRetainsForegroundOverrides(t *testing.T) {
+func TestConfigReloadRetainsForegroundOverrides(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_PORT
 	t.Setenv("KENN_FORGE_PORT", "8092")
 	srv, _, path, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	host, port := "127.0.0.1", 8093

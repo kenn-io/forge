@@ -14,6 +14,7 @@ import (
 
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 type blockingHubEventTransport struct {
@@ -73,6 +74,7 @@ func (r *pullLifecycleRecorder) Shutdown(ctx context.Context) error {
 // TestServerShutdownWaitsForBackgroundTask verifies that Shutdown
 // blocks until an in-flight runBackground task returns.
 func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	release := make(chan struct{})
@@ -103,6 +105,7 @@ func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
 // TestServerShutdownTimesOut verifies that Shutdown honours the
 // caller's ctx when a background task ignores its own cancellation.
 func TestServerShutdownTimesOut(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	stuck := make(chan struct{})
@@ -121,6 +124,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 // Shutdown starts, runBackground drops new submissions so bg.Add
 // cannot race with bg.Wait.
 func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
@@ -139,6 +143,7 @@ func TestServerShutdownPreventsNewBackgroundTasks(t *testing.T) {
 // TestServerShutdownRaceNoPanic exercises runBackground concurrently
 // with Shutdown to catch WaitGroup Add/Wait races under -race.
 func TestServerShutdownRaceNoPanic(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	done := make(chan struct{})
@@ -159,6 +164,7 @@ func TestServerShutdownRaceNoPanic(t *testing.T) {
 // Shutdown call with a longer deadline can still drain background
 // work that the first call timed out waiting for.
 func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	release := make(chan struct{})
@@ -179,6 +185,7 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 }
 
 func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServer(t)
 	releaseConsumer := make(chan struct{})
@@ -235,6 +242,7 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 }
 
 func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServer(t)
 	transport := &blockingHubEventTransport{
@@ -277,6 +285,7 @@ func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
 // a later call with a longer deadline still invokes
 // http.Server.Shutdown and blocks until the handler drains.
 func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServer(t)
 
@@ -354,6 +363,7 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 }
 
 func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServer(t)
 	pull := newPullLifecycleRecorder()

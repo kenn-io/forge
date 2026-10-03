@@ -12,6 +12,7 @@ import (
 )
 
 func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -49,6 +50,7 @@ func TestWorkspaceSubjectSnapshotKeepsReferenceAndCachedActivity(t *testing.T) {
 }
 
 func TestWorkspaceSubjectSnapshotResolvesAdHocAssociationAsPullReference(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -81,6 +83,7 @@ func TestWorkspaceSubjectSnapshotResolvesAdHocAssociationAsPullReference(t *test
 }
 
 func TestWorkspaceSubjectSnapshotFallsBackFromRemovedAssociatedPullRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -131,6 +134,7 @@ func TestWorkspaceSubjectSnapshotFallsBackFromRemovedAssociatedPullRequest(t *te
 }
 
 func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -169,6 +173,7 @@ func TestWorkspaceSubjectSnapshotUsesStableRepositoryIdentityAfterRename(t *test
 }
 
 func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")
@@ -219,6 +224,7 @@ func TestWorkspaceSubjectSnapshotKeepsStableIdentityAcrossReusedRoute(t *testing
 }
 
 func TestWorkspaceSubjectSnapshotKeepsNonReadyReferenceWithoutCachedActivity(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	h := newEnrichmentTestHandler(t, "")

@@ -20,13 +20,14 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
 
 // The executable fixture consumes real stdin and records invocations, so a
 // missing head check or an action pre-read changes observable output.
-func TestExternalContextAdapterProcess(t *testing.T) {
+func TestExternalContextAdapterProcess(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime
 	if len(os.Args) < 3 || os.Args[len(os.Args)-2] != "--context-fixture" {
 		return
 	}
@@ -64,6 +65,7 @@ func TestExternalContextAdapterProcess(t *testing.T) {
 }
 
 func TestExternalContextAPI(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()

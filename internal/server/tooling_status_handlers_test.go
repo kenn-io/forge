@@ -52,6 +52,7 @@ func decodeToolingStatus(
 // every CLI present and authenticated: versions, hosts, and users are
 // reported in the shape the UI's ToolingStatus contract expects.
 func TestToolingStatusHappyPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, _ := setupTestServer(t)
@@ -84,6 +85,7 @@ func TestToolingStatusHappyPath(t *testing.T) {
 // installed, so gh reports unavailable without auth probes, while git
 // and glab report independently.
 func TestToolingStatusMissingGh(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, _ := setupTestServer(t)
@@ -119,6 +121,7 @@ func TestToolingStatusMissingGh(t *testing.T) {
 // TestToolingStatusCachesProbes verifies rapid repeat requests serve
 // the cached status instead of re-spawning probe subprocesses.
 func TestToolingStatusCachesProbes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv, _, _ := setupTestServer(t)
@@ -140,6 +143,7 @@ func TestToolingStatusCachesProbes(t *testing.T) {
 // configured self-hosted platform hosts are probed instead of the
 // public defaults, and the response reports the probed host.
 func TestToolingStatusProbesConfiguredHosts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

@@ -322,6 +322,7 @@ func TestAutoAssignmentPreservesRepositoryIdentityAfterRouteReuse(t *testing.T) 
 }
 
 func TestSpokePreparationBlocksWorkspaceAutoAssignBeforeProviderAccess(t *testing.T) {
+	t.Parallel()
 	handler := &Handler{
 		syncer:            &ghclient.Syncer{},
 		config:            ConfigSnapshot{AutoAssignOnCreate: true},

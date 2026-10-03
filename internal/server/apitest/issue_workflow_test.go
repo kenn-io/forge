@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func decodeIssueWorkflowBody(t *testing.T, body []byte, target any) {
@@ -21,6 +22,7 @@ func decodeIssueWorkflowBody(t *testing.T, body []byte, target any) {
 }
 
 func TestIssueWorkflowStatusWire(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -86,6 +88,7 @@ func TestIssueWorkflowStatusWire(t *testing.T) {
 }
 
 func TestIssueWorkflowStatusMetadataNormalizesInvalidStoredStatus(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -117,6 +120,7 @@ func TestIssueWorkflowStatusMetadataNormalizesInvalidStoredStatus(t *testing.T) 
 }
 
 func TestIssueSyncResponseIncludesWorkflow(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

@@ -56,6 +56,7 @@ func newTailscaleAuthTestServer(t *testing.T) (*httptest.Server, *server.Server)
 // TestDaemonPingContract protects authenticated readiness and the private
 // identity proof used before lifecycle discovery trusts a recorded endpoint.
 func TestDaemonPingContract(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts := httptest.NewUnstartedServer(nil)
@@ -153,6 +154,7 @@ func authGet(
 // API routes 401 (problem+json, unauthorized code) without a
 // credential and serve normally with the bearer header.
 func TestAPIAuthGatesAPIRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts := newAuthTestServer(t, "secret-token")
@@ -205,6 +207,7 @@ func TestAPIAuthGatesAPIRoutes(t *testing.T) {
 }
 
 func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, _ := newTailscaleAuthTestServer(t)
@@ -247,6 +250,7 @@ func TestTailscaleServeIdentityAuthorizesGatedTransports(t *testing.T) {
 }
 
 func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	credentials, err := federationauth.Open(
 		filepath.Join(t.TempDir(), "federation-credentials.json"),
@@ -294,6 +298,7 @@ func TestFederationCredentialTakesPrecedenceOverTailscaleServeIdentity(t *testin
 // credential clears the gate (the route itself may then 404 in this
 // minimal server, but it is no longer a 401).
 func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	ts := newAuthTestServer(t, "secret-token")
 
@@ -323,6 +328,7 @@ func TestAPIAuthGatesTerminalWebSocketRoutes(t *testing.T) {
 // probes (supervisors poll before reading the token file) and
 // non-API paths (SPA assets) are not gated.
 func TestAPIAuthHealthAndAssetsStayOpen(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	ts := newAuthTestServer(t, "secret-token")
 
@@ -342,6 +348,7 @@ func TestAPIAuthHealthAndAssetsStayOpen(t *testing.T) {
 // the same URL without the token; the cookie then authorizes API
 // requests; a wrong bootstrap token is rejected outright.
 func TestAPIAuthCookieBootstrap(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts := newAuthTestServer(t, "secret-token")
@@ -384,6 +391,7 @@ func TestAPIAuthCookieBootstrap(t *testing.T) {
 // TestAPIAuthDisabledByDefault pins the default: with no token
 // configured, behavior is unchanged and nothing is gated.
 func TestAPIAuthDisabledByDefault(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	ts := newAuthTestServer(t, "")
 	resp := authGet(t, ts, "/api/v1/snapshot", nil)
 	t.Cleanup(func() {
@@ -395,6 +403,7 @@ func TestAPIAuthDisabledByDefault(t *testing.T) {
 }
 
 func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
@@ -437,6 +446,7 @@ func TestFederationAuthIsScopedIndependentlyOfLocalAuth(t *testing.T) {
 }
 
 func TestFederationAuthTreatsEscapedSlashAsOneRouteParameter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeWorkspaceWrite)
@@ -459,6 +469,7 @@ func TestFederationAuthTreatsEscapedSlashAsOneRouteParameter(t *testing.T) {
 }
 
 func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, _, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeProviderRead)
@@ -495,6 +506,7 @@ func TestFederationAuthRejectsInsufficientScopeAndSubjectMismatch(t *testing.T) 
 }
 
 func TestRevokedFederationCredentialFailsOnNextRequest(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, store, token := servertest.NewFederationAuthTestServer(t, federationauth.ScopeSnapshotRead)
@@ -522,6 +534,7 @@ func TestRevokedFederationCredentialFailsOnNextRequest(t *testing.T) {
 }
 
 func TestFederationProviderAuthRequiresExactProtocolAndScope(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ts, store, token := servertest.NewFederationAuthTestServer(
@@ -592,6 +605,7 @@ func TestFederationProviderAuthRequiresExactProtocolAndScope(t *testing.T) {
 }
 
 func TestPreEnrollmentEndpointUsesOneTimeTokenInsteadOfLocalAPIAuth(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	credentials, err := federationauth.Open(

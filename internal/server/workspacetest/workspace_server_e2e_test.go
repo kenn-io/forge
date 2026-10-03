@@ -20,6 +20,7 @@ import (
 )
 
 func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
@@ -96,6 +97,7 @@ func TestListWorkspacesIncludesKataMetadata(t *testing.T) {
 func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
 	t *testing.T,
 ) {
+	runParallelWorkspacePTYTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -156,6 +158,7 @@ exit 0
 func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
 	t *testing.T,
 ) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -244,7 +247,7 @@ exit 0
 	assert.Equal("⠴ claude-activity", *listed.TmuxPaneTitle)
 }
 
-func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) {
+func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) { //nolint:paralleltest // swaps the procutil default limiter
 	require := require.New(t)
 	assert := assert.New(t)
 	restoreLimiter := procutil.SetDefaultLimiterForTest(

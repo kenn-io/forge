@@ -10,9 +10,11 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/mcpapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestMCPHTTPGuardEnforcesLoopbackAuthorityOriginAndAuthentication(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	bind, err := config.ParseHostKey("127.0.0.1:8092")
 	require.NoError(t, err)
 	const token = "daemon-token"

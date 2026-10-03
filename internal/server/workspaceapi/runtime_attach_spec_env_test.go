@@ -10,7 +10,7 @@ import (
 // externally returned attach commands: tmux resolves -L sockets under
 // TMUX_TMPDIR, and the caller's shell may not share the daemon's value,
 // so the command must carry it explicitly.
-func TestRuntimeAttachCommandPinsTmuxTmpdir(t *testing.T) {
+func TestRuntimeAttachCommandPinsTmuxTmpdir(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMUX_TMPDIR
 	t.Setenv("TMUX_TMPDIR", "/custom/socket-dir")
 	assert.Equal(t,
 		[]string{
@@ -28,7 +28,7 @@ func TestRuntimeAttachCommandPinsTmuxTmpdir(t *testing.T) {
 // symmetric case: the caller's shell may carry TMUX_TMPDIR (or run
 // inside tmux with TMUX set) while the daemon does not, which would
 // route the attach to a different socket directory or refuse nesting.
-func TestRuntimeAttachCommandWithoutTmpdirUnsetsCallerValue(t *testing.T) {
+func TestRuntimeAttachCommandWithoutTmpdirUnsetsCallerValue(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMUX_TMPDIR
 	t.Setenv("TMUX_TMPDIR", "")
 	assert.Equal(t,
 		[]string{

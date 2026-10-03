@@ -25,7 +25,7 @@ import (
 )
 
 func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -62,7 +62,7 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	tests := []struct {
@@ -112,7 +112,7 @@ func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *te
 }
 
 func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)

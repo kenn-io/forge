@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -51,6 +52,7 @@ func (m *transferSyncMockGH) GetIssue(
 // vanished number now resolves to a pull request, then leave it ineligible for
 // the same provider lookup on later syncs.
 func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -150,6 +152,7 @@ func TestRepositorySyncTombstonesPRShapedStaleIssueE2E(t *testing.T) {
 // destination repository. Sync-engine persistence internals are covered by
 // internal/github; this test only asserts what a client can see.
 func TestTransferredIssueObservableViaAPIE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

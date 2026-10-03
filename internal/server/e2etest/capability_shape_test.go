@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // TestSnapshotCommandCapabilityShape pins the wire shape of the
@@ -14,6 +16,7 @@ import (
 // renamed flag changes what every fleet client decodes, so the
 // contract is asserted on real response bytes.
 func TestSnapshotCommandCapabilityShape(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

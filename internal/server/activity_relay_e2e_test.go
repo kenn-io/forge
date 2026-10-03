@@ -41,6 +41,7 @@ import (
 )
 
 func TestActivityRelayEndToEnd(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	if testing.Short() {
 		t.Skip("builds and launches the relay executable")

@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -76,6 +77,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 // anywhere in that wiring either loses the sample on the expected unavailable-
 // upstream result or measures committed work against the wrong base.
 func TestFleetSnapshotDetachedWorktreeDiffForSyncedRepoE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

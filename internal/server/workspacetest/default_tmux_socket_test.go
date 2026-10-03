@@ -25,7 +25,7 @@ import (
 // config.DefaultTmuxCommand would follow a regressed default and pass.
 // TMUX_TMPDIR points the -L socket directory at a private sandbox so the
 // test never touches a real kenn-forge server.
-func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) {
+func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes TMUX_TMPDIR
 	if len(workspaceTestTmuxCommand) == 0 {
 		t.Skip("tmux is required")
 	}

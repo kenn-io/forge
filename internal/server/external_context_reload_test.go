@@ -23,6 +23,7 @@ import (
 )
 
 func TestConfigReloadPublishesExternalContextSources(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfigContent(t, validReloadConfig, &serverfake.MockGH{})
 	require.Empty(srv.externalContext.Sources())
@@ -48,6 +49,7 @@ command = [%q]
 }
 
 func TestExternalContextUsesHubSyncedPull(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)

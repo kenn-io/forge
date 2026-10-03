@@ -22,7 +22,7 @@ import (
 // This test simulates the hook context by pointing GIT_DIR /
 // GIT_WORK_TREE at a throwaway "host" repo and asserts SetupDiffRepo
 // leaves it untouched.
-func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) {
+func TestSetupDiffRepoDoesNotLeakIntoHostGitDir(t *testing.T) { //nolint:paralleltest // t.Setenv writes GIT_DIR, GIT_WORK_TREE
 	require := require.New(t)
 
 	host := t.TempDir()

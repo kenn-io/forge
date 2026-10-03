@@ -64,7 +64,7 @@ func newSplitTestServerWithMock(
 	return srv, set, syncer
 }
 
-func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *testing.T) {
+func TestAPIPullDetailOperationsSkipViewerLookupWhenSubmitReviewUnavailable(t *testing.T) { //nolint:paralleltest // t.Setenv writes SPLIT_WRITE_CRED_PAT
 	require := require.New(t)
 	assert := assert.New(t)
 

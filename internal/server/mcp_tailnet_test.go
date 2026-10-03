@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func tailnetMCPInitialize(
@@ -67,6 +68,7 @@ func newTailnetMCPTestServer(t *testing.T) (*httptest.Server, string) {
 }
 
 func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	ts, publicHost := newTailnetMCPTestServer(t)
 	sameOrigin := "https://" + publicHost
 
@@ -99,6 +101,7 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 }
 
 func TestTailnetMCPRequiresTailscaleIdentityMode(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	ts := newAuthTestServer(t, "secret-token")
 	srv := ts.Config.Handler.(*Server)
 	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})

@@ -20,6 +20,7 @@ import (
 )
 
 func TestDeleteWorkspaceRejectsConcurrentSetup(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -48,6 +49,7 @@ func TestDeleteWorkspaceRejectsConcurrentSetup(t *testing.T) {
 }
 
 func TestDeleteWorkspaceReportsDeletionAlreadyInProgress(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -91,6 +93,7 @@ func insertDeletionTestWorkspace(
 }
 
 func TestQueueWorkspaceDeletionPersistsFailure(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -140,6 +143,7 @@ func TestQueueWorkspaceDeletionPersistsFailure(t *testing.T) {
 }
 
 func TestQueueWorkspaceDeletionIsIdempotentAfterRemoval(t *testing.T) {
+	t.Parallel()
 	database := dbtest.Open(t)
 	handler := New(Deps{
 		DB:         database,
@@ -150,6 +154,7 @@ func TestQueueWorkspaceDeletionIsIdempotentAfterRemoval(t *testing.T) {
 }
 
 func TestQueueWorkspaceForceDeletionRemovesDirtyWorkspaceRecord(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -181,6 +186,7 @@ func TestQueueWorkspaceForceDeletionRemovesDirtyWorkspaceRecord(t *testing.T) {
 }
 
 func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -262,6 +268,7 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 }
 
 func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -292,6 +299,7 @@ func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
 }
 
 func TestDeleteWorkspacePersistsFailureAfterAdmission(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -335,6 +343,7 @@ func TestDeleteWorkspacePersistsFailureAfterAdmission(t *testing.T) {
 }
 
 func TestDeleteWorkspacePublishesConfirmedIdentity(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -385,6 +394,7 @@ func TestDeleteWorkspacePublishesConfirmedIdentity(t *testing.T) {
 }
 
 func TestStartMarksInterruptedWorkspaceDeletionFailed(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -406,6 +416,7 @@ func TestStartMarksInterruptedWorkspaceDeletionFailed(t *testing.T) {
 }
 
 func TestStartMarksInterruptedWorkspaceSetupFailed(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

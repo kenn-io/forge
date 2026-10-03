@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -149,6 +150,7 @@ func mergedHeadPinPullRequest() *gh.PullRequest {
 }
 
 func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var recordedPin atomic.Value
@@ -187,6 +189,7 @@ func TestGitHubMergePassesReviewedHeadPinToProvider(t *testing.T) {
 }
 
 func TestGitHubDetailExposesReviewedHeadOnlyWhenDiffIsCurrent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{}
@@ -216,6 +219,7 @@ func TestGitHubDetailExposesReviewedHeadOnlyWhenDiffIsCurrent(t *testing.T) {
 }
 
 func TestGitHubMergeRejectsMissingReviewedDiff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -242,6 +246,7 @@ func TestGitHubMergeRejectsMissingReviewedDiff(t *testing.T) {
 }
 
 func TestGitHubMergeRejectsStaleReviewedDiff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -269,6 +274,7 @@ func TestGitHubMergeRejectsStaleReviewedDiff(t *testing.T) {
 }
 
 func TestGitHubMergeRejectsMissingReviewedHeadPin(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -296,6 +302,7 @@ func TestGitHubMergeRejectsMissingReviewedHeadPin(t *testing.T) {
 }
 
 func TestGitHubMergeMovedHeadRejectionMapsToStaleState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -323,6 +330,7 @@ func TestGitHubMergeMovedHeadRejectionMapsToStaleState(t *testing.T) {
 }
 
 func TestGitHubMergeGenericConflictKeepsConflictReason(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	mock := &mockGH{
@@ -350,6 +358,7 @@ func TestGitHubMergeGenericConflictKeepsConflictReason(t *testing.T) {
 }
 
 func TestGitHubApproveSubmitsReview(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -385,6 +394,7 @@ func TestGitHubApproveSubmitsReview(t *testing.T) {
 }
 
 func TestGitHubApproveOmittedHeadPinUsesStoredPlatformHead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool
@@ -421,6 +431,7 @@ func TestGitHubApproveOmittedHeadPinUsesStoredPlatformHead(t *testing.T) {
 }
 
 func TestGitHubReviewDraftApprovePublishesReview(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	var providerCalled atomic.Bool

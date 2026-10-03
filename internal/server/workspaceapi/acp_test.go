@@ -51,6 +51,7 @@ func (p *acpReconnectPeer) Watch(_ localruntime.ACPWatch, reply *localruntime.AC
 }
 
 func TestACPReattachesOnWorkspaceOpenNotStartup(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -125,6 +126,7 @@ func (p *acpPromptPeer) Command(command localruntime.ACPCommand, reply *localrun
 }
 
 func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -220,6 +222,7 @@ func (c *imageReferenceChat) Subscribe() (<-chan struct{}, func()) {
 }
 
 func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	root := t.TempDir()
@@ -288,6 +291,7 @@ func (c *stallingChat) ExitCode() int              { return 0 }
 
 // A prompt waiting on the agent must not keep the chat from reading a stop.
 func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
+	t.Parallel()
 	chat := &stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}
 	defer close(chat.release)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
@@ -322,6 +326,7 @@ func (c *historyChat) History(before, limit int) ([]byte, error) {
 
 // Earlier transcript pages are answered on the connection that asked.
 func TestACPChatAnswersHistoryRequests(t *testing.T) {
+	t.Parallel()
 	chat := &historyChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}, make(chan [2]int, 1)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
@@ -345,6 +350,7 @@ func (c *failingChat) Command(localruntime.ACPCommand) error { return errors.New
 
 // A failed command names itself so the client settles only that request.
 func TestACPChatErrorsNameTheFailedCommand(t *testing.T) {
+	t.Parallel()
 	chat := &failingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
@@ -373,6 +379,7 @@ func (c *acceptingChat) Command(localruntime.ACPCommand) error { return nil }
 // An accepted prompt is acknowledged to its sender, so a retried submission
 // the host already has, which changes no state, still settles.
 func TestACPChatAcknowledgesAcceptedPrompts(t *testing.T) {
+	t.Parallel()
 	chat := &acceptingChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()

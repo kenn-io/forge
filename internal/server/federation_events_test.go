@@ -34,6 +34,7 @@ type testFederationEventStream struct {
 }
 
 func TestReconnectStaleEventCarriesHubConnection(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	hub := syncevents.NewEventHubWithCapacity(4)
 	t.Cleanup(hub.Close)
 	server := wiredServer(&Server{hub: hub})
@@ -51,6 +52,7 @@ func TestReconnectStaleEventCarriesHubConnection(t *testing.T) {
 }
 
 func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	server, httpServer, token := newFederationEventServer(t)
 	server.Hub().Broadcast(syncevents.Event{Type: "workspace_created", Data: struct{}{}})
@@ -79,6 +81,7 @@ func TestFederationEventEndpointReplaysFilteredEventsAndSignalsStale(t *testing.
 }
 
 func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	server, httpServer, token := newFederationEventServer(t)
 	wrongScopeNodeID := "88888888888888888888888888888888"
 	wrongScopeToken, err := server.options.FederationCredentials.MintInbound(
@@ -126,6 +129,7 @@ func TestFederationEventEndpointEnforcesCredentialProtocolAndRequestBounds(t *te
 }
 
 func TestFederationEventCredentialRevocationAppliesToNextConnection(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	server, httpServer, token := newFederationEventServer(t)
 	stream := openFederationEventStream(t, httpServer, token, "")
@@ -144,6 +148,7 @@ func TestFederationEventCredentialRevocationAppliesToNextConnection(t *testing.T
 }
 
 func TestHubEventReceiveAssignsFreshLocalIDs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	server := newTestServer(t)
@@ -168,6 +173,7 @@ func TestHubEventReceiveAssignsFreshLocalIDs(t *testing.T) {
 }
 
 func TestHubEventsStopWhileFleetIsDisabled(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	server := newTestServer(t)
 	server.cfg = &config.Config{Fleet: config.Fleet{Enabled: false}}
 	before := server.Hub().Generation()
@@ -180,6 +186,7 @@ func TestHubEventsStopWhileFleetIsDisabled(t *testing.T) {
 }
 
 func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	hubID := "66666666666666666666666666666666"
 	nodeID := "77777777777777777777777777777777"

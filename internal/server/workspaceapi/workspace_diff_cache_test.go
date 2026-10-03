@@ -16,6 +16,7 @@ import (
 )
 
 func TestWorkspaceDiffCacheMissThenHitPreparesOnce(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Unix(100, 0)
@@ -295,6 +296,7 @@ func TestWorkspaceDiffCacheReconnectRetainsActiveScopes(t *testing.T) {
 }
 
 func TestWorkspaceDiffCacheChangedValidationReplacesStableSnapshot(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Unix(100, 0)
@@ -332,6 +334,7 @@ func TestWorkspaceDiffCacheChangedValidationReplacesStableSnapshot(t *testing.T)
 }
 
 func TestWorkspaceDiffCacheConcurrentMissesCoalesce(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	key := workspaceDiffTestKey()
 	started := make(chan struct{})
@@ -418,6 +421,7 @@ func TestWorkspaceDiffCacheExpiredActiveEntryCanBeEvicted(t *testing.T) {
 }
 
 func TestWorkspaceDiffCacheSelectionRetriesFailedPrewarm(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	retry := make(chan time.Time)
@@ -457,6 +461,7 @@ func TestWorkspaceDiffCacheSelectionRetriesFailedPrewarm(t *testing.T) {
 }
 
 func TestWorkspaceDiffCacheSelectedColdFailureWaitsForPrewarmBackoff(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	retry := make(chan time.Time)

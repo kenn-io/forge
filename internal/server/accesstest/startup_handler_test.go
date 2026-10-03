@@ -34,6 +34,7 @@ type healthResponse struct {
 }
 
 func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	switcher := hostapi.NewSwitchHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
@@ -54,6 +55,7 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 }
 
 func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -121,6 +123,7 @@ func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
 }
 
 func TestStartupHandlerUsesHostValidation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -148,6 +151,7 @@ func TestStartupHandlerUsesHostValidation(t *testing.T) {
 }
 
 func TestStartupHandlerHonorsBasePath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head><script src="/assets/index.js"></script></head><body>app</body></html>`),
@@ -205,6 +209,7 @@ func TestStartupHandlerHonorsBasePath(t *testing.T) {
 }
 
 func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	frontend := fstest.MapFS{
 		"index.html": &fstest.MapFile{
 			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
@@ -243,7 +248,7 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 
 	var fullServer *server.Server
 	t.Cleanup(func() {
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		if fullServer != nil {
 			require.NoError(t, fullServer.Shutdown(shutdownCtx))

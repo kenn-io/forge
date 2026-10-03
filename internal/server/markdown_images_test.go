@@ -29,6 +29,7 @@ import (
 )
 
 func TestMarkdownImageRouteServesRepositorySVG(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 80"><rect width="120" height="80" fill="green"/></svg>`
@@ -72,6 +73,7 @@ func repoBrowserRequest(
 }
 
 func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
@@ -119,6 +121,7 @@ func TestMarkdownImageRouteFetchesThroughProvider(t *testing.T) {
 // serve the fetch, and the capability probe must not report the whole host as
 // unable to read markdown images.
 func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const source = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
@@ -164,6 +167,7 @@ func TestMarkdownImageRouteFetchesThroughRoutedRepositoryCredential(t *testing.T
 }
 
 func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{GetMarkdownImageFn: func(
 		context.Context,
 		string,
@@ -189,6 +193,7 @@ func TestMarkdownImageRouteMapsProviderDeadlineToUpstreamError(t *testing.T) {
 }
 
 func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	gitlabServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/api/v4/projects/42/uploads/secret/private.png", r.URL.EscapedPath())
@@ -237,6 +242,7 @@ func TestMarkdownImageRouteMapsGitLabServerErrorToUpstreamError(t *testing.T) {
 // Owner/name is a mutable route. When a different repository takes over the
 // route, the cache must not hand it the previous occupant's private bytes.
 func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const source = "https://github.com/acme/widget/blob/main/docs/images/search.png?raw=true"
@@ -273,6 +279,7 @@ func TestMarkdownImageCacheDoesNotFollowRouteReuse(t *testing.T) {
 // Branch-addressed files change under the same URL, so the browser and the
 // disk cache must both revalidate them soon; attachments stay immutable.
 func TestMarkdownImageRouteCachesMutableImagesBriefly(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const mutableSource = "https://github.com/acme/widget/blob/main/docs/images/search.png?raw=true"

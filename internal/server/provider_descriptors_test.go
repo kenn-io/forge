@@ -53,6 +53,7 @@ func (r descriptorCloneRoutes) SourceForRepo(
 }
 
 func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert, require := assert.New(t), require.New(t)
 	hubDB := dbtest.Open(t)
 	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
@@ -119,6 +120,7 @@ func TestSpokeAdHocCreationFollowsCachedRepositoryRename(t *testing.T) {
 }
 
 func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert, require := assert.New(t), require.New(t)
 	descriptor, err := providerplane.BuildRepositoryDescriptor(providerplane.RepositorySnapshot{
 		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(2002),
@@ -150,6 +152,7 @@ func TestRepositorySelectionRejectsDifferentHubIdentity(t *testing.T) {
 }
 
 func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -200,6 +203,7 @@ func TestWorkspaceLaunchRefreshFollowsStableRepositoryRename(t *testing.T) {
 }
 
 func TestNodeGitLabCloneReadsFetchMergeRequestHead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	const mrNumber = 7
@@ -303,6 +307,7 @@ func (r descriptorCloneRoutes) ReadSourceForRepo(
 func (descriptorCloneRoutes) FallbackSource(string) tokenauth.Source { return nil }
 
 func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
@@ -398,6 +403,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 }
 
 func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
@@ -473,6 +479,7 @@ func TestRemoteAdHocWorkspaceCreationSeedsSpokeRepositoryCatalog(t *testing.T) {
 }
 
 func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	hubDB := dbtest.Open(t)
@@ -580,6 +587,7 @@ func TestWorkspaceLaunchSpecRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 }
 
 func TestNodeCloneReadsRequireFreshDescriptorAndComputeLocally(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)

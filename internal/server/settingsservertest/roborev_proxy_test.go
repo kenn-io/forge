@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/testutil"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestRoborevHealthProbeAvailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	daemon := httptest.NewServer(http.HandlerFunc(
@@ -48,6 +50,7 @@ func TestRoborevHealthProbeAvailable(t *testing.T) {
 }
 
 func TestRoborevHealthProbeUnavailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv := servertest.SetupTestServerWithRoborev(t, "http://127.0.0.1:1")

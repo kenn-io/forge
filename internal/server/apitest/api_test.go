@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestAPIListPullsSearchZeroPaddedNumber(t *testing.T) {
@@ -38,6 +39,7 @@ func TestAPIListPullsSearchZeroPaddedNumber(t *testing.T) {
 }
 
 func TestAPIListPullsIncludesLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	description := "Needs a fix"
@@ -67,6 +69,7 @@ func TestAPIListPullsIncludesLabels(t *testing.T) {
 }
 
 func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -159,6 +162,7 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 }
 
 func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -283,6 +287,7 @@ func TestAPIActivityAndRepoSummariesHideRemovedUpstreamArchiveRows(t *testing.T)
 }
 
 func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
@@ -358,6 +363,7 @@ func TestAPIResolveAndAutocompleteHideOnlyRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
@@ -405,6 +411,7 @@ func TestAPIRemovedIssueMutationsReturnNotFoundWithoutProviderWrites(t *testing.
 }
 
 func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
@@ -433,6 +440,7 @@ func TestAPIRefreshPullCIHidesOnlyRemovedUpstreamItems(t *testing.T) {
 }
 
 func TestAPIRemovedPullMutationsReturnNotFoundWithoutProviderWrites(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
@@ -475,6 +483,7 @@ func TestAPIRemovedPullMutationsReturnNotFoundWithoutProviderWrites(t *testing.T
 }
 
 func TestAPISynchronousSyncRejectsRemovedUpstreamTombstones(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, providerClient, _ := setupTestServerWithFixtureClient(t)
 	ctx := t.Context()
@@ -534,6 +543,7 @@ func TestAPISynchronousSyncRejectsRemovedUpstreamTombstones(t *testing.T) {
 }
 
 func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -573,6 +583,7 @@ func TestAPIIssuesHideRemovedUpstreamArchiveRows(t *testing.T) {
 }
 
 func TestAPIGetPull(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPRWithHeadSHA(t, database, "acme", "widget", 1, "abc123def456")
@@ -590,6 +601,7 @@ func TestAPIGetPull(t *testing.T) {
 }
 
 func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -604,6 +616,7 @@ func TestAPIGetPullAcceptsMixedCaseRepoPath(t *testing.T) {
 }
 
 func TestAPIListPullsAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -620,6 +633,7 @@ func TestAPIListPullsAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIListPullsAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -641,6 +655,7 @@ func TestAPIListPullsAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
 }
 
 func TestAPIGetPullIncludesBranches(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -657,6 +672,7 @@ func TestAPIGetPullIncludesBranches(t *testing.T) {
 }
 
 func TestAPIGetPullIncludesLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{
@@ -679,6 +695,7 @@ func TestAPIGetPullIncludesLabels(t *testing.T) {
 }
 
 func TestAPIListPullsStateFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -716,6 +733,7 @@ func TestAPIListPullsStateFilter(t *testing.T) {
 }
 
 func TestAPIListIssuesStateFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -741,6 +759,7 @@ func TestAPIListIssuesStateFilter(t *testing.T) {
 }
 
 func TestAPIListIssuesFilterByAssignee(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -764,6 +783,7 @@ func TestAPIListIssuesFilterByAssignee(t *testing.T) {
 }
 
 func TestAPIListIssuesResponseIncludesAssignees(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -785,6 +805,7 @@ func TestAPIListIssuesResponseIncludesAssignees(t *testing.T) {
 }
 
 func TestAPIGetIssueIncludesAssignees(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssueWithAssignees(t, database, "acme", "widget", 7, "open", `["alice","bob"]`)
@@ -799,6 +820,7 @@ func TestAPIGetIssueIncludesAssignees(t *testing.T) {
 }
 
 func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -865,6 +887,7 @@ func TestAPISyncIssuePersistsAssigneesFromProvider(t *testing.T) {
 }
 
 func TestAPIGetIssueIncludesLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	description := "Customer reported"

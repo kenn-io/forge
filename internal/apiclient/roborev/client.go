@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient/paramcodec"
@@ -93,6 +95,10 @@ func (c *Client) ListReposWithResponse(ctx context.Context, options *ListReposRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListReposErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)

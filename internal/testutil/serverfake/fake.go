@@ -829,22 +829,6 @@ func EmptyFrontend() fs.FS {
 	}
 }
 
-func (f *FakeTelemetry) Capture(event string, properties map[string]any) error {
-	f.Event = event
-	f.Properties = properties
-	return nil
-}
-
-func (f *FakeTelemetry) Close() error { return nil }
-
-func (f *FakeTelemetry) Enabled() bool { return f.EnabledValue }
-
-type FakeTelemetry struct {
-	EnabledValue bool
-	Event        string
-	Properties   map[string]any
-}
-
 const FederationEventTestNodeID = "55555555555555555555555555555555"
 
 func GracefulShutdown(t *testing.T, srv interface{ Shutdown(context.Context) error }) {

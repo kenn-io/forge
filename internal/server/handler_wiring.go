@@ -20,7 +20,6 @@ import (
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/streamapi"
 	"go.kenn.io/forge/internal/server/syncevents"
-	"go.kenn.io/forge/internal/server/telemetryapi"
 )
 
 // wireHandlers builds the Handlers of every package split out of this one.
@@ -208,9 +207,6 @@ func (s *Server) wireHandlers() {
 		ProviderSource:        &s.providerSource,
 		Syncer:                &s.syncer,
 		WorkspaceAPI:          &s.workspaceAPI,
-	}
-	s.telemetryapi = &telemetryapi.Handlers{
-		Telemetry: s.telemetry,
 	}
 	s.activityapi.DefaultPlatformHost = s.settingsapi.DefaultPlatformHost
 	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync

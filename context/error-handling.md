@@ -30,6 +30,10 @@ members:
 clients, tests, and automation should branch on `code` and `details`, not on
 prose.
 
+`POST /api/v1/telemetry/events` is served by kit's capture handler, so its
+handler errors (400, 405, 500) are `text/plain` while admission and body
+failures stay problem JSON; the UI ignores its failures.
+
 ## Code Taxonomy
 
 Wire codes are camelCase. Keep internal platform error constants in their native

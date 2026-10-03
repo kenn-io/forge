@@ -484,6 +484,31 @@ describe("App feature routes", () => {
     expect(finalized).toHaveBeenCalledOnce();
   });
 
+  it("reports app opens for the mounted app's lifetime", async () => {
+    const target = createAppTarget();
+    const interrupted: string[] = [];
+    const operations: string[] = [];
+    const runtime: OwnedAppRuntime = {
+      ...testAppRuntime(() => {}),
+      runCommand: <A, E>(_program: unknown, options: { readonly operation: string }): AppExecution<A, E> => {
+        operations.push(options.operation);
+        return {
+          interrupt: () => interrupted.push(options.operation),
+          await: Effect.never,
+          exit: new Promise(() => {}),
+        };
+      },
+    };
+    const mounted = mountApplication(target, runtime);
+    await waitFor(() => expect(target.childElementCount).toBeGreaterThan(0));
+    expect(operations).toContain("report app opened");
+    expect(interrupted).not.toContain("report app opened");
+
+    await Effect.runPromise(mounted.dispose);
+
+    expect(interrupted).toContain("report app opened");
+  });
+
   it("reports a non-interruption root finalizer defect", async () => {
     const target = createAppTarget();
     const reportFailure = vi.fn();

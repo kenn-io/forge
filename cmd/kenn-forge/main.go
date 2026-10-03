@@ -852,7 +852,7 @@ func run(opts serve.Options) error {
 			AgentMCPURL:                     "http://" + agentMCPLn.Addr().String() + "/mcp",
 			WorktreeDir:                     filepath.Join(cfg.DataDir, "worktrees"),
 			PtyOwnerManagerPath:             os.Getenv("KENN_FORGE_PTY_MANAGER"),
-			Telemetry:                       telemetryReporter,
+			TelemetryCapture:                telemetryReporter.CaptureHandler(),
 			TokenSources:                    tokenSources,
 			Archive:                         archiveService,
 			DetachRuntimeSessionsForRestart: cfg.ExecutionWorker.Enabled || os.Getenv("KENN_FORGE_DEV_RESTART") == "1",

@@ -7,8 +7,10 @@ import (
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"mime"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
@@ -12420,6 +12422,10 @@ func (c *Client) ListWorkflowRunsWithResponse(ctx context.Context, options *List
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowRunsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12476,6 +12482,10 @@ func (c *Client) ListWorkflowRunJobsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowRunJobsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12532,6 +12542,10 @@ func (c *Client) ListWorkflowsWithResponse(ctx context.Context, options *ListWor
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12589,6 +12603,10 @@ func (c *Client) DispatchWorkflowWithResponse(ctx context.Context, options *Disp
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DispatchWorkflowErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12664,6 +12682,10 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListActivityErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12725,6 +12747,10 @@ func (c *Client) ListActivityAuthorsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListActivityAuthorsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12800,6 +12826,10 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListActivityThreadEventsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12857,6 +12887,10 @@ func (c *Client) ReceiveAgentHookWithResponse(ctx context.Context, options *Rece
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReceiveAgentHookErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12912,6 +12946,10 @@ func (c *Client) ListArchivePacingWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListArchivePacingErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -12969,6 +13007,10 @@ func (c *Client) PauseArchivesWithResponse(ctx context.Context, options *PauseAr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PauseArchivesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13031,6 +13073,10 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetArchiveReportErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13093,6 +13139,10 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetArchiveSnapshotErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13150,6 +13200,10 @@ func (c *Client) StartArchivesWithResponse(ctx context.Context, options *StartAr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StartArchivesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13206,6 +13260,10 @@ func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListArchiveStatusErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13261,6 +13319,10 @@ func (c *Client) ListDevboxConnectionsWithResponse(ctx context.Context, reqEdito
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListDevboxConnectionsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13318,6 +13380,10 @@ func (c *Client) ConnectDevboxWithResponse(ctx context.Context, options *Connect
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ConnectDevboxErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13378,6 +13444,10 @@ func (c *Client) DiscoverDevboxesWithResponse(ctx context.Context, options *Disc
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DiscoverDevboxesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13434,6 +13504,10 @@ func (c *Client) DisconnectDevboxWithResponse(ctx context.Context, options *Disc
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DisconnectDevboxErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13476,6 +13550,10 @@ func (c *Client) ReconnectDevboxWithResponse(ctx context.Context, options *Recon
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReconnectDevboxErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13519,6 +13597,10 @@ func (c *Client) StoreDevboxPasteImageWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StoreDevboxPasteImageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13575,6 +13657,10 @@ func (c *Client) ListDevboxWorkspacesWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListDevboxWorkspacesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13632,6 +13718,10 @@ func (c *Client) CreateDevboxWorkspaceWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13692,6 +13782,10 @@ func (c *Client) DeleteDevboxWorkspaceWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13734,6 +13828,10 @@ func (c *Client) GetDevboxWorkspaceWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13790,6 +13888,10 @@ func (c *Client) ListDevboxAgentSessionsWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListDevboxAgentSessionsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13846,6 +13948,10 @@ func (c *Client) GetDevboxCommitsWithResponse(ctx context.Context, options *GetD
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxCommitsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13912,6 +14018,10 @@ func (c *Client) GetDevboxDiffWithResponse(ctx context.Context, options *GetDevb
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -13972,6 +14082,10 @@ func (c *Client) WatchDevboxDiffWithResponse(ctx context.Context, options *Watch
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(WatchDevboxDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14039,6 +14153,10 @@ func (c *Client) GetDevboxFilePreviewWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxFilePreviewErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14103,6 +14221,10 @@ func (c *Client) GetDevboxFilesWithResponse(ctx context.Context, options *GetDev
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxFilesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14159,6 +14281,10 @@ func (c *Client) PullDevboxWorkspaceWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PullDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14215,6 +14341,10 @@ func (c *Client) PushDevboxWorkspaceWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PushDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14271,6 +14401,10 @@ func (c *Client) RefreshDevboxWorkspaceWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14327,6 +14461,10 @@ func (c *Client) RetryDevboxWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RetryDevboxWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14383,6 +14521,10 @@ func (c *Client) GetDevboxRuntimeWithResponse(ctx context.Context, options *GetD
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxRuntimeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14440,6 +14582,10 @@ func (c *Client) LaunchDevboxHandoffWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchDevboxHandoffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14497,6 +14643,10 @@ func (c *Client) LaunchDevboxSessionWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchDevboxSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14553,6 +14703,10 @@ func (c *Client) StopDevboxSessionWithResponse(ctx context.Context, options *Sto
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StopDevboxSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14596,6 +14750,10 @@ func (c *Client) RenameDevboxSessionWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RenameDevboxSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14652,6 +14810,10 @@ func (c *Client) GetDevboxAttachSpecWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxAttachSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14709,6 +14871,10 @@ func (c *Client) SendDevboxInitialMessageWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SendDevboxInitialMessageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14765,6 +14931,10 @@ func (c *Client) ListDevboxWorkspaceTargetsWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListDevboxWorkspaceTargetsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14821,6 +14991,10 @@ func (c *Client) GetDevboxWorkspaceViewStateWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDevboxWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14878,6 +15052,10 @@ func (c *Client) UpdateDevboxWorkspaceViewStateWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateDevboxWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14938,6 +15116,10 @@ func (c *Client) BrowseDocsFoldersWithResponse(ctx context.Context, options *Bro
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(BrowseDocsFoldersErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -14993,6 +15175,10 @@ func (c *Client) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListDocsFoldersErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15050,6 +15236,10 @@ func (c *Client) CreateDocsFolderWithResponse(ctx context.Context, options *Crea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateDocsFolderErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15106,6 +15296,10 @@ func (c *Client) DeleteDocsFolderWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteDocsFolderErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15149,6 +15343,10 @@ func (c *Client) UpdateDocsFolderWithResponse(ctx context.Context, options *Upda
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateDocsFolderErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15209,6 +15407,10 @@ func (c *Client) ReadDocsBlobWithResponse(ctx context.Context, options *ReadDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReadDocsBlobErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15260,6 +15462,10 @@ func (c *Client) DeleteDocsFileWithResponse(ctx context.Context, options *Delete
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteDocsFileErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15306,6 +15512,10 @@ func (c *Client) ReadDocsFileWithResponse(ctx context.Context, options *ReadDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReadDocsFileErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15367,6 +15577,10 @@ func (c *Client) CreateDocsFileWithResponse(ctx context.Context, options *Create
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateDocsFileErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15428,6 +15642,10 @@ func (c *Client) WriteDocsFileWithResponse(ctx context.Context, options *WriteDo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(WriteDocsFileErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15485,6 +15703,10 @@ func (c *Client) RenameDocsFileWithResponse(ctx context.Context, options *Rename
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RenameDocsFileErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15541,6 +15763,10 @@ func (c *Client) GetDocsGitStatusWithResponse(ctx context.Context, options *GetD
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDocsGitStatusErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15597,6 +15823,10 @@ func (c *Client) GetDocsGitChangesWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDocsGitChangesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15654,6 +15884,10 @@ func (c *Client) PublishDocsGitWithResponse(ctx context.Context, options *Publis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PublishDocsGitErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15710,6 +15944,10 @@ func (c *Client) PullDocsGitWithResponse(ctx context.Context, options *PullDocsG
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PullDocsGitErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15771,6 +16009,10 @@ func (c *Client) SearchDocsFolderWithResponse(ctx context.Context, options *Sear
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SearchDocsFolderErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15827,6 +16069,10 @@ func (c *Client) GetDocsTreeWithResponse(ctx context.Context, options *GetDocsTr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetDocsTreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15888,6 +16134,10 @@ func (c *Client) SearchDocsWithResponse(ctx context.Context, options *SearchDocs
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SearchDocsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15948,6 +16198,10 @@ func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEv
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StreamEventsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -15989,6 +16243,10 @@ func (c *Client) ListExternalContextSourcesWithResponse(ctx context.Context, req
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListExternalContextSourcesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16044,6 +16302,10 @@ func (c *Client) IssueFederationBrowserLoginTicketWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(IssueFederationBrowserLoginTicketErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16101,6 +16363,10 @@ func (c *Client) BeginFederationEnrollmentWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(BeginFederationEnrollmentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16157,6 +16423,10 @@ func (c *Client) AbortFederationEnrollmentWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(AbortFederationEnrollmentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16200,6 +16470,10 @@ func (c *Client) ActivateFederationEnrollmentWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ActivateFederationEnrollmentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16256,6 +16530,10 @@ func (c *Client) BeginFederationSpokePreparationWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(BeginFederationSpokePreparationErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16313,6 +16591,10 @@ func (c *Client) SealFederationSpokePreparationWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SealFederationSpokePreparationErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16373,6 +16655,10 @@ func (c *Client) StreamFederationProviderEventsWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StreamFederationProviderEventsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16414,6 +16700,10 @@ func (c *Client) GetFederationIdentityWithResponse(ctx context.Context, reqEdito
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetFederationIdentityErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16471,6 +16761,10 @@ func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationImportReviewDraftErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16528,6 +16822,10 @@ func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationImportWorkflowStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16585,6 +16883,10 @@ func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx cont
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationFilterUnassignedActivitySubjectsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16642,6 +16944,10 @@ func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationGetDiffDescriptorErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16699,6 +17005,10 @@ func (c *Client) FederationResolveGithubRepositoryIDWithResponse(ctx context.Con
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationResolveGithubRepositoryIDErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16756,6 +17066,10 @@ func (c *Client) FederationGetRepositoryDescriptorWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationGetRepositoryDescriptorErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16811,6 +17125,10 @@ func (c *Client) FederationGetProviderSettingsWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationGetProviderSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16868,6 +17186,10 @@ func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationUpdateProviderSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16925,6 +17247,10 @@ func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationSetWorkflowStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -16982,6 +17308,10 @@ func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationListWorkflowStatesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17039,6 +17369,10 @@ func (c *Client) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationAutoAssignWorkspaceItemErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17082,6 +17416,10 @@ func (c *Client) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationResolveWorkspaceLaunchSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17139,6 +17477,10 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationRefreshWorkspaceLaunchSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17196,6 +17538,10 @@ func (c *Client) FederationQueryWorkspaceProviderStateWithResponse(ctx context.C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(FederationQueryWorkspaceProviderStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17251,6 +17597,10 @@ func (c *Client) QueueFederationWorkspaceCleanupWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(QueueFederationWorkspaceCleanupErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17297,6 +17647,10 @@ func (c *Client) CompleteFilesystemPathWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CompleteFilesystemPathErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17357,6 +17711,10 @@ func (c *Client) ValidateFilesystemRepoWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ValidateFilesystemRepoErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17414,6 +17772,10 @@ func (c *Client) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateFleetEnrollmentTokenErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -17470,6 +17832,10 @@ func (c *Client) RevokeFederationEnrollmentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RevokeFederationEnrollmentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19080,6 +19446,10 @@ func (c *Client) ListFleetWorkspaceTargetsWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListFleetWorkspaceTargetsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19136,6 +19506,10 @@ func (c *Client) GetFleetWorkspaceViewStateWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetFleetWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19193,6 +19567,10 @@ func (c *Client) UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateFleetWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19250,6 +19628,10 @@ func (c *Client) CreateFleetBrowserLoginWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateFleetBrowserLoginErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19307,6 +19689,10 @@ func (c *Client) JoinFederationWithResponse(ctx context.Context, options *JoinFe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(JoinFederationErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19362,6 +19748,10 @@ func (c *Client) PrepareFederationSpokeWithResponse(ctx context.Context, reqEdit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PrepareFederationSpokeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19419,6 +19809,10 @@ func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(AbortFederationSpokePreparationErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19476,6 +19870,10 @@ func (c *Client) QueryGhWithResponse(ctx context.Context, options *QueryGhReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(QueryGhErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19540,6 +19938,10 @@ func (c *Client) ListWorkflowRunsOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowRunsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19596,6 +19998,10 @@ func (c *Client) ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowRunJobsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19652,6 +20058,10 @@ func (c *Client) ListWorkflowsOnHostWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkflowsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19709,6 +20119,10 @@ func (c *Client) DispatchWorkflowOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DispatchWorkflowOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19766,6 +20180,10 @@ func (c *Client) CreateIssueOnHostWithResponse(ctx context.Context, options *Cre
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19822,6 +20240,10 @@ func (c *Client) GetIssueOnHostWithResponse(ctx context.Context, options *GetIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetIssueOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19879,6 +20301,10 @@ func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditIssueContentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19936,6 +20362,10 @@ func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueAssigneesOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -19993,6 +20423,10 @@ func (c *Client) PostIssueCommentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PostIssueCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20049,6 +20483,10 @@ func (c *Client) DeleteIssueCommentOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteIssueCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20092,6 +20530,10 @@ func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditIssueCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20149,6 +20591,10 @@ func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueGithubStateOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20205,6 +20651,10 @@ func (c *Client) ListIssueKataLinksOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListIssueKataLinksOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20262,6 +20712,10 @@ func (c *Client) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueKataLinkOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20318,6 +20772,10 @@ func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteIssueKataLinkOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20361,6 +20819,10 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueLabelsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20417,6 +20879,10 @@ func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncI
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SyncIssueOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20473,6 +20939,10 @@ func (c *Client) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EnqueueIssueSyncOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20516,6 +20986,10 @@ func (c *Client) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueWorkspaceOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20572,6 +21046,10 @@ func (c *Client) GetPullOnHostWithResponse(ctx context.Context, options *GetPull
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20629,6 +21107,10 @@ func (c *Client) EditPrContentOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrContentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20686,6 +21168,10 @@ func (c *Client) ApprovePullOnHostWithResponse(ctx context.Context, options *App
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApprovePullOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20742,6 +21228,10 @@ func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApprovePullWorkflowsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20799,6 +21289,10 @@ func (c *Client) SetPrAssigneesOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrAssigneesOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20855,6 +21349,10 @@ func (c *Client) RefreshPullCiOnHostWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshPullCiOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20912,6 +21410,10 @@ func (c *Client) PostPrCommentOnHostWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PostPrCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -20968,6 +21470,10 @@ func (c *Client) DeletePrCommentOnHostWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePrCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21011,6 +21517,10 @@ func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21067,6 +21577,10 @@ func (c *Client) GetPullCommitsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullCommitsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21130,6 +21644,10 @@ func (c *Client) GetPullDiffOnHostWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullDiffOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21187,6 +21705,10 @@ func (c *Client) ReplyToDiscussionOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReplyToDiscussionOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21244,6 +21766,10 @@ func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolveDiscussionOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21292,6 +21818,10 @@ func (c *Client) GetPullExternalContextOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullExternalContextOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21349,6 +21879,10 @@ func (c *Client) RunPullExternalContextActionOnHostWithResponse(ctx context.Cont
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RunPullExternalContextActionOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21413,6 +21947,10 @@ func (c *Client) GetPullFilePreviewOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullFilePreviewOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21469,6 +22007,10 @@ func (c *Client) GetPullFilesOnHostWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullFilesOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21526,6 +22068,10 @@ func (c *Client) SetPrGithubStateOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrGithubStateOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21582,6 +22128,10 @@ func (c *Client) GetPullImportMetadataOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullImportMetadataOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21638,6 +22188,10 @@ func (c *Client) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListPullRequestKataLinksOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21695,6 +22249,10 @@ func (c *Client) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreatePullRequestKataLinkOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21751,6 +22309,10 @@ func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePullRequestKataLinkOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21794,6 +22356,10 @@ func (c *Client) SetPrLabelsOnHostWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrLabelsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21851,6 +22417,10 @@ func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *Merge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MergePullOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21908,6 +22478,10 @@ func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeferMergePullOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -21964,6 +22538,10 @@ func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MarkPullReadyForReviewOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22021,6 +22599,10 @@ func (c *Client) RequestPullChangesOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RequestPullChangesOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22077,6 +22659,10 @@ func (c *Client) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DiscardPrReviewDraftOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22119,6 +22705,10 @@ func (c *Client) GetPrReviewDraftOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPrReviewDraftOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22176,6 +22766,10 @@ func (c *Client) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreatePrReviewDraftCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22232,6 +22826,10 @@ func (c *Client) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePrReviewDraftCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22275,6 +22873,10 @@ func (c *Client) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrReviewDraftCommentOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22332,6 +22934,10 @@ func (c *Client) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PublishPrReviewDraftOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22389,6 +22995,10 @@ func (c *Client) ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApplyPrReviewSuggestionsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22445,6 +23055,10 @@ func (c *Client) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolvePrReviewThreadOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22487,6 +23101,10 @@ func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UnresolvePrReviewThreadOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22529,6 +23147,10 @@ func (c *Client) GetPrReviewerAccountsOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPrReviewerAccountsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22586,6 +23208,10 @@ func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrReviewersOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22642,6 +23268,10 @@ func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullStackOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22699,6 +23329,10 @@ func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetKanbanStateOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22741,6 +23375,10 @@ func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SyncPullOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22797,6 +23435,10 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EnqueuePrSyncOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22839,6 +23481,10 @@ func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteRepoOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22881,6 +23527,10 @@ func (c *Client) GetRepoOnHostWithResponse(ctx context.Context, options *GetRepo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -22945,6 +23595,10 @@ func (c *Client) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserAssetOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23001,6 +23655,10 @@ func (c *Client) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserBlobOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23066,6 +23724,10 @@ func (c *Client) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserCommitOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23130,6 +23792,10 @@ func (c *Client) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserHistoryOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23193,6 +23859,10 @@ func (c *Client) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserLastChangedOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23253,6 +23923,10 @@ func (c *Client) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoBrowserRefsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23316,6 +23990,10 @@ func (c *Client) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoBrowserTreeOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23378,6 +24056,10 @@ func (c *Client) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetCommentAutocompleteOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23438,6 +24120,10 @@ func (c *Client) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoCommitDiffOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23494,6 +24180,10 @@ func (c *Client) ListRepoLabelsOnHostWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoLabelsOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23554,6 +24244,10 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetMarkdownImageOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23603,6 +24297,10 @@ func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *Ref
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshRepoOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23663,6 +24361,10 @@ func (c *Client) ResolveRepoItemOnHostWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolveRepoItemOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23720,6 +24422,10 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateRepoUIVisibilityOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23777,6 +24483,10 @@ func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateRepoWorkspaceOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23834,6 +24544,10 @@ func (c *Client) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateRepoWorktreeBaseOnHostErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23903,6 +24617,10 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListIssuesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -23960,6 +24678,10 @@ func (c *Client) CreateIssueWithResponse(ctx context.Context, options *CreateIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24016,6 +24738,10 @@ func (c *Client) GetIssueWithResponse(ctx context.Context, options *GetIssueRequ
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetIssueErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24073,6 +24799,10 @@ func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *Edit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditIssueContentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24130,6 +24860,10 @@ func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueAssigneesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24187,6 +24921,10 @@ func (c *Client) PostIssueCommentWithResponse(ctx context.Context, options *Post
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PostIssueCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24243,6 +24981,10 @@ func (c *Client) DeleteIssueCommentWithResponse(ctx context.Context, options *De
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteIssueCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24286,6 +25028,10 @@ func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *Edit
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditIssueCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24343,6 +25089,10 @@ func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *S
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueGithubStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24399,6 +25149,10 @@ func (c *Client) ListIssueKataLinksWithResponse(ctx context.Context, options *Li
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListIssueKataLinksErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24456,6 +25210,10 @@ func (c *Client) CreateIssueKataLinkWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24512,6 +25270,10 @@ func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *D
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteIssueKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24555,6 +25317,10 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetIssueLabelsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24611,6 +25377,10 @@ func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SyncIssueErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24667,6 +25437,10 @@ func (c *Client) EnqueueIssueSyncWithResponse(ctx context.Context, options *Enqu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EnqueueIssueSyncErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24710,6 +25484,10 @@ func (c *Client) CreateIssueWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateIssueWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24765,6 +25543,10 @@ func (c *Client) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListKataDaemonsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24826,6 +25608,10 @@ func (c *Client) ResolveKataIssueReferenceWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolveKataIssueReferenceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24882,6 +25668,10 @@ func (c *Client) GetKataIssueDetailWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetKataIssueDetailErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -24938,6 +25728,10 @@ func (c *Client) GetKataLaunchTargetWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetKataLaunchTargetErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25000,6 +25794,10 @@ func (c *Client) ListKataReferencesWithResponse(ctx context.Context, options *Li
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListKataReferencesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25056,6 +25854,10 @@ func (c *Client) GetKataProjectMappingsWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetKataProjectMappingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25116,6 +25918,10 @@ func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateKataWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25183,6 +25989,10 @@ func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListNotificationsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25240,6 +26050,10 @@ func (c *Client) MarkNotificationsDoneWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MarkNotificationsDoneErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25297,6 +26111,10 @@ func (c *Client) MarkNotificationsReadWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MarkNotificationsReadErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25352,6 +26170,10 @@ func (c *Client) SyncNotificationsWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SyncNotificationsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25395,6 +26217,10 @@ func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MarkNotificationsUndoneErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25457,6 +26283,10 @@ func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListUserRepositoriesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25512,6 +26342,10 @@ func (c *Client) ListProjectsWithResponse(ctx context.Context, reqEditors ...run
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListProjectsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25569,6 +26403,10 @@ func (c *Client) RegisterProjectWithResponse(ctx context.Context, options *Regis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RegisterProjectErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25626,6 +26464,10 @@ func (c *Client) CloneProjectWithResponse(ctx context.Context, options *ClonePro
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CloneProjectErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25682,6 +26524,10 @@ func (c *Client) DeleteProjectWithResponse(ctx context.Context, options *DeleteP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteProjectErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25724,6 +26570,10 @@ func (c *Client) GetProjectWithResponse(ctx context.Context, options *GetProject
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetProjectErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25780,6 +26630,10 @@ func (c *Client) ListProjectBranchesWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListProjectBranchesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25836,6 +26690,10 @@ func (c *Client) ListLaunchTargetsWithResponse(ctx context.Context, options *Lis
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListLaunchTargetsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25892,6 +26750,10 @@ func (c *Client) ListWorktreesWithResponse(ctx context.Context, options *ListWor
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorktreesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -25949,6 +26811,10 @@ func (c *Client) RegisterWorktreeWithResponse(ctx context.Context, options *Regi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RegisterWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26006,6 +26872,10 @@ func (c *Client) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateWorktreeFromMergeRequestErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26062,6 +26932,10 @@ func (c *Client) DeleteWorktreeWithResponse(ctx context.Context, options *Delete
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26105,6 +26979,10 @@ func (c *Client) RemoveWorktreeWithResponse(ctx context.Context, options *Remove
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RemoveWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26148,6 +27026,10 @@ func (c *Client) SetWorktreeHiddenWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetWorktreeHiddenErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26204,6 +27086,10 @@ func (c *Client) InspectProjectWorktreeWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(InspectProjectWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26261,6 +27147,10 @@ func (c *Client) SetWorktreeLinksWithResponse(ctx context.Context, options *SetW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetWorktreeLinksErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26317,6 +27207,10 @@ func (c *Client) RefreshWorktreeStatsWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshWorktreeStatsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26373,6 +27267,10 @@ func (c *Client) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetProjectWorktreeRuntimeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26430,6 +27328,10 @@ func (c *Client) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Con
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchProjectWorktreeRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26486,6 +27388,10 @@ func (c *Client) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StopProjectWorktreeRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26528,6 +27434,10 @@ func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx cont
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26584,6 +27494,10 @@ func (c *Client) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EnsureProjectWorktreeRuntimeShellErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26641,6 +27555,10 @@ func (c *Client) SetWorktreeSessionBackendWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetWorktreeSessionBackendErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26711,6 +27629,10 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListPullsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26767,6 +27689,10 @@ func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26824,6 +27750,10 @@ func (c *Client) EditPrContentWithResponse(ctx context.Context, options *EditPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrContentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26881,6 +27811,10 @@ func (c *Client) ApprovePullWithResponse(ctx context.Context, options *ApprovePu
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApprovePullErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26937,6 +27871,10 @@ func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApprovePullWorkflowsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -26994,6 +27932,10 @@ func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrA
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrAssigneesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27050,6 +27992,10 @@ func (c *Client) RefreshPullCiWithResponse(ctx context.Context, options *Refresh
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshPullCiErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27107,6 +28053,10 @@ func (c *Client) PostPrCommentWithResponse(ctx context.Context, options *PostPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PostPrCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27163,6 +28113,10 @@ func (c *Client) DeletePrCommentWithResponse(ctx context.Context, options *Delet
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePrCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27206,6 +28160,10 @@ func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrC
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27262,6 +28220,10 @@ func (c *Client) GetPullCommitsWithResponse(ctx context.Context, options *GetPul
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullCommitsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27325,6 +28287,10 @@ func (c *Client) GetPullDiffWithResponse(ctx context.Context, options *GetPullDi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27382,6 +28348,10 @@ func (c *Client) ReplyToDiscussionWithResponse(ctx context.Context, options *Rep
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ReplyToDiscussionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27439,6 +28409,10 @@ func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *Res
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolveDiscussionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27487,6 +28461,10 @@ func (c *Client) GetPullExternalContextWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullExternalContextErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27544,6 +28522,10 @@ func (c *Client) RunPullExternalContextActionWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RunPullExternalContextActionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27608,6 +28590,10 @@ func (c *Client) GetPullFilePreviewWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullFilePreviewErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27664,6 +28650,10 @@ func (c *Client) GetPullFilesWithResponse(ctx context.Context, options *GetPullF
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullFilesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27721,6 +28711,10 @@ func (c *Client) SetPrGithubStateWithResponse(ctx context.Context, options *SetP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrGithubStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27777,6 +28771,10 @@ func (c *Client) GetPullImportMetadataWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullImportMetadataErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27833,6 +28831,10 @@ func (c *Client) ListPullRequestKataLinksWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListPullRequestKataLinksErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27890,6 +28892,10 @@ func (c *Client) CreatePullRequestKataLinkWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreatePullRequestKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27946,6 +28952,10 @@ func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePullRequestKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -27989,6 +28999,10 @@ func (c *Client) SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrLabelsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28046,6 +29060,10 @@ func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MergePullErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28103,6 +29121,10 @@ func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferM
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeferMergePullErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28159,6 +29181,10 @@ func (c *Client) MarkPullReadyForReviewWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(MarkPullReadyForReviewErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28216,6 +29242,10 @@ func (c *Client) RequestPullChangesWithResponse(ctx context.Context, options *Re
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RequestPullChangesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28272,6 +29302,10 @@ func (c *Client) DiscardPrReviewDraftWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DiscardPrReviewDraftErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28314,6 +29348,10 @@ func (c *Client) GetPrReviewDraftWithResponse(ctx context.Context, options *GetP
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPrReviewDraftErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28371,6 +29409,10 @@ func (c *Client) CreatePrReviewDraftCommentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreatePrReviewDraftCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28427,6 +29469,10 @@ func (c *Client) DeletePrReviewDraftCommentWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeletePrReviewDraftCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28470,6 +29516,10 @@ func (c *Client) EditPrReviewDraftCommentWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EditPrReviewDraftCommentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28527,6 +29577,10 @@ func (c *Client) PublishPrReviewDraftWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PublishPrReviewDraftErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28584,6 +29638,10 @@ func (c *Client) ApplyPrReviewSuggestionsWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ApplyPrReviewSuggestionsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28640,6 +29698,10 @@ func (c *Client) ResolvePrReviewThreadWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolvePrReviewThreadErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28682,6 +29744,10 @@ func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UnresolvePrReviewThreadErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28724,6 +29790,10 @@ func (c *Client) GetPrReviewerAccountsWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPrReviewerAccountsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28781,6 +29851,10 @@ func (c *Client) SetPrReviewersWithResponse(ctx context.Context, options *SetPrR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetPrReviewersErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28837,6 +29911,10 @@ func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullS
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetPullStackErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28894,6 +29972,10 @@ func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKan
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetKanbanStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28936,6 +30018,10 @@ func (c *Client) SyncPullWithResponse(ctx context.Context, options *SyncPullRequ
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SyncPullErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -28992,6 +30078,10 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(EnqueuePrSyncErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29033,6 +30123,10 @@ func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...ru
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRateLimitsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29089,6 +30183,10 @@ func (c *Client) DeleteRepoWithResponse(ctx context.Context, options *DeleteRepo
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteRepoErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29131,6 +30229,10 @@ func (c *Client) GetRepoWithResponse(ctx context.Context, options *GetRepoReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29195,6 +30297,10 @@ func (c *Client) GetRepoBrowserAssetWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserAssetErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29251,6 +30357,10 @@ func (c *Client) GetRepoBrowserBlobWithResponse(ctx context.Context, options *Ge
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserBlobErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29316,6 +30426,10 @@ func (c *Client) GetRepoBrowserCommitWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserCommitErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29380,6 +30494,10 @@ func (c *Client) GetRepoBrowserHistoryWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserHistoryErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29443,6 +30561,10 @@ func (c *Client) GetRepoBrowserLastChangedWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoBrowserLastChangedErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29503,6 +30625,10 @@ func (c *Client) ListRepoBrowserRefsWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoBrowserRefsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29566,6 +30692,10 @@ func (c *Client) ListRepoBrowserTreeWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoBrowserTreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29630,6 +30760,10 @@ func (c *Client) GetCommentAutocompleteWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetCommentAutocompleteErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29690,6 +30824,10 @@ func (c *Client) GetRepoCommitDiffWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRepoCommitDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29746,6 +30884,10 @@ func (c *Client) ListRepoLabelsWithResponse(ctx context.Context, options *ListRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoLabelsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29806,6 +30948,10 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetMarkdownImageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29855,6 +31001,10 @@ func (c *Client) RefreshRepoWithResponse(ctx context.Context, options *RefreshRe
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshRepoErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29915,6 +31065,10 @@ func (c *Client) ResolveRepoItemWithResponse(ctx context.Context, options *Resol
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ResolveRepoItemErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -29972,6 +31126,10 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateRepoUIVisibilityErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30029,6 +31187,10 @@ func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *C
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateRepoWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30086,6 +31248,10 @@ func (c *Client) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateRepoWorktreeBaseErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30141,6 +31307,10 @@ func (c *Client) ListReposWithResponse(ctx context.Context, reqEditors ...runtim
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListReposErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30198,6 +31368,10 @@ func (c *Client) AddRepoWithResponse(ctx context.Context, options *AddRepoReques
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(AddRepoErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30255,6 +31429,10 @@ func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(BulkAddReposErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30312,6 +31490,10 @@ func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewR
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PreviewReposErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30367,6 +31549,10 @@ func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRepoSummariesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30422,6 +31608,10 @@ func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Conte
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListRoborevConfiguredRepositoriesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30477,6 +31667,10 @@ func (c *Client) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetRoborevStatusErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30532,6 +31726,10 @@ func (c *Client) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEdi
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListHostRuntimeSessionsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30589,6 +31787,10 @@ func (c *Client) LaunchHostRuntimeSessionWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchHostRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30645,6 +31847,10 @@ func (c *Client) StopHostRuntimeSessionWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StopHostRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30687,6 +31893,10 @@ func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetHostRuntimeSessionAttachSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30742,6 +31952,10 @@ func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30799,6 +32013,10 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30856,6 +32074,10 @@ func (c *Client) TestAcpAgentWithResponse(ctx context.Context, options *TestAcpA
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(TestAcpAgentErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30911,6 +32133,10 @@ func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetFleetSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -30968,6 +32194,10 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateFleetSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31023,6 +32253,10 @@ func (c *Client) GetLocalSettingsWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetLocalSettingsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31080,6 +32314,10 @@ func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *Crea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateRepoPresetErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31136,6 +32374,10 @@ func (c *Client) DeleteRepoPresetWithResponse(ctx context.Context, options *Dele
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteRepoPresetErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31193,6 +32435,10 @@ func (c *Client) UpdateRepoPresetWithResponse(ctx context.Context, options *Upda
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateRepoPresetErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31253,6 +32499,10 @@ func (c *Client) GetSnapshotWithResponse(ctx context.Context, options *GetSnapsh
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetSnapshotErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31313,6 +32563,10 @@ func (c *Client) GetSnapshotAggregateWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetSnapshotAggregateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31368,6 +32622,10 @@ func (c *Client) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...r
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetSnapshotRawErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31423,6 +32681,10 @@ func (c *Client) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshFleetStatsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31483,6 +32745,10 @@ func (c *Client) ListStacksWithResponse(ctx context.Context, options *ListStacks
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListStacksErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31548,6 +32814,10 @@ func (c *Client) UnsetStarredWithResponse(ctx context.Context, options *UnsetSta
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UnsetStarredErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31591,6 +32861,10 @@ func (c *Client) SetStarredWithResponse(ctx context.Context, options *SetStarred
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetStarredErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31638,6 +32912,10 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(TriggerSyncErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31679,6 +32957,10 @@ func (c *Client) GetSyncStatusWithResponse(ctx context.Context, reqEditors ...ru
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetSyncStatusErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31736,6 +33018,10 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CaptureTelemetryEventErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31792,6 +33078,10 @@ func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(WriteTerminalClipboardErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31835,6 +33125,10 @@ func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StoreTerminalPasteImageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31890,6 +33184,10 @@ func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ..
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetToolingStatusErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31947,6 +33245,10 @@ func (c *Client) SetActiveWorktreeWithResponse(ctx context.Context, options *Set
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SetActiveWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -31988,6 +33290,10 @@ func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runti
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetVersionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32043,6 +33349,10 @@ func (c *Client) GetExecutionWorkerWithResponse(ctx context.Context, reqEditors 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetExecutionWorkerErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32098,6 +33408,10 @@ func (c *Client) GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors .
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkerSnapshotErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32155,6 +33469,10 @@ func (c *Client) CreateWorkerWorkspaceWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateWorkerWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32212,6 +33530,10 @@ func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshWorkerContextErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32253,6 +33575,10 @@ func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...r
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkspacesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32310,6 +33636,10 @@ func (c *Client) CreateWorkspaceWithResponse(ctx context.Context, options *Creat
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32370,6 +33700,10 @@ func (c *Client) DeleteWorkspaceWithResponse(ctx context.Context, options *Delet
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32412,6 +33746,10 @@ func (c *Client) GetWorkspaceWithResponse(ctx context.Context, options *GetWorks
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32468,6 +33806,10 @@ func (c *Client) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkspaceAgentSessionsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32524,6 +33866,10 @@ func (c *Client) GetWorkspaceCommitsWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceCommitsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32590,6 +33936,10 @@ func (c *Client) GetWorkspaceDiffWithResponse(ctx context.Context, options *GetW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32650,6 +34000,10 @@ func (c *Client) WatchWorkspaceDiffWithResponse(ctx context.Context, options *Wa
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(WatchWorkspaceDiffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32717,6 +34071,10 @@ func (c *Client) GetWorkspaceFilePreviewWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceFilePreviewErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32781,6 +34139,10 @@ func (c *Client) GetWorkspaceFilesWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceFilesErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32837,6 +34199,10 @@ func (c *Client) ListWorkspaceKataLinksWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkspaceKataLinksErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32894,6 +34260,10 @@ func (c *Client) CreateWorkspaceKataLinkWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(CreateWorkspaceKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32950,6 +34320,10 @@ func (c *Client) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(DeleteWorkspaceKataLinkErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -32992,6 +34366,10 @@ func (c *Client) PullWorkspaceBranchWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PullWorkspaceBranchErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33048,6 +34426,10 @@ func (c *Client) PushWorkspaceBranchWithResponse(ctx context.Context, options *P
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(PushWorkspaceBranchErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33104,6 +34486,10 @@ func (c *Client) RefreshWorkspaceWithResponse(ctx context.Context, options *Refr
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RefreshWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33160,6 +34546,10 @@ func (c *Client) RetryWorkspaceWithResponse(ctx context.Context, options *RetryW
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RetryWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33216,6 +34606,10 @@ func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *Revea
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RevealWorkspaceErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33258,6 +34652,10 @@ func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *G
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceRuntimeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33315,6 +34713,10 @@ func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchWorkspaceAgentHandoffErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33372,6 +34774,10 @@ func (c *Client) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(LaunchWorkspaceRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33428,6 +34834,10 @@ func (c *Client) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(StopWorkspaceRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33471,6 +34881,10 @@ func (c *Client) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RenameWorkspaceRuntimeSessionErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33527,6 +34941,10 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceRuntimeSessionAttachSpecErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33583,6 +35001,10 @@ func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx contex
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceRuntimeSessionInitialMessageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33640,6 +35062,10 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx con
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33696,6 +35122,10 @@ func (c *Client) ListWorkspaceTargetsWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(ListWorkspaceTargetsErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33752,6 +35182,10 @@ func (c *Client) GetWorkspaceViewStateWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(GetWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33809,6 +35243,10 @@ func (c *Client) UpdateWorkspaceViewStateWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(UpdateWorkspaceViewStateErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)
@@ -33866,6 +35304,10 @@ func (c *Client) RemoveStaleWorktreeWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		// Only JSON bodies are problems; a plain-text error keeps its raw body.
+		if mediaType, _, _ := mime.ParseMediaType(resp.Headers.Get("Content-Type")); mediaType != "application/json" && !strings.HasSuffix(mediaType, "+json") {
+			return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		}
 		problem := new(RemoveStaleWorktreeErrorResponse)
 		if err := json.Unmarshal(resp.Content, problem); err != nil {
 			return out, fmt.Errorf("decode API error response: %w", err)

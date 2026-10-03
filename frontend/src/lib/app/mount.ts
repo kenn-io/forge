@@ -5,6 +5,7 @@ import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
+import { reportAppOpened } from "./app-opened.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 
 function renderApplicationFailure(target: HTMLElement): void {
@@ -62,9 +63,15 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
+  const appOpened = runtime.runCommand(reportAppOpened, {
+    operation: "report app opened",
+    safeContext: {},
+    onFailure: () => {},
+  });
   const root = Effect.scoped(appProgram(target, runtime)).pipe(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
+    Effect.ensuring(Effect.sync(appOpened.interrupt)),
     Effect.ensuring(runtime.disposeEffect),
   );
   const rootFiber = Effect.runFork(root);

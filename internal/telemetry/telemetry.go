@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -34,9 +35,7 @@ var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 type propertyFilter func(any) (any, bool)
 
 var allowedEvents = map[string]map[string]propertyFilter{
-	"app_loaded": {
-		"view": safeTelemetryToken,
-	},
+	"app_opened": {},
 	"daemon_active": {
 		"repo_count": safeTelemetryNumber,
 	},
@@ -78,31 +77,9 @@ func EventAllowed(event string) bool {
 	return ok
 }
 
-func SanitizeProperties(event string, properties map[string]any) (map[string]any, error) {
-	allowedProperties, ok := allowedEvents[strings.TrimSpace(event)]
-	if !ok {
-		return nil, ErrUnsupportedEvent
-	}
-
-	safeProperties := map[string]any{}
-	for key, value := range properties {
-		key = strings.TrimSpace(key)
-		filter, ok := allowedProperties[key]
-		if !ok {
-			continue
-		}
-		if safeValue, ok := filter(value); ok {
-			safeProperties[key] = safeValue
-		}
-	}
-	safeProperties["$process_person_profile"] = false
-	safeProperties["$geoip_disable"] = true
-	safeProperties["application"] = applicationSlug
-	return safeProperties, nil
-}
-
 func NewReporter(opts Options) (*Reporter, error) {
-	if testing.Testing() {
+	// Go tests never build a networked client; opted-out reporters carry none.
+	if testing.Testing() && enabledInBuild() && EnabledFromEnv() {
 		return DisabledReporter(), nil
 	}
 	return newReporter(opts, time.Now())
@@ -110,27 +87,25 @@ func NewReporter(opts Options) (*Reporter, error) {
 
 // newReporter is NewReporter without the go test guard.
 func newReporter(opts Options, now time.Time) (*Reporter, error) {
-	if !enabledInBuild() || !EnabledFromEnv() {
-		return DisabledReporter(), nil
-	}
-	if opts.Database == nil {
-		return nil, errors.New("telemetry database is required")
-	}
-
-	distinctID, installedAt, err := loadOrCreateInstallID(context.Background(), opts.Database, now)
-	if err != nil {
-		return nil, err
-	}
-
 	base := kittelemetry.PostHogOptions{
 		APIKey:      postHogAPIKey,
 		Endpoint:    postHogEndpoint,
 		Application: applicationSlug,
 		EnvPrefix:   envPrefix,
-		DistinctID:  distinctID,
 		Version:     opts.Version,
 		Commit:      opts.Commit,
-		InstalledAt: installedAt,
+	}
+	// Opted out, kit returns client-free reporters that keep the allowlist, so the UI route still rejects unknown events.
+	if enabledInBuild() && EnabledFromEnv() {
+		if opts.Database == nil {
+			return nil, errors.New("telemetry database is required")
+		}
+		distinctID, installedAt, err := loadOrCreateInstallID(context.Background(), opts.Database, now)
+		if err != nil {
+			return nil, err
+		}
+		base.DistinctID = distinctID
+		base.InstalledAt = installedAt
 	}
 	daemonOpts := base
 	daemonOpts.Source = "daemon"
@@ -226,24 +201,13 @@ func (r *Reporter) Close() error {
 	return err
 }
 
-func safeTelemetryToken(value any) (any, bool) {
-	text, ok := value.(string)
-	if !ok {
-		return nil, false
+// CaptureHandler serves the web UI's telemetry events through the backend-source kit reporter.
+func (r *Reporter) CaptureHandler() http.Handler {
+	var backend *kittelemetry.PostHogReporter
+	if r != nil {
+		backend, _ = r.backend.(*kittelemetry.PostHogReporter)
 	}
-	text = strings.TrimSpace(text)
-	if text == "" || len(text) > 64 {
-		return nil, false
-	}
-	for i := range len(text) {
-		b := text[i]
-		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
-			(b >= '0' && b <= '9') || b == '_' || b == '-' || b == '.' {
-			continue
-		}
-		return nil, false
-	}
-	return text, true
+	return kittelemetry.NewPostHogCaptureHandler(backend)
 }
 
 func safeTelemetryNumber(value any) (any, bool) {

@@ -16,13 +16,13 @@
   },
   "devDependencies": {
     "@effect/vitest": "4.0.0",
-    "@playwright/test": "1.62.1",
-    "@sveltejs/vite-plugin-svelte": "7.3.0",
+    "@playwright/test": "1.63.0",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@tsconfig/svelte": "5.0.8",
     "@types/node": "^26.0.0",
-    "playwright": "1.62.1",
-    "svelte": "5.56.8",
-    "svelte-check": "4.7.5",
+    "playwright": "1.63.0",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
     "vite-plus": "1.0.0",
     "vitest": "5.0.1"

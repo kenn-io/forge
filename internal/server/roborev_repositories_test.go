@@ -14,9 +14,11 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/testutil"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestListRoborevConfiguredRepositories(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
@@ -47,6 +49,7 @@ func TestListRoborevConfiguredRepositories(t *testing.T) {
 }
 
 func TestListRoborevConfiguredRepositoriesMarksPartialResultsIncomplete(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://127.0.0.1:1")
@@ -77,6 +80,7 @@ func TestListRoborevConfiguredRepositoriesMarksPartialResultsIncomplete(t *testi
 }
 
 func TestListRoborevConfiguredRepositoriesReturnsTypedUnavailableWithoutBlockingSummaries(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupTestServerWithRoborev(t, "http://private.invalid:7373")

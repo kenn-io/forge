@@ -39,6 +39,7 @@ func authenticatedProviderRequest(
 }
 
 func TestStandaloneProviderWritesDoNotRequireSpokePreparationState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	_, err := database.WriteDB().ExecContext(t.Context(), "DROP TABLE forge_spoke_preparation")
 	require.NoError(t, err)
@@ -59,6 +60,7 @@ func TestStandaloneProviderWritesDoNotRequireSpokePreparationState(t *testing.T)
 }
 
 func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	gate := providerplane.NewProviderWriteGate(database, true)
 	_, err := gate.BeginQuiesce(t.Context(), db.SpokePreparationBinding{
@@ -94,6 +96,7 @@ func TestLocalEnrollmentRestoresSpokePreparationBarrier(t *testing.T) {
 }
 
 func TestSpokePreparationBarrierGatesAuthenticatedProviderWritesAndSurvivesRestart(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

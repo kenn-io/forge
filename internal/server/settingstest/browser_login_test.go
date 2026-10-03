@@ -12,6 +12,7 @@ import (
 )
 
 func TestBrowserLoginTicketRejectsLocalCredentials(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, _, _ := servertest.NewFederationAuthTestServer(t, federationauth.ScopeBrowserLogin)
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,

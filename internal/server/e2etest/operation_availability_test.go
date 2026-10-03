@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -299,6 +300,7 @@ func TestRepoPathReuseSyncDropsPreviousProviderSnapshotE2E(t *testing.T) {
 }
 
 func TestPullDetailReportsPausedRateTrackerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

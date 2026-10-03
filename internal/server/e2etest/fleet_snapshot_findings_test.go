@@ -17,6 +17,7 @@ import (
 	dbpkg "go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -124,6 +125,7 @@ func findRawWorktreeByPath(
 // carries only the link; the hub enriches provider details in the
 // observer-facing snapshot.
 func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
@@ -180,6 +182,7 @@ func TestFleetSnapshotBranchMatchLinkE2E(t *testing.T) {
 // the PUT route and verifies the flag lands on the wire in both the route
 // response and the raw/enriched snapshots.
 func TestProjectWorktreeHiddenToggleE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
@@ -234,6 +237,7 @@ func TestProjectWorktreeHiddenToggleE2E(t *testing.T) {
 // snapshot endpoints overlay them by path: a sampled worktree reports all four
 // counts (even zero) while an unsampled one omits them.
 func TestFleetSnapshotWorktreeStatsE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
@@ -284,6 +288,7 @@ func TestFleetSnapshotWorktreeStatsE2E(t *testing.T) {
 // backend wire vocabulary: an empty stored backend defaults to localPTY and a
 // stored localTmux override surfaces with its canonical casing.
 func TestFleetSnapshotSessionBackendE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)
@@ -319,6 +324,7 @@ func TestFleetSnapshotSessionBackendE2E(t *testing.T) {
 // carry the project's provider kind so clients can build provider-aware
 // routes instead of assuming GitHub.
 func TestFleetSnapshotProjectPlatformE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ts, database := bootFleetServer(t, nil)

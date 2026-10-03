@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -290,6 +291,7 @@ func setupGitLabLabelStack(t *testing.T) (*server.Server, *db.DB, int64, *fakeGi
 }
 
 func TestGitLabListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, _ := setupGitLabLabelStack(t)
@@ -314,6 +316,7 @@ func TestGitLabListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
 }
 
 func TestGitLabSetPullLabelsUpdatesProviderAndDB(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, fake := setupGitLabLabelStack(t)
@@ -347,6 +350,7 @@ func TestGitLabSetPullLabelsUpdatesProviderAndDB(t *testing.T) {
 }
 
 func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, fake := setupGitLabLabelStack(t)
@@ -385,6 +389,7 @@ func TestGitLabSetIssueLabelsUpdatesProviderAndDB(t *testing.T) {
 // end up empty. A missing or null labels field is rejected instead
 // (covered in internal/server/apitest).
 func TestGitLabSetLabelsEmptyArrayClearsAll(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name     string
 		kind     string
@@ -460,6 +465,7 @@ func TestGitLabSetLabelsEmptyArrayClearsAll(t *testing.T) {
 }
 
 func TestGitLabSetPullLabelsRejectsCommaNamesFromCatalog(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, fake := setupGitLabLabelStack(t)
@@ -494,6 +500,7 @@ func TestGitLabSetPullLabelsRejectsCommaNamesFromCatalog(t *testing.T) {
 // external ID and its own row by name, and the save would fail after
 // the provider mutation already succeeded.
 func TestGitLabSetPullLabelsNameCollidingWithAnotherLabelID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, repoID, fake := setupGitLabLabelStack(t)
@@ -657,6 +664,7 @@ func setupGitealikeLabelStack(
 }
 
 func TestGitealikeListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, variant := range gitealikeLabelVariants() {
 		t.Run(variant.name, func(t *testing.T) {
 			require := require.New(t)
@@ -684,6 +692,7 @@ func TestGitealikeListRepoLabelsSyncsCatalogFromProvider(t *testing.T) {
 }
 
 func TestGitealikeSetPullLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, variant := range gitealikeLabelVariants() {
 		t.Run(variant.name, func(t *testing.T) {
 			require := require.New(t)
@@ -718,6 +727,7 @@ func TestGitealikeSetPullLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
 }
 
 func TestGitealikeSetIssueLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, variant := range gitealikeLabelVariants() {
 		t.Run(variant.name, func(t *testing.T) {
 			require := require.New(t)
@@ -756,6 +766,7 @@ func TestGitealikeSetIssueLabelsResolvesIDsAndUpdatesDB(t *testing.T) {
 // empty. A missing or null labels field is rejected instead (covered in
 // internal/server/apitest).
 func TestGitealikeSetLabelsEmptyArrayClearsAll(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	items := []struct {
 		name   string
 		kind   string
@@ -822,6 +833,7 @@ func TestGitealikeSetLabelsEmptyArrayClearsAll(t *testing.T) {
 }
 
 func TestGitealikeSetLabelsFailsWhenCatalogNameVanishedUpstream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, variant := range gitealikeLabelVariants() {
 		t.Run(variant.name, func(t *testing.T) {
 			require := require.New(t)

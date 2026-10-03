@@ -21,12 +21,14 @@ import (
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
 
 func TestAPIClientConstruction(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 	require.NotNil(t, client)
@@ -34,6 +36,7 @@ func TestAPIClientConstruction(t *testing.T) {
 }
 
 func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -65,6 +68,7 @@ func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 }
 
 func TestAPIGetPullNotFound(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
@@ -75,6 +79,7 @@ func TestAPIGetPullNotFound(t *testing.T) {
 }
 
 func TestAPISetKanbanState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -91,6 +96,7 @@ func TestAPISetKanbanState(t *testing.T) {
 }
 
 func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -102,6 +108,7 @@ func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
 }
 
 func TestAPIListRepos(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -214,6 +221,7 @@ func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 }
 
 func TestAPISetStarred(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -236,6 +244,7 @@ func TestAPISetStarred(t *testing.T) {
 }
 
 func TestAPIUnsetStarred(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -259,6 +268,7 @@ func TestAPIUnsetStarred(t *testing.T) {
 }
 
 func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -280,6 +290,7 @@ func TestAPISetStarredRejectsInvalidItemType(t *testing.T) {
 }
 
 func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
@@ -303,6 +314,7 @@ func TestOpenAPIEndpointReflectsHumaContract(t *testing.T) {
 }
 
 func TestAPIClosePRRejectsMerged(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -321,6 +333,7 @@ func TestAPIClosePRRejectsMerged(t *testing.T) {
 }
 
 func TestAPIClosePRInvalidState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
 	client := setupTestClient(t, srv)
@@ -331,6 +344,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 }
 
 func TestAPIListItemsHonorsLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -375,6 +389,7 @@ func TestAPIListItemsHonorsLimit(t *testing.T) {
 }
 
 func TestAPIListIssuesIncludesLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssueWithLabels(t, database, "acme", "widget", 5, "open", []db.Label{{
@@ -398,6 +413,7 @@ func TestAPIListIssuesIncludesLabels(t *testing.T) {
 }
 
 func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
@@ -412,6 +428,7 @@ func TestAPIGetIssueAcceptsMixedCaseRepoPath(t *testing.T) {
 }
 
 func TestAPIListIssuesAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedIssue(t, database, "acme", "widget", 5, "open")
@@ -428,6 +445,7 @@ func TestAPIListIssuesAcceptsMixedCaseProviderQualifiedRepoFilter(t *testing.T) 
 }
 
 func TestResolveItem_UntrackedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -442,6 +460,7 @@ func TestResolveItem_UntrackedRepo(t *testing.T) {
 }
 
 func TestAPIGetMRImportMetadata(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	ctx := t.Context()
@@ -489,6 +508,7 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 }
 
 func TestAPIGetMRImportMetadataNotFound(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _ := setupTestServer(t)
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
@@ -500,6 +520,7 @@ func TestAPIGetMRImportMetadataNotFound(t *testing.T) {
 }
 
 func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _ := setupTestServer(t)
 
@@ -541,6 +562,7 @@ func TestOpenAPIDocumentsCustomStatusCodes(t *testing.T) {
 }
 
 func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -589,6 +611,7 @@ func TestProviderIssueRouteGeneratedClientEscapesGitLabRepoPath(t *testing.T) {
 }
 
 func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -651,6 +674,7 @@ func TestProviderIssueRouteHandlesNestedGitLabRepoPathOverHTTP(t *testing.T) {
 }
 
 func TestMRListEmptyLinksWhenNone(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -666,6 +690,7 @@ func TestMRListEmptyLinksWhenNone(t *testing.T) {
 }
 
 func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)
@@ -679,6 +704,7 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 }
 
 func TestSetActiveWorktreeKey(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _ := setupTestServer(t)
 
@@ -698,6 +724,7 @@ func TestSetActiveWorktreeKey(t *testing.T) {
 }
 
 func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -744,6 +771,7 @@ func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
 }
 
 func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, database := setupTestServer(t)
@@ -785,6 +813,7 @@ func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {
 }
 
 func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -826,6 +855,7 @@ func TestAPIActivityCommentCarriesPRAuthor(t *testing.T) {
 }
 
 func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
@@ -867,6 +897,7 @@ func TestAPIListActivitySearchEventDeltaDoesNotReadBeforeCursor(t *testing.T) {
 }
 
 func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
@@ -891,6 +922,7 @@ func TestAPIListActivityAcceptsProviderAndHostQualifiedRepoFilter(t *testing.T) 
 }
 
 func TestAPIListStacks_Empty(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _ := setupTestServer(t)
 	client := setupTestClient(t, srv)

@@ -48,6 +48,7 @@ func serveWorkerCredential(t *testing.T, repositoryID int64) string {
 }
 
 func TestAdmitWorkerRepositoryUsesIntegerRepositoryID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name           string
 		suppliedRepoID int64

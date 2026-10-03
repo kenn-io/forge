@@ -55,6 +55,7 @@ func serveDirectDaemonRequest(t *testing.T, srv *server.Server, bearer string, h
 }
 
 func TestWildcardListenerKeepsHostAndDirectBearerBoundary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, bind := range []config.HostKey{{Host: "0.0.0.0", Port: "8091"}, {Host: "[::]", Port: "8091"}} {
 		t.Run(bind.Host, func(t *testing.T) {
 			assert := assert.New(t)
@@ -97,6 +98,7 @@ func TestWildcardListenerKeepsHostAndDirectBearerBoundary(t *testing.T) {
 // bearer requests bypass proxy Host interpretation, while any forwarded shape
 // remains subject to the existing proxy validation and rejection rules.
 func TestDirectDaemonBearerHostIntegration(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupHostCheckServerWithToken(t, authapi.HostCheckOptions{
 		Bind:              serverfake.BindLoopback8091(),
 		TrustReverseProxy: true,
@@ -111,6 +113,7 @@ func TestDirectDaemonBearerHostIntegration(t *testing.T) {
 // A native client must still bypass proxy Host interpretation without forcing
 // proxied browser/API traffic to authenticate.
 func TestDirectDaemonBearerClassificationWithoutGeneralAPIAuth(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
@@ -373,6 +376,7 @@ func TestHostCheckForwardedHost(t *testing.T) {
 }
 
 func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cases := []struct {
 		name       string
 		header     string
@@ -430,6 +434,7 @@ func TestCrossOriginProtectionUsesValidatedForwardedHost(t *testing.T) {
 // {"error":"..."} and the value must name both config knobs so an
 // operator can debug a rejected request from curl output alone.
 func TestHostCheck403BodyShape(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := setupHostCheckServer(t, authapi.HostCheckOptions{
 		Bind: serverfake.BindLoopback8091(),
 	})
@@ -456,6 +461,7 @@ func TestHostCheck403BodyShape(t *testing.T) {
 // repoint the accept-set at the actual bound port — otherwise every
 // request to an ephemeral-port daemon is rejected.
 func TestHostCheckEphemeralPortFollowsListener(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupHostCheckServer(t, authapi.HostCheckOptions{

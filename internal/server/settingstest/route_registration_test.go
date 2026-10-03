@@ -11,9 +11,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestAPIRoutesUseHumaRegistration(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	paths, err := filepath.Glob("*.go")

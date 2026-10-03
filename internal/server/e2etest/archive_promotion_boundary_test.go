@@ -22,6 +22,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -31,6 +32,7 @@ type archivePromotionClock struct{ now time.Time }
 func (c *archivePromotionClock) Now() time.Time { return c.now }
 
 func TestArchiveAPIPromotionMaintainsFromDiscoveryBoundaryE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

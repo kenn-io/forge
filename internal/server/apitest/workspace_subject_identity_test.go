@@ -8,10 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceReferencesUseStableRepositoryIdentityAcrossRenameAndRouteReuse(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)

@@ -13,6 +13,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -23,6 +24,7 @@ import (
 // RunOnce — the scheduled entry point — because the explicit API sync
 // trigger deliberately bypasses cadence gates.
 func TestScheduledSyncFetchesArchivedMetadataOncePerCadenceE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

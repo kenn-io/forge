@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -27,6 +28,7 @@ type timelineDetailResponse struct {
 }
 
 func TestE2E_DetailTimelineReturnsAssignmentEvents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -71,6 +73,7 @@ func TestE2E_DetailTimelineReturnsAssignmentEvents(t *testing.T) {
 }
 
 func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -111,6 +114,7 @@ func TestE2E_DetailTimelineReturnsCommentDirectURLs(t *testing.T) {
 }
 
 func TestE2E_DetailTimelineReturnsForcePushCommitOrderingMetadata(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

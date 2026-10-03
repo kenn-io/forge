@@ -26,6 +26,7 @@ import (
 )
 
 func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -107,6 +108,7 @@ func TestProjectWorktreeRuntimeShellLifecycle(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -186,6 +188,7 @@ func TestProjectWorktreeRuntimeLaunchTargetLifecycle(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -206,6 +209,7 @@ func TestProjectWorktreeRuntimeRejectsPlainShellOnSessionsRoute(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeAttachSpecRejectsNonOwnedSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -297,7 +301,7 @@ command = ["/bin/sh", "-c", "sleep 60"]
 	return srv, project.ID, worktree.ID
 }
 
-func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) {
+func TestInitLocalOnlyGitRepoIgnoresInheritedGitEnv(t *testing.T) { //nolint:paralleltest // t.Setenv writes GIT_DIR, GIT_WORK_TREE
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

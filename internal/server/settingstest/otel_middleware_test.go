@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestHTTPSpansParentedOnTraceparent(t *testing.T) {
+func TestHTTPSpansParentedOnTraceparent(t *testing.T) { //nolint:paralleltest // swaps the otel global tracer provider and propagator
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -62,7 +62,7 @@ func TestHTTPSpansParentedOnTraceparent(t *testing.T) {
 	assert.Equal("ws-9", attrs["workspace.id"])
 }
 
-func TestHTTPSpanUsesMatchedRouteUnderBasePath(t *testing.T) {
+func TestHTTPSpanUsesMatchedRouteUnderBasePath(t *testing.T) { //nolint:paralleltest // swaps the otel global tracer provider and propagator
 	recorder := tracetest.NewSpanRecorder()
 	prev := otel.GetTracerProvider()
 	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))

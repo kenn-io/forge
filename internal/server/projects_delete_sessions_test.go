@@ -60,6 +60,7 @@ func assertFakeTmuxKilledSession(
 }
 
 func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -90,6 +91,7 @@ func TestRemoveProjectWorktreeStopsRuntimeSessions(t *testing.T) {
 }
 
 func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	requirePTYAvailable(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -114,6 +116,7 @@ func TestDeleteProjectStopsWorktreeRuntimeSessions(t *testing.T) {
 }
 
 func TestDeleteProjectWorktreeKillsStoredTmuxSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, projectID, worktreeID, recordPath := setupProjectWorktreeCommandSessionTestWithRecord(t)

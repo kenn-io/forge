@@ -68,6 +68,7 @@ func prepareSpokeRequest(
 }
 
 func TestPrepareFederationSpokeSealsAndPersistsRoleThroughDaemon(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
@@ -236,6 +237,7 @@ base_url = %q
 }
 
 func TestPersistPreparedSpokeRoleKeepsSealAndMembershipGuards(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "persist-role")
@@ -311,6 +313,7 @@ state = "active"
 }
 
 func TestPersistPreparedSpokeRoleKeepsEnrollmentHubBinding(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "joined-spoke")
@@ -368,6 +371,7 @@ base_url = "https://spoke.example"
 }
 
 func TestSpokePreparationRejectsFilesystemLaunchSpecBeforePersistence(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -413,6 +417,7 @@ func TestSpokePreparationRejectsFilesystemLaunchSpecBeforePersistence(t *testing
 }
 
 func TestSpokePreparationRequiresCredentialBeforePersistingLaunchSpec(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -458,6 +463,7 @@ func TestSpokePreparationRequiresCredentialBeforePersistingLaunchSpec(t *testing
 }
 
 func TestSpokePreparationRequiresForkCredentialBeforePersistingLaunchSpec(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -508,7 +514,7 @@ func TestSpokePreparationRequiresForkCredentialBeforePersistingLaunchSpec(t *tes
 	assert.Nil(persisted)
 }
 
-func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) {
+func TestSpokePreparationRefreshFollowsStableRepositoryRename(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_TEST_PREPARATION_GIT_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

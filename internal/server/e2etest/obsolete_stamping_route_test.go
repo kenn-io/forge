@@ -21,12 +21,14 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/forgejo"
 )
 
 func TestForgejoSyncRouteStampsObsoleteCommitEventsAcrossForcePushes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()

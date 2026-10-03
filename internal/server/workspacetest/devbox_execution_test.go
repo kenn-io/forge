@@ -35,7 +35,7 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testing.T) {
+func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH
 	const repositoryID int64 = 42
 	if len(workspaceTestTmuxCommand) == 0 {
 		t.Skip("tmux is required")

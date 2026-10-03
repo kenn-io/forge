@@ -8,9 +8,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestEnqueueDetailSyncOrRerunRunsPendingAfterInFlight(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _ := setupTestServer(t)
 
 	synctest.Test(t, func(t *testing.T) {

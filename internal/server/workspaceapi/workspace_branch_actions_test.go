@@ -15,7 +15,7 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 )
 
-func TestRevealWorkspaceOpensWorkspacePath(t *testing.T) {
+func TestRevealWorkspaceOpensWorkspacePath(t *testing.T) { //nolint:paralleltest // writes package variable revealWorkspacePath
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -42,6 +42,7 @@ func TestRevealWorkspaceOpensWorkspacePath(t *testing.T) {
 }
 
 func TestLaunchSpecBranchActionMapsHubOutage(t *testing.T) {
+	t.Parallel()
 	err := workspaceBranchActionProblem(&workspace.LaunchSpecRefreshError{
 		Cause: providerplane.ErrHubUnavailable,
 	})
@@ -52,6 +53,7 @@ func TestLaunchSpecBranchActionMapsHubOutage(t *testing.T) {
 }
 
 func TestBranchActionMapsMissingGitCredential(t *testing.T) {
+	t.Parallel()
 	err := workspaceBranchActionProblem(gitclone.ErrCredentialUnavailable)
 
 	problem, ok := errors.AsType[*httpapi.ProblemError](err)

@@ -21,6 +21,7 @@ import (
 // Starting new work needs no provider item: a tracked repository plus an
 // optional branch name is enough to get a materialized worktree.
 func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -50,6 +51,7 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
@@ -120,6 +122,7 @@ func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert, require := assert.New(t), require.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
 	_, err := fixture.database.ObserveRepository(t.Context(), db.RepoIdentity{
@@ -177,6 +180,7 @@ func TestCreateAdHocWorkspaceFollowsCachedRepositoryRename(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -196,6 +200,7 @@ func TestCreateAdHocWorkspaceGeneratesBranchWhenOmitted(t *testing.T) {
 // A repeat request for the same branch reopens the workspace that already owns
 // it rather than creating a second worktree.
 func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -231,6 +236,7 @@ func TestCreateAdHocWorkspaceReusesWorkspaceForSameBranch(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceRejectsInvalidBranch(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
@@ -243,6 +249,7 @@ func TestCreateAdHocWorkspaceRejectsInvalidBranch(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceRejectsUntrackedRepo(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 
 	fixture := setupWorkspaceServerFixture(t, nil)
@@ -255,6 +262,7 @@ func TestCreateAdHocWorkspaceRejectsUntrackedRepo(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -277,6 +285,7 @@ func TestCreateAdHocWorkspaceExistingBranchIsUniquified(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -303,6 +312,7 @@ func TestCreateAdHocWorkspaceReusesExistingBranchWhenAsked(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -323,6 +333,7 @@ func TestCreateAdHocWorkspaceReuseMissingBranchReportsCreated(t *testing.T) {
 // Reuse is the one case where work does not start at origin/HEAD: the existing
 // branch is adopted at its own tip, however far that has diverged.
 func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -354,6 +365,7 @@ func TestCreateAdHocWorkspaceReuseStartsFromDivergedBranchTip(t *testing.T) {
 // still resolves to it, while a new workspace request for the renamed branch
 // receives a unique branch.
 func TestCreateAdHocWorkspaceAfterInWorktreeBranchRename(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

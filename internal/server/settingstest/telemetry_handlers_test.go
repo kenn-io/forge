@@ -8,9 +8,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv := servertest.NewTelemetryTestServer(t, nil)
@@ -29,6 +32,7 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 }
 
 func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv := servertest.NewTelemetryTestServer(t, nil)

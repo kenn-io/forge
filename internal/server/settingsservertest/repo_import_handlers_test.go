@@ -6,9 +6,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server/repoapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestNormalizeImportPlatformRejectsUnsafeHosts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name string
 		host string

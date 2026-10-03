@@ -90,6 +90,7 @@ func (f agentHandoffFixture) post(t *testing.T, body map[string]string) *httptes
 }
 
 func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
@@ -137,6 +138,7 @@ func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
 }
 
 func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
@@ -163,6 +165,7 @@ func TestClaudeHandoffProvidesPromptAtLaunchWithoutTypingIntoStartupDialogs(t *t
 }
 
 func TestAgentHandoffReportsOversizedCommandAsBadRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
 	// The Windows launch boundary returns this typed error before starting a process.
@@ -182,6 +185,7 @@ func TestAgentHandoffReportsOversizedCommandAsBadRequest(t *testing.T) {
 }
 
 func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
@@ -217,6 +221,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 }
 
 func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
 
@@ -251,6 +256,7 @@ func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
 }
 
 func TestAgentHandoffReportsWorkspaceSetupFailure(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
 	failure := "clone failed"
@@ -263,6 +269,7 @@ func TestAgentHandoffReportsWorkspaceSetupFailure(t *testing.T) {
 }
 
 func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
 	fixture.handler.agentHandoffTimeout = 50 * time.Millisecond
@@ -274,6 +281,7 @@ func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
 }
 
 func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
@@ -310,6 +318,7 @@ func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
 }
 
 func TestAgentHandoffCancelsPromptlyOnShutdown(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
@@ -337,6 +346,7 @@ func TestAgentHandoffCancelsPromptlyOnShutdown(t *testing.T) {
 }
 
 func TestAgentHandoffRefusesToWaitAfterShutdownCancellation(t *testing.T) {
+	t.Parallel()
 	// Shutdown may cancel before any handoff has created the shared
 	// context. A request arriving after that must not start a fresh wait
 	// that only the later workspace shutdown could end.
@@ -355,6 +365,7 @@ func TestAgentHandoffRefusesToWaitAfterShutdownCancellation(t *testing.T) {
 }
 
 func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
@@ -383,6 +394,7 @@ func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing
 }
 
 func TestAgentHandoffDeliveryPreservesCancellationCause(t *testing.T) {
+	t.Parallel()
 	for _, cause := range []error{context.DeadlineExceeded, context.Canceled} {
 		t.Run(cause.Error(), func(t *testing.T) {
 			fixture := newAgentHandoffFixture(t, "ready")

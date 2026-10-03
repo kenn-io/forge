@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
@@ -65,6 +66,7 @@ func setupGitLabCloneFixture(t *testing.T) (cloneURL, baseSHA, headSHA string) {
 }
 
 func TestGitLabNormalSyncEnablesHeadBoundMutations(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

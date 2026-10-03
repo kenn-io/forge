@@ -16,6 +16,7 @@ import (
 )
 
 func TestBrowserLoginTicketRequiresActivePeerGrant(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, test := range []struct {
 		name   string
 		scopes []federationauth.Scope

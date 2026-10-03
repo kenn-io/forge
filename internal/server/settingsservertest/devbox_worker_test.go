@@ -17,9 +17,11 @@ import (
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/devboxapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	cfg := &config.Config{}
 	cfg.DataDir = t.TempDir()

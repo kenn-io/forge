@@ -38,6 +38,7 @@ func listRepoNames(t *testing.T, srv *Server) []string {
 }
 
 func TestDeleteConfiguredRepoClearsOrphanedVisibility(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
@@ -110,6 +111,7 @@ name = "wid*"
 }
 
 func TestDeleteConfiguredRepoClearsVisibilityDespiteCanceledRequest(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -165,6 +167,7 @@ name = "wid*"
 }
 
 func TestConfigReloadClearsOrphanedVisibility(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	// The provider lists acme/widget so the glob keeps resolving the
@@ -243,6 +246,7 @@ name = "wid*"
 }
 
 func TestRepoUIVisibilityMutationSerializesWithOrphanSweep(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, syncer := setupTestServerWithConfigContent(t, `

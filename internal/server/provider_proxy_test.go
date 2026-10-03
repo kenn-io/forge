@@ -50,7 +50,7 @@ func (f providerPlaneClientFunc) Do(
 func TestProviderProxyPreservesHubResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, _ *http.Request,
@@ -89,7 +89,7 @@ func TestProviderProxyPreservesHubResponse(t *testing.T) {
 func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -124,7 +124,7 @@ func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 func TestNodeHEADProviderReadUsesHubGETOwnership(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	var hubReads atomic.Int64
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
@@ -158,6 +158,7 @@ func TestNodeHEADProviderReadUsesHubGETOwnership(t *testing.T) {
 }
 
 func TestNodeMarkdownImageUsesHubProviderReader(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var hubReads atomic.Int64
@@ -202,6 +203,7 @@ func TestNodeMarkdownImageUsesHubProviderReader(t *testing.T) {
 }
 
 func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var dispatched atomic.Int64
@@ -231,6 +233,7 @@ func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
 }
 
 func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
@@ -256,6 +259,7 @@ func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 }
 
 func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
@@ -313,6 +317,7 @@ func TestSpokeUnassignedActivityKeepsMatchingLocalWorkspaceSubject(t *testing.T)
 }
 
 func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, hubDatabase, _ := setupTestServer(t)
@@ -392,7 +397,7 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
@@ -443,6 +448,7 @@ func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 }
 
 func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var hubReads atomic.Int64
@@ -521,6 +527,7 @@ func TestNodeProviderRoutesStopWhenFleetIsDisabled(t *testing.T) {
 }
 
 func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	caps := platform.Capabilities{
@@ -606,6 +613,7 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 }
 
 func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
@@ -687,7 +695,7 @@ func newFederatedProviderNodeForTest(
 func TestProviderProxyMapsHubTimeoutToUnavailable(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, r *http.Request,
@@ -773,7 +781,7 @@ func newProviderProxyTestServer(
 }
 
 func TestProviderProxyHonorsCallerCancellation(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, r *http.Request,
@@ -799,7 +807,7 @@ func TestProviderProxyHonorsCallerCancellation(t *testing.T) {
 func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		w http.ResponseWriter, _ *http.Request,

@@ -15,6 +15,7 @@ import (
 )
 
 func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -44,6 +45,7 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 }
 
 func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 

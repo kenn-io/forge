@@ -21,6 +21,7 @@ func newTestServer(t *testing.T) *server.Server {
 }
 
 func TestServeRejectsRebindingHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -64,6 +65,7 @@ func TestServeRejectsRebindingHost(t *testing.T) {
 }
 
 func TestServeAllowsBoundLoopbackHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -104,6 +106,7 @@ func TestServeAllowsBoundLoopbackHost(t *testing.T) {
 }
 
 func TestSSE_ReturnsEventStream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
 	ts := httptest.NewServer(s)
 	defer ts.Close()

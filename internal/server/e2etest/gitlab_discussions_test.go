@@ -18,11 +18,13 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
 
 func TestGetPRDetailIncludesThreadID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -93,6 +95,7 @@ func TestGetPRDetailIncludesThreadID(t *testing.T) {
 }
 
 func TestGitLabDiscussionMetadataSyncsToDetailAPI(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -410,6 +413,7 @@ func (p *gitLabDiscussionProvider) ResolveThread(
 }
 
 func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -472,6 +476,7 @@ func TestGitLabRepoCapabilitiesIncludeDiscussions(t *testing.T) {
 }
 
 func TestReplyToDiscussionE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -657,6 +662,7 @@ func TestReplyToDiscussionE2E(t *testing.T) {
 }
 
 func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -752,6 +758,7 @@ func TestReplyToDiscussionRejectsInvalidThreadID(t *testing.T) {
 }
 
 func TestResolveDiscussionE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -843,6 +850,7 @@ func TestResolveDiscussionE2E(t *testing.T) {
 }
 
 func TestDiscussionEndpointsRequireCapability(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -903,6 +911,7 @@ func TestDiscussionEndpointsRequireCapability(t *testing.T) {
 }
 
 func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 
@@ -977,6 +986,7 @@ func TestDiscussionEndpointsRejectNonExistentMR(t *testing.T) {
 }
 
 func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()

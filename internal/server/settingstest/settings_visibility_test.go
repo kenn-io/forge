@@ -22,6 +22,7 @@ import (
 )
 
 func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _ := setupTestServerWithConfig(t)
@@ -66,6 +67,7 @@ func TestHandleUpdateRepoUIVisibilityHidesAndShows(t *testing.T) {
 }
 
 func TestServerStartupClearsOrphanedVisibility(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -159,6 +161,7 @@ name = "gadget"
 }
 
 func TestHandleUpdateRepoUIVisibilityWithoutSyncer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -209,6 +212,7 @@ name = "widget"
 }
 
 func TestStartupVisibilitySweepToleratesNilSyncer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -276,6 +280,7 @@ name = "widget"
 }
 
 func TestHandleUpdateRepoUIVisibilityRejectsGlobEntries(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -296,6 +301,7 @@ name = "widget-*"
 }
 
 func TestHandleUpdateRepoUIVisibilityUnknownRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 
@@ -307,6 +313,7 @@ func TestHandleUpdateRepoUIVisibilityUnknownRepo(t *testing.T) {
 }
 
 func TestHandleUpdateRepoUIVisibilityRequiresVerifiedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _ := setupTestServerWithConfig(t)
 

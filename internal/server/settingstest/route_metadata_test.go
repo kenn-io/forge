@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/server"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 var allowedAPITags = map[string]struct{}{
@@ -125,6 +126,7 @@ func usesKnownSingleTag(tags []string) bool {
 // TestHumaContractMetadata checks every live OpenAPI operation for non-empty,
 // unique metadata from the API taxonomy.
 func TestHumaContractMetadata(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	openAPI := server.NewOpenAPI()
 	require.NotNil(openAPI)
@@ -137,6 +139,7 @@ func TestHumaContractMetadata(t *testing.T) {
 // TestRouteMetadataWalkerCatchesUnannotatedRoute proves the live metadata
 // guard does not regress into a no-op.
 func TestRouteMetadataWalkerCatchesUnannotatedRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	mux := http.NewServeMux()
@@ -156,6 +159,7 @@ func TestRouteMetadataWalkerCatchesUnannotatedRoute(t *testing.T) {
 }
 
 func TestRouteMetadataWalkerRejectsUnknownOrMultipleTags(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	mux := http.NewServeMux()

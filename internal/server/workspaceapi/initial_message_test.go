@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,6 +28,7 @@ import (
 )
 
 func TestNormalizeAgentMessage(t *testing.T) {
+	t.Parallel()
 	terminal, acp := localruntime.LaunchTargetAgent, localruntime.LaunchTargetACP
 	tests := []struct {
 		name      string
@@ -73,6 +75,7 @@ func TestNormalizeAgentMessage(t *testing.T) {
 }
 
 func TestInitialMessageSubmitFailureReleasesPreWriteAttempt(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	handler := New(Deps{Now: func() time.Time {
@@ -98,6 +101,7 @@ func TestInitialMessageSubmitFailureReleasesPreWriteAttempt(t *testing.T) {
 }
 
 func TestInitialMessageInactivePasteModeReturnsRetryableServiceSignal(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	handler := New(Deps{Now: func() time.Time {
@@ -120,6 +124,7 @@ func TestInitialMessageInactivePasteModeReturnsRetryableServiceSignal(t *testing
 }
 
 func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -405,6 +410,7 @@ type initialMessagePTY struct {
 	writeErr error
 	onWrite  func()
 	once     sync.Once
+	closed   bool
 }
 
 func (p *initialMessagePTY) Output() <-chan []byte         { return p.output }
@@ -414,15 +420,23 @@ func (p *initialMessagePTY) Resize(ptysize.Geometry) error { return nil }
 
 func (p *initialMessagePTY) Write(data []byte) error {
 	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return io.ErrClosedPipe
+	}
 	if p.writeErr != nil {
 		p.mu.Unlock()
 		return p.writeErr
 	}
 	p.writes = append(p.writes, data...)
 	onWrite := p.onWrite
-	output := p.output
+	select {
+	case p.output <- bytes.Clone(data):
+	case <-p.done:
+		p.mu.Unlock()
+		return io.ErrClosedPipe
+	}
 	p.mu.Unlock()
-	output <- bytes.Clone(data)
 	if onWrite != nil {
 		onWrite()
 	}
@@ -449,14 +463,18 @@ func (p *initialMessagePTY) written() []byte {
 
 func (p *initialMessagePTY) Close() {
 	p.once.Do(func() {
-		close(p.output)
 		close(p.done)
+		p.mu.Lock()
+		p.closed = true
+		close(p.output)
+		p.mu.Unlock()
 	})
 }
 
 // A launch message is validated against its target's protocol before the
 // workspace is looked up: terminal limits refuse it, an ACP target does not.
 func TestLaunchValidatesInitialMessageByTargetProtocol(t *testing.T) {
+	t.Parallel()
 	runtime := localruntime.NewManager(localruntime.Options{Targets: []localruntime.LaunchTarget{
 		{Key: "terminal", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{"true"}},
 		{Key: "chat", Kind: localruntime.LaunchTargetACP, Available: true, Command: []string{"true"}},

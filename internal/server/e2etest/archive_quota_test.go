@@ -22,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -57,6 +58,7 @@ func (s archiveQuotaBurstSource) SyncArchiveItem(
 }
 
 func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Now().UTC()
@@ -218,6 +220,7 @@ func TestArchiveAPIStopsProviderBurstAtObservedQuotaHeadroomE2E(t *testing.T) {
 // transport — even though the smallest pool still has headroom, and the
 // persisted deferral must retry when that deficient pool resets.
 func TestArchiveAPIDefersHydrationAtLargerPoolReserveE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Now().UTC()

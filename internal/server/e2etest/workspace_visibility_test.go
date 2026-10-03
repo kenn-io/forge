@@ -11,10 +11,12 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 	ts, database := bootFleetServer(t, nil)
@@ -77,6 +79,7 @@ func TestWorkspaceAPIHidesRemovedAssociatedPullRequestE2E(t *testing.T) {
 }
 
 func TestWorkspaceAPIRetainsProviderMetadataAcrossReusedRouteE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 	ts, database := bootFleetServer(t, nil)

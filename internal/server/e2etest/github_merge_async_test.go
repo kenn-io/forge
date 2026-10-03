@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -202,6 +203,7 @@ func setupGitHubAsyncMergeE2E(
 }
 
 func TestGitHubAsyncMergePersistsOnlyAfterTerminalSuccess(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
@@ -273,6 +275,7 @@ func TestGitHubAsyncMergePersistsOnlyAfterTerminalSuccess(t *testing.T) {
 }
 
 func TestGitHubAsyncMergeFailureLeavesPullRequestOpen(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, repoID, _ := setupGitHubAsyncMergeE2E(
@@ -298,6 +301,7 @@ func TestGitHubAsyncMergeFailureLeavesPullRequestOpen(t *testing.T) {
 }
 
 func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(

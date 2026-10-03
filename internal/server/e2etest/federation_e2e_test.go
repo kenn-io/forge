@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
@@ -174,7 +175,7 @@ func newFederatedForgesFixture(t *testing.T) *federatedForgesFixture {
 			Owner: "acme", Name: "widget",
 		}},
 		Fleet: config.Fleet{
-			Enabled: true, Role: config.FleetRoleHub, PeerTimeout: "500ms",
+			Enabled: true, Role: config.FleetRoleHub, PeerTimeout: "5s",
 			Members: []config.FleetMember{
 				{NodeID: nodeA.NodeID, Name: nodeA.Name, BaseURL: nodeA.HTTP.URL, State: federation.EnrollmentActive},
 				{NodeID: nodeB.NodeID, Name: nodeB.Name, BaseURL: nodeB.HTTP.URL, State: federation.EnrollmentActive},
@@ -191,7 +192,7 @@ func newFederatedForgesFixture(t *testing.T) *federatedForgesFixture {
 			BasePath: "/",
 			Tmux:     config.Tmux{Command: []string{"kenn-forge-no-such-tmux"}},
 			Fleet: config.Fleet{
-				Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "500ms",
+				Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "5s",
 				Hub: &config.FleetHub{
 					NodeID: hub.NodeID, Name: hub.Name,
 					BaseURL: hub.HTTP.URL,
@@ -458,6 +459,7 @@ func workspaceByID(rows []fleet.WorkspaceSummary, id string) *fleet.WorkspaceSum
 // workspace overlays, one-hop fleet projection, outage behavior, event
 // re-stamping, protocol enforcement, and synchronous credential revocation.
 func TestFederatedForgesE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := newFederatedForgesFixture(t)
@@ -622,7 +624,7 @@ func mcpRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIden
 	}
 }
 
-func TestFederatedActivityWorkspaceIndicators(t *testing.T) {
+func TestFederatedActivityWorkspaceIndicators(t *testing.T) { //nolint:paralleltest // hub Activity read waits only the production 1s activityPeerWait for member fetches
 	fixture := newFederatedForgesFixture(t)
 	for _, tc := range []struct {
 		daemon *federatedDaemonFixture

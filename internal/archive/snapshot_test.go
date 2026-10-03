@@ -16,6 +16,7 @@ import (
 )
 
 func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -67,6 +68,7 @@ func TestSnapshotReadsConfiguredCachedWork(t *testing.T) {
 }
 
 func TestSnapshotMergeStatusObservedAtIsTheOldestObservedTime(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -108,6 +110,7 @@ func TestSnapshotMergeStatusObservedAtIsTheOldestObservedTime(t *testing.T) {
 }
 
 func TestSnapshotMergeStatusObservedAtIgnoresReviewDecisionOffGitHub(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -137,12 +140,14 @@ func TestSnapshotMergeStatusObservedAtIgnoresReviewDecisionOffGitHub(t *testing.
 }
 
 func TestMinObservedAtOnEmptyInputIsNilNotZeroTime(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	assert.Nil(minObservedAt(nil))
 	assert.Nil(minObservedAt([]*time.Time{}))
 }
 
 func TestSnapshotExportsOwnershipAndActivity(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -208,6 +213,7 @@ func TestSnapshotExportsOwnershipAndActivity(t *testing.T) {
 }
 
 func TestSnapshotOmitsClosedAtForOpenPullRequests(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := archiveTestTime()
@@ -231,6 +237,7 @@ func TestSnapshotOmitsClosedAtForOpenPullRequests(t *testing.T) {
 }
 
 func TestSnapshotOpenIssueScope(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {
 			assert := assert.New(t)
@@ -278,6 +285,7 @@ func TestSnapshotOpenIssueScope(t *testing.T) {
 }
 
 func TestSnapshotOpenIssueScopeKeepsExportLimit(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -303,6 +311,7 @@ func TestSnapshotOpenIssueScopeKeepsExportLimit(t *testing.T) {
 }
 
 func TestSnapshotDistinguishesUnknownHeadRepository(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, head string
 		stale      bool
@@ -340,6 +349,7 @@ func TestSnapshotDistinguishesUnknownHeadRepository(t *testing.T) {
 }
 
 func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []platform.Kind{platform.KindGitHub, platform.KindGitLab, platform.KindForgejo, platform.KindGitea} {
 		t.Run(string(kind), func(t *testing.T) {
 			assert := assert.New(t)
@@ -416,6 +426,7 @@ func TestSnapshotRetainsStableIdentityAndOneReadView(t *testing.T) {
 }
 
 func TestSnapshotPreflightsReviewVolume(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -459,6 +470,7 @@ func TestSnapshotPreflightsReviewVolume(t *testing.T) {
 }
 
 func TestSnapshotResponseByteBoundary(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

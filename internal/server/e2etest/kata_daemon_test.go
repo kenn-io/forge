@@ -17,7 +17,7 @@ import (
 	"go.kenn.io/forge/internal/kata"
 )
 
-func TestKataLocalDaemonChallengeIsReportedDownE2E(t *testing.T) {
+func TestKataLocalDaemonChallengeIsReportedDownE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME, KATA_AUTH_TOKEN, KATA_DB
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -69,7 +69,7 @@ local = true
 	assert.Equal([]string{""}, authorizations)
 }
 
-func TestKataLocalDaemonTokenEnvIsNotUsedForNarrowReadsE2E(t *testing.T) {
+func TestKataLocalDaemonTokenEnvIsNotUsedForNarrowReadsE2E(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME, KATA_AUTH_TOKEN, KATA_DB, KENN_FORGE_KATA_MISSING_TOKEN
 	assert := assert.New(t)
 	require := require.New(t)
 

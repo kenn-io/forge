@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/streamapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // The Fleet auth snapshot copies only the fields the resolver reads. Owner PATs
@@ -13,6 +14,7 @@ import (
 // them makes an owner-token-only configuration look unauthenticated to Fleet
 // even though sync and mutations are working.
 func TestFleetConfigSnapshotCarriesGitHubCredentialRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	cfg := &config.Config{
 		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",

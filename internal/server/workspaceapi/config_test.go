@@ -11,6 +11,7 @@ import (
 )
 
 func TestConfigSnapshotIsImmutableAndApplyConfigPublishesCommittedState(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	enabled := true
 	initial := ConfigSnapshot{
@@ -46,6 +47,7 @@ func TestConfigSnapshotIsImmutableAndApplyConfigPublishesCommittedState(t *testi
 }
 
 func TestLifecycleShutdownHonorsContextAndCanBeWaitedAgain(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	h := New(Deps{})
 	h.Start(t.Context(), true)

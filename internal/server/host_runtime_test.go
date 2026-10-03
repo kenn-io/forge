@@ -13,6 +13,7 @@ import (
 )
 
 func TestHostRuntimeStoredSessionSurvivesRestart(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

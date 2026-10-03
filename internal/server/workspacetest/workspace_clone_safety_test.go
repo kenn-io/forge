@@ -1187,7 +1187,7 @@ func TestWorkspaceDeleteDirty(t *testing.T) {
 	assert.Equal(http.StatusNotFound, get2.StatusCode)
 }
 
-func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E(
+func TestWorkspaceForceDeleteToleratesMissingWorktreeCommonDirE2E( //nolint:paralleltest // t.Setenv writes PATH, KENN_FORGE_TEST_REAL_GIT through installGitCommonDirReadFailure
 	t *testing.T,
 ) {
 	require := require.New(t)

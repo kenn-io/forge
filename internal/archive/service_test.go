@@ -20,6 +20,7 @@ import (
 )
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := archiveTestTime()
 	// A budget-transport refusal may reach the classifier bare or wrapped by a
@@ -45,6 +46,7 @@ func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T
 }
 
 func TestArchiveTerminalSyncOutcomeRetriesGenericPermissionDenied(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	outcome, destination, terminal := archiveTerminalSyncOutcome(
 		platform.PermissionDenied(platform.KindGitLab, "gitlab.example.com", errors.New("expired token")),
@@ -56,6 +58,7 @@ func TestArchiveTerminalSyncOutcomeRetriesGenericPermissionDenied(t *testing.T) 
 }
 
 func TestArchiveTerminalSyncOutcomeRetriesGenericNotFound(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	outcome, destination, terminal := archiveTerminalSyncOutcome(platform.ErrNotFound)
 
@@ -65,6 +68,7 @@ func TestArchiveTerminalSyncOutcomeRetriesGenericNotFound(t *testing.T) {
 }
 
 func TestArchiveTerminalSyncOutcomeAcceptsExplicitInaccessibleLookup(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	outcome, destination, terminal := archiveTerminalSyncOutcome(
 		platform.PermissionDenied(
@@ -80,6 +84,7 @@ func TestArchiveTerminalSyncOutcomeAcceptsExplicitInaccessibleLookup(t *testing.
 }
 
 func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -102,6 +107,7 @@ func TestArchiveServiceStartValidatesAllRepositoriesBeforePromotion(t *testing.T
 }
 
 func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -136,6 +142,7 @@ func TestArchiveServiceEnsureConfiguredSkipsUnresolvableRef(t *testing.T) {
 }
 
 func TestArchiveServiceEnsureConfiguredDefersRemovalPausingWhenRefUnresolvable(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -178,6 +185,7 @@ func TestArchiveServiceEnsureConfiguredDefersRemovalPausingWhenRefUnresolvable(t
 }
 
 func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -200,6 +208,7 @@ func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 }
 
 func TestArchiveServiceEnsureConfiguredUsesStoredRowForPinnedID(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -224,6 +233,7 @@ func TestArchiveServiceEnsureConfiguredUsesStoredRowForPinnedID(t *testing.T) {
 }
 
 func TestArchiveServiceEnsureConfiguredResolvesUnstoredPinnedIDThroughProvider(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -254,6 +264,7 @@ func TestArchiveServiceEnsureConfiguredResolvesUnstoredPinnedIDThroughProvider(t
 }
 
 func TestArchiveServiceEnsureConfiguredRejectsProviderIDMismatch(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -278,6 +289,7 @@ func TestArchiveServiceEnsureConfiguredRejectsProviderIDMismatch(t *testing.T) {
 }
 
 func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -318,6 +330,7 @@ func TestArchiveServiceAllScopeAndWakeLifecycle(t *testing.T) {
 }
 
 func TestArchiveServicePauseRejectsInFlightInventoryCommit(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -357,6 +370,7 @@ func TestArchiveServicePauseRejectsInFlightInventoryCommit(t *testing.T) {
 }
 
 func TestArchiveServiceRetryAuthenticationPreservesProgress(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -394,6 +408,7 @@ func TestArchiveServiceRetryAuthenticationPreservesProgress(t *testing.T) {
 }
 
 func TestArchiveAuthenticationFailureDefersPendingHydration(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -426,6 +441,7 @@ func TestArchiveAuthenticationFailureDefersPendingHydration(t *testing.T) {
 }
 
 func TestArchiveIdlePollDoesNotReconcileConfiguredRepositories(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -451,6 +467,7 @@ func TestArchiveIdlePollDoesNotReconcileConfiguredRepositories(t *testing.T) {
 }
 
 func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -506,6 +523,7 @@ func TestArchiveServiceRemovedRepositoryStopsWorkAndReaddResumesState(t *testing
 }
 
 func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -545,6 +563,7 @@ func TestArchiveInventoryInvalidCursorBlocksScanWithoutRestart(t *testing.T) {
 }
 
 func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -624,6 +643,7 @@ func TestArchiveResumesDiscoveryAppliesMaintenanceAndReportsDeterministically(t 
 }
 
 func TestArchiveInventoryFailureIsDurableAndClearedBySuccessfulProgress(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -658,6 +678,7 @@ func TestArchiveInventoryFailureIsDurableAndClearedBySuccessfulProgress(t *testi
 }
 
 func TestArchiveStartAllowsPartialHistoricalInventory(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -679,6 +700,7 @@ func TestArchiveStartAllowsPartialHistoricalInventory(t *testing.T) {
 }
 
 func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -704,6 +726,7 @@ func TestArchiveDiscoverySkipsUnsupportedInventoryStream(t *testing.T) {
 }
 
 func TestArchiveMaintenanceDoesNotReopenStaticallyUnsupportedInventoryStream(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -753,6 +776,7 @@ func TestArchiveMaintenanceDoesNotReopenStaticallyUnsupportedInventoryStream(t *
 }
 
 func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -805,6 +829,7 @@ func TestArchiveInventoryReopensRepositoryFeatureAfterReenable(t *testing.T) {
 }
 
 func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name      string
@@ -827,6 +852,7 @@ func TestDefaultArchiveRetryClassifierDistinguishesTerminalProviderErrors(t *tes
 }
 
 func TestArchiveBudgetDeferralDoesNotIncrementAttempts(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -853,6 +879,7 @@ func TestArchiveBudgetDeferralDoesNotIncrementAttempts(t *testing.T) {
 }
 
 func TestArchiveInventoryAdmissionReservesGitHubMergeRequestConfirmationAttempts(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -876,6 +903,7 @@ func TestArchiveInventoryAdmissionReservesGitHubMergeRequestConfirmationAttempts
 }
 
 func TestArchivePausePreventsFutureProviderReads(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -895,6 +923,7 @@ func TestArchivePausePreventsFutureProviderReads(t *testing.T) {
 }
 
 func TestArchiveHydrationRetryClassifierReceivesStoredAttemptCount(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -949,6 +978,7 @@ func (c *recordingRetryClassifier) recorded() []int {
 }
 
 func TestArchiveHydrationBudgetDeferralKeepsWorkPending(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	database := dbtest.Open(t)
 	now := archiveTestTime()

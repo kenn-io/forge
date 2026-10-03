@@ -72,7 +72,7 @@ func TestCloneProject(t *testing.T) {
 // TestCloneProjectBranchAndHomePath covers the branch option and
 // home-relative destination expansion: fleet clients send "~/..." paths
 // because only the executing host knows its home.
-func TestCloneProjectBranchAndHomePath(t *testing.T) {
+func TestCloneProjectBranchAndHomePath(t *testing.T) { //nolint:paralleltest // t.Setenv writes HOME
 	acquireWorkspaceGitSlot(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")

@@ -24,6 +24,7 @@ import (
 )
 
 func TestApplyWorktreeDivergenceReportsMissingConfiguredUpstream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	work := gitfixture.DivergenceWorktree(t)
@@ -78,6 +79,7 @@ func runGit(t *testing.T, dir string, args ...string) {
 }
 
 func TestApplyWorktreeDirtyDoesNotWriteTheGitIndex(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	dir := t.TempDir()
 
@@ -111,6 +113,7 @@ func TestFormatAgentActivityUpdatedAtPreservesSubsecondPrecision(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -245,6 +248,7 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 }
 
 func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
 	srv := &Handler{
@@ -277,6 +281,7 @@ func TestWorkspaceEnrichmentSupersedeRejectsOlderRefreshAndPreservesCache(t *tes
 }
 
 func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := &Handler{
 		now:                            time.Now,
@@ -299,6 +304,7 @@ func TestWorkspaceEnrichmentRejectsResultAfterGenerationIsTrimmed(t *testing.T) 
 }
 
 func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
@@ -334,6 +340,7 @@ func TestWorkspaceEnrichmentSupersededResponseUsesCurrentCacheState(t *testing.T
 }
 
 func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
@@ -360,6 +367,7 @@ func TestWorkspaceEnrichmentPendingJobUsesLatestSummary(t *testing.T) {
 }
 
 func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := &Handler{
 		workspaceEnrichmentCache: map[string]workspaceEnrichmentCacheEntry{
@@ -386,6 +394,7 @@ func TestTrimWorkspaceEnrichmentCacheDropsDeletedPendingState(t *testing.T) {
 }
 
 func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	srv := newEnrichmentTestHandler(t, "")
@@ -434,6 +443,7 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 }
 
 func TestCachedWorkspaceEnrichmentTracksComponentStaleness(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := newEnrichmentTestHandler(t, "")
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
@@ -465,6 +475,7 @@ func TestCachedWorkspaceEnrichmentTracksComponentStaleness(t *testing.T) {
 }
 
 func TestCachedWorkspaceEnrichmentDoesNotTreatTmuxAttemptAsDivergenceAttempt(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	srv := newEnrichmentTestHandler(t, "")
@@ -484,6 +495,7 @@ func TestCachedWorkspaceEnrichmentDoesNotTreatTmuxAttemptAsDivergenceAttempt(t *
 }
 
 func TestCachedWorkspaceEnrichmentKeepsFreshTmuxOnlyResultPending(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 	srv := &Handler{now: func() time.Time { return now }}
 	summary := db.WorkspaceSummary{
@@ -501,6 +513,7 @@ func TestCachedWorkspaceEnrichmentKeepsFreshTmuxOnlyResultPending(t *testing.T) 
 }
 
 func TestWorkspaceEnrichmentTmuxSuccessPreservesDivergenceFailure(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -553,6 +566,7 @@ func TestWorkspaceEnrichmentTmuxSuccessPreservesDivergenceFailure(t *testing.T) 
 }
 
 func TestNextWorkspaceEnrichmentJobLeavesUpgradeQueuedDuringActiveFlight(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := &Handler{
 		workspaceEnrichmentInFlight: map[string]uint64{"ws-upgrade": 3},
@@ -580,6 +594,7 @@ func TestNextWorkspaceEnrichmentJobLeavesUpgradeQueuedDuringActiveFlight(t *test
 }
 
 func TestFinishWorkspaceEnrichmentRequiresMatchingFlightID(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := &Handler{
 		workspaceEnrichmentInFlight:    map[string]uint64{"ws-flight": 4},
@@ -598,6 +613,7 @@ func TestFinishWorkspaceEnrichmentRequiresMatchingFlightID(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	dir := t.TempDir()
@@ -709,6 +725,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentThrottlesPublishedTmuxRecency(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
@@ -776,6 +793,7 @@ func TestWorkspaceEnrichmentThrottlesPublishedTmuxRecency(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentDoesNotRegressPublishedTmuxRecency(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 20, 13, 0, 0, 0, time.UTC)
@@ -813,6 +831,7 @@ func TestWorkspaceEnrichmentDoesNotRegressPublishedTmuxRecency(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentAbsentTmuxRecencyClearsAndResetsThrottle(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 8, 20, 14, 0, 0, 0, time.UTC)
@@ -859,6 +878,7 @@ func TestWorkspaceEnrichmentAbsentTmuxRecencyClearsAndResetsThrottle(t *testing.
 }
 
 func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	srv := &Handler{
 		workspaceEnrichmentCache:       make(map[string]workspaceEnrichmentCacheEntry),
@@ -949,6 +969,7 @@ func TestWorkspaceEnrichmentBroadcastsOnlyDurableChanges(t *testing.T) {
 }
 
 func TestTmuxOnlyEnrichmentBroadcastsFirstCompletion(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	srv := newEnrichmentTestHandler(t, "")
@@ -983,6 +1004,7 @@ func TestTmuxOnlyEnrichmentBroadcastsFirstCompletion(t *testing.T) {
 }
 
 func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
@@ -1013,6 +1035,7 @@ func TestWorkspaceEnrichmentUsesBoundedWorkersPastBackgroundCapacity(t *testing.
 }
 
 func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
+	t.Parallel()
 	srv := newEnrichmentTestHandler(t, "")
 	srv.workspaceEnrichmentDisabled = false
 	for range cap(srv.workspaceEnrichmentSlots) {
@@ -1035,6 +1058,7 @@ func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := newEnrichmentTestHandler(t, "")

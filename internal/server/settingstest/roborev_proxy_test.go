@@ -17,10 +17,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 )
 
 func TestRoborevProxyForwarding(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	var mu sync.Mutex
@@ -53,6 +55,7 @@ func TestRoborevProxyForwarding(t *testing.T) {
 }
 
 func TestRoborevProxyRejectsDeclaredStreamsWithoutAccept(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	var upstreamRequests atomic.Int64
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		upstreamRequests.Add(1)
@@ -76,6 +79,7 @@ func TestRoborevProxyRejectsDeclaredStreamsWithoutAccept(t *testing.T) {
 }
 
 func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -137,6 +141,7 @@ func TestRoborevProxyE2EForwardsSubpathAndNonGETMethod(t *testing.T) {
 }
 
 func TestRoborevProxy502(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	srv := servertest.SetupTestServerWithRoborev(t, "http://127.0.0.1:1")
@@ -152,6 +157,7 @@ func TestRoborevProxy502(t *testing.T) {
 }
 
 func TestRoborevNDJSONPassThrough(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	lines := []string{
 		`{"event":"start","id":1}`,
 		`{"event":"progress","pct":50}`,
@@ -212,6 +218,7 @@ func TestRoborevNDJSONPassThrough(t *testing.T) {
 }
 
 func TestRoborevProxyCancelsIdleUpstreamBeforeReconnect(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	var started atomic.Int64

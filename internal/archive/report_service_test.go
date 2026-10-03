@@ -14,6 +14,7 @@ import (
 )
 
 func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -66,6 +67,7 @@ func TestArchiveServiceReportBuildsOfflineCountsCoverageAndDetails(t *testing.T)
 }
 
 func TestArchiveServiceReportFiltersFullRepositoryIdentityAndRejectsEmptyScope(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -103,6 +105,7 @@ func TestArchiveServiceReportFiltersFullRepositoryIdentityAndRejectsEmptyScope(t
 }
 
 func TestArchiveServiceReportUsesRangeEndAsDeterministicStatusTime(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -130,6 +133,7 @@ func TestArchiveServiceReportUsesRangeEndAsDeterministicStatusTime(t *testing.T)
 }
 
 func TestArchiveServiceReportRejectsPartiallyMissingExplicitScope(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
@@ -152,6 +156,7 @@ func TestArchiveServiceReportRejectsPartiallyMissingExplicitScope(t *testing.T) 
 }
 
 func TestArchiveServiceReportUsesOneSQLiteSnapshot(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -206,6 +211,7 @@ func TestArchiveServiceReportUsesOneSQLiteSnapshot(t *testing.T) {
 }
 
 func TestArchiveServiceDetailedReportLimitDoesNotLimitSummary(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

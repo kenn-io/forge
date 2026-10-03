@@ -18,6 +18,7 @@ import (
 // list with a duplicate is stored normalized (sorted, deduped) and surfaces on
 // the worktree list; a missing worktree returns 404.
 func TestSetWorktreeLinkedIssuesRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

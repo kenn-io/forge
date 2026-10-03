@@ -35,6 +35,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -65,6 +66,7 @@ func doServerJSON(
 }
 
 func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -180,6 +182,7 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 }
 
 func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	const (
@@ -324,6 +327,7 @@ func findSettingsLaunchTarget(
 }
 
 func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsRuntimeSessions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -424,6 +428,7 @@ name = "widget"
 }
 
 func TestSettingsAPIE2EPreservesStartupConfigThroughSettingsSave(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfigContent(t, `
@@ -495,6 +500,7 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 }
 
 func TestSettingsAPIE2EFleetReadUpdateAndValidation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	const memberID = "fedcba9876543210fedcba9876543210"
@@ -602,6 +608,7 @@ state = "active"
 }
 
 func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -661,6 +668,7 @@ func TestRepoConfigAPIE2EAddDeleteAndErrors(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -707,6 +715,7 @@ func TestRepoConfigAPIE2EUpdatesWorktreeBasePath(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EAcceptsForkStyleWorktreeBase(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -743,6 +752,7 @@ func TestRepoConfigAPIE2EAcceptsForkStyleWorktreeBase(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServerWithConfig(t)
@@ -812,6 +822,7 @@ func TestRepoConfigAPIE2EUpdatesUIVisibility(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2ERejectsUnsafeWorktreeScopedBaseConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath := setupTestServerWithConfig(t)
@@ -952,6 +963,7 @@ func (env settingsWorkspaceEnv) setWorktreeBase(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -997,6 +1009,7 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesWorktreeBasePath(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredCheckedOut(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1049,6 +1062,7 @@ func TestRepoConfigAPIE2EWorkspaceCreationUsesFallbackBranchWhenPreferredChecked
 }
 
 func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -1100,6 +1114,7 @@ func TestWorkspaceAPIE2ERejectsEmptyProviderForAmbiguousRepo(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1146,6 +1161,7 @@ func TestRepoConfigAPIE2EDeleteReusedIssueBranchKeepsLocalBranch(t *testing.T) {
 }
 
 func TestRepoConfigAPIE2ERefreshGlobAndErrors(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	mock := &mockGH{
 		listReposByOwnerFn: func(

@@ -24,6 +24,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -76,6 +77,7 @@ type archiveMergeMetricsCase struct {
 }
 
 func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []archiveMergeMetricsCase{
 		{
 			name: "merged timestamp only", state: db.MergeRequestStateOpen,
@@ -113,6 +115,7 @@ func TestArchiveReportRepairsMergedMetricsAcrossRepositoryRenameE2E(t *testing.T
 }
 
 func TestArchiveHydrationRejectsInterveningMergeRequestSnapshotE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -222,6 +225,7 @@ func TestArchiveHydrationRejectsInterveningMergeRequestSnapshotE2E(t *testing.T)
 }
 
 func TestArchiveReactivationReclassifiesWorkspaceHeadRepoE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name       string
 		headOwner  string

@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/forge/platform"
 )
@@ -75,6 +76,7 @@ func setupAssigneeTestServer(t *testing.T) (*server.Server, *db.DB, *testutil.Fi
 }
 
 func TestAPISetPullAssigneesUpdatesProviderAndPersists(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, syncer := setupAssigneeTestServer(t)
@@ -111,6 +113,7 @@ func TestAPISetPullAssigneesUpdatesProviderAndPersists(t *testing.T) {
 }
 
 func TestAPISetPullAssigneesClearsAssignees(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, _, _ := setupAssigneeTestServer(t)
@@ -140,6 +143,7 @@ func TestAPISetPullAssigneesClearsAssignees(t *testing.T) {
 }
 
 func TestAPISetIssueAssigneesUpdatesProviderAndPersists(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, syncer := setupAssigneeTestServer(t)
@@ -173,6 +177,7 @@ func TestAPISetIssueAssigneesUpdatesProviderAndPersists(t *testing.T) {
 }
 
 func TestAPISetPullReviewersRequestsAndRemoves(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
@@ -204,6 +209,7 @@ func TestAPISetPullReviewersRequestsAndRemoves(t *testing.T) {
 }
 
 func TestAPISetPullReviewersRemovesAllRequests(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
@@ -228,6 +234,7 @@ func TestAPISetPullReviewersRemovesAllRequests(t *testing.T) {
 }
 
 func TestAPISetPullReviewersRemovesProviderReviewersWhenSyncedStateIsUnknown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
@@ -254,6 +261,7 @@ func TestAPISetPullReviewersRemovesProviderReviewersWhenSyncedStateIsUnknown(t *
 }
 
 func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
@@ -281,6 +289,7 @@ func TestAPISetPullReviewersRemovesDriftedProviderReviewers(t *testing.T) {
 }
 
 func TestAPISyncPersistsAssigneesAndRequestedReviewers(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, providerClient, syncer := setupAssigneeTestServer(t)
@@ -317,6 +326,7 @@ func TestAPISyncPersistsAssigneesAndRequestedReviewers(t *testing.T) {
 }
 
 func TestAPISetPullAssigneesRejectsDuplicatesAndEmptyNames(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupAssigneeTestServer(t)
 	seedPR(t, database, "acme", "widget", 1)
@@ -348,6 +358,7 @@ func (p readOnlyProvider) Capabilities() platform.Capabilities {
 }
 
 func TestAPIAssigneeAndReviewerMutationsAreCapabilityGated(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -410,6 +421,7 @@ func mergeRequestFieldPresence(t *testing.T, body []byte, envelopeKey string) ma
 }
 
 func TestAPIGetPullNeverReportedAssigneesAndReviewersOmitJSONKeys(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database := setupTestServer(t)
 	// seedPR leaves assignees_json and reviewers_json empty, meaning the
@@ -427,6 +439,7 @@ func TestAPIGetPullNeverReportedAssigneesAndReviewersOmitJSONKeys(t *testing.T) 
 }
 
 func TestAPIGetPullConfirmedEmptyAssigneesAndReviewersSerializeAsEmptyArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -456,6 +469,7 @@ func TestAPIGetPullConfirmedEmptyAssigneesAndReviewersSerializeAsEmptyArray(t *t
 }
 
 func TestAPIGetPullPopulatedAssigneesAndReviewersSerializeLogins(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -474,6 +488,7 @@ func TestAPIGetPullPopulatedAssigneesAndReviewersSerializeLogins(t *testing.T) {
 }
 
 func TestAPIListPullsDistinguishesUnknownFromConfirmedEmptyAssignees(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)
@@ -523,6 +538,7 @@ func TestAPIListPullsDistinguishesUnknownFromConfirmedEmptyAssignees(t *testing.
 }
 
 func TestAPIGetIssueConfirmedEmptyAssigneesSerializesAsEmptyArray(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupTestServer(t)

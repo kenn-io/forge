@@ -34,6 +34,7 @@ import (
 // unblocked on the Kenn Forge side.
 
 func TestProjectWorktreeRuntimeExcludesACPChatTargets(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTest(t)
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
@@ -62,6 +63,7 @@ func TestProjectWorktreeRuntimeExcludesACPChatTargets(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -82,6 +84,7 @@ func TestProjectWorktreeRuntimeRejectsMismatchedProject(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -130,6 +133,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -165,6 +169,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T)
 }
 
 func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -227,6 +232,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 }
 
 func TestProjectWorktreeRuntimeExitForgetsStoredTmuxSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, _, worktreeID := setupProjectWorktreeRuntimeTest(t)

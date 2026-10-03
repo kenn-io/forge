@@ -292,7 +292,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 }
 
 func TestTmuxWrapperNewSession(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -350,6 +350,7 @@ func TestTmuxWrapperNewSession(t *testing.T) {
 }
 
 func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	client, _, record := setupWrapperServer(t)
@@ -411,7 +412,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 }
 
 func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -519,7 +520,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 }
 
 func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -598,7 +599,7 @@ func TestActivityAuthorsIncludeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -674,7 +675,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 }
 
 func TestWorkspaceActivityNumberSearchIncludesEventlessSubject(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -767,7 +768,7 @@ func getRawWorkspaceActivity(
 	return got
 }
 
-func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
+func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -849,7 +850,7 @@ func TestWorkspaceCreateFailureLogsAndPersistsAuditEvent(t *testing.T) {
 }
 
 func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -961,6 +962,7 @@ func TestWorkspaceShutdownCancellationPersistsFailureViaAPI(t *testing.T) {
 }
 
 func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1040,7 +1042,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 }
 
 func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -1163,7 +1165,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 }
 
 func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	assert := assert.New(t)
@@ -1289,7 +1291,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 }
 
 func TestTmuxWrapperAttachSession(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -1377,6 +1379,7 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 }
 
 func TestTerminalRouteE2EPropagatesWorkspaceID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	_, baseURL, _ := setupWrapperServer(t)
 
@@ -1394,6 +1397,7 @@ func TestTerminalRouteE2EPropagatesWorkspaceID(t *testing.T) {
 }
 
 func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1452,7 +1456,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")
 }
 
-func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
+func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nolint:paralleltest // swaps the procutil default limiter
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1513,7 +1517,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) {
 	releaseHeld()
 }
 
-func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing.T) {
+func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing.T) { //nolint:paralleltest // swaps the procutil default limiter
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1569,7 +1573,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 // This complements TestTmuxWrapperNewSession and TestTmuxWrapperAttachSession —
 // together they cover all three tmux verbs that cross the HTTP boundary.
 func TestTmuxWrapperKillSession(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -1625,6 +1629,7 @@ func TestTmuxWrapperKillSession(t *testing.T) {
 }
 
 func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -1694,7 +1699,7 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 }
 
 func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -1757,7 +1762,7 @@ func TestDeleteWorkspaceTreatsTmuxServerExitAsGoneE2E(t *testing.T) {
 }
 
 func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	require := require.New(t)
@@ -1831,7 +1836,7 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 // the terminal handler sees the error and closes the WebSocket with
 // StatusInternalError.
 func TestTmuxWrapperAttachSurfacesWrapperFailure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	record := filepath.Join(t.TempDir(), "record")
@@ -1923,7 +1928,7 @@ func attachWebsocketAndExpectInternalError(t *testing.T, scriptBody string) {
 // reviewer flagged — shell wrappers often exit 1 for their own
 // generic errors.
 func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	record := filepath.Join(t.TempDir(), "record")
@@ -1947,7 +1952,7 @@ func TestTmuxWrapperAttachSurfacesExit1Failure(t *testing.T) {
 // "session absent." Pairs with the unit-level
 // TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout.
 func TestTmuxWrapperAttachIgnoresAbsencePhraseOnStdout(t *testing.T) {
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 	acquireRootWorkspaceGitSlot(t)
 
 	record := filepath.Join(t.TempDir(), "record")

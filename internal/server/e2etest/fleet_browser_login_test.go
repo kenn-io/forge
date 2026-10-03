@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/server/httpapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 type fleetBrowserLogin struct {
@@ -99,6 +100,7 @@ func decodeBrowserLogin(t *testing.T, response *http.Response, body []byte) flee
 // a hub mints a link on its spoke with its own federation credential, the
 // link establishes a spoke session, and that session can hop back to the hub.
 func TestFleetBrowserLoginE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newFederatedForgesFixture(t)
@@ -144,6 +146,7 @@ func TestFleetBrowserLoginE2E(t *testing.T) {
 }
 
 func TestFleetBrowserLoginRejectsUnreachableTargets(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
 	hub, nodeA, nodeB := fixture.Hub, fixture.NodeA, fixture.NodeB
 	for _, test := range []struct {
@@ -176,6 +179,7 @@ func TestFleetBrowserLoginRejectsUnreachableTargets(t *testing.T) {
 }
 
 func TestFleetBrowserLoginValidatesDestinationPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
 	for _, path := range []string{
 		"//evil.example/pulls",
@@ -201,6 +205,7 @@ func TestFleetBrowserLoginValidatesDestinationPath(t *testing.T) {
 }
 
 func TestFleetBrowserLoginIsNotPeerCallable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
 	response, body := fixture.requestBrowserLogin(
 		t, fixture.Hub, fixture.NodeB.NodeID, `{"path":"/"}`,
@@ -211,6 +216,7 @@ func TestFleetBrowserLoginIsNotPeerCallable(t *testing.T) {
 }
 
 func TestFleetBrowserLoginReportsPeerFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	fixture := newFederatedForgesFixture(t)
 	fixture.Hub.Switch.offline.Store(true)

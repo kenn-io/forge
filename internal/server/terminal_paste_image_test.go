@@ -23,6 +23,7 @@ import (
 )
 
 func TestTerminalPasteImageStoresBrowserImageForRemoteTerminal(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	dataDir := t.TempDir()
@@ -77,6 +78,7 @@ func TestTerminalPasteImageStoresBrowserImageForRemoteTerminal(t *testing.T) {
 }
 
 func TestTerminalPasteImageAcceptsFleetPeerRelay(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	dataDir := t.TempDir()
 	store, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(t, err)
@@ -112,6 +114,7 @@ func TestTerminalPasteImageAcceptsFleetPeerRelay(t *testing.T) {
 }
 
 func TestTerminalPasteImageRejectsUnsupportedAndOversizedPayloads(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := New(
 		serverfake.OpenTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: t.TempDir()},
@@ -151,6 +154,7 @@ func TestTerminalPasteImageRejectsUnsupportedAndOversizedPayloads(t *testing.T) 
 }
 
 func TestTerminalPasteImageFleetRouteAcceptsBrowserBinaryContentType(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := newTestServer(t)
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,
@@ -169,6 +173,7 @@ func TestTerminalPasteImageFleetRouteAcceptsBrowserBinaryContentType(t *testing.
 }
 
 func TestTerminalPasteImageAcceptsAuthenticatedCLIRelay(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := New(
 		serverfake.OpenTestDB(t), nil, nil, "/",
 		&config.Config{DataDir: t.TempDir()},
@@ -194,6 +199,7 @@ func TestTerminalPasteImageAcceptsAuthenticatedCLIRelay(t *testing.T) {
 }
 
 func TestTerminalPasteImageRejectsSimpleRequestContentType(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := newTestServer(t)
 	req := httptest.NewRequestWithContext(t.Context(),
 		http.MethodPost,

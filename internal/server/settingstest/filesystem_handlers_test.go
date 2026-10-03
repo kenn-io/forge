@@ -22,6 +22,7 @@ import (
 // completions for a partial path, used by project-registration UIs to browse
 // the daemon's local filesystem.
 func TestFilesystemComplete(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -73,6 +74,7 @@ func TestFilesystemComplete(t *testing.T) {
 // TestFilesystemValidateRepo covers GET /api/v1/filesystem/validate-repo:
 // resolving an arbitrary path to a registerable repository root.
 func TestFilesystemValidateRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")
 	}

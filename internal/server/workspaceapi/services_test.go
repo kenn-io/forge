@@ -85,6 +85,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 }
 
 func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -155,6 +156,7 @@ func (a *recordingWorkspaceAutomation) AutoAssignWorkspaceItem(
 }
 
 func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -214,6 +216,7 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 }
 
 func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -286,6 +289,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 }
 
 func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -339,6 +343,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 }
 
 func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		itemType string
@@ -424,6 +429,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 }
 
 func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

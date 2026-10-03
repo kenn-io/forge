@@ -14,6 +14,7 @@ import (
 )
 
 func TestArchiveStartRejectsDisabledSyncer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := serverfake.OpenTestDB(t)
 	syncer := github.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)

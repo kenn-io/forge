@@ -192,6 +192,7 @@ func TestCreateWorktreeFromMergeRequestRoute(t *testing.T) {
 }
 
 func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -231,6 +232,7 @@ func TestCreateWorktreeFromMergeRequestRouteRejectsChangedHead(t *testing.T) {
 }
 
 func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupProjectServer(t)
@@ -270,6 +272,7 @@ func TestCreateWorktreeFromGitLabMergeRequestRefRoute(t *testing.T) {
 }
 
 func TestCreateWorktreeFromRelativeForkRoutePersistsAbsoluteTracking(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database := setupProjectServer(t)

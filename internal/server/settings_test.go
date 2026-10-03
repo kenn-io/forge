@@ -157,6 +157,7 @@ func readSettingsTmuxGraphicsCommands(t *testing.T, record string) []string {
 }
 
 func TestHandleGetSettingsReportsRepositoryCurrentlyAtUnpinnedRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _, _ := setupTestServerWithConfigContent(t, `
 [[repos]]
@@ -184,6 +185,7 @@ name = "widget"
 }
 
 func TestHandleGetSettingsReportsMCPDesiredAndActiveState(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -216,6 +218,7 @@ diff_cache_mb = 256
 }
 
 func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, cfgPath, syncer := setupTestServerWithConfig(t)
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", map[string]bool{"airplane_mode": true})
@@ -238,6 +241,7 @@ func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
@@ -255,6 +259,7 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 }
 
 func TestCreateRepoPresetRejectsSaveFailureWithoutPublishing(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -285,6 +290,7 @@ repos = [{ provider = "github", platform_host = "github.com", platform_repo_id =
 }
 
 func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
@@ -332,6 +338,7 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfig(t)
 	require.False(srv.pullAPI.ConfigSnapshot().AllowMidStackMerges)
@@ -374,6 +381,7 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 }
 
 func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfig(t)
 
@@ -409,6 +417,7 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
@@ -439,7 +448,7 @@ func TestHandleUpdateSettingsMergesWorkspaceFields(t *testing.T) {
 	assert.Equal("item", cfg2.Workspaces.DefaultSidebarView)
 }
 
-func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) {
+func TestHandleUpdateTerminalSettingsAppliesMouseToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
 	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -472,7 +481,7 @@ name = "widget"
 	}, readSettingsTmuxMouseCommands(t, record))
 }
 
-func TestHandleUpdateTerminalSettingsAppliesGraphicsToDedicatedTmuxServer(t *testing.T) {
+func TestHandleUpdateTerminalSettingsAppliesGraphicsToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder
 	require := require.New(t)
 	record := installSettingsTmuxRecorder(t)
 	srv, _, _, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -508,6 +517,7 @@ name = "widget"
 }
 
 func TestHandleUpdateSettingsRefreshesRuntimeTargets(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	dir := t.TempDir()
 	agentPath := filepath.Join(dir, "codex-custom")
 	require.NoError(t, os.WriteFile(
@@ -570,6 +580,7 @@ func findRuntimeTargetForSettingsTest(
 }
 
 func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfig(t)
@@ -594,6 +605,7 @@ func TestMergeTrackedReposReconcilesRenamedRouteByProviderIdentity(t *testing.T)
 }
 
 func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfig(t)
@@ -619,6 +631,7 @@ func TestMergeTrackedReposPreservesExactEntryProvenance(t *testing.T) {
 }
 
 func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfig(t)
@@ -659,6 +672,7 @@ func TestMergeTrackedReposDoesNotTransferProvenanceAcrossProviderIdentities(t *t
 }
 
 func TestReplaceGlobReposPreservesExactEntryProvenance(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, _, syncer := setupTestServerWithConfig(t)
@@ -691,6 +705,7 @@ func trackedRepoArchived(syncer *ghclient.Syncer, owner, name string) bool {
 }
 
 func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -735,6 +750,7 @@ func TestWorktreeBasePathResolverMatchesProviderIdentity(t *testing.T) {
 }
 
 func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
@@ -771,6 +787,7 @@ func TestWorktreeBasePathResolverMatchesRegisteredProjectIdentity(t *testing.T) 
 }
 
 func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	_, err := database.ObserveRepository(
@@ -800,6 +817,7 @@ func TestProviderSettingsProjectionCarriesCatalogObservation(t *testing.T) {
 }
 
 func TestRoleAwareSettingsRequireOneOwnerPerNodeWrite(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub, hubDB, _, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -971,6 +989,7 @@ base_url = %q
 }
 
 func TestNodeWorktreeBaseOverrideFollowsHubRepositoryIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, configPath := setupTestServerWithConfigContentNoSyncer(t, `
@@ -1059,6 +1078,7 @@ port = 8091
 }
 
 func TestNodeLocalSettingsCommitWhileHubIsUnavailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath, _ := setupTestServerWithConfigContent(t, `
@@ -1092,6 +1112,7 @@ auto_assign_on_create = false
 }
 
 func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath, _ := setupTestServerWithConfigContent(t, `
@@ -1129,6 +1150,7 @@ peer_timeout = "50ms"
 }
 
 func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := setupTestServerWithConfig(t)
 	srv.cfg.Fleet.Enabled = false
@@ -1154,6 +1176,7 @@ func TestNodeSettingsLoadWhileFederationIsDisabled(t *testing.T) {
 }
 
 func TestInactiveSpokeSettingsStayLocal(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, configPath, _ := setupTestServerWithConfigContentAndOptions(t, `
@@ -1199,6 +1222,7 @@ base_url = "https://hub.example"
 }
 
 func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, _, _ := setupTestServerWithConfig(t)
 	autoAssign := true
 	ctx := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
@@ -1222,6 +1246,7 @@ func TestRoleAwareSettingsRejectFederationWriteToHubLocalPolicy(t *testing.T) {
 // ordering, and replaying branch inference over it would leave the projection
 // disagreeing with the preference until another sync.
 func TestReconcileNativeStackProjectionSkipsSupersededDisable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _, syncer := setupTestServerWithConfigContent(t, `
@@ -1270,6 +1295,7 @@ prefer_github_native_stacks = true
 }
 
 func TestSpokeSyncBudgetFollowsHubSettings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, _, _ := setupTestServerWithConfigContent(t, `
@@ -1323,6 +1349,7 @@ port = 8091
 }
 
 func TestHubAppliesSyncBudgetFromSpoke(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, configPath, _ := setupTestServerWithConfig(t)
 	srv.syncer = nil

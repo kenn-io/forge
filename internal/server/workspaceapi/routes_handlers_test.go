@@ -12,6 +12,7 @@ import (
 )
 
 func TestGetWorkspaceFilesPropagatesCanceledRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	manager := workspace.NewManager(database, t.TempDir())

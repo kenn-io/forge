@@ -6,9 +6,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestOTelTraceableFiltersOnlyLongLivedStreams(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name     string
 		basePath string

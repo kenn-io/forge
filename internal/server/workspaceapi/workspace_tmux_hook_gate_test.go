@@ -22,7 +22,7 @@ import (
 // workspace whose live agent session has reported through the hook
 // integration is not probed through tmux at all, and that the probe resumes
 // once the hook coverage is gone.
-func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) {
+func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_AGENT_SESSION_HELPER
 	assert := assert.New(t)
 	require := require.New(t)
 	t.Setenv("KENN_FORGE_AGENT_SESSION_HELPER", "1")

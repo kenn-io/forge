@@ -14,7 +14,7 @@ import (
 // stripping: a decoded-but-invalid Kata catalog still declares token
 // env names, and terminals created before any Kata request must strip
 // them.
-func TestServerBootAppliesInvalidCatalogTokenNames(t *testing.T) {
+func TestServerBootAppliesInvalidCatalogTokenNames(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME
 	dir := t.TempDir()
 	t.Setenv("KATA_HOME", dir)
 	require.NoError(t, os.WriteFile(

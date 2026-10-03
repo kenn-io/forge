@@ -12,6 +12,7 @@ import (
 )
 
 func TestHubPreparationSealMustMatchRequestedBinding(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	request := db.SpokePreparationSealRequest{
 		EnrollmentID: serverfake.PreparationEnrollmentID, NodeID: serverfake.PreparationLocalNodeID,

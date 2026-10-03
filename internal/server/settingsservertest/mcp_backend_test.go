@@ -14,6 +14,7 @@ import (
 )
 
 func TestMCPBackendAppliesActivityItemTypesBeforeSafetyWindow(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)

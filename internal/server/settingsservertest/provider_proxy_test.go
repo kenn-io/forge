@@ -67,6 +67,7 @@ func (b *failingProviderResponseBody) Read(p []byte) (int, error) {
 func (*failingProviderResponseBody) Close() error { return nil }
 
 func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var dispatched atomic.Int64
@@ -92,6 +93,7 @@ func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T
 }
 
 func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	var gotScope federationauth.Scope
 	var gotPath string
 	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
@@ -116,6 +118,7 @@ func TestHubWorkspaceRefreshUsesProviderMutationBoundary(t *testing.T) {
 }
 
 func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	row := pullapi.MergeRequestResponse{
@@ -154,6 +157,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 }
 
 func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	seen := make(map[string]bool)
@@ -191,6 +195,7 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 }
 
 func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	const subjectCount = 11_000
@@ -231,6 +236,7 @@ func TestHubUnassignedActivitySubjectFilterBatchesLargeSnapshots(t *testing.T) {
 }
 
 func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
@@ -357,6 +363,7 @@ func TestNodeProviderFetchKeepsHubOrderAndAddsOnlyLocalWorkspace(t *testing.T) {
 }
 
 func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	tests := []struct {
 		name  string
 		body  io.ReadCloser

@@ -15,6 +15,7 @@ import (
 )
 
 func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, database := servertest.SetupTestServer(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 42)
 
@@ -31,6 +32,7 @@ func TestMCPBackendRejectsMismatchedStableRepositoryID(t *testing.T) {
 }
 
 func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)
@@ -75,6 +77,7 @@ func TestMCPBackendPreservesCachedPullReadiness(t *testing.T) {
 }
 
 func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)
@@ -114,6 +117,7 @@ func TestMCPBackendFiltersPullLabelsBeforePagination(t *testing.T) {
 }
 
 func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)
@@ -147,6 +151,7 @@ func TestMCPBackendListsPullsWithMalformedCachedChecks(t *testing.T) {
 }
 
 func TestMCPBackendWorkflowDoesNotExposeOrMutateRemovedUpstreamItems(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database := servertest.SetupTestServer(t)

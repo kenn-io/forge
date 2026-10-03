@@ -14,6 +14,7 @@ import (
 )
 
 func TestRunPassIdleRepositoriesReportNoWorkWithoutRepositoryResolution(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -73,6 +74,7 @@ func TestRunPassIdleRepositoriesReportNoWorkWithoutRepositoryResolution(t *testi
 }
 
 func TestWorkerRepositoriesCacheFollowsConfigurationAndRetriesUnresolvedRefs(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -115,6 +117,7 @@ func TestWorkerRepositoriesCacheFollowsConfigurationAndRetriesUnresolvedRefs(t *
 }
 
 func TestWorkerRepositoriesCacheFollowsRepositoryTakingOverRoute(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	now := archiveTestTime()
@@ -154,6 +157,7 @@ func TestWorkerRepositoriesCacheFollowsRepositoryTakingOverRoute(t *testing.T) {
 }
 
 func TestRunPassReportsAdmissionDenialAsIdle(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
@@ -210,6 +214,7 @@ func (preemptingAdmission) Admit(
 }
 
 func TestRunPassReportsProviderAttemptedDeferralsAsWork(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := archiveTestTime()

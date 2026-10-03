@@ -11,6 +11,7 @@ import (
 )
 
 func TestAllowedHostsForListenerIncludesBoundLoopbackHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 
 	allowed := streamapi.AllowedHostsForListener(serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.2:8123")})
@@ -22,6 +23,7 @@ func TestAllowedHostsForListenerIncludesBoundLoopbackHost(t *testing.T) {
 }
 
 func TestParseLastEventID_HeaderWins(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
 	r.Header.Set("Last-Event-ID", "99")
 	got, ok := streamapi.ParseLastEventID(r)
@@ -30,6 +32,7 @@ func TestParseLastEventID_HeaderWins(t *testing.T) {
 }
 
 func TestParseLastEventID_FallsBackToQuery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=42", nil)
 	got, ok := streamapi.ParseLastEventID(r)
 	assert.True(t, ok)
@@ -37,12 +40,14 @@ func TestParseLastEventID_FallsBackToQuery(t *testing.T) {
 }
 
 func TestParseLastEventID_AbsentMeansNoCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events", nil)
 	_, ok := streamapi.ParseLastEventID(r)
 	assert.False(t, ok)
 }
 
 func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=7", nil)
 	r.Header.Set("Last-Event-ID", "garbage")
 	got, ok := streamapi.ParseLastEventID(r)
@@ -51,6 +56,7 @@ func TestParseLastEventID_InvalidHeaderFallsBackToQuery(t *testing.T) {
 }
 
 func TestParseLastEventID_AllUnparsableMeansNoCursor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/events?since=abc", nil)
 	r.Header.Set("Last-Event-ID", "xyz")
 	_, ok := streamapi.ParseLastEventID(r)

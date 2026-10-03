@@ -37,6 +37,7 @@ func decodeUserRepositories(
 // the gh listing translates to the wire shape with snake_case fields and
 // the default branch flattened.
 func TestListUserRepositories(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -76,6 +77,7 @@ func TestListUserRepositories(t *testing.T) {
 // TestListUserRepositoriesClampsLimit pins the limit fallback: zero
 // and limits beyond the 1000 cap fall back to the default of 100.
 func TestListUserRepositoriesClampsLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	srv, _, _ := setupTestServer(t)
@@ -109,6 +111,7 @@ func TestListUserRepositoriesClampsLimit(t *testing.T) {
 // missing gh binary and an unauthenticated gh map to distinct problem
 // codes so the UI can offer the right fix.
 func TestListUserRepositoriesProblemCodes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -163,6 +166,7 @@ func TestListUserRepositoriesProblemCodes(t *testing.T) {
 // unimplemented provider gets a typed unsupportedCapability problem
 // instead of silently listing the wrong platform.
 func TestListUserRepositoriesRejectsUnimplementedProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -193,6 +197,7 @@ func TestListUserRepositoriesRejectsUnimplementedProvider(t *testing.T) {
 // short page, and a platform_host routes every page through gh's
 // --hostname so self-hosted deployments list their own repositories.
 func TestListUserRepositoriesPaginatesAndTargetsHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -244,6 +249,7 @@ func TestListUserRepositoriesPaginatesAndTargetsHost(t *testing.T) {
 // (page offsets are per_page-relative) and truncates the appended
 // results instead of shrinking the final request.
 func TestListUserRepositoriesTruncatesMidPageLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 
 	full := make([]string, 0, 100)
@@ -283,6 +289,7 @@ func TestListUserRepositoriesTruncatesMidPageLimit(t *testing.T) {
 // upstream contract: a generic gh failure against a platform_host
 // surfaces as a 502 upstreamError whose details carry that host.
 func TestListUserRepositoriesUpstreamErrorCarriesHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

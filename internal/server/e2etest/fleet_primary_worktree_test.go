@@ -12,6 +12,7 @@ import (
 
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 // gitInitRepoWithWorktree creates a real git repo with one empty commit and a
@@ -54,6 +55,7 @@ func registerProjectE2E(t *testing.T, ts string, client *http.Client, path strin
 // flagged primary, and its runtime routes are addressable like any linked
 // worktree's.
 func TestPrimaryRootWorktreeIsRegisteredE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, _ := bootFleetServer(t, nil)
 	repoDir, _ := gitInitRepoWithWorktree(t, "wt-live")
@@ -87,6 +89,7 @@ func TestPrimaryRootWorktreeIsRegisteredE2E(t *testing.T) {
 // refuse the primary root row — deleting it would orphan the project's own
 // checkout registration.
 func TestRemovePrimaryRootWorktreeRefusedE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, _ := bootFleetServer(t, nil)
 	repoDir, _ := gitInitRepoWithWorktree(t, "wt-rm")
@@ -129,6 +132,7 @@ func jsonField(t *testing.T, body, field string) string {
 // labels the root row so clients can distinguish the non-removable primary
 // from linked worktrees.
 func TestPrimaryRootWorktreeListsAsPrimaryE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, _ := bootFleetServer(t, nil)
 	repoDir, wtDir := gitInitRepoWithWorktree(t, "wt-list")
@@ -157,6 +161,7 @@ func TestPrimaryRootWorktreeListsAsPrimaryE2E(t *testing.T) {
 // (discovery failed) reports its primary root row stale in the snapshot,
 // not as a healthy checkout.
 func TestPrimaryRootWorktreeInheritsProjectStaleE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ts, database := bootFleetServer(t, nil)
 	repoDir, _ := gitInitRepoWithWorktree(t, "wt-stale")

@@ -34,6 +34,7 @@ import (
 )
 
 func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
 	handler := New(Deps{
@@ -76,6 +77,7 @@ func TestRegisterProjectUsesHubRepositoryIdentity(t *testing.T) {
 }
 
 func TestRegisterProjectWithoutHubLinksOnlyTrackedRepository(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		trackRoute bool
@@ -132,6 +134,7 @@ func TestRegisterProjectWithoutHubLinksOnlyTrackedRepository(t *testing.T) {
 }
 
 func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
+	t.Parallel()
 	err := worktreeLifecycleProblem(
 		managedworktree.ErrBranchAlreadyExists, "body.setup_script",
 	)
@@ -142,7 +145,7 @@ func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
 	assert.Equal(t, httpapi.CodeBranchConflict, problem.Code)
 }
 
-func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) {
+func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) { //nolint:paralleltest // swaps the procutil default limiter
 	require := require.New(t)
 	restore := procutil.SetDefaultLimiterForTest(
 		procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond),
@@ -167,6 +170,7 @@ func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) {
 }
 
 func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	if _, err := exec.LookPath("git"); err != nil {

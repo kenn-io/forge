@@ -24,6 +24,7 @@ import (
 )
 
 func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)

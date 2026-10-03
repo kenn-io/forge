@@ -15,7 +15,7 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func TestDocFolderDaemonBindingWarnsWhenCatalogTargetMissingOnStartup(t *testing.T) {
+func TestDocFolderDaemonBindingWarnsWhenCatalogTargetMissingOnStartup(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME; swaps slog.Default to capture logs
 	assert := assert.New(t)
 
 	home := t.TempDir()
@@ -47,7 +47,7 @@ local = true
 	assert.Contains(logs, "daemon=gone")
 }
 
-func TestConfigReloadWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) {
+func TestConfigReloadWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME; swaps slog.Default to capture logs
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -84,7 +84,7 @@ local = true
 	assert.Contains(logs, "daemon=gone")
 }
 
-func TestConfigWatcherWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) {
+func TestConfigWatcherWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME; swaps slog.Default to capture logs
 	assert := assert.New(t)
 	require := require.New(t)
 

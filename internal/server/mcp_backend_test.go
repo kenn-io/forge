@@ -29,6 +29,7 @@ import (
 )
 
 func TestDaemonPingPublishesMCPURL(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := wiredServer(&Server{
 		options:   ServerOptions{MCPURL: "http://127.0.0.1:8092/mcp"},
 		buildInfo: BuildInfo{Version: "test"},
@@ -41,6 +42,7 @@ func TestDaemonPingPublishesMCPURL(t *testing.T) {
 }
 
 func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
@@ -88,6 +90,7 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 }
 
 func TestMCPPullWorkspaceDuplicateUsesStableConflictCode(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	_, database, _, _, srv := setupTestServerWithWorkspacesServer(t, nil)
@@ -124,6 +127,7 @@ func (r *recordingMCPLaunchResolver) ResolveWorkspaceLaunchSpec(
 }
 
 func TestMCPWorkspaceReusePreservesRepositoryIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, itemType := range []string{db.WorkspaceItemTypePullRequest, db.WorkspaceItemTypeIssue} {
 		t.Run(itemType, func(t *testing.T) {
 			require := require.New(t)
@@ -174,6 +178,7 @@ func TestMCPWorkspaceReusePreservesRepositoryIdentity(t *testing.T) {
 }
 
 func TestMCPAdHocWorkspaceRejectsRouteReplacementBeforeReuse(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
@@ -221,6 +226,7 @@ func TestMCPAdHocWorkspaceRejectsRouteReplacementBeforeReuse(t *testing.T) {
 }
 
 func TestMCPWorkspaceRepositoryRejectsHubDescriptorWithAnotherID(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	descriptor := providerplane.RepositoryDescriptor{
@@ -262,6 +268,7 @@ func TestMCPWorkspaceRepositoryRejectsHubDescriptorWithAnotherID(t *testing.T) {
 }
 
 func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
@@ -301,6 +308,7 @@ func TestMCPBackendResolvesRepositoryByProviderIDAcrossRename(t *testing.T) {
 }
 
 func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
@@ -327,6 +335,7 @@ func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T)
 }
 
 func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, database, _ := setupTestServer(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 7)

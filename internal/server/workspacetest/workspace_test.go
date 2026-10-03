@@ -27,6 +27,7 @@ import (
 )
 
 func TestWorkspaceFixtureUsesIsolatedTmuxServer(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Skip("tmux not available")
@@ -54,6 +55,7 @@ func TestWorkspaceFixtureUsesIsolatedTmuxServer(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -76,6 +78,7 @@ func TestWorkspaceRuntimeTargetsE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeClaimFailureClosesBeforeFollowingInputE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 	if len(workspaceTestTmuxCommand) == 0 {
 		t.Skip("tmux is required")
 	}
@@ -154,6 +157,7 @@ exec "$@"
 }
 
 func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -191,6 +195,7 @@ func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	disabled := false
 	cfg := &config.Config{Agents: []config.Agent{{
@@ -213,6 +218,7 @@ func TestWorkspaceRuntimeLaunchUnavailableTargetE2E(t *testing.T) {
 }
 
 func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) {
+	runParallelWorkspacePTYTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -243,6 +249,7 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 }
 
 func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -306,6 +313,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 
@@ -341,6 +349,7 @@ func TestWorkspaceCommitsFlagsUnpushedCommitsE2E(t *testing.T) {
 }
 
 func TestWorkspaceCommitsOmitsPushStatusWithoutUpstreamE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 

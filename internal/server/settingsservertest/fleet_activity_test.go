@@ -8,10 +8,12 @@ import (
 	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
 
 func TestFleetActivityWorkspaceMatching(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	repo := itemapi.ActivityRepoRefResponse{
 		Provider: "gitlab", PlatformHost: "git.example.test", Key: platform.RepositoryIDKey(42),
 		Owner: "acme", Name: "renamed",

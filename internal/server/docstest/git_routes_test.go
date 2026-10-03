@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -42,6 +43,7 @@ func setupDocsGitRouteServer(t *testing.T, root string) *server.Server {
 }
 
 func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -60,6 +62,7 @@ func TestDocsGitStatusEndpointReturnsEntries(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointReturnsPreview(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -80,6 +83,7 @@ func TestDocsGitChangesEndpointReturnsPreview(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointNotARepoAndUnknownFolder(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
@@ -96,6 +100,7 @@ func TestDocsGitChangesEndpointNotARepoAndUnknownFolder(t *testing.T) {
 }
 
 func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	repo := gitfixture.NewRepository(t, true)
 	repo.Write(t, ".gitattributes", "*.md filter=evil\n")
 	srv := setupDocsGitRouteServer(t, repo.Dir)
@@ -120,6 +125,7 @@ func TestDocsGitStatusAndChangesEndpointsRejectUnsafeAttributes(t *testing.T) {
 }
 
 func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -140,6 +146,7 @@ func TestDocsGitChangesEndpointRejectsUnsafeLocalConfig(t *testing.T) {
 }
 
 func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -164,6 +171,7 @@ func TestDocsGitReadEndpointsRejectNonLoopback(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -187,6 +195,7 @@ func TestDocsGitPublishEndpointHappyPath(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -205,6 +214,7 @@ func TestDocsGitPublishEndpointAcceptsLargeMessageBelowRouteLimit(t *testing.T) 
 }
 
 func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -232,6 +242,7 @@ func TestDocsGitPublishEndpointPushesConfiguredUpstreamDespitePushDefaults(t *te
 }
 
 func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -254,6 +265,7 @@ func TestDocsGitPublishEndpointRejectsNonLoopback(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv := setupDocsGitRouteServer(t, t.TempDir())
@@ -278,6 +290,7 @@ func TestDocsGitPublishEndpointRejectsNonJSONContentType(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointErrors(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -301,6 +314,7 @@ func TestDocsGitPublishEndpointErrors(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	noUpstream := gitfixture.NewRepository(t, false)
@@ -340,6 +354,7 @@ func TestDocsGitPublishEndpointNoUpstreamAndCommitFailure(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -358,6 +373,7 @@ func TestDocsGitPublishEndpointRejectsUnsafeGitConfig(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -378,6 +394,7 @@ func TestDocsGitPublishEndpointIgnoresDocsRepoHooks(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	cases := []struct {
 		name       string
 		setup      func(t *testing.T) *server.Server
@@ -486,6 +503,7 @@ func TestDocsGitPublishEndpointProblemMappings(t *testing.T) {
 }
 
 func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -609,6 +627,7 @@ func TestDocsGitPublishEndpointRejectsConcurrentInFlightPublish(t *testing.T) {
 }
 
 func TestDocsGitPullEndpointFastForwards(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -629,6 +648,7 @@ func TestDocsGitPullEndpointFastForwards(t *testing.T) {
 }
 
 func TestDocsGitPullEndpointUpToDate(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -644,6 +664,7 @@ func TestDocsGitPullEndpointUpToDate(t *testing.T) {
 }
 
 func TestDocsGitPullEndpointDivergedIs409(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, true)
@@ -662,6 +683,7 @@ func TestDocsGitPullEndpointDivergedIs409(t *testing.T) {
 }
 
 func TestDocsGitPullEndpointNoUpstreamIs400(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	repo := gitfixture.NewRepository(t, false)

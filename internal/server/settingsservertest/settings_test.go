@@ -256,6 +256,7 @@ func (t *gitealikeImportTransport) ListStatuses(
 }
 
 func TestHandleGetSettings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -310,6 +311,7 @@ command = ["codex", "--full-auto"]
 }
 
 func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -337,6 +339,7 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 }
 
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -378,6 +381,7 @@ diff_cache_mb = 256
 }
 
 func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -397,6 +401,7 @@ func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {
 }
 
 func TestRepoPresetMutationsAreAtomic(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -437,6 +442,7 @@ func TestRepoPresetMutationsAreAtomic(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsPersistsKataProjectMappings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -480,6 +486,7 @@ func assertDefaultModeVisibility(t *testing.T, modes config.ModeVisibility) {
 }
 
 func TestHandleUpdateSettings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -545,6 +552,7 @@ func TestHandleUpdateSettings(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsDisablesNativeStackProjectionImmediately(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -599,6 +607,7 @@ prefer_github_native_stacks = true
 }
 
 func TestHandleUpdateTerminalSettingsPreservesActivity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -652,6 +661,7 @@ docs = false
 }
 
 func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 	disabled := false
@@ -690,6 +700,7 @@ func TestHandleUpdateSettingsPersistsAgents(t *testing.T) {
 }
 
 func TestHandleUpdateSettingsInvalid(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
 	activity := config.Activity{
@@ -711,6 +722,7 @@ func TestHandleUpdateSettingsInvalid(t *testing.T) {
 }
 
 func TestHandleAddRepoAcceptsArchivedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -752,6 +764,7 @@ name = "widget"
 }
 
 func TestHandleAddRepoRefreshesArchivedStateForTrackedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
@@ -804,6 +817,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoUpdatesArchivedStateForOverlappingEntries(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
@@ -870,6 +884,7 @@ func trackedRepoProvenancePath(syncer *ghclient.Syncer, owner, name string) stri
 }
 
 func TestHandleRefreshRepoStopsLiveLanesForArchivedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	archivedNow := atomic.Bool{}
@@ -1010,6 +1025,7 @@ func trackedRepoArchived(syncer *ghclient.Syncer, owner, name string) bool {
 }
 
 func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -1063,6 +1079,7 @@ func TestHandleDeleteRepoPreservesKataProjectMappings(t *testing.T) {
 }
 
 func TestGetSettingsWithoutPersistence(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	dir := t.TempDir()
@@ -1121,6 +1138,7 @@ func TestGetSettingsWithoutPersistence(t *testing.T) {
 }
 
 func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
@@ -1150,6 +1168,7 @@ func TestDetailSettingsReadPersistAndRejectInvalidLimit(t *testing.T) {
 }
 
 func TestHandleGetSettingsIncludesGlobCounts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -1200,6 +1219,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoRebuildsExpandedSyncSet(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -1252,6 +1272,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoPersistsExpandedReposBeforeAsyncSync(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	includeRefreshRepo := atomic.Bool{}
@@ -1315,6 +1336,7 @@ name = "*"
 }
 
 func TestHandleRefreshRepoKeepsReposMatchedByOtherConfigEntries(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -1368,6 +1390,7 @@ name = "worker"
 }
 
 func TestHandleDeleteRepoRebuildsExpandedSetFromRemainingPatterns(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -1415,6 +1438,7 @@ name = "tools"
 }
 
 func TestHandleDeleteGlobKeepsRenamedExactEntryRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -1475,6 +1499,7 @@ name = "*"
 }
 
 func TestHandleDeleteExactEntryClearsProvenanceOnGlobKeptRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -1528,6 +1553,7 @@ name = "*"
 }
 
 func TestHandleDeleteExactEntryIgnoresSamePathOnOtherHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -1585,6 +1611,7 @@ platform_host = "ghe.example.com"
 }
 
 func TestHandleDeleteExactEntryIgnoresSamePathOnOtherProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	mock := &serverfake.MockGH{
 		GetRepositoryFn: func(
 			_ context.Context, owner, repo string,
@@ -1644,6 +1671,7 @@ name = "tools"
 }
 
 func TestHandleDeleteRepoUsesProviderHostQuery(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	srv, _, _, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -1678,6 +1706,7 @@ name = "widget"
 }
 
 func TestRefreshRepoPreservesExistingWhenResolutionFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	fail := true
@@ -1722,6 +1751,7 @@ name = "*"
 }
 
 func TestGetSettingsDoesNotCallGitHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -1782,6 +1812,7 @@ name = "widget"
 }
 
 func TestGlobMatchingIsCaseInsensitive(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -1815,6 +1846,7 @@ name = "Widget-*"
 }
 
 func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	// Pre-check for the race fix: handleAddRepo must not
 	// overwrite a concurrent handleUpdateSettings change.
 	// The setup mutates s.cfg.Activity after the add's
@@ -1858,6 +1890,7 @@ func TestAddRepoDoesNotDropConcurrentActivityChange(t *testing.T) {
 // the refresh would apply its stale expansion after the delete
 // and re-add the removed repos to the syncer's tracked set.
 func TestConcurrentRefreshAndDeleteDoesNotResurrect(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -1946,6 +1979,7 @@ name = "*"
 // operator-visible contract: mutating activity settings (or any
 // other field the UI touches) must not silently erase tmux.command.
 func TestHandleUpdateSettingsPreservesTmuxCommand(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
 sync_interval = "5m"
@@ -1981,6 +2015,7 @@ command = ["systemd-run", "--user", "--scope", "tmux"]
 }
 
 func TestHandlePreviewReposFiltersAndMarksAlreadyConfigured(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	pushedNewer := gh.Timestamp{Time: time.Date(2026, 4, 22, 10, 0, 0, 0, time.UTC)}
@@ -2069,6 +2104,7 @@ name = "widget-*"
 }
 
 func TestHandlePreviewReposRoutesGitHubByOwner(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	ownerClient := func(expected, repoName string) *serverfake.MockGH {
@@ -2131,6 +2167,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposFallsBackToListWhenExactLookupFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	privateRepo := true
@@ -2196,6 +2233,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposUsesExactLookupForConcreteRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	privateRepo := true
@@ -2259,6 +2297,7 @@ port = 8091
 }
 
 func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	updatedAt := time.Date(2026, 5, 1, 10, 30, 0, 0, time.UTC)
@@ -2343,6 +2382,7 @@ name = "Project"
 }
 
 func TestHandlePreviewReposSupportsForgejoOrgFallback(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	updatedAt := time.Date(2026, 5, 2, 14, 0, 0, 0, time.UTC)
@@ -2421,6 +2461,7 @@ repo_path = "ForgeOrg/Widget"
 }
 
 func TestHandleBulkAddReposPersistsExactRepos(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var getCalls atomic.Int32
@@ -2474,6 +2515,7 @@ name = "widget"
 }
 
 func TestHandleBulkAddReposPersistsGitLabProviderIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	ref := platform.RepoRef{
@@ -2544,6 +2586,7 @@ port = 8091
 }
 
 func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	local := spokeapi.SettingsResponse{Repos: []ghclient.ConfiguredRepoStatus{
 		{
 			Provider: "github", PlatformHost: "github.com",
@@ -2575,6 +2618,7 @@ func TestApplyProviderSettingsMatchesWorktreePathByStableIdentity(t *testing.T) 
 }
 
 func TestHandleBulkAddReposPersistsGiteaProviderIdentity(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	transport := &gitealikeImportTransport{
@@ -2646,6 +2690,7 @@ port = 8091
 }
 
 func TestHandleBulkAddReposValidationFailureChangesNothing(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	mock := &serverfake.MockGH{
@@ -2688,6 +2733,7 @@ name = "widget"
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredBeforeValidation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	var apiCalls atomic.Int32
@@ -2731,6 +2777,7 @@ name = "api"
 }
 
 func TestHandleBulkAddReposSkipsAlreadyConfiguredAtApplyTime(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	unblockGet := make(chan struct{})
@@ -2803,6 +2850,7 @@ name = "widget"
 }
 
 func TestFleetSettingsPreserveEnrollmentOwnedRoleAndMembers(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -2876,6 +2924,7 @@ state = "active"
 // ordering would keep driving the UI and the merge safeguard until some later
 // sync happened to re-detect.
 func TestHandleUpdateSettingsRestoresProjectionAfterRequestCancellation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -2940,6 +2989,7 @@ prefer_github_native_stacks = true
 // sync it again, so if reconciliation only walked the tracked set its stored
 // pull requests would keep serving native ordering forever.
 func TestHandleUpdateSettingsRestoresProjectionForUntrackedRepo(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, _, _ := servertest.SetupTestServerWithConfigContent(t, `
@@ -2999,6 +3049,7 @@ prefer_github_native_stacks = true
 }
 
 func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)

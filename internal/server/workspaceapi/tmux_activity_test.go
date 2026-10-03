@@ -24,6 +24,7 @@ func (c *doneObservedContext) Done() <-chan struct{} {
 }
 
 func TestTmuxActivityTrackerUsesOutputFingerprintChanges(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
@@ -72,6 +73,7 @@ func TestTmuxActivityTrackerUsesOutputFingerprintChanges(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerPrefersTitleProtocol(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
@@ -88,6 +90,7 @@ func TestTmuxActivityTrackerPrefersTitleProtocol(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
@@ -112,6 +115,7 @@ func TestTmuxActivityTrackerCachesFreshSamples(t *testing.T) {
 }
 
 func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
+	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		now := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
@@ -158,6 +162,7 @@ func TestTmuxActivityTrackerBoundsAndCoalescesProbes(t *testing.T) {
 }
 
 func TestProbeOneTmuxSessionWaitsForCoalescedProbeWithFallback(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
@@ -217,6 +222,7 @@ func TestProbeOneTmuxSessionWaitsForCoalescedProbeWithFallback(t *testing.T) {
 }
 
 func TestProbeOneTmuxSessionReturnsFallbackWhenCoalescedWaitTimesOut(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
@@ -271,6 +277,7 @@ func TestProbeOneTmuxSessionReturnsFallbackWhenCoalescedWaitTimesOut(t *testing.
 }
 
 func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	assert.Equal(
@@ -284,6 +291,7 @@ func TestNormalizeTmuxOutputForFingerprinting(t *testing.T) {
 }
 
 func TestMergeTmuxActivityPrefersWorkingSession(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	lastOutput := time.Date(2026, 4, 23, 12, 0, 0, 0, time.UTC)
 	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
@@ -307,6 +315,7 @@ func TestMergeTmuxActivityPrefersWorkingSession(t *testing.T) {
 }
 
 func TestMergeTmuxActivityPrefersTitleOverOutput(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	merged, ok := mergeTmuxActivityResults([]tmuxActivityResult{
 		{

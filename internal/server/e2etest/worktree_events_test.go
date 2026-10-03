@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/testutil/servertest"
 )
 
@@ -32,6 +33,7 @@ import (
 // clients rely on instead of embedder hooks; the mutation path is
 // covered separately by the in-package fanout unit test.
 func TestE2E_WorktreeLinkChangeReachesSSE(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	ctx := t.Context()
 

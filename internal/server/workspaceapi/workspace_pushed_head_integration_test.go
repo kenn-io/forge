@@ -131,6 +131,7 @@ func newPushedHeadProvider(
 }
 
 func TestWorkspacePushedHeadPassRefreshesProviderAndPublishesWireEvents(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	var newHead string
@@ -177,6 +178,7 @@ func TestWorkspacePushedHeadPassRefreshesProviderAndPublishesWireEvents(t *testi
 }
 
 func TestWorkspacePushedHeadPassIgnoresLocalOnlyCommit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	var detailSyncCalls atomic.Int64
@@ -209,6 +211,7 @@ func TestWorkspacePushedHeadPassIgnoresLocalOnlyCommit(t *testing.T) {
 }
 
 func TestWorkspacePushedHeadPassStopsAfterNonConvergingRefresh(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	providerHead := "e2e0000000000000000000000000000000000000"
@@ -245,6 +248,7 @@ func TestWorkspacePushedHeadPassStopsAfterNonConvergingRefresh(t *testing.T) {
 }
 
 func TestWorkspacePushedHeadPassIgnoresRemovedPullRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	var detailSyncCalls atomic.Int64
 	provider := newPushedHeadProvider(func(
@@ -269,6 +273,7 @@ func TestWorkspacePushedHeadPassIgnoresRemovedPullRequest(t *testing.T) {
 }
 
 func TestWorkspacePushedHeadQueuedRefreshRechecksRemovedPullRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	var detailSyncCalls atomic.Int64
 	provider := newPushedHeadProvider(func(
@@ -294,6 +299,7 @@ func TestWorkspacePushedHeadQueuedRefreshRechecksRemovedPullRequest(t *testing.T
 }
 
 func TestWorkspacePushedHeadQueuedCIRefreshRechecksRemovedPullRequest(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	provider := newPushedHeadProvider(func(
 		context.Context, string, string, int,
@@ -323,6 +329,7 @@ func TestWorkspacePushedHeadQueuedCIRefreshRechecksRemovedPullRequest(t *testing
 }
 
 func TestLookupPushedHeadMRDoesNotFollowReusedRepositoryRoute(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	fixture := newPushedHeadIntegrationFixture(t, newPushedHeadProvider(nil))
 	repoID := seedPushedHeadIntegrationPR(t, fixture.database, "old-head")
@@ -344,6 +351,7 @@ func TestLookupPushedHeadMRDoesNotFollowReusedRepositoryRoute(t *testing.T) {
 }
 
 func TestWorkspacePushedHeadQueuedRefreshStopsWhenRouteIsReusedDuringSync(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	var detailSyncCalls atomic.Int64
 	provider := newPushedHeadProvider(func(

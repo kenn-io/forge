@@ -45,6 +45,7 @@ func (r descriptorCloneRoutes) ReadSourceForRepo(
 func (descriptorCloneRoutes) FallbackSource(string) tokenauth.Source { return nil }
 
 func TestWorkspaceLaunchSpecRequiresForkCredentialRoute(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	issuedAt := time.Date(2026, time.August, 22, 16, 30, 0, 0, time.UTC)

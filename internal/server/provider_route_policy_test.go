@@ -8,12 +8,13 @@ import (
 
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/routepolicy"
+	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
 func TestProviderRouteCoverage(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	registered, err := RegisteredTransportOperations()
 	require.NoError(err)
@@ -45,7 +46,7 @@ func TestProviderRouteCoverage(t *testing.T) {
 
 func TestProviderRouteOwnershipExamples(t *testing.T) {
 	assert := assert.New(t)
-	runParallelServerTest(t)
+	serverfake.RunParallelServerTest(t)
 
 	rules, err := providerRouteRules()
 	require.NoError(t, err)

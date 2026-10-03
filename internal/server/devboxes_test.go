@@ -35,6 +35,7 @@ import (
 )
 
 func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert, require := assert.New(t), require.New(t)
 	database := dbtest.Open(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 7)
@@ -115,6 +116,7 @@ func TestDevboxCreationFollowsCachedRepositoryRename(t *testing.T) {
 }
 
 func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, itemField := range []string{"mr_number", "issue_number"} {
 		t.Run(itemField, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
@@ -183,6 +185,7 @@ func TestDevboxCreationRejectsCachedRepositoryRouteReplacement(t *testing.T) {
 }
 
 func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
@@ -231,6 +234,7 @@ func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
 }
 
 func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, target := range []string{"plain_shell", "shell", "codex"} {
 		t.Run(target, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
@@ -290,6 +294,7 @@ func TestDevboxShellLaunchDoesNotRefreshSourceContext(t *testing.T) {
 }
 
 func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, maintenance := range []bool{false, true} {
 		t.Run(fmt.Sprint(maintenance), func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
@@ -327,7 +332,7 @@ func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 	}
 }
 
-func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) {
+func TestDevboxTerminalsBypassDefaultHTTPProxy(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
 	assert, require := assert.New(t), require.New(t)
 	var proxyRequests atomic.Int32
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

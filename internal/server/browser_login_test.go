@@ -171,6 +171,7 @@ func browserSessionCookie(response *http.Response) *http.Cookie {
 }
 
 func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
@@ -209,6 +210,7 @@ func TestBrowserLoginTicketBootstrapsSession(t *testing.T) {
 }
 
 func TestBrowserLoginRedirectStaysSameOrigin(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
@@ -222,6 +224,7 @@ func TestBrowserLoginRedirectStaysSameOrigin(t *testing.T) {
 }
 
 func TestBrowserSessionCookieSecureFollowsTrustedScheme(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	for _, test := range []struct {
 		name    string
 		trusted bool
@@ -259,6 +262,7 @@ func TestBrowserSessionCookieSecureFollowsTrustedScheme(t *testing.T) {
 }
 
 func TestBrowserSessionEndsWithIssuingPeerEnrollment(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
@@ -293,6 +297,7 @@ func TestBrowserSessionEndsWithIssuingPeerEnrollment(t *testing.T) {
 }
 
 func TestBrowserSessionRejectsCrossOriginWebSocket(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	hub := newBrowserLoginHub(t, authapi.HostCheckOptions{})
 	cookie := hub.signIn(t)

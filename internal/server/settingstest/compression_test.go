@@ -14,6 +14,7 @@ import (
 )
 
 func TestServerUsesResponseCompressionMiddleware(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	_, err := testutil.SeedFixtures(t.Context(), database)
 	require.NoError(t, err)

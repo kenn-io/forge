@@ -36,6 +36,7 @@ func openFederationPreparationStores(
 }
 
 func TestAbortPreparationFromNodeShapedServerRequiresRestart(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "abort-spoke")
@@ -91,6 +92,7 @@ base_url = "https://hub.example"
 }
 
 func TestForcedAbortPreservesHubRevocationPath(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	enrollments, credentials := openFederationPreparationStores(t, "forced-abort")

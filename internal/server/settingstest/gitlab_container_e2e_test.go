@@ -54,6 +54,7 @@ type gitLabContainerManifest struct {
 }
 
 func TestGitLabContainerE2E(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	if os.Getenv("KENN_FORGE_GITLAB_CONTAINER_E2E") != "1" {
 		t.Skip("set KENN_FORGE_GITLAB_CONTAINER_E2E=1 to run GitLab CE container e2e")
 	}

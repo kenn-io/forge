@@ -16,6 +16,7 @@ import (
 )
 
 func TestACPImagePreviewFollowsSymlinksAndSkipsSpecialFiles(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
 	root := t.TempDir()

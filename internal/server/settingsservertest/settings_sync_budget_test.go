@@ -59,6 +59,7 @@ func liveSyncCeiling(t *testing.T, srv *server.Server) itemapi.LocalSyncCeilingS
 }
 
 func TestSyncBudgetSettingAppliesToLiveCeilingAndPersists(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, cfgPath := setupSyncBudgetTestServer(t)
@@ -88,6 +89,7 @@ func TestSyncBudgetSettingAppliesToLiveCeilingAndPersists(t *testing.T) {
 }
 
 func TestSyncBudgetSettingRejectsOutOfRangeValues(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, cfgPath := setupSyncBudgetTestServer(t)

@@ -26,6 +26,7 @@ func notificationsEnabledConfig() *config.Config {
 }
 
 func TestToNotificationResponseRejectsBlankProvider(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	s := wiredServer(&Server{})
 	_, err := s.notificationapi.ToNotificationResponse(t.Context(), db.Notification{
@@ -45,6 +46,7 @@ func TestToNotificationResponseRejectsBlankProvider(t *testing.T) {
 }
 
 func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := serverfake.OpenTestDB(t)
 	syncer := ghclient.NewSyncer(
@@ -96,6 +98,7 @@ func TestNotificationsAPIExposesBackgroundSyncStatus(t *testing.T) {
 }
 
 func TestGlobalSyncExposesNotificationSyncFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	database := serverfake.OpenTestDB(t)
 	syncer := ghclient.NewSyncer(

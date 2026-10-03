@@ -23,6 +23,7 @@ import (
 // uses ephemeral ports) plus the two named test hostnames; nothing
 // else.
 func TestNewCfgNilTestFriendlyDefault(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	srv := newServerForDefaultTest(t)
 
 	cases := []struct {
@@ -50,6 +51,7 @@ func TestNewCfgNilTestFriendlyDefault(t *testing.T) {
 }
 
 func TestNewDerivesHostCheckFromUnvalidatedConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)

@@ -1,6 +1,8 @@
 ---
-name: kenn-forge-ephemeral-dev
+title: "Kenn Forge Ephemeral Dev"
 description: Use when working on kenn-forge local development sessions that need backend and frontend on ephemeral/free ports, isolated generated config, copied SQLite state, or dev-ephemeral status JSON/PIDs.
+last_edited: "2026-09-24"
+name: kenn-forge-ephemeral-dev
 ---
 
 # Kenn Forge Ephemeral Dev

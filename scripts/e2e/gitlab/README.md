@@ -1,3 +1,8 @@
+---
+title: "GitLab CE Container Fixture"
+description: "Run GitLab CE provider compatibility checks with the optional baked container fixture."
+last_edited: "2026-07-31"
+---
 # GitLab CE Container Fixture
 
 This fixture is an opt-in compatibility check for the GitLab provider. It is intentionally outside the default test suite because GitLab CE is slow to pull and boot.

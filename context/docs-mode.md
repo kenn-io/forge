@@ -1,3 +1,8 @@
+---
+title: "Docs Mode"
+description: "Filesystem ownership, safe document operations, HTTP boundaries, and Git pull and publish contracts for Docs mode."
+last_edited: "2026-09-30"
+---
 # Docs Mode
 
 Use this document for changes to configured markdown folders, Docs HTTP access,

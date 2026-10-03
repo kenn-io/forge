@@ -1,3 +1,8 @@
+---
+title: "Kenn Forge Product Purpose"
+description: "Product purpose, intended users, core workflows, and scope of the Kenn Forge maintainer console."
+last_edited: "2026-07-31"
+---
 # Product
 
 ## Register

@@ -1,3 +1,8 @@
+---
+title: "ADR 0004: Quota meter semantics"
+description: "Record distinct meter geometry and semantics for provider capacity and local sync spending."
+last_edited: "2026-08-12"
+---
 # ADR 0004: Quota meter semantics
 
 Date: 2026-08-09

@@ -1,6 +1,8 @@
 ---
-name: docs-diff-review
+title: "Docs diff review"
 description: Render kenn-forge documentation changes for human review as aligned before-and-after blocks. Use when docs are rewritten, screenshots or navigation change, or a reviewer asks to see what changed on the rendered pages rather than reading a source diff.
+last_edited: "2026-08-19"
+name: docs-diff-review
 ---
 
 # Docs diff review

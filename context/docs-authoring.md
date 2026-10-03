@@ -1,3 +1,8 @@
+---
+title: "Documentation Authoring"
+description: "Documentation ownership, public site staging, branding, screenshots, and release publishing conventions."
+last_edited: "2026-09-22"
+---
 # Documentation Authoring
 
 Use this document for changes to user-facing documentation, workflow

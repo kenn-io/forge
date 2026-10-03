@@ -1,3 +1,8 @@
+---
+title: "Testing"
+description: "Test lane selection, provider validation, API contracts, HTTP boundaries, and integration test architecture."
+last_edited: "2026-10-02"
+---
 # Testing
 
 Use this document when choosing test boundaries or lanes, changing provider or

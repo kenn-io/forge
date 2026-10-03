@@ -1,3 +1,8 @@
+---
+title: "Review pull requests"
+description: "Review pull request context, assess readiness, and open local coding agent follow-up work."
+last_edited: "2026-08-29"
+---
 # Review pull requests
 
 Review the newest pull-request context, decide whether the branch is ready,

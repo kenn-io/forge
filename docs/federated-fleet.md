@@ -1,3 +1,8 @@
+---
+title: "Federated Forge"
+description: "Connect Forge instances into a fleet for shared control over workspaces on multiple development machines."
+last_edited: "2026-09-24"
+---
 # Federated Forge
 
 A Kenn Forge fleet gives several development machines one shared control point

@@ -1,6 +1,8 @@
 ---
-name: profiling-kenn-forge-performance
+title: "Profiling Kenn Forge Performance"
 description: Use when diagnosing Kenn Forge workspace-switch, terminal-rendering, browser-main-thread, API latency, allocation, CPU, tmux replay, or frontend/backend trace regressions with pprof, Playwright, User Timing, Go trace, or OpenTelemetry.
+last_edited: "2026-07-31"
+name: profiling-kenn-forge-performance
 ---
 
 # Profiling Kenn Forge Performance

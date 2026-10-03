@@ -1,3 +1,8 @@
+---
+title: "UI Interaction Contracts"
+description: "Route state, identity, persistence, input semantics, and async reconciliation contracts for interactive surfaces."
+last_edited: "2026-10-03"
+---
 # UI Interaction Contracts
 
 Use this document for frontend behavior changes where the risk is not visual

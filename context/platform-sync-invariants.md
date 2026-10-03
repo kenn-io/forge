@@ -1,3 +1,8 @@
+---
+title: "Platform Sync Invariants"
+description: "Provider identity, hosts, credentials, sync capabilities, import, and route invariants across supported platforms."
+last_edited: "2026-10-01"
+---
 # Platform Sync Invariants
 
 Use this document for changes that touch provider-aware repository identity,

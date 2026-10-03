@@ -1,3 +1,8 @@
+---
+title: "Test Basics"
+description: "Go assertions, fixtures, test commands, shell coverage, hooks, and isolation conventions."
+last_edited: "2026-10-01"
+---
 # Test Basics
 
 Use this document when writing or running Go tests, choosing common test

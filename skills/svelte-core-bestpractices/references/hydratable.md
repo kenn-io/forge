@@ -1,3 +1,8 @@
+---
+title: "Svelte Hydration"
+description: "Preserve server-computed values during Svelte hydration and account for serialization and CSP constraints."
+last_edited: "2026-04-21"
+---
 In Svelte, when you want to render asynchronous content data on the server, you can simply `await` it. This is great! However, it comes with a pitfall: when hydrating that content on the client, Svelte has to redo the asynchronous work, which blocks hydration for however long it takes:
 
 ```svelte

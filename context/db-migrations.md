@@ -1,3 +1,8 @@
+---
+title: "Database Migrations"
+description: "Rules for immutable SQLite migrations, connection behavior, and safe federation database preparation."
+last_edited: "2026-10-01"
+---
 # Database Migrations
 
 Use this document before creating, editing, reviewing, or validating database

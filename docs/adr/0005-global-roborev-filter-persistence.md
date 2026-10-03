@@ -1,3 +1,8 @@
+---
+title: "ADR 0005: Global Roborev Filter Persistence"
+description: "Record global persistence of Roborev filter choices across repositories and sessions."
+last_edited: "2026-08-11"
+---
 # ADR 0005: Global Roborev Filter Persistence
 
 Date: 2026-08-10

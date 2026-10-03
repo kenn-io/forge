@@ -1,3 +1,8 @@
+---
+title: "Kata Integration"
+description: "Kata daemon discovery, external task authority, UI ownership, and Forge association boundaries."
+last_edited: "2026-10-02"
+---
 # Kata Integration
 
 Use this document for Kata daemon discovery, pinned integration reads, Forge-owned

@@ -1,3 +1,8 @@
+---
+title: "Frontend Effect"
+description: "Effect services, layers, async ownership, schemas, and error handling conventions for the frontend."
+last_edited: "2026-10-01"
+---
 # Frontend Effect
 
 Use this document for frontend async ownership, Effect workflows, services,

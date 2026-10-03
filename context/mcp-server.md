@@ -1,3 +1,8 @@
+---
+title: "MCP Companion"
+description: "MCP tool contracts, cached reads, transport boundaries, workspace tracking, and agent handoff guidance."
+last_edited: "2026-10-02"
+---
 # MCP Companion
 
 - Event excerpts must disclose whether more cached events exist so agents can

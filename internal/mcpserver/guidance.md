@@ -1,3 +1,8 @@
+---
+title: "Kenn Forge MCP Guidance"
+description: "Choose cached Forge MCP tools for maintainer workflows and recover agent handoffs with workspace tracking."
+last_edited: "2026-10-01"
+---
 # Kenn Forge MCP Guidance
 
 Use kenn-forge's MCP companion as a cached maintainer console. The companion

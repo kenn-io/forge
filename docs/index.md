@@ -1,5 +1,7 @@
 ---
 title: Overview
+description: "Start with Kenn Forge setup, main views, maintainer workflows, and advanced integrations."
+last_edited: "2026-10-01"
 ---
 
 # Kenn Forge

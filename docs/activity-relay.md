@@ -1,3 +1,8 @@
+---
+title: "Faster GitHub updates"
+description: "Connect Kenn Forge to an activity relay and operate a shared relay for faster GitHub updates."
+last_edited: "2026-09-19"
+---
 # Faster GitHub updates
 
 Kenn Forge can use a shared **activity relay** to notice GitHub changes sooner.

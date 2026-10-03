@@ -1,3 +1,8 @@
+---
+title: "Documentation development"
+description: "Build and publish the public documentation site and update its complete workflow screenshot set."
+last_edited: "2026-08-30"
+---
 # Documentation development
 
 The public site build downloads its current workflow screenshots from the

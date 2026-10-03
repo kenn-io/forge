@@ -1,3 +1,8 @@
+---
+title: "Error Handling"
+description: "API problem envelopes, stable error codes, provider translation, and frontend failure handling contracts."
+last_edited: "2026-09-30"
+---
 # Error Handling
 
 Use this document for changes that touch HTTP API failure responses, platform

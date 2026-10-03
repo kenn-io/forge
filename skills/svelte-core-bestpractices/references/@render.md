@@ -1,3 +1,8 @@
+---
+title: "Svelte Snippet Rendering"
+description: "Render Svelte snippets with arguments and handle optional snippets."
+last_edited: "2026-04-21"
+---
 To render a [snippet](snippet), use a `{@render ...}` tag.
 
 ```svelte

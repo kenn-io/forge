@@ -1,3 +1,8 @@
+---
+title: "Workspace switch performance report"
+description: "Report measured workspace switch performance, profiling provenance, and backend and frontend improvements."
+last_edited: "2026-07-31"
+---
 # Workspace switch performance report
 
 ## Outcome

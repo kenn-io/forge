@@ -1,3 +1,8 @@
+---
+title: "Troubleshooting"
+description: "Diagnose daemon startup, port conflicts, configuration reloads, and common Kenn Forge problems."
+last_edited: "2026-09-20"
+---
 # Troubleshooting
 
 ## The UI does not open

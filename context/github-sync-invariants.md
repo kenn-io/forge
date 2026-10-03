@@ -1,3 +1,8 @@
+---
+title: "GitHub Sync Invariants"
+description: "Identity, freshness, notifications, activity relay, and reconciliation invariants for GitHub synchronization."
+last_edited: "2026-10-01"
+---
 # GitHub Sync Invariants
 
 Use this document for changes in `internal/github/`, GitHub adapter code,

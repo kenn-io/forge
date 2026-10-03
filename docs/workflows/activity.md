@@ -1,3 +1,8 @@
+---
+title: "Follow activity across repositories"
+description: "Filter cross-repository activity and inspect related items while keeping the daily queue in view."
+last_edited: "2026-09-28"
+---
 # Follow activity across repositories
 
 Activity is the best place to start when you maintain more than one repository.

@@ -1,3 +1,8 @@
+---
+title: "Read and edit local Docs"
+description: "Register Markdown folders, find documents, edit local files, and use Git operations from Docs."
+last_edited: "2026-08-29"
+---
 # Read and edit local Docs
 
 Docs turns registered Markdown folders into a local reading and editing

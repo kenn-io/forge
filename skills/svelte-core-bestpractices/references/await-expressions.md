@@ -1,3 +1,8 @@
+---
+title: "Svelte Await Expressions"
+description: "Configure experimental async Svelte expressions and manage synchronized updates, concurrency, loading, and errors."
+last_edited: "2026-04-21"
+---
 As of Svelte 5.36, you can use the `await` keyword inside your components in three places where it was previously unavailable:
 
 - at the top level of your component's `<script>`

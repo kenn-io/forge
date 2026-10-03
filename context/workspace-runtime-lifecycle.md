@@ -1,3 +1,8 @@
+---
+title: "Workspace Runtime Lifecycle"
+description: "Workspace deletion, ownership, runtime sessions, tmux recovery, and terminal lifecycle contracts."
+last_edited: "2026-10-02"
+---
 # Workspace Runtime Lifecycle
 
 Use this document for changes in workspace delete flows, runtime session

@@ -1,3 +1,8 @@
+---
+title: "Retries, Backoff, and Single-Flight Dedup"
+description: "Separate contracts for transient retries, rate-limit gates, scheduling, and single-flight deduplication."
+last_edited: "2026-10-01"
+---
 # Retries, Backoff, and Single-Flight Dedup
 
 Use this document for transient upstream retries, rate-limit gates, scheduling

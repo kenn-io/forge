@@ -1,6 +1,8 @@
 ---
-name: dev-ephemeral-running-instances
+title: "Dev Ephemeral Running Instances"
 description: Use only when the user explicitly invokes dev-ephemeral-running-instances. Must be run outside the Codex sandbox because sandboxed scans cannot reliably see all Codex worktrees, uv/Python state, or the process table. Lists kenn-forge dev-ephemeral status files across git worktrees, checks recorded launcher/backend/frontend PIDs and backend/frontend URLs, reports which worktree each running, degraded, stale, or invalid instance belongs to, and prepares clean shutdown command lists when explicitly requested.
+last_edited: "2026-07-31"
+name: dev-ephemeral-running-instances
 ---
 
 # Dev Ephemeral Running Instances

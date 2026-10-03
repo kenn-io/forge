@@ -1,3 +1,8 @@
+---
+title: "VS Code Workflow Panel Interaction Spec"
+description: "Editor groups, workflow tabs, terminal splits, focus, and persistence rules modeled on VS Code interactions."
+last_edited: "2026-08-04"
+---
 # VS Code Workflow Panel Interaction Spec
 
 Use this document when changing kenn-forge's workflow groups, workflow tabs,

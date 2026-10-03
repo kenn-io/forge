@@ -1,3 +1,8 @@
+---
+title: "GitHub CLI shim"
+description: "Install the GitHub CLI shim so supported pull request queries use cached Kenn Forge data."
+last_edited: "2026-10-01"
+---
 # GitHub CLI shim
 
 Coding agents often run the same `gh pr list` and `gh pr view` commands many

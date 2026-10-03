@@ -1,3 +1,8 @@
+---
+title: "Forgejo Container Fixture"
+description: "Run the opt-in Forgejo container fixture and sync its seeded provider data into SQLite."
+last_edited: "2026-07-31"
+---
 # Forgejo Container Fixture
 
 This opt-in fixture starts a real Forgejo instance on loopback, runs an idempotent bootstrap script, and lets the Go e2e test sync seeded data into SQLite.

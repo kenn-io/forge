@@ -1,3 +1,8 @@
+---
+title: "Svelte Snippets"
+description: "Define, scope, pass, type, and export reusable Svelte markup snippets."
+last_edited: "2026-04-21"
+---
 ```svelte
 <!--- copy: false  --->
 {#snippet name()}...{/snippet}

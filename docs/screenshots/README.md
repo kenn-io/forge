@@ -1,3 +1,8 @@
+---
+title: "Docs screenshots"
+description: "Generate workflow documentation screenshots with Playwright against the real seeded e2e backend."
+last_edited: "2026-09-19"
+---
 # Docs screenshots
 
 The documentation build uses these Playwright cases to generate the screenshots

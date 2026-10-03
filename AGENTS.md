@@ -63,6 +63,11 @@ only routes to them.
 
 ## Conventions
 
+Every new Markdown file, except root `README.md` and `AGENTS.md`, must have YAML
+frontmatter with `title`, `description`, and `last_edited`, in that order.
+Update `last_edited` to the body-edit date whenever you change the body of any
+nonexempt Markdown file; preserve it for metadata-only edits.
+
 - Prefer stdlib over external dependencies
 - Before hand-rolling file-safety or filesystem helpers, reuse `go.kenn.io/kit` (for example `fslink.ReadFile` for regular-file-only reads, `safefileio` for private files); do not reimplement what Kit already owns
 - Never make backward-incompatible changes to the activity relay wire format. Relays and Forge clients upgrade independently; preserve existing field types, meanings, and events, and verify changes against fixed wire fixtures from deployed versions.

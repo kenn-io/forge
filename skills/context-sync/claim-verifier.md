@@ -1,3 +1,8 @@
+---
+title: "Claim Verifier — Subagent Instructions (kenn-forge)"
+description: "Verify anchored documentation claims against repository code and report outdated or unverifiable contracts."
+last_edited: "2026-09-07"
+---
 # Claim Verifier — Subagent Instructions (kenn-forge)
 
 You are a read-only subagent verifying the factual claims in a single context document

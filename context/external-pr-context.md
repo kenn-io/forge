@@ -1,3 +1,8 @@
+---
+title: "External PR Context"
+description: "Configuration, execution protocol, trust boundaries, and action contracts for external pull request context cards."
+last_edited: "2026-10-01"
+---
 # External PR Context
 
 - External integrations are node-local CLI commands configured only through

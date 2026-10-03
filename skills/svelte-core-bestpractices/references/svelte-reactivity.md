@@ -1,3 +1,8 @@
+---
+title: "Svelte Reactive Subscribers"
+description: "Use Svelte createSubscriber to connect external event sources to reactive effects."
+last_edited: "2026-04-21"
+---
 ## createSubscriber
 
 <blockquote class="since note">

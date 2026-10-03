@@ -1,6 +1,8 @@
 ---
-name: svelte-core-bestpractices
+title: "Svelte Core Best Practices"
 description: Guidance on writing fast, robust, modern Svelte code. Load this skill whenever in a Svelte project and asked to write/edit or analyze a Svelte component or module. Covers reactivity, event handling, styling, integration with libraries and more.
+last_edited: "2026-04-21"
+name: svelte-core-bestpractices
 ---
 
 ## `$state`

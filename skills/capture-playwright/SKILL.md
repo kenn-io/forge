@@ -1,6 +1,8 @@
 ---
-name: capture-playwright
+title: "capture-playwright"
 description: Use when a screenshot or short video needs to be captured with Playwright and saved to local disk, with optional upload through `gh image` (upload requires explicit user approval and must target a PR or issue).
+last_edited: "2026-07-31"
+name: capture-playwright
 ---
 
 # capture-playwright

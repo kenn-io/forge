@@ -1,3 +1,8 @@
+---
+title: "Multiline review comments research"
+description: "Research multiline review comment support using the pinned diff viewer APIs and provider contracts."
+last_edited: "2026-08-21"
+---
 # Multiline review comments research
 
 ## Recommendation

@@ -1,3 +1,8 @@
+---
+title: "Activity relay"
+description: "Build and check the stateless GitHub activity relay that delivers webhook updates to connected Forges."
+last_edited: "2026-09-17"
+---
 # Activity relay
 
 `kenn-forge-relay` receives GitHub webhooks and passes each change to the

@@ -1,6 +1,8 @@
 ---
-name: small-change-verification
+title: "Small Change Verification"
 description: Use when making small or localized changes that could still affect user-visible behavior, API contracts, database queries, test runtime, CI, generated artifacts, or cross-layer data flow.
+last_edited: "2026-05-11"
+name: small-change-verification
 ---
 
 # Small Change Verification

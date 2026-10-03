@@ -1,3 +1,8 @@
+---
+title: "Provider Architecture"
+description: "Provider package boundaries, capability interfaces, transport responsibilities, and requirements for adding a provider."
+last_edited: "2026-09-30"
+---
 # Provider Architecture
 
 Use this document when adding a provider or changing the provider split. For

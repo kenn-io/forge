@@ -1,3 +1,8 @@
+---
+title: "Workflows"
+description: "Scan activity, follow role-based guides, and move between daily maintainer workflows."
+last_edited: "2026-09-19"
+---
 # Workflows
 
 ## Scan recent activity

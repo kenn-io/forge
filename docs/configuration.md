@@ -1,3 +1,8 @@
+---
+title: "Configuration"
+description: "Configure repositories, provider credentials, optional modes, and advanced Kenn Forge behavior."
+last_edited: "2026-10-02"
+---
 # Configuration
 
 Kenn Forge reads `~/.kenn/forge/config.toml`. Set `KENN_FORGE_HOME` to move

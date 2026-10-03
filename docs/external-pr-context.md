@@ -1,3 +1,8 @@
+---
+title: "External PR context"
+description: "Configure external integrations that show private pull request context cards and actions in Kenn Forge."
+last_edited: "2026-09-28"
+---
 # External PR context
 
 Kenn Forge can show private information beside a pull request without posting

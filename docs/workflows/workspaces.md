@@ -1,3 +1,8 @@
+---
+title: "Work in local sessions"
+description: "Create workspaces for tracked work and organize shell and agent sessions beside the relevant items."
+last_edited: "2026-09-28"
+---
 # Work in local sessions
 
 A workspace ties a tracked repository and Git worktree to the shell and agent

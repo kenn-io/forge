@@ -1,3 +1,8 @@
+---
+title: "Browse repository source"
+description: "Browse repository source at a chosen ref, share exact file views, and refresh cached source."
+last_edited: "2026-08-29"
+---
 # Browse repository source
 
 Open **Repos** to check the repositories Kenn Forge knows about. Each card

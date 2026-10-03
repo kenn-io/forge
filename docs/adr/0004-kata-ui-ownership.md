@@ -1,3 +1,8 @@
+---
+title: "ADR 0004: Make Kata the sole owner of Kata UI"
+description: "Record Kata as the sole owner of task UI while Forge owns local workspace associations."
+last_edited: "2026-08-31"
+---
 # ADR 0004: Make Kata the sole owner of Kata UI
 
 Date: 2026-08-08

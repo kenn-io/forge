@@ -1,6 +1,8 @@
 ---
-name: local-test-runner-debugging
+title: "Local Test Runner Debugging"
 description: Use when tests do not run locally, hang locally, fail to launch local runners, or appear blocked by host resource, process, tmux, Playwright, Vitest, Node, file descriptor, ulimit, stale artifact, or cleanup issues.
+last_edited: "2026-07-31"
+name: local-test-runner-debugging
 ---
 
 # Local Test Runner Debugging

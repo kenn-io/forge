@@ -1,6 +1,8 @@
 ---
-name: testing-without-tautologies
+title: "Testing Without Tautologies"
 description: Use when creating, editing, fixing, or reviewing tests; when adding mocks, assertions, smoke tests, unit tests, integration tests, e2e tests, or changing tests after failures.
+last_edited: "2026-07-31"
+name: testing-without-tautologies
 ---
 
 # Testing Without Tautologies

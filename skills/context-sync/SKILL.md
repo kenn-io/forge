@@ -1,6 +1,8 @@
 ---
-name: context-sync
+title: "Context Sync (kenn-forge)"
 description: Use before every agent-created commit in kenn-forge, when context docs may have drifted after a large refactor, when a maintainer states a durable decision, or when an agent hits a gotcha that context should have prevented.
+last_edited: "2026-09-11"
+name: context-sync
 ---
 
 # Context Sync (kenn-forge)

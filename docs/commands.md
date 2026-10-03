@@ -1,3 +1,8 @@
+---
+title: "Commands"
+description: "Use the Kenn Forge command tree to control the daemon and inspect available console workflows."
+last_edited: "2026-10-01"
+---
 # Commands
 
 Run `kenn-forge` or `kenn-forge --help` for the complete command tree. Flags

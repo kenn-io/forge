@@ -1,3 +1,8 @@
+---
+title: "Kenn Forge MCP"
+description: "Enable the Kenn Forge MCP companion and use cached maintainer workflows from local agent clients."
+last_edited: "2026-10-01"
+---
 # Kenn Forge MCP
 
 Forge can expose cached maintainer workflows to local MCP clients from the

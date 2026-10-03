@@ -1,3 +1,8 @@
+---
+title: "Pull Request Workflow"
+description: "Public repository privacy, CI runner policy, review preservation, and pull request delivery conventions."
+last_edited: "2026-10-02"
+---
 # Pull Request Workflow
 
 Use this document before pushing, opening a pull request, or changing pull

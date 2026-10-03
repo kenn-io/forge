@@ -1,3 +1,8 @@
+---
+title: "ADR 0001: UTC Datetime Policy"
+description: "Record the decision to store and expose UTC timestamps and convert them only for UI presentation."
+last_edited: "2026-08-04"
+---
 # ADR 0001: UTC Datetime Policy
 
 ## Status

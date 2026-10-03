@@ -1,3 +1,8 @@
+---
+title: "Workspace-switch profiling"
+description: "Run seeded workspace switch profiling and interpret timing phases, traces, and captured artifacts."
+last_edited: "2026-09-19"
+---
 # Workspace-switch profiling
 
 Developer tooling for diagnosing workspace switching latency. One

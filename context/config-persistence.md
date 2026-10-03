@@ -1,3 +1,8 @@
+---
+title: "Config Persistence Invariants"
+description: "Invariants for TOML configuration persistence, transient overrides, reload behavior, and settings ownership."
+last_edited: "2026-10-02"
+---
 # Config Persistence Invariants
 
 Use this document when adding or changing config fields that kenn-forge saves

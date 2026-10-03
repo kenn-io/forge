@@ -1,3 +1,8 @@
+---
+title: "Notifications In Activity"
+description: "Repository scope, persistence, sync, and presentation contracts for GitHub notifications in Activity."
+last_edited: "2026-09-30"
+---
 # Notifications In Activity
 
 Use this document for changes touching GitHub notifications, their presentation in the Activity feed, notification API handlers, notification sync, or notification persistence.

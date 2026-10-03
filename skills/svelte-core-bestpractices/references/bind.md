@@ -1,3 +1,8 @@
+---
+title: "Svelte Function Bindings"
+description: "Use Svelte function bindings for validation, transformations, and readonly element measurements."
+last_edited: "2026-04-21"
+---
 ## Function bindings
 
 You can also use `bind:property={get, set}`, where `get` and `set` are functions, allowing you to perform validation and transformation:

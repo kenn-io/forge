@@ -1,3 +1,8 @@
+---
+title: "Server Runtime"
+description: "Daemon startup, discovery, embedded assets, host and origin validation, and event stream replay contracts."
+last_edited: "2026-10-02"
+---
 # Server Runtime
 
 - Startup liveness and ready health probes expose the same running build identity

@@ -1,3 +1,8 @@
+---
+title: "UI Design System"
+description: "Visual design intent, tokens, component conventions, and shared desktop and mobile UI principles."
+last_edited: "2026-10-02"
+---
 # UI Design System
 
 Desktop and mobile remain supported application experiences. External host embeds

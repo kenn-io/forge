@@ -1,3 +1,8 @@
+---
+title: "Workspace APIs"
+description: "Workspace creation, reuse, item identity, lifecycle hooks, and generated launch context contracts."
+last_edited: "2026-10-02"
+---
 # Workspace APIs
 
 Use this document for changes to workspace creation, reuse, identity, routes,

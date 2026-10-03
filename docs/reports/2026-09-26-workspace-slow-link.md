@@ -1,3 +1,8 @@
+---
+title: "Workspace navigation on high-latency HTTPS"
+description: "Report reproduced navigation issues and usability fixes for Forge workspaces over high-latency HTTPS."
+last_edited: "2026-09-29"
+---
 # Workspace navigation on high-latency HTTPS
 
 This investigation covers a browser connected to a remote Forge server over

@@ -1,3 +1,8 @@
+---
+title: "Mobile UX Principles"
+description: "Intent and interaction principles for phone routes, narrow layouts, and touch workflows."
+last_edited: "2026-10-02"
+---
 # Mobile UX Principles
 
 Use this document as the intent-level guide for mobile UI work in `kenn-forge`. Read it before designing, implementing, or reviewing anything under phone routes, narrow viewports, touch-focused layouts, or mobile-specific CSS.

@@ -1,6 +1,8 @@
 ---
-name: optimize-go-test-duration
+title: "Optimize Go Test Duration"
 description: Use when Go test wall time is too high, CI test duration regresses, a package needs trace-driven test performance analysis, or tests should be made safely parallel with t.Parallel, package splitting, subprocess isolation, semaphores, or Go built-in tracing.
+last_edited: "2026-07-31"
+name: optimize-go-test-duration
 ---
 
 # Optimize Go Test Duration

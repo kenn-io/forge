@@ -1,3 +1,8 @@
+---
+title: "Change settings in the app"
+description: "Change everyday Kenn Forge settings in the app and identify options that require configuration file edits."
+last_edited: "2026-09-29"
+---
 # Change settings in the app
 
 Open the gear in the app header to change everyday Kenn Forge behavior. The

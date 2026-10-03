@@ -1,3 +1,8 @@
+---
+title: "ADR 0003: Provider-ready first-run activation"
+description: "Record provider readiness and repository activation as the first-run setup model."
+last_edited: "2026-08-03"
+---
 # ADR 0003: Provider-ready first-run activation
 
 Date: 2026-08-02

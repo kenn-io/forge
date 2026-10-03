@@ -1,3 +1,8 @@
+---
+title: "Fleet Architecture"
+description: "Ownership, snapshots, routing, peer transports, and devbox execution contracts for federated Forge instances."
+last_edited: "2026-09-30"
+---
 # Fleet Architecture
 
 Use this document for federation settings, snapshot aggregation, spoke routing,

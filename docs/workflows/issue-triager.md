@@ -1,3 +1,8 @@
+---
+title: "Triage issues"
+description: "Find issues needing attention, choose the next action, and start implementation in a workspace."
+last_edited: "2026-08-29"
+---
 # Triage issues
 
 Find the issue that needs attention now. Recent activity matters more than

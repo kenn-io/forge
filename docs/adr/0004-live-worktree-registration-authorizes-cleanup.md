@@ -1,3 +1,8 @@
+---
+title: "ADR 0004: Live Worktree Registration Authorizes Cleanup"
+description: "Record live Git worktree registration as authority for cleanup of older Forge-owned workspaces."
+last_edited: "2026-08-09"
+---
 # ADR 0004: Live Worktree Registration Authorizes Cleanup
 
 ## Status

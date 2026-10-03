@@ -1,3 +1,8 @@
+---
+title: "ADR 0005: Active Pane Follows DOM Focus"
+description: "Record DOM focus as the owner of keyboard and scrolling input across simultaneously visible panes."
+last_edited: "2026-08-13"
+---
 # ADR 0005: Active Pane Follows DOM Focus
 
 ## Status

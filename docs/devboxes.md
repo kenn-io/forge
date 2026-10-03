@@ -1,3 +1,8 @@
+---
+title: "Devboxes"
+description: "Run and supervise Forge workspaces on shared Linux devboxes with account-scoped repository access."
+last_edited: "2026-09-24"
+---
 # Devboxes
 
 Kenn Forge can run agent workspaces in your account on a shared Linux machine.

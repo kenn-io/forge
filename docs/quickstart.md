@@ -1,3 +1,8 @@
+---
+title: "Quick start"
+description: "Install Kenn Forge, connect a code forge, and open a first workspace."
+last_edited: "2026-09-19"
+---
 # Quick start
 
 Install Kenn Forge, connect a code forge, and open your first workspace.

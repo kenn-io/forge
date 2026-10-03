@@ -1,3 +1,8 @@
+---
+title: "Svelte Keyed Each Blocks"
+description: "Use keyed Svelte each blocks to preserve item identity during list updates."
+last_edited: "2026-04-21"
+---
 ## Keyed each blocks
 
 ```svelte

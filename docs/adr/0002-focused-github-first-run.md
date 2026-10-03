@@ -1,3 +1,8 @@
+---
+title: "ADR 0002: Focused GitHub first-run activation"
+description: "Record the superseded decision to focus initial setup on GitHub authentication and repository activation."
+last_edited: "2026-08-07"
+---
 # ADR 0002: Focused GitHub first-run activation
 
 Date: 2026-08-02

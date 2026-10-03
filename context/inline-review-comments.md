@@ -1,3 +1,8 @@
+---
+title: "Inline Review Comments"
+description: "Draft ownership, publication, ingestion, and shared diff UI contracts for inline review comments."
+last_edited: "2026-09-30"
+---
 # Inline Review Comments
 
 Use this document for inline pull-request diff comments, local review drafts,

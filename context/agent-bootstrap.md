@@ -1,3 +1,8 @@
+---
+title: "Agent Bootstrap"
+description: "Constraints for repository-controlled session hooks that install frontend dependencies without replacing activity hooks."
+last_edited: "2026-09-28"
+---
 # Agent Bootstrap
 
 Use this document only for committed repository hooks that bootstrap frontend

@@ -1,3 +1,8 @@
+---
+title: "Kenn Forge Performance Workflows"
+description: "Run workspace switch harnesses and copied-state API and pprof investigations with consistent workloads and cleanup."
+last_edited: "2026-07-31"
+---
 # Kenn Forge Performance Workflows
 
 ## Workspace-switch harness

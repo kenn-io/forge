@@ -1,3 +1,8 @@
+---
+title: "Historical activity archive"
+description: "Backfill historical provider activity, manage archive sync capacity, and report from local Kenn Forge data."
+last_edited: "2026-09-11"
+---
 # Historical activity archive
 
 Kenn Forge can backfill provider activity into its local SQLite database.

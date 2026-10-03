@@ -1,3 +1,8 @@
+---
+title: "Repository Source Browser"
+description: "Repository clone ownership, ref coherence, file content boundaries, and source preview contracts."
+last_edited: "2026-09-30"
+---
 # Repository Source Browser
 
 Use this document for repository source-browser routes, bare-clone reads, ref

@@ -1,3 +1,8 @@
+---
+title: "Context Engineering Guide — kenn-forge"
+description: "Write concise context with durable invariants, anchored claims, scoped budgets, and safeguards against context poisoning."
+last_edited: "2026-09-24"
+---
 # Context Engineering Guide — kenn-forge
 
 Loaded during a `context-sync` run. The complete philosophy and rules for keeping

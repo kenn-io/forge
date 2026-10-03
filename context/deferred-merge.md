@@ -1,3 +1,8 @@
+---
+title: "Deferred (\"merge after CI\") merge invariants"
+description: "Queueing, event ordering, cancellation, and recovery invariants for merging pull requests after checks pass."
+last_edited: "2026-09-28"
+---
 # Deferred ("merge after CI") merge invariants
 
 Use this document for changes to deferred merge queueing, cancellation,

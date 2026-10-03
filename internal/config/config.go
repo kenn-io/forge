@@ -1154,7 +1154,12 @@ func (c *Config) MCPListenAddr() string {
 	if port == 0 {
 		return ""
 	}
-	return net.JoinHostPort(c.Host, strconv.Itoa(port))
+	// The companion stays local even when the main listener faces a network.
+	host := c.Host
+	if !IsLoopbackHostname(host) {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 func (c *Config) MCPDiffCacheBytes() int64 {
@@ -1669,9 +1674,6 @@ func (c *Config) validate() error {
 		}
 		if mcpPort == c.Port {
 			return fmt.Errorf("config: MCP port %d matches backend port", mcpPort)
-		}
-		if !IsLoopbackHostname(c.Host) {
-			return fmt.Errorf("config: MCP listener requires a loopback host, got %q", c.Host)
 		}
 	}
 

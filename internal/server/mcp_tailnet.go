@@ -6,24 +6,23 @@ import (
 	"strings"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 )
 
 // SetTailnetMCPHandler publishes the MCP handler on the main listener for
-// allowlisted Tailscale Serve users, so a tailnet MCP client needs no bearer.
-// The loopback MCP listener remains the bearer-authenticated local path.
+// daemon bearer clients and allowlisted Tailscale Serve users, so an MCP
+// client on another machine can use the main port.
 func (s *Server) SetTailnetMCPHandler(handler http.Handler) {
 	s.tailnetMCP.Store(&handler)
 }
 
-// serveTailnetMCP handles /mcp when Tailscale identity mode is enabled. The
-// identity header is ambient like a cookie, so a request that names another
-// origin is rejected rather than letting a web page drive agent tools.
+// serveTailnetMCP handles /mcp on the main listener for a daemon bearer or an
+// allowed Tailscale Serve user. The identity header is ambient like a cookie,
+// so a request that names another origin is rejected rather than letting a
+// web page drive agent tools.
 func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
-	if !s.daemonRequests.TailscaleServeEnabled() {
-		return false
-	}
 	path := r.URL.Path
 	if s.basePath != "/" {
 		path = strings.TrimPrefix(path, strings.TrimSuffix(s.basePath, "/"))
@@ -36,11 +35,13 @@ func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
 		http.NotFound(w, r)
 		return true
 	}
-	if !s.daemonRequests.AcceptsTailscaleServeUser(r) {
+	if !authapi.HasValidBearer(r, s.daemonRequests.Token) &&
+		!s.daemonRequests.AcceptsTailscaleServeUser(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
 		routepolicy.WriteProblemResponse(w, httpapi.NewProblem(
 			http.StatusUnauthorized,
 			httpapi.CodeUnauthorized,
-			"MCP on this origin requires an allowed Tailscale Serve user",
+			"MCP on this origin requires the daemon bearer token or an allowed Tailscale Serve user",
 			nil,
 		))
 		return true

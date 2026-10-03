@@ -23,9 +23,11 @@
 - The companion uses an optional daemon-owned listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
-- The listener is startup-bound and loopback-only. Discovery publishes
-  `mcp_listen_addr` and `/api/ping` publishes `mcp_url`; changing listener
-  settings requires a restart (`cmd/kenn-forge/main.go::bindDaemonListeners`,
+- The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
+  the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
+  Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;
+  changing listener settings requires a restart
+  (`cmd/kenn-forge/main.go::bindDaemonListeners`,
   `internal/server/daemon_ping.go::Server.daemonPing`).
 - Settings exposes the saved MCP listener/cache configuration separately from
   the boot-active endpoint and authentication policy. Saving MCP settings never
@@ -40,9 +42,12 @@
   forwarding headers, and optional same-origin HTTP Origin are required
   (`internal/mcpserver/server.go::Server.HTTPHandler`,
   `internal/server/mcpapi/mcp_http.go::NewMCPHTTPGuard`).
-- With `[api.tailscale_serve]` enabled, the main listener also serves `/mcp` to
-  allowlisted Serve users without a bearer. The identity header is ambient, so
-  a request whose Origin names another authority is rejected. Serve reaches the
+- While MCP is enabled, the main listener also serves `/mcp` to requests with
+  the daemon bearer, regardless of `[api].require_auth`, and, with
+  `[api.tailscale_serve]` enabled, to allowlisted Serve users without a bearer
+  (`internal/server/mcp_tailnet.go::Server.serveTailnetMCP`). Both pass the
+  main listener's host check first. The identity header is ambient, so a
+  request whose Origin names another authority is rejected. Serve reaches the
   loopback listener with the public Host, so this path uses the SDK handler
   without its localhost rebinding guard after Forge's host check
   (`internal/mcpserver/server.go::Server.TailnetHTTPHandler`).

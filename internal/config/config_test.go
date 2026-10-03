@@ -84,6 +84,30 @@ func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
 	assert.Equal(int64(128<<20), cfg.MCPDiffCacheBytes())
 }
 
+func TestMCPListenAddrStaysLoopback(t *testing.T) {
+	tests := []struct {
+		host string
+		port string
+		want string
+	}{
+		{host: "127.0.0.1", want: "127.0.0.1:8092"},
+		{host: "::1", port: "9192", want: "[::1]:9192"},
+		{host: "192.0.2.10", want: "127.0.0.1:8092"},
+		{host: "2001:db8::10", port: "9192", want: "127.0.0.1:9192"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			content := fmt.Sprintf("host = %q\nport = 8091\n[mcp]\nenabled = true\n", tt.host)
+			if tt.port != "" {
+				content += "port = " + tt.port + "\n"
+			}
+			cfg, err := Load(writeConfig(t, content))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.MCPListenAddr())
+		})
+	}
+}
+
 func TestMCPConfigRoundTrip(t *testing.T) {
 	require := require.New(t)
 	cfg, err := Load(writeConfig(t, ""))
@@ -121,11 +145,6 @@ func TestMCPConfigValidation(t *testing.T) {
 			name:    "explicit port above range",
 			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = 65536\n",
 			wantErr: "MCP port",
-		},
-		{
-			name:    "non-loopback host",
-			content: "host = \"192.0.2.10\"\nport = 8091\n[mcp]\nenabled = true\n",
-			wantErr: "loopback",
 		},
 		{
 			name:    "negative diff cache",

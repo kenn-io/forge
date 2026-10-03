@@ -42,6 +42,19 @@ func tailnetMCPInitialize(
 // allowed host, matching how Tailscale Serve reaches Forge.
 func newTailnetMCPTestServer(t *testing.T) (*httptest.Server, string) {
 	t.Helper()
+	return newMainMCPTestServer(t, authapi.DaemonAccessOptions{
+		Token: "local-secret", RequireAPIAuth: true,
+		TailscaleServeEnabled: true,
+		TailscaleServeUsers:   []string{"user@example.com"},
+	}, true)
+}
+
+// newMainMCPTestServer serves the main listener with the given daemon access
+// policy, optionally installing the MCP handler.
+func newMainMCPTestServer(
+	t *testing.T, access authapi.DaemonAccessOptions, withMCP bool,
+) (*httptest.Server, string) {
+	t.Helper()
 	ts := httptest.NewUnstartedServer(nil)
 	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
 	require.NoError(t, err)
@@ -50,17 +63,13 @@ func newTailnetMCPTestServer(t *testing.T) (*httptest.Server, string) {
 	publicHost := "forge.example.ts.net:" + bind.Port
 	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{
 		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
-	}, ServerOptions{
-		DaemonAccess: authapi.DaemonAccessOptions{
-			Token: "local-secret", RequireAPIAuth: true,
-			TailscaleServeEnabled: true,
-			TailscaleServeUsers:   []string{"user@example.com"},
-		},
-	})
-	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = mcp.Close() })
-	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
+	}, ServerOptions{DaemonAccess: access})
+	if withMCP {
+		mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = mcp.Close() })
+		srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
+	}
 	ts.Config.Handler = srv
 	ts.Start()
 	t.Cleanup(ts.Close)
@@ -75,6 +84,7 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 	tests := []struct {
 		name     string
 		login    string
+		bearer   string
 		origin   string
 		expected int
 	}{
@@ -83,6 +93,9 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 		{name: "missing identity", expected: http.StatusUnauthorized},
 		{name: "other user", login: "other@example.com", expected: http.StatusUnauthorized},
 		{name: "cross-origin page", login: "user@example.com", origin: "https://attacker.example", expected: http.StatusForbidden},
+		{name: "allowed user with wrong bearer", login: "user@example.com", bearer: "wrong", expected: http.StatusOK},
+		{name: "daemon bearer without identity", bearer: "local-secret", expected: http.StatusOK},
+		{name: "daemon bearer with other user", login: "other@example.com", bearer: "local-secret", expected: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -90,6 +103,9 @@ func TestTailnetMCPAcceptsAllowedTailscaleServeUserWithoutBearer(t *testing.T) {
 				request.Host = publicHost
 				if test.login != "" {
 					request.Header.Set("Tailscale-User-Login", test.login)
+				}
+				if test.bearer != "" {
+					request.Header.Set("Authorization", "Bearer "+test.bearer)
 				}
 				if test.origin != "" {
 					request.Header.Set("Origin", test.origin)
@@ -113,5 +129,103 @@ func TestTailnetMCPRequiresTailscaleIdentityMode(t *testing.T) {
 		request.Header.Set("Tailscale-User-Login", "user@example.com")
 	})
 
-	assert.NotEqual(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+}
+
+func TestMainListenerMCPAcceptsDaemonBearer(t *testing.T) {
+	for _, requireAuth := range []bool{true, false} {
+		t.Run("require_auth="+strconv.FormatBool(requireAuth), func(t *testing.T) {
+			ts, publicHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{
+				Token: "local-secret", RequireAPIAuth: requireAuth,
+			}, true)
+
+			tests := []struct {
+				name     string
+				header   string
+				origin   string
+				expected int
+			}{
+				{name: "valid bearer", header: "Bearer local-secret", expected: http.StatusOK},
+				{name: "same-origin bearer", header: "Bearer local-secret", origin: "https://" + publicHost, expected: http.StatusOK},
+				{name: "missing bearer", expected: http.StatusUnauthorized},
+				{name: "wrong bearer", header: "Bearer other-secret", expected: http.StatusUnauthorized},
+				{name: "basic auth", header: "Basic local-secret", expected: http.StatusUnauthorized},
+				{name: "cross-origin bearer", header: "Bearer local-secret", origin: "https://attacker.example", expected: http.StatusForbidden},
+				{name: "plain-http origin bearer", header: "Bearer local-secret", origin: "http://" + publicHost, expected: http.StatusForbidden},
+			}
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+						request.Host = publicHost
+						if test.header != "" {
+							request.Header.Set("Authorization", test.header)
+						}
+						if test.origin != "" {
+							request.Header.Set("Origin", test.origin)
+						}
+					})
+					assert.Equal(t, test.expected, response.StatusCode)
+				})
+			}
+		})
+	}
+}
+
+func TestMainListenerMCPRejectsBearerWhenDaemonTokenEmpty(t *testing.T) {
+	ts, publicHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{}, true)
+
+	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+		request.Host = publicHost
+		request.Header.Set("Authorization", "Bearer ")
+	})
+
+	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+}
+
+func TestMainListenerMCPRejectsDisallowedHostBeforeBearer(t *testing.T) {
+	ts, _ := newMainMCPTestServer(t, authapi.DaemonAccessOptions{Token: "local-secret"}, true)
+
+	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+		request.Host = "rebound.example:80"
+		request.Header.Set("Authorization", "Bearer local-secret")
+	})
+
+	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+}
+
+func TestMainListenerMCPAcceptsDaemonBearerUnderBasePath(t *testing.T) {
+	ts := httptest.NewUnstartedServer(nil)
+	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(bind.Port)
+	require.NoError(t, err)
+	srv := New(dbtest.Open(t), nil, nil, "/forge/", &config.Config{
+		Host: "127.0.0.1", Port: port,
+	}, ServerOptions{DaemonAccess: authapi.DaemonAccessOptions{Token: "local-secret"}})
+	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mcp.Close() })
+	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
+	ts.Config.Handler = srv
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	accepted := tailnetMCPInitialize(t, ts.URL+"/forge", func(request *http.Request) {
+		request.Header.Set("Authorization", "Bearer local-secret")
+	})
+	rejected := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
+
+	assert.Equal(t, http.StatusOK, accepted.StatusCode)
+	assert.Equal(t, http.StatusUnauthorized, rejected.StatusCode)
+}
+
+func TestMainListenerMCPWithoutHandlerReturnsNotFound(t *testing.T) {
+	ts, publicHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{Token: "local-secret"}, false)
+
+	response := tailnetMCPInitialize(t, ts.URL, func(request *http.Request) {
+		request.Host = publicHost
+		request.Header.Set("Authorization", "Bearer local-secret")
+	})
+
+	assert.Equal(t, http.StatusNotFound, response.StatusCode)
 }

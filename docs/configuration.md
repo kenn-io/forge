@@ -602,7 +602,9 @@ The sessionless Streamable HTTP endpoint is
 `http://127.0.0.1:<resolved-port>/mcp`. Authentication follows
 `[api].require_auth`. Full diff files use a request-based least-recently-used
 cache; `diff_cache_mb` defaults to 128 MiB. MCP listener or cache changes
-require a daemon restart.
+require a daemon restart. The companion stays on `127.0.0.1` when `host` is
+not loopback; clients on other machines use `/mcp` on the main port with the
+daemon bearer token instead (see [Kenn Forge MCP](kenn-forge-mcp.md)).
 
 ## Pull request stacks
 

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -80,6 +81,11 @@ func (b *failingBody) Read(p []byte) (int, error) {
 	return copy(p, `{"event":`), nil
 }
 
+// errReader fails every read with err.
+type errReader struct{ err error }
+
+func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
 // failingBodyClient is a generated client whose requests reach the server with a body that fails mid-read.
 func failingBodyClient(t *testing.T, srv *server.Server) *apiclient.Client {
 	t.Helper()
@@ -112,6 +118,7 @@ func TestCaptureTelemetryEventRoute(t *testing.T) {
 		kind          telemetryServerKind
 		body          string
 		chunked       bool
+		readErr       error
 		contentType   string
 		noContentType bool
 		authorization string
@@ -131,6 +138,7 @@ func TestCaptureTelemetryEventRoute(t *testing.T) {
 		{name: "daemon_active is not a UI event", body: `{"event":"daemon_active"}`, wantStatus: http.StatusBadRequest, wantBody: "unsupported telemetry event\n", wantReached: 1},
 		{name: "oversized property", body: oversizedProperty, wantStatus: http.StatusRequestEntityTooLarge, wantProblem: true},
 		{name: "trailing whitespace past the limit with unknown length", body: trailingWhitespace, chunked: true, wantStatus: http.StatusRequestEntityTooLarge, wantProblem: true},
+		{name: "body read timeout", body: `{"event":`, readErr: os.ErrDeadlineExceeded, wantStatus: http.StatusRequestTimeout, wantProblem: true},
 		{name: "text/plain content type", body: `{"event":"app_opened"}`, contentType: "text/plain", wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
 		{name: "JSON with charset", body: `{"event":"app_opened"}`, contentType: "application/json; charset=utf-8", wantStatus: http.StatusAccepted, wantBody: `{"status":"disabled"}`, wantReached: 1},
 		{name: "+json suffix", body: `{"event":"app_opened"}`, contentType: "application/vnd.test+json", wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
@@ -190,6 +198,9 @@ func TestCaptureTelemetryEventRoute(t *testing.T) {
 			var body io.Reader = strings.NewReader(tt.body)
 			if tt.chunked {
 				body = io.MultiReader(body)
+			}
+			if tt.readErr != nil {
+				body = io.MultiReader(body, errReader{tt.readErr})
 			}
 			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, telemetryEventsPath, body)
 			if !tt.noContentType {

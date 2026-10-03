@@ -65,3 +65,29 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 		assert.False(found, key)
 	}
 }
+
+func TestKitAllowlistFiltersUIProperties(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	t.Setenv(EnabledEnv, "0")
+	backend, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("backend")...)
+	require.NoError(err)
+
+	assert.False(backend.EventAllowed("daemon_active"))
+	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
+		"surface":                 "web",
+		"distinct_id":             "spoofed",
+		"$geoip_disable":          false,
+		"$process_person_profile": true,
+	})
+	require.NoError(err)
+	assert.Equal("web", properties["surface"])
+	assert.NotContains(properties, "distinct_id")
+	assert.Equal(true, properties["$geoip_disable"])
+	assert.Equal(false, properties["$process_person_profile"])
+
+	properties, err = backend.SanitizeProperties("app_opened", map[string]any{"surface": "owner/repo"})
+	require.NoError(err)
+	assert.NotContains(properties, "surface")
+}

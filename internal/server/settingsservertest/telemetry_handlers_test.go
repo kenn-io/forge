@@ -104,8 +104,8 @@ func captureWithClient(t *testing.T, client *apiclient.Client, event string) (*g
 }
 
 func TestCaptureTelemetryEventRoute(t *testing.T) {
-	oversizedProperty := `{"event":"app_opened","properties":{"pad":"` + strings.Repeat("x", 1<<20+1) + `"}}`
-	trailingWhitespace := `{"event":"app_opened"}` + strings.Repeat(" ", 1<<20)
+	oversizedProperty := `{"event":"app_opened","properties":{"pad":"` + strings.Repeat("x", 64<<10+1) + `"}}`
+	trailingWhitespace := `{"event":"app_opened"}` + strings.Repeat(" ", 64<<10)
 
 	tests := []struct {
 		name          string
@@ -133,9 +133,9 @@ func TestCaptureTelemetryEventRoute(t *testing.T) {
 		{name: "trailing whitespace past the limit with unknown length", body: trailingWhitespace, chunked: true, wantStatus: http.StatusRequestEntityTooLarge, wantProblem: true},
 		{name: "text/plain content type", body: `{"event":"app_opened"}`, contentType: "text/plain", wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
 		{name: "JSON with charset", body: `{"event":"app_opened"}`, contentType: "application/json; charset=utf-8", wantStatus: http.StatusAccepted, wantBody: `{"status":"disabled"}`, wantReached: 1},
-		{name: "+json suffix", body: `{"event":"app_opened"}`, contentType: "application/vnd.test+json", wantStatus: http.StatusAccepted, wantBody: `{"status":"disabled"}`, wantReached: 1},
-		{name: "merge-patch+json suffix", body: `{"event":"app_opened"}`, contentType: "application/merge-patch+json", wantStatus: http.StatusAccepted, wantBody: `{"status":"disabled"}`, wantReached: 1},
-		{name: "absent content type", body: `{"event":"app_opened"}`, noContentType: true, wantStatus: http.StatusAccepted, wantBody: `{"status":"disabled"}`, wantReached: 1},
+		{name: "+json suffix", body: `{"event":"app_opened"}`, contentType: "application/vnd.test+json", wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
+		{name: "merge-patch+json suffix", body: `{"event":"app_opened"}`, contentType: "application/merge-patch+json", wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
+		{name: "absent content type", body: `{"event":"app_opened"}`, noContentType: true, wantStatus: http.StatusUnsupportedMediaType, wantProblem: true},
 		{name: "nil capture admits no event", kind: nilCaptureServer, body: `{"event":"app_opened"}`, wantStatus: http.StatusBadRequest, wantBody: "unsupported telemetry event\n"},
 		{name: "auth without token", kind: authServer, body: `{"event":"app_opened"}`, wantStatus: http.StatusUnauthorized, wantProblem: true},
 		{name: "auth with wrong token", kind: authServer, body: `{"event":"app_opened"}`, authorization: "Bearer wrong-token", wantStatus: http.StatusUnauthorized, wantProblem: true},

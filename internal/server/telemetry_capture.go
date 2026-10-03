@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -18,9 +17,9 @@ import (
 	kittelemetry "go.kenn.io/kit/telemetry"
 )
 
-// These keep Huma's defaults from the typed operation this route replaces.
+// The size cap matches kit's handler so oversized bodies still get problem JSON; the timeout is Huma's default.
 const (
-	telemetryEventMaxBodyBytes    = 1 << 20
+	telemetryEventMaxBodyBytes    = 64 << 10
 	telemetryEventBodyReadTimeout = 5 * time.Second
 )
 
@@ -118,12 +117,9 @@ func (w *humaResponseWriter) Write(p []byte) (int, error) {
 }
 
 func telemetryContentTypeAllowed(w http.ResponseWriter, r *http.Request) bool {
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "" {
-		return true
-	}
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err == nil && (mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")) {
+	// Kit accepts only application/json; rejecting here keeps the 415 as problem JSON.
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err == nil && mediaType == "application/json" {
 		return true
 	}
 	routepolicy.WriteProblemResponse(w, httpapi.NewProblem(

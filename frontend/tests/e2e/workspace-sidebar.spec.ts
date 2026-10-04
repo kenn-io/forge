@@ -3848,6 +3848,35 @@ test.describe("sidebar toggle behavior", () => {
     expect(topElementIsModal).toBe(true);
   });
 
+  test("label picker paints over the workspace details splitter", async ({ page }) => {
+    await page.goto("/terminal/ws-123");
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+    await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
+
+    await page.locator(".right-sidebar .chips-row").getByRole("button", { name: "Labels", exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "Edit labels" });
+    await expect(picker).toBeVisible();
+
+    // The picker opens leftward from the Labels chip, across the splitter
+    // into the terminal area. Where the two overlap, the picker must be on top.
+    const overlap = await page.evaluate(() => {
+      const handle = document.querySelector('[role="separator"][aria-label="Resize workspace details"]');
+      const popover = document.querySelector(".label-editor-popover");
+      if (!(handle instanceof HTMLElement) || !(popover instanceof HTMLElement)) {
+        throw new Error("Missing workspace details splitter or label picker");
+      }
+      const handleRect = handle.getBoundingClientRect();
+      const popoverRect = popover.getBoundingClientRect();
+      const x = handleRect.left + handleRect.width / 2;
+      const y = popoverRect.top + popoverRect.height / 2;
+      return {
+        crossesSplitter: popoverRect.left < handleRect.left && popoverRect.right > handleRect.right,
+        pickerOnTop: document.elementFromPoint(x, y)?.closest(".label-editor-popover") === popover,
+      };
+    });
+    expect(overlap).toEqual({ crossesSplitter: true, pickerOnTop: true });
+  });
+
   test("clicking the active toggle closes the sidebar", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 

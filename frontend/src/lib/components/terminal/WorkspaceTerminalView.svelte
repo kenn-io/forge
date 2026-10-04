@@ -5901,9 +5901,11 @@
     overflow: hidden;
   }
 
+  /* No z-index here: it would make the pane a stacking context, trapping the
+     label picker, menus, and modals it opens below the details splitter's
+     z-index, so the splitter would paint over them. */
   .right-sidebar {
     position: relative;
-    z-index: 2;
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -5916,10 +5918,6 @@
     border: var(--chrome-border-width) solid
       color-mix(in srgb, var(--accent-blue) 48%, var(--border-default));
     pointer-events: none;
-  }
-
-  .right-sidebar:has(:global(.kit-modal-overlay)) {
-    z-index: 80;
   }
 
 

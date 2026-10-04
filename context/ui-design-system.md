@@ -374,7 +374,10 @@ handle (kit-ui-check `split-handle-override`, unsuppressible). Hide handles
 responsively from an app wrapper selector. A pane beside a handle draws no
 border on that edge, including panes whose container follows a sidebar's
 handle; the handle is the divider. `app.css` only lifts handles above xterm's
-layers (`frontend/src/app.css`, `.kit-split-resize-handle`).
+layers (`frontend/src/app.css`, `.kit-split-resize-handle`). A pane beside a
+handle must not set its own z-index: as a stacking context below the handle's,
+it clamps every popover it opens under the handle
+(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`, `.right-sidebar`).
 
 Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
 the dock is open plus its domain header/body/footer content; the shared dock

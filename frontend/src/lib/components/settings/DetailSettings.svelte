@@ -153,8 +153,8 @@
   <span class="setting-copy">
     <span class="setting-label">Collapse single line breaks</span>
     <span class="setting-description">
-      Render markdown with soft line breaks: a single newline joins the paragraph
-      and only a blank line starts a new one.
+      Applies to comments and markdown commit bodies. Descriptions always reflow
+      paragraphs to fit the pane.
     </span>
   </span>
 </Checkbox>

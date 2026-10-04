@@ -59,9 +59,10 @@ back to TOML.
 - `sync_budget_per_hour` is hub-owned, bounded 50-15000 on load and settings writes, and never
   startup-bound: writes and reloads resize live budgets in place, keeping the window's spend
   (`internal/github/budget.go::SyncBudget.SetLimit`).
-- `detail.collapse_single_line_breaks` is a false-by-default PR/issue presentation opt-in
-  that renders markdown descriptions, comments, and markdown-rendered commit bodies with
-  CommonMark soft breaks. It never changes plain text, Docs mode, or editor previews, and Detail settings writes replace the
+- `detail.collapse_single_line_breaks` is a false-by-default PR/issue timeline opt-in
+  that renders comments and markdown-rendered commit bodies with CommonMark soft breaks.
+  Descriptions always use soft breaks so source-wrapped prose fits narrow panes.
+  It never changes plain text, Docs mode, or editor previews, and Detail settings writes replace the
   whole section, so the UI must send every Detail field
   (`internal/config/config.go::Detail`, `frontend/src/lib/utils/markdown.ts::getMarked`).
 - `detail.render_commit_messages_as_markdown` is a false-by-default opt-in that routes

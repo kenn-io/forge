@@ -1558,7 +1558,7 @@
                   repo={{ provider, platformHost, owner, name, repoPath }}
                   options={{
                     interactiveTasks: capabilities.state_mutation && !contentGate.unavailable,
-                    collapseSingleLineBreaks: settings.getDetailSettings().collapse_single_line_breaks,
+                    collapseSingleLineBreaks: true,
                   }}
                 />
               </div>

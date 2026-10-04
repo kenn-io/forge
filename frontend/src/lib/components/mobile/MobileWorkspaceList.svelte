@@ -9,6 +9,7 @@
   import { onMount, untrack } from "svelte";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { configuredAPIPath } from "../../api/runtime-base.js";
+  import { getStreamEventsUrl } from "../../api/generated/system/system.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
   import { ProblemCodes } from "../../api/problems.js";
   import {
@@ -457,7 +458,7 @@
   });
 
   onMount(() => {
-    const events = eventSourceStream(configuredAPIPath("/events"), "workspace_status").pipe(
+    const events = eventSourceStream(configuredAPIPath(getStreamEventsUrl()), "workspace_status").pipe(
       Stream.retry(Schedule.exponential("1 second").pipe(Schedule.jittered)),
       Stream.catch(() => Stream.empty),
     );

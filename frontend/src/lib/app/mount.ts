@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Fiber } from "effect";
 import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
+import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
 import { orvalRequest } from "../api/runtime.js";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 import type { OwnedAppRuntime } from "./runtime.js";
@@ -52,7 +53,7 @@ const observeMarkdownMermaidRendering = (target: HTMLElement) =>
 const reportAppOpens = Effect.acquireRelease(
   Effect.sync(() =>
     startAppOpenedReporting({
-      route: "/telemetry/events",
+      route: getCaptureTelemetryEventUrl(),
       surface: "web",
       post: (route, event) =>
         orvalRequest(route, {

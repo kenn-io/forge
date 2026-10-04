@@ -1,5 +1,4 @@
 import type { RepositoryKey } from "./repository-key.js";
-import { configuredAPIPath } from "./runtime-base.js";
 
 export type ProviderRouteRef = {
   provider: string;
@@ -180,21 +179,6 @@ export function providerRepoPath(ref: ProviderRouteRef, suffix = ""): string {
     return `/host/{platform_host}/repo/{provider}/{owner}/{name}${suffix}`;
   }
   return `/repo/{provider}/{owner}/{name}${suffix}`;
-}
-
-export function providerRepoResourceURL(
-  ref: ProviderRouteRef,
-  suffix: RepoSuffix,
-  query: Record<string, string> = {},
-): string {
-  const params = providerRouteParams(ref);
-  const provider = encodeURIComponent(params.provider);
-  const owner = encodeURIComponent(params.owner);
-  const name = encodeURIComponent(params.name);
-  const host = providerUsesHostRoute(ref) ? ref.platformHost?.trim() : undefined;
-  const hostPrefix = host ? `/host/${encodeURIComponent(host)}` : "";
-  const search = new URLSearchParams(query).toString();
-  return configuredAPIPath(`${hostPrefix}/repo/${provider}/${owner}/${name}${suffix}${search ? `?${search}` : ""}`);
 }
 
 type CollectionKind = Exclude<RouteKind, "repo">;

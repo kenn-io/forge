@@ -2,6 +2,7 @@ import { Effect, Option, Schema, Stream } from "effect";
 import { normalizedFetch, type FetchFn } from "../request.js";
 import { TransientTransportError } from "../effect-errors.js";
 import { openStreamingResponse, responseByteStream } from "../../browser/streaming-fetch.js";
+import { getGetJobOutputUrl, getStreamEventsUrl } from "./generated/client.js";
 import { RoborevEvent, RoborevJobOutputSnapshot, RoborevLogLinePayload, RoborevStreamOpened } from "./schemas.js";
 
 export type RoborevClient = FetchFn;
@@ -115,7 +116,7 @@ export function roborevEventStream(
   RoborevStreamError,
   import("../../browser/streaming-fetch.js").StreamingFetch
 > {
-  const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/stream/events`, globalThis.location.origin).toString();
+  const url = new URL(`${baseUrl.replace(/\/$/, "")}${getStreamEventsUrl()}`, globalThis.location.origin).toString();
   return Stream.unwrap(
     Effect.gen(function* () {
       const response = yield* Effect.acquireRelease(
@@ -165,10 +166,8 @@ export function roborevEventStream(
 }
 
 function jobOutputUrl(baseUrl: string, jobID: number, streaming: boolean): string {
-  const url = new URL(`${baseUrl.replace(/\/$/, "")}/api/job/output`, globalThis.location.origin);
-  url.searchParams.set("job_id", String(jobID));
-  if (streaming) url.searchParams.set("stream", "1");
-  return url.toString();
+  const path = getGetJobOutputUrl({ job_id: String(jobID), ...(streaming ? { stream: "1" } : {}) });
+  return new URL(`${baseUrl.replace(/\/$/, "")}${path}`, globalThis.location.origin).toString();
 }
 
 export const loadRoborevJobOutput = Effect.fn("RoborevClient.loadJobOutput")(function* (

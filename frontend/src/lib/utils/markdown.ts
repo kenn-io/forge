@@ -18,7 +18,14 @@ import type { UponSanitizeAttributeHook } from "dompurify";
 import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
-import { canonicalProvider, providerRepoResourceURL } from "../api/provider-routes.js";
+import { getGetMarkdownImageOnHostUrl, getGetMarkdownImageUrl } from "../api/generated/repositories/repositories.js";
+import {
+  canonicalProvider,
+  providerHostRouteParams,
+  providerRouteParams,
+  providerUsesHostRoute,
+} from "../api/provider-routes.js";
+import { configuredAPIPath } from "../api/runtime-base.js";
 import { itemReferenceAnchorAttributes, parseProviderItemURL } from "./item-reference.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
@@ -434,7 +441,12 @@ function proxiedMarkdownImageSource(source: string, repo: RepoContext): string |
         (!url.pathname.startsWith(`/${repo.repoPath}/uploads/`) && !/^\/-\/project\/\d+\/uploads\//.test(url.pathname)))
     )
       return null;
-    return providerRepoResourceURL(repo, "/markdown-image", { source: url.toString() });
+    const params = { source: url.toString() };
+    return configuredAPIPath(
+      providerUsesHostRoute(repo)
+        ? getGetMarkdownImageOnHostUrl(providerHostRouteParams(repo), params)
+        : getGetMarkdownImageUrl(providerRouteParams(repo), params),
+    );
   } catch {
     return null;
   }

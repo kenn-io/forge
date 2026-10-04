@@ -102,6 +102,10 @@ service is the supported tool here.
   Orval model from `frontend/src/lib/api/generated/models/`, directly or through
   `frontend/src/lib/api/types.ts`; do not duplicate those shapes or add runtime
   guards around already-generated contracts.
+- Build API paths, including raw `orvalRequest`, EventSource, and Roborev
+  calls, with the generated Orval `get*Url` helpers instead of string routes
+  (`frontend/src/lib/api/generated/system/system.ts::getStreamEventsUrl`). Only
+  endpoints outside OpenAPI, such as `/ws/v1` terminals, are hand-built.
 - A non-idempotent transport failure may be uncertain. Retain a fence and read
   fresh authority before retrying. Definite rejection, uncertain outcome, and
   acknowledged success followed by refresh failure require different UI state.

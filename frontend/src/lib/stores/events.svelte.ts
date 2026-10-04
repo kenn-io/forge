@@ -1,5 +1,7 @@
 import { Deferred, Effect } from "effect";
 import type { AppRuntime, AppServices } from "../app/runtime.js";
+import { getStreamEventsUrl } from "../api/generated/system/system.js";
+import { configuredAPIPath } from "../api/runtime-base.js";
 import type { SyncStatus } from "../api/types.js";
 import {
   providerEventsProgram,
@@ -88,10 +90,11 @@ export function createEventsStore(opts: EventsStoreOptions) {
   }
 
   function buildURL(): string {
-    const base = getBasePath().replace(/\/$/, "");
-    const url = `${base}/api/v1/events`;
     const workspaceId = selectedWorkspaceId();
-    return workspaceId === undefined ? url : `${url}?workspace_id=${encodeURIComponent(workspaceId)}`;
+    return configuredAPIPath(
+      getStreamEventsUrl(workspaceId === undefined ? {} : { workspace_id: workspaceId }),
+      getBasePath(),
+    );
   }
 
   function dispatch(event: ProviderEvent): Effect.Effect<void, ProviderEventsError, AppServices> {

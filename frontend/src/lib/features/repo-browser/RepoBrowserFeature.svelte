@@ -23,6 +23,7 @@
   } from "./repoBrowserViewState.js";
   import PierreFileContents from "./PierreFileContents.svelte";
   import { apiBaseURL } from "../../api/runtime.js";
+  import { getGetRepoBrowserAssetOnHostUrl, getGetRepoBrowserAssetUrl } from "../../api/generated/repositories/repositories.js";
   import type { FolderIndex } from "../../api/docs/folderLinks";
   import { observeResizes } from "../../browser/observers.js";
 
@@ -559,20 +560,16 @@
   }
 
   function assetURL(path: string): string {
-    const params = new URLSearchParams();
-    params.set("repo_path", route.repoPath);
-    params.set("path", path);
-    if (selectedRef?.sha) {
-      params.set("ref_type", "commit");
-      params.set("ref_sha", selectedRef.sha);
-    }
-    const hostPath = route.platformHost
-      ? `/host/${encodeURIComponent(route.platformHost)}`
-      : "";
-    const endpointPath = `${hostPath}/repo/${encodeURIComponent(route.provider)}/${encodeURIComponent(route.owner)}/${encodeURIComponent(route.name)}/browser/asset`;
-    const url = new URL(endpointPath.replace(/^\//, ""), withTrailingSlash(apiBaseURL));
-    url.search = params.toString();
-    return url.toString();
+    const params = {
+      repo_path: route.repoPath,
+      path,
+      ...(selectedRef?.sha ? { ref_type: "commit", ref_sha: selectedRef.sha } : {}),
+    };
+    const repo = { provider: route.provider, owner: route.owner, name: route.name };
+    const endpointPath = route.platformHost
+      ? getGetRepoBrowserAssetOnHostUrl({ ...repo, platformHost: route.platformHost }, params)
+      : getGetRepoBrowserAssetUrl(repo, params);
+    return new URL(endpointPath.replace(/^\//, ""), withTrailingSlash(apiBaseURL)).toString();
   }
 
   function withTrailingSlash(value: string): string {

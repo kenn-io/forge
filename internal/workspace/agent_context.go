@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -416,7 +417,10 @@ func writeGeneratedFileAtomic(worktreePath, relPath string, content []byte) erro
 	if err := os.Chmod(tmpPath, 0o644); err != nil {
 		return fmt.Errorf("chmod generated context temp file: %w", err)
 	}
-	if err := os.Rename(tmpPath, path); err != nil {
+	// Running agents may be reading this file. On Windows, os.Rename fails
+	// with Access is denied while any reader has it open, even one that
+	// allows deletion (Node, Rust, os.Root); Replace succeeds there.
+	if err := atomicfile.Replace(tmpPath, path); err != nil {
 		return fmt.Errorf("install generated context file: %w", err)
 	}
 	return nil

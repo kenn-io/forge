@@ -134,7 +134,7 @@ func newAt(root string) (*Owner, error) {
 			StartToken:   identity.startToken,
 		}
 		runDir, admissionDir, err := publishOwnerState(
-			root, runName, marker, os.Rename,
+			root, runName, marker, os.Rename, //nolint:forbidigo // directory move
 		)
 		if err != nil {
 			return err

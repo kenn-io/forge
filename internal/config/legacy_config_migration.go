@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.kenn.io/kit/atomicfile"
 )
 
 const legacyConfigMigrationMarker = ".legacy-config-migrated"
@@ -94,14 +96,14 @@ func migrateLegacyConfig(configPath string) error {
 			return fmt.Errorf("complete legacy config migration to %s: %w", configPath, err)
 		}
 	case errors.Is(err, os.ErrNotExist):
-		if err := os.Rename(tmpPath, configPath); err != nil {
+		if err := atomicfile.Replace(tmpPath, configPath); err != nil {
 			return fmt.Errorf("publish migrated config %s: %w", configPath, err)
 		}
 	case err != nil:
 		return fmt.Errorf("inspect Kenn Forge config %s: %w", configPath, err)
 	case bytes.Equal(destination, transformed):
 	case bytes.Equal(destination, []byte(defaultConfigContents())):
-		if err := os.Rename(tmpPath, configPath); err != nil {
+		if err := atomicfile.Replace(tmpPath, configPath); err != nil {
 			return fmt.Errorf("replace generated config %s: %w", configPath, err)
 		}
 	default:

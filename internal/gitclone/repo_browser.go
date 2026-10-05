@@ -1080,7 +1080,7 @@ func (m *Manager) publishRepoBrowserStaging(
 	}
 	previous := staging + ".previous"
 	hadPrevious := false
-	if err := os.Rename(published, previous); err != nil {
+	if err := os.Rename(published, previous); err != nil { //nolint:forbidigo // directory move
 		if !errors.Is(err, os.ErrNotExist) {
 			barrier.unlockWrite()
 			return false, fmt.Errorf("move published repo browser clone aside: %w", err)
@@ -1088,14 +1088,14 @@ func (m *Manager) publishRepoBrowserStaging(
 	} else {
 		hadPrevious = true
 	}
-	publish := os.Rename
+	publish := os.Rename //nolint:forbidigo // directory move
 	if injected := m.publishRepoBrowserStagingForTest; injected != nil {
 		publish = injected
 	}
 	if err := publish(staging, published); err != nil {
 		var restoreErr error
 		if hadPrevious {
-			restoreErr = os.Rename(previous, published)
+			restoreErr = os.Rename(previous, published) //nolint:forbidigo // directory move
 		}
 		barrier.unlockWrite()
 		return false, errors.Join(

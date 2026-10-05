@@ -3890,7 +3890,7 @@ func quarantineOrphanedWorkspacePath(
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(worktreePath, recoveryPath); err != nil {
+	if err := os.Rename(worktreePath, recoveryPath); err != nil { //nolint:forbidigo // directory move
 		return fmt.Errorf("preserve orphaned workspace path: %w", err)
 	}
 	slog.Warn(

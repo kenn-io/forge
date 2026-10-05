@@ -781,7 +781,7 @@ func removeCloneAside(clonePath string) error {
 	if err := os.RemoveAll(aside); err != nil {
 		return err
 	}
-	if err := os.Rename(clonePath, aside); err != nil {
+	if err := os.Rename(clonePath, aside); err != nil { //nolint:forbidigo // directory move
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/gofrs/flock"
+	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -97,7 +98,7 @@ func migrateLegacyDatabase(configPath string) error {
 		if _, err := os.Stat(oldPath); errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err := os.Rename(oldPath, newPath); err != nil {
+		if err := atomicfile.Replace(oldPath, newPath); err != nil {
 			return fmt.Errorf("move legacy database %s to %s: %w", oldPath, newPath, err)
 		}
 	}

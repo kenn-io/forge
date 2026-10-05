@@ -2833,11 +2833,19 @@ components:
           type: string
         id:
           type: string
+        input:
+          $ref: "#/components/schemas/ExternalContextActionInput"
         label:
           type: string
       required:
         - id
         - label
+      type: object
+    ExternalContextActionInput:
+      additionalProperties: false
+      properties:
+        placeholder:
+          type: string
       type: object
     ExternalContextActionRequest:
       additionalProperties: false
@@ -2854,6 +2862,9 @@ components:
         head_sha:
           maxLength: 128
           minLength: 1
+          type: string
+        input:
+          maxLength: 16384
           type: string
         platform_repo_id:
           format: int64

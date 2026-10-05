@@ -54,6 +54,7 @@ type externalContextActionRequest struct {
 	PlatformRepoID          int64     `json:"platform_repo_id,omitempty"`
 	BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero"`
 	HeadSHA                 string    `json:"head_sha" minLength:"1" maxLength:"128"`
+	Input                   string    `json:"input,omitempty" maxLength:"16384"`
 }
 
 // externalContextRepoKey decodes the repository key a context request names;
@@ -157,7 +158,7 @@ func (s *Server) runPullExternalContextAction(ctx context.Context, input *extern
 	if pull.HeadSHA != input.Body.HeadSHA {
 		return nil, httpapi.Conflict(httpapi.CodeConflict, "The synced pull request head changed. Refresh before running this action.", map[string]any{"reason": "stale_state"})
 	}
-	result, err := s.externalContext.Action(ctx, input.SourceID, pull, input.ActionID)
+	result, err := s.externalContext.Action(ctx, input.SourceID, pull, input.ActionID, input.Body.Input)
 	if err != nil {
 		return nil, externalContextProblem(err)
 	}

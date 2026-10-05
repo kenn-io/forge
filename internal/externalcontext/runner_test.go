@@ -133,13 +133,31 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	_, err = runner.Read(t.Context(), "metrics", pull, true)
 	require.NoError(t, err)
 	assert.Len(invocations(t, dir), 2)
-	result, err = runner.Action(t.Context(), "metrics", pull, "run")
+	result, err = runner.Action(t.Context(), "metrics", pull, "run", "")
 	require.NoError(t, err)
 	assert.Equal("action:head-one:run", result.Card.Summary)
 	assert.Len(invocations(t, dir), 3)
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)
 	assert.Len(invocations(t, dir), 4)
+	result, err = runner.Action(t.Context(), "metrics", pull, "note", "Ship it\nafter review")
+	require.NoError(t, err)
+	assert.Equal("action:head-one:note", result.Card.Summary)
+	actions := map[string]string{}
+	for _, file := range invocations(t, dir) {
+		if strings.Contains(file.Name(), "-action-") {
+			payload, err := os.ReadFile(filepath.Join(dir, file.Name()))
+			require.NoError(t, err)
+			var request struct {
+				ActionID string `json:"action_id"`
+			}
+			require.NoError(t, json.Unmarshal(payload, &request))
+			actions[request.ActionID] = string(payload)
+		}
+	}
+	pullJSON := `{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":123,"repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}`
+	assert.JSONEq(`{"version":1,"operation":"action","pull_request":`+pullJSON+`,"action_id":"run"}`, actions["run"])
+	assert.JSONEq(`{"version":1,"operation":"action","pull_request":`+pullJSON+`,"action_id":"note","input":"Ship it\nafter review"}`, actions["note"])
 }
 
 func TestReadValidationAndFailureCache(t *testing.T) {
@@ -154,6 +172,8 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 		{"status", "raw", `{"card":{"status":"other","summary":"hello"}}`, ErrInvalidResponse},
 		{"summary", "raw", `{"card":{"status":"success","summary":" "}}`, ErrInvalidResponse},
 		{"summary limit", "raw", `{"card":{"status":"success","summary":"` + strings.Repeat("x", 4097) + `"}}`, ErrInvalidResponse},
+		{"action input", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}}]}}`, nil},
+		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse},
 		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse},
 		{"stdout limit", "stdout", "", ErrOutputLimit},
 		{"stderr limit", "stderr", "", ErrOutputLimit},
@@ -172,7 +192,12 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 			for range 2 {
 				result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
 				require.ErrorIs(t, err, tt.want)
-				assert.Nil(result.Card)
+				if tt.name == "action input" {
+					require.NotNil(t, result.Card)
+					assert.Equal("Leave a note", result.Card.Actions[0].Input.Placeholder)
+				} else {
+					assert.Nil(result.Card)
+				}
 				if err != nil {
 					assert.NotContains(err.Error(), "private")
 				}
@@ -211,7 +236,7 @@ func TestInvalidationDiscardsInflightRead(t *testing.T) {
 			go func() { _, _ = runner.Read(t.Context(), "metrics", fixturePull(), false); close(readDone) }()
 			require.Eventually(t, func() bool { return len(invocations(t, dir)) == 1 }, 3*time.Second, time.Millisecond)
 			if action {
-				_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run")
+				_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run", "")
 				require.NoError(t, err)
 			} else {
 				runner.Update([]config.ExternalContextSource{source})
@@ -233,7 +258,7 @@ func TestActionsAreNotRetriedAndReportUncertainSubmission(t *testing.T) {
 	source, dir := fixtureSource(t, "exit")
 	runner := New([]config.ExternalContextSource{source})
 	t.Cleanup(runner.Close)
-	_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run")
+	_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run", "")
 	require.ErrorIs(t, err, ErrInvocation)
 	assert.Contains(t, err.Error(), "The action may have been submitted. Refresh to check its status.")
 	assert.NotContains(t, err.Error(), "private diagnostic")
@@ -256,7 +281,7 @@ func TestProcessLimitIncludesActionsAndQueuedDeadline(t *testing.T) {
 		}()
 	}
 	require.Eventually(t, func() bool { return len(invocations(t, dir)) == 2 }, 3*time.Second, time.Millisecond)
-	_, err := runner.Action(t.Context(), "queued", fixturePull(), "run")
+	_, err := runner.Action(t.Context(), "queued", fixturePull(), "run", "")
 	require.ErrorIs(t, err, ErrTimeout)
 	assert.Empty(t, invocations(t, queuedDir))
 	assert.NotContains(t, err.Error(), "may have been submitted")
@@ -347,7 +372,7 @@ func TestActionCompletionInvalidatesReadsOnSuccessAndFailure(t *testing.T) {
 			require.NoError(t, err)
 			actionDone := make(chan error, 1)
 			go func() {
-				_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run")
+				_, err := runner.Action(t.Context(), "metrics", fixturePull(), "run", "")
 				actionDone <- err
 			}()
 			require.Eventually(t, func() bool { return len(invocations(t, dir)) == 2 }, 3*time.Second, time.Millisecond)

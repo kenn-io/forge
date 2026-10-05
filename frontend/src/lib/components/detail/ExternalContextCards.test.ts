@@ -220,6 +220,46 @@ describe("external PR context", () => {
     expect(posts).toHaveBeenCalledTimes(1);
   });
 
+  it("collects text for an action that asks for input and keeps it until the action succeeds", async () => {
+    const bodies: unknown[] = [];
+    const noteCard = { ...card, actions: [{ id: "note", label: "Add note", input: { placeholder: "Leave a note" } }] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const url = request.url;
+        if (url.endsWith("/external-context/sources"))
+          return Response.json({ sources: [{ id: "checks", name: "Quality checks" }] });
+        if (request.method === "POST") {
+          bodies.push(await request.json());
+          if (bodies.length === 1)
+            return Response.json({ code: "upstreamError", detail: "Adapter rejected it." }, { status: 502 });
+          return Response.json({ card: { ...noteCard, summary: "Note saved" } });
+        }
+        return Response.json({ card: noteCard });
+      }),
+    );
+    render(ExternalContextCards, { props });
+    const textbox = (await screen.findByRole("textbox", { name: "Add note" })) as HTMLTextAreaElement;
+    const button = screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
+    expect(textbox.placeholder).toBe("Leave a note");
+    expect(button.disabled).toBe(true);
+    await fireEvent.input(textbox, { target: { value: "  " } });
+    expect(button.disabled).toBe(true);
+    await fireEvent.input(textbox, { target: { value: "Ship after review" } });
+    await fireEvent.click(button);
+    expect((await screen.findByRole("alert")).textContent).toBe("Adapter rejected it.");
+    expect(textbox.value).toBe("Ship after review");
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh Quality checks" }));
+    await waitFor(() => expect(button.disabled).toBe(false));
+    await fireEvent.click(button);
+    expect(await screen.findByText("Note saved")).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: "Add note" }) as HTMLTextAreaElement).value).toBe("");
+    expect(bodies).toEqual([
+      { platform_repo_id: 123, head_sha: "a".repeat(40), input: "Ship after review" },
+      { platform_repo_id: 123, head_sha: "a".repeat(40), input: "Ship after review" },
+    ]);
+  });
+
   it("reloads sources after configuration invalidation and reads again for a new head", async () => {
     let configured = false;
     let reads = 0;

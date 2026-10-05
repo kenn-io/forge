@@ -249,6 +249,7 @@ export * from "./ensureFleetProjectWorktreeRuntimeShellPathParameters.ts";
 export * from "./ensureProjectWorktreeRuntimeShellPathParameters.ts";
 export * from "./errorDetail.ts";
 export * from "./externalContextAction.ts";
+export * from "./externalContextActionInput.ts";
 export * from "./externalContextActionRequest.ts";
 export * from "./externalContextCard.ts";
 export * from "./externalContextCardStatus.ts";

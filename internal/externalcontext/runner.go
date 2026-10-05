@@ -113,7 +113,7 @@ func (r *Runner) Read(ctx context.Context, sourceID string, pull PullRequest, re
 		call = &readCall{done: make(chan struct{})}
 		r.flights[key] = call
 		r.wg.Go(func() {
-			call.result, call.err = r.invoke(source, pull, "read", "")
+			call.result, call.err = r.invoke(source, pull, "read", "", "")
 			call.completed = time.Now()
 			r.mu.Lock()
 			// Deleting a flight invalidates it without cancelling its existing waiters.
@@ -129,7 +129,7 @@ func (r *Runner) Read(ctx context.Context, sourceID string, pull PullRequest, re
 	return wait(ctx, call)
 }
 
-func (r *Runner) Action(ctx context.Context, sourceID string, pull PullRequest, actionID string) (ExternalContextResult, error) {
+func (r *Runner) Action(ctx context.Context, sourceID string, pull PullRequest, actionID, input string) (ExternalContextResult, error) {
 	if err := ctx.Err(); err != nil {
 		return ExternalContextResult{}, err
 	}
@@ -142,7 +142,7 @@ func (r *Runner) Action(ctx context.Context, sourceID string, pull PullRequest, 
 	r.invalidate(sourceID, pull)
 	call := &readCall{done: make(chan struct{})}
 	r.wg.Go(func() {
-		call.result, call.err = r.invoke(source, pull, "action", actionID)
+		call.result, call.err = r.invoke(source, pull, "action", actionID, input)
 		r.mu.Lock()
 		r.invalidate(sourceID, pull)
 		r.mu.Unlock()
@@ -210,7 +210,7 @@ func (r *Runner) Close() {
 	r.wg.Wait()
 }
 
-func (r *Runner) invoke(source config.ExternalContextSource, pull PullRequest, operation, actionID string) (ExternalContextResult, error) {
+func (r *Runner) invoke(source config.ExternalContextSource, pull PullRequest, operation, actionID, actionInput string) (ExternalContextResult, error) {
 	timeout := 10 * time.Second
 	if source.Timeout != "" {
 		var err error
@@ -237,7 +237,8 @@ func (r *Runner) invoke(source config.ExternalContextSource, pull PullRequest, o
 		Operation   string      `json:"operation"`
 		PullRequest PullRequest `json:"pull_request"`
 		ActionID    string      `json:"action_id,omitempty"`
-	}{1, operation, pull, actionID}
+		Input       string      `json:"input,omitempty"`
+	}{1, operation, pull, actionID, actionInput}
 	input, err := json.Marshal(request)
 	if err != nil {
 		return ExternalContextResult{}, ErrInvocation
@@ -308,7 +309,7 @@ func decodeResult(data []byte) (ExternalContextResult, error) {
 	}
 	seen := make(map[string]bool, len(card.Actions))
 	for _, action := range card.Actions {
-		if strings.TrimSpace(action.ID) == "" || len(action.ID) > 128 || seen[action.ID] || strings.TrimSpace(action.Label) == "" || len(action.Label) > 256 || len(action.DisabledReason) > 4096 {
+		if strings.TrimSpace(action.ID) == "" || len(action.ID) > 128 || seen[action.ID] || strings.TrimSpace(action.Label) == "" || len(action.Label) > 256 || len(action.DisabledReason) > 4096 || (action.Input != nil && len(action.Input.Placeholder) > 256) {
 			return ExternalContextResult{}, ErrInvalidResponse
 		}
 		seen[action.ID] = true

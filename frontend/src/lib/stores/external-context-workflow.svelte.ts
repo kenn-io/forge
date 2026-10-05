@@ -41,6 +41,7 @@ export class ExternalContextState {
   loading = $state(false);
   pendingAction = $state<string | null>(null);
   needsRefresh = $state(false);
+  drafts = $state<Record<string, string>>({});
   generation = 0;
 }
 
@@ -58,7 +59,12 @@ export interface ExternalContextWorkflowService {
   readonly sources: Effect.Effect<ExternalContextSourceInfo[], ExternalContextError>;
   readonly state: (pull: ExternalContextPull, sourceId: string) => ExternalContextState;
   readonly read: (pull: ExternalContextPull, sourceId: string, refresh?: boolean) => Effect.Effect<void>;
-  readonly action: (pull: ExternalContextPull, sourceId: string, actionId: string) => Effect.Effect<void>;
+  readonly action: (
+    pull: ExternalContextPull,
+    sourceId: string,
+    actionId: string,
+    input?: string,
+  ) => Effect.Effect<void>;
 }
 
 export class ExternalContextWorkflow extends Context.Service<ExternalContextWorkflow, ExternalContextWorkflowService>()(
@@ -131,6 +137,7 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
       pull: ExternalContextPull,
       sourceId: string,
       actionId: string,
+      input?: string,
     ) {
       const entry = state(pull, sourceId);
       if (entry.pendingAction !== null || entry.needsRefresh || !pull.headSha) return;
@@ -138,7 +145,11 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
       entry.loading = false;
       entry.pendingAction = actionId;
       entry.error = null;
-      const body = { ...repositoryKeyToWire(pull.repositoryKey), head_sha: pull.headSha };
+      const body = {
+        ...repositoryKeyToWire(pull.repositoryKey),
+        head_sha: pull.headSha,
+        ...(input === undefined ? {} : { input }),
+      };
       yield* api
         .execute("run external context action", (signal) =>
           providerUsesHostRoute(pull.ref)
@@ -156,6 +167,7 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         .pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
+              delete entry.drafts[actionId];
               if (entry.generation === generation) entry.card = result.card ?? null;
             }),
           ),

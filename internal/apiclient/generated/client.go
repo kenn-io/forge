@@ -57153,9 +57153,14 @@ type ErrorDetail struct {
 }
 
 type ExternalContextAction struct {
-	DisabledReason *string `json:"disabled_reason,omitempty"`
-	ID             string  `json:"id"`
-	Label          string  `json:"label"`
+	DisabledReason *string                     `json:"disabled_reason,omitempty"`
+	ID             string                      `json:"id"`
+	Input          *ExternalContextActionInput `json:"input,omitempty"`
+	Label          string                      `json:"label"`
+}
+
+type ExternalContextActionInput struct {
+	Placeholder *string `json:"placeholder,omitempty"`
 }
 
 type ExternalContextActionRequest struct {
@@ -57163,6 +57168,7 @@ type ExternalContextActionRequest struct {
 	Schema                  *string `json:"$schema,omitempty"`
 	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
 	HeadSha                 string  `json:"head_sha"`
+	Input                   *string `json:"input,omitempty"`
 	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
 }
 

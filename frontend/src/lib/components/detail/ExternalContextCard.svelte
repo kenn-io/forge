@@ -58,8 +58,8 @@
     });
   }
 
-  function runAction(actionId: string): void {
-    runtime.runCommand(workflow.action(pull, source.id, actionId), {
+  function runAction(actionId: string, input?: string): void {
+    runtime.runCommand(workflow.action(pull, source.id, actionId, input), {
       operation: "run external context action", safeContext: { number: pull.number }, onFailure: () => {},
     });
   }
@@ -92,12 +92,23 @@
         {#if state.card.actions?.length}
           <div class="context-actions">
             {#each state.card.actions as action (action.id)}
-              <div class="context-action">
+              {@const blocked = !!action.disabled_reason || state.pendingAction !== null || state.needsRefresh || !pull.headSha}
+              <div class="context-action" class:with-input={action.input}>
+                {#if action.input}
+                  <textarea
+                    class="action-input"
+                    aria-label={action.label}
+                    placeholder={action.input.placeholder}
+                    rows="3"
+                    disabled={blocked}
+                    bind:value={() => state.drafts[action.id] ?? "", (value) => (state.drafts[action.id] = value)}
+                  ></textarea>
+                {/if}
                 <Button
                   size="sm"
-                  disabled={!!action.disabled_reason || state.pendingAction !== null || state.needsRefresh || !pull.headSha}
+                  disabled={blocked || (!!action.input && !state.drafts[action.id]?.trim())}
                   title={action.disabled_reason || undefined}
-                  onclick={() => runAction(action.id)}
+                  onclick={() => runAction(action.id, action.input ? state.drafts[action.id] : undefined)}
                 >
                   {state.pendingAction === action.id ? "Submitting…" : action.label}
                 </Button>
@@ -129,6 +140,21 @@
   }
 
   .context-header strong { margin-right: auto; }
+  .context-action.with-input { flex-basis: 100%; flex-direction: column; align-items: flex-start; }
+  .action-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font: inherit;
+    resize: vertical;
+  }
+  .action-input::placeholder { color: var(--text-muted); }
+  .action-input:focus { border-color: var(--accent-blue); outline: none; }
+  .action-input:disabled { opacity: var(--opacity-disabled); }
   p { margin: 0; }
   .older-result { color: var(--accent-amber); }
   .context-error { color: var(--accent-red); }

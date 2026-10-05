@@ -222,6 +222,7 @@ describe("external PR context", () => {
 
   it("collects text for an action that asks for input and keeps it until the action succeeds", async () => {
     const bodies: unknown[] = [];
+    const deferred = Promise.withResolvers<Response>();
     const noteCard = {
       ...card,
       actions: [{ id: "constructor", label: "Add note", input: { placeholder: "Leave a note" } }],
@@ -236,6 +237,7 @@ describe("external PR context", () => {
           bodies.push(await request.json());
           if (bodies.length === 1)
             return Response.json({ code: "upstreamError", detail: "Adapter rejected it." }, { status: 502 });
+          if (bodies.length === 3) return deferred.promise;
           return Response.json({ card: { ...noteCard, summary: "Note saved" } });
         }
         return Response.json({ card: noteCard });
@@ -265,37 +267,21 @@ describe("external PR context", () => {
       { platform_repo_id: 123, head_sha: "c".repeat(40), input: "Ship after review" },
       { platform_repo_id: 123, head_sha: "c".repeat(40), input: "Ship after review" },
     ]);
-  });
 
-  it("keeps text edited on a new head when an older submission succeeds", async () => {
-    const action = Promise.withResolvers<Response>();
-    const noteCard = { ...card, actions: [{ id: "note", label: "Add note", input: {} }] };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (request: Request) => {
-        if (request.url.endsWith("/external-context/sources"))
-          return Response.json({ sources: [{ id: "checks", name: "Quality checks" }] });
-        if (request.method === "POST") return action.promise;
-        return Response.json({ card: noteCard });
-      }),
-    );
-    const view = render(ExternalContextCards, { props });
-    const textbox = () => screen.getByRole("textbox", { name: "Add note text" }) as HTMLTextAreaElement;
-    await fireEvent.input(await screen.findByRole("textbox", { name: "Add note text" }), {
-      target: { value: "First note" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Add note" }));
-    await view.rerender({ ...props, headSha: "c".repeat(40) });
+    // An older submission that succeeds after a head change keeps text edited since.
+    await fireEvent.input(textbox(), { target: { value: "First note" } });
+    await fireEvent.click(button());
+    await view.rerender({ ...props, headSha: "d".repeat(40) });
     await waitFor(() => expect(textbox().value).toBe("First note"));
     await fireEvent.input(textbox(), { target: { value: "Second note" } });
-    action.resolve(Response.json({ card: noteCard }));
+    deferred.resolve(Response.json({ card: noteCard }));
     const snapshot = await runtimeCapture.current!.runCommand(ExternalContextWorkflow, {
       operation: "observe action outcome",
       safeContext: {},
       onFailure: () => {},
     }).exit;
     if (!Exit.isSuccess(snapshot)) throw new Error("Workflow unavailable");
-    await waitFor(() => expect(snapshot.value.state(props, "checks").pendingAction).toBeNull());
+    await waitFor(() => expect(snapshot.value.state(newHead, "checks").pendingAction).toBeNull());
     expect(textbox().value).toBe("Second note");
   });
 

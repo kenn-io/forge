@@ -126,7 +126,8 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	require.Len(t, files, 1)
 	payload, err := os.ReadFile(filepath.Join(dir, files[0].Name()))
 	require.NoError(t, err)
-	assert.JSONEq(`{"version":1,"operation":"read","pull_request":{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":123,"repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}}`, string(payload))
+	pullJSON := `{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":123,"repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}`
+	assert.JSONEq(`{"version":1,"operation":"read","pull_request":`+pullJSON+`}`, string(payload))
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)
 	assert.Len(invocations(t, dir), 1)
@@ -155,43 +156,31 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 			actions[request.ActionID] = string(payload)
 		}
 	}
-	pullJSON := `{"provider":"gitlab","platform_host":"git.example.test","platform_repo_id":123,"repo_path":"group/subgroup/project","number":42,"url":"https://git.example.test/group/subgroup/project/-/merge_requests/42","state":"open","head_sha":"head-one","base_sha":"base-one"}`
 	assert.JSONEq(`{"version":1,"operation":"action","pull_request":`+pullJSON+`,"action_id":"run"}`, actions["run"])
 	assert.JSONEq(`{"version":1,"operation":"action","pull_request":`+pullJSON+`,"action_id":"note","input":"Ship it\nafter review"}`, actions["note"])
-}
-
-func TestReadActionInput(t *testing.T) {
-	source, _ := fixtureSource(t, "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}},{"id":"comment","label":"Comment","input":{}}]}}`)
-	runner := New([]config.ExternalContextSource{source})
-	t.Cleanup(runner.Close)
-	result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
-	require.NoError(t, err)
-	require.NotNil(t, result.Card)
-	assert.Equal(t, []ExternalContextAction{
-		{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{Placeholder: "Leave a note"}},
-		{ID: "comment", Label: "Comment", Input: &ExternalContextActionInput{}},
-	}, result.Card.Actions)
 }
 
 func TestReadValidationAndFailureCache(t *testing.T) {
 	for _, tt := range []struct {
 		name, mode, output string
 		want               error
+		actions            []ExternalContextAction
 	}{
-		{"no card", "raw", `{"card":null}`, nil},
-		{"missing card", "raw", `{}`, ErrInvalidResponse},
-		{"trailing json", "raw", `{"card":null}{}`, ErrInvalidResponse},
-		{"malformed", "raw", `private output`, ErrInvalidResponse},
-		{"status", "raw", `{"card":{"status":"other","summary":"hello"}}`, ErrInvalidResponse},
-		{"summary", "raw", `{"card":{"status":"success","summary":" "}}`, ErrInvalidResponse},
-		{"summary limit", "raw", `{"card":{"status":"success","summary":"` + strings.Repeat("x", 4097) + `"}}`, ErrInvalidResponse},
-		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse},
-		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse},
-		{"stdout limit", "stdout", "", ErrOutputLimit},
-		{"stderr limit", "stderr", "", ErrOutputLimit},
-		{"exit", "exit", "", ErrInvocation},
-		{"deadline", "timeout", "", ErrTimeout},
-		{"inherited pipes", "inherited-pipes", "", ErrInvocation},
+		{"no card", "raw", `{"card":null}`, nil, nil},
+		{"missing card", "raw", `{}`, ErrInvalidResponse, nil},
+		{"trailing json", "raw", `{"card":null}{}`, ErrInvalidResponse, nil},
+		{"malformed", "raw", `private output`, ErrInvalidResponse, nil},
+		{"status", "raw", `{"card":{"status":"other","summary":"hello"}}`, ErrInvalidResponse, nil},
+		{"summary", "raw", `{"card":{"status":"success","summary":" "}}`, ErrInvalidResponse, nil},
+		{"summary limit", "raw", `{"card":{"status":"success","summary":"` + strings.Repeat("x", 4097) + `"}}`, ErrInvalidResponse, nil},
+		{"action input", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}}]}}`, nil, []ExternalContextAction{{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{Placeholder: "Leave a note"}}}},
+		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse, nil},
+		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse, nil},
+		{"stdout limit", "stdout", "", ErrOutputLimit, nil},
+		{"stderr limit", "stderr", "", ErrOutputLimit, nil},
+		{"exit", "exit", "", ErrInvocation, nil},
+		{"deadline", "timeout", "", ErrTimeout, nil},
+		{"inherited pipes", "inherited-pipes", "", ErrInvocation, nil},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -204,7 +193,12 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 			for range 2 {
 				result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
 				require.ErrorIs(t, err, tt.want)
-				assert.Nil(result.Card)
+				if tt.actions == nil {
+					assert.Nil(result.Card)
+				} else {
+					require.NotNil(t, result.Card)
+					assert.Equal(tt.actions, result.Card.Actions)
+				}
 				if err != nil {
 					assert.NotContains(err.Error(), "private")
 				}

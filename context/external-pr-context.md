@@ -63,9 +63,8 @@ Optional fields are `markdown`, `result_head_sha`, `actions`, and
 `refresh_after_seconds`. Each action has `id`, `label`, and optional
 `disabled_reason` and `input`. An `input` object, with optional `placeholder`,
 makes the card collect nonblank text before submitting; drafts survive PR
-navigation and head changes and clear only after the action succeeds. Forge
-builds without `input` support reject cards that emit it, so adapters using it
-need a Forge build that has it. Action responses use the same envelope. Preserve the nullable card in generated
+navigation and head changes and clear only after the action succeeds. Action
+responses use the same envelope. Preserve the nullable card in generated
 schemas and clients
 (`internal/externalcontext/types.go::ExternalContextCard.TransformSchema`).
 

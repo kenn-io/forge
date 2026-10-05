@@ -142,19 +142,8 @@
 
   .context-header strong { margin-right: auto; }
   .context-action.with-input { flex-basis: 100%; flex-direction: column; align-items: flex-start; }
-  .action-input {
-    box-sizing: border-box;
-    width: 100%;
-    padding: var(--space-2) var(--space-3);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    font: inherit;
-    resize: vertical;
-  }
+  .action-input { box-sizing: border-box; width: 100%; resize: vertical; }
   .action-input::placeholder { color: var(--text-muted); }
-  .action-input:focus { border-color: var(--accent-blue); outline: none; }
   .action-input:disabled { opacity: var(--opacity-disabled); }
   p { margin: 0; }
   .older-result { color: var(--accent-amber); }

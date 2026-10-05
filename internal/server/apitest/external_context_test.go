@@ -119,13 +119,13 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 		assert.Equal(http.StatusConflict, response.StatusCode)
 	}
 	action, err := client.HTTP.RunPullExternalContextActionWithResponse(t.Context(), &generated.RunPullExternalContextActionRequestOptions{
-		PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "request-run"},
+		PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "comment"},
 		Body:       &generated.ExternalContextActionRequest{PlatformRepoID: &widgetID, HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Input: new("Looks good")},
 	})
 	require.NoError(err)
 	require.Equal(http.StatusOK, action.StatusCode)
 	oversized, err := client.HTTP.RunPullExternalContextActionWithResponse(t.Context(), &generated.RunPullExternalContextActionRequestOptions{
-		PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "request-run"},
+		PathParams: &generated.RunPullExternalContextActionPath{Provider: "github", Owner: "acme", Name: "widget", Number: 1, SourceID: "checks", ActionID: "comment"},
 		Body:       &generated.ExternalContextActionRequest{PlatformRepoID: &widgetID, HeadSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Input: new(strings.Repeat("x", 16385))},
 	})
 	require.Error(err)
@@ -135,7 +135,7 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	lines := strings.Split(strings.TrimSpace(string(invocations)), "\n")
 	require.Len(lines, 2, "rejected actions do not execute; accepted action has no pre-read")
 	assert.Contains(lines[1], `"operation":"action"`)
-	assert.Contains(lines[1], `"action_id":"request-run"`)
+	assert.Contains(lines[1], `"action_id":"comment"`)
 	assert.Contains(lines[1], `"input":"Looks good"`)
 	assert.Contains(lines[1], `"head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`)
 

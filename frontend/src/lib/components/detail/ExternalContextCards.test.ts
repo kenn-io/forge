@@ -267,6 +267,38 @@ describe("external PR context", () => {
     ]);
   });
 
+  it("keeps text edited on a new head when an older submission succeeds", async () => {
+    const action = Promise.withResolvers<Response>();
+    const noteCard = { ...card, actions: [{ id: "note", label: "Add note", input: {} }] };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        if (request.url.endsWith("/external-context/sources"))
+          return Response.json({ sources: [{ id: "checks", name: "Quality checks" }] });
+        if (request.method === "POST") return action.promise;
+        return Response.json({ card: noteCard });
+      }),
+    );
+    const view = render(ExternalContextCards, { props });
+    const textbox = () => screen.getByRole("textbox", { name: "Add note text" }) as HTMLTextAreaElement;
+    await fireEvent.input(await screen.findByRole("textbox", { name: "Add note text" }), {
+      target: { value: "First note" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    await view.rerender({ ...props, headSha: "c".repeat(40) });
+    await waitFor(() => expect(textbox().value).toBe("First note"));
+    await fireEvent.input(textbox(), { target: { value: "Second note" } });
+    action.resolve(Response.json({ card: noteCard }));
+    const snapshot = await runtimeCapture.current!.runCommand(ExternalContextWorkflow, {
+      operation: "observe action outcome",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    if (!Exit.isSuccess(snapshot)) throw new Error("Workflow unavailable");
+    await waitFor(() => expect(snapshot.value.state(props, "checks").pendingAction).toBeNull());
+    expect(textbox().value).toBe("Second note");
+  });
+
   it("reloads sources after configuration invalidation and reads again for a new head", async () => {
     let configured = false;
     let reads = 0;

@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from "effect";
 import { SvelteMap } from "svelte/reactivity";
 import { ApiProblemError, type TransientTransportError } from "../api/effect-errors.js";
 import { GeneratedApi } from "../api/generated-api.js";
+import { getCommentDraftKey } from "../components/detail/comment-drafts.svelte.js";
 import type { ExternalContextCard } from "../api/generated/models/externalContextCard.js";
 import type { ExternalContextSourceInfo } from "../api/generated/models/externalContextSourceInfo.js";
 import {
@@ -22,9 +23,9 @@ export interface ExternalContextPull {
   readonly headSha: string;
 }
 
-function pullIdentity(pull: ExternalContextPull): unknown[] {
+export function externalContextKey(pull: ExternalContextPull): string {
   const { ref } = pull;
-  return [
+  return JSON.stringify([
     canonicalProvider(ref.provider),
     resolvedPlatformHost(ref.provider, ref.platformHost),
     repositoryKeyString(pull.repositoryKey),
@@ -32,11 +33,8 @@ function pullIdentity(pull: ExternalContextPull): unknown[] {
     ref.owner,
     ref.name,
     pull.number,
-  ];
-}
-
-export function externalContextKey(pull: ExternalContextPull): string {
-  return JSON.stringify([...pullIdentity(pull), pull.headSha]);
+    pull.headSha,
+  ]);
 }
 
 export class ExternalContextState {
@@ -83,7 +81,16 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
     // Drafts outlive head changes, so they key on the PR without its head SHA.
     const drafts = new SvelteMap<string, string>();
     const draftKey = (pull: ExternalContextPull, sourceId: string, actionId: string) =>
-      JSON.stringify([...pullIdentity(pull), sourceId, actionId]);
+      JSON.stringify([
+        getCommentDraftKey("pull", {
+          ...pull.ref,
+          platformHost: pull.ref.platformHost ?? "",
+          repositoryKey: pull.repositoryKey,
+          number: pull.number,
+        }),
+        sourceId,
+        actionId,
+      ]);
     let revision = $state(0);
 
     function state(pull: ExternalContextPull, sourceId: string): ExternalContextState {
@@ -176,7 +183,9 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         .pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              drafts.delete(draftKey(pull, sourceId, actionId));
+              // A newer edit made while this submission was pending stays.
+              const key = draftKey(pull, sourceId, actionId);
+              if (drafts.get(key) === input) drafts.delete(key);
               if (entry.generation === generation) entry.card = result.card ?? null;
             }),
           ),

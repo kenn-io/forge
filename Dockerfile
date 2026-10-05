@@ -14,7 +14,8 @@ RUN bun install --frozen-lockfile \
 
 FROM --platform=$BUILDPLATFORM golang:1.27.1-bookworm AS build
 WORKDIR /src
-ENV CGO_ENABLED=0 GOFLAGS=-p=2 GOMAXPROCS=2
+# "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
+ENV CGO_ENABLED=0 GOFLAGS=-p=2 GOMAXPROCS=2 GOPROXY="https://proxy.golang.org|direct"
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

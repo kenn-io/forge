@@ -3,11 +3,9 @@ ARG ROBOREV_REF=main
 COPY . /src
 WORKDIR /src
 RUN git checkout ${ROBOREV_REF}
-RUN for attempt in 1 2 3; do \
-      go mod download && break; \
-      [ "$attempt" -lt 3 ] || exit 1; \
-      sleep 5; \
-    done
+# "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
+ENV GOPROXY="https://proxy.golang.org|direct"
+RUN go mod download
 RUN GOPROXY=off go build -o /roborev ./cmd/roborev/
 COPY --from=forge tests/integration/roborev/tcp-forward.go /tcp-forward.go
 RUN go build -o /tcp-forward /tcp-forward.go

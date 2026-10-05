@@ -44,6 +44,7 @@ type StartupHandler struct {
 	AllowedHosts   map[string]struct{}
 	DaemonRequests authapi.DaemonRequestPolicy
 	BasePath       string
+	Spa            http.Handler
 	Health         routepolicy.HealthResponse
 }
 
@@ -70,16 +71,52 @@ func (h *StartupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.serve(w, r)
 }
 
-// serve answers liveness probes and reports every other route, including the
-// web app, as unavailable until the full server is swapped in.
 func (h *StartupHandler) serve(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
-	if h.BasePath != "/" {
-		path = strings.TrimPrefix(path, strings.TrimSuffix(h.BasePath, "/"))
-	}
-	if path == "/livez" {
-		authapi.WriteJSON(w, http.StatusOK, h.Health)
+	if h.BasePath == "/" {
+		h.serveInner(w, r)
 		return
 	}
-	writeStartupUnavailable(w, r)
+
+	switch r.URL.Path {
+	case "/healthz", "/livez":
+		h.serveInner(w, r)
+		return
+	}
+
+	prefix := strings.TrimSuffix(h.BasePath, "/")
+	if r.URL.Path == prefix {
+		http.Redirect(w, r, prefix+"/", http.StatusMovedPermanently)
+		return
+	}
+	if !strings.HasPrefix(r.URL.Path, h.BasePath) {
+		http.NotFound(w, r)
+		return
+	}
+
+	stripped := r.Clone(r.Context())
+	stripped.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+	if r.URL.RawPath != "" {
+		stripped.URL.RawPath = strings.TrimPrefix(r.URL.RawPath, prefix)
+	}
+	h.serveInner(w, stripped)
+}
+
+func (h *StartupHandler) serveInner(w http.ResponseWriter, r *http.Request) {
+	switch {
+	case r.URL.Path == "/livez":
+		authapi.WriteJSON(w, http.StatusOK, h.Health)
+	case r.URL.Path == "/healthz",
+		r.URL.Path == "/api",
+		strings.HasPrefix(r.URL.Path, "/api/"),
+		r.URL.Path == "/ws",
+		strings.HasPrefix(r.URL.Path, "/ws/"),
+		r.URL.Path == "/mcp":
+		writeStartupUnavailable(w, r)
+	default:
+		if h.Spa == nil {
+			http.NotFound(w, r)
+			return
+		}
+		h.Spa.ServeHTTP(w, r)
+	}
 }

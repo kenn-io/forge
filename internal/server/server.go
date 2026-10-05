@@ -1106,6 +1106,7 @@ func newServer(
 		s.roborevapi.RegisterRoborevProxyAPI(roborevAPI)
 	}
 
+	s.registerMCPRoute(humago.NewAdapter(mux, ""))
 	if frontend != nil && !options.ExecutionWorker {
 		mux.Handle("/", compression.NewSPAAssetHandler(frontend, basePath, s.bootstrapScript))
 	}
@@ -1218,9 +1219,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Debug("http request completed", args...)
 		}
 	}()
-	if s.serveLocalMCP(w, r) {
-		return
-	}
 	hostOpts := *s.hostOpts.Load()
 	admission := s.daemonRequests.Admit(
 		w, r, hostOpts, s.authapi.IsGatedAPIRequest(r),
@@ -1228,7 +1226,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if admission.Handled {
 		return
 	}
-	if !admission.BypassProxyHostCheck && !hostapi.CheckHost(w, r, hostOpts) {
+	if !admission.BypassProxyHostCheck && !s.isDirectLocalMCPRequest(r) &&
+		!hostapi.CheckHost(w, r, hostOpts) {
 		return
 	}
 	if !s.streamapi.CheckHost(w, r) {
@@ -1236,9 +1235,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.authapi.RequestArrivedOverHTTPS(r) {
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
-	}
-	if s.serveTailnetMCP(w, r) {
-		return
 	}
 	if s.daemonRequests.RequireAPIAuth {
 		if !s.options.ExecutionWorker &&

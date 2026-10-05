@@ -508,7 +508,7 @@ func run(opts serve.Options) error {
 	buildInfo := server.BuildInfo{
 		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
 	}
-	startupHandler := server.NewStartupHandler(cfg, startupOptions, ln, buildInfo)
+	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln, buildInfo)
 	switcher := hostapi.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
 		Handler:     switcher,

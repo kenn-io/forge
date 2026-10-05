@@ -39,10 +39,10 @@
   When that port is the backend port and the main listener already accepts the
   companion's loopback address, the main listener serves `/mcp` at the base path
   instead of binding a colliding socket. Direct loopback requests get the
-  companion guard before main-listener host and reverse-proxy checks, with or
-  without a bearer; other requests keep the bearer and Serve policy
+  companion guard instead of main-listener host and reverse-proxy checks, with
+  or without a bearer; other requests keep the bearer and Serve policy
   (`internal/config/config.go::Config.MCPSharesMainListener`,
-  `internal/server/mcp_tailnet.go::Server.serveLocalMCP`).
+  `internal/server/mcp_tailnet.go::Server.isDirectLocalMCPRequest`).
 - The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
   the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
   Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;
@@ -62,10 +62,13 @@
   forwarding headers, and optional same-origin HTTP Origin are required
   (`internal/mcpserver/server.go::Server.HTTPHandler`,
   `internal/server/mcpapi/mcp_http.go::NewMCPHTTPGuard`).
+- On the main listener, `/mcp` is a hidden Huma operation on the server mux that
+  hands the raw request to the MCP SDK; keep its policy in that route rather than
+  intercepting it in `ServeHTTP` (`internal/server/mcp_tailnet.go::Server.registerMCPRoute`).
 - While MCP is enabled, the main listener also serves `/mcp` to requests with
   the daemon bearer, regardless of `[api].require_auth`, and, with
   `[api.tailscale_serve]` enabled, to allowlisted Serve users without a bearer
-  (`internal/server/mcp_tailnet.go::Server.serveTailnetMCP`). Both pass the
+  (`internal/server/mcp_tailnet.go::Server.serveMCP`). Both pass the
   main listener's host check first. The identity header is ambient, so a
   request whose Origin names another authority is rejected. Serve reaches the
   loopback listener with the public Host, so this path uses the SDK handler

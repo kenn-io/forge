@@ -249,6 +249,20 @@
     event.preventDefault();
     return true;
   }
+  // A click on passive chat content (messages, gaps, the status line) sends
+  // focus to the composer. Controls keep their own clicks, a drag-selection
+  // stays intact for copying, and touch input skips it so a tap does not
+  // raise the on-screen keyboard.
+  const interactiveTarget = "a[href], button, input, select, textarea, summary, label, iframe, [contenteditable]:not([contenteditable='false']), [tabindex], [role='button'], [role='link'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='tab']";
+  function focusComposerFromClick(event: MouseEvent & { currentTarget: HTMLElement }) {
+    if (event.defaultPrevented || event.button !== 0 || !textarea || textarea.disabled) return;
+    if (!(event.target instanceof Element)) return;
+    const control = event.target.closest(interactiveTarget);
+    if (control && event.currentTarget.contains(control)) return;
+    if (window.getSelection()?.isCollapsed === false) return;
+    if (window.matchMedia("(pointer: coarse)").matches) return;
+    textarea.focus({ preventScroll: true });
+  }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
@@ -258,7 +272,8 @@
   }
 </script>
 
-<section class="acp-workspace" aria-label={`${label} chat`}>
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+<section class="acp-workspace" aria-label={`${label} chat`} onclick={focusComposerFromClick}>
   <div class="chat-status">
     <div class="chat-status__inner">
       <span class="chat-status__text" role="status">

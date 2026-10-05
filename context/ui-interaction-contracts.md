@@ -174,6 +174,9 @@ Interactive surfaces must agree on which item is selected.
 - The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
   Busy input steers when the agent supports it, otherwise queues
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- A fine-pointer click on passive ACP pane content focuses the composer. Clicks on
+  controls, clicks that end a text selection, and touch taps keep normal behavior
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::focusComposerFromClick`).
 - ACP thoughts and interleaved tool calls share a collapsed activity group with separate
   counts; reasoning stays opt-in even while streaming so intermediate work does not crowd
   the conversation (`frontend/src/lib/components/acp/chat-timeline.ts::chatRows`).

@@ -1235,6 +1235,67 @@ describe("ACPWorkspace composer size", () => {
   });
 });
 
+describe("ACPWorkspace click to focus composer", () => {
+  const transcript = { messages: [{ role: "assistant", text: "The change is ready." }] };
+  const composer = () => screen.getByRole("textbox", { name: "Message agent" });
+
+  it("focuses the composer when passive chat content is clicked", async () => {
+    await openChat(transcript);
+
+    await fireEvent.click(screen.getByText("The change is ready."));
+    expect(document.activeElement).toBe(composer());
+
+    composer().blur();
+    await fireEvent.click(screen.getByRole("log", { name: "Conversation" }));
+    expect(document.activeElement).toBe(composer());
+  });
+
+  it("leaves focus with the control that was clicked", async () => {
+    await openChat({
+      elicitations: [
+        {
+          id: "elicit-1",
+          message: "Name it",
+          schema: { properties: { name: { type: "string", title: "Project name" } } },
+        },
+      ],
+    });
+    const field = screen.getByLabelText(/Project name/);
+    field.focus();
+
+    await fireEvent.click(field);
+    expect(document.activeElement).toBe(field);
+  });
+
+  it("keeps a text selection in the transcript intact", async () => {
+    await openChat(transcript);
+    const text = screen.getByText("The change is ready.");
+    window.getSelection()!.selectAllChildren(text);
+
+    await fireEvent.click(text);
+    expect(document.activeElement).not.toBe(composer());
+    expect(window.getSelection()!.toString()).toBe("The change is ready.");
+  });
+
+  it("does not raise the touch keyboard for taps", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({ matches: query === "(pointer: coarse)" })),
+    );
+    await openChat(transcript);
+
+    await fireEvent.click(screen.getByText("The change is ready."));
+    expect(document.activeElement).not.toBe(composer());
+  });
+
+  it("does nothing while the chat is disconnected", async () => {
+    await openChat({ ...transcript, connected: false });
+
+    await fireEvent.click(screen.getByText("The change is ready."));
+    expect(document.activeElement).not.toBe(composer());
+  });
+});
+
 describe("ACPWorkspace pasted images", () => {
   it("stages a removable image and sends an image-only prompt", async () => {
     await openChat(baseState);

@@ -427,6 +427,9 @@ jobs:
       - name: Run localruntime PTY owner smoke test
         run: go test ./internal/workspace/localruntime -run TestManagerLaunchUsesPtyOwnerWhenConfigured -shuffle=on
 
+      - name: Run agent context replacement test
+        run: go test ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
+
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 

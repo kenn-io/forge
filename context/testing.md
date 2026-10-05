@@ -505,6 +505,10 @@ Windows test binaries that launch restart-durable PTY processes must contain
 their descendants in a kill-on-close Job Object; test timeouts bypass normal
 Go cleanup (`internal/testutil/processjob/processjob_windows.go::ContainCurrentProcessTree`).
 
+Windows CI runs only the packages and tests named in its job; a new
+`*_windows_test.go` never runs in CI until a step there selects it
+(`.github/workflows/ci.yml::pty-windows`).
+
 Keep splitting new high-volume tests into the existing black-box packages when
 they do not need unexported internals:
 

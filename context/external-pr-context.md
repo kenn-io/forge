@@ -81,7 +81,9 @@ optional `max_length` 1 to 16384 characters
 (`internal/externalcontext/runner.go::decodeResult`). Submitted input allows
 16384 characters (`internal/server/external_context.go::externalContextActionRequest`).
 The card applies `max_length` to its text box only; the adapter still enforces
-its own limit.
+its own limit. Browsers count `max_length` in UTF-16 code units and may cut a
+paste to fit, showing the cut text before submit, so adapters should accept at
+least that many characters.
 
 Poll only mounted, visible cards; requested intervals are at least five
 seconds. Manual Refresh bypasses completed cached results and shares an

@@ -225,7 +225,7 @@ describe("external PR context", () => {
     const deferred = Promise.withResolvers<Response>();
     const noteCard = {
       ...card,
-      actions: [{ id: "constructor", label: "Add note", input: { placeholder: "Leave a note", max_length: 2000 } }],
+      actions: [{ id: "note", label: "Add note", input: { placeholder: "Leave a note", max_length: 2000 } }],
     };
     vi.stubGlobal(
       "fetch",

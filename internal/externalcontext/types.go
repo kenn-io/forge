@@ -66,7 +66,7 @@ type ExternalContextAction struct {
 // ExternalContextActionInput asks the user for text before submitting the action.
 type ExternalContextActionInput struct {
 	Placeholder string `json:"placeholder,omitempty"`
-	MaxLength   *int   `json:"max_length,omitzero" minimum:"1" maximum:"16384" nullable:"false"`
+	MaxLength   int    `json:"max_length,omitzero" minimum:"1" maximum:"16384"`
 }
 
 var (

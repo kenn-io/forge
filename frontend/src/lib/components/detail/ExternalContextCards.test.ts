@@ -56,7 +56,9 @@ describe("external PR context", () => {
         if (url.includes("/external-context/checks")) return Response.json({ card });
         if (url.includes("/external-context/other")) return Response.json({ card: null });
         if (url.includes("/external-context/plain"))
-          return Response.json({ card: { status: "neutral", summary: "No changes" } });
+          return Response.json({
+            card: { status: "neutral", summary: "No changes", actions: [{ id: "n", label: "Note", input: {} }] },
+          });
         throw new Error(`Unexpected request: ${url}`);
       }),
     );
@@ -75,6 +77,7 @@ describe("external PR context", () => {
     expect(await screen.findByText("No changes")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "No changes" })).toBeNull();
     expect(screen.queryByText("neutral")).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Note text" })).toBeTruthy();
     await waitFor(() => expect(screen.queryByText("Other context")).toBeNull());
   });
 

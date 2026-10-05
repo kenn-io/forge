@@ -72,7 +72,8 @@ Pending reads without a card must stay out of the PR layout; a source returning
 null must never flash a loading card. Keep existing cards visible during refresh
 (`frontend/src/lib/components/detail/ExternalContextCard.svelte`). Neutral
 cards show no status chip; with Markdown, the summary toggles details and
-actions that declare `input` render inside them.
+actions that declare `input` render inside them. A card mounted with an unsent
+draft opens and stays open after the draft clears.
 
 `summary` and `markdown` are display text; nothing parses them for list ranking or filtering.
 

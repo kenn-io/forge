@@ -30,10 +30,8 @@
   const rowActions = $derived((context.card?.actions ?? []).filter((a) => !bodyActions.includes(a)));
   // The card remounts on head changes and navigation, so reopen it when a kept draft would otherwise hide.
   const hasDraft = $derived(bodyActions.some((a) => workflow.draft(pull, source.id, a.id).trim() !== ""));
-  let toggled = $state<boolean | null>(null);
-  const open = $derived(toggled ?? hasDraft);
-  // Latch it so the body stays open once a submission clears that draft.
-  $effect.pre(() => { if (hasDraft) untrack(() => { toggled ??= true; }); });
+  let open = $state(false);
+  $effect.pre(() => { if (hasDraft) open = true; });
 
   $effect(() => {
     const currentPull = pull;
@@ -115,7 +113,7 @@
               class="context-toggle"
               aria-expanded={open}
               aria-controls={`${id}-details`}
-              onclick={() => (toggled = !open)}
+              onclick={() => (open = !open)}
             >
               <ChevronRightIcon size={13} aria-hidden="true" class={open ? "expanded" : undefined} />
               <span>{context.card.summary}</span>

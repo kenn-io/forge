@@ -40,7 +40,9 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
-  { id = "gofmt", name = "gofmt + goimports + gofumpt (via custom-gcl fmt)", language = "system", entry = "./scripts/run-hook-go.sh make fmt", files = "\\.go$", pass_filenames = false, priority = 3 },
+  # Formats staged files only; CI's `make fmt-check` covers the whole repo.
+  # Serial so concurrent batches don't rebuild ./custom-gcl at the same time.
+  { id = "gofmt", name = "gofmt + goimports + gofumpt (via custom-gcl fmt)", language = "system", entry = "./scripts/run-hook-go.sh sh -c 'make -s custom-gcl && exec ./custom-gcl fmt \"$@\"' --", types = ["go"], require_serial = true, priority = 3 },
   { id = "cargo-fmt", name = "cargo fmt", language = "system", entry = "cargo fmt --all", files = "^(Cargo\\.toml|Cargo\\.lock|rust/.*\\.rs|rust/.*/Cargo\\.toml)$", pass_filenames = false, priority = 3 },
   { id = "frontend-deps", name = "install workspace dependencies", language = "system", entry = "make frontend-deps", stages = ["pre-commit", "pre-push"], always_run = true, pass_filenames = false, priority = 4 },
   { id = "lint-config-check", name = "kennlint config drift", language = "system", entry = "./scripts/run-hook-go.sh make lint-config-check", files = "^(\\.golangci(\\.overlay)?\\.yml|\\.custom-gcl\\.yml|go\\.mod|go\\.sum)$", pass_filenames = false, priority = 8 },

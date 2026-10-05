@@ -50,7 +50,8 @@ fixtures, or changing shell-script coverage.
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Commit hooks run only formatters, generators, and checks scoped to the change
   or a few seconds long; whole-repo lint, type checks, contract checks, and
-  script tests run at pre-push (`prek.toml`).
+  script tests run at pre-push (`prek.toml`). The Go formatter hook formats
+  only staged files; CI's `make fmt-check` covers the whole repo.
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.
 - `-short` must skip tests that build and launch real kenn-forge daemons or run

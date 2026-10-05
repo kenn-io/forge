@@ -62,6 +62,17 @@ func Run(args []string) int {
 		fmt.Fprintln(os.Stderr, "kenn-forge gh: gh keeps calling back into kenn-forge gh; set FORGE_GH_REAL to the real gh executable")
 		return 1
 	}
+	// A typo must not leave the log on, because it records flag values such
+	// as secrets passed to gh.
+	logUsage := true
+	switch os.Getenv(usageLogEnv) {
+	case "":
+	case "off":
+		logUsage = false
+	default:
+		fmt.Fprintf(os.Stderr, "kenn-forge gh: %s must be \"off\" or unset\n", usageLogEnv)
+		return 1
+	}
 	skip := filepath.SplitList(os.Getenv(skipEnv))
 	// A gh wrapper script that runs `kenn-forge gh` sends the call it was
 	// handed straight back here. Skip that wrapper from now on, including in
@@ -87,7 +98,9 @@ func Run(args []string) int {
 				output, handled, why := queryDaemon(q)
 				reason = why
 				if handled {
-					recordUsage(args, reason)
+					if logUsage {
+						recordUsage(args, reason)
+					}
 					if _, err := os.Stdout.WriteString(output); err != nil {
 						return 1
 					}
@@ -97,7 +110,9 @@ func Run(args []string) int {
 				reason = "repository_unresolved"
 			}
 		}
-		recordUsage(args, reason)
+		if logUsage {
+			recordUsage(args, reason)
+		}
 	}
 	handoff.Path, handoff.Argv = realPath, args
 	encoded, err := json.Marshal(handoff)
@@ -125,6 +140,9 @@ const (
 	depthEnv   = "KENN_FORGE_GH_DEPTH"
 	maxDepth   = 16
 )
+
+// usageLogEnv set to "off" stops the shim from writing gh-shim-usage.jsonl.
+const usageLogEnv = "FORGE_GH_USAGE_LOG"
 
 func realGH(skip []string) (string, error) {
 	self, err := os.Executable()

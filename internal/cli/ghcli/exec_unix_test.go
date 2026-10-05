@@ -62,3 +62,23 @@ func TestRealGHSkipsShimSymlinkAndNonExecutable(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(realPath, got)
 }
+
+func TestUsageLogOffWritesNothing(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	if os.Getenv("FORGE_GH_TEST_CHILD") == "1" {
+		os.Exit(Run([]string{"secret", "set", "NAME", "--body", "value"}))
+	}
+	dir := t.TempDir()
+	realPath := filepath.Join(dir, "gh")
+	require.NoError(os.WriteFile(realPath, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\"\n"), 0o700))
+	home := filepath.Join(dir, "home")
+	binary, err := os.Executable()
+	require.NoError(err)
+	cmd := procutil.CommandContext(t.Context(), binary, "-test.run=^TestUsageLogOffWritesNothing$")
+	cmd.Env = append(os.Environ(), "FORGE_GH_TEST_CHILD=1", "FORGE_GH_REAL="+realPath, "KENN_FORGE_HOME="+home, "FORGE_GH_USAGE_LOG=off")
+	output, err := cmd.Output()
+	require.NoError(err)
+	assert.Equal("secret\nset\nNAME\n--body\nvalue\n", string(output))
+	assert.NoDirExists(home)
+}

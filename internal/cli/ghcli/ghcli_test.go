@@ -104,6 +104,14 @@ func TestDefaultHostMatchesGHSoleConfiguredHost(t *testing.T) {
 	assert.Equal("override.example", defaultGHHost())
 }
 
+func TestUsageLogRejectsUnknownValue(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	t.Setenv("KENN_FORGE_HOME", home)
+	t.Setenv("FORGE_GH_USAGE_LOG", "0")
+	assert.Equal(t, 1, Run([]string{"secret", "set", "NAME", "--body", "value"}))
+	assert.NoDirExists(t, home)
+}
+
 func TestMain(m *testing.M) {
 	os.Exit(gitsafe.RunIsolatedMain(m))
 }

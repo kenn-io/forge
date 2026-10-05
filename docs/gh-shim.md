@@ -182,5 +182,18 @@ jq -s 'group_by([.argv,.reason]) | map({argv: .[0].argv, reason: .[0].reason, co
 The log stays on your machine. It is never sent to the daemon or GitHub.
 Delete it whenever you want.
 
+The log also records calls that go to `gh`, so values such as
+`gh secret set NAME --body <value>` or `gh api -H 'Authorization: ...'` end up
+in it as plain text. To stop the shim from writing the log, set
+`FORGE_GH_USAGE_LOG` to `off` in the tool's environment:
+
+```sh
+PATH="$HOME/.kenn/forge/gh-shim:$PATH" FORGE_GH_USAGE_LOG=off claude
+```
+
+With the log off, the shim does not create the file or its directory. Any
+value other than `off` stops the call with an error, so a typo cannot leave
+the log on. Unset the variable to turn the log back on.
+
 The shim reads the default Forge config to find the daemon. Set
 `FORGE_GH_CONFIG` to use a different config file.

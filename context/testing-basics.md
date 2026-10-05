@@ -20,7 +20,7 @@ fixtures, or changing shell-script coverage.
   (`internal/server/workspacetest/fixtures_test.go::setupWorkspaceServerFixtureWithTmuxInjection`).
 - Direct Make test lanes bound package concurrency (`GO_TEST_P=` restores
   native concurrency). Go hooks run uncapped and the read-only Go consumers run
-  concurrently after `golangci-lint --fix`; `KENN_FORGE_HOOK_GO_CONCURRENCY`
+  concurrently; `KENN_FORGE_HOOK_GO_CONCURRENCY`
   opts into a cap (`scripts/run-hook-go.sh`, `prek.toml`).
 - `internal/server` black-box tests live in sibling test-only packages
   (`accesstest`, `pulltest`, ...), so they build and lint in parallel instead of
@@ -42,14 +42,15 @@ fixtures, or changing shell-script coverage.
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).
 - `make api-generate` skips a client generator only when its inputs and its
   generated output both match the last successful run; list every generator
-  input and output path (`scripts/cached-generate.sh`). The hook runs in
-  parallel with golangci-lint by maintainer decision; a rare one-off collision
-  is accepted for the time saved (`prek.toml`).
+  input and output path (`scripts/cached-generate.sh`).
 - Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
   export data; tests keep real paths for `runtime.Caller` fixtures
   (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as
   `go vet -vettool` so results are cached per package (`Makefile::nilaway`).
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
+- Commit hooks run only formatters, generators, and checks scoped to the change
+  or a few seconds long; whole-repo lint, type checks, contract checks, and
+  script tests run at pre-push (`prek.toml`).
 - Repository-wide Go tests do not run from Git hooks. Any future fast hook
   lane must select a small set of packages rather than require per-test opt-outs.
 - `-short` must skip tests that build and launch real kenn-forge daemons or run
@@ -63,7 +64,7 @@ fixtures, or changing shell-script coverage.
   can reject path bytes that Git preserves (`landedwork/range_test.go::TestRebaseFileChanges`).
 - Publish fixture output atomically when file existence signals readiness; creation precedes
   completed writes (`internal/server/workspaceapi/agent_resume_test.go::TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss`).
-- Pre-commit runs frontend core checks without full-project Effect diagnostics;
+- Pre-push runs frontend core checks without full-project Effect diagnostics;
   explicit frontend checks and CI retain Effect coverage (`Makefile::frontend-check-no-deps`).
 - `svelte-check` runs with `--tsgo`, which only sees Svelte types that ship
   declarations; source-consumed Svelte dependencies must publish `.d.ts` files
@@ -99,7 +100,7 @@ fixtures, or changing shell-script coverage.
 - Go tests run Git only through `internal/testutil/gitfixture` or the
   `gitsafe` runners, and every such test package calls
   `gitsafe.RunIsolatedMain` from `TestMain`. `make git-test-fixture-check`
-  enforces this in pre-commit and CI, including build-tagged and platform-specific
+  enforces this in pre-push and CI, including build-tagged and platform-specific
   files (`tools/norawgittest/main.go`).
 - JavaScript tests that create or mutate Git repositories must use the shared
   isolated fixture; raw child processes can inherit hook bindings and mutate the

@@ -190,9 +190,9 @@ frontend-check: frontend-deps
 frontend-check-no-deps: frontend-check-core-no-deps
 	$(MAKE) frontend-effect-diagnostics
 
-# The pre-commit hook uses this core target because frontend-deps already
+# The pre-push hook uses this core target because frontend-deps already
 # installed dependencies and full-project Effect diagnostics are retained in
-# CI instead of blocking every local commit. svelte-check stays here because
+# CI instead of blocking every local push. svelte-check stays here because
 # tsgo keeps it at ~5s.
 frontend-check-core-no-deps: check-vite-plus-bin
 	node scripts/check-dev-auth-proxy.mjs

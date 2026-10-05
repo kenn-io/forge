@@ -8,6 +8,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/server/mcpapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
 )
 
@@ -18,24 +19,46 @@ func (s *Server) SetTailnetMCPHandler(handler http.Handler) {
 	s.tailnetMCP.Store(&handler)
 }
 
-// SetLocalMCPHandler serves the guarded loopback companion on the main
-// listener for requests without a daemon bearer or Serve identity, used when
-// the companion is configured on the main listener's port.
-func (s *Server) SetLocalMCPHandler(handler http.Handler) {
-	s.localMCP.Store(&handler)
+type localMCPHandler struct {
+	handler http.Handler
+	port    string
 }
 
-// serveTailnetMCP handles /mcp on the main listener for a daemon bearer or an
-// allowed Tailscale Serve user, falling back to the local companion handler
-// when one shares this listener. The identity header is ambient like a
-// cookie, so a request that names another origin is rejected rather than
-// letting a web page drive agent tools.
-func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
+// SetLocalMCPHandler serves the loopback companion on the main listener when
+// it is configured on this listener's port. Direct loopback /mcp requests get
+// the companion guard, with or without a bearer, and skip the main listener's
+// host and reverse-proxy checks as on the dedicated companion listener; other
+// /mcp requests keep the bearer and Serve policy.
+func (s *Server) SetLocalMCPHandler(next http.Handler, opts mcpapi.MCPHTTPGuardOptions) {
+	s.localMCP.Store(&localMCPHandler{
+		handler: mcpapi.NewMCPHTTPGuard(next, opts),
+		port:    opts.Bind.Port,
+	})
+}
+
+func (s *Server) serveLocalMCP(w http.ResponseWriter, r *http.Request) bool {
+	local := s.localMCP.Load()
+	if local == nil || !s.isMCPPath(r) || !mcpapi.IsDirectLoopbackRequest(r, local.port) {
+		return false
+	}
+	local.handler.ServeHTTP(w, mcpRootRequest(r))
+	return true
+}
+
+func (s *Server) isMCPPath(r *http.Request) bool {
 	path := r.URL.Path
 	if s.basePath != "/" {
 		path = strings.TrimPrefix(path, strings.TrimSuffix(s.basePath, "/"))
 	}
-	if path != "/mcp" {
+	return path == "/mcp"
+}
+
+// serveTailnetMCP handles /mcp on the main listener for a daemon bearer or an
+// allowed Tailscale Serve user. The identity header is ambient like a cookie,
+// so a request that names another origin is rejected rather than letting a
+// web page drive agent tools.
+func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
+	if !s.isMCPPath(r) {
 		return false
 	}
 	handler := s.tailnetMCP.Load()
@@ -45,10 +68,6 @@ func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if !authapi.HasValidBearer(r, s.daemonRequests.Token) &&
 		!s.daemonRequests.AcceptsTailscaleServeUser(r) {
-		if local := s.localMCP.Load(); local != nil {
-			(*local).ServeHTTP(w, mcpRootRequest(r))
-			return true
-		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
 		routepolicy.WriteProblemResponse(w, httpapi.NewProblem(
 			http.StatusUnauthorized,

@@ -37,11 +37,12 @@
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
   When that port is the backend port and the main listener already accepts the
-  companion's loopback address, the main listener serves `/mcp` under the
-  companion policy for requests without a bearer or Serve identity, at the base
-  path, instead of binding a colliding socket
+  companion's loopback address, the main listener serves `/mcp` at the base path
+  instead of binding a colliding socket. Direct loopback requests get the
+  companion guard before main-listener host and reverse-proxy checks, with or
+  without a bearer; other requests keep the bearer and Serve policy
   (`internal/config/config.go::Config.MCPSharesMainListener`,
-  `internal/server/mcp_tailnet.go::Server.serveTailnetMCP`).
+  `internal/server/mcp_tailnet.go::Server.serveLocalMCP`).
 - The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
   the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
   Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;
@@ -141,7 +142,9 @@
 - Shutdown contract: stop MCP admission, wait the bounded grace period, cancel
   in-flight handler contexts and force-close connections, and only then close
   the MCP temp store and database; handlers must honor request-context
-  cancellation (`cmd/kenn-forge/main.go::runMainShutdown`).
+  cancellation. MCP handlers on the main listener follow this contract, not the
+  primary drain (`cmd/kenn-forge/main.go::runMainShutdown`,
+  `internal/server/mcpapi/mcp_gate.go::RequestGate`).
 - MCP-created pull-request and issue workspaces suppress optional automatic
   assignment; ordinary UI omission preserves configured self-assignment
   (`internal/server/workspaceapi/routes_handlers.go::Handler.CreatePullWorkspace`,

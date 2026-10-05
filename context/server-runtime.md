@@ -62,6 +62,9 @@ and the root event stream.
 
 ## Startup Contracts
 
+- Until the full server swaps in, the primary listener answers only `/livez` and
+  the daemon discovery ping; every other route, including the web app and `/mcp`,
+  returns the startup 503 (`internal/server/hostapi/startup_handler.go::StartupHandler.serve`).
 - Hub readiness must not wait for repository discovery: restore the verified catalog
   locally, then resolve current configuration and start sync in the background
   (`cmd/kenn-forge/main.go::resolveStartupRepos`). Background discovery holds

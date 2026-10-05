@@ -231,8 +231,10 @@ func TestMainListenerMCPWithoutHandlerReturnsNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, response.StatusCode)
 }
 
-func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
+func newSharedPortMCPTestServer(
+	t *testing.T, trustReverseProxy bool,
+) (*httptest.Server, config.HostKey, string) {
+	t.Helper()
 	ts := httptest.NewUnstartedServer(nil)
 	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
 	require.NoError(t, err)
@@ -241,30 +243,40 @@ func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
 	publicHost := "forge.example.ts.net:" + bind.Port
 	srv := New(dbtest.Open(t), nil, nil, "/forge/", &config.Config{
 		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
+		TrustReverseProxy: trustReverseProxy,
 	}, ServerOptions{DaemonAccess: authapi.DaemonAccessOptions{Token: "local-secret"}})
 	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = mcp.Close() })
 	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
-	srv.SetLocalMCPHandler(mcpapi.NewMCPHTTPGuard(mcp.HTTPHandler(), mcpapi.MCPHTTPGuardOptions{
+	srv.SetLocalMCPHandler(mcp.HTTPHandler(), mcpapi.MCPHTTPGuardOptions{
 		Bind: bind, Token: "local-secret",
-	}))
+	})
 	ts.Config.Handler = srv
 	ts.Start()
 	t.Cleanup(ts.Close)
+	return ts, bind, publicHost
+}
+
+func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	ts, bind, publicHost := newSharedPortMCPTestServer(t, false)
 
 	tests := []struct {
 		name     string
 		host     string
-		header   string
-		value    string
+		headers  map[string]string
 		expected int
 	}{
 		{name: "loopback without bearer", expected: http.StatusOK},
-		{name: "loopback origin", header: "Origin", value: "http://" + bind.String(), expected: http.StatusOK},
-		{name: "public host without bearer", host: publicHost, expected: http.StatusForbidden},
-		{name: "forwarded without bearer", header: "X-Forwarded-For", value: "192.0.2.1", expected: http.StatusForbidden},
-		{name: "public host with bearer", host: publicHost, header: "Authorization", value: "Bearer local-secret", expected: http.StatusOK},
+		{name: "loopback origin", headers: map[string]string{"Origin": "http://" + bind.String()}, expected: http.StatusOK},
+		{name: "loopback bearer with loopback origin", headers: map[string]string{
+			"Authorization": "Bearer local-secret", "Origin": "http://" + bind.String(),
+		}, expected: http.StatusOK},
+		{name: "loopback cross-origin page", headers: map[string]string{"Origin": "http://attacker.example"}, expected: http.StatusForbidden},
+		{name: "public host without bearer", host: publicHost, expected: http.StatusUnauthorized},
+		{name: "forwarded without bearer", headers: map[string]string{"X-Forwarded-For": "192.0.2.1"}, expected: http.StatusUnauthorized},
+		{name: "public host with bearer", host: publicHost, headers: map[string]string{"Authorization": "Bearer local-secret"}, expected: http.StatusOK},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -272,11 +284,22 @@ func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
 				if test.host != "" {
 					request.Host = test.host
 				}
-				if test.header != "" {
-					request.Header.Set(test.header, test.value)
+				for name, value := range test.headers {
+					request.Header.Set(name, value)
 				}
 			})
 			assert.Equal(t, test.expected, response.StatusCode)
 		})
 	}
+}
+
+// Reverse-proxy mode requires forwarding headers on the main listener, which
+// the companion forbids; direct loopback MCP must not need them.
+func TestMainListenerSharedMCPWorksWithTrustedReverseProxy(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	ts, _, _ := newSharedPortMCPTestServer(t, true)
+
+	response := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
+
+	assert.Equal(t, http.StatusOK, response.StatusCode)
 }

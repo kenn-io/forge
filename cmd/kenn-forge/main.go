@@ -508,7 +508,7 @@ func run(opts serve.Options) error {
 	buildInfo := server.BuildInfo{
 		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
 	}
-	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln, buildInfo)
+	startupHandler := server.NewStartupHandler(cfg, startupOptions, ln, buildInfo)
 	switcher := hostapi.NewSwitchHandler(startupHandler)
 	httpSrv := &http.Server{
 		Handler:     switcher,
@@ -523,6 +523,9 @@ func run(opts serve.Options) error {
 	var mcpGuard mcpapi.MCPHTTPGuardOptions
 	mcpRequestsCtx, cancelMCPRequests := context.WithCancel(context.Background())
 	defer cancelMCPRequests()
+	// MCP handlers on the primary listener follow the MCP shutdown contract
+	// rather than the primary listener's drain.
+	mainMCPGate := mcpapi.NewRequestGate(mcpRequestsCtx)
 	agentMCPLn, agentMCPHTTPSrv, agentMCPSwitcher, err := newAgentMCPHTTP(mcpRequestsCtx, authToken)
 	if err != nil {
 		closeListeners()
@@ -609,7 +612,8 @@ func run(opts serve.Options) error {
 					return backgroundLoops.Stop(ctx)
 				},
 				ShutdownMCPHTTP: func(shutdownCtx context.Context) error {
-					// Both listeners must stop before their shared backend closes.
+					// Every MCP surface must stop before the shared backend closes.
+					mainMCPGate.Stop()
 					var shutdownErr error
 					for _, httpServer := range []*http.Server{agentMCPHTTPSrv, mcpHTTPSrv} {
 						if httpServer == nil {
@@ -617,6 +621,7 @@ func run(opts serve.Options) error {
 						}
 						shutdownErr = errors.Join(shutdownErr, httpServer.Shutdown(shutdownCtx), httpServer.Close())
 					}
+					shutdownErr = errors.Join(shutdownErr, mainMCPGate.Wait(shutdownCtx))
 					cancelMCPRequests()
 					return shutdownErr
 				},
@@ -924,12 +929,12 @@ func run(opts serve.Options) error {
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
 	switcher.Swap(srv)
 	if mcpListenAddr != "" {
-		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
 	}
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
 	} else if mcpListenAddr != "" {
-		srv.SetLocalMCPHandler(mcpapi.NewMCPHTTPGuard(mcpSrv.HTTPHandler(), mcpGuard))
+		srv.SetLocalMCPHandler(mainMCPGate.Wrap(mcpSrv.HTTPHandler()), mcpGuard)
 	}
 
 	if syncer != nil && !opts.DisableSync {

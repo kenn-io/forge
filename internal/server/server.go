@@ -180,9 +180,9 @@ type Server struct {
 	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
 	// Serve users; nil until the MCP companion is initialized.
 	tailnetMCP atomic.Pointer[http.Handler]
-	// localMCP serves /mcp under the loopback companion policy when the
-	// companion shares this listener's port; nil otherwise.
-	localMCP               atomic.Pointer[http.Handler]
+	// localMCP serves direct loopback /mcp requests under the companion
+	// policy when the companion shares this listener's port; nil otherwise.
+	localMCP               atomic.Pointer[localMCPHandler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -1218,6 +1218,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Debug("http request completed", args...)
 		}
 	}()
+	if s.serveLocalMCP(w, r) {
+		return
+	}
 	hostOpts := *s.hostOpts.Load()
 	admission := s.daemonRequests.Admit(
 		w, r, hostOpts, s.authapi.IsGatedAPIRequest(r),

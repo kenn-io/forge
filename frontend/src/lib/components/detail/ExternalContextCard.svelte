@@ -97,18 +97,18 @@
                 {#if action.input}
                   <textarea
                     class="action-input"
-                    aria-label={action.label}
+                    aria-label={`${action.label} text`}
                     placeholder={action.input.placeholder}
                     rows="3"
                     disabled={blocked}
-                    bind:value={() => state.drafts[action.id] ?? "", (value) => (state.drafts[action.id] = value)}
+                    bind:value={() => workflow.draft(pull, source.id, action.id), (value) => workflow.setDraft(pull, source.id, action.id, value)}
                   ></textarea>
                 {/if}
                 <Button
                   size="sm"
-                  disabled={blocked || (!!action.input && !state.drafts[action.id]?.trim())}
+                  disabled={blocked || (!!action.input && !workflow.draft(pull, source.id, action.id).trim())}
                   title={action.disabled_reason || undefined}
-                  onclick={() => runAction(action.id, action.input ? state.drafts[action.id] : undefined)}
+                  onclick={() => runAction(action.id, action.input ? workflow.draft(pull, source.id, action.id) : undefined)}
                 >
                   {state.pendingAction === action.id ? "Submitting…" : action.label}
                 </Button>

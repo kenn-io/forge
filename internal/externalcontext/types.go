@@ -60,7 +60,7 @@ type ExternalContextAction struct {
 	ID             string                      `json:"id"`
 	Label          string                      `json:"label"`
 	DisabledReason string                      `json:"disabled_reason,omitempty"`
-	Input          *ExternalContextActionInput `json:"input,omitempty"`
+	Input          *ExternalContextActionInput `json:"input,omitzero"`
 }
 
 // ExternalContextActionInput asks the user for text before submitting the action.

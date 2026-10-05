@@ -222,7 +222,10 @@ describe("external PR context", () => {
 
   it("collects text for an action that asks for input and keeps it until the action succeeds", async () => {
     const bodies: unknown[] = [];
-    const noteCard = { ...card, actions: [{ id: "note", label: "Add note", input: { placeholder: "Leave a note" } }] };
+    const noteCard = {
+      ...card,
+      actions: [{ id: "constructor", label: "Add note", input: { placeholder: "Leave a note" } }],
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (request: Request) => {
@@ -238,25 +241,29 @@ describe("external PR context", () => {
         return Response.json({ card: noteCard });
       }),
     );
-    render(ExternalContextCards, { props });
-    const textbox = (await screen.findByRole("textbox", { name: "Add note" })) as HTMLTextAreaElement;
-    const button = screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
-    expect(textbox.placeholder).toBe("Leave a note");
-    expect(button.disabled).toBe(true);
-    await fireEvent.input(textbox, { target: { value: "  " } });
-    expect(button.disabled).toBe(true);
-    await fireEvent.input(textbox, { target: { value: "Ship after review" } });
-    await fireEvent.click(button);
+    const view = render(ExternalContextCards, { props });
+    const textbox = () => screen.getByRole("textbox", { name: "Add note text" }) as HTMLTextAreaElement;
+    const button = () => screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
+    await screen.findByRole("textbox", { name: "Add note text" });
+    expect(textbox().placeholder).toBe("Leave a note");
+    expect(button().disabled).toBe(true);
+    await fireEvent.input(textbox(), { target: { value: "  " } });
+    expect(button().disabled).toBe(true);
+    await fireEvent.input(textbox(), { target: { value: "Ship after review" } });
+    const newHead = { ...props, headSha: "c".repeat(40) };
+    await view.rerender(newHead);
+    await waitFor(() => expect(textbox().value).toBe("Ship after review"));
+    await fireEvent.click(button());
     expect((await screen.findByRole("alert")).textContent).toBe("Adapter rejected it.");
-    expect(textbox.value).toBe("Ship after review");
+    expect(textbox().value).toBe("Ship after review");
     await fireEvent.click(screen.getByRole("button", { name: "Refresh Quality checks" }));
-    await waitFor(() => expect(button.disabled).toBe(false));
-    await fireEvent.click(button);
+    await waitFor(() => expect(button().disabled).toBe(false));
+    await fireEvent.click(button());
     expect(await screen.findByText("Note saved")).toBeTruthy();
-    expect((screen.getByRole("textbox", { name: "Add note" }) as HTMLTextAreaElement).value).toBe("");
+    expect(textbox().value).toBe("");
     expect(bodies).toEqual([
-      { platform_repo_id: 123, head_sha: "a".repeat(40), input: "Ship after review" },
-      { platform_repo_id: 123, head_sha: "a".repeat(40), input: "Ship after review" },
+      { platform_repo_id: 123, head_sha: "c".repeat(40), input: "Ship after review" },
+      { platform_repo_id: 123, head_sha: "c".repeat(40), input: "Ship after review" },
     ]);
   });
 

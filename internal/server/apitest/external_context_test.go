@@ -58,7 +58,7 @@ func TestExternalContextAdapterProcess(t *testing.T) { //nolint:paralleltest // 
 	if err := json.MarshalWrite(os.Stdout, map[string]any{"card": map[string]any{
 		"status": "success", "summary": request.Operation,
 		"markdown": string(data), "result_head_sha": request.PullRequest["head_sha"],
-		"actions": []map[string]string{{"id": "request-run", "label": "Run check"}},
+		"actions": []map[string]any{{"id": "request-run", "label": "Run check"}, {"id": "comment", "label": "Comment", "input": map[string]any{}}},
 	}}); err != nil {
 		os.Exit(2)
 	}
@@ -106,6 +106,7 @@ command = [%q, "-test.run=^TestExternalContextAdapterProcess$", "--", "--context
 	require.NotNil(read.JSON200)
 	require.NotNil(read.JSON200.Card)
 	require.NotNil(read.JSON200.Card.Markdown)
+	assert.Contains(string(read.Body), `"id":"comment","label":"Comment","input":{}`, "an empty input object still marks the action")
 	assert.JSONEq(fmt.Sprintf(`{"version":1,"operation":"read","action_id":"","pull_request":{"provider":"github","platform_host":"github.com","platform_repo_id":%d,"repo_path":"acme/widget","number":1,"url":"https://github.com/acme/widget/pull/1","state":"open","head_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","base_sha":""}}`, widgetID), *read.JSON200.Card.Markdown)
 	for _, body := range []generated.ExternalContextActionRequest{
 		{PlatformRepoID: &widgetID, HeadSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},

@@ -160,6 +160,19 @@ func TestReadProtocolCacheAndAction(t *testing.T) {
 	assert.JSONEq(`{"version":1,"operation":"action","pull_request":`+pullJSON+`,"action_id":"note","input":"Ship it\nafter review"}`, actions["note"])
 }
 
+func TestReadActionInput(t *testing.T) {
+	source, _ := fixtureSource(t, "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}},{"id":"comment","label":"Comment","input":{}}]}}`)
+	runner := New([]config.ExternalContextSource{source})
+	t.Cleanup(runner.Close)
+	result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
+	require.NoError(t, err)
+	require.NotNil(t, result.Card)
+	assert.Equal(t, []ExternalContextAction{
+		{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{Placeholder: "Leave a note"}},
+		{ID: "comment", Label: "Comment", Input: &ExternalContextActionInput{}},
+	}, result.Card.Actions)
+}
+
 func TestReadValidationAndFailureCache(t *testing.T) {
 	for _, tt := range []struct {
 		name, mode, output string
@@ -172,7 +185,6 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 		{"status", "raw", `{"card":{"status":"other","summary":"hello"}}`, ErrInvalidResponse},
 		{"summary", "raw", `{"card":{"status":"success","summary":" "}}`, ErrInvalidResponse},
 		{"summary limit", "raw", `{"card":{"status":"success","summary":"` + strings.Repeat("x", 4097) + `"}}`, ErrInvalidResponse},
-		{"action input", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}}]}}`, nil},
 		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse},
 		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse},
 		{"stdout limit", "stdout", "", ErrOutputLimit},
@@ -192,12 +204,7 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 			for range 2 {
 				result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
 				require.ErrorIs(t, err, tt.want)
-				if tt.name == "action input" {
-					require.NotNil(t, result.Card)
-					assert.Equal("Leave a note", result.Card.Actions[0].Input.Placeholder)
-				} else {
-					assert.Nil(result.Card)
-				}
+				assert.Nil(result.Card)
 				if err != nil {
 					assert.NotContains(err.Error(), "private")
 				}

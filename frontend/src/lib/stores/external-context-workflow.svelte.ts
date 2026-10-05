@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect";
+import { SvelteMap } from "svelte/reactivity";
 import { ApiProblemError, type TransientTransportError } from "../api/effect-errors.js";
 import { GeneratedApi } from "../api/generated-api.js";
 import type { ExternalContextCard } from "../api/generated/models/externalContextCard.js";
@@ -21,9 +22,9 @@ export interface ExternalContextPull {
   readonly headSha: string;
 }
 
-export function externalContextKey(pull: ExternalContextPull): string {
+function pullIdentity(pull: ExternalContextPull): unknown[] {
   const { ref } = pull;
-  return JSON.stringify([
+  return [
     canonicalProvider(ref.provider),
     resolvedPlatformHost(ref.provider, ref.platformHost),
     repositoryKeyString(pull.repositoryKey),
@@ -31,8 +32,11 @@ export function externalContextKey(pull: ExternalContextPull): string {
     ref.owner,
     ref.name,
     pull.number,
-    pull.headSha,
-  ]);
+  ];
+}
+
+export function externalContextKey(pull: ExternalContextPull): string {
+  return JSON.stringify([...pullIdentity(pull), pull.headSha]);
 }
 
 export class ExternalContextState {
@@ -41,7 +45,6 @@ export class ExternalContextState {
   loading = $state(false);
   pendingAction = $state<string | null>(null);
   needsRefresh = $state(false);
-  drafts = $state<Record<string, string>>({});
   generation = 0;
 }
 
@@ -58,6 +61,8 @@ export interface ExternalContextWorkflowService {
   readonly invalidate: Effect.Effect<void>;
   readonly sources: Effect.Effect<ExternalContextSourceInfo[], ExternalContextError>;
   readonly state: (pull: ExternalContextPull, sourceId: string) => ExternalContextState;
+  readonly draft: (pull: ExternalContextPull, sourceId: string, actionId: string) => string;
+  readonly setDraft: (pull: ExternalContextPull, sourceId: string, actionId: string, text: string) => void;
   readonly read: (pull: ExternalContextPull, sourceId: string, refresh?: boolean) => Effect.Effect<void>;
   readonly action: (
     pull: ExternalContextPull,
@@ -75,6 +80,10 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
   Effect.gen(function* () {
     const api = yield* GeneratedApi;
     const entries = new Map<string, ExternalContextState>();
+    // Drafts outlive head changes, so they key on the PR without its head SHA.
+    const drafts = new SvelteMap<string, string>();
+    const draftKey = (pull: ExternalContextPull, sourceId: string, actionId: string) =>
+      JSON.stringify([...pullIdentity(pull), sourceId, actionId]);
     let revision = $state(0);
 
     function state(pull: ExternalContextPull, sourceId: string): ExternalContextState {
@@ -167,7 +176,7 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         .pipe(
           Effect.tap((result) =>
             Effect.sync(() => {
-              delete entry.drafts[actionId];
+              drafts.delete(draftKey(pull, sourceId, actionId));
               if (entry.generation === generation) entry.card = result.card ?? null;
             }),
           ),
@@ -204,6 +213,10 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         )
         .pipe(Effect.map((result) => result.sources ?? [])),
       state,
+      draft: (pull, sourceId, actionId) => drafts.get(draftKey(pull, sourceId, actionId)) ?? "",
+      setDraft: (pull, sourceId, actionId, text) => {
+        drafts.set(draftKey(pull, sourceId, actionId), text);
+      },
       read,
       action,
     };

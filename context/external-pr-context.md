@@ -63,8 +63,9 @@ Optional fields are `markdown`, `result_head_sha`, `actions`, and
 `refresh_after_seconds`. Each action has `id`, `label`, and optional
 `disabled_reason` and `input`. An `input` object, with optional `placeholder`,
 makes the card collect nonblank text before submitting; drafts survive PR
-navigation and clear only after the action succeeds. Action responses use the same envelope. Preserve the
-nullable card in generated schemas and clients
+navigation and head changes and clear only after the action succeeds. Action
+responses use the same envelope. Preserve the nullable card in generated
+schemas and clients
 (`internal/externalcontext/types.go::ExternalContextCard.TransformSchema`).
 
 Pending reads without a card must stay out of the PR layout; a source returning

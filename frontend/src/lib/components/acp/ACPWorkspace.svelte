@@ -249,18 +249,35 @@
     event.preventDefault();
     return true;
   }
-  // A click on passive chat content (messages, gaps, the status line) sends
-  // focus to the composer. Controls keep their own clicks, a drag-selection
-  // stays intact for copying, and touch input skips it so a tap does not
-  // raise the on-screen keyboard.
-  const interactiveTarget = "a[href], button, input, select, textarea, summary, label, iframe, [contenteditable]:not([contenteditable='false']), [tabindex], [role='button'], [role='link'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='tab']";
+  // A click on empty space in the pane (gaps between messages, margins beside
+  // short lines, padding) sends focus to the composer. Clicks on text, media,
+  // or controls keep their normal behavior, a drag-selection stays intact for
+  // copying, and touch input skips it so a tap does not raise the on-screen
+  // keyboard. The click's own pointer type decides, since touchscreen laptops
+  // report a fine primary pointer; the media query is the fallback for
+  // browsers whose clicks carry no pointer type.
+  const interactiveTarget = "a[href], audio[controls], video[controls], button, input, select, textarea, summary, label, iframe, [contenteditable]:not([contenteditable='false']), [tabindex], [role='button'], [role='link'], [role='menuitem'], [role='option'], [role='radio'], [role='checkbox'], [role='tab']";
+  const mediaTarget = "img, svg, canvas, audio, video";
+  // The click target is the deepest element under the pointer, so text in a
+  // nested element would have made that element the target: only the target's
+  // own text nodes can sit under the pointer.
+  function overText(target: Element, x: number, y: number) {
+    const range = document.createRange();
+    return [...target.childNodes].some((node) => {
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) return false;
+      range.selectNodeContents(node);
+      return [...range.getClientRects()].some((rect) => x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom);
+    });
+  }
   function focusComposerFromClick(event: MouseEvent & { currentTarget: HTMLElement }) {
     if (event.defaultPrevented || event.button !== 0 || !textarea || textarea.disabled) return;
     if (!(event.target instanceof Element)) return;
     const control = event.target.closest(interactiveTarget);
     if (control && event.currentTarget.contains(control)) return;
+    if (event.target.closest(mediaTarget) || overText(event.target, event.clientX, event.clientY)) return;
     if (window.getSelection()?.isCollapsed === false) return;
-    if (window.matchMedia("(pointer: coarse)").matches) return;
+    const touch = event instanceof PointerEvent && event.pointerType ? event.pointerType === "touch" : window.matchMedia("(pointer: coarse)").matches;
+    if (touch) return;
     textarea.focus({ preventScroll: true });
   }
   function keydown(event: KeyboardEvent) {

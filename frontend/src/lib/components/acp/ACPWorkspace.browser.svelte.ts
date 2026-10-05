@@ -120,6 +120,81 @@ describe("ACPWorkspace message gutter (browser)", () => {
   });
 });
 
+describe("ACPWorkspace click to focus composer (browser)", () => {
+  // The primary-pointer media query describes the device, not the click:
+  // touchscreen laptops report a fine pointer, tablets with a mouse a coarse one.
+  function primaryPointer(coarse: boolean) {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({ matches: query === "(pointer: coarse)" && coarse })),
+    );
+  }
+
+  // Points on the reply's one short line and in the empty space to its right,
+  // relative to the block that holds the line.
+  async function renderReply() {
+    const { host, cell } = await renderChat(900);
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    let text = walker.nextNode();
+    while (text && !text.textContent?.includes("The change adds a gutter.")) text = walker.nextNode();
+    const block = text!.parentElement!;
+    const range = document.createRange();
+    range.selectNodeContents(text!);
+    const line = range.getBoundingClientRect();
+    const box = block.getBoundingClientRect();
+    const y = line.top - box.top + line.height / 2;
+    const onText = { x: line.left - box.left + 4, y };
+    const empty = { x: box.width - 4, y };
+    expect(box.left + empty.x).toBeGreaterThan(line.right + 20);
+    return { block, onText, empty, composer: host.querySelector("textarea")! };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("focuses on a click in the empty space beside a short line", async () => {
+    primaryPointer(false);
+    const { block, empty, composer } = await renderReply();
+
+    await userEvent.click(block, { position: empty });
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it("leaves focus alone on a click on message text", async () => {
+    primaryPointer(false);
+    const { block, onText, composer } = await renderReply();
+
+    await userEvent.click(block, { position: onText });
+    expect(document.activeElement).not.toBe(composer);
+  });
+
+  it("skips a touch tap on a device whose primary pointer is fine", async () => {
+    primaryPointer(false);
+    const { block, empty, composer } = await renderReply();
+    const box = block.getBoundingClientRect();
+
+    block.dispatchEvent(
+      new PointerEvent("click", {
+        bubbles: true,
+        button: 0,
+        pointerType: "touch",
+        clientX: box.left + empty.x,
+        clientY: box.top + empty.y,
+      }),
+    );
+    expect(document.activeElement).not.toBe(composer);
+  });
+
+  it("focuses on a mouse click on a device whose primary pointer is coarse", async () => {
+    primaryPointer(true);
+    const { block, empty, composer } = await renderReply();
+
+    await userEvent.click(block, { position: empty });
+    expect(document.activeElement).toBe(composer);
+  });
+});
+
 describe("ACPWorkspace notices and errors (browser)", () => {
   it("keeps errors and the notice icon in the reading column", async () => {
     const { host } = await renderChat(1400);

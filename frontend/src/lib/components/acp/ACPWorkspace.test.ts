@@ -915,6 +915,9 @@ describe("ACPWorkspace rich content", () => {
     const audio = document.querySelector("audio")!;
     expect(audio.getAttribute("src")).toBe("data:audio/wav;base64,UklGRg==");
     expect(audio.hasAttribute("controls")).toBe(true);
+
+    await fireEvent.click(audio);
+    expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: "Message agent" }));
   });
 
   it("links resource cards only for web addresses", async () => {
@@ -1235,18 +1238,17 @@ describe("ACPWorkspace composer size", () => {
   });
 });
 
+// jsdom has no text layout, so these click empty containers. Text versus
+// empty space is covered in ACPWorkspace.browser.svelte.ts.
 describe("ACPWorkspace click to focus composer", () => {
   const transcript = { messages: [{ role: "assistant", text: "The change is ready." }] };
   const composer = () => screen.getByRole("textbox", { name: "Message agent" });
+  const emptySpace = () => screen.getByRole("log", { name: "Conversation" });
 
-  it("focuses the composer when passive chat content is clicked", async () => {
+  it("focuses the composer when empty space is clicked", async () => {
     await openChat(transcript);
 
-    await fireEvent.click(screen.getByText("The change is ready."));
-    expect(document.activeElement).toBe(composer());
-
-    composer().blur();
-    await fireEvent.click(screen.getByRole("log", { name: "Conversation" }));
+    await fireEvent.click(emptySpace());
     expect(document.activeElement).toBe(composer());
   });
 
@@ -1269,10 +1271,10 @@ describe("ACPWorkspace click to focus composer", () => {
 
   it("keeps a text selection in the transcript intact", async () => {
     await openChat(transcript);
-    const text = screen.getByText("The change is ready.");
-    window.getSelection()!.selectAllChildren(text);
+    window.getSelection()!.selectAllChildren(screen.getByText("The change is ready."));
 
-    await fireEvent.click(text);
+    // A drag that ends past the text fires its click on the shared container.
+    await fireEvent.click(emptySpace());
     expect(document.activeElement).not.toBe(composer());
     expect(window.getSelection()!.toString()).toBe("The change is ready.");
   });
@@ -1284,14 +1286,14 @@ describe("ACPWorkspace click to focus composer", () => {
     );
     await openChat(transcript);
 
-    await fireEvent.click(screen.getByText("The change is ready."));
+    await fireEvent.click(emptySpace());
     expect(document.activeElement).not.toBe(composer());
   });
 
   it("does nothing while the chat is disconnected", async () => {
     await openChat({ ...transcript, connected: false });
 
-    await fireEvent.click(screen.getByText("The change is ready."));
+    await fireEvent.click(emptySpace());
     expect(document.activeElement).not.toBe(composer());
   });
 });

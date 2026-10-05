@@ -201,10 +201,16 @@ async function mockDiffForAllPRsWithDelayedDiff(page: Page, fixture: DiffResult)
   return releaseDiff;
 }
 
-function issueDetailFixture(platformHost: string, issueNumber = 10, title = "Fix Safari layout issue"): unknown {
+function issueDetailFixture(
+  platformHost: string,
+  issueNumber = 10,
+  title = "Fix Safari layout issue",
+  fetchedAt = "2026-04-27T12:00:00Z",
+): unknown {
   const now = "2026-04-27T12:00:00Z";
   return {
     detail_loaded: true,
+    detail_fetched_at: fetchedAt,
     events: [],
     platform_host: platformHost,
     repo_owner: "acme",
@@ -817,6 +823,7 @@ test.describe("activity split view", () => {
             "ghe.example.com",
             issueNumber,
             issueNumber === 10 ? "Fix Safari layout issue" : "Fix Firefox layout issue",
+            asyncSyncPosts.has(key) ? "2026-04-27T12:01:00Z" : undefined,
           ),
         ),
       });
@@ -838,7 +845,8 @@ test.describe("activity split view", () => {
     await expect(detail.locator(".issue-detail")).toBeVisible();
     await expect(detail.locator(".detail-title")).toHaveText("Fix Firefox layout issue");
 
-    await page.waitForTimeout(500);
+    await expect.poll(() => [...detailGets.values()]).toEqual([2, 2]);
+    await page.waitForTimeout(1_500);
     expect(maxCount(detailGets)).toBeLessThanOrEqual(2);
     expect(maxCount(syncPosts)).toBe(0);
     expect(maxCount(asyncSyncPosts)).toBeLessThanOrEqual(1);

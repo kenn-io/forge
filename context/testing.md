@@ -321,6 +321,9 @@ mutation wait for its response; rendered assertions wait for rendered state, sin
 controls with old content (`frontend/tests/e2e-full/utc-maintainer-flows.spec.ts:90`, `frontend/tests/e2e-full/repo-browser.spec.ts:480`).
 Tests that compress browser polling must patch the timer primitive used by the scheduler and await the response
 that carries the expected state (`frontend/tests/e2e-full/ci-dropdown.spec.ts:40`).
+Mocks that accept `sync/async` must advance `detail_fetched_at` on later detail reads; otherwise detail stores keep
+convergence-polling, by contract even for deselected items, and request-count bounds pass only on fast runners
+(`frontend/tests/e2e-full/activity-drawer.spec.ts::issueDetailFixture`).
 
 Playwright suites with `route.fetch()` proxies must unregister routes with
 `page.unrouteAll({ behavior: "ignoreErrors" })` before page teardown; background refetches can otherwise fail outside the completed test (`frontend/tests/e2e-full/diff-view.spec.ts::mockReviewThreadsOnPreviewMarkdown`).

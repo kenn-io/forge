@@ -5,7 +5,7 @@ glab = "1.117.0"
 golangci-lint = "2.13.2"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
 node = "24.16.0"
-"npm:vite-plus" = "0.1.24"
+"npm:vite-plus" = "1.0.0"
 prek = "latest"
 
 [tasks.dev-stack]

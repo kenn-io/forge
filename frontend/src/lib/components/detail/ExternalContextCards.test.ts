@@ -39,7 +39,7 @@ describe("external PR context", () => {
     vi.useRealTimers();
   });
 
-  it("renders applicable results, their older-commit label and read-only Markdown", async () => {
+  it("renders compact cards, their older-commit label, read-only Markdown and a failed source", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (request: Request) => {
@@ -50,6 +50,7 @@ describe("external PR context", () => {
               { id: "checks", name: "Quality checks" },
               { id: "other", name: "Other context" },
               { id: "plain", name: "Plain context" },
+              { id: "report", name: "Report" },
             ],
           });
         }
@@ -59,6 +60,17 @@ describe("external PR context", () => {
           return Response.json({
             card: { status: "neutral", summary: "No changes", actions: [{ id: "n", label: "Note", input: {} }] },
           });
+        if (url.includes("/external-context/report"))
+          return Response.json(
+            {
+              type: "about:blank",
+              status: 504,
+              title: "Source timed out",
+              detail: "External context timed out.",
+              code: "upstreamError",
+            },
+            { status: 504 },
+          );
         throw new Error(`Unexpected request: ${url}`);
       }),
     );
@@ -78,38 +90,9 @@ describe("external PR context", () => {
     expect(screen.queryByRole("button", { name: "No changes" })).toBeNull();
     expect(screen.queryByText("neutral")).toBeNull();
     expect(screen.getByRole("textbox", { name: "Note text" })).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText("Other context")).toBeNull());
-  });
-
-  it("keeps a failed source separate from a successful card", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (request: Request) => {
-        const url = request.url;
-        if (url.endsWith("/external-context/sources"))
-          return Response.json({
-            sources: [
-              { id: "checks", name: "Quality checks" },
-              { id: "report", name: "Report" },
-            ],
-          });
-        if (url.includes("/external-context/checks")) return Response.json({ card });
-        return Response.json(
-          {
-            type: "about:blank",
-            status: 504,
-            title: "Source timed out",
-            detail: "External context timed out.",
-            code: "upstreamError",
-          },
-          { status: 504 },
-        );
-      }),
-    );
-    render(ExternalContextCards, { props });
-    expect(await screen.findByText("A slower result")).toBeTruthy();
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "External context timed out.");
     expect(screen.getByRole("button", { name: "Refresh Report" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Other context")).toBeNull());
   });
 
   it("pins one action to the displayed commit on a host route and keeps its outcome across navigation", async () => {

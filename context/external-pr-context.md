@@ -77,7 +77,7 @@ null must never flash a loading card. Keep existing cards visible during refresh
 Summaries allow 4096 bytes, Markdown 512 KiB, and up to 32 actions. Action IDs
 must be unique and nonblank (128 bytes maximum); labels allow 256 bytes and
 disabled reasons 4096 bytes, input placeholders 256 bytes, and an input's
-optional `max_length` 1 to 16384 characters
+optional `max_length` up to 16384 characters, where omitted or zero means 16384
 (`internal/externalcontext/runner.go::decodeResult`). Submitted input allows
 16384 characters (`internal/server/external_context.go::externalContextActionRequest`).
 The card applies `max_length` to its text box only; the adapter still enforces

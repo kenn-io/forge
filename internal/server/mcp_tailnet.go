@@ -18,10 +18,18 @@ func (s *Server) SetTailnetMCPHandler(handler http.Handler) {
 	s.tailnetMCP.Store(&handler)
 }
 
+// SetLocalMCPHandler serves the guarded loopback companion on the main
+// listener for requests without a daemon bearer or Serve identity, used when
+// the companion is configured on the main listener's port.
+func (s *Server) SetLocalMCPHandler(handler http.Handler) {
+	s.localMCP.Store(&handler)
+}
+
 // serveTailnetMCP handles /mcp on the main listener for a daemon bearer or an
-// allowed Tailscale Serve user. The identity header is ambient like a cookie,
-// so a request that names another origin is rejected rather than letting a
-// web page drive agent tools.
+// allowed Tailscale Serve user, falling back to the local companion handler
+// when one shares this listener. The identity header is ambient like a
+// cookie, so a request that names another origin is rejected rather than
+// letting a web page drive agent tools.
 func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
 	path := r.URL.Path
 	if s.basePath != "/" {
@@ -37,6 +45,10 @@ func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if !authapi.HasValidBearer(r, s.daemonRequests.Token) &&
 		!s.daemonRequests.AcceptsTailscaleServeUser(r) {
+		if local := s.localMCP.Load(); local != nil {
+			(*local).ServeHTTP(w, mcpRootRequest(r))
+			return true
+		}
 		w.Header().Set("WWW-Authenticate", `Bearer realm="kenn-forge"`)
 		routepolicy.WriteProblemResponse(w, httpapi.NewProblem(
 			http.StatusUnauthorized,
@@ -55,13 +67,18 @@ func (s *Server) serveTailnetMCP(w http.ResponseWriter, r *http.Request) bool {
 		))
 		return true
 	}
+	(*handler).ServeHTTP(w, mcpRootRequest(r))
+	return true
+}
+
+// mcpRootRequest strips the base path so MCP handlers see their own root.
+func mcpRootRequest(r *http.Request) *http.Request {
 	request := r.Clone(r.Context())
 	requestURL := *r.URL
 	requestURL.Path = "/mcp"
 	requestURL.RawPath = ""
 	request.URL = &requestURL
-	(*handler).ServeHTTP(w, request)
-	return true
+	return request
 }
 
 func sameHTTPSOrigin(r *http.Request) bool {

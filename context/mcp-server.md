@@ -36,6 +36,12 @@
 - The companion uses an optional daemon-owned listener enabled by
   `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
   a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
+  When that port is the backend port and the main listener already accepts the
+  companion's loopback address, the main listener serves `/mcp` under the
+  companion policy for requests without a bearer or Serve identity, at the base
+  path, instead of binding a colliding socket
+  (`internal/config/config.go::Config.MCPSharesMainListener`,
+  `internal/server/mcp_tailnet.go::Server.serveTailnetMCP`).
 - The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
   the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
   Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;

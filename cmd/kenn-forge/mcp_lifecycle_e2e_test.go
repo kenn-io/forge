@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -118,4 +119,75 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 			return ln.Close() == nil
 		}, 5*time.Second, 50*time.Millisecond, "listener %s not released", addr)
 	}
+}
+
+// TestDaemonServesMCPOnSharedBackendPortE2E covers configuring the companion
+// on the backend port: the main listener serves the loopback companion
+// policy at /mcp without a bearer, and discovery reports that endpoint.
+func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	bin := buildForge(t)
+
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	require.NoError(os.MkdirAll(dataDir, 0o700))
+	cfgPath := filepath.Join(root, "config.toml")
+	appPort := reserveFreePort(t)
+	writeMinimalConfig(t, cfgPath, dataDir, appPort)
+	existing, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	require.NoError(os.WriteFile(cfgPath, append(existing, fmt.Appendf(nil,
+		"\n[mcp]\nenabled = true\nport = %d\n", appPort,
+	)...), 0o600))
+
+	serve := procutil.Command(bin, "serve", "--config", cfgPath)
+	serve.Stdout = os.Stderr
+	serve.Stderr = os.Stderr
+	serve.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
+	require.NoError(serve.Start())
+	t.Cleanup(func() {
+		_ = serve.Process.Signal(syscall.SIGKILL)
+		_ = serve.Wait()
+	})
+
+	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
+	status, err := runtimelock.Read(dataDir)
+	require.NoError(err)
+	require.NotNil(status.Metadata)
+	appAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
+	assert.Equal(appAddr, status.Metadata.MCPListenAddr)
+
+	client := mcp.NewClient(
+		&mcp.Implementation{Name: "shared-port-test", Version: "test"}, nil,
+	)
+	var session *mcp.ClientSession
+	require.Eventually(func() bool {
+		cs, connectErr := client.Connect(
+			t.Context(),
+			&mcp.StreamableClientTransport{Endpoint: "http://" + appAddr + "/mcp"},
+			nil,
+		)
+		if connectErr != nil {
+			return false
+		}
+		session = cs
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+	t.Cleanup(func() { _ = session.Close() })
+
+	result, err := session.CallTool(
+		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
+	)
+	require.NoError(err)
+	assert.False(result.IsError)
+
+	quickstartOutput, err := procutil.Command(
+		bin, "mcp", "quickstart", "--config", cfgPath, "--json",
+	).Output()
+	require.NoError(err)
+	var connection mcpQuickstartInfo
+	require.NoError(json.Unmarshal(quickstartOutput, &connection))
+	assert.True(connection.Active)
+	assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
 }

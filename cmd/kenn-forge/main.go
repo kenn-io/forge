@@ -90,7 +90,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
-	if !cfg.MCP.Enabled {
+	if !cfg.MCP.Enabled || cfg.MCPSharesMainListener() {
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
@@ -452,6 +452,10 @@ func run(opts serve.Options) error {
 	if mcpLn != nil {
 		mcpListenAddr = mcpLn.Addr().String()
 		mcpURL = "http://" + mcpListenAddr + "/mcp"
+	} else if cfg.MCP.Enabled {
+		// The main listener already accepts the companion's loopback address.
+		mcpListenAddr = cfg.MCPListenAddr()
+		mcpURL = "http://" + mcpListenAddr + cfg.BasePath + "mcp"
 	}
 	closeListeners := func() {
 		_ = ln.Close()
@@ -516,6 +520,7 @@ func run(opts serve.Options) error {
 
 	var mcpHTTPSrv *http.Server
 	var mcpSwitcher *hostapi.SwitchHandler
+	var mcpGuard mcpapi.MCPHTTPGuardOptions
 	mcpRequestsCtx, cancelMCPRequests := context.WithCancel(context.Background())
 	defer cancelMCPRequests()
 	agentMCPLn, agentMCPHTTPSrv, agentMCPSwitcher, err := newAgentMCPHTTP(mcpRequestsCtx, authToken)
@@ -524,17 +529,20 @@ func run(opts serve.Options) error {
 		return fmt.Errorf("listen for agent MCP: %w", err)
 	}
 	defer agentMCPLn.Close()
-	if mcpLn != nil {
+	if mcpListenAddr != "" {
 		bind, parseErr := config.ParseHostKey(mcpListenAddr)
 		if parseErr != nil {
 			closeListeners()
 			return fmt.Errorf("parse MCP listener address %s: %w", mcpListenAddr, parseErr)
 		}
+		mcpGuard = mcpapi.MCPHTTPGuardOptions{
+			Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
+		}
+	}
+	if mcpLn != nil {
 		mcpSwitcher = hostapi.NewSwitchHandler(newMCPStartupHandler())
 		mcpHTTPSrv = &http.Server{
-			Handler: mcpapi.NewMCPHTTPGuard(mcpSwitcher, mcpapi.MCPHTTPGuardOptions{
-				Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
-			}),
+			Handler:           mcpapi.NewMCPHTTPGuard(mcpSwitcher, mcpGuard),
 			ReadHeaderTimeout: 5 * time.Second,
 			// Handlers inherit this context so shutdown can cancel
 			// long-running MCP requests once the grace period expires.
@@ -915,9 +923,13 @@ func run(opts serve.Options) error {
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
 	switcher.Swap(srv)
+	if mcpListenAddr != "" {
+		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+	}
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
-		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+	} else if mcpListenAddr != "" {
+		srv.SetLocalMCPHandler(mcpapi.NewMCPHTTPGuard(mcpSrv.HTTPHandler(), mcpGuard))
 	}
 
 	if syncer != nil && !opts.DisableSync {

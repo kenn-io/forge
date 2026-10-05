@@ -13,6 +13,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/mcpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -228,4 +229,54 @@ func TestMainListenerMCPWithoutHandlerReturnsNotFound(t *testing.T) {
 	})
 
 	assert.Equal(t, http.StatusNotFound, response.StatusCode)
+}
+
+func TestMainListenerMCPAppliesCompanionPolicyWhenSharingPort(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	ts := httptest.NewUnstartedServer(nil)
+	bind, err := config.ParseHostKey(ts.Listener.Addr().String())
+	require.NoError(t, err)
+	port, err := strconv.Atoi(bind.Port)
+	require.NoError(t, err)
+	publicHost := "forge.example.ts.net:" + bind.Port
+	srv := New(dbtest.Open(t), nil, nil, "/forge/", &config.Config{
+		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
+	}, ServerOptions{DaemonAccess: authapi.DaemonAccessOptions{Token: "local-secret"}})
+	mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mcp.Close() })
+	srv.SetTailnetMCPHandler(mcp.TailnetHTTPHandler())
+	srv.SetLocalMCPHandler(mcpapi.NewMCPHTTPGuard(mcp.HTTPHandler(), mcpapi.MCPHTTPGuardOptions{
+		Bind: bind, Token: "local-secret",
+	}))
+	ts.Config.Handler = srv
+	ts.Start()
+	t.Cleanup(ts.Close)
+
+	tests := []struct {
+		name     string
+		host     string
+		header   string
+		value    string
+		expected int
+	}{
+		{name: "loopback without bearer", expected: http.StatusOK},
+		{name: "loopback origin", header: "Origin", value: "http://" + bind.String(), expected: http.StatusOK},
+		{name: "public host without bearer", host: publicHost, expected: http.StatusForbidden},
+		{name: "forwarded without bearer", header: "X-Forwarded-For", value: "192.0.2.1", expected: http.StatusForbidden},
+		{name: "public host with bearer", host: publicHost, header: "Authorization", value: "Bearer local-secret", expected: http.StatusOK},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := tailnetMCPInitialize(t, ts.URL+"/forge", func(request *http.Request) {
+				if test.host != "" {
+					request.Host = test.host
+				}
+				if test.header != "" {
+					request.Header.Set(test.header, test.value)
+				}
+			})
+			assert.Equal(t, test.expected, response.StatusCode)
+		})
+	}
 }

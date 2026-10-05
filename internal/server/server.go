@@ -179,7 +179,10 @@ type Server struct {
 	hostOpts atomic.Pointer[authapi.HostCheckOptions]
 	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
 	// Serve users; nil until the MCP companion is initialized.
-	tailnetMCP             atomic.Pointer[http.Handler]
+	tailnetMCP atomic.Pointer[http.Handler]
+	// localMCP serves /mcp under the loopback companion policy when the
+	// companion shares this listener's port; nil otherwise.
+	localMCP               atomic.Pointer[http.Handler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler

@@ -15,6 +15,10 @@ enabled = true
 # port = 8092 # defaults to the main backend port plus one
 ```
 
+Set `port` to the backend port to serve the companion at `/mcp` on the main
+loopback listener instead of a second port. It keeps the same loopback and
+authentication rules.
+
 Restart the daemon after changing either setting:
 
 ```sh
@@ -204,8 +208,8 @@ Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 ## Troubleshooting
 
 If the endpoint is unavailable, confirm `[mcp].enabled = true`, restart the
-daemon, and inspect daemon status for the resolved listener. An explicit MCP
-port must differ from the backend port and must be free at startup.
+daemon, and inspect daemon status for the resolved listener. A separate MCP
+port must be free at startup.
 
 A `401` response means `[api].require_auth` is enabled and the bearer token is
 missing or incorrect. A `403` response means the request did not arrive as a

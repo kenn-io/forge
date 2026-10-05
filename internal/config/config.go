@@ -1162,6 +1162,17 @@ func (c *Config) MCPListenAddr() string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
+// MCPSharesMainListener reports whether the companion's loopback address is
+// already served by the main listener, so /mcp is served there instead of
+// binding a second socket on the same port.
+func (c *Config) MCPSharesMainListener() bool {
+	if c.MCPPort() != c.Port {
+		return false
+	}
+	ip := net.ParseIP(c.Host)
+	return ip != nil && (ip.IsLoopback() || ip.Equal(net.IPv4zero))
+}
+
 func (c *Config) MCPDiffCacheBytes() int64 {
 	megabytes := defaultMCPDiffCacheMB
 	if c != nil && c.MCP.DiffCacheMB != 0 {
@@ -1671,9 +1682,6 @@ func (c *Config) validate() error {
 		mcpPort := c.MCPPort()
 		if mcpPort < 1 || mcpPort > 65535 {
 			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)
-		}
-		if mcpPort == c.Port {
-			return fmt.Errorf("config: MCP port %d matches backend port", mcpPort)
 		}
 	}
 

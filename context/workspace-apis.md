@@ -741,9 +741,12 @@ synthetic name and its numbered variants and may delete them during cleanup;
 any other pre-existing branch is user-owned and must keep pointing where it did.
 Ad-hoc workspaces instead reserve their final hashed branch identity before
 setup; a later external Git ref collision is an explicit setup error.
-PR worktree creation and reuse fast-forward the fetched local base branch while
-holding repository route identity stable; checked-out, diverged, or ref-namespace-
-blocked base branches stay untouched and emit a warning
+PR worktree creation and reuse sync the fetched local base branch while holding
+repository route identity stable. Managed clones follow rewritten upstream bases
+after preserving the old tip under `refs/kenn-forge/base-backups/<sha>`; those refs
+also retain local-only commits and can be used to create a recovery branch.
+Checked-out branches, diverged bases in configured user checkouts, and
+ref-namespace-blocked bases stay untouched and emit a warning
 (`internal/workspace/manager.go::syncLocalBaseBranch`).
 
 ## Branch Upstream

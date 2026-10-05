@@ -1822,7 +1822,7 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 			}
 		}
 		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
-			ctx, commonDir, prov.remote, ws, launchSpec,
+			ctx, commonDir, prov.remote, ws, launchSpec, !prov.localBase,
 		)
 		if refreshErr != nil {
 			if prov.localBase {
@@ -2157,6 +2157,7 @@ func (m *Manager) refreshExistingWorkspaceWorktree(
 	remote string,
 	ws *Workspace,
 	launchSpec *WorkspaceLaunchSpec,
+	managedClone bool,
 ) (bool, error) {
 	if err := m.fetchWorkspaceBase(
 		ctx, commonDir, ws.Platform, ws.PlatformHost,
@@ -2164,7 +2165,7 @@ func (m *Manager) refreshExistingWorkspaceWorktree(
 	); err != nil {
 		return false, err
 	}
-	if err := m.syncWorkspaceBaseBranch(ctx, commonDir, remote, ws); err != nil {
+	if err := m.syncWorkspaceBaseBranch(ctx, commonDir, remote, ws, managedClone); err != nil {
 		return false, err
 	}
 	if ws.ItemType != db.WorkspaceItemTypePullRequest {
@@ -2985,7 +2986,7 @@ func (m *Manager) addWorktree(
 				return err
 			}
 		}
-		if err := m.syncWorkspaceBaseBranch(ctx, gitDir.path, gitDir.remote, ws); err != nil {
+		if err := m.syncWorkspaceBaseBranch(ctx, gitDir.path, gitDir.remote, ws, !gitDir.localBase); err != nil {
 			return err
 		}
 		if err := m.ensureWorkspacePathAvailable(ctx, ws); err != nil {
@@ -5865,7 +5866,7 @@ func fetchWorkspaceBaseWithGit(
 }
 
 func (m *Manager) syncWorkspaceBaseBranch(
-	ctx context.Context, dir, remote string, ws *Workspace,
+	ctx context.Context, dir, remote string, ws *Workspace, managedClone bool,
 ) error {
 	if ws == nil || ws.ItemType != db.WorkspaceItemTypePullRequest ||
 		ws.Platform == "" || ws.PlatformHost == "" ||
@@ -5893,11 +5894,12 @@ func (m *Manager) syncWorkspaceBaseBranch(
 	if mr == nil || strings.TrimSpace(mr.BaseBranch) == "" {
 		return nil
 	}
-	return syncLocalBaseBranch(ctx, dir, remote, ws.ID, strings.TrimSpace(mr.BaseBranch))
+	return syncLocalBaseBranch(ctx, dir, remote, ws.ID, strings.TrimSpace(mr.BaseBranch), managedClone)
 }
 
 func syncLocalBaseBranch(
 	ctx context.Context, dir, remote, workspaceID, branch string,
+	managedClone bool,
 ) error {
 	localRef := "refs/heads/" + branch
 	remoteRef := remoteTrackingRef(remote, branch)
@@ -5933,12 +5935,23 @@ func syncLocalBaseBranch(
 		if err != nil {
 			return fmt.Errorf("check base branch fast-forward: %w", err)
 		}
-		if !ancestor {
+		if !ancestor && !managedClone {
 			slog.Warn("workspace base branch sync skipped",
 				"workspace_id", workspaceID, "branch", branch,
 				"local_sha", localSHA, "remote_sha", remoteSHA,
 				"reason", "update is not a fast-forward")
 			return nil
+		}
+		if !ancestor {
+			// Bare clones may have no reflog. Keep the old history reachable
+			// before following a force-push, including any local-only commits.
+			backupRef := "refs/kenn-forge/base-backups/" + localSHA
+			if err := runGitWithoutHooks(ctx, dir, "update-ref", backupRef, localSHA); err != nil {
+				return fmt.Errorf("preserve local base branch %q: %w", branch, err)
+			}
+			slog.Info("workspace base branch history preserved",
+				"workspace_id", workspaceID, "branch", branch,
+				"backup_ref", backupRef, "remote_sha", remoteSHA)
 		}
 	}
 	if err := runGitWithoutHooks(

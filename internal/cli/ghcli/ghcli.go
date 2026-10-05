@@ -8,6 +8,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -62,17 +63,6 @@ func Run(args []string) int {
 		fmt.Fprintln(os.Stderr, "kenn-forge gh: gh keeps calling back into kenn-forge gh; set FORGE_GH_REAL to the real gh executable")
 		return 1
 	}
-	// A typo must not leave the log on, because it records flag values such
-	// as secrets passed to gh.
-	logUsage := true
-	switch os.Getenv(usageLogEnv) {
-	case "":
-	case "off":
-		logUsage = false
-	default:
-		fmt.Fprintf(os.Stderr, "kenn-forge gh: %s must be \"off\" or unset\n", usageLogEnv)
-		return 1
-	}
 	skip := filepath.SplitList(os.Getenv(skipEnv))
 	// A gh wrapper script that runs `kenn-forge gh` sends the call it was
 	// handed straight back here. Skip that wrapper from now on, including in
@@ -98,9 +88,7 @@ func Run(args []string) int {
 				output, handled, why := queryDaemon(q)
 				reason = why
 				if handled {
-					if logUsage {
-						recordUsage(args, reason)
-					}
+					logCall(args, reason)
 					if _, err := os.Stdout.WriteString(output); err != nil {
 						return 1
 					}
@@ -110,9 +98,7 @@ func Run(args []string) int {
 				reason = "repository_unresolved"
 			}
 		}
-		if logUsage {
-			recordUsage(args, reason)
-		}
+		logCall(args, reason)
 	}
 	handoff.Path, handoff.Argv = realPath, args
 	encoded, err := json.Marshal(handoff)
@@ -140,9 +126,6 @@ const (
 	depthEnv   = "KENN_FORGE_GH_DEPTH"
 	maxDepth   = 16
 )
-
-// usageLogEnv set to "off" stops the shim from writing gh-shim-usage.jsonl.
-const usageLogEnv = "FORGE_GH_USAGE_LOG"
 
 func realGH(skip []string) (string, error) {
 	self, err := os.Executable()
@@ -268,39 +251,8 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 	return resp.JSON200.Output, resp.JSON200.Handled, resp.JSON200.Reason
 }
 
-// Record the full invocation and outcome so coverage gaps can be reproduced.
-func recordUsage(args []string, reason string) {
-	path := filepath.Join(filepath.Dir(config.DefaultConfigPath()), "gh-shim-usage.jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return
-	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	data, err := json.Marshal(struct {
-		Time    string   `json:"time"`
-		Command string   `json:"command"`
-		Reason  string   `json:"reason"`
-		Argv    []string `json:"argv"`
-	}{time.Now().UTC().Format(time.RFC3339), commandName(args), reason, args})
-	if err == nil {
-		_, _ = file.Write(append(data, '\n'))
-	}
-}
-
-func commandName(args []string) string {
-	if len(args) < 2 {
-		return "other"
-	}
-	switch args[0] {
-	case "pr", "issue", "repo", "run", "workflow", "auth", "api", "release", "search", "label", "project":
-		switch args[1] {
-		case "list", "ls", "view", "checks", "status", "token", "create", "edit", "close", "merge", "diff", "checkout", "comment", "review", "download", "watch", "delete":
-			return args[0] + " " + args[1]
-		}
-		return args[0] + " other"
-	}
-	return "other"
+// Log each call at debug level so normal gh output stays clean. The argv is
+// a string so the log handler can redact known secret shapes in it.
+func logCall(args []string, reason string) {
+	slog.Debug("gh shim call", "reason", reason, "argv", fmt.Sprintf("%q", args))
 }

@@ -42,9 +42,10 @@ Follow https://forge.kenn.io/docs/gh-shim.md exactly.
    so the shim directory comes first on its PATH. Do not add the shim
    directory to my login shell's PATH.
 4. Check the setup: from a checkout of a repository that Forge syncs,
-   run a supported query through the shim with piped output, then show
-   me the last usage-log entry. If the reason is not "served", explain
-   it with the reason table on the docs page.
+   run a supported query through the shim with piped output and
+   KENN_FORGE_LOG_LEVEL=debug, then show me the logged reason. If the
+   reason is not "served", explain it with the reason table on the
+   docs page.
 5. Tell me what you changed and how to undo it.
 ```
 
@@ -90,20 +91,15 @@ export FORGE_GH_REAL=/opt/gh/bin/gh
 
 ## Check that it works
 
-From a checkout of a configured repository, pipe a supported query:
+From a checkout of a configured repository, pipe a supported query with debug
+logging on:
 
 ```sh
-gh pr list --json number,title --limit 5 | cat
+KENN_FORGE_LOG_LEVEL=debug gh pr list --json number,title --limit 5 | cat
 ```
 
-Then check the most recent entry in the usage log:
-
-```sh
-tail -n 1 ~/.kenn/forge/gh-shim-usage.jsonl
-```
-
-`"reason":"served"` means Forge answered the query. Any other reason means the
-call went to `gh`. See [Why a call was not served](#why-a-call-was-not-served).
+The shim logs one `gh shim call` line to stderr. `reason=served` means Forge
+answered the query. Any other reason means the call went to `gh`. See [Why a call was not served](#why-a-call-was-not-served).
 
 ## What Forge answers
 
@@ -159,9 +155,9 @@ call goes to `gh`.
 
 ## Why a call was not served
 
-Each call adds one line to `gh-shim-usage.jsonl` in Forge's home directory
-(`~/.kenn/forge`, or `KENN_FORGE_HOME` when set). Each entry records the
-time, the command, the full argument list including flag values, and a reason:
+With `KENN_FORGE_LOG_LEVEL=debug`, the shim logs each call to stderr with its
+full argument list and a reason. At the default level it logs nothing, so `gh`
+output is unchanged:
 
 | Reason                  | Meaning                                                               |
 | ----------------------- | --------------------------------------------------------------------- |
@@ -173,27 +169,10 @@ time, the command, the full argument list including flag values, and a reason:
 | `provider_unavailable`  | Forge could not load its configured repository list                   |
 | `data_unavailable`      | Sync, the full archive, or a requested field is not complete yet      |
 
-To see which calls happen most and whether Forge answered them:
-
-```sh
-jq -s 'group_by([.argv,.reason]) | map({argv: .[0].argv, reason: .[0].reason, count: length}) | sort_by(-.count)' ~/.kenn/forge/gh-shim-usage.jsonl
-```
-
-The log stays on your machine. It is never sent to the daemon or GitHub.
-Delete it whenever you want.
-
-The log also records calls that go to `gh`, so values such as
-`gh secret set NAME --body <value>` or `gh api -H 'Authorization: ...'` end up
-in it as plain text. To stop the shim from writing the log, set
-`FORGE_GH_USAGE_LOG` to `off` in the tool's environment:
-
-```sh
-PATH="$HOME/.kenn/forge/gh-shim:$PATH" FORGE_GH_USAGE_LOG=off claude
-```
-
-With the log off, the shim does not create the file or its directory. Any
-value other than `off` stops the call with an error, so a typo cannot leave
-the log on. Unset the variable to turn the log back on.
+Set `KENN_FORGE_LOG_FILE` to keep these lines in a file across sessions. The
+log redacts known token formats, but other flag values, such as
+`gh secret set NAME --body <value>`, appear as written. Leave debug logging off
+for tools that pass secrets to `gh` as flags.
 
 The shim reads the default Forge config to find the daemon. Set
 `FORGE_GH_CONFIG` to use a different config file.

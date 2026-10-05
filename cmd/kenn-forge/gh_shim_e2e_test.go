@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -30,35 +31,35 @@ func TestGHShimPassesUnsupportedCallsToRealGH(t *testing.T) {
 		direct  bool
 		args    []string
 		want    string
-		logged  []string
+		logged  [][]string
 	}{
 		{
 			name:    "gh symlink",
 			install: func(t *testing.T, dir string) { require.NoError(t, os.Symlink(bin, filepath.Join(dir, "gh"))) },
 			args:    []string{"pr", "list", "-L5", "--jq", ".[].number"},
 			want:    "pr\nlist\n-L5\n--jq\n.[].number\n",
-			logged:  []string{`"argv":["pr","list","-L5","--jq",".[].number"]`},
+			logged:  [][]string{{"pr", "list", "-L5", "--jq", ".[].number"}},
 		},
 		{
 			name:   "gh subcommand",
 			direct: true,
 			args:   []string{"pr", "list", "-L5", "--jq", ".[].number"},
 			want:   "pr\nlist\n-L5\n--jq\n.[].number\n",
-			logged: []string{`"argv":["pr","list","-L5","--jq",".[].number"]`},
+			logged: [][]string{{"pr", "list", "-L5", "--jq", ".[].number"}},
 		},
 		{
 			name:    "exec wrapper script",
 			install: writeGHWrapper(bin, "exec ", "", 4),
 			args:    []string{"pr", "view", "--web"},
 			want:    "pr\nview\n--web\n",
-			logged:  []string{`"argv":["pr","view","--web"]`},
+			logged:  [][]string{{"pr", "view", "--web"}},
 		},
 		{
 			name:    "child wrapper script with nested gh call",
 			install: writeGHWrapper(bin, "", "", 4),
 			args:    []string{"nested"},
 			want:    "nested\ninner\n",
-			logged:  []string{`"argv":["nested"]`, `"argv":["inner"]`},
+			logged:  [][]string{{"nested"}, {"inner"}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,7 +76,10 @@ func TestGHShimPassesUnsupportedCallsToRealGH(t *testing.T) {
 			cmd := procutil.CommandContext(ctx, path, args...)
 			cmd.Env = append(os.Environ(),
 				"PATH="+strings.Join([]string{shimDir, realDir, os.Getenv("PATH")}, string(os.PathListSeparator)),
-				"FORGE_GH_REAL=", "KENN_FORGE_GH_HANDOFF=", "KENN_FORGE_GH_SKIP=", "KENN_FORGE_GH_DEPTH=", "TEST_GH_HOPS=", "KENN_FORGE_HOME="+home)
+				"FORGE_GH_REAL=", "KENN_FORGE_GH_HANDOFF=", "KENN_FORGE_GH_SKIP=", "KENN_FORGE_GH_DEPTH=", "TEST_GH_HOPS=", "KENN_FORGE_HOME="+home,
+				"KENN_FORGE_LOG_LEVEL=debug", "KENN_FORGE_LOG_FILE=", "KENN_FORGE_LOG_STDERR_LEVEL=")
+			var stderr strings.Builder
+			cmd.Stderr = &stderr
 			output, err := cmd.Output()
 			require.NoError(t, ctx.Err(), "shim looped instead of reaching the real gh")
 			var exit *exec.ExitError
@@ -83,12 +87,16 @@ func TestGHShimPassesUnsupportedCallsToRealGH(t *testing.T) {
 			assert.Equal(7, exit.ExitCode())
 			assert.Equal(tc.want, string(output))
 
-			usage, err := os.ReadFile(filepath.Join(home, "gh-shim-usage.jsonl"))
-			require.NoError(t, err)
-			lines := strings.Split(strings.TrimSpace(string(usage)), "\n")
+			var lines []string
+			for line := range strings.Lines(stderr.String()) {
+				if strings.Contains(line, `msg="gh shim call"`) {
+					lines = append(lines, line)
+				}
+			}
 			require.Len(t, lines, len(tc.logged), "each call is logged once")
 			for i, argv := range tc.logged {
-				assert.Contains(lines[i], argv)
+				assert.Contains(lines[i], "reason=unsupported")
+				assert.Contains(lines[i], "argv="+strconv.Quote(fmt.Sprintf("%q", argv)))
 			}
 		})
 	}

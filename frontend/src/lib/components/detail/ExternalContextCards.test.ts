@@ -14,6 +14,7 @@ const props = {
   number: 42,
   headSha: "a".repeat(40),
 };
+const details = () => screen.getByText("Details:", { exact: false }).closest("details") as HTMLDetailsElement;
 const card = {
   status: "warning",
   summary: "A slower result",
@@ -80,14 +81,15 @@ describe("external PR context", () => {
     expect(screen.getByText("Quality checks")).toBeTruthy();
     expect(screen.getByText("Results are for an older commit")).toBeTruthy();
     expect(screen.getByText("warning")).toBeTruthy();
-    expect(screen.queryByRole("table")).toBeNull();
+    expect(details().open).toBe(false);
     expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Run first")).toBeTruthy();
-    await fireEvent.click(screen.getByRole("button", { name: "A slower result" }));
+    await fireEvent.click(screen.getByText("Details:", { exact: false }));
+    expect(details().open).toBe(true);
     expect(screen.getByRole("table").textContent).toContain("Parse input");
     expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
     expect(await screen.findByText("No changes")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "No changes" })).toBeNull();
+    expect(screen.getAllByText("Details:", { exact: false })).toHaveLength(1);
     expect(screen.queryByText("neutral")).toBeNull();
     expect(screen.getByRole("textbox", { name: "Note text" })).toBeTruthy();
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "External context timed out.");
@@ -241,9 +243,8 @@ describe("external PR context", () => {
     const textbox = () => screen.getByRole("textbox", { name: "Add note text" }) as HTMLTextAreaElement;
     const button = () => screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
     await screen.findByText("A slower result");
-    expect(screen.queryByRole("textbox")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Add note" })).toBeNull();
-    await fireEvent.click(await screen.findByRole("button", { name: "A slower result" }));
+    expect(details().open).toBe(false);
+    await fireEvent.click(screen.getByText("Details:", { exact: false }));
     expect(textbox().placeholder).toBe("Leave a note");
     expect(textbox().maxLength).toBe(2000);
     expect(button().disabled).toBe(true);
@@ -253,6 +254,7 @@ describe("external PR context", () => {
     const newHead = { ...props, headSha: "c".repeat(40) };
     await view.rerender(newHead);
     await waitFor(() => expect(textbox().value).toBe("Ship after review"));
+    expect(details().open).toBe(true);
     await fireEvent.click(button());
     expect((await screen.findByRole("alert")).textContent).toBe("Adapter rejected it.");
     expect(textbox().value).toBe("Ship after review");

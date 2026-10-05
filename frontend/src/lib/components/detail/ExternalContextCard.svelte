@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Button, Card, Chip } from "@kenn-io/kit-ui";
-  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import { Effect } from "effect";
   import { untrack } from "svelte";
   import type { ExternalContextAction } from "../../api/generated/models/externalContextAction.js";
@@ -24,7 +23,6 @@
   } = $props();
   const runtime = getAppRuntime();
   const tones = { neutral: "neutral", pending: "info", success: "success", warning: "warning", error: "danger" } as const;
-  const id = $props.id();
   let refreshRead: AppExecution<void, never> | undefined;
   const bodyActions = $derived(context.card?.markdown ? (context.card.actions ?? []).filter((a) => a.input) : []);
   const rowActions = $derived((context.card?.actions ?? []).filter((a) => !bodyActions.includes(a)));
@@ -106,22 +104,6 @@
       <div class="context-header">
         <strong>{source.name}</strong>
         {#if context.card && context.card.status !== "neutral"}<Chip size="xs" tone={tones[context.card.status]}>{context.card.status}</Chip>{/if}
-        <span class="context-summary">
-          {#if context.card?.markdown}
-            <button
-              type="button"
-              class="context-toggle"
-              aria-expanded={open}
-              aria-controls={`${id}-details`}
-              onclick={() => (open = !open)}
-            >
-              <ChevronRightIcon size={13} aria-hidden="true" class={open ? "expanded" : undefined} />
-              <span>{context.card.summary}</span>
-            </button>
-          {:else if context.card}
-            {context.card.summary}
-          {/if}
-        </span>
         <Button
           size="sm"
           disabled={context.loading || context.pendingAction !== null}
@@ -130,18 +112,22 @@
         >Refresh</Button>
       </div>
       {#if context.card}
+        {#if !context.card.markdown}<p>{context.card.summary}</p>{/if}
         {#if context.card.result_head_sha && context.card.result_head_sha !== pull.headSha}
           <p class="older-result">Results are for an older commit</p>
         {/if}
-        {#if context.card.markdown && open}
-          <div id={`${id}-details`} class="context-details">
-            <div class="markdown-body"><MarkdownHtml raw={context.card.markdown} options={{ interactiveTasks: false }} /></div>
-            {#if bodyActions.length}
-              <div class="context-actions">
-                {#each bodyActions as action (action.id)}{@render actionControl(action)}{/each}
-              </div>
-            {/if}
-          </div>
+        {#if context.card.markdown}
+          <details bind:open>
+            <summary>Details: <span>{context.card.summary}</span></summary>
+            <div class="context-details">
+              <div class="markdown-body"><MarkdownHtml raw={context.card.markdown} options={{ interactiveTasks: false }} /></div>
+              {#if bodyActions.length}
+                <div class="context-actions">
+                  {#each bodyActions as action (action.id)}{@render actionControl(action)}{/each}
+                </div>
+              {/if}
+            </div>
+          </details>
         {/if}
         {#if rowActions.length}
           <div class="context-actions">
@@ -170,7 +156,7 @@
     gap: var(--space-3);
   }
 
-  .context-summary { flex: 1; min-width: 0; color: var(--text-secondary); }
+  .context-header strong { margin-right: auto; }
   .context-action.with-input { flex-basis: 100%; flex-direction: column; align-items: flex-start; }
   .action-input { box-sizing: border-box; width: 100%; resize: vertical; }
   .action-input::placeholder { color: var(--text-muted); }
@@ -179,26 +165,7 @@
   .older-result { color: var(--accent-amber); }
   .context-error { color: var(--accent-red); }
   .disabled-reason { color: var(--text-muted); }
-  .context-toggle {
-    display: inline-flex;
-    align-items: flex-start;
-    gap: var(--space-2);
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-  }
-  .context-toggle:hover { color: var(--text-primary); }
-  .context-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-  .context-toggle :global(svg) { flex: 0 0 auto; margin-top: 0.2em; color: var(--text-muted); transition: transform var(--transition-fast) ease-out; }
-  .context-toggle :global(svg.expanded) { transform: rotate(90deg); }
-  .context-details { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  summary { cursor: pointer; color: var(--text-secondary); }
+  .context-details { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; margin-top: var(--space-3); }
   .markdown-body { overflow: auto; }
-
-  @media (prefers-reduced-motion: reduce) {
-    .context-toggle :global(svg) { transition: none; }
-  }
 </style>

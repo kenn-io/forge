@@ -70,7 +70,9 @@ schemas and clients
 
 Pending reads without a card must stay out of the PR layout; a source returning
 null must never flash a loading card. Keep existing cards visible during refresh
-(`frontend/src/lib/components/detail/ExternalContextCard.svelte`).
+(`frontend/src/lib/components/detail/ExternalContextCard.svelte`). Neutral
+cards show no status chip; with Markdown, the summary toggles details and
+actions that declare `input` render inside them.
 
 `summary` and `markdown` are display text; nothing parses them for list ranking or filtering.
 

@@ -1,7 +1,9 @@
 <script lang="ts">
   import { Button, Card, Chip } from "@kenn-io/kit-ui";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import { Effect } from "effect";
   import { untrack } from "svelte";
+  import type { ExternalContextAction } from "../../api/generated/models/externalContextAction.js";
   import type { ExternalContextSourceInfo } from "../../api/generated/models/externalContextSourceInfo.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -14,7 +16,7 @@
   } from "../../stores/external-context-workflow.svelte.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
 
-  const { source, state, pull, workflow }: {
+  const { source, state: context, pull, workflow }: {
     source: ExternalContextSourceInfo;
     state: ExternalContextState;
     pull: ExternalContextPull;
@@ -22,7 +24,16 @@
   } = $props();
   const runtime = getAppRuntime();
   const tones = { neutral: "neutral", pending: "info", success: "success", warning: "warning", error: "danger" } as const;
+  const id = $props.id();
   let refreshRead: AppExecution<void, never> | undefined;
+  const bodyActions = $derived(context.card?.markdown ? (context.card.actions ?? []).filter((a) => a.input) : []);
+  const rowActions = $derived((context.card?.actions ?? []).filter((a) => !bodyActions.includes(a)));
+  // The card remounts on head changes and navigation, so reopen it when a kept draft would otherwise hide.
+  const hasDraft = $derived(bodyActions.some((a) => workflow.draft(pull, source.id, a.id).trim() !== ""));
+  let toggled = $state<boolean | null>(null);
+  const open = $derived(toggled ?? hasDraft);
+  // Latch it so the body stays open once a submission clears that draft.
+  $effect.pre(() => { if (hasDraft) untrack(() => { toggled ??= true; }); });
 
   $effect(() => {
     const currentPull = pull;
@@ -40,8 +51,8 @@
   });
 
   $effect(() => {
-    const interval = state.card?.refresh_after_seconds;
-    if (!interval || state.needsRefresh) return;
+    const interval = context.card?.refresh_after_seconds;
+    if (!interval || context.needsRefresh) return;
     const currentPull = pull;
     const sourceId = source.id;
     const owner = workflow;
@@ -65,61 +76,82 @@
   }
 </script>
 
-{#if state.card || state.error}
+{#snippet actionControl(action: ExternalContextAction)}
+  {@const blocked = !!action.disabled_reason || context.pendingAction !== null || context.needsRefresh || !pull.headSha}
+  <div class="context-action" class:with-input={action.input}>
+    {#if action.input}
+      <textarea
+        class="action-input"
+        aria-label={`${action.label} text`}
+        placeholder={action.input.placeholder}
+        rows="3"
+        maxlength={action.input.max_length ?? 16384}
+        disabled={blocked}
+        bind:value={() => workflow.draft(pull, source.id, action.id), (value) => workflow.setDraft(pull, source.id, action.id, value)}
+      ></textarea>
+    {/if}
+    <Button
+      size="sm"
+      disabled={blocked || (!!action.input && !workflow.draft(pull, source.id, action.id).trim())}
+      title={action.disabled_reason || undefined}
+      onclick={() => runAction(action.id, action.input ? workflow.draft(pull, source.id, action.id) : undefined)}
+    >
+      {context.pendingAction === action.id ? "Submitting…" : action.label}
+    </Button>
+    {#if action.disabled_reason}<span class="disabled-reason">{action.disabled_reason}</span>{/if}
+  </div>
+{/snippet}
+
+{#if context.card || context.error}
   <Card level="inset" padding="sm">
     <section class="external-context" aria-label={source.name}>
       <div class="context-header">
         <strong>{source.name}</strong>
-        {#if state.card}<Chip size="xs" tone={tones[state.card.status]}>{state.card.status}</Chip>{/if}
+        {#if context.card && context.card.status !== "neutral"}<Chip size="xs" tone={tones[context.card.status]}>{context.card.status}</Chip>{/if}
+        <span class="context-summary">
+          {#if context.card?.markdown}
+            <button
+              type="button"
+              class="context-toggle"
+              aria-expanded={open}
+              aria-controls={`${id}-details`}
+              onclick={() => (toggled = !open)}
+            >
+              <ChevronRightIcon size={13} aria-hidden="true" class={open ? "expanded" : undefined} />
+              <span>{context.card.summary}</span>
+            </button>
+          {:else if context.card}
+            {context.card.summary}
+          {/if}
+        </span>
         <Button
           size="sm"
-          disabled={state.loading || state.pendingAction !== null}
+          disabled={context.loading || context.pendingAction !== null}
           ariaLabel={`Refresh ${source.name}`}
           onclick={refresh}
         >Refresh</Button>
       </div>
-      {#if state.card}
-        <p>{state.card.summary}</p>
-        {#if state.card.result_head_sha && state.card.result_head_sha !== pull.headSha}
+      {#if context.card}
+        {#if context.card.result_head_sha && context.card.result_head_sha !== pull.headSha}
           <p class="older-result">Results are for an older commit</p>
         {/if}
-        {#if state.card.markdown}
-          <details>
-            <summary>Details</summary>
-            <div class="markdown-body"><MarkdownHtml raw={state.card.markdown} options={{ interactiveTasks: false }} /></div>
-          </details>
-        {/if}
-        {#if state.card.actions?.length}
-          <div class="context-actions">
-            {#each state.card.actions as action (action.id)}
-              {@const blocked = !!action.disabled_reason || state.pendingAction !== null || state.needsRefresh || !pull.headSha}
-              <div class="context-action" class:with-input={action.input}>
-                {#if action.input}
-                  <textarea
-                    class="action-input"
-                    aria-label={`${action.label} text`}
-                    placeholder={action.input.placeholder}
-                    rows="3"
-                    maxlength={action.input.max_length ?? 16384}
-                    disabled={blocked}
-                    bind:value={() => workflow.draft(pull, source.id, action.id), (value) => workflow.setDraft(pull, source.id, action.id, value)}
-                  ></textarea>
-                {/if}
-                <Button
-                  size="sm"
-                  disabled={blocked || (!!action.input && !workflow.draft(pull, source.id, action.id).trim())}
-                  title={action.disabled_reason || undefined}
-                  onclick={() => runAction(action.id, action.input ? workflow.draft(pull, source.id, action.id) : undefined)}
-                >
-                  {state.pendingAction === action.id ? "Submitting…" : action.label}
-                </Button>
-                {#if action.disabled_reason}<span class="disabled-reason">{action.disabled_reason}</span>{/if}
+        {#if context.card.markdown && open}
+          <div id={`${id}-details`} class="context-details">
+            <div class="markdown-body"><MarkdownHtml raw={context.card.markdown} options={{ interactiveTasks: false }} /></div>
+            {#if bodyActions.length}
+              <div class="context-actions">
+                {#each bodyActions as action (action.id)}{@render actionControl(action)}{/each}
               </div>
-            {/each}
+            {/if}
+          </div>
+        {/if}
+        {#if rowActions.length}
+          <div class="context-actions">
+            {#each rowActions as action (action.id)}{@render actionControl(action)}{/each}
           </div>
         {/if}
       {/if}
-      {#if state.error}<p class="context-error" role="alert">{state.error}</p>{/if}
+      {#if context.error}<p class="context-error" role="alert">{context.error}</p>{/if}
     </section>
   </Card>
 {/if}
@@ -140,7 +172,7 @@
     gap: var(--space-3);
   }
 
-  .context-header strong { margin-right: auto; }
+  .context-summary { flex: 1; min-width: 0; color: var(--text-secondary); }
   .context-action.with-input { flex-basis: 100%; flex-direction: column; align-items: flex-start; }
   .action-input { box-sizing: border-box; width: 100%; resize: vertical; }
   .action-input::placeholder { color: var(--text-muted); }
@@ -149,6 +181,26 @@
   .older-result { color: var(--accent-amber); }
   .context-error { color: var(--accent-red); }
   .disabled-reason { color: var(--text-muted); }
-  summary { cursor: pointer; color: var(--text-secondary); }
-  .markdown-body { margin-top: var(--space-3); overflow: auto; }
+  .context-toggle {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .context-toggle:hover { color: var(--text-primary); }
+  .context-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+  .context-toggle :global(svg) { flex: 0 0 auto; margin-top: 0.2em; color: var(--text-muted); transition: transform var(--transition-fast) ease-out; }
+  .context-toggle :global(svg.expanded) { transform: rotate(90deg); }
+  .context-details { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+  .markdown-body { overflow: auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .context-toggle :global(svg) { transition: none; }
+  }
 </style>

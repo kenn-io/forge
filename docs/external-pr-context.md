@@ -37,8 +37,9 @@ server.
 ## Use the card
 
 Open a PR supported by the integration. Its card appears above the
-description. Expand details for tables or report links, use an available
-action button, or choose **Refresh** to fetch the current external status.
+description. Click a card's summary to show details and any text boxes for
+actions; other action buttons and **Refresh** stay visible. Choose **Refresh**
+to fetch the current external status.
 Queued work can refresh automatically while the page is visible.
 
 Results for a different commit are labeled as older results. Actions receive

@@ -49,11 +49,14 @@ describe("external PR context", () => {
             sources: [
               { id: "checks", name: "Quality checks" },
               { id: "other", name: "Other context" },
+              { id: "plain", name: "Plain context" },
             ],
           });
         }
         if (url.includes("/external-context/checks")) return Response.json({ card });
         if (url.includes("/external-context/other")) return Response.json({ card: null });
+        if (url.includes("/external-context/plain"))
+          return Response.json({ card: { status: "neutral", summary: "No changes" } });
         throw new Error(`Unexpected request: ${url}`);
       }),
     );
@@ -62,11 +65,16 @@ describe("external PR context", () => {
     expect(await screen.findByText("A slower result")).toBeTruthy();
     expect(screen.getByText("Quality checks")).toBeTruthy();
     expect(screen.getByText("Results are for an older commit")).toBeTruthy();
-    await fireEvent.click(screen.getByText("Details"));
-    expect(screen.getByRole("table").textContent).toContain("Parse input");
-    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText("warning")).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
     expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Run first")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "A slower result" }));
+    expect(screen.getByRole("table").textContent).toContain("Parse input");
+    expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+    expect(await screen.findByText("No changes")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "No changes" })).toBeNull();
+    expect(screen.queryByText("neutral")).toBeNull();
     await waitFor(() => expect(screen.queryByText("Other context")).toBeNull());
   });
 
@@ -246,7 +254,10 @@ describe("external PR context", () => {
     const view = render(ExternalContextCards, { props });
     const textbox = () => screen.getByRole("textbox", { name: "Add note text" }) as HTMLTextAreaElement;
     const button = () => screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
-    await screen.findByRole("textbox", { name: "Add note text" });
+    await screen.findByText("A slower result");
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add note" })).toBeNull();
+    await fireEvent.click(await screen.findByRole("button", { name: "A slower result" }));
     expect(textbox().placeholder).toBe("Leave a note");
     expect(textbox().maxLength).toBe(2000);
     expect(button().disabled).toBe(true);

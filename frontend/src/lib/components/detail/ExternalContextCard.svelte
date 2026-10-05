@@ -22,7 +22,7 @@
     workflow: ExternalContextWorkflowService;
   } = $props();
   const runtime = getAppRuntime();
-  const tones = { neutral: "neutral", pending: "info", success: "success", warning: "warning", error: "danger" } as const;
+  const tones = { pending: "info", success: "success", warning: "warning", error: "danger" } as const;
   let refreshRead: AppExecution<void, never> | undefined;
   const bodyActions = $derived(context.card?.markdown ? (context.card.actions ?? []).filter((a) => a.input) : []);
   const rowActions = $derived((context.card?.actions ?? []).filter((a) => !bodyActions.includes(a)));
@@ -113,9 +113,6 @@
       </div>
       {#if context.card}
         {#if !context.card.markdown}<p>{context.card.summary}</p>{/if}
-        {#if context.card.result_head_sha && context.card.result_head_sha !== pull.headSha}
-          <p class="older-result">Results are for an older commit</p>
-        {/if}
         {#if context.card.markdown}
           <details bind:open>
             <summary>Details: <span>{context.card.summary}</span></summary>
@@ -128,6 +125,9 @@
               {/if}
             </div>
           </details>
+        {/if}
+        {#if context.card.result_head_sha && context.card.result_head_sha !== pull.headSha}
+          <p class="older-result">Results are for an older commit</p>
         {/if}
         {#if rowActions.length}
           <div class="context-actions">

@@ -82,6 +82,12 @@ describe("external PR context", () => {
     expect(screen.getByText("Results are for an older commit")).toBeTruthy();
     expect(screen.getByText("warning")).toBeTruthy();
     expect(details().open).toBe(false);
+    expect(details().textContent).not.toContain("Run checks");
+    expect(details().textContent).not.toContain("Publish");
+    expect(
+      details().compareDocumentPosition(screen.getByText("Results are for an older commit")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText("Run first")).toBeTruthy();
     await fireEvent.click(screen.getByText("Details:", { exact: false }));
@@ -247,6 +253,7 @@ describe("external PR context", () => {
     await fireEvent.click(screen.getByText("Details:", { exact: false }));
     expect(textbox().placeholder).toBe("Leave a note");
     expect(textbox().maxLength).toBe(2000);
+    expect(details().contains(textbox())).toBe(true);
     expect(button().disabled).toBe(true);
     await fireEvent.input(textbox(), { target: { value: "  " } });
     expect(button().disabled).toBe(true);

@@ -174,6 +174,8 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 		{"summary", "raw", `{"card":{"status":"success","summary":" "}}`, ErrInvalidResponse, nil},
 		{"summary limit", "raw", `{"card":{"status":"success","summary":"` + strings.Repeat("x", 4097) + `"}}`, ErrInvalidResponse, nil},
 		{"action input", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"Leave a note"}}]}}`, nil, []ExternalContextAction{{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{Placeholder: "Leave a note"}}}},
+		{"action input max length", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"max_length":2000}}]}}`, nil, []ExternalContextAction{{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{MaxLength: new(2000)}}}},
+		{"action input max length range", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"max_length":16385}}]}}`, ErrInvalidResponse, nil},
 		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse, nil},
 		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse, nil},
 		{"stdout limit", "stdout", "", ErrOutputLimit, nil},

@@ -309,7 +309,7 @@ func decodeResult(data []byte) (ExternalContextResult, error) {
 	}
 	seen := make(map[string]bool, len(card.Actions))
 	for _, action := range card.Actions {
-		if strings.TrimSpace(action.ID) == "" || len(action.ID) > 128 || seen[action.ID] || strings.TrimSpace(action.Label) == "" || len(action.Label) > 256 || len(action.DisabledReason) > 4096 || (action.Input != nil && len(action.Input.Placeholder) > 256) {
+		if strings.TrimSpace(action.ID) == "" || len(action.ID) > 128 || seen[action.ID] || strings.TrimSpace(action.Label) == "" || len(action.Label) > 256 || len(action.DisabledReason) > 4096 || (action.Input != nil && (len(action.Input.Placeholder) > 256 || action.Input.MaxLength != nil && (*action.Input.MaxLength < 1 || *action.Input.MaxLength > 16384))) {
 			return ExternalContextResult{}, ErrInvalidResponse
 		}
 		seen[action.ID] = true

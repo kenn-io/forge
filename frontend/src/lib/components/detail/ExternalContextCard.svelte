@@ -100,7 +100,7 @@
                     aria-label={`${action.label} text`}
                     placeholder={action.input.placeholder}
                     rows="3"
-                    maxlength={16384}
+                    maxlength={action.input.max_length ?? 16384}
                     disabled={blocked}
                     bind:value={() => workflow.draft(pull, source.id, action.id), (value) => workflow.setDraft(pull, source.id, action.id, value)}
                   ></textarea>

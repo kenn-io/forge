@@ -3,5 +3,10 @@
  */
 
 export interface ExternalContextActionInput {
+  /**
+   * @minimum 1
+   * @maximum 16384
+   */
+  max_length?: number;
   placeholder?: string;
 }

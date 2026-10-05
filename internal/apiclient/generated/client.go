@@ -57160,6 +57160,7 @@ type ExternalContextAction struct {
 }
 
 type ExternalContextActionInput struct {
+	MaxLength   *int64  `json:"max_length,omitempty"`
 	Placeholder *string `json:"placeholder,omitempty"`
 }
 

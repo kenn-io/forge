@@ -225,7 +225,7 @@ describe("external PR context", () => {
     const deferred = Promise.withResolvers<Response>();
     const noteCard = {
       ...card,
-      actions: [{ id: "constructor", label: "Add note", input: { placeholder: "Leave a note" } }],
+      actions: [{ id: "constructor", label: "Add note", input: { placeholder: "Leave a note", max_length: 2000 } }],
     };
     vi.stubGlobal(
       "fetch",
@@ -248,6 +248,7 @@ describe("external PR context", () => {
     const button = () => screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement;
     await screen.findByRole("textbox", { name: "Add note text" });
     expect(textbox().placeholder).toBe("Leave a note");
+    expect(textbox().maxLength).toBe(2000);
     expect(button().disabled).toBe(true);
     await fireEvent.input(textbox(), { target: { value: "  " } });
     expect(button().disabled).toBe(true);

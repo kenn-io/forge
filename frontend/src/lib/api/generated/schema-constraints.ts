@@ -22,6 +22,9 @@ export const schemaConstraints = {
   DiffDescriptor: {
     snapshot_revision: { minimum: 0 },
   },
+  ExternalContextActionInput: {
+    max_length: { minimum: 1, maximum: 16384 },
+  },
   FederationDiffDescriptorRequest: {
     pull_number: { minimum: 1 },
   },

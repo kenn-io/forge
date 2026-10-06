@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gopty "github.com/aymanbagabas/go-pty"
@@ -294,17 +295,22 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 }
 
 func TestOwnerNaturalExitRetentionHonorsCompletedPreExitAttachment(t *testing.T) {
-	require := require.New(t)
-	o := &owner{
-		stopRequested:          make(chan struct{}),
-		activeAttachmentsDone:  make(chan struct{}),
-		postExitAttachmentDone: make(chan struct{}),
-	}
-	close(o.activeAttachmentsDone)
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		o := &owner{
+			stopRequested:          make(chan struct{}),
+			activeAttachmentsDone:  make(chan struct{}),
+			postExitAttachmentDone: make(chan struct{}),
+		}
+		close(o.activeAttachmentsDone)
+		start := time.Now()
 
-	err := o.waitAfterNaturalExit(t.Context(), make(chan error))
+		err := o.waitAfterNaturalExit(t.Context(), make(chan error))
 
-	require.NoError(err)
+		require.NoError(err)
+		// The retention timer would also return nil, so require that no fake time passed.
+		require.Zero(time.Since(start))
+	})
 }
 
 func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testing.T) {

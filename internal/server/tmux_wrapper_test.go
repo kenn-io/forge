@@ -1461,7 +1461,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 	require := require.New(t)
 
 	restoreLimiter := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, time.Minute),
 	)
 	t.Cleanup(restoreLimiter)
 

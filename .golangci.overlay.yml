@@ -1,6 +1,9 @@
 # Repository additions merged into the canonical kit config by `kennlint config`.
 run:
   go: "1.27"
+  # Lint integration-tagged tests too, so deadlinetest covers every test file.
+  build-tags:
+    - integration
 linters:
   settings:
     govet:

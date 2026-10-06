@@ -425,7 +425,7 @@ jobs:
         run: go test ./internal/ptyowner/... -shuffle=on
 
       - name: Run localruntime PTY owner smoke test
-        run: go test ./internal/workspace/localruntime -run TestManagerLaunchUsesPtyOwnerWhenConfigured -shuffle=on
+        run: go test ./internal/workspace/localruntime -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole' -shuffle=on
 
       - name: Run agent context replacement test
         run: go test ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on

@@ -46,6 +46,8 @@ Rules:
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- On Windows the ACP agent shares its owner's console; only a parent with no console
+  launches it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).
 - Owner-to-client ACP state changes are not bridged across upgrades: an owner started by an
   older binary may fail under a newer UI until the agent is relaunched. Do not add
   compatibility fallbacks for it (maintainer decision; `frontend/src/lib/components/acp/chat-types.ts::ChatStateSchema`).

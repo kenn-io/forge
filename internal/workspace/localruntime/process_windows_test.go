@@ -11,8 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
+
+	"go.kenn.io/forge/internal/procutil"
 )
 
 func TestWindowsACPProcessTreeHelper(t *testing.T) {
@@ -58,4 +61,13 @@ func TestKillSessionProcessStopsWindowsDescendants(t *testing.T) {
 		var code uint32
 		return windows.GetExitCodeProcess(handle, &code) != nil || code != 259 // STILL_ACTIVE from the Windows process API.
 	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestConfigureACPProcessSharesParentConsole(t *testing.T) {
+	for _, hasConsole := range []bool{true, false} {
+		cmd := procutil.Command("cmd.exe", "/c", "exit 0")
+		shareParentConsole(cmd, hasConsole)
+		assert.Equal(t, !hasConsole, cmd.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW != 0, "hasConsole=%v", hasConsole)
+		assert.True(t, cmd.SysProcAttr.HideWindow, "hasConsole=%v", hasConsole)
+	}
 }

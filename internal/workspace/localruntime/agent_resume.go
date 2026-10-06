@@ -34,6 +34,17 @@ func agentResumeCommand(command []string, agent, sessionID string) ([]string, er
 	return invocation.Argv, nil
 }
 
+// AgentResumable reports whether target is available and its command can
+// resume the hook-reported session interactively.
+func (m *Manager) AgentResumable(targetKey, agent, sessionID string) bool {
+	target, err := m.target(targetKey)
+	if err != nil || !target.Available {
+		return false
+	}
+	_, err = agentResumeCommand(target.Command, agent, sessionID)
+	return err == nil
+}
+
 // A successful PTY spawn does not mean tmux attached. Probe before spawning so
 // a missing server cannot erase the recovery report through an asynchronous exit.
 func (m *Manager) requireTmuxSession(ctx context.Context, session string) error {

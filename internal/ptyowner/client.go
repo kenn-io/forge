@@ -354,6 +354,12 @@ func (c *Client) Ping(ctx context.Context, session string) error {
 	return nil
 }
 
+// Gone reports whether no owner runs for session, as after a reboot or crash.
+func (c *Client) Gone(ctx context.Context, session string) bool {
+	err := c.Ping(ctx, session)
+	return err != nil && isAbsentOwner(err)
+}
+
 func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {

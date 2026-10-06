@@ -92,12 +92,12 @@ func TestACPReattachesOnWorkspaceOpenNotStartup(t *testing.T) {
 	stored, err := database.ListWorkspaceRuntimeSessions(ctx, "workspace")
 	require.NoError(err)
 	require.Len(stored, 1)
-	result, err := handler.GetWorkspaceRuntimeService(ctx, "workspace")
+	result, err := handler.GetWorkspaceRuntimeService(ctx, "workspace", false)
 	require.NoError(err)
 	require.Len(result.Sessions, 1)
 	assert.Equal(localruntime.SessionStatusRunning, result.Sessions[0].Status)
 	assert.Equal(int32(1), peer.bindings.Load())
-	_, err = handler.GetWorkspaceRuntimeService(ctx, "workspace")
+	_, err = handler.GetWorkspaceRuntimeService(ctx, "workspace", false)
 	require.NoError(err)
 	assert.Equal(int32(1), peer.bindings.Load(), "reopening must reuse the attachment")
 }
@@ -162,7 +162,7 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	defer runtime.Shutdown()
 	activity := agentactivity.NewStore(t.TempDir())
 	handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
-	_, err = handler.GetWorkspaceRuntimeService(ctx, "workspace")
+	_, err = handler.GetWorkspaceRuntimeService(ctx, "workspace", false)
 	require.NoError(err)
 	require.NoError(activity.Record(localruntime.ACPActivityAgent, "acp-session", "chat-runtime", cwd, agentactivity.StateWorking))
 	// A hook identity is not evidence for an ACP runtime.

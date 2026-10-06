@@ -27,6 +27,7 @@ func (h *Handler) registerTerminal(api huma.API, includeRuntime bool) {
 		handler = &terminal.Handler{
 			Workspaces:  h.workspaces,
 			TmuxCommand: slices.Clone(h.tmuxCmd),
+			Typed:       func(workspaceID string) { h.idle.Load().Typed(workspaceID) },
 		}
 	}
 	op := &huma.Operation{

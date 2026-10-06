@@ -835,6 +835,7 @@ func newServer(
 			AgentMCPToken:      options.DaemonAccess.Token,
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
+			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),

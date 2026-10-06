@@ -148,6 +148,17 @@ describe("MobileWorkspaceTerminal", () => {
     }
   });
 
+  it("tells the host it is viewing only while the page is shown", async () => {
+    const view = render(MobileWorkspaceTerminal, { props: { ...props, visible: false } });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    expect(mocks.runtimeClient.getWorkspaceRuntime.mock.calls[0]?.[1]).toEqual({});
+    view.unmount();
+    mocks.runtimeClient.getWorkspaceRuntime.mockClear();
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    expect(mocks.runtimeClient.getWorkspaceRuntime.mock.calls[0]?.[1]).toEqual({ viewing: true });
+  });
+
   it("starts runtime discovery while workspace details are held", async () => {
     const detail = Promise.withResolvers<typeof workspace>();
     mocks.runtimeClient.getWorkspace.mockReturnValue(detail.promise);

@@ -3818,6 +3818,8 @@ components:
           type: string
         session_id:
           type: string
+        source:
+          type: string
         tool_name:
           type: string
       required:
@@ -13371,6 +13373,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Set to true when the workspace view is showing.
+          explode: false
+          in: query
+          name: viewing
+          schema:
+            description: Set to true when the workspace view is showing.
+            type: boolean
         - in: path
           name: connection_id
           required: true
@@ -16432,6 +16441,11 @@ paths:
         - in: path
           name: id
           required: true
+          schema:
+            type: string
+        - description: Set to true when the workspace view is showing.
+          in: query
+          name: viewing
           schema:
             type: string
       responses:
@@ -27368,6 +27382,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Set to true when the workspace view is showing.
+          explode: false
+          in: query
+          name: viewing
+          schema:
+            description: Set to true when the workspace view is showing.
+            type: boolean
       responses:
         "200":
           content:

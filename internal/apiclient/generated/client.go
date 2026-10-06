@@ -984,6 +984,7 @@ func (o *RetryDevboxWorkspaceRequestOptions) GetHeader() (map[string]string, err
 // GetDevboxRuntimeRequestOptions is the options needed to make a request to GetDevboxRuntime.
 type GetDevboxRuntimeRequestOptions struct {
 	PathParams *GetDevboxRuntimePath
+	Query      *GetDevboxRuntimeQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -1000,7 +1001,7 @@ func (o *GetDevboxRuntimeRequestOptions) GetPathParams() (map[string]any, error)
 
 // GetQuery returns the query params as a map.
 func (o *GetDevboxRuntimeRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -3880,6 +3881,7 @@ func (o *RevealFleetWorkspaceRequestOptions) GetHeader() (map[string]string, err
 // GetFleetWorkspaceRuntimeRequestOptions is the options needed to make a request to GetFleetWorkspaceRuntime.
 type GetFleetWorkspaceRuntimeRequestOptions struct {
 	PathParams *GetFleetWorkspaceRuntimePath
+	Query      *GetFleetWorkspaceRuntimeQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -3896,7 +3898,7 @@ func (o *GetFleetWorkspaceRuntimeRequestOptions) GetPathParams() (map[string]any
 
 // GetQuery returns the query params as a map.
 func (o *GetFleetWorkspaceRuntimeRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -11495,6 +11497,7 @@ func (o *RevealWorkspaceRequestOptions) GetHeader() (map[string]string, error) {
 // GetWorkspaceRuntimeRequestOptions is the options needed to make a request to GetWorkspaceRuntime.
 type GetWorkspaceRuntimeRequestOptions struct {
 	PathParams *GetWorkspaceRuntimePath
+	Query      *GetWorkspaceRuntimeQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -11511,7 +11514,7 @@ func (o *GetWorkspaceRuntimeRequestOptions) GetPathParams() (map[string]any, err
 
 // GetQuery returns the query params as a map.
 func (o *GetWorkspaceRuntimeRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -14388,10 +14391,14 @@ func (c *Client) RetryDevboxWorkspaceWithResponse(ctx context.Context, options *
 func (c *Client) GetDevboxRuntimeWithResponse(ctx context.Context, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxRuntimeResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -33375,10 +33382,14 @@ func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *Revea
 func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *GetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -34659,10 +34670,14 @@ func (c *Client) RetryDevboxWorkspaceRaw(ctx context.Context, httpClient *http.C
 // GetDevboxRuntimeRaw returns an unread response. The caller must close its body.
 func (c *Client) GetDevboxRuntimeRaw(ctx context.Context, httpClient *http.Client, options *GetDevboxRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -40582,10 +40597,14 @@ func (c *Client) RevealWorkspaceRaw(ctx context.Context, httpClient *http.Client
 // GetWorkspaceRuntimeRaw returns an unread response. The caller must close its body.
 func (c *Client) GetWorkspaceRuntimeRaw(ctx context.Context, httpClient *http.Client, options *GetWorkspaceRuntimeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -41426,10 +41445,14 @@ func NewGetDevboxRuntimeRequest(ctx context.Context, baseURL string, options *Ge
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -47712,10 +47735,14 @@ func NewGetWorkspaceRuntimeRequest(ctx context.Context, baseURL string, options 
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"viewing": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -50922,6 +50949,11 @@ type GetDevboxFilesQuery struct {
 	To *string `json:"to,omitempty"`
 }
 
+type GetDevboxRuntimeQuery struct {
+	// Viewing Set to true when the workspace view is showing.
+	Viewing *bool `json:"viewing,omitempty"`
+}
+
 type BrowseDocsFoldersQuery struct {
 	Path *string `json:"path,omitempty"`
 }
@@ -51054,6 +51086,11 @@ type GetFleetWorkspaceFilesQuery struct {
 
 	// To Newer range commit SHA.
 	To *string `json:"to,omitempty"`
+}
+
+type GetFleetWorkspaceRuntimeQuery struct {
+	// Viewing Set to true when the workspace view is showing.
+	Viewing *string `json:"viewing,omitempty"`
 }
 
 type ListWorkflowRunsOnHostQuery struct {
@@ -51460,6 +51497,11 @@ type GetWorkspaceFilesQuery struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `json:"to,omitempty"`
+}
+
+type GetWorkspaceRuntimeQuery struct {
+	// Viewing Set to true when the workspace view is showing.
+	Viewing *bool `json:"viewing,omitempty"`
 }
 
 type ListWorkflowRunsResponse = WorkflowRunsResponse
@@ -57527,6 +57569,7 @@ type HookEvent struct {
 	HookEventName        string         `json:"hook_event_name"`
 	NotificationType     *string        `json:"notification_type,omitempty"`
 	SessionID            string         `json:"session_id"`
+	Source               *string        `json:"source,omitempty"`
 	ToolName             *string        `json:"tool_name,omitempty"`
 	AdditionalProperties map[string]any `json:"-"`
 }
@@ -57591,6 +57634,12 @@ func (h *HookEvent) UnmarshalJSON(data []byte) error {
 		}
 		delete(object, "session_id")
 	}
+	if raw, found := object["source"]; found {
+		if err := json.Unmarshal(raw, &h.Source); err != nil {
+			return fmt.Errorf("error reading 'source': %w", err)
+		}
+		delete(object, "source")
+	}
 	if raw, found := object["tool_name"]; found {
 		if err := json.Unmarshal(raw, &h.ToolName); err != nil {
 			return fmt.Errorf("error reading 'tool_name': %w", err)
@@ -57650,6 +57699,12 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		return nil, fmt.Errorf("error marshaling 'session_id': %w", err)
 	}
 
+	if h.Source != nil {
+		object["source"], err = json.Marshal(h.Source)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'source': %w", err)
+		}
+	}
 	if h.ToolName != nil {
 		object["tool_name"], err = json.Marshal(h.ToolName)
 		if err != nil {

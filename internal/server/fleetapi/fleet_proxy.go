@@ -250,6 +250,9 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			path:        "/fleet/hosts/{host_key}/workspaces/{id}/runtime",
 			summary:     "Get workspace runtime on fleet host",
 			pathParams:  []string{"host_key", "id"},
+			queryParams: []*huma.Param{
+				fleetStringQueryParam("viewing", "Set to true when the workspace view is showing."),
+			},
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/runtime"
 			},

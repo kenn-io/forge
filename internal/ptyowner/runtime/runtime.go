@@ -26,6 +26,8 @@ type Owner interface {
 		extraEnv map[string]string,
 	) (PTY, error)
 	Stop(ctx context.Context, session string) error
+	// Gone reports whether no owner runs for session.
+	Gone(ctx context.Context, session string) bool
 }
 
 type PTY interface {
@@ -56,6 +58,10 @@ func New(client *ptyowner.Client, resolve ExecutableResolver) Owner {
 		resolve = ResolveExecutable
 	}
 	return owner{client: client, resolve: resolve}
+}
+
+func (o owner) Gone(ctx context.Context, session string) bool {
+	return o.client != nil && o.client.Gone(ctx, session)
 }
 
 func (o owner) Attach(ctx context.Context, session string) (PTY, error) {

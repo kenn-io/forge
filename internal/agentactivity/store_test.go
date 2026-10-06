@@ -502,3 +502,15 @@ func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
 	require.Len(t, reports, 1)
 	assert.Equal(t, StateWorking, reports[0].State)
 }
+
+func TestSessionStartSourceMarksContinuedConversation(t *testing.T) {
+	t.Parallel()
+	for source, continued := range map[string]bool{"resume": true, "compact": false, "startup": false, "clear": false, "": false} {
+		store := NewStore(t.TempDir())
+		worktree := t.TempDir()
+		require.NoError(t, store.HandleEvent("claude", HookEvent{SessionID: "agent-1", CWD: worktree, HookEventName: "SessionStart", Source: source}, "runtime-1"))
+		reports := store.LiveReportsForWorkspace(worktree, []string{"runtime-1"})
+		require.Len(t, reports, 1)
+		assert.Equal(t, continued, reports[0].Continued, "source %q", source)
+	}
+}

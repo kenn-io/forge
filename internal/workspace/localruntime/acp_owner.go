@@ -34,6 +34,9 @@ type acpOwnerConfig struct {
 type acpSavedSession struct {
 	SessionID string
 	State     ACPState
+	// LoadSession records that the agent can load this session back, so a
+	// replacement owner keeps the agent's context.
+	LoadSession bool
 }
 
 func (m *Manager) acpSessionPath(key string) string {
@@ -44,11 +47,34 @@ func (m *Manager) acpSessionPath(key string) string {
 	return filepath.Join(paths.Dir, "session.json")
 }
 
+// ACPReloadable reports whether a saved ACP session exists and its agent can
+// load it, so stopping the owner loses neither transcript nor agent context.
+func (m *Manager) ACPReloadable(key string) bool {
+	saved, err := m.loadACPSaved(key)
+	return err == nil && saved != nil && saved.LoadSession
+}
+
+// loadACPSaved reads a key's saved ACP session, or nil when none is saved.
+func (m *Manager) loadACPSaved(key string) (*acpSavedSession, error) {
+	data, err := os.ReadFile(m.acpSessionPath(key))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	saved := &acpSavedSession{}
+	if err := json.Unmarshal(data, saved); err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
 func (a *ACP) persistLocked() error {
 	if a.recordPath == "" {
 		return nil
 	}
-	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state}, json.Deterministic(true))
+	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession}, json.Deterministic(true))
 	if err != nil {
 		return err
 	}
@@ -256,14 +282,8 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	}
 	defer proxy.Close()
 	manager := NewManager(Options{ACPSessionsDir: cfg.Root, ACPPreferencesPath: cfg.Preferences, AgentMCPURL: proxy.URL(), AgentMCPToken: proxy.token})
-	var saved *acpSavedSession
-	data, err = os.ReadFile(manager.acpSessionPath(cfg.Info.Key))
-	if err == nil {
-		saved = &acpSavedSession{}
-		if err := json.Unmarshal(data, saved); err != nil {
-			return err
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	saved, err := manager.loadACPSaved(cfg.Info.Key)
+	if err != nil {
 		return err
 	}
 	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved)
@@ -308,14 +328,19 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	err = agent.Stop(context.Background())
 	select {
 	case <-service.stop:
+		if service.park {
+			break
+		}
 		if removeErr := os.Remove(agent.recordPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			err = errors.Join(err, removeErr)
 		}
 	default:
 	}
 	service.stopErr = err
-	close(service.stopped)
+	// Close the listener, which removes the socket, before acknowledging a
+	// stop, so a caller that sees the reply finds no socket left to dial.
 	_ = listener.Close()
+	close(service.stopped)
 	<-accepted
 	drained := make(chan struct{})
 	go func() { clients.Wait(); close(drained) }()
@@ -326,6 +351,28 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 		<-drained
 	}
 	return err
+}
+
+// callACPOwner calls an owner RPC; an owner that is not running is not an error.
+func (m *Manager) callACPOwner(ctx context.Context, key, method string) error {
+	if m.acpSessionsDir == "" {
+		return nil
+	}
+	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
+	if err != nil {
+		return err
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
+	if err != nil {
+		// A missing or refusing socket means the owner is dead.
+		if ptyowner.IsAbsentOwner(err) {
+			return nil
+		}
+		return err
+	}
+	client := rpc.NewClient(conn)
+	defer client.Close()
+	return (&acpAttachment{client: client}).call(ctx, method, struct{}{}, &struct{}{})
 }
 
 // StopDormantACP stops an owner even before the workspace has been reopened.
@@ -355,18 +402,8 @@ func (m *Manager) StopDormantACP(ctx context.Context, workspaceID, key string) e
 	if cfg.Info.WorkspaceID != workspaceID {
 		return ErrSessionNotFound
 	}
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
-	if err != nil {
-		if !ptyowner.IsAbsentOwner(err) {
-			return err
-		}
-	} else {
-		client := rpc.NewClient(conn)
-		defer client.Close()
-		remote := &acpAttachment{client: client}
-		if err := remote.call(ctx, "ACP.Stop", struct{}{}, &struct{}{}); err != nil {
-			return err
-		}
+	if err := m.callACPOwner(ctx, key, "ACP.Stop"); err != nil {
+		return err
 	}
 	if err := os.Remove(m.acpSessionPath(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

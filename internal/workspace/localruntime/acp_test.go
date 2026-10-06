@@ -1155,3 +1155,25 @@ func TestACPImagePrompts(t *testing.T) {
 		})
 	}
 }
+
+type silentChat struct{ ACPChat }
+
+func (silentChat) Command(ACPCommand) error { return nil }
+func (silentChat) Prompt(string) error      { return nil }
+
+// Only prompts and replies to the agent count as input to a chat; paging,
+// settings and turn control do not.
+func TestObservedACPReportsOnlyPromptsAndReplies(t *testing.T) {
+	t.Parallel()
+	typed := 0
+	chat := observedACP{ACPChat: silentChat{}, typed: func() { typed++ }}
+	for _, command := range []string{"config", "unqueue", "resume", "cancel"} {
+		require.NoError(t, chat.Command(ACPCommand{Type: command}))
+	}
+	assert.Zero(t, typed)
+	for _, command := range []string{"prompt", "permission", "elicitation"} {
+		require.NoError(t, chat.Command(ACPCommand{Type: command}))
+	}
+	require.NoError(t, chat.Prompt("go"))
+	assert.Equal(t, 4, typed)
+}

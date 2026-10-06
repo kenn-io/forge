@@ -10,6 +10,7 @@ export interface HookEvent {
   hook_event_name: string;
   notification_type?: string;
   session_id: string;
+  source?: string;
   tool_name?: string;
   [key: string]: unknown;
 }

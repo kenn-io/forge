@@ -434,17 +434,20 @@ async function setupTerminalMocks(
     },
   );
 
-  await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
-    if (route.request().method() === "GET") {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(runtime),
-      });
-      return;
-    }
-    await route.fulfill({ status: 405 });
-  });
+  await page.route(
+    (url) => url.pathname === `/api/v1/workspaces/${ws.id}/runtime`,
+    async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(runtime),
+        });
+        return;
+      }
+      await route.fulfill({ status: 405 });
+    },
+  );
 
   await page.route(`**/api/v1/workspaces/${ws.id}/runtime/sessions`, async (route) => {
     if (route.request().method() !== "POST") {
@@ -1184,13 +1187,16 @@ test("phone keeps the durable workspace terminal available when runtime discover
   await page.setViewportSize({ width: 390, height: 844 });
   await installControllableTerminalWebSockets(page);
   await setupTerminalMocks(page);
-  await page.route("**/api/v1/workspaces/ws-123/runtime", async (route) => {
-    await route.fulfill({
-      status: 503,
-      contentType: "application/problem+json",
-      body: JSON.stringify(problem("serviceUnavailable", 503, "runtime discovery unavailable")),
-    });
-  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/workspaces/ws-123/runtime",
+    async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/problem+json",
+        body: JSON.stringify(problem("serviceUnavailable", 503, "runtime discovery unavailable")),
+      });
+    },
+  );
 
   await page.goto("/m/workspaces/local/ws-123");
 
@@ -1642,13 +1648,16 @@ test("phone Fleet workspace keeps its linked item as passive metadata", async ({
       body: JSON.stringify(testWorkspace),
     });
   });
-  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123/runtime", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(workspaceRuntime),
-    });
-  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/fleet/hosts/member/workspaces/ws-123/runtime",
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(workspaceRuntime),
+      });
+    },
+  );
 
   await page.goto("/m/workspaces/fleet/member/ws-123");
 
@@ -1787,13 +1796,16 @@ test("typed workspace deletion returns the phone workflow to the workspace list"
 test("missing phone workspace runtime returns to the workspace list", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
-  await page.route("**/api/v1/workspaces/ws-123/runtime", async (route) => {
-    await route.fulfill({
-      status: 404,
-      contentType: "application/problem+json",
-      body: JSON.stringify({ status: 404, code: "workspaceNotFound", detail: "workspace not found" }),
-    });
-  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/workspaces/ws-123/runtime",
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ status: 404, code: "workspaceNotFound", detail: "workspace not found" }),
+      });
+    },
+  );
 
   await page.goto("/m/workspaces/local/ws-123");
 
@@ -1829,13 +1841,16 @@ test("unavailable Fleet runtime stays in context with Reconnect", async ({ page 
       body: JSON.stringify(testWorkspace),
     });
   });
-  await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123/runtime", async (route) => {
-    await route.fulfill({
-      status: 404,
-      contentType: "application/problem+json",
-      body: JSON.stringify({ status: 404, code: "notFound", detail: "Fleet host unavailable" }),
-    });
-  });
+  await page.route(
+    (url) => url.pathname === "/api/v1/fleet/hosts/member/workspaces/ws-123/runtime",
+    async (route) => {
+      await route.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ status: 404, code: "notFound", detail: "Fleet host unavailable" }),
+      });
+    },
+  );
 
   await page.goto("/m/workspaces/fleet/member/ws-123");
 
@@ -4141,16 +4156,19 @@ test.describe("workspace list fleet inventory", () => {
         body: JSON.stringify(remoteWorkspace),
       });
     });
-    await page.route(`**/api/v1/fleet/hosts/${remoteHostKey}/workspaces/member-ws-23/runtime`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          launch_targets: [],
-          sessions: [],
-        }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/fleet/hosts/${remoteHostKey}/workspaces/member-ws-23/runtime`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+        });
+      },
+    );
 
     await page.goto("/workspaces");
 
@@ -4755,16 +4773,19 @@ test.describe("workspace list bubble opens right sidebar", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            launch_targets: [],
-            sessions: [],
-          }),
-        });
-      });
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${ws.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+            }),
+          });
+        },
+      );
     }
 
     await page.goto(`/terminal/${wsA.id}`);
@@ -4917,16 +4938,19 @@ test.describe("workspace list bubble opens right sidebar", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            launch_targets: [],
-            sessions: [],
-          }),
-        });
-      });
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${ws.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              launch_targets: [],
+              sessions: [],
+            }),
+          });
+        },
+      );
     }
 
     await page.goto("/workspaces");
@@ -5475,16 +5499,19 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(`**/api/v1/workspaces/${wsA.id}/runtime`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          launch_targets: [],
-          sessions: [],
-        }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/workspaces/${wsA.id}/runtime`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+        });
+      },
+    );
 
     // wsB — delayed. Resolved manually below so the test can
     // observe the in-place transition.
@@ -5504,17 +5531,20 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(`**/api/v1/workspaces/${wsB.id}/runtime`, async (route) => {
-      await bDelay;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          launch_targets: [],
-          sessions: [],
-        }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/workspaces/${wsB.id}/runtime`,
+      async (route) => {
+        await bDelay;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [],
+          }),
+        });
+      },
+    );
 
     await page.goto(`/terminal/${wsA.id}`);
 
@@ -5600,16 +5630,19 @@ test.describe("delayed-response navigation", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            ...workspaceRuntime,
-            sessions: [shellSession(ws.id)],
-          }),
-        });
-      });
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${ws.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({
+              ...workspaceRuntime,
+              sessions: [shellSession(ws.id)],
+            }),
+          });
+        },
+      );
     }
 
     await page.goto(`/terminal/${wsA.id}`);
@@ -5690,16 +5723,19 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(`**/api/v1/workspaces/${wsA.id}/runtime`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          ...workspaceRuntime,
-          sessions: [sessionA],
-        }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/workspaces/${wsA.id}/runtime`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            ...workspaceRuntime,
+            sessions: [sessionA],
+          }),
+        });
+      },
+    );
     // wsB: workspace GET is fast, runtime GET is held.
     await page.route(`**/api/v1/workspaces/${wsB.id}`, async (route) => {
       if (route.request().method() === "GET") {
@@ -5716,14 +5752,17 @@ test.describe("delayed-response navigation", () => {
     const bRuntimeDelay = new Promise<void>((resolve) => {
       releaseBRuntime = resolve;
     });
-    await page.route(`**/api/v1/workspaces/${wsB.id}/runtime`, async (route) => {
-      await bRuntimeDelay;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(workspaceRuntime),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/workspaces/${wsB.id}/runtime`,
+      async (route) => {
+        await bRuntimeDelay;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(workspaceRuntime),
+        });
+      },
+    );
 
     await page.goto(`/terminal/${wsA.id}`);
     // A's session tab should be visible.
@@ -5802,13 +5841,16 @@ test.describe("delayed-response navigation", () => {
         }
         await route.fulfill({ status: 204 });
       });
-      await page.route(`**/api/v1/workspaces/${ws.id}/runtime`, async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({ launch_targets: [], sessions: [] }),
-        });
-      });
+      await page.route(
+        (url) => url.pathname === `/api/v1/workspaces/${ws.id}/runtime`,
+        async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ launch_targets: [], sessions: [] }),
+          });
+        },
+      );
     }
     // A's retry never resolves so retryingSetup stays true across the
     // navigation to B.
@@ -5931,13 +5973,16 @@ test.describe("delayed-response navigation", () => {
       }
       await route.fulfill({ status: 204 });
     });
-    await page.route(`**/api/v1/workspaces/${localWorkspace.id}/runtime`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ launch_targets: [], sessions: [] }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/workspaces/${localWorkspace.id}/runtime`,
+      async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ launch_targets: [], sessions: [] }),
+        });
+      },
+    );
     for (const suffix of ["files", "diff"]) {
       await page.route(`**/api/v1/workspaces/${localWorkspace.id}/${suffix}*`, async (route) => {
         await route.fulfill({
@@ -5965,14 +6010,17 @@ test.describe("delayed-response navigation", () => {
         });
       },
     );
-    await page.route(`**/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}/runtime`, async (route) => {
-      await bDelay;
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ launch_targets: [], sessions: [] }),
-      });
-    });
+    await page.route(
+      (url) => url.pathname === `/api/v1/fleet/hosts/member/workspaces/${memberWorkspace.id}/runtime`,
+      async (route) => {
+        await bDelay;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ launch_targets: [], sessions: [] }),
+        });
+      },
+    );
 
     await page.goto(`/terminal/${localWorkspace.id}`);
     await expect(page.locator(".terminal-main .header-name")).toContainText("Local A");

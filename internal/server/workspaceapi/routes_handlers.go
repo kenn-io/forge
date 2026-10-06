@@ -134,6 +134,9 @@ type refreshWorkspaceInput struct {
 
 type getWorkspaceRuntimeInput struct {
 	ID string `path:"id"`
+	// Viewing marks a read from the workspace view while it shows; only such
+	// reads count as a viewer for idle stop and resume idle-stopped agents.
+	Viewing bool `query:"viewing" doc:"Set to true when the workspace view is showing."`
 }
 
 type launchWorkspaceRuntimeSessionInput struct {
@@ -2562,21 +2565,27 @@ func (s *Handler) getWorkspaceRuntime(
 	ctx context.Context,
 	input *getWorkspaceRuntimeInput,
 ) (*getWorkspaceRuntimeOutput, error) {
-	result, err := s.GetWorkspaceRuntimeService(ctx, input.ID)
+	result, err := s.GetWorkspaceRuntimeService(ctx, input.ID, input.Viewing)
 	if err != nil {
 		return nil, err
 	}
 	return &getWorkspaceRuntimeOutput{Body: workspaceRuntimeResponse(result)}, nil
 }
 
+// GetWorkspaceRuntimeService lists a workspace's runtimes. viewing reports a
+// page view, which resumes runtimes idle stop stopped; only the showing
+// workspace page sets it.
 func (s *Handler) GetWorkspaceRuntimeService(
-	ctx context.Context, workspaceID string,
+	ctx context.Context, workspaceID string, viewing bool,
 ) (WorkspaceRuntimeResult, error) {
 	summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
 	if err != nil {
 		return WorkspaceRuntimeResult{}, err
 	}
-	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	if viewing {
+		s.idle.Load().Viewed(&summary.Workspace)
+	}
+	s.restoreWorkspaceACP(ctx, &summary.Workspace, viewing)
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
 		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())
@@ -2602,7 +2611,17 @@ func (s *Handler) workspaceRuntimeSessions(
 	stored = slices.DeleteFunc(stored, func(session db.WorkspaceRuntimeSession) bool {
 		return s.runtime.Exited(session.SessionKey)
 	})
-	return mergeStoredRuntimeSessions(sessions, stored), nil
+	merged := mergeStoredRuntimeSessions(sessions, stored)
+	idle := s.idle.Load()
+	for i := range merged {
+		if merged[i].Status != localruntime.SessionStatusError {
+			continue
+		}
+		if j := slices.IndexFunc(stored, func(session db.WorkspaceRuntimeSession) bool { return session.SessionKey == merged[i].Key }); j >= 0 && idle.Stopped(ctx, stored[j]) {
+			merged[i].Status = localruntime.SessionStatusParked
+		}
+	}
+	return merged, nil
 }
 
 func mergeStoredRuntimeSessions(

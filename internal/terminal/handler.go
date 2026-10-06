@@ -30,6 +30,8 @@ import (
 type Handler struct {
 	Workspaces  *workspace.Manager
 	TmuxCommand []string
+	// Typed reports input typed into a pty-owner workspace terminal.
+	Typed func(workspaceID string)
 
 	mu     sync.Mutex
 	active map[string]int
@@ -145,7 +147,11 @@ func (h *Handler) ServeHTTP(
 		// Setup is complete; end the span before the long-lived bridge
 		// loop so terminal.attach stays bounded to the attach phase.
 		endAttachSpan()
-		exited := bridgePtyOwnerAttachment(ctx, conn, attachment)
+		exited := bridgePtyOwnerAttachment(ctx, conn, attachment, func() {
+			if h.Typed != nil {
+				h.Typed(ws.ID)
+			}
+		})
 		if exited {
 			conn.Close(websocket.StatusNormalClosure, "session ended")
 		} else {
@@ -336,6 +342,7 @@ func bridgePtyOwnerAttachment(
 	ctx context.Context,
 	conn *websocket.Conn,
 	attachment *ptyowner.Attachment,
+	onInput func(),
 ) bool {
 	defer attachment.Close()
 
@@ -352,6 +359,7 @@ func bridgePtyOwnerAttachment(
 			}
 			switch typ {
 			case websocket.MessageBinary:
+				onInput()
 				if err := attachment.Write(data); err != nil {
 					return
 				}

@@ -647,7 +647,8 @@
   }
 
   function initialStatusMessage(status: string | undefined): string {
-    return status === "exited" ? "Process exited" : "Session unavailable";
+    if (status === "exited") return "Process exited";
+    return status === "parked" ? "Stopped while idle; it restarts when the workspace shows" : "Session unavailable";
   }
 
   function defaultTerminalFontFamily(): string {

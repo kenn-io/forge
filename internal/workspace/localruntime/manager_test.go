@@ -807,7 +807,7 @@ func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 	assert.Equal(createdAt, sessions[0].CreatedAt)
 }
 
-func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
+func TestManagerRestorePtyOwnerAttachOutcomes(t *testing.T) {
 	previousBackOff := newPtyOwnerAttachBackOff
 	newPtyOwnerAttachBackOff = func() backoff.BackOff {
 		expo := backoff.NewExponentialBackOff()

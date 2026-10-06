@@ -1726,6 +1726,11 @@ func (c *Config) validate() error {
 			return fmt.Errorf("config: invalid base_path %q: dot segments are not allowed", c.BasePath)
 		}
 	}
+	// Trailing slashes do not change routing, so a base path named like a
+	// root route would make that route ambiguous.
+	if first, _, _ := strings.Cut(strings.Trim(c.BasePath, "/"), "/"); slices.Contains(rootRouteSegments, first) {
+		return fmt.Errorf("config: invalid base_path %q: %q is a reserved root route", c.BasePath, first)
+	}
 
 	validViewModes := map[string]bool{
 		"flat": true, "threaded": true,
@@ -2527,7 +2532,10 @@ var reservedSystemLaunchTargetKeys = map[string]bool{
 }
 
 var (
-	validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
+	// rootRouteSegments lead the probe and daemon ping routes, which are
+	// served at the root regardless of base_path.
+	rootRouteSegments = []string{"api", "healthz", "livez"}
+	validBasePathRe   = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
 	// Without scheme: require / so bare "github.com" (a valid repo
 	// name) is not falsely matched.
 	bareHostRepoRe = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9.-]*(?:\.[A-Za-z0-9.-]+|:[0-9]+))/(.*)$`)

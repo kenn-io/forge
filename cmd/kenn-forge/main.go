@@ -508,10 +508,13 @@ func run(opts serve.Options) error {
 	buildInfo := server.BuildInfo{
 		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
 	}
-	switcher := hostapi.NewStartupSwitch(server.NewStartupHandler(cfg, startupOptions, ln, buildInfo))
+	const primaryReadTimeout = 15 * time.Second
+	switcher := hostapi.NewStartupSwitch(
+		server.NewStartupHandler(cfg, startupOptions, ln, buildInfo), primaryReadTimeout,
+	)
 	httpSrv := &http.Server{
 		Handler:     switcher,
-		ReadTimeout: 15 * time.Second,
+		ReadTimeout: primaryReadTimeout,
 		// WriteTimeout is 0 (disabled) because SSE and proxy
 		// responses are long-lived by design.
 		IdleTimeout: 60 * time.Second,

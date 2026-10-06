@@ -1,6 +1,8 @@
 package accesstest
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,8 +11,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -57,12 +61,18 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 
 func newStartupSwitch(t *testing.T, basePath string) *hostapi.SwitchHandler {
 	t.Helper()
+	return newStartupSwitchWithOptions(basePath, server.ServerOptions{}, 0)
+}
+
+func newStartupSwitchWithOptions(
+	basePath string, options server.ServerOptions, readTimeout time.Duration,
+) *hostapi.SwitchHandler {
 	return hostapi.NewStartupSwitch(server.NewStartupHandler(
 		&config.Config{Host: "127.0.0.1", Port: 8091, BasePath: basePath},
-		server.ServerOptions{},
+		options,
 		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
 		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
-	))
+	), readTimeout)
 }
 
 func serveStartup(
@@ -112,25 +122,154 @@ func TestStartupSwitchAnswersProbes(t *testing.T) {
 	}
 }
 
-func TestStartupSwitchHoldsOtherRequestsUntilFullServer(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	switcher := newStartupSwitch(t, "/")
+func TestStartupSwitchHoldsRequestsUntilFullServer(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		switcher := newStartupSwitch(t, "/")
 
-	// A request abandoned before readiness gets no startup answer.
-	abandoned, cancel := context.WithCancel(t.Context())
-	cancel()
-	rr := serveStartup(abandoned, switcher, "/mcp", "127.0.0.1:8091")
-	assert.Empty(t, rr.Body.String())
-	assert.Empty(t, rr.Header())
+		// A request abandoned before readiness gets no startup answer.
+		abandoned, cancel := context.WithCancel(t.Context())
+		cancel()
+		rr := serveStartup(abandoned, switcher, "/mcp", "127.0.0.1:8091")
+		assert.Empty(t, rr.Body.String())
+		assert.Empty(t, rr.Header())
 
-	held := make(chan *httptest.ResponseRecorder, 1)
-	go func() { held <- serveStartup(t.Context(), switcher, "/api/v1/settings", "127.0.0.1:8091") }()
-	switcher.Swap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
+		held := make(chan *httptest.ResponseRecorder, 1)
+		go func() { held <- serveStartup(t.Context(), switcher, "/api/v1/settings", "127.0.0.1:8091") }()
+		synctest.Wait()
+		select {
+		case <-held:
+			require.Fail(t, "request answered before the full server was installed")
+		default:
+		}
 
-	assert.Equal(t, http.StatusNoContent, (<-held).Code)
-	assert.Equal(t, http.StatusNoContent, serveStartup(t.Context(), switcher, "/livez", "127.0.0.1:8091").Code)
+		switcher.Swap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		assert.Equal(t, http.StatusNoContent, (<-held).Code)
+		assert.Equal(t, http.StatusNoContent, serveStartup(t.Context(), switcher, "/livez", "127.0.0.1:8091").Code)
+	})
+}
+
+// A token link opened during startup must reach the full server, which sets
+// the auth cookie that later API calls need.
+func TestStartupSwitchHandsHeldTokenLinkToFullServer(t *testing.T) {
+	access := authapi.DaemonAccessOptions{Token: "startup-secret", RequireAPIAuth: true}
+	database := dbtest.Open(t)
+	fullServer := server.New(
+		database, nil, fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte(`<body>app</body>`)}}, "/",
+		&config.Config{Host: "127.0.0.1", Port: 8091, BasePath: "/"},
+		server.ServerOptions{DaemonAccess: access},
+	)
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, fullServer) })
+
+	var authCookie *http.Cookie
+	synctest.Test(t, func(t *testing.T) {
+		switcher := newStartupSwitchWithOptions("/", server.ServerOptions{DaemonAccess: access}, 0)
+		held := make(chan *httptest.ResponseRecorder, 1)
+		go func() { held <- serveStartup(t.Context(), switcher, "/?auth_token=startup-secret", "127.0.0.1:8091") }()
+		synctest.Wait()
+		select {
+		case <-held:
+			require.Fail(t, "token link answered before the full server was installed")
+		default:
+		}
+
+		switcher.Swap(fullServer)
+		bootstrap := <-held
+		require.Equal(t, http.StatusSeeOther, bootstrap.Code, bootstrap.Body.String())
+		for _, cookie := range bootstrap.Result().Cookies() {
+			if cookie.Name == authapi.AuthCookieName {
+				authCookie = cookie
+			}
+		}
+	})
+	require.NotNil(t, authCookie)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/sync/status", nil)
+	request.Host = "127.0.0.1:8091"
+	request.RemoteAddr = "127.0.0.1:1234"
+	request.AddCookie(authCookie)
+	rr := httptest.NewRecorder()
+	fullServer.ServeHTTP(rr, request)
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+}
+
+// pipeListener serves in-memory connections so synctest controls every wait,
+// including the connection's read deadlines.
+type pipeListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case conn := <-l.conns:
+		return conn, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return serverfake.StaticListenerAddr("127.0.0.1:8091") }
+
+// Waiting for startup must not spend the request's body read budget.
+func TestStartupSwitchHeldRequestKeepsBodyReadBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const readTimeout = time.Second
+		switcher := newStartupSwitchWithOptions("/", server.ServerOptions{}, readTimeout)
+		listener := &pipeListener{conns: make(chan net.Conn, 1), done: make(chan struct{})}
+		httpSrv := &http.Server{Handler: switcher, ReadTimeout: readTimeout}
+		serverConn, clientConn := net.Pipe()
+		listener.conns <- serverConn
+		go func() { _ = httpSrv.Serve(listener) }()
+
+		body := bytes.Repeat([]byte("x"), 64<<10)
+		statuses := make(chan int, 1)
+		go func() {
+			request, err := http.NewRequestWithContext(
+				t.Context(), http.MethodPost, "http://127.0.0.1:8091/api/v1/upload", bytes.NewReader(body),
+			)
+			if err == nil {
+				err = request.Write(clientConn)
+			}
+			if err != nil {
+				statuses <- 0
+				return
+			}
+			response, err := http.ReadResponse(bufio.NewReader(clientConn), request)
+			if err != nil {
+				statuses <- 0
+				return
+			}
+			_ = response.Body.Close()
+			statuses <- response.StatusCode
+		}()
+		synctest.Wait()
+		time.Sleep(2 * readTimeout)
+
+		received := make(chan int, 1)
+		switcher.Swap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				received <- -1
+				return
+			}
+			received <- len(data)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+
+		assert.Equal(t, len(body), <-received)
+		assert.Equal(t, http.StatusNoContent, <-statuses)
+		require.NoError(t, clientConn.Close())
+		require.NoError(t, httpSrv.Close())
+	})
 }
 
 func TestStartupHandlerUsesHostValidation(t *testing.T) {
@@ -163,13 +302,12 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		},
 	}
 
-	access := authapi.DaemonAccessOptions{Token: "startup-secret", RequireAPIAuth: true}
 	switcher := hostapi.NewStartupSwitch(server.NewStartupHandler(
 		cfg,
-		server.ServerOptions{DaemonAccess: access},
+		server.ServerOptions{},
 		ln,
 		server.BuildInfo{},
-	))
+	), 0)
 	httpSrv := &http.Server{Handler: switcher}
 	errCh := make(chan error, 1)
 	go func() {
@@ -206,25 +344,6 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	assert := assert.New(t)
 	assert.Equal(http.StatusOK, liveStatus)
 
-	// A tokenized page load during startup waits for the full server, which
-	// runs the token-to-cookie bootstrap.
-	type response struct {
-		resp *http.Response
-		err  error
-	}
-	held := make(chan response, 1)
-	go func() {
-		bootstrapRequest, err := http.NewRequestWithContext(
-			t.Context(), http.MethodGet, baseURL+"/?auth_token=startup-secret", nil,
-		)
-		if err != nil {
-			held <- response{err: err}
-			return
-		}
-		resp, err := client.Do(bootstrapRequest)
-		held <- response{resp: resp, err: err}
-	}()
-
 	database := dbtest.Open(t)
 	mock := &serverfake.MockGH{}
 	syncer := ghclient.NewSyncer(
@@ -234,30 +353,18 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	fullServer = server.New(
 		database, syncer, frontend, "/", cfg,
-		server.ServerOptions{DaemonAccess: access, HostCheckAllowLoopbackAnyPort: true},
+		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
 	)
 	fullServer.AttachHTTPServer(httpSrv, ln)
 	switcher.Swap(fullServer)
 
-	bootstrap := <-held
-	require.NoError(t, bootstrap.err)
-	defer bootstrap.resp.Body.Close()
-	assert.Equal(http.StatusSeeOther, bootstrap.resp.StatusCode)
-	var authCookie *http.Cookie
-	for _, cookie := range bootstrap.resp.Cookies() {
-		if cookie.Name == authapi.AuthCookieName {
-			authCookie = cookie
-		}
-	}
-	require.NotNil(t, authCookie)
+	readyStatus, _, readyBody := getHTTPBody(t, client, baseURL+"/api/v1/sync/status")
+	assert.Equal(http.StatusOK, readyStatus)
+	assert.Contains(readyBody, `"running":`)
 
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/sync/status", nil)
-	require.NoError(t, err)
-	request.AddCookie(authCookie)
-	ready, err := client.Do(request)
-	require.NoError(t, err)
-	defer ready.Body.Close()
-	assert.Equal(http.StatusOK, ready.StatusCode)
+	rootStatus, _, rootBody := getHTTPBody(t, client, baseURL+"/")
+	assert.Equal(http.StatusOK, rootStatus)
+	assert.Contains(rootBody, `window.__BASE_PATH__="/"`)
 }
 
 func getHTTPBody(

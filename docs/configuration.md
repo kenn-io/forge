@@ -554,7 +554,8 @@ base_path = "/"
 
 - `sync_interval` controls provider refreshes.
 - `host` and `port` set the listener.
-- `base_path` adds a URL prefix behind a reverse proxy.
+- `base_path` adds a URL prefix behind a reverse proxy. It cannot start with
+  `api`, `healthz`, or `livez`, which Forge serves at the root.
 - `data_dir` moves app data while leaving config under `KENN_FORGE_HOME`.
 
 For a trusted reverse proxy or a larger SSE replay window:

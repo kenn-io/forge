@@ -895,6 +895,11 @@ name = "b"
 		{"single dot", "/./path", true, ""},
 		{"special chars", "/mid<script>", true, ""},
 		{"quotes", `/mid"man`, true, ""},
+		// Root probe and ping routes would be ambiguous without trailing slashes.
+		{"health probe name", "/healthz/", true, ""},
+		{"liveness probe name", "livez", true, ""},
+		{"ping prefix", "/api/ping/", true, ""},
+		{"probe-like but distinct", "/live/", false, "/live/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"go.kenn.io/forge/internal/daemonruntime"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -17,10 +18,11 @@ import (
 // It lets startup bind before the full server exists, then swap to the full
 // server without closing the listener.
 type SwitchHandler struct {
-	current   atomic.Value
-	startup   *StartupHandler
-	ready     chan struct{}
-	readyOnce sync.Once
+	current     atomic.Value
+	startup     *StartupHandler
+	readTimeout time.Duration
+	ready       chan struct{}
+	readyOnce   sync.Once
 }
 
 type switchHandlerTarget struct {
@@ -35,10 +37,13 @@ func NewSwitchHandler(initial http.Handler) *SwitchHandler {
 }
 
 // NewStartupSwitch answers startup probes from startup and holds every other
-// request until Swap installs the full server, which then serves it.
-func NewStartupSwitch(startup *StartupHandler) *SwitchHandler {
+// request until Swap installs the full server, which then serves it. A held
+// request gets a fresh readTimeout, the serving http.Server's ReadTimeout,
+// when it is handed over, so waiting does not consume its body read budget.
+func NewStartupSwitch(startup *StartupHandler, readTimeout time.Duration) *SwitchHandler {
 	h := NewSwitchHandler(startup)
 	h.startup = startup
+	h.readTimeout = readTimeout
 	return h
 }
 
@@ -59,14 +64,28 @@ func (h *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				h.startup.ServeHTTP(w, r)
 				return
 			}
-			select {
-			case <-h.ready:
-			case <-r.Context().Done():
+			if !h.hold(w, r) {
 				return
 			}
 		}
 	}
 	h.current.Load().(switchHandlerTarget).handler.ServeHTTP(w, r)
+}
+
+// hold waits for the full server and reports whether r should be served.
+func (h *SwitchHandler) hold(w http.ResponseWriter, r *http.Request) bool {
+	// Deadline errors only mean the writer has no connection to adjust.
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Time{})
+	select {
+	case <-h.ready:
+	case <-r.Context().Done():
+		return false
+	}
+	if h.readTimeout > 0 {
+		_ = controller.SetReadDeadline(time.Now().Add(h.readTimeout))
+	}
+	return true
 }
 
 // StartupHandler answers the probes that must work before the full server

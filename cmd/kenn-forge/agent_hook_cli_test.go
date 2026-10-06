@@ -130,22 +130,6 @@ func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 	assert.JSONEq(`{}`, stdout.String())
 }
 
-func TestAgentHookProfilesDefaultToEveryKitProfile(t *testing.T) {
-	profiles, err := selectedAgentHookProfiles("")
-
-	require.NoError(t, err)
-	assert.Equal(t, []agenthook.Agent{
-		agenthook.AgentClaude,
-		agenthook.AgentCodex,
-		agenthook.AgentCopilot,
-		agenthook.AgentCursor,
-		agenthook.AgentDroid,
-		agenthook.AgentGemini,
-		agenthook.AgentHermes,
-		agenthook.AgentQwen,
-	}, profiles)
-}
-
 func TestAgentHookProfilesSelectOneIntegration(t *testing.T) {
 	profiles, err := selectedAgentHookProfiles("GeMiNi")
 

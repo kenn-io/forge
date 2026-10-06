@@ -504,9 +504,8 @@ func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
 			root := t.TempDir()
 			paths, err := NewSessionPaths(root, "kenn-forge-dead")
 			require.NoError(err)
-			socket := filepath.Join(t.TempDir(), "owner.sock")
 			if closedSocket {
-				listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+				listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.Socket, Net: "unix"})
 				require.NoError(err)
 				// Leave the socket file a killed owner leaves behind.
 				listener.SetUnlinkOnClose(false)
@@ -514,7 +513,7 @@ func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
 			}
 			require.NoError(writeState(paths, ownerState{
 				Session: "kenn-forge-dead",
-				Addr:    "unix://" + socket,
+				Addr:    "unix://" + paths.Socket,
 				Token:   "token",
 				Cwd:     t.TempDir(),
 			}))

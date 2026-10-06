@@ -166,7 +166,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 			default:
 				return nil, fmt.Errorf("%w: ACP owner unavailable", ErrSessionUnavailable)
 			}
-		} else if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ECONNREFUSED) {
+		} else if !errors.Is(err, ptyowner.ErrOwnerGone) {
 			return nil, err
 		}
 	}

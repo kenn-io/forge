@@ -68,7 +68,10 @@ func (m *Manager) StoppedMark(sessionKey string) bool {
 		return false
 	}
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
+	if err != nil || info == nil {
+		return false
+	}
+	return info.Mode().IsRegular()
 }
 
 func (m *Manager) markStopped(sessionKey string) error {

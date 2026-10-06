@@ -344,12 +344,6 @@ func newInitialMessagePTYOwner() *initialMessagePTYOwner {
 	}
 }
 
-func (o *initialMessagePTYOwner) HasState(session string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	return o.ptys[session] != nil
-}
-
 func (o *initialMessagePTYOwner) Attach(
 	_ context.Context,
 	session string,

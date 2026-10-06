@@ -16,7 +16,6 @@ import (
 )
 
 type Owner interface {
-	HasState(session string) bool
 	Attach(ctx context.Context, session string) (PTY, error)
 	Start(
 		ctx context.Context,
@@ -57,13 +56,6 @@ func New(client *ptyowner.Client, resolve ExecutableResolver) Owner {
 		resolve = ResolveExecutable
 	}
 	return owner{client: client, resolve: resolve}
-}
-
-func (o owner) HasState(session string) bool {
-	if o.client == nil {
-		return false
-	}
-	return o.client.HasState(session)
 }
 
 func (o owner) Attach(ctx context.Context, session string) (PTY, error) {

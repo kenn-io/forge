@@ -2664,10 +2664,6 @@ func newFakeRuntimePtyOwner() *fakeRuntimePtyOwner {
 	return &fakeRuntimePtyOwner{}
 }
 
-func (f *fakeRuntimePtyOwner) HasState(session string) bool {
-	return f.startedSession == session
-}
-
 func writeLongRunningAttachTmux(t *testing.T) string {
 	t.Helper()
 	tmuxPath := filepath.Join(t.TempDir(), "tmux")
@@ -2712,7 +2708,7 @@ func (f *fakeRuntimePtyOwner) Attach(
 		f.attachErrs = f.attachErrs[1:]
 		return nil, err
 	}
-	if !f.HasState(session) || f.startedPTY == nil {
+	if f.startedSession != session || f.startedPTY == nil {
 		return nil, fmt.Errorf("%w: missing pty owner state", ptyowner.ErrOwnerGone)
 	}
 	return f.startedPTY, nil

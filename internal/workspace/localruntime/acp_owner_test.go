@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/ptyowner"
+	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
 
 func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
@@ -121,7 +123,8 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	options := withTestPtyOwnerRuntime(t, Options{ACPSessionsDir: filepath.Join(dir, "acp"), Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)})
+	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+	options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), PtyOwnerRuntime: ptyownerruntime.New(owner, nil), Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)}
 	first := newACPTestManager(t, options)
 	info, err := first.Launch(t.Context(), "workspace", dir, "chat")
 	require.NoError(t, err)
@@ -142,7 +145,7 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	process, err := os.FindProcess(pid)
 	require.NoError(t, err)
 	require.NoError(t, process.Signal(syscall.SIGTERM))
-	require.Eventually(t, func() bool { return !options.PtyOwnerRuntime.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
 	second := newACPTestManager(t, options)
 	require.NoError(t, second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}))
 	resumed, err := second.ACP("workspace", info.Key)
@@ -271,11 +274,13 @@ func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	exits := make(chan SessionInfo, 1)
-	options := withTestPtyOwnerRuntime(t, Options{
-		ACPSessionsDir: filepath.Join(dir, "acp"),
-		Targets:        ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
-		OnSessionExit:  func(info SessionInfo) { exits <- info },
-	})
+	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+	options := Options{
+		ACPSessionsDir:  filepath.Join(dir, "acp"),
+		PtyOwnerRuntime: ptyownerruntime.New(owner, nil),
+		Targets:         ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
+		OnSessionExit:   func(info SessionInfo) { exits <- info },
+	}
 	manager := newACPTestManager(t, options)
 	info, err := manager.Launch(t.Context(), "workspace", dir, "chat")
 	require.NoError(t, err)
@@ -289,7 +294,7 @@ func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
 	}
 	assert.True(t, manager.Exited(info.Key))
 	// The owner is fully gone, as when the reopen comes a moment later.
-	require.Eventually(t, func() bool { return !options.PtyOwnerRuntime.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
 
 	err = manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}})
 	require.ErrorIs(t, err, ErrSessionUnavailable)

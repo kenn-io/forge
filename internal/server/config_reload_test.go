@@ -1707,10 +1707,6 @@ type fakeRuntimePTY struct {
 	done   chan struct{}
 }
 
-func (m *fakeRuntimeOwner) HasState(string) bool {
-	return m.pty != nil
-}
-
 func (m *fakeRuntimeOwner) Attach(context.Context, string) (ptyownerruntime.PTY, error) {
 	return m.pty, nil
 }

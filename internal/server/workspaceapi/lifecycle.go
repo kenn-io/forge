@@ -235,8 +235,8 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			h.setRuntimeRecoveryPending(session.SessionKey, false)
 			continue
 		}
-		// A dead pty-owner keeps its row, as an unavailable session the user
-		// stops, unless its agent has a saved conversation to resume.
+		// Resume a missing tmux agent or a gone pty-owner agent from its saved
+		// conversation.
 		gone := errors.Is(err, localruntime.ErrSessionNotFound) || errors.Is(err, ptyowner.ErrOwnerGone)
 		if gone && workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
 			h.agentActivity != nil && len(h.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, []string{session.SessionKey})) > 0 {

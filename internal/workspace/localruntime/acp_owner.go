@@ -154,7 +154,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 		if !errors.Is(err, ErrSessionNotFound) {
 			return nil, err
 		}
-	} else if m.ptyOwnerRuntime != nil && m.ptyOwnerRuntime.HasState(info.Key) {
+	} else if m.ptyOwnerRuntime != nil {
 		backend, err := m.ptyOwnerRuntime.Attach(ctx, info.Key)
 		if err == nil {
 			defer backend.Close()

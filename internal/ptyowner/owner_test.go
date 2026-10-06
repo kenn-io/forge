@@ -517,7 +517,7 @@ func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
 				listener.SetUnlinkOnClose(false)
 				require.NoError(listener.Close())
 			case "socket directory missing":
-				socket = filepath.Join(t.TempDir(), "gone", "owner.sock")
+				socket = filepath.Join(filepath.Dir(paths.Socket), "gone", "s")
 			}
 			require.NoError(writeState(paths, ownerState{
 				Session: "kenn-forge-dead",

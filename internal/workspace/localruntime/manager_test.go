@@ -876,6 +876,20 @@ func TestManagerRestorePtyOwnerGoneIsNotFound(t *testing.T) {
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
+func TestRestoreACPReplacesGoneOwner(t *testing.T) {
+	owner := newFakeRuntimePtyOwner()
+	owner.startedSession = "ws-1_chat"
+	owner.attachErrs = []error{fmt.Errorf("%w: connection refused", ptyowner.ErrOwnerGone)}
+	mgr := NewManager(Options{PtyOwnerRuntime: owner, ACPSessionsDir: t.TempDir()})
+	t.Cleanup(mgr.Shutdown)
+
+	_, err := mgr.restoreACP(t.Context(), SessionInfo{Key: "ws-1_chat", WorkspaceID: "ws-1", TargetKey: "chat", Kind: LaunchTargetACP}, t.TempDir())
+
+	// Past the owner check, restore reads the saved configuration to start a replacement.
+	require.ErrorContains(t, err, "read ACP owner configuration")
+	assert.Equal(t, 1, owner.attaches)
+}
+
 func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

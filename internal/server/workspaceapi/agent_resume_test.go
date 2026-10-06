@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,8 +27,21 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_AGENT_SESSION_HELPER
-	t.Setenv("KENN_FORGE_AGENT_SESSION_HELPER", "1")
+// TestResumeAgentHelper records the arguments a resume appended, in the agent's
+// working directory, then waits like a running agent.
+func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess entry point
+	if os.Getenv("KENN_FORGE_RESUME_AGENT_HELPER") != "1" {
+		return
+	}
+	args := os.Args[slices.Index(os.Args, "--")+1:]
+	if os.WriteFile("args.tmp", []byte(strings.Join(args, "\n")), 0o600) != nil || os.Rename("args.tmp", "args") != nil {
+		os.Exit(2)
+	}
+	time.Sleep(time.Hour)
+}
+
+func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_RESUME_AGENT_HELPER
+	t.Setenv("KENN_FORGE_RESUME_AGENT_HELPER", "1")
 	for _, name := range []string{"no owner state", "stale owner state", "no saved conversation"} {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
@@ -57,14 +71,14 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				paths, err := ptyowner.NewSessionPaths(ownerRoot, "saved-runtime")
 				require.NoError(err)
 				require.NoError(os.MkdirAll(paths.Dir, 0o700))
-				state, err := json.Marshal(map[string]string{"session": "saved-runtime", "addr": "unix://" + filepath.Join(t.TempDir(), "gone", "owner.sock"), "token": "token"})
+				state, err := json.Marshal(map[string]string{"session": "saved-runtime", "addr": "unix://" + filepath.Join(filepath.Dir(paths.Socket), "gone", "s"), "token": "token"})
 				require.NoError(err)
 				require.NoError(os.WriteFile(paths.StatePath, state, 0o600))
 			}
 			runtime := localruntime.NewManager(localruntime.Options{
 				PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: ownerRoot, InProcess: true}, nil),
 				Targets: []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{
-					os.Args[0], "-test.run=^TestWorkspaceAgentSessionHelper$", "--", "record",
+					os.Args[0], "-test.run=^TestResumeAgentHelper$", "--",
 				}}},
 			})
 			t.Cleanup(func() {

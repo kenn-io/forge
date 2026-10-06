@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -176,16 +175,10 @@ func TestWorkspaceAgentSessionHelper(t *testing.T) { //nolint:paralleltest // su
 	for index, arg := range args {
 		if arg == "--" && index+1 < len(args) {
 			mode = args[index+1]
-			args = args[index+2:]
 			break
 		}
 	}
-	if mode == "record" {
-		// Record the arguments a launch appended, in the agent's working directory.
-		if os.WriteFile("args.tmp", []byte(strings.Join(args, "\n")), 0o600) != nil || os.Rename("args.tmp", "args") != nil {
-			os.Exit(2)
-		}
-	} else if mode != "sleep" {
+	if mode != "sleep" {
 		_, _ = fmt.Fprintln(os.Stderr, "unknown helper mode")
 		os.Exit(2)
 	}

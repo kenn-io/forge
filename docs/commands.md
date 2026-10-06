@@ -139,7 +139,9 @@ kenn-forge agent-hook uninstall --agent codex
 
 Without `--agent`, install or remove every supported integration. Installed
 hooks send lifecycle activity to the running daemon. Codex asks you to review
-the installed commands through `/hooks` once.
+the installed commands through `/hooks` once. On Windows, Claude hooks need
+Claude Code 2.1.139 or later. Rerun `kenn-forge agent-hook install` after
+upgrading Forge so it rewrites existing Claude hooks.
 
 ## Stand in for the GitHub CLI
 

@@ -187,6 +187,9 @@ func TestAgentHookInstallDefaultsToEveryKitProfile(t *testing.T) {
 		plan, err := agenthook.PlanUninstall(profile.Agent, "", agentHookMarker)
 		require.NoError(err)
 		assert.True(plan.Changed, "%s hooks should carry the kenn-forge marker", profile.Agent)
+		plan, err = agenthook.PlanUninstall(profile.Agent, "", "--agent "+string(profile.Agent))
+		require.NoError(err)
+		assert.True(plan.Changed, "%s hooks should route to their own agent", profile.Agent)
 		assert.Contains(output.String(), "Installed kenn-forge "+profile.DisplayName+" hooks")
 	}
 }

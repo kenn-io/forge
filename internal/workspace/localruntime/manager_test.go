@@ -2484,70 +2484,15 @@ func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *test
 	assert.ErrorIs(t, err, ErrInitialMessageNotWritten)
 }
 
-func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *testing.T) {
+func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		require := require.New(t)
 		writeStarted := make(chan struct{})
 		writeRelease := make(chan struct{})
-		writeFinished := make(chan struct{})
-		pty := &fakeRuntimePTY{
-			output: make(chan []byte), done: make(chan struct{}),
-			writeStarted: writeStarted, writeRelease: writeRelease, writeFinished: writeFinished,
-		}
-		s := &session{
-			info: SessionInfo{
-				Key: "agent-1", WorkspaceID: "ws-1", Kind: LaunchTargetAgent,
-				Status: SessionStatusRunning,
-			},
-			pty: pty, done: make(chan struct{}),
-			subscribers: make(map[chan []byte]struct{}),
-		}
-		mgr := NewManager(Options{})
-		mgr.sessions[s.info.Key] = s
-		s.broadcast([]byte("\x1b[?2004h"))
-		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-		defer cancel()
-		result := make(chan error, 1)
-		go func() {
-			result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this")
-		}()
-
-		<-writeStarted
-		snapshotDone := make(chan struct{})
-		go func() {
-			_ = s.snapshot()
-			close(snapshotDone)
-		}()
-		select {
-		case <-snapshotDone:
-		case <-time.After(time.Second):
-			require.FailNow("session lock remained held during terminal write")
-		}
-		select {
-		case err := <-result:
-			require.ErrorIs(err, context.DeadlineExceeded)
-		case <-time.After(time.Second):
-			require.FailNow("initial message write ignored context deadline")
-		}
-		close(writeRelease)
-		select {
-		case <-writeFinished:
-		case <-time.After(time.Second):
-			require.FailNow("blocked test write did not finish")
-		}
-		// The detached Enter write must finish before the bubble can exit.
-		time.Sleep(initialMessageEnterDelay)
-	})
-}
-
-func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		require := require.New(t)
-		writeRelease := make(chan struct{})
 		writeObserved := make(chan []byte)
 		pty := &fakeRuntimePTY{
 			output: make(chan []byte), done: make(chan struct{}),
-			writeRelease: writeRelease, writeObserved: writeObserved,
+			writeStarted: writeStarted, writeRelease: writeRelease, writeObserved: writeObserved,
 		}
 		s := &session{
 			info: SessionInfo{
@@ -2566,6 +2511,9 @@ func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *tes
 		go func() {
 			result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this")
 		}()
+		<-writeStarted
+		require.True(s.mu.TryLock(), "session lock remained held during terminal write")
+		s.mu.Unlock()
 		select {
 		case err := <-result:
 			require.ErrorIs(err, context.DeadlineExceeded)

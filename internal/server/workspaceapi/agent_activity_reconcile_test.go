@@ -32,7 +32,7 @@ func TestRestoreRuntimeSessionsDropsReportsOfPrunedRuntimes(t *testing.T) {
 		GitHeadRef: "feature/reconcile", WorkspaceBranch: "feature/reconcile",
 		WorktreePath: worktree, Status: "ready",
 	}))
-	// A persisted runtime whose pty-owner state is gone restores as
+	// With no pty-owner runtime configured, a persisted runtime restores as
 	// unavailable, which keeps its row; its report must survive.
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
 		WorkspaceID: workspaceID, SessionKey: "runtime-kept",

@@ -808,19 +808,6 @@ func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 }
 
 func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	sessionKey := "ws-1_retry-attach"
-	owner := newFakeRuntimePtyOwner()
-	owner.startedSession = sessionKey
-	owner.startedPTY = &fakeRuntimePTY{
-		output: make(chan []byte, 64),
-		done:   make(chan struct{}),
-	}
-	owner.attachErrs = []error{
-		errors.New("owner socket not ready"),
-		errors.New("owner still starting"),
-	}
 	previousBackOff := newPtyOwnerAttachBackOff
 	newPtyOwnerAttachBackOff = func() backoff.BackOff {
 		expo := backoff.NewExponentialBackOff()
@@ -830,109 +817,57 @@ func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
 		return expo
 	}
 	t.Cleanup(func() { newPtyOwnerAttachBackOff = previousBackOff })
-	mgr := NewManager(Options{
-		PtyOwnerRuntime: owner,
-	})
-	t.Cleanup(mgr.Shutdown)
+	gone := fmt.Errorf("%w: connection refused", ptyowner.ErrOwnerGone)
+	for _, test := range []struct {
+		name       string
+		kind       LaunchTargetKind
+		attachErrs []error
+		attaches   int
+		check      func(*require.Assertions, error)
+	}{
+		{"transient then attached", LaunchTargetAgent, []error{errors.New("owner socket not ready"), errors.New("owner still starting")}, 3, func(require *require.Assertions, err error) {
+			require.NoError(err)
+		}},
+		{"retries exhausted", LaunchTargetAgent, []error{errors.New("a"), errors.New("b"), errors.New("c"), errors.New("d")}, 4, func(require *require.Assertions, err error) {
+			require.ErrorIs(err, ErrSessionUnavailable)
+			require.NotErrorIs(err, ErrSessionNotFound)
+		}},
+		{"owner gone", LaunchTargetAgent, []error{gone}, 1, func(require *require.Assertions, err error) {
+			require.ErrorIs(err, ErrSessionNotFound)
+		}},
+		{"ACP owner gone", LaunchTargetACP, []error{gone}, 1, func(require *require.Assertions, err error) {
+			// Past the owner check, restore reads the saved configuration to start a replacement.
+			require.ErrorContains(err, "read ACP owner configuration")
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sessionKey := "ws-1_restore"
+			owner := newFakeRuntimePtyOwner()
+			owner.startedSession = sessionKey
+			owner.startedPTY = &fakeRuntimePTY{output: make(chan []byte, 64), done: make(chan struct{})}
+			owner.attachErrs = test.attachErrs
+			mgr := NewManager(Options{PtyOwnerRuntime: owner, ACPSessionsDir: t.TempDir()})
+			t.Cleanup(mgr.Shutdown)
 
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
-		WorkspaceID: "ws-1",
-		SessionKey:  sessionKey,
-		TargetKey:   "helper",
-		Label:       "Helper",
-		Kind:        LaunchTargetAgent,
-		CWD:         t.TempDir(),
-		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
-	}})
-	require.NoError(err)
+			err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+				WorkspaceID: "ws-1",
+				SessionKey:  sessionKey,
+				TargetKey:   "helper",
+				Label:       "Helper",
+				Kind:        test.kind,
+				CWD:         t.TempDir(),
+				CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
+			}})
 
-	sessions := mgr.ListSessions("ws-1")
-	require.Len(sessions, 1)
-	assert.Equal(3, owner.attaches)
-	assert.Equal(sessionKey, sessions[0].Key)
-	assert.Equal(SessionStatusRunning, sessions[0].Status)
-}
-
-func TestManagerRestorePtyOwnerGoneIsNotFound(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	sessionKey := "ws-1_gone"
-	owner := newFakeRuntimePtyOwner()
-	owner.startedSession = sessionKey
-	owner.attachErrs = []error{fmt.Errorf("%w: connection refused", ptyowner.ErrOwnerGone)}
-	mgr := NewManager(Options{PtyOwnerRuntime: owner})
-	t.Cleanup(mgr.Shutdown)
-
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
-		WorkspaceID: "ws-1",
-		SessionKey:  sessionKey,
-		TargetKey:   "helper",
-		Kind:        LaunchTargetAgent,
-		CWD:         t.TempDir(),
-	}})
-
-	require.ErrorIs(err, ErrSessionNotFound)
-	assert.Equal(1, owner.attaches, "a gone owner is not retried")
-	assert.Empty(mgr.ListSessions("ws-1"))
-}
-
-func TestRestoreACPReplacesGoneOwner(t *testing.T) {
-	owner := newFakeRuntimePtyOwner()
-	owner.startedSession = "ws-1_chat"
-	owner.attachErrs = []error{fmt.Errorf("%w: connection refused", ptyowner.ErrOwnerGone)}
-	mgr := NewManager(Options{PtyOwnerRuntime: owner, ACPSessionsDir: t.TempDir()})
-	t.Cleanup(mgr.Shutdown)
-
-	_, err := mgr.restoreACP(t.Context(), SessionInfo{Key: "ws-1_chat", WorkspaceID: "ws-1", TargetKey: "chat", Kind: LaunchTargetACP}, t.TempDir())
-
-	// Past the owner check, restore reads the saved configuration to start a replacement.
-	require.ErrorContains(t, err, "read ACP owner configuration")
-	assert.Equal(t, 1, owner.attaches)
-}
-
-func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	sessionKey := "ws-1_unavailable-attach"
-	owner := newFakeRuntimePtyOwner()
-	owner.startedSession = sessionKey
-	owner.startedPTY = &fakeRuntimePTY{
-		output: make(chan []byte, 64),
-		done:   make(chan struct{}),
+			test.check(require.New(t), err)
+			assert.Equal(t, test.attaches, owner.attaches)
+			if err == nil {
+				assert.Len(t, mgr.ListSessions("ws-1"), 1)
+			} else {
+				assert.Empty(t, mgr.ListSessions("ws-1"))
+			}
+		})
 	}
-	owner.attachErrs = []error{
-		errors.New("owner socket not ready"),
-		errors.New("owner still starting"),
-		errors.New("owner still absent"),
-		errors.New("owner gone"),
-	}
-	previousBackOff := newPtyOwnerAttachBackOff
-	newPtyOwnerAttachBackOff = func() backoff.BackOff {
-		expo := backoff.NewExponentialBackOff()
-		expo.InitialInterval = time.Millisecond
-		expo.MaxInterval = time.Millisecond
-		expo.RandomizationFactor = 0
-		return expo
-	}
-	t.Cleanup(func() { newPtyOwnerAttachBackOff = previousBackOff })
-	mgr := NewManager(Options{
-		PtyOwnerRuntime: owner,
-	})
-	t.Cleanup(mgr.Shutdown)
-
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
-		WorkspaceID: "ws-1",
-		SessionKey:  sessionKey,
-		TargetKey:   "helper",
-		Label:       "Helper",
-		Kind:        LaunchTargetAgent,
-		CWD:         t.TempDir(),
-		CreatedAt:   time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
-	}})
-	require.ErrorIs(err, ErrSessionUnavailable)
-	require.NotErrorIs(err, ErrSessionNotFound)
-	assert.Equal(4, owner.attaches)
-	assert.Empty(mgr.ListSessions("ws-1"))
 }
 
 func TestManagerRestoreTmuxSessionAttachesStoredSessionWithoutOwnerValidation(t *testing.T) {

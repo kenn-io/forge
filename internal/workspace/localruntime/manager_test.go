@@ -2763,7 +2763,7 @@ func (f *fakeRuntimePtyOwner) Attach(
 		return nil, err
 	}
 	if !f.HasState(session) || f.startedPTY == nil {
-		return nil, errors.New("missing pty owner state")
+		return nil, fmt.Errorf("%w: missing pty owner state", ptyowner.ErrOwnerGone)
 	}
 	return f.startedPTY, nil
 }

@@ -498,22 +498,30 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 }
 
 func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
-	for name, closedSocket := range map[string]bool{"socket refuses": true, "socket missing": false} {
+	for _, name := range []string{"socket refuses", "socket missing", "socket directory missing"} {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			root := t.TempDir()
 			paths, err := NewSessionPaths(root, "kenn-forge-dead")
 			require.NoError(err)
-			if closedSocket {
-				listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.Socket, Net: "unix"})
+			if paths.SocketDir != "" {
+				require.NoError(createPrivateSocketDir(paths.SocketDir))
+				t.Cleanup(func() { removeSocketDir(paths) })
+			}
+			socket := paths.Socket
+			switch name {
+			case "socket refuses":
+				listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 				require.NoError(err)
 				// Leave the socket file a killed owner leaves behind.
 				listener.SetUnlinkOnClose(false)
 				require.NoError(listener.Close())
+			case "socket directory missing":
+				socket = filepath.Join(t.TempDir(), "gone", "owner.sock")
 			}
 			require.NoError(writeState(paths, ownerState{
 				Session: "kenn-forge-dead",
-				Addr:    "unix://" + paths.Socket,
+				Addr:    "unix://" + socket,
 				Token:   "token",
 				Cwd:     t.TempDir(),
 			}))

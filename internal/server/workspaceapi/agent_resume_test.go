@@ -94,7 +94,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 			stored, err := database.ListAllWorkspaceRuntimeSessions(ctx)
 			require.NoError(err)
 			if name == "no saved conversation" {
-				assert.Empty(stored)
+				assert.Len(stored, 1, "the row stays as an unavailable session until the user stops it")
 				assert.Empty(runtime.ListSessions("workspace"))
 				return
 			}

@@ -833,7 +833,8 @@ func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
 			require.NotErrorIs(err, ErrSessionNotFound)
 		}},
 		{"owner gone", LaunchTargetAgent, []error{gone}, 1, func(require *require.Assertions, err error) {
-			require.ErrorIs(err, ErrSessionNotFound)
+			require.ErrorIs(err, ErrSessionUnavailable)
+			require.ErrorIs(err, ptyowner.ErrOwnerGone)
 		}},
 		{"ACP owner gone", LaunchTargetACP, []error{gone}, 1, func(require *require.Assertions, err error) {
 			// Past the owner check, restore reads the saved configuration to start a replacement.

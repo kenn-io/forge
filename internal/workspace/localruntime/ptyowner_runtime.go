@@ -88,9 +88,6 @@ func attachPtyOwnerSession(
 			return owner.Attach(ctx, info.Key)
 		},
 	})
-	if errors.Is(err, ptyowner.ErrOwnerGone) {
-		return nil, fmt.Errorf("%w: %q: %w", ErrSessionNotFound, info.Key, err)
-	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%w: %q: %w",

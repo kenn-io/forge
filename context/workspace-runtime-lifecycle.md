@@ -288,7 +288,8 @@ create a local process, PTY, or durable transport session
 - Missing tmux agents, and ptyowner agents whose owner is gone (no state, or a
   socket that refuses or no longer exists, as after a reboot), resume the newest
   matching Codex, Claude, or Pi hook session by exact ID, preserving configured
-  flags and runtime identity without replaying the initial prompt
+  flags and runtime identity without replaying the initial prompt. A gone
+  ptyowner session with nothing to resume stays unavailable until the user stops it
   (`internal/server/workspaceapi/agent_resume.go::Handler.resumeWorkspaceAgent`,
   `internal/workspace/localruntime/ptyowner_runtime.go::attachPtyOwnerSession`).
 - Agent recovery must enforce the same Git identity and credential-helper checks as a fresh

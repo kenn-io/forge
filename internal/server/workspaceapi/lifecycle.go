@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -234,16 +235,17 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			h.setRuntimeRecoveryPending(session.SessionKey, false)
 			continue
 		}
-		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			if workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
-				h.agentActivity != nil && len(h.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, []string{session.SessionKey})) > 0 {
-				if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr == nil {
-					continue
-				} else {
-					slog.Warn("could not resume workspace agent; retained for recovery", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
-					continue
-				}
+		// A dead pty-owner keeps its row, as an unavailable session the user
+		// stops, unless its agent has a saved conversation to resume.
+		gone := errors.Is(err, localruntime.ErrSessionNotFound) || errors.Is(err, ptyowner.ErrOwnerGone)
+		if gone && workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
+			h.agentActivity != nil && len(h.agentActivity.LiveReportsForWorkspace(summary.WorktreePath, []string{session.SessionKey})) > 0 {
+			if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr != nil {
+				slog.Warn("could not resume workspace agent; retained for recovery", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
 			}
+			continue
+		}
+		if errors.Is(err, localruntime.ErrSessionNotFound) {
 			if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
 				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
 			); forgetErr != nil {

@@ -90,18 +90,48 @@ func TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E(t *testing.T) { //nolint:pa
 
 	// Prove application clipboard writes cross the base shell, tmux, and
 	// terminal WebSocket; an option read would miss a broken transport hop.
-	require.NoError(conn.Write(ctx, websocket.MessageBinary,
-		[]byte("printf '\\033]52;c;Y2xpcGJvYXJkLXByb29m\\007'\n")))
-	readCtx, cancelRead := context.WithTimeout(ctx, 5*time.Second)
+	// Keystrokes sent while the attached tmux client is still starting can be
+	// lost, so the command repeats until its output arrives.
+	readCtx, cancelRead := context.WithCancel(ctx)
 	defer cancelRead()
+	output := make(chan []byte)
+	readErr := make(chan error, 1)
+	go func() {
+		for {
+			typ, data, err := conn.Read(readCtx)
+			if err != nil {
+				readErr <- err
+				return
+			}
+			if typ != websocket.MessageBinary {
+				continue
+			}
+			select {
+			case output <- data:
+			case <-readCtx.Done():
+				return
+			}
+		}
+	}()
+	clipboardCommand := []byte("printf '\\033]52;c;Y2xpcGJvYXJkLXByb29m\\007'\n")
+	resend := time.NewTicker(time.Second)
+	defer resend.Stop()
+	deadline := time.After(15 * time.Second)
 	var clipboardOutput []byte
+	require.NoError(conn.Write(ctx, websocket.MessageBinary, clipboardCommand))
 	for !bytes.Contains(clipboardOutput, []byte("\x1b]52;c;Y2xpcGJvYXJkLXByb29m")) {
-		typ, data, err := conn.Read(readCtx)
-		require.NoError(err)
-		if typ == websocket.MessageBinary {
+		select {
+		case data := <-output:
 			clipboardOutput = append(clipboardOutput, data...)
+		case <-resend.C:
+			require.NoError(conn.Write(ctx, websocket.MessageBinary, clipboardCommand))
+		case err := <-readErr:
+			require.NoError(err)
+		case <-deadline:
+			require.Fail("clipboard sequence never crossed the terminal WebSocket")
 		}
 	}
+	cancelRead()
 
 	require.NoError(conn.Close(websocket.StatusNormalClosure, "done"))
 

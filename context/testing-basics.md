@@ -107,6 +107,9 @@ fixtures, or changing shell-script coverage.
 - Isolation must strip inherited Git variables, use scratch global and system
   configuration, and keep the fixture outside every checkout; a working
   directory or `git -C` alone does not isolate Git.
+- Keystrokes sent through a freshly attached terminal can be lost while the tmux
+  client starts; resend the command until its output arrives rather than sending
+  once (`internal/server/workspacetest/default_tmux_socket_test.go::TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E`).
 - ACP fixtures must explicitly select private tmux or disable tmux discovery;
   a nil command discovers the live default server (`internal/workspace/localruntime/acp_test.go::newACPTestManager`).
 - Private tmux tests retain markers on gate, read, validation, or identity errors;

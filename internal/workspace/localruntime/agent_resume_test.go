@@ -29,3 +29,12 @@ func TestAgentResumeCommand(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestAgentResumableRequiresTerminalAgentTarget(t *testing.T) {
+	manager := NewManager(Options{Targets: []LaunchTarget{
+		{Key: "worker", Kind: LaunchTargetAgent, Available: true, Command: []string{"claude"}},
+		{Key: "chat", Kind: LaunchTargetACP, Available: true, Command: []string{"claude"}},
+	}})
+	assert.True(t, manager.AgentResumable("worker", "claude", "conversation"))
+	assert.False(t, manager.AgentResumable("chat", "claude", "conversation"), "a target reloaded to ACP can't resume a terminal agent")
+}

@@ -34,11 +34,11 @@ func agentResumeCommand(command []string, agent, sessionID string) ([]string, er
 	return invocation.Argv, nil
 }
 
-// AgentResumable reports whether target is available and its command can
-// resume the hook-reported session interactively.
+// AgentResumable reports whether target is an available terminal agent target
+// whose command can resume the hook-reported session interactively.
 func (m *Manager) AgentResumable(targetKey, agent, sessionID string) bool {
 	target, err := m.target(targetKey)
-	if err != nil || !target.Available {
+	if err != nil || !target.Available || target.Kind != LaunchTargetAgent {
 		return false
 	}
 	_, err = agentResumeCommand(target.Command, agent, sessionID)

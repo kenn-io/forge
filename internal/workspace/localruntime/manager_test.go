@@ -853,6 +853,41 @@ func TestManagerRestorePtyOwnerSessionRetriesAttach(t *testing.T) {
 	assert.Equal(SessionStatusRunning, sessions[0].Status)
 }
 
+func TestManagerRestorePtyOwnerGoneIsNotFound(t *testing.T) {
+	for name, tc := range map[string]struct {
+		hasState bool
+		attaches int
+	}{
+		"owner gone":    {hasState: true, attaches: 1},
+		"state missing": {hasState: false, attaches: 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			sessionKey := "ws-1_gone"
+			owner := newFakeRuntimePtyOwner()
+			if tc.hasState {
+				owner.startedSession = sessionKey
+			}
+			owner.attachErrs = []error{fmt.Errorf("%w: connection refused", ptyowner.ErrOwnerGone)}
+			mgr := NewManager(Options{PtyOwnerRuntime: owner})
+			t.Cleanup(mgr.Shutdown)
+
+			err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+				WorkspaceID: "ws-1",
+				SessionKey:  sessionKey,
+				TargetKey:   "helper",
+				Kind:        LaunchTargetAgent,
+				CWD:         t.TempDir(),
+			}})
+
+			require.ErrorIs(err, ErrSessionNotFound)
+			assert.Equal(tc.attaches, owner.attaches)
+			assert.Empty(mgr.ListSessions("ws-1"))
+		})
+	}
+}
+
 func TestManagerRestorePtyOwnerAttachFailureIsUnavailable(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

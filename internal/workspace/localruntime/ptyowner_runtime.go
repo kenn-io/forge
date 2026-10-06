@@ -9,6 +9,7 @@ import (
 	"runtime"
 
 	"github.com/cenkalti/backoff/v7"
+	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	internalretry "go.kenn.io/forge/internal/retry"
 )
@@ -80,13 +81,16 @@ func attachPtyOwnerSession(
 		Label:    "runtime pty owner attach",
 		BackOff:  newPtyOwnerAttachBackOff(),
 		MaxTries: 4,
-		IsTransient: func(error) bool {
-			return true
+		IsTransient: func(err error) bool {
+			return !errors.Is(err, ptyowner.ErrOwnerGone)
 		},
 		Op: func() (ptyownerruntime.PTY, error) {
 			return owner.Attach(ctx, info.Key)
 		},
 	})
+	if errors.Is(err, ptyowner.ErrOwnerGone) {
+		return nil, fmt.Errorf("%w: %q: %w", ErrSessionNotFound, info.Key, err)
+	}
 	if err != nil {
 		return nil, fmt.Errorf(
 			"%w: %q: %w",

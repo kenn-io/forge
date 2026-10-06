@@ -663,9 +663,10 @@ func (m *Manager) restoreRuntimeSession(
 			ErrSessionUnavailable, key,
 		)
 	} else if restored.Kind != LaunchTargetACP && tmuxSession == "" && !m.ptyOwnerRuntime.HasState(key) {
+		// An owner deletes its state when it exits, so missing state means it is gone.
 		return fmt.Errorf(
 			"%w: %q: pty owner state missing",
-			ErrSessionUnavailable, key,
+			ErrSessionNotFound, key,
 		)
 	}
 

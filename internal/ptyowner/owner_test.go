@@ -497,6 +497,36 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	require.True(os.IsNotExist(err))
 }
 
+func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
+	for name, closedSocket := range map[string]bool{"socket refuses": true, "socket missing": false} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			root := t.TempDir()
+			paths, err := NewSessionPaths(root, "kenn-forge-dead")
+			require.NoError(err)
+			socket := filepath.Join(t.TempDir(), "owner.sock")
+			if closedSocket {
+				listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+				require.NoError(err)
+				// Leave the socket file a killed owner leaves behind.
+				listener.SetUnlinkOnClose(false)
+				require.NoError(listener.Close())
+			}
+			require.NoError(writeState(paths, ownerState{
+				Session: "kenn-forge-dead",
+				Addr:    "unix://" + socket,
+				Token:   "token",
+				Cwd:     t.TempDir(),
+			}))
+
+			_, err = (&Client{Root: root}).Attach(t.Context(), "kenn-forge-dead", ptysize.FallbackGeometry(80, 24))
+
+			require.ErrorIs(err, ErrOwnerGone)
+			require.FileExists(paths.StatePath)
+		})
+	}
+}
+
 func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 	require := require.New(t)
 

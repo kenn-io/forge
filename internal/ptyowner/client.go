@@ -81,6 +81,10 @@ const (
 
 var ErrCommandLineTooLong = errors.New("command line exceeds the Windows limit of 32,767 UTF-16 code units; shorten the prompt or launch arguments")
 
+// ErrOwnerGone means no owner is running for a session, as after a reboot or
+// a killed owner, so attaching again cannot succeed.
+var ErrOwnerGone = errors.New("pty owner is not running")
+
 type Attachment struct {
 	Output <-chan []byte
 	Done   <-chan struct{}
@@ -383,6 +387,9 @@ func (c *Client) Attach(
 ) (*Attachment, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
+		if isAbsentOwner(err) {
+			return nil, fmt.Errorf("%w: %w", ErrOwnerGone, err)
+		}
 		return nil, err
 	}
 	clearDeadline := applyRPCDeadline(ctx, conn)

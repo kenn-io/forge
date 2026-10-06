@@ -62,9 +62,12 @@ and the root event stream.
 
 ## Startup Contracts
 
-- Until the full server swaps in, the startup handler serves liveness, the
-  discovery ping, and the web app, while `/api`, `/ws`, `/healthz`, and `/mcp`
-  return the startup 503 (`internal/server/hostapi/startup_handler.go::StartupHandler.serveInner`).
+- Until the full server swaps in, the primary listener answers only startup
+  probes (`/livez`, the not-ready `/healthz`, and the discovery ping) and holds
+  every other request for the full server instead of serving partial routes
+  (`internal/server/hostapi/startup_handler.go::SwitchHandler.ServeHTTP`).
+- A base path without its trailing slash is served as the base path, not
+  redirected (`internal/server/server.go::serveBareBasePath`).
 - Hub readiness must not wait for repository discovery: restore the verified catalog
   locally, then resolve current configuration and start sync in the background
   (`cmd/kenn-forge/main.go::resolveStartupRepos`). Background discovery holds

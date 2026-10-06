@@ -21,6 +21,7 @@ import (
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
+	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -54,158 +55,89 @@ func TestSwitchHandlerSwapsDifferentHandlerTypes(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, secondRR.Code)
 }
 
-func TestStartupHandlerServesSPAWhileAPIUnavailable(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
-		},
-		"assets/index-DEADBEEF.js": &fstest.MapFile{
-			Data: []byte(`console.log("bundle");`),
-		},
-	}
-	cfg := &config.Config{
-		Host:     "127.0.0.1",
-		Port:     8091,
-		BasePath: "/",
-	}
-	handler := server.NewStartupHandler(
-		frontend,
-		cfg,
+func newStartupSwitch(t *testing.T, basePath string) *hostapi.SwitchHandler {
+	t.Helper()
+	return hostapi.NewStartupSwitch(server.NewStartupHandler(
+		&config.Config{Host: "127.0.0.1", Port: 8091, BasePath: basePath},
 		server.ServerOptions{},
 		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
 		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
-	)
+	))
+}
 
-	rootReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
-	rootReq.Host = "127.0.0.1:8091"
-	rootReq.RemoteAddr = "127.0.0.1:1234"
-	rootRR := httptest.NewRecorder()
-	handler.ServeHTTP(rootRR, rootReq)
+func serveStartup(
+	ctx context.Context, handler http.Handler, path, host string,
+) *httptest.ResponseRecorder {
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	req.Host = host
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
 
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, rootRR.Code)
-	assert.Contains(rootRR.Body.String(), `<body>app</body>`)
-	assert.Contains(rootRR.Body.String(), `window.__BASE_PATH__="/"`)
-	assert.NotContains(rootRR.Body.String(), "kenn-forge is starting")
+func TestStartupSwitchAnswersProbes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	tests := []struct {
+		basePath string
+		path     string
+		live     bool
+	}{
+		{basePath: "/", path: "/livez", live: true},
+		{basePath: "/", path: "/healthz"},
+		{basePath: "/kenn-forge/", path: "/kenn-forge/livez", live: true},
+		{basePath: "/kenn-forge/", path: "/kenn-forge/healthz"},
+		// Base paths that overlap the root probes must not hide them.
+		{basePath: "/live/", path: "/livez", live: true},
+		{basePath: "/live/", path: "/live/livez", live: true},
+		{basePath: "/livez/", path: "/livez", live: true},
+		{basePath: "/livez/", path: "/livez/livez", live: true},
+	}
+	for _, test := range tests {
+		t.Run(test.basePath+" "+test.path, func(t *testing.T) {
+			rr := serveStartup(t.Context(), newStartupSwitch(t, test.basePath), test.path, "127.0.0.1:8091")
+			if test.live {
+				require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+				var live healthResponse
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &live))
+				assert.Equal(t, "ok", live.Status)
+				assert.Equal(t, "v1.2.3", live.Version)
+				return
+			}
+			require.Equal(t, http.StatusServiceUnavailable, rr.Code)
+			var problem httpapi.ProblemError
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &problem))
+			assert.Equal(t, httpapi.CodeServiceUnavailable, problem.Code)
+		})
+	}
+}
 
-	liveReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/livez", nil)
-	liveReq.Host = "127.0.0.1:8091"
-	liveReq.RemoteAddr = "127.0.0.1:1234"
-	liveRR := httptest.NewRecorder()
-	handler.ServeHTTP(liveRR, liveReq)
-	var live healthResponse
-	require.NoError(t, json.Unmarshal(liveRR.Body.Bytes(), &live))
-	assert.Equal(http.StatusOK, liveRR.Code)
-	assert.Equal("v1.2.3", live.Version)
-	assert.Len(live.Revision, 40)
+func TestStartupSwitchHoldsOtherRequestsUntilFullServer(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	switcher := newStartupSwitch(t, "/")
 
-	apiReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
-	apiReq.Host = "127.0.0.1:8091"
-	apiReq.RemoteAddr = "127.0.0.1:1234"
-	apiRR := httptest.NewRecorder()
-	handler.ServeHTTP(apiRR, apiReq)
+	// A request abandoned before readiness gets no startup answer.
+	abandoned, cancel := context.WithCancel(t.Context())
+	cancel()
+	rr := serveStartup(abandoned, switcher, "/mcp", "127.0.0.1:8091")
+	assert.Empty(t, rr.Body.String())
+	assert.Empty(t, rr.Header())
 
-	assert.Equal(http.StatusServiceUnavailable, apiRR.Code)
-	assert.Equal("application/problem+json", apiRR.Header().Get("Content-Type"))
-	var problem httpapi.ProblemError
-	require.NoError(t, json.Unmarshal(apiRR.Body.Bytes(), &problem))
-	assert.Equal(httpapi.CodeServiceUnavailable, problem.Code)
+	held := make(chan *httptest.ResponseRecorder, 1)
+	go func() { held <- serveStartup(t.Context(), switcher, "/api/v1/settings", "127.0.0.1:8091") }()
+	switcher.Swap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
 
-	assetReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index-DEADBEEF.js", nil)
-	assetReq.Host = "127.0.0.1:8091"
-	assetReq.RemoteAddr = "127.0.0.1:1234"
-	assetRR := httptest.NewRecorder()
-	handler.ServeHTTP(assetRR, assetReq)
-
-	assert.Equal(http.StatusOK, assetRR.Code)
-	assert.Equal("public, max-age=31536000, immutable", assetRR.Header().Get("Cache-Control"))
+	assert.Equal(t, http.StatusNoContent, (<-held).Code)
+	assert.Equal(t, http.StatusNoContent, serveStartup(t.Context(), switcher, "/livez", "127.0.0.1:8091").Code)
 }
 
 func TestStartupHandlerUsesHostValidation(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
-		},
-	}
-	cfg := &config.Config{
-		Host:     "127.0.0.1",
-		Port:     8091,
-		BasePath: "/",
-	}
-	handler := server.NewStartupHandler(
-		frontend,
-		cfg,
-		server.ServerOptions{},
-		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
-		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
-	)
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
-	req.Host = "attacker.example:8091"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
+	rr := serveStartup(t.Context(), newStartupSwitch(t, "/"), "/livez", "attacker.example:8091")
 
 	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
-}
-
-func TestStartupHandlerHonorsBasePath(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head><script src="/assets/index.js"></script></head><body>app</body></html>`),
-		},
-	}
-	cfg := &config.Config{
-		Host:     "127.0.0.1",
-		Port:     8091,
-		BasePath: "/kenn-forge/",
-	}
-	handler := server.NewStartupHandler(
-		frontend,
-		cfg,
-		server.ServerOptions{},
-		serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
-		server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
-	)
-
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/", nil)
-	req.Host = "127.0.0.1:8091"
-	req.RemoteAddr = "127.0.0.1:1234"
-	rr := httptest.NewRecorder()
-	handler.ServeHTTP(rr, req)
-
-	assert := assert.New(t)
-	assert.Equal(http.StatusOK, rr.Code)
-	assert.Contains(rr.Body.String(), `<body>app</body>`)
-	assert.Contains(rr.Body.String(), `window.__BASE_PATH__="/kenn-forge/"`)
-	assert.Contains(rr.Body.String(), `src="/kenn-forge/assets/index.js"`)
-	assert.NotContains(rr.Body.String(), "kenn-forge is starting")
-
-	healthReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/healthz", nil)
-	healthReq.Host = "127.0.0.1:8091"
-	healthReq.RemoteAddr = "127.0.0.1:1234"
-	healthRR := httptest.NewRecorder()
-	handler.ServeHTTP(healthRR, healthReq)
-
-	assert.Equal(http.StatusServiceUnavailable, healthRR.Code)
-
-	apiReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/kenn-forge/api/v1/settings", nil)
-	apiReq.Host = "127.0.0.1:8091"
-	apiReq.RemoteAddr = "127.0.0.1:1234"
-	apiRR := httptest.NewRecorder()
-	handler.ServeHTTP(apiRR, apiReq)
-
-	assert.Equal(http.StatusServiceUnavailable, apiRR.Code)
-
-	bareReq := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/settings", nil)
-	bareReq.Host = "127.0.0.1:8091"
-	bareReq.RemoteAddr = "127.0.0.1:1234"
-	bareRR := httptest.NewRecorder()
-	handler.ServeHTTP(bareRR, bareReq)
-
-	assert.Equal(http.StatusNotFound, bareRR.Code)
 }
 
 func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
@@ -231,10 +163,10 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		},
 	}
 
-	switcher := hostapi.NewSwitchHandler(server.NewStartupHandler(
-		frontend,
+	access := authapi.DaemonAccessOptions{Token: "startup-secret", RequireAPIAuth: true}
+	switcher := hostapi.NewStartupSwitch(server.NewStartupHandler(
 		cfg,
-		server.ServerOptions{},
+		server.ServerOptions{DaemonAccess: access},
 		ln,
 		server.BuildInfo{},
 	))
@@ -262,22 +194,36 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 		}
 	})
 
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	baseURL := "http://" + ln.Addr().String()
 
-	rootStatus, _, rootBody := getHTTPBody(t, client, baseURL+"/")
+	liveStatus, _, _ := getHTTPBody(t, client, baseURL+"/livez")
 	assert := assert.New(t)
-	assert.Equal(http.StatusOK, rootStatus)
-	assert.Contains(rootBody, `<body>app</body>`)
-	assert.Contains(rootBody, `window.__BASE_PATH__="/"`)
-	assert.NotContains(rootBody, "kenn-forge is starting")
+	assert.Equal(http.StatusOK, liveStatus)
 
-	apiStatus, apiHeader, apiBody := getHTTPBody(
-		t, client, baseURL+"/api/v1/sync/status",
-	)
-	assert.Equal(http.StatusServiceUnavailable, apiStatus)
-	assert.Equal("application/problem+json", apiHeader.Get("Content-Type"))
-	assert.Contains(apiBody, `"reason":"starting"`)
+	// A tokenized page load during startup waits for the full server, which
+	// runs the token-to-cookie bootstrap.
+	type response struct {
+		resp *http.Response
+		err  error
+	}
+	held := make(chan response, 1)
+	go func() {
+		bootstrapRequest, err := http.NewRequestWithContext(
+			t.Context(), http.MethodGet, baseURL+"/?auth_token=startup-secret", nil,
+		)
+		if err != nil {
+			held <- response{err: err}
+			return
+		}
+		resp, err := client.Do(bootstrapRequest)
+		held <- response{resp: resp, err: err}
+	}()
 
 	database := dbtest.Open(t)
 	mock := &serverfake.MockGH{}
@@ -288,25 +234,30 @@ func TestStartupHandlerSwapsToFullServerOverHTTP(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	fullServer = server.New(
 		database, syncer, frontend, "/", cfg,
-		server.ServerOptions{HostCheckAllowLoopbackAnyPort: true},
+		server.ServerOptions{DaemonAccess: access, HostCheckAllowLoopbackAnyPort: true},
 	)
 	fullServer.AttachHTTPServer(httpSrv, ln)
 	switcher.Swap(fullServer)
 
-	readyStatus, readyHeader, readyBody := getHTTPBody(
-		t, client, baseURL+"/api/v1/sync/status",
-	)
-	assert.Equal(http.StatusOK, readyStatus)
-	assert.True(
-		strings.HasPrefix(readyHeader.Get("Content-Type"), "application/json"),
-		readyHeader.Get("Content-Type"),
-	)
-	assert.Contains(readyBody, `"running":`)
+	bootstrap := <-held
+	require.NoError(t, bootstrap.err)
+	defer bootstrap.resp.Body.Close()
+	assert.Equal(http.StatusSeeOther, bootstrap.resp.StatusCode)
+	var authCookie *http.Cookie
+	for _, cookie := range bootstrap.resp.Cookies() {
+		if cookie.Name == authapi.AuthCookieName {
+			authCookie = cookie
+		}
+	}
+	require.NotNil(t, authCookie)
 
-	readyRootStatus, _, readyRootBody := getHTTPBody(t, client, baseURL+"/")
-	assert.Equal(http.StatusOK, readyRootStatus)
-	assert.Contains(readyRootBody, "app")
-	assert.Contains(readyRootBody, `window.__BASE_PATH__="/"`)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+"/api/v1/sync/status", nil)
+	require.NoError(t, err)
+	request.AddCookie(authCookie)
+	ready, err := client.Do(request)
+	require.NoError(t, err)
+	defer ready.Body.Close()
+	assert.Equal(http.StatusOK, ready.StatusCode)
 }
 
 func getHTTPBody(
@@ -321,44 +272,4 @@ func getHTTPBody(
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, resp.Header, string(body)
-}
-
-func TestStartupHandlerReportsMCPUnavailableAndKeepsRootLiveness(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	frontend := fstest.MapFS{
-		"index.html": &fstest.MapFile{
-			Data: []byte(`<!DOCTYPE html><html><head></head><body>app</body></html>`),
-		},
-	}
-	tests := []struct {
-		basePath string
-		path     string
-		expected int
-	}{
-		{basePath: "/", path: "/mcp", expected: http.StatusServiceUnavailable},
-		{basePath: "/", path: "/", expected: http.StatusOK},
-		{basePath: "/kenn-forge/", path: "/kenn-forge/mcp", expected: http.StatusServiceUnavailable},
-		// Base paths that overlap the root liveness route must not hide it.
-		{basePath: "/live/", path: "/livez", expected: http.StatusOK},
-		{basePath: "/live/", path: "/live/livez", expected: http.StatusOK},
-		{basePath: "/livez/", path: "/livez", expected: http.StatusOK},
-		{basePath: "/livez/", path: "/livez/livez", expected: http.StatusOK},
-	}
-	for _, test := range tests {
-		t.Run(test.basePath+" "+test.path, func(t *testing.T) {
-			handler := server.NewStartupHandler(
-				frontend,
-				&config.Config{Host: "127.0.0.1", Port: 8091, BasePath: test.basePath},
-				server.ServerOptions{},
-				serverfake.StaticListener{AddrValue: serverfake.StaticListenerAddr("127.0.0.1:8091")},
-				server.BuildInfo{Version: "v1.2.3", Commit: strings.Repeat("a", 40)},
-			)
-			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, test.path, nil)
-			req.Host = "127.0.0.1:8091"
-			req.RemoteAddr = "127.0.0.1:1234"
-			rr := httptest.NewRecorder()
-			handler.ServeHTTP(rr, req)
-			assert.Equal(t, test.expected, rr.Code, rr.Body.String())
-		})
-	}
 }

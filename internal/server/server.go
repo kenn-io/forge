@@ -1123,7 +1123,7 @@ func newServer(
 		outer.Handle("/livez", mux)
 		s.registerDaemonPing(outer)
 		outer.Handle(basePath, otelmiddleware.StripPrefixPreservingPattern(prefix, mux))
-		assembled = outer
+		assembled = serveBareBasePath(prefix, outer)
 	} else {
 		s.registerDaemonPing(mux)
 		assembled = mux
@@ -1183,6 +1183,19 @@ func (s *Server) InitializeProviderRepositories(
 	resolve func(context.Context, *config.Config) []ghclient.RepoRef,
 ) error {
 	return s.configreload.InitializeProviderRepositories(ctx, resolve)
+}
+
+// serveBareBasePath serves the base path without its trailing slash as the
+// base path itself, so /forge and /forge/ behave the same without a redirect.
+func serveBareBasePath(prefix string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == prefix {
+			r = r.Clone(r.Context())
+			r.URL.Path = prefix + "/"
+			r.URL.RawPath = ""
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ServeHTTP implements http.Handler so Server can be used directly.

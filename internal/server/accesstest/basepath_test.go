@@ -54,6 +54,7 @@ func TestBasePathAPIRouting(t *testing.T) {
 		{"prefix: API returns JSON", "/kenn-forge/", "/kenn-forge/api/v1/sync/status", 200, "application/json", `"running"`},
 		{"prefix: SPA returns HTML", "/kenn-forge/", "/kenn-forge/pulls", 200, "text/html", "<body>app</body>"},
 		{"prefix: bare API 404s", "/kenn-forge/", "/api/v1/sync/status", 404, "text/plain", "404 page not found"},
+		{"prefix: base path without trailing slash serves SPA", "/kenn-forge/", "/kenn-forge?desktop=1", 200, "text/html", "<body>app</body>"},
 	}
 
 	for _, tt := range tests {

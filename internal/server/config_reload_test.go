@@ -2151,7 +2151,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	assert.True(ev.Valid)
 
-	// Check any extra event that has already arrived. The
+	// Drain any extra events that arrive within a short window — the
 	// debounce should have prevented them, but we don't assert "no
 	// extras at all" since fsnotify ordering on some kernels can
 	// flush a second event after the rename burst.
@@ -2161,7 +2161,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 			// A second event is acceptable but should be valid and quick.
 			assert.True(extra.Valid)
 		}
-	default:
+	case <-time.After(200 * time.Millisecond): //nolint:kennlint // shows the event does not happen; no invalid reload follows the debounced one
 	}
 }
 

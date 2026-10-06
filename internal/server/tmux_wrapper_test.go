@@ -1254,9 +1254,13 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 		require.FailNow("blocking request never started")
 	}
 
-	time.AfterFunc(250*time.Millisecond, func() { //nolint:kennlint // the deadline is the expected result; the blocked request spends part of the shutdown budget before the held setup transaction exhausts it
-		close(blockRelease)
-	})
+	// Release the request once the HTTP drain starts, so Shutdown reaches the workspace stop.
+	srv.bgMu.Lock()
+	httpSrv := srv.httpSrv
+	srv.bgMu.Unlock()
+	require.NotNil(httpSrv)
+	var releaseOnce sync.Once
+	httpSrv.RegisterOnShutdown(func() { releaseOnce.Do(func() { close(blockRelease) }) })
 
 	shutdownCtx, cancel := context.WithTimeout( //nolint:kennlint // the deadline is the expected result; the held setup transaction keeps Shutdown waiting until it fires
 		t.Context(), 400*time.Millisecond,

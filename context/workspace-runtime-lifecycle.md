@@ -46,7 +46,8 @@ Rules:
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
-- On Windows the ACP agent shares its parent's console (acp-owner's ConPTY); only a
+- On Windows the ACP agent shares its parent's console: acp-owner's ConPTY for workspace
+  agents, or the daemon's console for the settings test handshake (`Manager.TestACP`). Only a
   parent with no console launches it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).
 - Owner-to-client ACP state changes are not bridged across upgrades: an owner started by an
   older binary may fail under a newer UI until the agent is relaunched. Do not add

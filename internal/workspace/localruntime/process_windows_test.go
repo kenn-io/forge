@@ -66,22 +66,22 @@ func TestKillSessionProcessStopsWindowsDescendants(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
-// The agent joins its parent's console when the parent has one, and keeps a
-// hidden console of its own when the parent has none.
+// The agent joins its parent's console when the parent has one, and gets a
+// console with no window when the parent has none.
 func TestConfigureACPProcessSharesParentConsole(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		flags uint32
 		want  string
 	}{
-		{name: "parent console", want: "hidden=false shared=true"},
-		{name: "no parent console", flags: windows.DETACHED_PROCESS, want: "hidden=true shared=false"},
+		{name: "parent console", want: "window=false shared=true"},
+		{name: "no parent console", flags: windows.DETACHED_PROCESS, want: "window=false shared=false"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			parent := windowsConsoleHelper(t, "parent")
 			parent.SysProcAttr.CreationFlags |= tc.flags
 			out, err := parent.Output()
-			require.NoError(t, err)
+			require.NoError(t, err, string(out))
 			assert.True(t, strings.HasPrefix(string(out), tc.want+"\n"), string(out))
 		})
 	}
@@ -93,13 +93,19 @@ func TestWindowsConsoleHelper(t *testing.T) {
 		child := windowsConsoleHelper(t, "child")
 		configureACPProcess(child)
 		out, err := child.Output()
-		require.NoError(t, err)
-		hidden := child.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW != 0
-		shared := slices.Contains(strings.Fields(string(out)), strconv.Itoa(os.Getpid()))
-		_, _ = fmt.Printf("hidden=%v shared=%v\n", hidden, shared)
+		require.NoError(t, err, string(out))
+		fields := strings.Fields(string(out))
+		require.NotEmpty(t, fields)
+		shared := slices.Contains(fields, strconv.Itoa(os.Getpid()))
+		_, _ = fmt.Printf("%s shared=%v\n", fields[0], shared)
 	case "child":
+		kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+		// A console created with CREATE_NO_WINDOW has no window; any other new
+		// console has one, even when it starts hidden.
+		window, _, _ := kernel32.NewProc("GetConsoleWindow").Call()
+		_, _ = fmt.Printf("window=%v\n", window != 0)
 		pids := make([]uint32, 64)
-		n, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
+		n, _, _ := kernel32.NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
 		for _, pid := range pids[:min(int(n), len(pids))] {
 			_, _ = fmt.Println(pid)
 		}

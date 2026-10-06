@@ -4,12 +4,15 @@ package localruntime
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,11 +66,51 @@ func TestKillSessionProcessStopsWindowsDescendants(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
+// The agent joins its parent's console when the parent has one, and keeps a
+// hidden console of its own when the parent has none.
 func TestConfigureACPProcessSharesParentConsole(t *testing.T) {
-	for _, hasConsole := range []bool{true, false} {
-		cmd := procutil.Command("cmd.exe", "/c", "exit 0")
-		shareParentConsole(cmd, hasConsole)
-		assert.Equal(t, !hasConsole, cmd.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW != 0, "hasConsole=%v", hasConsole)
-		assert.True(t, cmd.SysProcAttr.HideWindow, "hasConsole=%v", hasConsole)
+	for _, tc := range []struct {
+		name  string
+		flags uint32
+		want  string
+	}{
+		{name: "parent console", want: "hidden=false shared=true"},
+		{name: "no parent console", flags: windows.DETACHED_PROCESS, want: "hidden=true shared=false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parent := windowsConsoleHelper(t, "parent")
+			parent.SysProcAttr.CreationFlags |= tc.flags
+			out, err := parent.Output()
+			require.NoError(t, err)
+			assert.True(t, strings.HasPrefix(string(out), tc.want+"\n"), string(out))
+		})
 	}
+}
+
+func TestWindowsConsoleHelper(t *testing.T) {
+	switch os.Getenv("KENN_FORGE_WINDOWS_CONSOLE_HELPER") {
+	case "parent":
+		child := windowsConsoleHelper(t, "child")
+		configureACPProcess(child)
+		out, err := child.Output()
+		require.NoError(t, err)
+		hidden := child.SysProcAttr.CreationFlags&windows.CREATE_NO_WINDOW != 0
+		shared := slices.Contains(strings.Fields(string(out)), strconv.Itoa(os.Getpid()))
+		_, _ = fmt.Printf("hidden=%v shared=%v\n", hidden, shared)
+	case "child":
+		pids := make([]uint32, 64)
+		n, _, _ := windows.NewLazySystemDLL("kernel32.dll").NewProc("GetConsoleProcessList").Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
+		for _, pid := range pids[:min(int(n), len(pids))] {
+			_, _ = fmt.Println(pid)
+		}
+	}
+}
+
+// windowsConsoleHelper starts this test binary the way procutil starts agents.
+func windowsConsoleHelper(t *testing.T, mode string) *exec.Cmd {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := procutil.CommandContext(t.Context(), executable, "-test.run=^TestWindowsConsoleHelper$")
+	cmd.Env = append(os.Environ(), "KENN_FORGE_WINDOWS_CONSOLE_HELPER="+mode)
+	return cmd
 }

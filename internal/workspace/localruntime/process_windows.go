@@ -27,16 +27,11 @@ func killSessionProcess(process *os.Process) error {
 	return nil
 }
 
-func configureACPProcess(cmd *exec.Cmd) {
-	_, err := windows.GetConsoleCP()
-	shareParentConsole(cmd, err == nil)
-}
-
-// shareParentConsole lets the agent join a console the parent already has
+// configureACPProcess lets the agent join a console the parent already has
 // (acp-owner's ConPTY), so it costs no console of its own; a console-less
 // parent keeps CREATE_NO_WINDOW so no window opens.
-func shareParentConsole(cmd *exec.Cmd, hasConsole bool) {
-	if hasConsole {
+func configureACPProcess(cmd *exec.Cmd) {
+	if _, err := windows.GetConsoleCP(); err == nil {
 		cmd.SysProcAttr.CreationFlags &^= windows.CREATE_NO_WINDOW
 	}
 }

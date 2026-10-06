@@ -227,7 +227,7 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 			assert.Equal("close database", shutdownErr.message)
 			require.ErrorIs(shutdownErr.err, context.Canceled)
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		close(release)
 		<-done
 		require.Fail("MCP temp-store cleanup ignored the shutdown context")
@@ -237,7 +237,7 @@ func TestRunMainShutdownBoundsMCPStoreCleanup(t *testing.T) {
 	// the database closes while the abandoned MCP cleanup stays blocked.
 	select {
 	case <-databaseClosed:
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("database cleanup did not run after MCP cleanup timed out")
 	}
 	close(release)

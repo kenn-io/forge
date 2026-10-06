@@ -42,11 +42,8 @@ func (p *acpReconnectPeer) Bind(_ localruntime.ACPMCPBinding, _ *struct{}) error
 }
 
 func (p *acpReconnectPeer) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
-	select {
-	case <-p.done:
-		reply.Exited = true
-	case <-time.After(20 * time.Millisecond):
-	}
+	<-p.done
+	reply.Exited = true
 	return nil
 }
 

@@ -141,7 +141,7 @@ func TestWatcher_IgnoresUnrelatedFiles(t *testing.T) {
 	select {
 	case <-fired:
 		require.Fail("sibling file should not trigger the watcher")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; only the watched file may fire the callback
 	}
 	assert.Equal(t, int32(0), count.Load(),
 		"sibling file should not trigger the watcher")
@@ -242,7 +242,7 @@ func TestWatcher_DoneWaitsForInFlightCallback(t *testing.T) {
 	select {
 	case <-w.Done():
 		require.FailNow("watcher stopped before callback returned")
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the running callback keeps the watcher from stopping until callbackRelease
 	}
 
 	close(callbackRelease)

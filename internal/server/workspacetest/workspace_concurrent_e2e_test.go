@@ -66,7 +66,7 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	case result := <-deleteDone:
 		require.NoError(result.err)
 		require.FailNow("force-delete returned while workspace setup was paused")
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(500 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held setup lock blocks the force-delete until unlock
 	}
 
 	require.NoError(held.Unlock())

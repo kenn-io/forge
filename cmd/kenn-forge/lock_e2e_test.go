@@ -306,7 +306,7 @@ func TestDaemonStartSerializesConfigMoveBeforeRuntimePublicationE2E(t *testing.T
 	select {
 	case result := <-secondDone:
 		require.FailNow("second start bypassed config lifecycle lock", result.stderr)
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(250 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the first start holds the config lifecycle lock until the gate file is removed
 	}
 	require.NoError(os.Remove(gatePath))
 

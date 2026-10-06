@@ -504,7 +504,7 @@ func TestWorkspaceDiffCacheSelectedColdFailureWaitsForPrewarmBackoff(t *testing.
 	case attempt := <-attempts:
 		earlyAttempt = true
 		assert.Fail("periodic validation bypassed cold retry backoff", "attempt=%d", attempt)
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the cold retry backoff holds the next attempt until retry fires
 	}
 
 	retry <- time.Now()
@@ -652,7 +652,7 @@ func TestWorkspaceDiffCacheValidationTimeoutDoesNotPoisonForegroundWaiter(t *tes
 		},
 	})
 
-	validationCtx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	validationCtx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond) //nolint:kennlint // the deadline is the expected result; prepare blocks on releasePrepare until it fires
 	defer cancel()
 	validationDone := make(chan error, 1)
 	go func() { validationDone <- cache.validate(validationCtx, key) }()
@@ -670,7 +670,7 @@ func TestWorkspaceDiffCacheValidationTimeoutDoesNotPoisonForegroundWaiter(t *tes
 	select {
 	case result := <-getDone:
 		require.Fail("foreground waiter inherited validation cancellation", "error=%v", result.err)
-	case <-time.After(25 * time.Millisecond):
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; prepare blocks the foreground waiter until releasePrepare
 	}
 	close(releasePrepare)
 	require.NoError((<-getDone).err)

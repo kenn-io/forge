@@ -2161,7 +2161,7 @@ func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
 			// A second event is acceptable but should be valid and quick.
 			assert.True(extra.Valid)
 		}
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(200 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the debounce should suppress any extra reload event
 	}
 }
 

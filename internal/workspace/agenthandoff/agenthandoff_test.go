@@ -51,7 +51,7 @@ func TestWaitForWorkspaceReportsSetupFailureWithMessage(t *testing.T) {
 }
 
 func TestWaitForWorkspaceStopsOnDeadline(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the workspace stays creating, so only the context ends the wait
 	defer cancel()
 
 	err := Poller{Interval: time.Millisecond}.WaitForWorkspace(
@@ -106,7 +106,7 @@ func TestDeliverReturnsFinalErrorWithoutRetry(t *testing.T) {
 
 func TestDeliverKeepsLastResultWhenWaitEnds(t *testing.T) {
 	notReady := errors.New("input not ready")
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; delivery never becomes ready, so only the context ends the wait
 	defer cancel()
 
 	got, err := Deliver(

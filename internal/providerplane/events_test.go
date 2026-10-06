@@ -260,7 +260,7 @@ func TestEventClientShutdownInterruptsReconnectWait(t *testing.T) {
 
 	select {
 	case <-done:
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("event client did not stop after cancellation")
 	}
 	assert.Equal(t, int64(1), calls.Load())

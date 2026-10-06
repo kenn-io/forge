@@ -2046,7 +2046,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 		require.FailNow("first setup did not begin registration confirmation")
 	}
 
-	secondCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
+	secondCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the first setup holds registration confirmation until release
 	defer cancel()
 	err = mgr.setupManagedRepositoryHooks(secondCtx, cloneDir, ws)
 	require.ErrorIs(err, context.DeadlineExceeded)
@@ -4382,7 +4382,7 @@ func TestFailSetupRespectsParentDeadline(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(func() { _ = tx.Rollback() })
 
-	parent, cancel := context.WithTimeout(
+	parent, cancel := context.WithTimeout( //nolint:kennlint // the deadline is the expected result; the held write transaction blocks persistence until it fires
 		t.Context(), 100*time.Millisecond,
 	)
 	defer cancel()
@@ -5446,7 +5446,7 @@ func TestCleanupContextRespectsParentDeadline(t *testing.T) {
 	require := require.New(t)
 
 	parent, cancel := context.WithTimeout(
-		t.Context(), 100*time.Millisecond,
+		t.Context(), workspaceCleanupTimeout/2,
 	)
 	defer cancel()
 
@@ -5455,10 +5455,8 @@ func TestCleanupContextRespectsParentDeadline(t *testing.T) {
 
 	deadline, ok := cleanupCtx.Deadline()
 	require.True(ok)
-
-	remaining := time.Until(deadline)
-	require.LessOrEqual(remaining, 100*time.Millisecond)
-	require.Greater(remaining, 0*time.Millisecond)
+	parentDeadline, _ := parent.Deadline()
+	require.Equal(parentDeadline, deadline)
 }
 
 func setupBareCloneForWorkspaceGitTest(t *testing.T) string {
@@ -7958,7 +7956,7 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	select {
 	case <-done:
 		require.FailNow("addWorktree completed while the per-repo lock was held")
-	case <-time.After(80 * time.Millisecond):
+	case <-time.After(80 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held per-repo lock blocks addWorktree until unlock
 	}
 
 	require.NoError(held.Unlock())
@@ -8001,7 +7999,7 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 	select {
 	case <-done:
 		require.FailNow("addWorktree completed while the per-repo lock was held")
-	case <-time.After(80 * time.Millisecond):
+	case <-time.After(80 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held per-repo lock blocks addWorktree until unlock
 	}
 	require.NoError(os.MkdirAll(ws.WorktreePath, 0o755))
 	require.NoError(os.WriteFile(
@@ -8149,7 +8147,7 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 	select {
 	case <-done:
 		require.FailNow("cleanupWorkspaceArtifactsForDelete proceeded under held lock")
-	case <-time.After(80 * time.Millisecond):
+	case <-time.After(80 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held per-repo lock blocks cleanup until unlock
 	}
 	require.NoError(held.Unlock())
 	select {

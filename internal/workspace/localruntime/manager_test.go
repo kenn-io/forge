@@ -1825,7 +1825,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 		require.FailNow(
 			"StopWorkspace returned before inflight launch drained",
 		)
-	case <-time.After(75 * time.Millisecond):
+	case <-time.After(75 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the inflight launch count keeps StopWorkspace blocked until releaseInflight
 	}
 
 	mgr.releaseInflight("ws-1")
@@ -2504,7 +2504,7 @@ func TestManagerSubmitInitialMessageHonorsContextWithoutHoldingSessionLock(t *te
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 	s.broadcast([]byte("\x1b[?2004h"))
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the held PTY write keeps SubmitInitialMessage blocked until it fires
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
@@ -2555,7 +2555,7 @@ func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *tes
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 	s.broadcast([]byte("\x1b[?2004h"))
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the held PTY write keeps SubmitInitialMessage blocked until it fires
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
@@ -2906,7 +2906,7 @@ func TestSessionBroadcastClosesSlowSubscriber(t *testing.T) {
 	select {
 	case _, ok := <-ch:
 		assert.False(ok)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("slow subscriber was not closed")
 	}
 	s.mu.Lock()
@@ -2929,7 +2929,7 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal("startup-banner\r\n$ ", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive replay")
 	}
 
@@ -2937,7 +2937,7 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal("ls\r\n", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive new output after replay")
 	}
 }
@@ -2959,7 +2959,7 @@ func TestSessionSubscribeReplayTruncationPreservesUTF8Boundary(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(byte('?'), data[0])
 		assert.NotContains(string(data), "\x1b[?2004l")
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -2976,7 +2976,7 @@ func TestSessionSubscribeReplayTruncationPreservesRawC1(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal(t, byte(0x9b), data[0])
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -2995,7 +2995,7 @@ func TestSessionSubscribeRestoresInputModesAfterReplayTruncation(t *testing.T) {
 		assert := assert.New(t)
 		assert.Len(data, maxSessionOutputReplay+len(modeSequence))
 		assert.Equal(modeSequence, string(data[maxSessionOutputReplay:]))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -3015,7 +3015,7 @@ func TestSessionSubscribeRestoresDisabledInputModesAfterReplayTruncation(t *test
 		assert := assert.New(t)
 		assert.Len(data, maxSessionOutputReplay+len(resetSequence))
 		assert.Equal(resetSequence, string(data[maxSessionOutputReplay:]))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -3033,7 +3033,7 @@ func TestSessionSubscribeOverridesStaleReplayInputModes(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal(t, "screen\x1b[?1000h\x1b[?1000l", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -3048,7 +3048,7 @@ func TestSessionSubscribeDoesNotSynthesizeDuplicateRetainedFocusMode(t *testing.
 	select {
 	case data := <-ch:
 		assert.Equal(t, 2, bytes.Count(data, []byte("\x1b[?1004h")))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -3160,7 +3160,7 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 			select {
 			case data := <-ch:
 				assert.True(bytes.HasSuffix(data, []byte("\x1b[?1000h"+tt.candidate)))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive replay")
 			}
 
@@ -3168,13 +3168,13 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 			select {
 			case data := <-ch:
 				assert.Equal(tt.continuation, string(data))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive split sequence continuation")
 			}
 			select {
 			case data := <-ch:
 				assert.Nil(data)
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive replay boundary")
 			}
 		})
@@ -3192,13 +3192,13 @@ func TestSessionSubscribeReplayBoundaryReadyWithoutPendingTail(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal("complete replay", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive replay")
 	}
 	select {
 	case data := <-ch:
 		assert.Nil(data)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive replay boundary")
 	}
 }
@@ -3243,7 +3243,7 @@ func TestSessionSubscribePlacesTransitionsAfterCompleteOrDiscardedC1Data(t *test
 			select {
 			case data := <-ch:
 				assert.True(t, bytes.HasSuffix(data, []byte(tt.controlString+"\x1b[?1000h")))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail(t, "subscriber did not receive replay")
 			}
 		})
@@ -3261,7 +3261,7 @@ func TestSessionSubscribeRestoresInputModesWhileAlternateScreenActive(t *testing
 	select {
 	case data := <-ch:
 		assert.Equal(t, "\x1b[?1000;1006h", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive input mode replay")
 	}
 }
@@ -3283,7 +3283,7 @@ func TestSessionSubscribeIgnoresUTF8ContinuationWhileAlternateScreenActive(t *te
 			"unexpected replay: %q",
 			string(data),
 		)
-	case <-time.After(25 * time.Millisecond):
+	default:
 	}
 }
 
@@ -3299,20 +3299,20 @@ func TestSessionSubscribePreservesSplitUTF8C1WhileAlternateScreenActive(t *testi
 	select {
 	case data := <-ch:
 		assert.Equal("\xc2", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive split UTF-8 C1 prefix")
 	}
 	s.broadcast([]byte("\x9b?1h"))
 	select {
 	case data := <-ch:
 		assert.Equal("\x9b?1h", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive split UTF-8 C1 continuation")
 	}
 	select {
 	case data := <-ch:
 		assert.Nil(data)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive replay boundary")
 	}
 }
@@ -3379,7 +3379,7 @@ func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t 
 			select {
 			case data := <-ch:
 				assert.Equal("\x1b[?1000h"+tt.candidate, string(data))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive terminal replay")
 			}
 
@@ -3387,13 +3387,13 @@ func TestSessionSubscribePreservesSplitTerminalDataWhileAlternateScreenActive(t 
 			select {
 			case data := <-ch:
 				assert.Equal(tt.continuation, string(data))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive split sequence continuation")
 			}
 			select {
 			case data := <-ch:
 				assert.Nil(data)
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail("subscriber did not receive replay boundary")
 			}
 		})
@@ -3423,7 +3423,7 @@ func TestSessionSubscribeDropsRawC1TailWhileAlternateScreenActive(t *testing.T) 
 			select {
 			case data := <-ch:
 				assert.Equal(t, "\x1b[?1000h", string(data))
-			case <-time.After(100 * time.Millisecond):
+			default:
 				assert.Fail(t, "subscriber did not receive terminal replay")
 			}
 		})
@@ -3446,13 +3446,13 @@ func TestSessionSubscribeAfterCloseCombinesReplayAndInputModes(t *testing.T) {
 		assert.True(ok)
 		assert.Len(data, maxSessionOutputReplay+len(modeSequence))
 		assert.Equal(modeSequence, string(data[maxSessionOutputReplay:]))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("expected replay before channel close")
 	}
 	select {
 	case _, ok := <-ch:
 		assert.False(ok)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("expected channel to close after replay")
 	}
 }
@@ -3467,7 +3467,7 @@ func TestSessionSubscribeWithoutInputModesPreservesReplay(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal(t, "startup-banner\r\n$ ", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail(t, "subscriber did not receive replay")
 	}
 }
@@ -3484,13 +3484,13 @@ func TestSessionInputModeReplayIsSubscriberOnly(t *testing.T) {
 	select {
 	case data := <-ch:
 		assert.Equal(raw, data)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive live output")
 	}
 	select {
 	case data := <-ch:
 		assert.Failf("subscriber received synthesized live output", "output: %q", data)
-	case <-time.After(25 * time.Millisecond):
+	default:
 	}
 	s.mu.Lock()
 	replay := bytes.Clone(s.outputBuffer)
@@ -3516,14 +3516,14 @@ func TestSessionSubscribeSkipsReplayWhileAlternateScreenActive(t *testing.T) {
 			"unexpected replay: %q",
 			string(data),
 		)
-	case <-time.After(25 * time.Millisecond):
+	default:
 	}
 
 	s.broadcast([]byte("\x1b[Hupdated screen"))
 	select {
 	case data := <-ch:
 		assert.Equal("\x1b[Hupdated screen", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive live output")
 	}
 }
@@ -3543,7 +3543,7 @@ func TestSessionSubscribeReplaysNormalOutputAfterAlternateScreenExit(t *testing.
 	select {
 	case data := <-ch:
 		assert.Equal("\r\n$ ", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive normal replay after exit")
 	}
 }
@@ -3566,7 +3566,7 @@ func TestSessionAlternateScreenTrackingHandlesSplitEscapeSequences(t *testing.T)
 			"unexpected replay: %q",
 			string(data),
 		)
-	case <-time.After(25 * time.Millisecond):
+	default:
 	}
 
 	s.broadcast([]byte("\x1b[?104"))
@@ -3575,13 +3575,13 @@ func TestSessionAlternateScreenTrackingHandlesSplitEscapeSequences(t *testing.T)
 	select {
 	case data := <-ch:
 		live.Write(data)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive live split exit prefix")
 	}
 	select {
 	case data := <-ch:
 		live.Write(data)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive live split exit suffix")
 	}
 	assert.Equal("\x1b[?1049l\r\n$ ", live.String())
@@ -3591,7 +3591,7 @@ func TestSessionAlternateScreenTrackingHandlesSplitEscapeSequences(t *testing.T)
 	select {
 	case data := <-ch2:
 		assert.Equal("\r\n$ ", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("subscriber did not receive replay after split exit")
 	}
 }
@@ -3611,13 +3611,13 @@ func TestSessionSubscribeAfterCloseStillReplays(t *testing.T) {
 	case data, ok := <-ch:
 		assert.True(ok)
 		assert.Equal("hello\r\nbye\r\n", string(data))
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("expected replay before channel close")
 	}
 	select {
 	case _, ok := <-ch:
 		assert.False(ok)
-	case <-time.After(100 * time.Millisecond):
+	default:
 		assert.Fail("expected channel to close after replay")
 	}
 }

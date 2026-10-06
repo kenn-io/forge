@@ -95,15 +95,22 @@ func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
 
-	// The workspace becomes ready while the handoff is already waiting.
-	readyTimer := time.AfterFunc(60*time.Millisecond, func() {
-		_ = fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "ready", nil)
-	})
-	t.Cleanup(func() { readyTimer.Stop() })
-
-	response := fixture.post(t, map[string]string{
+	request := fixture.request(t, map[string]string{
 		"target_key": "CoDeX", "message": "rebase this pull request\r\nonto main",
 	})
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		done <- fixture.serve(request)
+	}()
+
+	// The workspace becomes ready while the handoff is already waiting.
+	select {
+	case response := <-done:
+		require.FailNow("handoff returned before the workspace was ready", response.Body.String())
+	case <-time.After(60 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the creating workspace keeps the handoff waiting until it is marked ready
+	}
+	require.NoError(fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "ready", nil))
+	response := <-done
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
 
 	var body struct {

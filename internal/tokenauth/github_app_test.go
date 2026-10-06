@@ -436,7 +436,7 @@ func TestGitHubAppMintCallerDeadlineFailureIsNotCached(t *testing.T) {
 		},
 	})
 
-	deadlineCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	deadlineCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond) //nolint:kennlint // the deadline is the expected result; the first mint blocks until the context ends
 	defer cancel()
 	_, err := src.Token(deadlineCtx)
 	require.ErrorIs(err, context.DeadlineExceeded)

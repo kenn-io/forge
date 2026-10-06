@@ -249,7 +249,8 @@ func (i *idleRuntimes) idle(ws *db.Workspace, created time.Time) time.Duration {
 // workspace.
 func (i *idleRuntimes) stopIdle(ctx context.Context, after time.Duration) {
 	h := i.h
-	if h.db == nil || h.runtime == nil || h.workspaces == nil {
+	// A reload that turns the setting off mid-pass yields a zero timeout.
+	if after <= 0 || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return
 	}
 	workspaces, err := h.db.ListWorkspaces(ctx)

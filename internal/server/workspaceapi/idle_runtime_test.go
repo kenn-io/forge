@@ -130,6 +130,8 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	unused := func() bool { return handler.idle.Load().idle(ws, time.Time{}) >= time.Hour }
 
 	advance(2 * time.Hour)
+	handler.idle.Load().stopIdle(ctx, 0)
+	untouched("a pass whose timeout a reload cleared stops nothing")
 	view(true)
 	stopIdle()
 	untouched("a page view is use")

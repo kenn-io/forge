@@ -65,7 +65,8 @@ and the root event stream.
 - Until the full server swaps in, the primary listener answers only startup
   probes (`/livez`, the not-ready `/healthz`, and the discovery ping) and holds
   every other request for the full server instead of serving partial routes.
-  Waiting must not spend a held request's body read budget
+  Waiting must not spend a held request's body read budget, and bodyless
+  requests keep net/http's own deadline handling so held streams survive
   (`internal/server/hostapi/startup_handler.go::SwitchHandler.hold`).
 - Trailing slashes never change routing: the server serves `/base` as `/base/`
   and the frontend router maps `/base`, `/base?…`, and `/base#…` to the app

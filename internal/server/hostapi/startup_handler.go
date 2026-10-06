@@ -73,16 +73,22 @@ func (h *SwitchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // hold waits for the full server and reports whether r should be served.
+// Only a request body still has a read deadline to protect: for bodyless
+// requests net/http has already cleared it to watch for disconnects, and
+// re-arming it would cancel long-lived streams.
 func (h *SwitchHandler) hold(w http.ResponseWriter, r *http.Request) bool {
+	hasBody := r.Body != nil && r.Body != http.NoBody
 	// Deadline errors only mean the writer has no connection to adjust.
 	controller := http.NewResponseController(w)
-	_ = controller.SetReadDeadline(time.Time{})
+	if hasBody {
+		_ = controller.SetReadDeadline(time.Time{})
+	}
 	select {
 	case <-h.ready:
 	case <-r.Context().Done():
 		return false
 	}
-	if h.readTimeout > 0 {
+	if hasBody && h.readTimeout > 0 {
 		_ = controller.SetReadDeadline(time.Now().Add(h.readTimeout))
 	}
 	return true

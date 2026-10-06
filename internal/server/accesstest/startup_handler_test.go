@@ -272,6 +272,49 @@ func TestStartupSwitchHeldRequestKeepsBodyReadBudget(t *testing.T) {
 	})
 }
 
+// A bodyless stream held during startup, such as an SSE reconnect, must not
+// be cut off by the read timeout after handoff.
+func TestStartupSwitchHeldStreamOutlivesReadTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const readTimeout = time.Second
+		switcher := newStartupSwitchWithOptions("/", server.ServerOptions{}, readTimeout)
+		listener := &pipeListener{conns: make(chan net.Conn, 1), done: make(chan struct{})}
+		httpSrv := &http.Server{Handler: switcher, ReadTimeout: readTimeout}
+		serverConn, clientConn := net.Pipe()
+		listener.conns <- serverConn
+		go func() { _ = httpSrv.Serve(listener) }()
+
+		go func() {
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:8091/api/v1/events", nil)
+			if err != nil || request.Write(clientConn) != nil {
+				return
+			}
+			response, err := http.ReadResponse(bufio.NewReader(clientConn), request)
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, response.Body)
+		}()
+		synctest.Wait()
+
+		cancelled := make(chan bool, 1)
+		switcher.Swap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_ = http.NewResponseController(w).Flush()
+			select {
+			case <-r.Context().Done():
+				cancelled <- true
+			case <-time.After(10 * readTimeout):
+				cancelled <- false
+			}
+		}))
+
+		assert.False(t, <-cancelled, "held stream was cancelled before the handler finished")
+		require.NoError(t, clientConn.Close())
+		require.NoError(t, httpSrv.Close())
+	})
+}
+
 func TestStartupHandlerUsesHostValidation(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	rr := serveStartup(t.Context(), newStartupSwitch(t, "/"), "/livez", "attacker.example:8091")

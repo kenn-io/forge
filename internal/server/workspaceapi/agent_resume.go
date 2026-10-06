@@ -49,8 +49,9 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 	return nil
 }
 
-// Restore base terminals before agents create new tmux sessions. Otherwise the
-// periodic prune would mistake the remaining missing bases for individual exits.
+// Restore tmux base terminals before agents create new tmux sessions. Otherwise
+// the periodic prune would mistake the remaining missing bases for individual
+// exits. Pty-owner bases are left to the attach path, which reuses a live owner.
 func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspaces map[string]bool, pendingOnly bool) {
 	workspaces, err := h.db.ListWorkspaces(ctx)
 	if err != nil {
@@ -62,6 +63,9 @@ func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspa
 			return
 		}
 		if pendingOnly && !retainedWorkspaces[ws.ID] {
+			continue
+		}
+		if h.workspaces.UsesPtyOwnerForWorkspace(&ws) {
 			continue
 		}
 		if !workspaceStatusAllowsRecovery(ws.Status) || ws.TmuxSession == "" ||

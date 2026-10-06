@@ -200,3 +200,26 @@ exec sleep 60
 		})
 	}
 }
+
+func TestRestoreRuntimeSessionsLeavesPtyOwnerBaseTerminalToAttach(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/lazy"), GitHeadRef: "work/lazy",
+		WorkspaceBranch: "work/lazy", WorktreePath: t.TempDir(), Status: "ready",
+		TmuxSession: "forge-base", TerminalBackend: workspace.TerminalBackendPtyOwner,
+	}))
+	client := &ptyowner.Client{Root: t.TempDir(), InProcess: true}
+	runtime := localruntime.NewManager(localruntime.Options{PtyOwnerRuntime: ptyownerruntime.New(client, nil)})
+	t.Cleanup(runtime.Shutdown)
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetPtyOwnerClient(client)
+	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+
+	require.NoError(handler.RestoreRuntimeSessions(ctx))
+	require.False(client.HasState("forge-base"), "startup must leave the base shell for the attach path")
+}

@@ -297,9 +297,11 @@ create a local process, PTY, or durable transport session
 - Recovery never resets worktrees or resends the initial message; failed
   recovery retains the saved runtime and report for another attempt
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).
-- Restore base terminals before agents, including retained creating/error retries;
-  startup recovery shares a 30-second budget and preserves uncompleted attempts
-  (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
+- Restore tmux base terminals before agents, including retained creating/error
+  retries; startup recovery shares a 30-second budget and preserves uncompleted
+  attempts (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
+  Pty-owner base terminals are never started by recovery; attach reuses a live
+  owner or starts one (`internal/terminal/handler.go::Handler.ServeHTTP`).
 - Pending startup recovery retries during periodic missing-tmux pruning under
   workspace setup admission; successful recovery restores ordinary exit cleanup
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).

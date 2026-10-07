@@ -3,12 +3,6 @@ info:
   title: Preserve arbitrary JSON object values in Go
   version: 1.0.0
 actions:
-  - target: $.components.schemas.HookEvent.properties.background_tasks
-    update:
-      x-go-type: any
-  - target: $.components.schemas.HookEvent.properties.session_crons
-    update:
-      x-go-type: any
   - target: $.components.schemas.ProblemError.properties.details
     update:
       additionalProperties: true

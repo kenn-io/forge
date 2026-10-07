@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/kit/agenthook"
 )
 
 func newIdleRuntimeDaemon(t *testing.T, workspaceID string, deps Deps, options localruntime.Options) (*localruntime.Manager, *Handler) {
@@ -206,10 +207,14 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 
 	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
 		SessionID: "saved-conversation", CWD: worktree, HookEventName: "Stop",
-		BackgroundTasks: []any{map[string]any{"id": "task-1", "type": "shell", "status": "running"}},
+		BackgroundTasks: []agenthook.BackgroundTask{{ID: "task-1", Type: "shell", Status: "running"}},
 	}, agent.Key))
 	stopIdle()
 	assert.True(running(agent.Key), "an agent with pending background work keeps running")
+	report("claude", "saved-conversation", "UserPromptSubmit")
+	report("claude", "saved-conversation", "PermissionRequest")
+	stopIdle()
+	assert.True(running(agent.Key), "background work from the previous turn survives a new approval prompt")
 	advance(time.Second)
 	report("claude", "other-conversation", "Stop")
 	stopIdle()
@@ -239,6 +244,15 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	for _, session := range listed.Sessions {
 		assert.Equal(localruntime.SessionStatusParked, session.Status, "readers see a stopped runtime as parked, not failed")
 	}
+	renamed, err := handler.renameWorkspaceRuntimeSession(ctx, &renameWorkspaceRuntimeSessionInput{
+		ID: ws.ID, SessionKey: agent.Key, Body: struct {
+			Label string `json:"label"`
+		}{Label: "Renamed agent"},
+	})
+	require.NoError(err)
+	assert.Equal("Renamed agent", renamed.Body.Label)
+	assert.Equal(localruntime.SessionStatusParked, renamed.Body.Status, "renaming keeps an idle-stopped session parked")
+	assert.False(running(agent.Key), "renaming leaves the session stopped")
 
 	runtime.Shutdown()
 	runtime, handler = daemon(time.Hour)

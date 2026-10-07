@@ -139,7 +139,7 @@ Rules:
   state untouched and otherwise maps to `done`; only `elicitation_dialog` and
   user-input tools put a session into `input`
   (`internal/agentactivity/store.go::Store.HandleEvent`).
-- Only Stop refreshes pending background work and scheduled wakeups; other events preserve it for the same conversation and runtime, and UserPromptSubmit clears it (`internal/agentactivity/store.go::Store.HandleEvent`).
+- Only Stop refreshes pending background work and scheduled wakeups; every other event preserves it for the same conversation and runtime (`internal/agentactivity/store.go::Store.HandleEvent`).
 - Reports are reconciled against persisted and live runtime session keys
   after startup restoration and after every missing-tmux prune, so a report
   whose runtime row was pruned does not outlive it

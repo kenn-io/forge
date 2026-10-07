@@ -1383,7 +1383,7 @@ export const WorkspaceRuntimePortLive = Effect.gen(function* () {
             )
           : api.client.FleetService.getFleetWorkspaceRuntime(
               { hostKey, id: workspaceId },
-              viewing === true ? { viewing: "true" } : {},
+              viewing === true ? { viewing: true } : {},
               { signal },
             ),
       );

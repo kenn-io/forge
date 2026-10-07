@@ -82,7 +82,15 @@ func TestStoreTracksHookLifecycleByRuntimeSession(t *testing.T) {
 		})
 		reports = store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
 		require.Len(reports, 1)
-		assert.False(reports[0].PendingWork, tc.name+" after new prompt")
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name+" after new prompt")
+		reportHook(t, store, "runtime-a", map[string]any{
+			"session_id": "agent-a", "cwd": workspace,
+			"hook_event_name": "PermissionRequest",
+		})
+		reports = store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		assert.Equal(StateApproval, reports[0].State, tc.name)
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name+" while awaiting approval")
 	}
 
 	reportHook(t, store, "runtime-a", map[string]any{

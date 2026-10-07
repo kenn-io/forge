@@ -6,5 +6,5 @@ export type GetFleetWorkspaceRuntimeParams = {
   /**
    * Set to true when the workspace view is showing.
    */
-  viewing?: string;
+  viewing?: boolean;
 };

@@ -3085,13 +3085,13 @@ func (s *Handler) renameStoredRuntimeSession(
 	if err != nil || !updated {
 		return localruntime.SessionInfo{}, false, err
 	}
-	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, workspaceID)
+	sessions, err := s.workspaceRuntimeSessions(ctx, workspaceID)
 	if err != nil {
 		return localruntime.SessionInfo{}, false, err
 	}
-	for _, session := range stored {
-		if session.SessionKey == sessionKey {
-			return storedRuntimeSessionInfo(session), true, nil
+	for _, session := range sessions {
+		if session.Key == sessionKey {
+			return session, true, nil
 		}
 	}
 	return localruntime.SessionInfo{}, false, nil

@@ -1221,6 +1221,32 @@ components:
         - oid
         - pushed
       type: object
+    BackgroundTask:
+      additionalProperties: false
+      properties:
+        agent_type:
+          type: string
+        command:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        server:
+          type: string
+        status:
+          type: string
+        tool:
+          type: string
+        type:
+          type: string
+      required:
+        - id
+        - type
+        - status
+      type: object
     BodySnippet:
       additionalProperties: false
       properties:
@@ -3810,14 +3836,20 @@ components:
           type: string
         agent_id:
           type: string
-        background_tasks: {}
+        background_tasks:
+          items:
+            $ref: "#/components/schemas/BackgroundTask"
+          type: array
         cwd:
           type: string
         hook_event_name:
           type: string
         notification_type:
           type: string
-        session_crons: {}
+        session_crons:
+          items:
+            $ref: "#/components/schemas/SessionCron"
+          type: array
         session_id:
           type: string
         source:
@@ -9032,6 +9064,23 @@ components:
         - receipts_digest
         - drained_ack_generation
         - preparation_digest
+      type: object
+    SessionCron:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        prompt:
+          type: string
+        recurring:
+          type: boolean
+        schedule:
+          type: string
+      required:
+        - id
+        - schedule
+        - recurring
+        - prompt
       type: object
     SessionInfo:
       additionalProperties: false
@@ -16449,7 +16498,7 @@ paths:
           in: query
           name: viewing
           schema:
-            type: string
+            type: boolean
       responses:
         default:
           content:

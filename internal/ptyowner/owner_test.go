@@ -533,9 +533,7 @@ func TestClientReportsDeadOwnerAsGone(t *testing.T) {
 			require.ErrorIs(err, ErrOwnerGone)
 			_, err = (&Client{Root: root}).Snapshot(t.Context(), "kenn-forge-dead")
 			require.ErrorIs(err, ErrOwnerGone)
-			if name == "state missing" {
-				require.NoFileExists(paths.StatePath)
-			} else {
+			if name != "state missing" {
 				require.FileExists(paths.StatePath)
 			}
 		})

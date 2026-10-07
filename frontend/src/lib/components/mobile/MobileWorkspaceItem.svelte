@@ -15,7 +15,6 @@
   import PRListView from "../../views/PRListView.svelte";
   import type { WorkspaceDetail } from "../terminal/workspace-detail.js";
   import { loadMobileWorkspaceDetail, mobileWorkspaceLinkedItem } from "./mobile-workspace-detail.js";
-  import { loadMobileWorkspaceSession } from "./mobile-workspace-session.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   interface Props {
@@ -61,7 +60,6 @@
   let workspace = $state.raw<WorkspaceDetail | null>(null);
   let loadError = $state<string | null>(null);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
-  const sessionLabel = $derived(loadMobileWorkspaceSession(workspaceId, hostKey));
 
   const itemRef = $derived.by((): PullRequestRouteRef | IssueRouteRef | null => {
     if (!workspace || !linkedItem) return null;
@@ -142,7 +140,6 @@
       <ArrowLeftIcon size="20" strokeWidth="2" aria-hidden="true" />
       <span>
         <strong>{backDestination === "list" ? "Workspaces" : "Terminal"}</strong>
-        {#if backDestination === "terminal" && sessionLabel}<small>{sessionLabel}</small>{/if}
       </span>
     </button>
     <span class="mobile-workspace-item__end">
@@ -227,9 +224,8 @@
   .mobile-workspace-item__toolbar { min-height: 3.5rem; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.375rem 0.625rem; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-item__back { min-width: 0; min-height: 2.75rem; display: inline-flex; align-items: center; gap: 0.5rem; padding: 0 0.625rem; border: 0; border-radius: var(--radius-md); color: var(--text-secondary); background: transparent; font: inherit; text-align: left; }
   .mobile-workspace-item__back span { min-width: 0; display: flex; flex-direction: column; }
-  .mobile-workspace-item__back strong, .mobile-workspace-item__back small { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-workspace-item__back strong { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-item__back strong { color: var(--text-primary); font-size: var(--font-size-md); }
-  .mobile-workspace-item__back small { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--font-size-sm); }
   .mobile-workspace-item__end { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.5rem; }
   .mobile-workspace-item__badge { flex: 0 0 auto; padding: 0.25rem 0.625rem; border-radius: 999px; color: var(--text-on-accent); background: var(--accent-green); font-family: var(--font-mono); font-size: var(--font-size-sm); font-weight: 700; }
   .mobile-workspace-item__badge.issue { background: var(--accent-amber); }

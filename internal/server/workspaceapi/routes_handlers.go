@@ -2932,6 +2932,9 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 			if stopped {
 				s.setRuntimeRecoveryPending(input.SessionKey, false)
 				s.removeAgentActivityRuntimeSession(input.SessionKey)
+				if err := s.runtime.Resumed(input.SessionKey); err != nil {
+					slog.Warn("remove stop mark of stopped runtime", "session_key", input.SessionKey, "err", err)
+				}
 				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
 			}

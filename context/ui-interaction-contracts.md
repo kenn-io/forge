@@ -308,6 +308,9 @@ Persisted controls must state their scope clearly.
   storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
+- Workspace pins are browser-local and host-aware; keep them above the normal list with project labels
+  and no duplicate rows. Pins follow the repository filter and text search
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::pinnedWorkspaces`).
 - Agent status visibility uses Forge config across browsers.
   Keep PR, Issue, and Activity labels on the right, matching Workspaces
   (`frontend/src/lib/components/shared/AgentStatusIndicator.svelte`).

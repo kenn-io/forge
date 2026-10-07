@@ -4,6 +4,10 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 
 ## Core stance
 
+- The native app reuses the server's mobile web workflows; do not duplicate ACP
+  or terminal UI in React Native. Desktop layout is an opt-in for tablets
+  (`mobile/connection.ts::launchURL`). Setup and Android commands live in `mobile/README.md`.
+
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 
 `kenn-forge` can stay dense and information-rich, but phone density must come from hierarchy and summarization, not from tiny desktop controls, compressed split panes, or table layouts.

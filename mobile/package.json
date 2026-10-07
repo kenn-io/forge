@@ -1,0 +1,31 @@
+{
+  "name": "kenn-forge-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Elastic-2.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "node node_modules/expo/bin/cli start",
+    "android": "node node_modules/expo/bin/cli run:android",
+    "ios": "node node_modules/expo/bin/cli run:ios",
+    "check": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --experimental-strip-types --test connection.test.ts"
+  },
+  "dependencies": {
+    "expo": "57.0.26",
+    "expo-build-properties": "~57.0.22",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/react": "~19.2.0",
+    "typescript": "6.0.3"
+  },
+  "packageManager": "bun@1.4.0"
+}

@@ -1,0 +1,8 @@
+node_modules/
+.expo/
+android/
+ios/
+dist/
+*.apk
+*.aab
+*.ipa

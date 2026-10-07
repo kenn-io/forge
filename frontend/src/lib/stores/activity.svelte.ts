@@ -20,6 +20,7 @@ import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mut
 import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filter.js";
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
+import { parseRepoFilterSelection, providerQualifiedRepoFilterValue } from "../utils/repo-filter-values.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -166,6 +167,18 @@ interface OwnedActivityResponse {
 
 interface ActivityReadResponse extends OwnedActivityResponse {
   readonly scope: string;
+  readonly repo: string | undefined;
+  readonly filterScope: string;
+}
+
+interface CachedActivitySnapshot {
+  readonly repo: string | undefined;
+  readonly filterScope: string;
+  readonly items: ActivityItem[];
+  readonly itemActivity: ActivitySubject[];
+  readonly workspaceActivity: WorkspaceActivitySubject[];
+  readonly capped: boolean;
+  readonly itemActivityCapped: boolean;
 }
 
 type ActivityPollProjection =
@@ -240,6 +253,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let pollCount = 0;
   let pollingStarted = false;
   let snapshotScope: string | undefined;
+  let snapshotFilterScope: string | undefined;
+  let displayedRepo: string | undefined;
+  const recentSnapshots = new Map<string, CachedActivitySnapshot>();
   const AUTHORITATIVE_REFRESH_EVERY = 4;
   let activityLifecycleTick = 0;
   const notificationStateOwnership = new Map<string, { readonly tick: number; readonly state: string }>();
@@ -539,6 +555,59 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return JSON.stringify([activityProjectionScope(params), params.projection]);
   }
 
+  function rememberActivitySnapshot(): void {
+    if (snapshotScope === undefined || snapshotFilterScope === undefined) return;
+    recentSnapshots.delete(snapshotScope);
+    recentSnapshots.set(snapshotScope, {
+      repo: displayedRepo,
+      filterScope: snapshotFilterScope,
+      items,
+      itemActivity,
+      workspaceActivity,
+      capped,
+      itemActivityCapped,
+    });
+    if (recentSnapshots.size > 8) recentSnapshots.delete(recentSnapshots.keys().next().value!);
+  }
+
+  function restoreRepositoryActivity(params: ActivityParams): void {
+    rememberActivitySnapshot();
+    if (displayedRepo === params.repo) return;
+    const { repo, ...unscopedParams } = params;
+    const selected = new Set(parseRepoFilterSelection(repo));
+    const filterScope = activityProjectionScope(unscopedParams);
+    const cached =
+      recentSnapshots.get(pagedActivityScopeKey()) ??
+      [...recentSnapshots.values()].reverse().find((entry) => {
+        if (entry.filterScope !== filterScope) return false;
+        const cachedRepos = parseRepoFilterSelection(entry.repo);
+        return (
+          cachedRepos.length === 0 || (selected.size > 0 && [...selected].every((value) => cachedRepos.includes(value)))
+        );
+      });
+    const matchesRepo = (item: ActivityItem | ActivitySubject | WorkspaceActivitySubject): boolean => {
+      if (selected.size === 0) return true;
+      const value = providerQualifiedRepoFilterValue({
+        provider: item.repo?.provider,
+        platformHost: item.repo?.platform_host ?? item.platform_host,
+        repoPath: item.repo?.repo_path,
+      });
+      return value !== null && selected.has(value);
+    };
+    displayedRepo = repo;
+    items = cached?.items.filter(matchesRepo) ?? [];
+    itemActivity = cached?.itemActivity.filter(matchesRepo) ?? [];
+    workspaceActivity = cached?.workspaceActivity.filter(matchesRepo) ?? [];
+    capped = cached?.capped ?? false;
+    itemActivityCapped = cached?.itemActivityCapped ?? false;
+    // Cached rows are a preview. Only the response for this selection may
+    // establish cursor and child-page authority or satisfy ensureActivityLoaded.
+    snapshotScope = undefined;
+    snapshotFilterScope = undefined;
+    activityEventCursor = "";
+    loadedThreadKeys = new Set();
+  }
+
   function ownsForegroundSnapshot(generation: number, scope: string): boolean {
     return generation === pagedActivityGeneration && scope === activityProjectionScope(buildParams());
   }
@@ -608,13 +677,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function activityRead(params: ActivityParams) {
     const scope = pagedActivityScopeKey();
+    // Background reads may request collapsed summaries while the retained
+    // display includes expanded children. Cache by the logical display scope.
+    const { repo, ...unscopedParams } = buildParams();
+    const filterScope = activityProjectionScope(unscopedParams);
     return Effect.sync(() => ++activityLifecycleTick).pipe(
       Effect.flatMap((startedAt) =>
         executeGeneratedApiRequest("GET /activity", (client, signal) =>
           client.ActivityService.listActivity(params, { signal }),
         ).pipe(
           retryIdempotentRead,
-          Effect.map((response) => ({ response, startedAt, scope })),
+          Effect.map((response) => ({ response, startedAt, scope, repo, filterScope })),
         ),
       ),
     );
@@ -706,6 +779,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function projectActivitySnapshot(result: ActivityReadResponse, projection: ActivityParams["projection"]): void {
     snapshotScope = result.scope;
+    snapshotFilterScope = result.filterScope;
+    displayedRepo = result.repo;
     items = projectOwnedNotificationStates(result);
     projectActivitySubjects(result.response);
     capped = result.response.capped;
@@ -735,6 +810,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse): void {
     snapshotScope = result.scope;
+    snapshotFilterScope = result.filterScope;
+    displayedRepo = result.repo;
     const reconcileCollapsedThreads = shouldUseCollapsedAuthoritativeProjection();
     const autoLoadExpandedThreadEvents = activityPageLimit === undefined;
     const childProjectionStale =
@@ -1091,6 +1168,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
     const params = buildParams();
+    restoreRepositoryActivity(params);
     const scope = activityProjectionScope(params);
     loadActivityAuthors(forceAuthors || authorsLoading);
     runtime.runCommand(loadActivityEffect(params, generation, scope), {
@@ -1123,6 +1201,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   // propagation backend-side and flips the row to read locally so the
   // unread affordance clears without waiting for the next sync. The
   // activity item id for a notification is "ntf:<db id>".
+  function projectNotificationState(id: string, state: string): void {
+    const update = (item: ActivityItem): ActivityItem => (item.id === id ? { ...item, item_state: state } : item);
+    items = items.map(update);
+    for (const [scope, snapshot] of recentSnapshots) {
+      recentSnapshots.set(scope, { ...snapshot, items: snapshot.items.map(update) });
+    }
+  }
+
   function markNotificationSeen(item: ActivityItem): void {
     const id = notificationDbId(item.id);
     if (id === null) return;
@@ -1132,7 +1218,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const apply = (state: string) =>
       Effect.sync(() => {
         notificationStateOwnership.set(item.id, { tick: mutationTick, state });
-        items = items.map((candidate) => (candidate.id === item.id ? { ...candidate, item_state: state } : candidate));
+        projectNotificationState(item.id, state);
       });
     const program = Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
@@ -1156,7 +1242,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       if (acknowledged) {
         const acknowledgementTick = ++activityLifecycleTick;
         notificationStateOwnership.set(item.id, { tick: acknowledgementTick, state: "read" });
-        items = items.map((candidate) => (candidate.id === item.id ? { ...candidate, item_state: "read" } : candidate));
+        projectNotificationState(item.id, "read");
       } else {
         notificationStateOwnership.delete(item.id);
         showFlash("Failed to mark notification as read.", { tone: "danger" });

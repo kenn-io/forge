@@ -346,7 +346,8 @@ create a local process, PTY, or durable transport session
   binary input beyond automatic replies on the workspace terminal socket (`terminal.Handler.Typed`). Socket opens,
   reconnects, focus, heartbeats, history and other reads are neither.
 - Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
-  report under the runtime key and a resume path (hook agents `done`, `input` or
+  report under the runtime key, no pending background work or scheduled wakeups in their
+  latest report, and a resume path (hook agents `done`, `input` or
   `approval`, or `idle` after a SessionStart whose `source` is `resume` or `fork`
   (`agentactivity.Report.Continued`), on an available target whose executable can run; ACP chats with
   `loadSession`; owners started by an older build record no
@@ -356,7 +357,7 @@ create a local process, PTY, or durable transport session
   through `ACP.Park` and kills other owner trees, so the saved conversation and row stay;
   an owner that survives a failed stop is unmarked and reattached. The pass holds only
   the workspace's setup admission, with a bounded deadline per stop. Each stop uses the
-  live timeout and current idle owner, so a reload affects a pass already underway.
+  live timeout, so a reload affects a pass already underway.
 - The pty-owner workspace terminal stops while idle only with no claimed socket; claim its
   slot through the stop without holding the shared lock. It stays ready and starts a fresh
   shell on attach, without a stop mark (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).

@@ -250,7 +250,7 @@ func (i *idleRuntimes) idle(ws *db.Workspace, created time.Time) time.Duration {
 // stopIdle stops unused runtimes in each ready pty-owner workspace.
 func (i *idleRuntimes) stopIdle(ctx context.Context) {
 	h := i.h
-	if h.configSnapshot().IdleRuntimeStopAfter <= 0 || h.idle.Load() != i || h.db == nil || h.runtime == nil || h.workspaces == nil {
+	if h.configSnapshot().IdleRuntimeStopAfter <= 0 || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return
 	}
 	workspaces, err := h.db.ListWorkspaces(ctx)
@@ -261,7 +261,7 @@ func (i *idleRuntimes) stopIdle(ctx context.Context) {
 	for idx := range workspaces {
 		ws := &workspaces[idx]
 		after := h.configSnapshot().IdleRuntimeStopAfter
-		if ctx.Err() != nil || after <= 0 || h.idle.Load() != i {
+		if ctx.Err() != nil || after <= 0 {
 			return
 		}
 		i.seen(ws.ID)
@@ -297,7 +297,7 @@ func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace) erro
 			continue
 		}
 		after := h.configSnapshot().IdleRuntimeStopAfter
-		if after <= 0 || h.idle.Load() != i {
+		if after <= 0 {
 			break
 		}
 		// Checked after stoppable's reads, so a view or typing during them keeps the runtime.
@@ -311,7 +311,7 @@ func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace) erro
 		}
 	}
 	after := h.configSnapshot().IdleRuntimeStopAfter
-	if ctx.Err() == nil && after > 0 && h.idle.Load() == i && h.terminal != nil && i.idle(ws, time.Time{}) >= after {
+	if ctx.Err() == nil && after > 0 && h.terminal != nil && i.idle(ws, time.Time{}) >= after {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idleRuntimeStopTimeout)
 		errs = append(errs, h.terminal.StopUnattachedTerminal(stopCtx, ws))
 		cancel()
@@ -353,6 +353,9 @@ func (i *idleRuntimes) stoppable(ctx context.Context, ws *db.Workspace, row db.W
 		return h.runtime.ACPReloadable(row.SessionKey)
 	}
 	latest := reports[0]
+	if latest.PendingWork {
+		return false
+	}
 	if latest.State == agentactivity.StateIdle && !latest.Continued {
 		return false
 	}

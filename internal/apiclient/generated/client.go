@@ -57565,9 +57565,11 @@ type HookEvent struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema               *string        `json:"$schema,omitempty"`
 	AgentID              *string        `json:"agent_id,omitempty"`
+	BackgroundTasks      []struct{}     `json:"background_tasks,omitempty"`
 	Cwd                  string         `json:"cwd"`
 	HookEventName        string         `json:"hook_event_name"`
 	NotificationType     *string        `json:"notification_type,omitempty"`
+	SessionCrons         []struct{}     `json:"session_crons,omitempty"`
 	SessionID            string         `json:"session_id"`
 	Source               *string        `json:"source,omitempty"`
 	ToolName             *string        `json:"tool_name,omitempty"`
@@ -57610,6 +57612,12 @@ func (h *HookEvent) UnmarshalJSON(data []byte) error {
 		}
 		delete(object, "agent_id")
 	}
+	if raw, found := object["background_tasks"]; found {
+		if err := json.Unmarshal(raw, &h.BackgroundTasks); err != nil {
+			return fmt.Errorf("error reading 'background_tasks': %w", err)
+		}
+		delete(object, "background_tasks")
+	}
 	if raw, found := object["cwd"]; found {
 		if err := json.Unmarshal(raw, &h.Cwd); err != nil {
 			return fmt.Errorf("error reading 'cwd': %w", err)
@@ -57627,6 +57635,12 @@ func (h *HookEvent) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("error reading 'notification_type': %w", err)
 		}
 		delete(object, "notification_type")
+	}
+	if raw, found := object["session_crons"]; found {
+		if err := json.Unmarshal(raw, &h.SessionCrons); err != nil {
+			return fmt.Errorf("error reading 'session_crons': %w", err)
+		}
+		delete(object, "session_crons")
 	}
 	if raw, found := object["session_id"]; found {
 		if err := json.Unmarshal(raw, &h.SessionID); err != nil {
@@ -57677,6 +57691,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		}
 	}
 
+	object["background_tasks"], err = json.Marshal(h.BackgroundTasks)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'background_tasks': %w", err)
+	}
+
 	object["cwd"], err = json.Marshal(h.Cwd)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling 'cwd': %w", err)
@@ -57692,6 +57711,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
 		}
+	}
+
+	object["session_crons"], err = json.Marshal(h.SessionCrons)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'session_crons': %w", err)
 	}
 
 	object["session_id"], err = json.Marshal(h.SessionID)

@@ -3810,12 +3810,18 @@ components:
           type: string
         agent_id:
           type: string
+        background_tasks:
+          items: {}
+          type: array
         cwd:
           type: string
         hook_event_name:
           type: string
         notification_type:
           type: string
+        session_crons:
+          items: {}
+          type: array
         session_id:
           type: string
         source:

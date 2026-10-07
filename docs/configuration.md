@@ -519,8 +519,9 @@ idle_runtime_stop_hours = 12
 A workspace counts as in use while its page shows in a visible browser tab, and
 whenever someone types into one of its terminals or chats, from any client.
 An agent stops once it has finished its turn or is waiting on an approval or an
-answer, as long as it can resume its conversation. A pending approval or
-question is lost; ask again after it resumes. A working agent, a terminal agent
+answer, as long as it can resume its conversation and has no pending background
+work or scheduled wakeups. A pending approval or question is lost; ask again after
+it resumes. A working agent, a terminal agent
 that was never prompted, and chat agents started before you upgraded Forge keep
 running, as do command sessions and terminals in project worktrees. Shell tabs
 stop too, along with anything running in them. The workspace terminal stops

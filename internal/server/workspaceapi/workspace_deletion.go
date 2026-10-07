@@ -166,7 +166,7 @@ func (s *Handler) runWorkspaceDeletion(
 			for _, item := range stored {
 				s.removeAgentActivityRuntimeSession(item.SessionKey)
 				if err := s.runtime.Resumed(item.SessionKey); err != nil {
-					return err
+					slog.Warn("remove stop mark of stopped runtime", "session_key", item.SessionKey, "err", err)
 				}
 			}
 			s.idle.Load().Forget(id)

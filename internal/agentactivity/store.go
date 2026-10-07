@@ -38,8 +38,9 @@ type Report struct {
 	// Continued marks an idle session that resumed or forked an earlier
 	// conversation, rather than one that started fresh. A compaction is not one:
 	// it can fire mid-turn.
-	Continued bool      `json:"continued,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Continued   bool      `json:"continued,omitempty"`
+	PendingWork bool      `json:"pending_work,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Snapshot struct {
@@ -53,7 +54,7 @@ type storedReport struct {
 }
 
 // HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
-// Agent-specific payload fields are ignored unless they affect activity state.
+// Agent-specific payload fields are ignored unless they affect activity or idle stop.
 type HookEvent struct {
 	SessionID        string `json:"session_id"`
 	CWD              string `json:"cwd"`
@@ -62,8 +63,10 @@ type HookEvent struct {
 	NotificationType string `json:"notification_type,omitempty"`
 	AgentID          string `json:"agent_id,omitempty"`
 	// Source is how a SessionStart session began: startup, resume, clear, compact or fork.
-	Source string   `json:"source,omitempty"`
-	_      struct{} `json:"-" additionalProperties:"true"`
+	Source          string   `json:"source,omitempty"`
+	BackgroundTasks []any    `json:"background_tasks,omitempty"`
+	SessionCrons    []any    `json:"session_crons,omitempty"`
+	_               struct{} `json:"-" additionalProperties:"true"`
 }
 
 type Store struct {
@@ -123,6 +126,7 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 			CWD:               cwd,
 			State:             state,
 			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork"),
+			PendingWork:       len(hook.BackgroundTasks) > 0 || len(hook.SessionCrons) > 0,
 			UpdatedAt:         s.now().UTC(),
 		}
 		if state == StateDone {

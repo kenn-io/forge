@@ -203,6 +203,13 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	report("claude", "saved-conversation", "UserPromptSubmit")
 	stopIdle()
 	assert.True(running(agent.Key), "a working agent keeps running")
+
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+		SessionID: "saved-conversation", CWD: worktree, HookEventName: "Stop",
+		BackgroundTasks: []any{map[string]any{"id": "task-1", "type": "shell", "status": "running"}},
+	}, agent.Key))
+	stopIdle()
+	assert.True(running(agent.Key), "an agent with pending background work keeps running")
 	report("gemini", "no-resume", "Stop")
 	stopIdle()
 	assert.True(running(agent.Key), "an agent that cannot be resumed keeps running")

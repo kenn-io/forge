@@ -1,6 +1,7 @@
 # Forge mobile
 
-An Expo app for an existing Forge server. Phones open the mobile workspace UI,
+An Expo app with Forge’s web UI bundled into the APK. The selected Forge server
+provides APIs, event streams, and WebSockets. Phones open the mobile workspace UI,
 including ACP conversations and the terminal. Tablets start in the same mobile
 view and offer **Use desktop layout** on the connection screen.
 
@@ -12,9 +13,11 @@ HTTPS must have a certificate trusted by the device.
 
 The app remembers one connection in Expo SecureStore. It uses Forge's existing
 `auth_token` cookie bootstrap so API requests, event streams, and WebSockets
-share the WebView session. **Server** returns to connection settings;
+share the WebView session. Connected pages use Forge's own header. On Android,
+Back navigates through page history, then returns to connection settings.
+Starting the app again also opens the saved connection form.
 **Forget connection** removes the saved URL and token. WebView cookies and
-browser storage are session-only. Links to other origins open in the browser.
+browser storage follow the platform WebView’s private-browsing behavior. Links to other origins open in the browser.
 
 ## Run on Android
 
@@ -23,10 +26,12 @@ Android 16 / API 36 emulator. Set `ANDROID_HOME` to your SDK directory and
 `JAVA_HOME` to your JDK directory, and put the SDK's `platform-tools` and
 `emulator` directories on `PATH`. Linux emulators need access to `/dev/kvm`.
 
-From this directory:
+Install the root workspace dependencies, then build from this directory:
 
 ```sh
+(cd .. && bun install --frozen-lockfile)
 bun install --frozen-lockfile
+node scripts/build-web.mjs
 node node_modules/expo/bin/cli run:android
 ```
 
@@ -50,14 +55,16 @@ After the first native build, start Metro with:
 node node_modules/expo/bin/cli start --localhost
 ```
 
-Rebuild the native app after changing dependencies or `app.json`. A standalone
-local Android build, with its JavaScript bundle included, is available through
+Rebuild the web bundle with `node scripts/build-web.mjs` after changing the
+frontend. Rebuild the native app after changing dependencies or `app.json`. A standalone
+local Android build, with its native JavaScript and Forge web assets included, is available through
 `node node_modules/expo/bin/cli run:android --variant release`. Distribution still
 needs your own signing configuration.
 
 ## iOS
 
 On macOS with Xcode and an iOS simulator installed, run
+`node scripts/build-web.mjs` followed by
 `node node_modules/expo/bin/cli run:ios`. The native shell supports iPhone and
 iPad. Android is the locally verified platform for this initial app.
 
@@ -65,10 +72,10 @@ iPad. Android is the locally verified platform for this initial app.
 
 ```sh
 node node_modules/typescript/bin/tsc --noEmit
-node --experimental-strip-types --test connection.test.ts
+node --experimental-strip-types --test *.test.ts
 node node_modules/expo/bin/cli export --platform android
 ```
 
-The app loads the UI from the selected server, so ACP and terminal capabilities
-follow that server's Forge version. It does not run a Forge daemon on the phone
-or provide offline workspaces.
+UI updates require a new app build. Use a Forge server with APIs compatible with
+the bundled frontend. The app does not run a Forge daemon on the phone or provide
+offline workspaces.

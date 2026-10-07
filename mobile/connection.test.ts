@@ -20,10 +20,10 @@ test("desktop is an opt-in tablet layout", () => {
   );
 });
 
-test("optional auth uses Forge's cookie bootstrap and encodes the token", () => {
+test("launch routes keep auth tokens out of navigation history", () => {
   assert.equal(
     launchURL({ server: "https://forge.example.test", token: " a+b&c ", desktop: false }, false),
-    "https://forge.example.test/m/workspaces?auth_token=a%2Bb%26c",
+    "https://forge.example.test/m/workspaces",
   );
 });
 

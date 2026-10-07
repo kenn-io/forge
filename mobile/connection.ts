@@ -26,7 +26,6 @@ export function launchURL(connection: Connection, tablet: boolean): string {
   const route = connection.desktop && tablet ? "/terminal" : "/m/workspaces";
   const url = new URL(serverURL(connection.server) + route);
   if (connection.desktop && tablet) url.searchParams.set("desktop", "1");
-  if (connection.token.trim()) url.searchParams.set("auth_token", connection.token.trim());
   return url.toString();
 }
 

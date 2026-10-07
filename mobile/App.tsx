@@ -20,7 +20,9 @@ import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { isServerURL, launchURL, readConnection, serverURL, type Connection } from "./connection";
+import { isServerURL, readConnection, serverURL, type Connection } from "./connection";
+import { embeddedPage } from "./embedded-page";
+import { loadWebBundle } from "./web-bundle";
 
 const storageKey = "forge.connection";
 const emptyConnection: Connection = { server: "", token: "", desktop: false };
@@ -63,12 +65,13 @@ function ForgeApp() {
   const tablet = Math.min(width, height) >= 600;
   const [draft, setDraft] = useState<Connection>(emptyConnection);
   const [connection, setConnection] = useState<Connection | null>(null);
-  const [source, setSource] = useState<{ uri: string } | null>(null);
+  const [source, setSource] = useState<{ html: string; baseUrl: string } | null>(null);
+  const bundle = useRef("");
+  const [pageRevision, setPageRevision] = useState(0);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [pageError, setPageError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
   const webview = useRef<WebView>(null);
 
@@ -112,13 +115,13 @@ function ForgeApp() {
     setSaving(true);
     try {
       const next = { ...draft, server: serverURL(draft.server), token: draft.token.trim() };
-      const uri = launchURL(next, tablet);
+      bundle.current = await loadWebBundle();
+      const page = embeddedPage(bundle.current, next, tablet);
       await SecureStore.setItemAsync(storageKey, JSON.stringify(next));
       setDraft(next);
       setPageError("");
-      setLoading(true);
       setCanGoBack(false);
-      setSource({ uri });
+      setSource(page);
       setConnection(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the connection. Try again.");
@@ -175,13 +178,6 @@ function ForgeApp() {
         <ActivityIndicator style={styles.center} color={colors.accent} accessibilityLabel="Loading connection" />
       ) : connection && source ? (
         <>
-          <View style={[styles.toolbar, { borderColor: colors.border }]}>
-            <Text numberOfLines={1} style={[styles.server, { color: colors.muted }]}>
-              {new URL(connection.server).host}
-            </Text>
-            {loading && !pageError && <ActivityIndicator color={colors.accent} accessibilityLabel="Connecting" />}
-            {button("Server", disconnect)}
-          </View>
           {pageError ? (
             <View style={styles.failure}>
               <Text accessibilityRole="header" style={[styles.heading, { color: colors.text }]}>
@@ -194,8 +190,7 @@ function ForgeApp() {
                 "Retry",
                 () => {
                   setPageError("");
-                  setLoading(true);
-                  setSource({ uri: launchURL(connection, tablet) });
+                  setSource(embeddedPage(bundle.current, connection, tablet));
                 },
                 true,
               )}
@@ -203,35 +198,52 @@ function ForgeApp() {
             </View>
           ) : (
             <WebView
+              key={pageRevision}
               ref={webview}
               source={source}
               style={{ backgroundColor: colors.background }}
               incognito
+              originWhitelist={["http://*", "https://*", "about:*", "data:*"]}
               allowsBackForwardNavigationGestures
               contentMode={connection.desktop && tablet ? "desktop" : "mobile"}
-              onLoadEnd={() => setLoading(false)}
+              startInLoadingState
+              renderLoading={() => (
+                <ActivityIndicator
+                  style={[StyleSheet.absoluteFill, { backgroundColor: colors.background }]}
+                  color={colors.accent}
+                  accessibilityLabel="Connecting"
+                />
+              )}
               onNavigationStateChange={(state) => {
                 setCanGoBack(state.canGoBack);
-                setLoading(state.loading);
               }}
               onShouldStartLoadWithRequest={(request) => {
-                if (isServerURL(request.url, connection.server)) return true;
+                if (request.url === "about:blank") return true;
+                if (request.isTopFrame === false) {
+                  return isServerURL(request.url, connection.server) || /^(data|about):/.test(request.url);
+                }
+                if (isServerURL(request.url, connection.server)) {
+                  setPageRevision((revision) => revision + 1);
+                  setSource(embeddedPage(bundle.current, connection, tablet, request.url));
+                  return false;
+                }
                 openExternal(request.url);
                 return false;
+              }}
+              onMessage={(event) => {
+                try {
+                  const message = JSON.parse(event.nativeEvent.data);
+                  if (message.type === "connection-error" && typeof message.message === "string") {
+                    setPageError(message.message);
+                  }
+                } catch {
+                  // Other web messages do not change the native connection screen.
+                }
               }}
               onOpenWindow={(event) => openExternal(event.nativeEvent.targetUrl)}
               onError={() =>
                 setPageError("Check the server address and your network or Tailscale connection, then retry.")
               }
-              onHttpError={(event) => {
-                if (event.nativeEvent.statusCode === 401 || event.nativeEvent.statusCode === 403) {
-                  setPageError(
-                    "The server refused this connection. Check your auth token and the server's access settings.",
-                  );
-                } else if (event.nativeEvent.url === source.uri) {
-                  setPageError(`The server returned HTTP ${event.nativeEvent.statusCode}. Try again.`);
-                }
-              }}
               onRenderProcessGone={() => setPageError("The web view stopped. Retry to reconnect to Forge.")}
               onContentProcessDidTerminate={() => setPageError("The web view stopped. Retry to reconnect to Forge.")}
             />
@@ -349,15 +361,6 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 16, fontWeight: "600" },
   toggle: { flexDirection: "row", alignItems: "center", gap: 16, minHeight: 48 },
   switch: { minWidth: 48, minHeight: 48 },
-  toolbar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-  },
-  server: { flex: 1, fontSize: 14 },
   failure: {
     flex: 1,
     justifyContent: "center",

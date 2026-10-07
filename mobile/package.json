@@ -6,14 +6,17 @@
   "main": "index.ts",
   "scripts": {
     "start": "node node_modules/expo/bin/cli start",
-    "android": "node node_modules/expo/bin/cli run:android",
-    "ios": "node node_modules/expo/bin/cli run:ios",
+    "android": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:android",
+    "ios": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:ios",
     "check": "node node_modules/typescript/bin/tsc --noEmit",
-    "test": "node --experimental-strip-types --test connection.test.ts"
+    "test": "node --experimental-strip-types --test *.test.ts",
+    "build:web": "node scripts/build-web.mjs"
   },
   "dependencies": {
     "expo": "57.0.26",
+    "expo-asset": "~57.0.5",
     "expo-build-properties": "~57.0.22",
+    "expo-file-system": "~57.0.5",
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
@@ -25,7 +28,8 @@
   "devDependencies": {
     "@types/node": "^26.0.0",
     "@types/react": "~19.2.0",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "vite-plugin-singlefile": "^2.3.3"
   },
   "packageManager": "bun@1.4.0",
   "patchedDependencies": {

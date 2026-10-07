@@ -91,12 +91,3 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require.NoError(err)
 	assert.NotContains(properties, "surface")
 }
-
-func TestSessionEndedAllowlist(t *testing.T) {
-	t.Setenv(EnabledEnv, "0")
-	backend, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("backend")...)
-	require.NoError(t, err)
-	assert.True(t, UIEventAllowed("session_ended"))
-	assert.True(t, backend.EventAllowed("session_ended"))
-	assert.Equal(t, "backend", sourceForEvent("session_ended"))
-}

@@ -132,6 +132,7 @@ func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {
 	assert := assert.New(t)
 
 	assert.True(UIEventAllowed(" app_opened "))
+	assert.True(UIEventAllowed("session_ended"))
 	assert.False(UIEventAllowed("daemon_active"))
 	assert.False(UIEventAllowed("app_loaded"))
 }

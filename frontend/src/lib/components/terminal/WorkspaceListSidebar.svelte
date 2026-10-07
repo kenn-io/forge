@@ -11,6 +11,7 @@
   } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import PencilIcon from "@lucide/svelte/icons/pencil";
+  import PinIcon from "@lucide/svelte/icons/pin";
   import {
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
@@ -47,8 +48,10 @@
     defaultWorkspaceListSort,
     loadWorkspaceListDisplayOptions,
     loadWorkspaceListSort,
+    loadPinnedWorkspaces,
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
+    savePinnedWorkspaces,
     workspaceAgentStatePriority,
     workspaceAgentStateSortTime,
     workspaceListSortTimestamp,
@@ -169,6 +172,8 @@
   let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
+  let pinnedWorkspaceKeys = $state.raw(loadPinnedWorkspaces());
+  let pinsCollapsed = $state(false);
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
   let contextMenu = $state<{
     ws: Workspace;
@@ -239,6 +244,13 @@
     return scoped.filter((ws) => workspaceMatchesSearch(ws, parsedSearchQuery));
   });
 
+  const pinnedWorkspaces = $derived(
+    pinnedWorkspaceKeys.flatMap((key) =>
+      visibleWorkspaces.filter((ws) => workspaceRowKey(ws) === key),
+    ),
+  );
+  const unpinnedWorkspaces = $derived(visibleWorkspaces.filter((ws) => !isPinned(ws)));
+
   const sidebarCountLabel = $derived(
     hasSearchQuery || selectedRepoValues.size > 0
       ? `${visibleWorkspaces.length}/${workspaces.length}`
@@ -247,7 +259,7 @@
 
   const grouped = $derived.by<WorkspaceGroup[]>(() => {
     const groups: WorkspaceGroup[] = [];
-    for (const ws of visibleWorkspaces) {
+    for (const ws of unpinnedWorkspaces) {
       const key = repoIdentityKey(workspaceRepoIdentity(ws));
       const group = groups.find((candidate) => candidate.key === key);
       if (group) {
@@ -335,7 +347,7 @@
   // Missing timestamps fall back to workspace creation time.
   const sortedFlat = $derived.by(() => {
     if (sortMode === "agent-status") {
-      return [...visibleWorkspaces].sort(
+      return [...unpinnedWorkspaces].sort(
         (a, b) =>
           workspaceAgentStatePriority(b.agent_state) - workspaceAgentStatePriority(a.agent_state) ||
           timeValue(workspaceAgentStateSortTime(b)) - timeValue(workspaceAgentStateSortTime(a)) ||
@@ -350,7 +362,7 @@
             timeValue(ws.item_last_activity_at) ||
             timeValue(ws.created_at)
         : (ws: Workspace) => timeValue(ws.created_at);
-    return [...visibleWorkspaces].sort(
+    return [...unpinnedWorkspaces].sort(
       (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
     );
   });
@@ -358,6 +370,20 @@
   function setSort(sort: WorkspaceListSort): void {
     sortMode = sort;
     saveWorkspaceListSort(sort);
+  }
+
+  function isPinned(ws: Workspace): boolean {
+    return pinnedWorkspaceKeys.includes(workspaceRowKey(ws));
+  }
+
+  function togglePin(ws: Workspace): void {
+    const key = workspaceRowKey(ws);
+    pinnedWorkspaceKeys = isPinned(ws)
+      ? pinnedWorkspaceKeys.filter((candidate) => candidate !== key)
+      : [...pinnedWorkspaceKeys, key];
+    savePinnedWorkspaces(pinnedWorkspaceKeys);
+    pinsCollapsed = false;
+    closeContextMenu();
   }
 
   function setDisplayOption(
@@ -1325,6 +1351,21 @@
   {/if}
   <ScrollBox class="sidebar-list" label="Workspaces">
     {#snippet children()}
+    {#if pinnedWorkspaces.length > 0}
+      <GroupedSidebarSection
+        label="Pinned"
+        count={pinnedWorkspaces.length}
+        collapsed={!hasSearchQuery && pinsCollapsed}
+        onclick={() => { pinsCollapsed = !pinsCollapsed; }}
+      >
+        {#snippet leading()}
+          <PinIcon size={12} aria-hidden="true" />
+        {/snippet}
+        {#each pinnedWorkspaces as ws (workspaceRowKey(ws))}
+          {@render workspaceRow(ws, true)}
+        {/each}
+      </GroupedSidebarSection>
+    {/if}
     {#if sortMode === "repo"}
     {#each grouped as { key: repoKey, items } (repoKey)}
       {@const collapsed =
@@ -1606,6 +1647,16 @@
         {repoLabel(menuWorkspace)} · {shortBranch(menuWorkspace.git_head_ref)}
       </div>
     </div>
+
+    <button
+      class="kit-filter-dropdown__item"
+      role="menuitem"
+      type="button"
+      onclick={() => togglePin(menuWorkspace)}
+    >
+      <PinIcon size={12} aria-hidden="true" />
+      <span class="kit-filter-dropdown__label">{isPinned(menuWorkspace) ? "Unpin workspace" : "Pin workspace"}</span>
+    </button>
 
     <div class="kit-filter-dropdown__section-title">Sync branch</div>
     {#if canPush(menuWorkspace)}

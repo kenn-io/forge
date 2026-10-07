@@ -5256,6 +5256,50 @@ test.describe("workspace list sorting", () => {
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
   });
 
+  test("pins workspaces from different projects above the list and remembers unpinning", async ({ page }, testInfo) => {
+    await page.route("**/api/v1/snapshot**", async (route) => {
+      await route.fulfill({
+        json: {
+          workspaces: [
+            wsNew,
+            {
+              ...wsMid,
+              repo_owner: "acme",
+              repo_name: "web",
+              repo: workspaceRepoRef("acme", "web"),
+            },
+            wsOld,
+          ],
+        },
+      });
+    });
+    await page.goto("/workspaces");
+    const sidebar = page.locator(".workspace-list-sidebar");
+    const names = sidebar.locator(".ws-name");
+    await sidebar.locator(".ws-row").filter({ hasText: "Most recently active" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Pin workspace", exact: true }).click();
+    await sidebar.locator(".ws-row").filter({ hasText: "Oldest without activity" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Pin workspace", exact: true }).click();
+
+    await expect(names).toHaveText(["Most recently active", "Oldest without activity", "Newest created"]);
+    const pinned = sidebar
+      .locator(".sidebar-list-group")
+      .filter({ has: page.getByRole("button", { name: "Pinned 2" }) });
+    await expect(pinned.locator(".repo-context-name")).toHaveText(["acme/web", "acme/widgets"]);
+    await expect(pinned).toBeInViewport();
+    await sidebar.screenshot({ path: testInfo.outputPath("pinned-workspaces.png") });
+
+    await page.reload();
+    await expect(names).toHaveText(["Most recently active", "Oldest without activity", "Newest created"]);
+    await sidebar.locator(".ws-row").filter({ hasText: "Most recently active" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Unpin workspace", exact: true }).click();
+    await sidebar.locator(".ws-row").filter({ hasText: "Oldest without activity" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Unpin workspace", exact: true }).click();
+    await page.reload();
+    await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
+    await expect(sidebar.getByRole("button", { name: /^Pinned/ })).toHaveCount(0);
+  });
+
   test("toggles visibility options and persists provider-aware labels", async ({ page }) => {
     const wsGithub = {
       ...testWorkspace,

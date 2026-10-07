@@ -1510,6 +1510,111 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".repo-context")).toHaveLength(3);
   });
 
+  it.each(["repo", "created", "activity", "item-activity", "agent-status"])(
+    "pins workspaces across projects above the %s list and restores them on remount",
+    async (sort) => {
+      localStorage.setItem("kenn-forge:workspaceListSort", sort);
+      const workspaces = [
+        workspaceFixture({
+          id: "api-new",
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "api",
+          number: 1,
+          title: "API cleanup",
+          createdAt: "2026-05-14T12:00:00Z",
+        }),
+        workspaceFixture({
+          id: "api-old",
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "api",
+          number: 2,
+          title: "API feature",
+        }),
+        workspaceFixture({
+          id: "web-old",
+          provider: "gitlab",
+          platformHost: "gitlab.example.com",
+          owner: "acme",
+          name: "web",
+          number: 3,
+          title: "Web feature",
+        }),
+      ];
+      mockGet.mockResolvedValue({ data: { workspaces } });
+      const view = render(WorkspaceListSidebar, { props: { selectedId: "api-new" } });
+      await screen.findByText("Web feature");
+
+      await fireEvent.contextMenu(screen.getByText("Web feature").closest(".ws-row")!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Pin workspace", exact: true }));
+      await fireEvent.contextMenu(screen.getByText("API feature").closest(".ws-row")!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Pin workspace", exact: true }));
+
+      expect(rowTitles(view.container)).toEqual(["Web feature", "API feature", "API cleanup"]);
+      const pinned = screen.getByRole("button", { name: "Pinned 2" }).closest("section")!;
+      expect(rowTitles(pinned)).toEqual(["Web feature", "API feature"]);
+      expect(within(pinned).getByText("acme/web")).toBeTruthy();
+      expect(within(pinned).getByText("acme/api")).toBeTruthy();
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      await view.rerender({ showSidebar: false });
+      await view.rerender({ showSidebar: true, selectedRepos: "github|github.com/acme/api" });
+      await waitFor(() => expect(rowTitles(view.container)).toEqual(["API feature", "API cleanup"]));
+
+      await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+        target: { value: "Web feature" },
+      });
+      expect(rowTitles(view.container)).toEqual([]);
+      await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), { target: { value: "" } });
+      await view.rerender({ selectedRepos: undefined });
+      expect(rowTitles(view.container)).toEqual(["Web feature", "API feature", "API cleanup"]);
+
+      await fireEvent.contextMenu(screen.getByText("Web feature").closest(".ws-row")!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Unpin workspace", exact: true }));
+      await view.rerender({ selectedRepos: "github|github.com/acme/api" });
+      expect(rowTitles(view.container)).toEqual(["API feature", "API cleanup"]);
+      await fireEvent.contextMenu(screen.getByText("API feature").closest(".ws-row")!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Unpin workspace", exact: true }));
+      expect(screen.queryByRole("button", { name: /^Pinned/ })).toBeNull();
+      expect(rowTitles(view.container)).toEqual(["API cleanup", "API feature"]);
+      await view.rerender({ showSidebar: false });
+      await view.rerender({ showSidebar: true });
+      await waitFor(() => expect(rowTitles(view.container)).toEqual(["API cleanup", "API feature"]));
+    },
+  );
+
+  it("pins only the chosen host when workspace IDs match", async () => {
+    const local = workspaceFixture({
+      id: "shared-id",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "api",
+      number: 1,
+      title: "Local workspace",
+    });
+    const remote = { ...local, mr_title: "Remote workspace", fleet_host_key: "peer-a" };
+    mockGet.mockResolvedValue({ data: { workspaces: [local, remote] } });
+    const view = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Remote workspace");
+    await fireEvent.contextMenu(screen.getByText("Remote workspace").closest(".ws-row")!);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Pin workspace", exact: true }));
+    expect(rowTitles(view.container)).toEqual(["Remote workspace", "Local workspace"]);
+    expect(rowTitles(screen.getByRole("button", { name: "Pinned 1" }).closest("section")!)).toEqual([
+      "Remote workspace",
+    ]);
+
+    await fireEvent.contextMenu(screen.getByText("Local workspace").closest(".ws-row")!);
+    expect(screen.getByRole("menuitem", { name: "Pin workspace", exact: true })).toBeTruthy();
+    await fireEvent.keyDown(document, { key: "Escape" });
+    await view.rerender({ showSidebar: false });
+    await view.rerender({ showSidebar: true });
+    await waitFor(() => expect(rowTitles(view.container)).toEqual(["Remote workspace", "Local workspace"]));
+  });
+
   it("keeps provider and host identity visible in flat rows", async () => {
     mockGet.mockResolvedValue({
       data: {

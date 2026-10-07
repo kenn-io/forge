@@ -57565,11 +57565,11 @@ type HookEvent struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema               *string        `json:"$schema,omitempty"`
 	AgentID              *string        `json:"agent_id,omitempty"`
-	BackgroundTasks      []struct{}     `json:"background_tasks,omitempty"`
+	BackgroundTasks      *any           `json:"background_tasks,omitempty"`
 	Cwd                  string         `json:"cwd"`
 	HookEventName        string         `json:"hook_event_name"`
 	NotificationType     *string        `json:"notification_type,omitempty"`
-	SessionCrons         []struct{}     `json:"session_crons,omitempty"`
+	SessionCrons         *any           `json:"session_crons,omitempty"`
 	SessionID            string         `json:"session_id"`
 	Source               *string        `json:"source,omitempty"`
 	ToolName             *string        `json:"tool_name,omitempty"`
@@ -57690,10 +57690,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("error marshaling 'agent_id': %w", err)
 		}
 	}
-
-	object["background_tasks"], err = json.Marshal(h.BackgroundTasks)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'background_tasks': %w", err)
+	if h.BackgroundTasks != nil {
+		object["background_tasks"], err = json.Marshal(h.BackgroundTasks)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'background_tasks': %w", err)
+		}
 	}
 
 	object["cwd"], err = json.Marshal(h.Cwd)
@@ -57712,10 +57713,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
 		}
 	}
-
-	object["session_crons"], err = json.Marshal(h.SessionCrons)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'session_crons': %w", err)
+	if h.SessionCrons != nil {
+		object["session_crons"], err = json.Marshal(h.SessionCrons)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'session_crons': %w", err)
+		}
 	}
 
 	object["session_id"], err = json.Marshal(h.SessionID)

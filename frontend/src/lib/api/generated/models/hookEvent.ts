@@ -6,11 +6,11 @@ export interface HookEvent {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   agent_id?: string;
-  background_tasks?: unknown[];
+  background_tasks?: unknown;
   cwd: string;
   hook_event_name: string;
   notification_type?: string;
-  session_crons?: unknown[];
+  session_crons?: unknown;
   session_id: string;
   source?: string;
   tool_name?: string;

@@ -64,8 +64,8 @@ type HookEvent struct {
 	AgentID          string `json:"agent_id,omitempty"`
 	// Source is how a SessionStart session began: startup, resume, clear, compact or fork.
 	Source          string   `json:"source,omitempty"`
-	BackgroundTasks []any    `json:"background_tasks,omitempty"`
-	SessionCrons    []any    `json:"session_crons,omitempty"`
+	BackgroundTasks any      `json:"background_tasks,omitempty"`
+	SessionCrons    any      `json:"session_crons,omitempty"`
 	_               struct{} `json:"-" additionalProperties:"true"`
 }
 
@@ -119,6 +119,8 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
 	if err == nil {
+		backgroundTasks, _ := hook.BackgroundTasks.([]any)
+		sessionCrons, _ := hook.SessionCrons.([]any)
 		report := Report{
 			Agent:             agent,
 			SessionID:         hook.SessionID,
@@ -126,12 +128,15 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 			CWD:               cwd,
 			State:             state,
 			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork"),
-			PendingWork:       len(hook.BackgroundTasks) > 0 || len(hook.SessionCrons) > 0,
+			PendingWork:       hook.HookEventName == "Stop" && (len(backgroundTasks) > 0 || len(sessionCrons) > 0),
 			UpdatedAt:         s.now().UTC(),
 		}
-		if state == StateDone {
-			previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
-			if ok {
+		previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
+		if ok {
+			if hook.HookEventName != "Stop" && hook.HookEventName != "UserPromptSubmit" {
+				report.PendingWork = previous.PendingWork
+			}
+			if state == StateDone {
 				switch {
 				case isIdlePrompt(hook) && (previous.State == StateInput ||
 					previous.State == StateApproval):

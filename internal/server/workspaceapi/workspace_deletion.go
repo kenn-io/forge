@@ -160,11 +160,15 @@ func (s *Handler) runWorkspaceDeletion(
 			}
 			sessions := s.runtime.ListSessions(id)
 			s.runtime.StopWorkspace(stopCtx, id)
+			removed := make(map[string]struct{}, len(sessions))
 			for _, session := range sessions {
 				s.removeAgentActivityRuntimeSession(session.Key)
+				removed[session.Key] = struct{}{}
 			}
 			for _, item := range stored {
-				s.removeAgentActivityRuntimeSession(item.SessionKey)
+				if _, ok := removed[item.SessionKey]; !ok {
+					s.removeAgentActivityRuntimeSession(item.SessionKey)
+				}
 				if err := s.runtime.Resumed(item.SessionKey); err != nil {
 					slog.Warn("remove stop mark of stopped runtime", "session_key", item.SessionKey, "err", err)
 				}

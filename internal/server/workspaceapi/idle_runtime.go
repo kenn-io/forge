@@ -346,16 +346,15 @@ func (i *idleRuntimes) stoppable(ctx context.Context, ws *db.Workspace, row db.W
 		_, ok := reportedAgent(report, localruntime.SessionInfo{Kind: kind})
 		return !ok
 	})
-	if len(reports) == 0 || slices.ContainsFunc(reports, func(report agentactivity.Report) bool { return report.State == agentactivity.StateWorking }) {
+	if len(reports) == 0 || slices.ContainsFunc(reports, func(report agentactivity.Report) bool {
+		return report.State == agentactivity.StateWorking || report.PendingWork
+	}) {
 		return false
 	}
 	if kind == localruntime.LaunchTargetACP {
 		return h.runtime.ACPReloadable(row.SessionKey)
 	}
 	latest := reports[0]
-	if latest.PendingWork {
-		return false
-	}
 	if latest.State == agentactivity.StateIdle && !latest.Continued {
 		return false
 	}

@@ -46,10 +46,10 @@ func TestTmuxEnrichmentTreatsDormantPtyOwnerAsIdle(t *testing.T) {
 			result := handler.workspaceResponseWithTmuxEnrichment(ctx, summary)
 
 			if name == "incomplete state" {
-				assert.Error(result.tmuxErr)
+				require.Error(result.tmuxErr)
 				assert.False(result.tmuxComplete)
 			} else {
-				assert.NoError(result.tmuxErr)
+				require.NoError(result.tmuxErr)
 				assert.True(result.tmuxComplete)
 				assert.False(result.response.TmuxWorking)
 				assert.NoFileExists(paths.StatePath)

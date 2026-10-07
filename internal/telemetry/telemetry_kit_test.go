@@ -91,3 +91,23 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require.NoError(err)
 	assert.NotContains(properties, "surface")
 }
+
+func TestSessionEndedAllowlist(t *testing.T) {
+	t.Setenv(EnabledEnv, "0")
+	backend, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("backend")...)
+	require.NoError(t, err)
+	assert.True(t, UIEventAllowed("session_ended"))
+	for _, bucket := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m"} {
+		props, err := backend.SanitizeProperties("session_ended", map[string]any{"surface": "web", "duration_bucket": bucket, "seconds": 120})
+		require.NoError(t, err)
+		assert.Equal(t, bucket, props["duration_bucket"])
+		assert.Equal(t, "web", props["surface"])
+		assert.NotContains(t, props, "seconds")
+	}
+	for _, bucket := range []any{"invalid", 120} {
+		props, err := backend.SanitizeProperties("session_ended", map[string]any{"surface": "tui", "duration_bucket": bucket})
+		require.NoError(t, err)
+		assert.NotContains(t, props, "duration_bucket")
+		assert.NotContains(t, props, "surface")
+	}
+}

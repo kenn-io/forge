@@ -65,3 +65,25 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 	require.NoError(err)
 	assert.Equal("disabled", body.Status)
 }
+
+func TestCaptureSessionEnded(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, enabled := range []bool{true, false} {
+		client := &serverfake.FakeTelemetry{EnabledValue: enabled}
+		srv := servertest.NewTelemetryTestServer(t, client)
+		for range 2 {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events",
+				strings.NewReader(`{"event":"session_ended","properties":{"surface":"web","duration_bucket":"1_to_5m"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			assert.Equal(t, http.StatusAccepted, rr.Code)
+			if enabled {
+				assert.Equal(t, "session_ended", client.Event)
+				assert.Equal(t, map[string]any{"surface": "web", "duration_bucket": "1_to_5m"}, client.Properties)
+			} else {
+				assert.Contains(t, rr.Body.String(), "disabled")
+			}
+		}
+	}
+}

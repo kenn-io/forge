@@ -51,8 +51,8 @@ const observeMarkdownMermaidRendering = (target: HTMLElement) =>
   ).pipe(Effect.andThen(Effect.never));
 
 const reportAppOpens = Effect.acquireRelease(
-  Effect.sync(() =>
-    startAppOpenedReporting({
+  Effect.sync(() => {
+    const stopOpens = startAppOpenedReporting({
       route: getCaptureTelemetryEventUrl(),
       surface: "web",
       post: (route, event) =>
@@ -61,8 +61,36 @@ const reportAppOpens = Effect.acquireRelease(
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(event),
         }),
-    }),
-  ),
+    });
+    let started = document.hidden ? undefined : performance.now();
+    const end = () => {
+      if (started === undefined) return;
+      const elapsed = performance.now() - started;
+      started = undefined;
+      const duration =
+        elapsed < 60_000 ? "under_1m" : elapsed < 300_000 ? "1_to_5m" : elapsed <= 1_800_000 ? "5_to_30m" : "over_30m";
+      void orvalRequest(getCaptureTelemetryEventUrl(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "session_ended", properties: { surface: "web", duration_bucket: duration } }),
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+    const resume = () => {
+      if (!document.hidden && started === undefined) started = performance.now();
+    };
+    const visibility = () => (document.hidden ? end() : resume());
+    document.addEventListener("visibilitychange", visibility);
+    window.addEventListener("pagehide", end);
+    window.addEventListener("pageshow", resume);
+    return () => {
+      stopOpens();
+      started = undefined;
+      document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener("pagehide", end);
+      window.removeEventListener("pageshow", resume);
+    };
+  }),
   (stop) => Effect.sync(stop),
 ).pipe(Effect.andThen(Effect.never));
 

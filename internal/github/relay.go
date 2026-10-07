@@ -348,7 +348,9 @@ func (s *Syncer) refreshRelayRefs(ctx context.Context, repo RepoRef) error {
 		return err
 	}
 	requestedAt := s.nowUTC()
-	prs, err := client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	// This read only indexes REST fields. Leave the list ETag to normal sync,
+	// where a changed list also triggers the GraphQL mergeability refresh.
+	prs, err := client.ListOpenPullRequests(platformgithub.WithUnconditionalRead(ctx), repo.Owner, repo.Name)
 	if platformgithub.IsNotModified(err) {
 		return nil
 	}

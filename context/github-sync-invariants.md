@@ -82,6 +82,9 @@ what "current" means.
 - Daily coverage is a target, not permission to exceed quota. Show remaining overdue
   open items, including never-fetched items, rather than implying complete freshness
   (`internal/github/sync.go::countOverdueDetails`).
+- Unknown or missing GitHub mergeability remains eligible for budgeted detail refresh;
+  it can resolve after a base push without changing the PR's `updated_at`.
+  (`internal/github/sync.go::buildDetailQueueItems`)
 - Comment-only polling must respect dormant-item cadence. Admitted open-item detail
   checks still check comments on parent 304s before advancing freshness; edits and
   deletions may leave the parent unchanged (`internal/github/sync.go::markUnchangedIssueDetailFetched`).
@@ -839,6 +842,9 @@ error or cancellation unchanged and never adopts.
   accepting an HTTP stream is not evidence of compatibility. (`internal/github/relay.go::RunRelay`)
 - Relay hints accelerate normal polling; each consumer still uses its own credentials and rate gates.
   (`internal/github/relay.go::refreshRelayHint`)
+- Relay ref reads must not advance the normal-sync list ETag: REST indexing omits
+  mergeability, while that validator also gates the richer GraphQL refresh.
+  (`internal/github/relay.go::refreshRelayRefs`)
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
   the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)

@@ -346,7 +346,7 @@ create a local process, PTY, or durable transport session
   reconnects, focus, heartbeats, history and other reads are neither.
 - Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
   report under the runtime key and a resume path (hook agents `done`, `input` or
-  `approval`, or `idle` after a SessionStart whose `source` is `resume`, `fork` or `compact`
+  `approval`, or `idle` after a SessionStart whose `source` is `resume` or `fork`
   (`agentactivity.Report.Continued`), on an available target; ACP chats with
   `loadSession`; owners started by an older build record no
   `LoadSession` and lack `ACP.Park`, so they keep running per the no-compatibility rule

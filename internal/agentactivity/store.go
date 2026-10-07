@@ -35,7 +35,9 @@ type Report struct {
 	RuntimeSessionKey string `json:"runtime_session_key"`
 	CWD               string `json:"cwd"`
 	State             State  `json:"state"`
-	// Continued marks an idle session with a saved conversation to resume.
+	// Continued marks an idle session that resumed or forked an earlier
+	// conversation, rather than one that started fresh. A compaction is not one:
+	// it can fire mid-turn.
 	Continued bool      `json:"continued,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -120,7 +122,7 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 			RuntimeSessionKey: runtimeSessionKey,
 			CWD:               cwd,
 			State:             state,
-			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork" || hook.Source == "compact"),
+			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork"),
 			UpdatedAt:         s.now().UTC(),
 		}
 		if state == StateDone {

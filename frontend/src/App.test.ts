@@ -239,6 +239,7 @@ describe("App feature routes", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -484,12 +485,23 @@ describe("App feature routes", () => {
     expect(finalized).toHaveBeenCalledOnce();
   });
 
-  it("reports app_opened through the daemon route", async () => {
+  it.each([
+    [59_999, "under_1m"],
+    [60_000, "1_to_5m"],
+    [120_000, "1_to_5m"],
+    [300_000, "5_to_30m"],
+    [1_800_000, "5_to_30m"],
+    [1_800_001, "over_30m"],
+  ])("reports %i visible milliseconds as %s through the daemon route", async (elapsed, bucket) => {
     localStorage.removeItem("kit-ui.app-opened.web");
-    const posts: Array<{ url: string; body: unknown }> = [];
+    let now = 0;
+    let hidden = true;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    const posts: Array<{ url: string; body: unknown; keepalive: boolean }> = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input, init);
-      posts.push({ url: request.url, body: await request.json() });
+      posts.push({ url: request.url, body: await request.json(), keepalive: request.keepalive });
       return Response.json({ status: "queued" }, { status: 202 });
     });
     let appOpens: { interruptUnsafe: () => void } | undefined;
@@ -505,7 +517,32 @@ describe("App feature routes", () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]?.url).toMatch(/\/api\/v1\/telemetry\/events$/);
     expect(posts[0]?.body).toEqual({ event: "app_opened", properties: { surface: "web" } });
+    now = 600_000;
+    window.dispatchEvent(new Event("pagehide"));
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    now += elapsed;
+    hidden = true;
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pagehide"));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1]?.url).toBe(posts[0]?.url);
+    expect(posts[1]?.keepalive).toBe(true);
+    expect(posts[1]?.body).toEqual({ event: "session_ended", properties: { surface: "web", duration_bucket: bucket } });
+    now += 600_000;
+    hidden = false;
+    window.dispatchEvent(new Event("pageshow"));
+    now += 120_000;
+    window.dispatchEvent(new Event("pagehide"));
+    await waitFor(() => expect(posts).toHaveLength(3));
+    expect(posts[2]?.body).toEqual({
+      event: "session_ended",
+      properties: { surface: "web", duration_bucket: "1_to_5m" },
+    });
     await Effect.runPromise(mounted.dispose);
+    window.dispatchEvent(new Event("pageshow"));
+    window.dispatchEvent(new Event("pagehide"));
+    expect(posts).toHaveLength(3);
   });
 
   it("reports a non-interruption root finalizer defect", async () => {

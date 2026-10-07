@@ -34,6 +34,10 @@ var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"app_opened": {
 		"surface": posthog.AllowStringValues("web"),
 	},
+	"session_ended": {
+		"surface":         posthog.AllowStringValues("web"),
+		"duration_bucket": posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m"),
+	},
 	"daemon_active": {
 		"repo_count": posthog.AllowNumber,
 	},

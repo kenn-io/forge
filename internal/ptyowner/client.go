@@ -508,6 +508,10 @@ func cleanupAbsentOwner(paths SessionPaths) {
 	removeSocketDir(paths)
 }
 
+// IsAbsentOwner reports whether err, from reaching a session's owner, means
+// no owner runs for it.
+func IsAbsentOwner(err error) bool { return isAbsentOwner(err) }
+
 func isAbsentOwner(err error) bool {
 	return errors.Is(err, os.ErrNotExist) ||
 		errors.Is(err, io.EOF) ||

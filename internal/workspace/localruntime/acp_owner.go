@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
-	"syscall"
 	"time"
 
 	"go.kenn.io/forge/internal/agentactivity"
@@ -358,7 +357,7 @@ func (m *Manager) StopDormantACP(ctx context.Context, workspaceID, key string) e
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.ECONNREFUSED) {
+		if !ptyowner.IsAbsentOwner(err) {
 			return err
 		}
 	} else {

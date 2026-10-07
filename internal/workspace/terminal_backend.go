@@ -76,16 +76,14 @@ func (m *Manager) AttachPtyOwnerTerminal(
 
 // StopPtyOwnerTerminal stops a running base terminal without changing workspace state.
 func (m *Manager) StopPtyOwnerTerminal(ctx context.Context, ws *db.Workspace) error {
-	if !m.usesPtyOwnerForWorkspace(ws) || m.ptyOwner == nil || !m.ptyOwner.HasState(ws.TmuxSession) {
+	if !m.usesPtyOwnerForWorkspace(ws) || m.ptyOwner == nil {
 		return nil
 	}
-	if _, err := m.ptyOwner.Snapshot(ctx, ws.TmuxSession); err != nil {
-		if ptyowner.IsAbsentOwner(err) {
-			return nil
-		}
-		return err
+	err := m.ptyOwner.Stop(ctx, ws.TmuxSession)
+	if ptyowner.IsAbsentOwner(err) {
+		return nil
 	}
-	return m.ptyOwner.Stop(ctx, ws.TmuxSession)
+	return err
 }
 
 func (m *Manager) newTerminalSession(

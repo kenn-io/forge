@@ -6051,6 +6051,25 @@ func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
 	assert.True(os.IsNotExist(err))
 }
 
+func TestManagerStopPtyOwnerTerminalRejectsCorruptOwnerState(t *testing.T) {
+	require := require.New(t)
+	client := &ptyowner.Client{Root: t.TempDir()}
+	mgr := newTestManager(t, nil, t.TempDir())
+	mgr.SetPtyOwnerClient(client)
+	ws := &db.Workspace{
+		TmuxSession:     "sess-owner",
+		TerminalBackend: TerminalBackendPtyOwner,
+	}
+	paths, err := ptyowner.NewSessionPaths(client.Root, ws.TmuxSession)
+	require.NoError(err)
+	require.NoError(client.Stop(t.Context(), ws.TmuxSession))
+	require.NoError(mgr.StopPtyOwnerTerminal(t.Context(), ws))
+	require.NoError(os.MkdirAll(paths.Dir, 0o700))
+	require.NoError(os.WriteFile(paths.StatePath, []byte("{broken"), 0o600))
+
+	assert.Error(t, mgr.StopPtyOwnerTerminal(t.Context(), ws))
+}
+
 func TestManagerTerminalPaneSnapshotIncludesPtyOwnerTitle(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

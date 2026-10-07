@@ -449,13 +449,13 @@ func writeTerminalExit(conn *websocket.Conn, exitCode int) {
 	writeCancel()
 }
 
-// StopUnattachedTerminal holds socket admission through the stop so an attach cannot restart it mid-pass.
+// StopUnattachedTerminal claims the workspace slot so an attach cannot restart it mid-pass.
 func (h *Handler) StopUnattachedTerminal(ctx context.Context, ws *db.Workspace) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.active[ws.ID] > 0 {
+	release, err := h.claimTerminalSlot(ws.ID)
+	if err != nil {
 		return nil
 	}
+	defer release()
 	return h.Workspaces.StopPtyOwnerTerminal(ctx, ws)
 }
 

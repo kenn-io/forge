@@ -263,7 +263,7 @@ func assertNoTestSSEFrame(t *testing.T, frames <-chan testSSEFrame) {
 	select {
 	case frame := <-frames:
 		require.Fail(t, "unexpected federation event", "%+v", frame)
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; callers assert no federation event is published
 	}
 }
 

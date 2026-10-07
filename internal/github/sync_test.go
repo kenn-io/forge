@@ -10588,7 +10588,7 @@ func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
 	select {
 	case <-entered:
 		secondEntered = true
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the first sync holds the watched-MR lock until release
 	}
 	close(release)
 

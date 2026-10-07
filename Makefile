@@ -62,7 +62,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check timing-budget-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -264,12 +264,8 @@ migration-history-check:
 git-test-fixture-check:
 	$(GO_ANALYSIS_ENV) go run ./tools/norawgittest ./...
 
-# Reject unreviewed sub-second test polling budgets.
-timing-budget-check:
-	$(GO_ANALYSIS_ENV) go run ./tools/timingbudgetcheck .
-
 guardrail-check: check-vite-plus-bin
-	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests docs-branding-check timing-budget-check
+	$(MAKE) frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests docs-branding-check
 
 
 # Regenerate the checked-in OpenAPI document and generated clients. Client
@@ -550,7 +546,6 @@ help:
 	@echo "  lint-config    - Render .golangci.yml from kit plus the overlay"
 	@echo "  fmt            - Apply gofmt, goimports, and gofumpt"
 	@echo "  fmt-check      - Check Go formatters without modifying files"
-	@echo "  timing-budget-check - Reject unreviewed sub-second test polling budgets"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"
 	@echo "  git-test-fixture-check - Keep test Git inside gitsafe/gitfixture"

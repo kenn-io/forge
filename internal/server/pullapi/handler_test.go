@@ -455,7 +455,7 @@ func TestHandlerStopClosesAdmissionAndShutdownWaitsForWorkers(t *testing.T) {
 	}
 	require.False(handler.runBackground(func(context.Context) {}), "Stop must close admission")
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the worker blocked on release keeps Shutdown waiting until it fires
 	defer shortCancel()
 	require.ErrorIs(handler.Shutdown(shortCtx), context.DeadlineExceeded)
 

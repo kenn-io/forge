@@ -669,7 +669,7 @@ func TestRunWaitsForWorkDirLockBeforeReusingLiveStatus(t *testing.T) {
 	select {
 	case err := <-errCh:
 		require.Failf("run returned while the workdir lock was held", "err: %v", err)
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(150 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held workdir lock blocks run until release
 	}
 
 	require.NoError(release())
@@ -753,7 +753,7 @@ func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
 	select {
 	case err := <-errCh:
 		require.Failf("run returned while stop held the workdir lock", "err: %v", err)
-	case <-time.After(150 * time.Millisecond):
+	case <-time.After(150 * time.Millisecond): //nolint:kennlint // shows the event does not happen; stop holds the workdir lock until release
 	}
 
 	require.NoError(stopEphemeralStack(statusPath))

@@ -224,7 +224,7 @@ func TestRootLockSerializesAcrossProcesses(t *testing.T) {
 	case err := <-acquired:
 		require.NoError(err)
 		require.Fail("second process entered the root critical section")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the helper process holds the root lock until the release file appears
 	}
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
@@ -701,7 +701,7 @@ esac
 	case cleanupErr := <-cleanupDone:
 		require.NoError(cleanupErr)
 		require.Fail("cleanup returned while admitted tmux startup was blocked")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the admitted tmux startup blocks Cleanup until the release file appears
 	}
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))

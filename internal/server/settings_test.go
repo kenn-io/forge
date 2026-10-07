@@ -404,7 +404,7 @@ func TestHandleUpdateSettingsSerializesWithConfigReload(t *testing.T) {
 		srv.configReloadMu.Unlock()
 		require.NoError(err)
 		require.Fail("settings update completed while config reload lock was held")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held config reload lock blocks the update until unlock
 	}
 
 	srv.configReloadMu.Unlock()

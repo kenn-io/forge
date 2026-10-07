@@ -659,7 +659,7 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 
 	// The superseded worker must stand down silently: a deferred-merge
 	// failure event for a pull request the user just merged is misleading.
-	deadline := time.After(300 * time.Millisecond)
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -1135,7 +1135,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; pending CI keeps the deferred merge from calling the provider
 	}
 }
 
@@ -1742,7 +1742,7 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 		require.Failf("unexpected merge", "merge call: %+v", call)
 	default:
 	}
-	deadline := time.After(300 * time.Millisecond)
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the closed pull must never publish a completion event
 	for {
 		select {
 		case ev := <-events:

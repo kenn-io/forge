@@ -872,7 +872,7 @@ func TestSetPreferGitHubNativeStacksWaitsForStackProjection(t *testing.T) {
 	select {
 	case <-swapped:
 		assert.Fail("preference swapped while a projection held the lock")
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the running projection holds the preference lock until release
 	}
 	assert.False(syncer.PrefersGitHubNativeStacks(),
 		"the projection must observe a stable preference for its whole run")

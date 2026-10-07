@@ -596,13 +596,14 @@ that call `t.Run`, `t.Parallel`, or `t.Deadline` inside the bubble.
 `synctest.Wait` is race-detector synchronization, so it is useful under
 `go test -race` when the test is structurally eligible.
 
-`make timing-budget-check` runs in `guardrail-check` and the pre-commit hooks
-and rejects testify `Eventually`, `EventuallyWithT`, `Eventuallyf`,
-`EventuallyWithTf`, `Never` and `Neverf` completion budgets written as literals
-below one second, whether called on the package or an `assert.New`/`require.New`
-helper. Keep a shorter wait only when it observes an external owner, and record
-that owner in a reviewed `allowedBudgets` entry; named budgets and tick
-intervals stay outside the check. (`tools/timingbudgetcheck/main.go::allowedBudgets`)
+kennlint's `deadlinetest`, run by `make lint-check`, rejects constant budgets
+below one second in tests outside a `synctest.Test` bubble: `context.WithTimeout`,
+`context.WithDeadline`, `time.After`, `time.NewTimer`, `time.AfterFunc`, and the
+`waitFor` of testify's `Eventually` family. Wait on a real event or run the test
+in a bubble. Only two cases take `//nolint:kennlint // reason`, with a reason
+that names the case and what holds the wait: the asserted result is the deadline
+expiring, or a `select` on a timer shows that an event does not happen. Short
+positive `Never` windows are allowed because they cannot fail.
 
 ## HTTP testing discipline
 

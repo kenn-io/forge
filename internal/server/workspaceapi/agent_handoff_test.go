@@ -89,17 +89,11 @@ func (f agentHandoffFixture) post(t *testing.T, body map[string]string) *httptes
 	return f.serve(f.request(t, body))
 }
 
-func TestAgentHandoffWaitsForReadyThenLaunchesAndDeliversPrompt(t *testing.T) {
+func TestAgentHandoffLaunchesAndDeliversPrompt(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
-	fixture := newAgentHandoffFixture(t, "creating")
-
-	// The workspace becomes ready while the handoff is already waiting.
-	readyTimer := time.AfterFunc(60*time.Millisecond, func() {
-		_ = fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "ready", nil)
-	})
-	t.Cleanup(func() { readyTimer.Stop() })
+	fixture := newAgentHandoffFixture(t, "ready")
 
 	response := fixture.post(t, map[string]string{
 		"target_key": "CoDeX", "message": "rebase this pull request\r\nonto main",

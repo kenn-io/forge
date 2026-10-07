@@ -94,7 +94,7 @@ func TestServerShutdownWaitsForBackgroundTask(t *testing.T) {
 	select {
 	case <-shutdownDone:
 		require.FailNow(t, "Shutdown returned before background task finished")
-	case <-time.After(50 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the background task blocks Shutdown until release
 	}
 
 	close(release)
@@ -114,7 +114,7 @@ func TestServerShutdownTimesOut(t *testing.T) {
 	})
 	defer close(stuck)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the stuck background task keeps Shutdown waiting until it fires
 	defer cancel()
 	err := srv.Shutdown(ctx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -172,7 +172,7 @@ func TestServerShutdownRetryWithLongerCtx(t *testing.T) {
 		<-release
 	})
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the background task blocks Shutdown until release
 	defer shortCancel()
 	err := srv.Shutdown(shortCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -218,7 +218,7 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 		runtimeStops.Add(1)
 	}
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the workspace consumer blocks Shutdown until releaseConsumer
 	defer shortCancel()
 	require.ErrorIs(srv.Shutdown(shortCtx), context.DeadlineExceeded)
 	require.Zero(workspaceStops.Load(), "Workspace stopped before its consumer drained")
@@ -226,7 +226,7 @@ func TestServerShutdownDoesNotAdvancePastActiveWorkspaceConsumers(t *testing.T) 
 
 	close(releaseConsumer)
 	consumerReleased = true
-	rootCtx, rootCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	rootCtx, rootCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; root work blocks Shutdown until releaseRootWork
 	defer rootCancel()
 	require.ErrorIs(srv.Shutdown(rootCtx), context.DeadlineExceeded)
 	require.Zero(workspaceStops.Load(), "Workspace stopped before root work drained")
@@ -273,7 +273,7 @@ func TestServerShutdownWaitsForHubEventClient(t *testing.T) {
 	select {
 	case <-shutdownDone:
 		require.FailNow("shutdown returned before hub event client exited")
-	case <-time.After(25 * time.Millisecond):
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the hub event client blocks Shutdown until its transport is released
 	}
 
 	close(transport.release)
@@ -332,7 +332,7 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 		require.FailNow("slow handler never started")
 	}
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 100*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the slow handler blocks the HTTP drain until release
 	defer shortCancel()
 	err = srv.Shutdown(shortCtx)
 	require.ErrorIs(err, context.DeadlineExceeded)
@@ -347,7 +347,7 @@ func TestServerShutdownRetryWaitsForHTTPHandler(t *testing.T) {
 	select {
 	case <-longErrCh:
 		require.FailNow("second Shutdown returned before HTTP handler drained")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the slow handler blocks the second Shutdown until release
 	}
 
 	close(release)
@@ -419,7 +419,7 @@ func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testi
 		require.FailNow("slow HTTP handler did not start")
 	}
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the slow handler blocks the HTTP drain until httpRelease
 	defer shortCancel()
 	require.ErrorIs(srv.Shutdown(shortCtx), context.DeadlineExceeded)
 	select {
@@ -442,7 +442,7 @@ func TestServerShutdownStopsPullBeforeHTTPDrainAndRetriesDependencyWait(t *testi
 	select {
 	case <-shutdownDone:
 		require.FailNow("shutdown advanced past an active Pull worker")
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the Pull worker blocks Shutdown until pull.release
 	}
 	close(pull.release)
 	require.NoError(<-shutdownDone)

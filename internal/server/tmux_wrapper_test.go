@@ -1254,11 +1254,15 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 		require.FailNow("blocking request never started")
 	}
 
-	time.AfterFunc(250*time.Millisecond, func() {
-		close(blockRelease)
-	})
+	// Release the request once the HTTP drain starts, so Shutdown reaches the workspace stop.
+	srv.bgMu.Lock()
+	httpSrv := srv.httpSrv
+	srv.bgMu.Unlock()
+	require.NotNil(httpSrv)
+	var releaseOnce sync.Once
+	httpSrv.RegisterOnShutdown(func() { releaseOnce.Do(func() { close(blockRelease) }) })
 
-	shutdownCtx, cancel := context.WithTimeout(
+	shutdownCtx, cancel := context.WithTimeout( //nolint:kennlint // the deadline is the expected result; the held setup transaction keeps Shutdown waiting until it fires
 		t.Context(), 400*time.Millisecond,
 	)
 	defer cancel()
@@ -1461,7 +1465,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 	require := require.New(t)
 
 	restoreLimiter := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, time.Minute),
 	)
 	t.Cleanup(restoreLimiter)
 
@@ -1510,7 +1514,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 		require.NoError(json.NewDecoder(got.resp.Body).Decode(&listed))
 		require.Len(listed.Workspaces, 1)
 		assert.Equal(createResp.JSON202.ID, listed.Workspaces[0].ID)
-	case <-time.After(200 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("workspace list waited for subprocess capacity")
 	}
 

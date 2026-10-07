@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	gopty "github.com/aymanbagabas/go-pty"
@@ -213,7 +214,7 @@ func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
 
 	select {
 	case <-attach.Done:
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("attachment did not close promptly after PTY EOF")
 	}
 	require.Equal(-1, attach.ExitCode())
@@ -294,19 +295,22 @@ func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
 }
 
 func TestOwnerNaturalExitRetentionHonorsCompletedPreExitAttachment(t *testing.T) {
-	require := require.New(t)
-	o := &owner{
-		stopRequested:          make(chan struct{}),
-		activeAttachmentsDone:  make(chan struct{}),
-		postExitAttachmentDone: make(chan struct{}),
-	}
-	close(o.activeAttachmentsDone)
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		o := &owner{
+			stopRequested:          make(chan struct{}),
+			activeAttachmentsDone:  make(chan struct{}),
+			postExitAttachmentDone: make(chan struct{}),
+		}
+		close(o.activeAttachmentsDone)
+		start := time.Now()
 
-	err := o.waitAfterNaturalExit(ctx, make(chan error))
+		err := o.waitAfterNaturalExit(t.Context(), make(chan error))
 
-	require.NoError(err)
+		require.NoError(err)
+		// The retention timer would also return nil, so require that no fake time passed.
+		require.Zero(time.Since(start))
+	})
 }
 
 func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testing.T) {
@@ -334,7 +338,7 @@ func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testin
 			"owner returned before pre-exit attachment completed",
 			"waitAfterNaturalExit returned %v", err,
 		)
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(20 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the open pre-exit attachment keeps the owner waiting until activeAttachmentsDone
 	}
 
 	close(o.activeAttachmentsDone)
@@ -655,7 +659,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the silent owner never answers, so only the context ends Ping
 	defer cancel()
 	err = (&Client{Root: root}).Ping(ctx, "kenn-forge-silent-owner")
 

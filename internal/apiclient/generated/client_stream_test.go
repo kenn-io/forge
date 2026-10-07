@@ -68,7 +68,7 @@ func TestStreamEventsReturnsLiveEventStream(t *testing.T) {
 		line, err := bufio.NewReader(result.resp.Body).ReadString('\n')
 		require.NoError(err)
 		assert.Equal(": connected\n", line)
-	case <-time.After(500 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("StreamEvents did not return the live response body")
 	}
 }

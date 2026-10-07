@@ -6,6 +6,9 @@ run:
   timeout: 10m
   allow-parallel-runners: true
   go: "1.27"
+  # Lint integration-tagged tests too, so deadlinetest covers every test file.
+  build-tags:
+    - integration
 linters:
   default: none
   enable:

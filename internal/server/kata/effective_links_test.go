@@ -164,7 +164,7 @@ func TestKataEffectiveLinkHydrationLimitsAcrossConcurrentRequests(t *testing.T) 
 			select {
 			case <-started:
 				exceeded = true
-			case <-time.After(100 * time.Millisecond):
+			case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held slots keep further hydration blocked until releaseAll
 			}
 			mu.Lock()
 			observedMaxActive := maxActive

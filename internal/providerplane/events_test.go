@@ -232,16 +232,20 @@ func TestEventClientShutdownInterruptsReconnectWait(t *testing.T) {
 	t.Parallel()
 
 	var calls atomic.Int64
-	requestStarted := make(chan struct{}, 1)
 	client := stubClient(func(
 		_ context.Context, _ federationauth.Scope, _ *http.Request,
 	) (*http.Response, error) {
 		calls.Add(1)
-		requestStarted <- struct{}{}
 		return eventResponse(http.StatusUnauthorized, "application/problem+json", `{}`), nil
 	})
+	waitStarted := make(chan struct{}, 1)
 	eventClient, err := NewEventClient(EventClientOptions{
-		Client: client,
+		Client:     client,
+		RetryDelay: func(int) time.Duration { return time.Hour },
+		Wait: func(ctx context.Context, delay time.Duration) error {
+			waitStarted <- struct{}{}
+			return waitForEventRetry(ctx, delay)
+		},
 	})
 	require.NoError(err)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -251,16 +255,16 @@ func TestEventClientShutdownInterruptsReconnectWait(t *testing.T) {
 		close(done)
 	}()
 	select {
-	case <-requestStarted:
+	case <-waitStarted:
 	case <-time.After(time.Second):
-		require.FailNow("event client did not start")
+		require.FailNow("event client did not start its reconnect wait")
 	}
 
 	cancel()
 
 	select {
 	case <-done:
-	case <-time.After(250 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		require.Fail("event client did not stop after cancellation")
 	}
 	assert.Equal(t, int64(1), calls.Load())

@@ -56,7 +56,7 @@ func TestHandlerShutdownIsIdempotentAndContextBounded(t *testing.T) {
 	}))
 	<-started
 
-	deadlineCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
+	deadlineCtx, cancel := context.WithTimeout(t.Context(), time.Millisecond) //nolint:kennlint // the deadline is the expected result; the blocked worker keeps Shutdown waiting until it fires
 	defer cancel()
 	require.ErrorIs(h.Shutdown(deadlineCtx), context.DeadlineExceeded)
 

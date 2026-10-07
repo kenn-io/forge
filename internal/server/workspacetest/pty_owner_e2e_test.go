@@ -401,7 +401,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 			string(read.data),
 			"late attach must not replay stale alternate-screen output",
 		)
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; a late attach must receive no stale alternate-screen replay
 	}
 
 	require.NoError(conn.Write(

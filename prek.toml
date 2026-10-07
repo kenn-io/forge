@@ -60,7 +60,6 @@ hooks = [
   { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", exclude = "^(cmd|internal)/.*_test\\.go$", stages = ["pre-push"], pass_filenames = false, priority = 20 },
   { id = "git-test-fixture-check", name = "keep test Git inside gitsafe/gitfixture", language = "system", entry = "./scripts/run-hook-go.sh make git-test-fixture-check", files = "^(tools/norawgittest/.*\\.go|.*_test\\.go|internal/testutil/.*\\.go)$", stages = ["pre-push"], pass_filenames = false, priority = 20 },
   { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 20 },
-  { id = "timing-budget-check", name = "reject unreviewed sub-second test polling budgets", language = "system", entry = "./scripts/run-hook-go.sh make timing-budget-check", files = "^(tools/timingbudgetcheck/.*\\.go|.*_test\\.go)$", pass_filenames = false, priority = 20 },
   { id = "nilaway", name = "nilaway", language = "system", entry = "./scripts/run-hook-go.sh make nilaway", stages = [
     "pre-push",
   ], types_or = [

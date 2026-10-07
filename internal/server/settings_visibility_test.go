@@ -301,7 +301,7 @@ name = "wid*"
 	case <-result:
 		srv.repoVisibilityMu.Unlock()
 		require.FailNow("the visibility mutation ignored the sweep lock")
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held sweep lock blocks the mutation until unlock
 	}
 
 	srv.cfgMu.Lock()

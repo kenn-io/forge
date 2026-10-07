@@ -61,7 +61,7 @@ func New(client *ptyowner.Client, resolve ExecutableResolver) Owner {
 }
 
 func (o owner) Gone(ctx context.Context, session string) bool {
-	return o.client != nil && o.client.Gone(ctx, session)
+	return o.client.Gone(ctx, session)
 }
 
 func (o owner) Attach(ctx context.Context, session string) (PTY, error) {

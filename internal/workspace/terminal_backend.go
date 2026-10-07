@@ -79,11 +79,7 @@ func (m *Manager) StopPtyOwnerTerminal(ctx context.Context, ws *db.Workspace) er
 	if !m.usesPtyOwnerForWorkspace(ws) || m.ptyOwner == nil {
 		return nil
 	}
-	err := m.ptyOwner.Stop(ctx, ws.TmuxSession)
-	if ptyowner.IsAbsentOwner(err) {
-		return nil
-	}
-	return err
+	return m.ptyOwner.Stop(ctx, ws.TmuxSession)
 }
 
 func (m *Manager) newTerminalSession(

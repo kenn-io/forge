@@ -462,7 +462,8 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	})
 	defer runtime.Shutdown()
 	activity := agentactivity.NewStore(t.TempDir())
-	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{SessionID: "saved", CWD: cwd, HookEventName: "Stop"}, key))
+	require.NoError(activity.Record(localruntime.ACPActivityAgent, "saved", key, cwd, agentactivity.StateIdle))
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{SessionID: "stale-hook", CWD: cwd, HookEventName: "UserPromptSubmit"}, key))
 	var now atomic.Int64
 	now.Store(time.Now().UnixNano())
 	clock := func() time.Time { return time.Unix(0, now.Load()).UTC() }
@@ -484,7 +485,7 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	assert.Equal(localruntime.SessionStatusRunning, read(true))
 	require.Equal(int32(1), peer.bindings.Load())
 	stopIdle()
-	assert.Equal(int32(1), peer.parks.Load(), "an idle reloadable chat parks its owner")
+	assert.Equal(int32(1), peer.parks.Load(), "an idle reloadable chat parks its owner despite a stale working hook report")
 	assert.Equal(localruntime.SessionStatusParked, read(false), "only a page view resumes a stopped chat")
 	assert.Equal(int32(1), peer.bindings.Load())
 	assert.Equal(localruntime.SessionStatusRunning, read(true))

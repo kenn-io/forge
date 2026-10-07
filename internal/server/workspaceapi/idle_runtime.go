@@ -333,6 +333,10 @@ func (i *idleRuntimes) stoppable(ctx context.Context, ws *db.Workspace, row db.W
 		return false
 	}
 	reports := h.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{row.SessionKey})
+	reports = slices.DeleteFunc(reports, func(report agentactivity.Report) bool {
+		_, ok := reportedAgent(report, localruntime.SessionInfo{Kind: kind})
+		return !ok
+	})
 	if len(reports) == 0 || slices.ContainsFunc(reports, func(report agentactivity.Report) bool { return report.State == agentactivity.StateWorking }) {
 		return false
 	}

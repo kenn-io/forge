@@ -1649,7 +1649,7 @@
     </div>
 
     <button
-      class="kit-filter-dropdown__item"
+      class="kit-filter-dropdown__item active"
       role="menuitem"
       type="button"
       onclick={() => togglePin(menuWorkspace)}

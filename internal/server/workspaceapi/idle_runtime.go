@@ -154,7 +154,7 @@ func (i *idleRuntimes) Typed(workspaceID string) {
 // since. It reads the stop mark before asking the owner, so rows idle stop
 // never touched cost nothing.
 func (i *idleRuntimes) Stopped(ctx context.Context, row db.WorkspaceRuntimeSession) bool {
-	return i != nil && row.TmuxSession == "" && i.h.runtime.Parked(ctx, row.WorkspaceID, row.SessionKey)
+	return i != nil && i.h.runtime.Parked(ctx, row.WorkspaceID, row.SessionKey)
 }
 
 // Retain drops stop marks and saved use of runtimes and workspaces that are gone.

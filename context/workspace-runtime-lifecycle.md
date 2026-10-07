@@ -253,6 +253,8 @@ Workspace deletion is intentionally conservative.
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
+- Deletion clears activity reports and stop marks for stored runtimes, including
+  parked sessions absent from the live manager inventory.
 - A live worktree registration at the persisted path in the resolved repository
   authorizes cleanup without an ownership marker; a same-repository replacement
   is the workspace, but a symlink to another worktree is not.
@@ -344,7 +346,7 @@ create a local process, PTY, or durable transport session
   reconnects, focus, heartbeats, history and other reads are neither.
 - Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
   report under the runtime key and a resume path (hook agents `done`, `input` or
-  `approval`, or `idle` after a SessionStart whose `source` is `resume`
+  `approval`, or `idle` after a SessionStart whose `source` is `resume`, `fork` or `compact`
   (`agentactivity.Report.Continued`), on an available target; ACP chats with
   `loadSession`; owners started by an older build record no
   `LoadSession` and lack `ACP.Park`, so they keep running per the no-compatibility rule

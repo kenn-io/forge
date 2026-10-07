@@ -52,7 +52,8 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	t.Setenv("KENN_FORGE_RESUME_AGENT_HELPER", "1")
 	ctx := t.Context()
 	database := dbtest.Open(t)
-	worktree := t.TempDir()
+	worktree := filepath.Join(t.TempDir(), "worktree")
+	require.NoError(os.Mkdir(worktree, 0o700))
 	ws := &db.Workspace{
 		ID: "ws-idle", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widgets",
 		ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey("work/idle"), GitHeadRef: "work/idle",
@@ -198,10 +199,13 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	report("claude", "saved-conversation", "UserPromptSubmit")
 	stopIdle()
 	assert.True(running(agent.Key), "a working agent keeps running")
-	// Claude auto-compacts mid-turn with a SessionStart whose source is compact.
 	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{SessionID: "saved-conversation", CWD: worktree, HookEventName: "SessionStart", Source: "compact"}, agent.Key))
 	stopIdle()
-	assert.True(running(agent.Key), "a compaction during a turn keeps the agent running")
+	assert.False(running(agent.Key), "a compacted conversation can resume")
+	view(true)
+	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(os.Remove(filepath.Join(worktree, "args")))
+	advance(2 * time.Hour)
 	report("gemini", "no-resume", "Stop")
 	stopIdle()
 	assert.True(running(agent.Key), "an agent that cannot be resumed keeps running")
@@ -310,6 +314,20 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	stopIdle()
 	assert.False(running(crashed.Key), "a recovered conversation stops again before it is prompted")
 	assert.True(runtime.StoppedMark(crashed.Key))
+	stored, err = database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.NotEmpty(stored)
+	require.Empty(runtime.ListSessions(ws.ID), "parked runtimes have no live manager entry")
+	for _, row := range stored {
+		require.True(runtime.StoppedMark(row.SessionKey))
+	}
+	require.NotEmpty(activity.LiveReportsForWorkspace(worktree, []string{crashed.Key}))
+	_, err = handler.DeleteWorkspace(ctx, &DeleteWorkspaceInput{ID: ws.ID, Force: true})
+	require.NoError(err)
+	for _, row := range stored {
+		assert.False(runtime.StoppedMark(row.SessionKey), "deletion removes every stored runtime's stop mark")
+		assert.Empty(activity.LiveReportsForWorkspace(worktree, []string{row.SessionKey}), "deletion removes every stored runtime's activity")
+	}
 }
 
 func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:paralleltest // t.Setenv writes the helper switch

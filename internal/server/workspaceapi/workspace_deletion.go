@@ -163,6 +163,12 @@ func (s *Handler) runWorkspaceDeletion(
 			for _, session := range sessions {
 				s.removeAgentActivityRuntimeSession(session.Key)
 			}
+			for _, item := range stored {
+				s.removeAgentActivityRuntimeSession(item.SessionKey)
+				if err := s.runtime.Resumed(item.SessionKey); err != nil {
+					return err
+				}
+			}
 			s.idle.Load().Forget(id)
 			return nil
 		},

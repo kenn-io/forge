@@ -7,6 +7,9 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 - The native app reuses the server's mobile web workflows; do not duplicate ACP
   or terminal UI in React Native. Desktop layout is an opt-in for tablets
   (`mobile/connection.ts::launchURL`). Setup and Android commands live in `mobile/README.md`.
+- The native shell owns system-bar and cutout spacing. Android WebView must pass
+  zeroes for those CSS safe-area insets while preserving keyboard insets
+  (`mobile/patches/react-native-webview@13.16.1.patch`).
 
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 

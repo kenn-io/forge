@@ -27,5 +27,8 @@
     "@types/react": "~19.2.0",
     "typescript": "6.0.3"
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.0",
+  "patchedDependencies": {
+    "react-native-webview@13.16.1": "patches/react-native-webview@13.16.1.patch"
+  }
 }

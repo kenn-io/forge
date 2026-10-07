@@ -41,8 +41,16 @@ func (m *Manager) AgentResumable(targetKey, agent, sessionID string) bool {
 	if err != nil || !target.Available || target.Kind != LaunchTargetAgent {
 		return false
 	}
-	_, err = agentResumeCommand(target.Command, agent, sessionID)
-	return err == nil
+	command, err := agentResumeCommand(target.Command, agent, sessionID)
+	if err != nil {
+		return false
+	}
+	executable, err := resolveExecutable(command[0])
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(executable)
+	return err == nil && !info.IsDir()
 }
 
 // A successful PTY spawn does not mean tmux attached. Probe before spawning so

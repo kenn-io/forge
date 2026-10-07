@@ -1,6 +1,8 @@
 package localruntime
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -31,10 +33,15 @@ func TestAgentResumeCommand(t *testing.T) {
 }
 
 func TestAgentResumableRequiresTerminalAgentTarget(t *testing.T) {
+	assert := assert.New(t)
 	manager := NewManager(Options{Targets: []LaunchTarget{
-		{Key: "worker", Kind: LaunchTargetAgent, Available: true, Command: []string{"claude"}},
+		{Key: "worker", Kind: LaunchTargetAgent, Available: true, Command: []string{os.Args[0]}},
 		{Key: "chat", Kind: LaunchTargetACP, Available: true, Command: []string{"claude"}},
+		{Key: "missing", Kind: LaunchTargetAgent, Available: true, Command: []string{"forge-missing-agent-executable"}},
+		{Key: "missing-path", Kind: LaunchTargetAgent, Available: true, Command: []string{filepath.Join(t.TempDir(), "missing-agent")}},
 	}})
-	assert.True(t, manager.AgentResumable("worker", "claude", "conversation"))
-	assert.False(t, manager.AgentResumable("chat", "claude", "conversation"), "a target reloaded to ACP can't resume a terminal agent")
+	assert.True(manager.AgentResumable("worker", "claude", "conversation"))
+	assert.False(manager.AgentResumable("chat", "claude", "conversation"), "a target reloaded to ACP can't resume a terminal agent")
+	assert.False(manager.AgentResumable("missing", "claude", "conversation"))
+	assert.False(manager.AgentResumable("missing-path", "claude", "conversation"))
 }

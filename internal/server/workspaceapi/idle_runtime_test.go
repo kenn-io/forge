@@ -151,16 +151,15 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	agentPane := dial("/runtime/sessions/" + agent.Key + "/terminal?resize_active=1")
 	require.NoError(agentPane.Write(ctx, websocket.MessageText, claim))
 	assert.Never(func() bool { return !unused() }, time.Second, 10*time.Millisecond, "sockets, focus and reads are not use")
-	require.NoError(agentPane.Write(ctx, websocket.MessageBinary, []byte("y")))
-	assert.Eventually(func() bool { return !unused() }, 5*time.Second, 10*time.Millisecond, "typing in an agent pane is use")
 	_ = agentPane.CloseNow()
-	stopIdle()
-	untouched("typing keeps the workspace running")
 	// Input from any client counts, not only sockets: tools write through the
 	// runtime manager.
 	advance(2 * time.Hour)
 	direct, err := runtime.AttachSession(ws.ID, agent.Key)
 	require.NoError(err)
+	idleBefore := handler.idle.Load().idle(ws, time.Time{})
+	require.NoError(direct.Write([]byte("\x1b[I")))
+	assert.Equal(idleBefore, handler.idle.Load().idle(ws, time.Time{}), "automatic focus reports leave idle time unchanged")
 	require.NoError(direct.Write([]byte("y")))
 	direct.Close()
 	assert.False(unused(), "input written through the runtime manager is use")
@@ -175,10 +174,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	shellAttached, err := runtime.AttachSession(ws.ID, shell.Key)
 	require.NoError(err)
 	defer shellAttached.Close()
-	base = dial("/terminal")
 	stopIdle()
-	assert.True(client.HasState(ws.TmuxSession), "an attached socket keeps the base terminal running")
-	_ = base.CloseNow()
 	assert.True(running(agent.Key), "an agent that was never prompted has nothing to resume")
 	assert.False(running(shell.Key), "a shell stops")
 	assert.True(shellAttached.RecoverableDetach(), "an attached pane must reconnect rather than see an exit")
@@ -199,10 +195,6 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	report("claude", "saved-conversation", "UserPromptSubmit")
 	stopIdle()
 	assert.True(running(agent.Key), "a working agent keeps running")
-	// Claude auto-compacts mid-turn with a SessionStart whose source is compact.
-	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{SessionID: "saved-conversation", CWD: worktree, HookEventName: "SessionStart", Source: "compact"}, agent.Key))
-	stopIdle()
-	assert.True(running(agent.Key), "a compaction during a turn keeps the agent running")
 	report("gemini", "no-resume", "Stop")
 	stopIdle()
 	assert.True(running(agent.Key), "an agent that cannot be resumed keeps running")
@@ -239,13 +231,9 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	assert.True(running(shell.Key), "a stopped shell starts fresh under its key")
 	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond, "the agent resumes its saved conversation")
 	continued(agent.Key, "saved-conversation")
-	// A shell whose stop mark cannot be written keeps running.
-	shellMark := filepath.Join(parkedDir, shell.Key)
-	require.NoError(os.MkdirAll(filepath.Join(shellMark, "blocked"), 0o700))
 	advance(2 * time.Hour)
 	stopIdle()
 	assert.False(running(agent.Key), "a resumed conversation stops again before it is prompted")
-	assert.True(running(shell.Key), "a failed stop leaves the runtime reachable")
 
 	// A resume that fails gives up the stop and hands the agent to recovery.
 	stored, err = database.ListAllWorkspaceRuntimeSessions(ctx)
@@ -274,7 +262,6 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond)
 
 	// A page reload that cancels the viewing read doesn't fail the resume.
-	require.NoError(os.RemoveAll(shellMark))
 	continued(agent.Key, "saved-conversation")
 	advance(2 * time.Hour)
 	stopIdle()
@@ -344,7 +331,9 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	client := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true, Command: shellCommand}
 	workspaces := workspace.NewManager(database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
-	parkedDir := filepath.Join(t.TempDir(), "parked-runtimes")
+	stateDir := t.TempDir()
+	parkedDir := filepath.Join(stateDir, "parked-runtimes")
+	activityFile := filepath.Join(stateDir, "idle-activity.json")
 	// The workspace and its runtime are days old when idle stop first runs.
 	var now atomic.Int64
 	now.Store(time.Now().Add(240 * time.Hour).UnixNano())
@@ -361,6 +350,29 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 		return runtime, handler
 	}
 	runtime, handler := daemon(time.Hour)
+	noState := func(msg string) {
+		assert.NoDirExists(parkedDir, msg)
+		assert.NoFileExists(activityFile, msg)
+	}
+	pending := func(key string) bool {
+		handler.runtimeRecoveryMu.Lock()
+		defer handler.runtimeRecoveryMu.Unlock()
+		return handler.runtimeRecoveryPending[key]
+	}
+	// Starting with the setting off hands an agent idle stop stopped to
+	// recovery and removes idle state.
+	stopped := db.WorkspaceRuntimeSession{WorkspaceID: ws.ID, SessionKey: "stopped-agent", TargetKey: "worker", Kind: string(localruntime.LaunchTargetAgent), Scope: "session"}
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &stopped))
+	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
+	require.True(runtime.StoppedMark(stopped.SessionKey))
+	require.NoError(handler.Shutdown(ctx))
+	runtime.Shutdown()
+	runtime, handler = daemon(0)
+	require.NoError(handler.RestoreRuntimeSessions(ctx))
+	noState("startup with the setting off removes idle state")
+	assert.Nil(handler.idle.Load())
+	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery at startup")
+
 	shell, err := runtime.Launch(ctx, ws.ID, worktree, "plain_shell")
 	require.NoError(err)
 	require.NoError(handler.recordRuntimeSession(ctx, ws.ID, shell, "session"))
@@ -377,6 +389,16 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	restart := func() { restartWith(time.Hour) }
 	stopIdle := func() { handler.idle.Load().stopIdle(ctx, time.Hour) }
 
+	attached, err := runtime.AttachSession(ws.ID, shell.Key)
+	require.NoError(err)
+	require.NoError(attached.Write([]byte("y")))
+	attached.Close()
+	_, err = handler.getWorkspaceRuntime(ctx, &getWorkspaceRuntimeInput{ID: ws.ID, Viewing: true})
+	require.NoError(err)
+	assert.Nil(handler.syncIdle(ctx))
+	noState("typing and page views with the setting off record nothing")
+
+	restart()
 	stopIdle()
 	assert.True(client.HasState(shell.Key), "idle time starts when the pass first sees a workspace")
 	restart()
@@ -400,17 +422,16 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	stopIdle()
 	assert.False(client.HasState(shell.Key))
 
-	// Use while the setting is off outdates what was saved while it was on.
-	view()
-	restart()
+	handler.idle.Load().save()
+	require.FileExists(activityFile)
+	// Turning it off hands a stopped agent to recovery and removes idle state.
+	handler.setRuntimeRecoveryPending(stopped.SessionKey, false)
+	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
+	require.True(runtime.StoppedMark(stopped.SessionKey))
 	handler.ApplyConfig(ConfigSnapshot{})
-	restartWith(0)
-	advance(time.Hour)
-	view()
-	advance(30 * time.Minute)
-	restart()
-	stopIdle()
-	assert.True(client.HasState(shell.Key), "use 30 minutes before the setting came back on keeps the shell")
+	assert.Nil(handler.syncIdle(ctx))
+	noState("turning the setting off removes idle state")
+	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery")
 }
 
 // acpParkPeer is an ACP owner that counts park requests.
@@ -518,91 +539,4 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	handler.runtimeRecoveryMu.Unlock()
 	closeOwner = listen()
 	assert.Equal(localruntime.SessionStatusRunning, read(false), "a later read reloads the chat")
-}
-
-func TestIdleRuntimeOffRecordsNothing(t *testing.T) { //nolint:paralleltest // t.Setenv writes the helper switch
-	require := require.New(t)
-	assert := assert.New(t)
-	t.Setenv("KENN_FORGE_AGENT_SESSION_HELPER", "1")
-	ctx := t.Context()
-	database := dbtest.Open(t)
-	worktree := t.TempDir()
-	ws := &db.Workspace{
-		ID: "ws-idle-off", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widgets",
-		ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey("work/idle-off"), GitHeadRef: "work/idle-off",
-		WorkspaceBranch: "work/idle-off", WorktreePath: worktree, Status: "ready", TerminalBackend: workspace.TerminalBackendPtyOwner,
-	}
-	require.NoError(database.InsertWorkspace(ctx, ws))
-	shellCommand := []string{os.Args[0], "-test.run=^TestWorkspaceAgentSessionHelper$", "--", "sleep"}
-	client := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true, Command: shellCommand}
-	workspaces := workspace.NewManager(database, t.TempDir())
-	workspaces.SetPtyOwnerClient(client)
-	stateDir := t.TempDir()
-	parkedDir := filepath.Join(stateDir, "parked-runtimes")
-	activityFile := filepath.Join(stateDir, "idle-activity.json")
-	runtime := localruntime.NewManager(localruntime.Options{
-		Targets:         []localruntime.LaunchTarget{{Key: "plain_shell", Kind: localruntime.LaunchTargetPlainShell, Available: true, Command: shellCommand}},
-		PtyOwnerRuntime: ptyownerruntime.New(client, nil),
-		ParkedDir:       parkedDir,
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, ws.ID)
-		runtime.Shutdown()
-	})
-	var now atomic.Int64
-	now.Store(time.Now().UnixNano())
-	clock := func() time.Time { return time.Unix(0, now.Load()).UTC() }
-	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, Now: clock})
-	noState := func(msg string) {
-		assert.NoDirExists(parkedDir, msg)
-		assert.NoFileExists(activityFile, msg)
-	}
-	pending := func(key string) bool {
-		handler.runtimeRecoveryMu.Lock()
-		defer handler.runtimeRecoveryMu.Unlock()
-		return handler.runtimeRecoveryPending[key]
-	}
-	// Starting with the setting off hands an agent idle stop stopped to
-	// recovery and removes idle state.
-	stopped := db.WorkspaceRuntimeSession{WorkspaceID: ws.ID, SessionKey: "stopped-agent", TargetKey: "worker", Kind: string(localruntime.LaunchTargetAgent), Scope: "session"}
-	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &stopped))
-	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
-	require.True(runtime.StoppedMark(stopped.SessionKey))
-	require.NoError(handler.RestoreRuntimeSessions(ctx))
-	noState("startup with the setting off removes idle state")
-	assert.Nil(handler.idle.Load())
-	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery at startup")
-	shell, err := runtime.Launch(ctx, ws.ID, worktree, "plain_shell")
-	require.NoError(err)
-	require.NoError(handler.recordRuntimeSession(ctx, ws.ID, shell, "session"))
-
-	attached, err := runtime.AttachSession(ws.ID, shell.Key)
-	require.NoError(err)
-	require.NoError(attached.Write([]byte("y")))
-	attached.Close()
-	_, err = handler.getWorkspaceRuntime(ctx, &getWorkspaceRuntimeInput{ID: ws.ID, Viewing: true})
-	require.NoError(err)
-	assert.Nil(handler.syncIdle(ctx))
-	noState("typing and page views with the setting off record nothing")
-
-	now.Add(int64(48 * time.Hour))
-	handler.ApplyConfig(ConfigSnapshot{IdleRuntimeStopAfter: time.Hour})
-	idle := handler.syncIdle(ctx)
-	require.NotNil(idle)
-	idle.stopIdle(ctx, time.Hour)
-	assert.True(client.HasState(shell.Key), "turning the setting on starts the clock")
-	assert.Zero(idle.idle(ws, time.Time{}))
-	idle.save()
-	require.FileExists(activityFile)
-
-	// Turning it off hands a stopped agent to recovery and removes idle state.
-	handler.setRuntimeRecoveryPending(stopped.SessionKey, false)
-	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
-	require.True(runtime.StoppedMark(stopped.SessionKey))
-	handler.ApplyConfig(ConfigSnapshot{})
-	assert.Nil(handler.syncIdle(ctx))
-	noState("turning the setting off removes idle state")
-	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery")
 }

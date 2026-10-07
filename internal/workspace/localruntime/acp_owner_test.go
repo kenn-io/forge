@@ -347,6 +347,3 @@ func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
 	_, err = manager.ACP("workspace", info.Key)
 	assert.Error(t, err, "the exited chat was relaunched")
 }
-
-// A dormant chat whose owner died stops cleanly; owner state that cannot be
-// read leaves it unavailable instead of assuming the owner is gone.

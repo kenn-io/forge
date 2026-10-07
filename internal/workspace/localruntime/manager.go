@@ -3097,7 +3097,9 @@ func attachToSession(
 			if err := s.writeInput(data); err != nil {
 				return err
 			}
-			typed()
+			if !TerminalRepliesOnly(data) {
+				typed()
+			}
 			return nil
 		},
 		submitInitialMessage: func(ctx context.Context, message string) error {

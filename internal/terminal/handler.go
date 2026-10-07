@@ -360,7 +360,9 @@ func bridgePtyOwnerAttachment(
 			}
 			switch typ {
 			case websocket.MessageBinary:
-				onInput()
+				if !localruntime.TerminalRepliesOnly(data) {
+					onInput()
+				}
 				if err := attachment.Write(data); err != nil {
 					return
 				}

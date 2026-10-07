@@ -24,8 +24,9 @@ const (
 // through it, and so does every stop mark except the removal when a runtime or
 // workspace is deleted; callers only report a page view or typing, or ask
 // whether a stored runtime is stopped. A page view is the showing workspace
-// page's viewing runtime read. Typing is input on any terminal socket or an
-// ACP prompt or reply. Socket opens, reconnects, focus and other reads are
+// page's viewing runtime read. Typing is terminal input containing anything
+// beyond automatic terminal replies, or an ACP prompt or reply.
+// Socket opens, reconnects, focus and other reads are
 // neither, since the browser keeps hidden panes connected. Only a page view
 // resumes stopped runtimes, so a hidden pane reconnecting can't undo a stop.
 // It exists only while the setting is on (Handler.idle is nil otherwise, and

@@ -340,15 +340,15 @@ create a local process, PTY, or durable transport session
   5-minute pass and shutdown save last use per workspace beside the stop marks
   (`localruntime.Manager.SaveIdleActivity`) and startup loads it, so a restart keeps idle
   time; the pass gives a workspace with none saved a last use of now. A page
-  view is the showing page's `viewing=true` runtime read. Typing is input the runtime
-  manager delivers (any attachment's terminal input, a submitted agent message, an ACP
-  prompt, permission or elicitation reply; `localruntime.Manager.SetInputObserver`) or
-  binary input on the workspace terminal socket (`terminal.Handler.Typed`). Socket opens,
+  view is the showing page's `viewing=true` runtime read. Typing is terminal input beyond
+  automatic replies, a submitted agent message, or an ACP
+  prompt, permission or elicitation reply (`localruntime.Manager.SetInputObserver`), or
+  binary input beyond automatic replies on the workspace terminal socket (`terminal.Handler.Typed`). Socket opens,
   reconnects, focus, heartbeats, history and other reads are neither.
 - Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
   report under the runtime key and a resume path (hook agents `done`, `input` or
   `approval`, or `idle` after a SessionStart whose `source` is `resume` or `fork`
-  (`agentactivity.Report.Continued`), on an available target; ACP chats with
+  (`agentactivity.Report.Continued`), on an available target whose executable resolves; ACP chats with
   `loadSession`; owners started by an older build record no
   `LoadSession` and lack `ACP.Park`, so they keep running per the no-compatibility rule
   above). Command and tmux sessions never stop. Stopping

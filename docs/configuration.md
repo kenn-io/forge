@@ -622,12 +622,16 @@ stacks. Mid-stack merges stay blocked by default.
 ## Telemetry
 
 Forge sends limited anonymous telemetry by default: daemon activity, an app
-open about once a day per browser, version, commit, OS and architecture, and an
+open about once a day per browser, which screens were opened (each counted once
+per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
 Hiding or closing a tab reports `session_ended` with `surface: web` and a
 `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`, or `over_30m`.
 Each duration counts one visible interval and excludes hidden time.
+Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,
+workspaces, terminal, workspace-item, settings, project-intake, design-system,
+and onboarding. Screen counts persist across tabs and daemon restarts.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 

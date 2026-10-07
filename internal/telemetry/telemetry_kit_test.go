@@ -37,7 +37,7 @@ func TestNewReporterHandsKitTheStoredInstallIdentity(t *testing.T) {
 	_, err := newReporter(Options{Database: database}, created)
 	require.NoError(err)
 
-	storedID, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	storedID, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
 	require.NoError(err)
 	require.True(found)
 	require.Len(built, 2)
@@ -59,7 +59,7 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
-	for _, key := range []string{installIDMetadataKey, installedAtKey} {
+	for _, key := range []string{InstallIDMetadataKey, installedAtKey} {
 		_, found, err := database.AppMetadataValue(t.Context(), key)
 		require.NoError(err)
 		assert.False(found, key)
@@ -75,6 +75,19 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require.NoError(err)
 
 	assert.False(backend.EventAllowed("daemon_active"))
+	assert.True(backend.EventAllowed("screen_viewed"))
+	assert.True(UIEventAllowed("screen_viewed"))
+	for _, screen := range []string{"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs", "workspaces", "terminal", "workspace-item", "settings", "project-intake", "design-system", "onboarding"} {
+		properties, err := backend.SanitizeProperties("screen_viewed", map[string]any{"screen": screen, "surface": "web", "repo": "owner/repo"})
+		require.NoError(err)
+		assert.Equal(screen, properties["screen"])
+		assert.Equal("web", properties["surface"])
+		assert.NotContains(properties, "repo")
+	}
+	for _, invalid := range []any{nil, 7, "owner/repo", ""} {
+		_, valid := ScreenName(invalid)
+		assert.False(valid)
+	}
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",
 		"distinct_id":             "spoofed",

@@ -56526,18 +56526,6 @@ type Attribution struct {
 	Status               AttributionStatus `json:"status"`
 }
 
-type BackgroundTask struct {
-	AgentType   *string `json:"agent_type,omitempty"`
-	Command     *string `json:"command,omitempty"`
-	Description *string `json:"description,omitempty"`
-	ID          string  `json:"id"`
-	Name        *string `json:"name,omitempty"`
-	Server      *string `json:"server,omitempty"`
-	Status      string  `json:"status"`
-	Tool        *string `json:"tool,omitempty"`
-	Type        string  `json:"type"`
-}
-
 type BodySnippet struct {
 	Matches []SnippetRange `json:"matches"`
 	Text    string         `json:"text"`
@@ -57575,17 +57563,17 @@ type Hit struct {
 
 type HookEvent struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema               *string          `json:"$schema,omitempty"`
-	AgentID              *string          `json:"agent_id,omitempty"`
-	BackgroundTasks      []BackgroundTask `json:"background_tasks,omitempty"`
-	Cwd                  string           `json:"cwd"`
-	HookEventName        string           `json:"hook_event_name"`
-	NotificationType     *string          `json:"notification_type,omitempty"`
-	SessionCrons         []SessionCron    `json:"session_crons,omitempty"`
-	SessionID            string           `json:"session_id"`
-	Source               *string          `json:"source,omitempty"`
-	ToolName             *string          `json:"tool_name,omitempty"`
-	AdditionalProperties map[string]any   `json:"-"`
+	Schema               *string        `json:"$schema,omitempty"`
+	AgentID              *string        `json:"agent_id,omitempty"`
+	BackgroundTasks      *any           `json:"background_tasks,omitempty"`
+	Cwd                  string         `json:"cwd"`
+	HookEventName        string         `json:"hook_event_name"`
+	NotificationType     *string        `json:"notification_type,omitempty"`
+	SessionCrons         *any           `json:"session_crons,omitempty"`
+	SessionID            string         `json:"session_id"`
+	Source               *string        `json:"source,omitempty"`
+	ToolName             *string        `json:"tool_name,omitempty"`
+	AdditionalProperties map[string]any `json:"-"`
 }
 
 // Getter for additional properties for HookEvent. Returns the specified
@@ -57702,10 +57690,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("error marshaling 'agent_id': %w", err)
 		}
 	}
-
-	object["background_tasks"], err = json.Marshal(h.BackgroundTasks)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'background_tasks': %w", err)
+	if h.BackgroundTasks != nil {
+		object["background_tasks"], err = json.Marshal(h.BackgroundTasks)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'background_tasks': %w", err)
+		}
 	}
 
 	object["cwd"], err = json.Marshal(h.Cwd)
@@ -57724,10 +57713,11 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
 		}
 	}
-
-	object["session_crons"], err = json.Marshal(h.SessionCrons)
-	if err != nil {
-		return nil, fmt.Errorf("error marshaling 'session_crons': %w", err)
+	if h.SessionCrons != nil {
+		object["session_crons"], err = json.Marshal(h.SessionCrons)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'session_crons': %w", err)
+		}
 	}
 
 	object["session_id"], err = json.Marshal(h.SessionID)
@@ -57746,12 +57736,6 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'tool_name': %w", err)
 		}
-	}
-	if len(h.BackgroundTasks) == 0 {
-		delete(object, "background_tasks")
-	}
-	if len(h.SessionCrons) == 0 {
-		delete(object, "session_crons")
 	}
 	for fieldName, field := range h.AdditionalProperties {
 		object[fieldName], err = json.Marshal(field)
@@ -59653,13 +59637,6 @@ type SealSpokePreparationInputBody struct {
 	PreparationDigest    string  `json:"preparation_digest"`
 	ProtocolVersion      int64   `json:"protocol_version"`
 	ReceiptsDigest       string  `json:"receipts_digest"`
-}
-
-type SessionCron struct {
-	ID        string `json:"id"`
-	Prompt    string `json:"prompt"`
-	Recurring bool   `json:"recurring"`
-	Schedule  string `json:"schedule"`
 }
 
 type SessionInfo struct {

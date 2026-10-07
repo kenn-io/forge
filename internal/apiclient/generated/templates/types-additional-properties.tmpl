@@ -68,13 +68,6 @@ func ({{$alias}} {{$td.Name}}) MarshalJSON() ([]byte, error) {
     object := make(map[string]jsontext.Value)
     {{ template "marshalEmbeddedFields" (dict "alias" $alias "properties" $td.Schema.Properties) }}
     {{ template "marshalNamedFields" (dict "alias" $alias "properties" $td.Schema.Properties) }}
-    {{- range $td.Schema.Properties }}
-    {{- if and .Schema.ArrayType (not .Constraints.Required) }}
-    if len({{$alias}}.{{.GoName}}) == 0 {
-        delete(object, "{{.JsonFieldName}}")
-    }
-    {{- end }}
-    {{- end }}
     for fieldName, field := range {{$alias}}.AdditionalProperties {
         object[fieldName], err = json.Marshal(field)
         if err != nil {

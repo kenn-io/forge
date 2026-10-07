@@ -27,7 +27,6 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
-	"go.kenn.io/kit/agenthook"
 )
 
 func newIdleRuntimeDaemon(t *testing.T, workspaceID string, deps Deps, options localruntime.Options) (*localruntime.Manager, *Handler) {
@@ -207,7 +206,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 
 	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
 		SessionID: "saved-conversation", CWD: worktree, HookEventName: "Stop",
-		BackgroundTasks: []agenthook.BackgroundTask{{ID: "task-1", Type: "shell", Status: "running"}},
+		BackgroundTasks: []any{map[string]any{"id": "task-1", "type": "shell", "status": "running"}},
 	}, agent.Key))
 	stopIdle()
 	assert.True(running(agent.Key), "an agent with pending background work keeps running")

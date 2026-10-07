@@ -239,6 +239,7 @@ describe("App feature routes", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -542,7 +543,6 @@ describe("App feature routes", () => {
     window.dispatchEvent(new Event("pageshow"));
     window.dispatchEvent(new Event("pagehide"));
     expect(posts).toHaveLength(3);
-    vi.restoreAllMocks();
   });
 
   it("reports a non-interruption root finalizer defect", async () => {

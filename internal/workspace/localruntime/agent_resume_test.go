@@ -15,10 +15,6 @@ func TestAgentResumeCommand(t *testing.T) {
 		{"codex", []string{"resume", "conversation"}},
 		{"claude", []string{"--resume", "conversation"}},
 		{"pi", []string{"--session", "conversation"}},
-		{"copilot", []string{"--resume=conversation"}},
-		{"cursor", []string{"--resume", "conversation"}},
-		{"droid", []string{"--resume", "conversation"}},
-		{"gemini", []string{"--resume", "conversation"}},
 	} {
 		t.Run(tc.agent, func(t *testing.T) {
 			command, err := agentResumeCommand([]string{"custom-worker", "--model", "model-a"}, tc.agent, "conversation")

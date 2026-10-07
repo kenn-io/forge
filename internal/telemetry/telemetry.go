@@ -19,7 +19,7 @@ const (
 	EnabledEnv           = "TELEMETRY_ENABLED"
 	applicationSlug      = "kenn-forge"
 	envPrefix            = "KENN_FORGE"
-	installIDMetadataKey = "telemetry.install_id"
+	InstallIDMetadataKey = "telemetry.install_id"
 	installedAtKey       = "telemetry.install_created_at"
 	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
@@ -30,7 +30,24 @@ const HeartbeatInterval = 24 * time.Hour
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
+var screenFilter = posthog.AllowStringValues(
+	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
+	"workspaces", "terminal", "workspace-item", "settings", "project-intake",
+	"design-system", "onboarding",
+)
+
+// ScreenName uses the reporter's allowlist for the daily claim too.
+func ScreenName(value any) (string, bool) {
+	filtered, ok := screenFilter(value)
+	name, _ := filtered.(string)
+	return name, ok
+}
+
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"screen_viewed": {
+		"screen":  screenFilter,
+		"surface": posthog.AllowStringValues("web"),
+	},
 	"app_opened": {
 		"surface": posthog.AllowStringValues("web"),
 	},
@@ -209,7 +226,7 @@ func (r *Reporter) Close() error {
 // time means the age is unknown (the ID predates install-age tracking or the
 // stored time is unreadable), so events go untagged.
 func loadOrCreateInstallID(ctx context.Context, database *db.DB, now time.Time) (string, time.Time, error) {
-	_, found, err := database.AppMetadataValue(ctx, installIDMetadataKey)
+	_, found, err := database.AppMetadataValue(ctx, InstallIDMetadataKey)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -221,7 +238,7 @@ func loadOrCreateInstallID(ctx context.Context, database *db.DB, now time.Time) 
 			return "", time.Time{}, err
 		}
 	}
-	id, err := database.GetOrCreateAppMetadataValue(ctx, installIDMetadataKey, randomInstallID)
+	id, err := database.GetOrCreateAppMetadataValue(ctx, InstallIDMetadataKey, randomInstallID)
 	if err != nil {
 		return "", time.Time{}, err
 	}

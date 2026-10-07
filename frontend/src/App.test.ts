@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Cause, Effect } from "effect";
+import { flushSync } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { mountApplication } from "./lib/app/mount.js";
 import type { AppExecution, OwnedAppRuntime } from "./lib/app/runtime.js";
@@ -543,6 +544,54 @@ describe("App feature routes", () => {
     window.dispatchEvent(new Event("pageshow"));
     window.dispatchEvent(new Event("pagehide"));
     expect(posts).toHaveLength(3);
+  });
+
+  it("reports each visible screen once per day after startup, navigation, history, and focus", async () => {
+    startup.autoReady = false;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
+    const posts: unknown[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      posts.push(await request.json());
+      return Response.json({ status: "queued" }, { status: 202 });
+    });
+    const owner = makeTestAppRuntime();
+    const runtime: OwnedAppRuntime = {
+      ...testAppRuntime(() => {}),
+      disposeEffect: owner.disposeEffect,
+      runCommand: (program, options) =>
+        options.operation === "report screen view"
+          ? owner.runCommand(program, options)
+          : testAppRuntime(() => {}).runCommand(program, options),
+    };
+    const { replaceUrl, navigate } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const mounted = mountApplication(createAppTarget(), runtime);
+    try {
+      await waitFor(() => expect(startup.readyCallbacks).toHaveLength(1));
+      window.dispatchEvent(new Event("focus"));
+      startup.readyCallbacks[0]!();
+      const event = (name: string) => ({ event: "screen_viewed", properties: { screen: name, surface: "web" } });
+      await waitFor(() => expect(posts).toEqual([event("docs")]));
+      navigate("/settings");
+      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings")]));
+      window.history.replaceState(null, "", "/issues");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings"), event("issues")]));
+      window.dispatchEvent(new Event("focus"));
+      navigate("/docs");
+      flushSync();
+      navigate("/repos");
+      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings"), event("issues"), event("repos")]));
+      vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
+      window.dispatchEvent(new Event("focus"));
+      await waitFor(() => expect(posts).toHaveLength(5));
+      expect(posts[4]).toEqual(event("repos"));
+    } finally {
+      await Effect.runPromise(mounted.dispose);
+      vi.useRealTimers();
+    }
   });
 
   it("reports a non-interruption root finalizer defect", async () => {

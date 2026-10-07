@@ -1,6 +1,9 @@
 package telemetryapi
 
 import (
+	"time"
+
+	"go.kenn.io/forge/internal/db"
 	telemetrypkg "go.kenn.io/forge/internal/telemetry"
 )
 
@@ -9,4 +12,6 @@ import (
 // mutable server fields by pointer.
 type Handlers struct {
 	Telemetry telemetrypkg.Client
+	DB        *db.DB
+	Now       *func() time.Time
 }

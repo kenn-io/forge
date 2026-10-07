@@ -2,6 +2,7 @@
   import type { TabbedPanelLeaf } from "./lib/components/shared/tabbed-panel-layout.js";
   import { onDestroy, setContext, untrack } from "svelte";
   import { Effect } from "effect";
+  import { createScreenViewReporter, visibleScreen } from "./lib/app/telemetry.js";
   import type { AppExecution, AppRuntime } from "./lib/app/runtime.js";
   import { setAppRuntime } from "./lib/app/runtime-context.js";
   import { createAppStores } from "./lib/app-stores.svelte.js";
@@ -234,6 +235,20 @@
         onboardingState,
       ),
   );
+
+  const telemetryScreen = $derived(visibleScreen(getRoute(), appReady, onboardingActive));
+  const reportScreenViewed = createScreenViewReporter();
+  function reportVisibleScreen(): void {
+    if (telemetryScreen === null) return;
+    appRuntime.runCommand(reportScreenViewed(telemetryScreen), {
+      operation: "report screen view",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+  $effect(() => {
+    if (telemetryScreen !== null) untrack(reportVisibleScreen);
+  });
 
   function startOnboarding(): void {
     if (onboardingState === "active") return;
@@ -1188,7 +1203,7 @@
   });
 </script>
 
-<svelte:window onresize={updateViewportState} />
+<svelte:window onresize={updateViewportState} onfocus={reportVisibleScreen} />
 
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}

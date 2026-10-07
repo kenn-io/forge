@@ -301,6 +301,7 @@
     <div class="chat-status__inner">
       <span class="chat-status__text" role="status">
         {#if !connected && status === "running"}<Spinner size={14} />Connecting agent…
+        {:else if status === "parked"}Stopped while idle; it restarts when the workspace shows
         {:else if !chatState?.connected}Agent disconnected
         {:else if stopping}Stopping…
         {:else if chatState.permissions.length || elicitations.length}Needs your answer

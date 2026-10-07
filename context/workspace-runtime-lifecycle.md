@@ -353,7 +353,9 @@ create a local process, PTY, or durable transport session
   through `ACP.Park` and kills other owner trees, so the saved conversation and row stay;
   an owner that survives a failed stop is unmarked and reattached. The pass holds only
   the workspace's setup admission, with a bounded deadline per stop.
-- The workspace terminal never stops: a client that holds its socket would restart it.
+- The pty-owner workspace terminal stops while idle only with no claimed socket; hold socket
+  admission through the stop to prevent an attach racing it. It stays ready and starts a fresh
+  shell on attach, without a stop mark (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).
 - Only a page view resumes a marked row whose owner is gone (`ptyowner.Client.Gone`):
   agents resume their conversation, shells start fresh under their key, ACP chats
   reload, in the viewing read's one recovery pass. A failed resume clears

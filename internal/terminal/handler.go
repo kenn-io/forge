@@ -16,6 +16,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/ptysize"
@@ -446,6 +447,16 @@ func writeTerminalExit(conn *websocket.Conn, exitCode int) {
 		context.Background(), 2*time.Second)
 	_ = conn.Write(writeCtx, websocket.MessageText, exitMsg)
 	writeCancel()
+}
+
+// StopUnattachedTerminal holds socket admission through the stop so an attach cannot restart it mid-pass.
+func (h *Handler) StopUnattachedTerminal(ctx context.Context, ws *db.Workspace) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.active[ws.ID] > 0 {
+		return nil
+	}
+	return h.Workspaces.StopPtyOwnerTerminal(ctx, ws)
 }
 
 func (h *Handler) claimTerminalSlot(

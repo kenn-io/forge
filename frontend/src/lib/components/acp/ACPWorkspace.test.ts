@@ -640,6 +640,12 @@ describe("ACPWorkspace chat status and transcript", () => {
     return document.querySelector(".chat-status")?.textContent?.trim() ?? "";
   }
 
+  it("explains why a parked chat stopped", async () => {
+    render(ACPWorkspace, { props: { websocketPath: "/ws/chat", status: "parked" } });
+    await tick();
+    expect(statusText()).toBe("Stopped while idle; it restarts when the workspace shows");
+  });
+
   it("hides Guardian assessment tool calls from the transcript", async () => {
     await openChat({
       messages: [

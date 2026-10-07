@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/systemclipboard"
+	"go.kenn.io/forge/internal/terminal"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -127,6 +128,7 @@ type Handler struct {
 	config          ConfigSnapshot
 	workspaces      *workspace.Manager
 	runtime         *localruntime.Manager
+	terminal        *terminal.Handler
 	clipboard       systemclipboard.Writer
 	pasteImages     *terminalpaste.Store
 	agentActivity   *agentactivity.Store

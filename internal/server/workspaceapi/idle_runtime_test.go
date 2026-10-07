@@ -29,6 +29,22 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
+func newIdleRuntimeDaemon(t *testing.T, workspaceID string, deps Deps, options localruntime.Options) (*localruntime.Manager, *Handler) {
+	t.Helper()
+	runtime := localruntime.NewManager(options)
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, workspaceID)
+		runtime.Shutdown()
+	})
+	deps.Runtime = runtime
+	handler := New(deps)
+	handler.syncIdle(t.Context())
+	t.Cleanup(func() { _ = handler.Shutdown(context.Background()) })
+	return runtime, handler
+}
+
 func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:paralleltest // t.Setenv writes the helper switches
 	require := require.New(t)
 	assert := assert.New(t)
@@ -64,7 +80,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	advance := func(d time.Duration) { now.Add(int64(d)) }
 	// Each daemon gets its own runtime manager and handler over the same owners.
 	daemon := func(stopAfter time.Duration) (*localruntime.Manager, *Handler) {
-		runtime := localruntime.NewManager(localruntime.Options{
+		return newIdleRuntimeDaemon(t, ws.ID, Deps{DB: database, Workspaces: workspaces, AgentActivity: activity, Now: clock, Config: ConfigSnapshot{IdleRuntimeStopAfter: stopAfter}}, localruntime.Options{
 			Targets: []localruntime.LaunchTarget{
 				{Key: "worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{os.Args[0], "-test.run=^TestResumeAgentHelper$", "--"}},
 				{Key: "plain_shell", Kind: localruntime.LaunchTargetPlainShell, Available: true, Command: helper("sleep")},
@@ -72,15 +88,6 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 			PtyOwnerRuntime: ptyownerruntime.New(client, nil),
 			ParkedDir:       parkedDir,
 		})
-		t.Cleanup(func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			runtime.StopWorkspace(cleanupCtx, ws.ID)
-			runtime.Shutdown()
-		})
-		handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity, Now: clock, Config: ConfigSnapshot{IdleRuntimeStopAfter: stopAfter}})
-		handler.syncIdle(ctx)
-		return runtime, handler
 	}
 	runtime, handler := daemon(time.Hour)
 
@@ -167,12 +174,25 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	shellAttached, err := runtime.AttachSession(ws.ID, shell.Key)
 	require.NoError(err)
 	defer shellAttached.Close()
+	base = dial("/terminal")
 	stopIdle()
+	assert.True(client.HasState(ws.TmuxSession), "an attached socket keeps the base terminal running")
+	_ = base.CloseNow()
 	assert.True(running(agent.Key), "an agent that was never prompted has nothing to resume")
 	assert.False(running(shell.Key), "a shell stops")
 	assert.True(shellAttached.RecoverableDetach(), "an attached pane must reconnect rather than see an exit")
 	assert.False(client.HasState(shell.Key))
-	assert.True(client.HasState(ws.TmuxSession), "the workspace terminal never stops")
+	require.Eventually(func() bool {
+		stopIdle()
+		return !client.HasState(ws.TmuxSession)
+	}, 5*time.Second, 10*time.Millisecond, "an idle base terminal stops after its socket releases")
+	ready, err := handler.GetWorkspaceService(ctx, ws.ID)
+	require.NoError(err)
+	require.Equal("ready", ready.Workspace.Status, "stopping the base terminal keeps the workspace ready")
+	base = dial("/terminal")
+	require.NoError(base.Write(ctx, websocket.MessageBinary, []byte("echo\n")))
+	require.Eventually(func() bool { return client.HasState(ws.TmuxSession) && !unused() }, 5*time.Second, 10*time.Millisecond, "attach starts a working fresh base terminal")
+	_ = base.CloseNow()
 
 	advance(2 * time.Hour)
 	report("claude", "saved-conversation", "UserPromptSubmit")
@@ -317,21 +337,12 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	advance := func(d time.Duration) { now.Add(int64(d)) }
 	// Each daemon runs the idle loop and stops through Handler.Shutdown, as the server does.
 	daemon := func(stopAfter time.Duration) (*localruntime.Manager, *Handler) {
-		runtime := localruntime.NewManager(localruntime.Options{
+		runtime, handler := newIdleRuntimeDaemon(t, ws.ID, Deps{DB: database, Workspaces: workspaces, Now: clock, Config: ConfigSnapshot{IdleRuntimeStopAfter: stopAfter}}, localruntime.Options{
 			Targets:         []localruntime.LaunchTarget{{Key: "plain_shell", Kind: localruntime.LaunchTargetPlainShell, Available: true, Command: shellCommand}},
 			PtyOwnerRuntime: ptyownerruntime.New(client, nil),
 			ParkedDir:       parkedDir,
 		})
-		t.Cleanup(func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			runtime.StopWorkspace(cleanupCtx, ws.ID)
-			runtime.Shutdown()
-		})
-		handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, Now: clock, Config: ConfigSnapshot{IdleRuntimeStopAfter: stopAfter}})
-		handler.syncIdle(ctx)
 		require.True(handler.runBackground(handler.runIdle))
-		t.Cleanup(func() { _ = handler.Shutdown(context.Background()) })
 		return runtime, handler
 	}
 	runtime, handler := daemon(time.Hour)

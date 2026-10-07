@@ -273,9 +273,8 @@ func (i *idleRuntimes) stopIdle(ctx context.Context, after time.Duration) {
 	}
 }
 
-// stopWorkspace stops a workspace's stoppable runtimes, never its terminal,
-// under the workspace's setup admission, so setup, deletion, recovery and resume
-// wait for it, and other workspaces don't.
+// stopWorkspace stops eligible runtimes and the unattached base terminal under setup admission.
+// Setup, deletion, recovery and resume skip when admission is held; a viewing read resumes on its next poll.
 func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace, after time.Duration) error {
 	h := i.h
 	done, admitted := h.beginWorkspaceSetup(ws.ID)
@@ -302,6 +301,11 @@ func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace, afte
 		if ok {
 			stopped++
 		}
+	}
+	if ctx.Err() == nil && h.terminal != nil && i.idle(ws, time.Time{}) >= after {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idleRuntimeStopTimeout)
+		errs = append(errs, h.terminal.StopUnattachedTerminal(stopCtx, ws))
+		cancel()
 	}
 	if stopped > 0 {
 		h.invalidateWorkspaceEnrichment(ws.ID)

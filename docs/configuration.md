@@ -522,8 +522,9 @@ An agent stops once it has finished its turn or is waiting on an approval or an
 answer, as long as it can resume its conversation. A pending approval or
 question is lost; ask again after it resumes. A working agent, a terminal agent
 that was never prompted, and chat agents started before you upgraded Forge keep
-running, as do command sessions, the workspace terminal and terminals in
-project worktrees. Shell tabs stop too, along with anything running in them.
+running, as do command sessions and terminals in project worktrees. Shell tabs
+stop too, along with anything running in them. The workspace terminal stops
+unless a terminal is connected to it, and starts a fresh shell when opened.
 Forge knows a terminal agent finished its turn, or resumed a conversation, from
 the agent's activity hooks, so an agent without them keeps running.
 

@@ -85,11 +85,13 @@ export function withBasePath(path: string): string {
   return basePrefix + path;
 }
 
+// Trailing slashes never change the route: "/base", "/base/", "/base?x" and
+// "/base#x" all map to the app root.
 function stripBase(path: string): string {
-  if (basePrefix && path.startsWith(basePrefix)) {
-    return path.slice(basePrefix.length) || "/";
-  }
-  return path;
+  if (!basePrefix || !path.startsWith(basePrefix)) return path;
+  const rest = path.slice(basePrefix.length);
+  if (rest === "" || rest.startsWith("?") || rest.startsWith("#")) return `/${rest}`;
+  return rest.startsWith("/") ? rest : path;
 }
 
 function currentLocationPath(): string {

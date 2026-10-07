@@ -30,11 +30,16 @@ func NewMCPHTTPGuard(next http.Handler, opts MCPHTTPGuardOptions) http.Handler {
 	})
 }
 
+// IsDirectLoopbackRequest reports whether r came straight from a loopback
+// peer, without forwarding headers, addressed to a loopback authority on port.
+// It does not check Origin; the guard does.
+func IsDirectLoopbackRequest(r *http.Request, port string) bool {
+	return !mcpHasForwardingHeader(r.Header) && mcpLoopbackRemote(r.RemoteAddr) &&
+		mcpLoopbackAuthority(r.Host, port)
+}
+
 func mcpDirectLoopbackRequest(r *http.Request, port string) bool {
-	if mcpHasForwardingHeader(r.Header) || !mcpLoopbackRemote(r.RemoteAddr) {
-		return false
-	}
-	if !mcpLoopbackAuthority(r.Host, port) {
+	if !IsDirectLoopbackRequest(r, port) {
 		return false
 	}
 	origin := strings.TrimSpace(r.Header.Get("Origin"))

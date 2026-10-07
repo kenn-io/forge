@@ -179,7 +179,10 @@ type Server struct {
 	hostOpts atomic.Pointer[authapi.HostCheckOptions]
 	// tailnetMCP serves /mcp on this listener for allowlisted Tailscale
 	// Serve users; nil until the MCP companion is initialized.
-	tailnetMCP             atomic.Pointer[http.Handler]
+	tailnetMCP atomic.Pointer[http.Handler]
+	// localMCP serves direct loopback /mcp requests under the companion
+	// policy when the companion shares this listener's port; nil otherwise.
+	localMCP               atomic.Pointer[localMCPHandler]
 	buildInfo              BuildInfo
 	now                    func() time.Time
 	handler                http.Handler
@@ -1103,6 +1106,7 @@ func newServer(
 		s.roborevapi.RegisterRoborevProxyAPI(roborevAPI)
 	}
 
+	s.registerMCPRoute(humago.NewAdapter(mux, ""))
 	if frontend != nil && !options.ExecutionWorker {
 		mux.Handle("/", compression.NewSPAAssetHandler(frontend, basePath, s.bootstrapScript))
 	}
@@ -1119,7 +1123,7 @@ func newServer(
 		outer.Handle("/livez", mux)
 		s.registerDaemonPing(outer)
 		outer.Handle(basePath, otelmiddleware.StripPrefixPreservingPattern(prefix, mux))
-		assembled = outer
+		assembled = serveBareBasePath(prefix, outer)
 	} else {
 		s.registerDaemonPing(mux)
 		assembled = mux
@@ -1181,6 +1185,19 @@ func (s *Server) InitializeProviderRepositories(
 	return s.configreload.InitializeProviderRepositories(ctx, resolve)
 }
 
+// serveBareBasePath serves the base path without its trailing slash as the
+// base path itself, so /forge and /forge/ behave the same without a redirect.
+func serveBareBasePath(prefix string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == prefix {
+			r = r.Clone(r.Context())
+			r.URL.Path = prefix + "/"
+			r.URL.RawPath = ""
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // ServeHTTP implements http.Handler so Server can be used directly.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logged := &statuslog.StatusLoggingResponseWriter{ResponseWriter: w}
@@ -1222,7 +1239,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if admission.Handled {
 		return
 	}
-	if !admission.BypassProxyHostCheck && !hostapi.CheckHost(w, r, hostOpts) {
+	if !admission.BypassProxyHostCheck && !s.isDirectLocalMCPRequest(r) &&
+		!hostapi.CheckHost(w, r, hostOpts) {
 		return
 	}
 	if !s.streamapi.CheckHost(w, r) {
@@ -1230,9 +1248,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.authapi.RequestArrivedOverHTTPS(r) {
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
-	}
-	if s.serveTailnetMCP(w, r) {
-		return
 	}
 	if s.daemonRequests.RequireAPIAuth {
 		if !s.options.ExecutionWorker &&

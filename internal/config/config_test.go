@@ -108,6 +108,35 @@ func TestMCPListenAddrStaysLoopback(t *testing.T) {
 	}
 }
 
+func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		mcpPort string
+		want    bool
+	}{
+		{name: "loopback same port", host: "127.0.0.1", mcpPort: "8091", want: true},
+		{name: "ipv6 loopback same port", host: "::1", mcpPort: "8091", want: true},
+		{name: "ipv4 wildcard same port", host: "0.0.0.0", mcpPort: "8091", want: true},
+		{name: "loopback default port", host: "127.0.0.1", want: false},
+		{name: "loopback distinct port", host: "127.0.0.1", mcpPort: "9192", want: false},
+		// The companion binds 127.0.0.1, which these main listeners do not cover.
+		{name: "interface same port", host: "192.0.2.10", mcpPort: "8091", want: false},
+		{name: "ipv6 wildcard same port", host: "::", mcpPort: "8091", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := fmt.Sprintf("host = %q\nport = 8091\n[api]\nrequire_auth = true\n[mcp]\nenabled = true\n", tt.host)
+			if tt.mcpPort != "" {
+				content += "port = " + tt.mcpPort + "\n"
+			}
+			cfg, err := Load(writeConfig(t, content))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cfg.MCPSharesMainListener())
+		})
+	}
+}
+
 func TestMCPConfigRoundTrip(t *testing.T) {
 	require := require.New(t)
 	cfg, err := Load(writeConfig(t, ""))
@@ -129,11 +158,6 @@ func TestMCPConfigValidation(t *testing.T) {
 		{
 			name:    "default port overflows",
 			content: "host = \"127.0.0.1\"\nport = 65535\n[mcp]\nenabled = true\n",
-			wantErr: "MCP port",
-		},
-		{
-			name:    "matches backend port",
-			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = 8091\n",
 			wantErr: "MCP port",
 		},
 		{
@@ -871,6 +895,11 @@ name = "b"
 		{"single dot", "/./path", true, ""},
 		{"special chars", "/mid<script>", true, ""},
 		{"quotes", `/mid"man`, true, ""},
+		// Root probe and ping routes would be ambiguous without trailing slashes.
+		{"health probe name", "/healthz/", true, ""},
+		{"liveness probe name", "livez", true, ""},
+		{"ping prefix", "/api/ping/", true, ""},
+		{"probe-like but distinct", "/live/", false, "/live/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

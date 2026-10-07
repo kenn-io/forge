@@ -62,6 +62,19 @@ and the root event stream.
 
 ## Startup Contracts
 
+- Until the full server swaps in, the primary listener answers only startup
+  probes (`/livez`, the not-ready `/healthz`, and the discovery ping) and holds
+  every other request for the full server instead of serving partial routes.
+  Waiting must not spend a held request's body read budget, and bodyless
+  requests keep net/http's own deadline handling so held streams survive
+  (`internal/server/hostapi/startup_handler.go::SwitchHandler.hold`).
+- Trailing slashes never change routing: the server serves `/base` as `/base/`
+  and the frontend router maps `/base`, `/base?…`, and `/base#…` to the app
+  root. `base_path` cannot start with a root-served segment (`api`, `healthz`,
+  `livez`), which would make that route ambiguous
+  (`internal/server/server.go::serveBareBasePath`,
+  `frontend/src/lib/stores/router.svelte.ts::stripBase`,
+  `internal/config/config.go::rootRouteSegments`).
 - Hub readiness must not wait for repository discovery: restore the verified catalog
   locally, then resolve current configuration and start sync in the background
   (`cmd/kenn-forge/main.go::resolveStartupRepos`). Background discovery holds

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const issueRoute = "/host/ghe.example.com/issues/github/acme/widget/7";
+// Each imported router wraps history.replaceState; restore it so a router from
+// an earlier test cannot record routes during a later one.
+const originalReplaceState = window.history.replaceState;
 
 async function importRouterAt(path: string) {
   vi.resetModules();
@@ -14,6 +17,7 @@ describe("router initialization", () => {
   });
 
   afterEach(() => {
+    window.history.replaceState = originalReplaceState;
     delete window.__BASE_PATH__;
     vi.restoreAllMocks();
     window.sessionStorage.clear();
@@ -89,6 +93,26 @@ describe("router initialization", () => {
     expect(restoredURL.searchParams.get("hide_branch")).toBe("1");
     expect(restoredURL.searchParams.get("author")).toBe("Alice Smith");
     expect(new URL(router.getLastActivityRoute(), "https://example.com").searchParams.get("view")).toBe("threaded");
+  });
+
+  it("treats the base path without a trailing slash as the app root", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    const router = await importRouterAt("/kenn-forge?view=threaded&notif=0");
+
+    expect(router.getRoute()).toEqual({ page: "activity" });
+    expect(router.getLastActivityRoute()).toBe("/?view=threaded&notif=0");
+  });
+
+  it("restores stored Activity filters when a bare base-path URL only sets the view", async () => {
+    window.__BASE_PATH__ = "/kenn-forge/";
+    window.sessionStorage.setItem("kenn-forge:last-activity-route", "/?item_types=pr&notif=0");
+
+    await importRouterAt("/kenn-forge?view=threaded");
+    const restoredURL = new URL(window.location.href);
+
+    expect(restoredURL.searchParams.get("view")).toBe("threaded");
+    expect(restoredURL.searchParams.get("item_types")).toBe("pr");
+    expect(restoredURL.searchParams.get("notif")).toBe("0");
   });
 
   it("restores stored Activity filters when SPA navigation enters from Settings", async () => {

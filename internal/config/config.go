@@ -1162,6 +1162,17 @@ func (c *Config) MCPListenAddr() string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
+// MCPSharesMainListener reports whether the companion's loopback address is
+// already served by the main listener, so /mcp is served there instead of
+// binding a second socket on the same port.
+func (c *Config) MCPSharesMainListener() bool {
+	if c.MCPPort() != c.Port {
+		return false
+	}
+	ip := net.ParseIP(c.Host)
+	return ip != nil && (ip.IsLoopback() || ip.Equal(net.IPv4zero))
+}
+
 func (c *Config) MCPDiffCacheBytes() int64 {
 	megabytes := defaultMCPDiffCacheMB
 	if c != nil && c.MCP.DiffCacheMB != 0 {
@@ -1672,9 +1683,6 @@ func (c *Config) validate() error {
 		if mcpPort < 1 || mcpPort > 65535 {
 			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)
 		}
-		if mcpPort == c.Port {
-			return fmt.Errorf("config: MCP port %d matches backend port", mcpPort)
-		}
 	}
 
 	bindKey, err := ParseHostKey(net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
@@ -1717,6 +1725,11 @@ func (c *Config) validate() error {
 		if seg == "." || seg == ".." {
 			return fmt.Errorf("config: invalid base_path %q: dot segments are not allowed", c.BasePath)
 		}
+	}
+	// Trailing slashes do not change routing, so a base path named like a
+	// root route would make that route ambiguous.
+	if first, _, _ := strings.Cut(strings.Trim(c.BasePath, "/"), "/"); slices.Contains(rootRouteSegments, first) {
+		return fmt.Errorf("config: invalid base_path %q: %q is a reserved root route", c.BasePath, first)
 	}
 
 	validViewModes := map[string]bool{
@@ -2519,7 +2532,10 @@ var reservedSystemLaunchTargetKeys = map[string]bool{
 }
 
 var (
-	validBasePathRe = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
+	// rootRouteSegments lead the probe and daemon ping routes, which are
+	// served at the root regardless of base_path.
+	rootRouteSegments = []string{"api", "healthz", "livez"}
+	validBasePathRe   = regexp.MustCompile(`^/([a-zA-Z0-9._~-]+/)*$`)
 	// Without scheme: require / so bare "github.com" (a valid repo
 	// name) is not falsely matched.
 	bareHostRepoRe = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9.-]*(?:\.[A-Za-z0-9.-]+|:[0-9]+))/(.*)$`)

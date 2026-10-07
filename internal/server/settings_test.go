@@ -247,7 +247,7 @@ func TestHandleUpdateSettingsRejectsInvalidMCPWithoutPublishing(t *testing.T) {
 	srv, _, cfgPath, _ := setupTestServerWithConfig(t)
 
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
-		Enabled: new(true), Port: new(8091),
+		Enabled: new(true), Port: new(65536),
 	}})
 
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())

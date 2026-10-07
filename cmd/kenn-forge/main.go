@@ -90,7 +90,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
-	if !cfg.MCP.Enabled {
+	if !cfg.MCP.Enabled || cfg.MCPSharesMainListener() {
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
@@ -452,6 +452,10 @@ func run(opts serve.Options) error {
 	if mcpLn != nil {
 		mcpListenAddr = mcpLn.Addr().String()
 		mcpURL = "http://" + mcpListenAddr + "/mcp"
+	} else if cfg.MCP.Enabled {
+		// The main listener already accepts the companion's loopback address.
+		mcpListenAddr = cfg.MCPListenAddr()
+		mcpURL = "http://" + mcpListenAddr + cfg.BasePath + "mcp"
 	}
 	closeListeners := func() {
 		_ = ln.Close()
@@ -504,11 +508,13 @@ func run(opts serve.Options) error {
 	buildInfo := server.BuildInfo{
 		Name: "kenn-forge", Version: version, Commit: commit, BuildDate: buildDate,
 	}
-	startupHandler := server.NewStartupHandler(assets, cfg, startupOptions, ln, buildInfo)
-	switcher := hostapi.NewSwitchHandler(startupHandler)
+	const primaryReadTimeout = 15 * time.Second
+	switcher := hostapi.NewStartupSwitch(
+		server.NewStartupHandler(cfg, startupOptions, ln, buildInfo), primaryReadTimeout,
+	)
 	httpSrv := &http.Server{
 		Handler:     switcher,
-		ReadTimeout: 15 * time.Second,
+		ReadTimeout: primaryReadTimeout,
 		// WriteTimeout is 0 (disabled) because SSE and proxy
 		// responses are long-lived by design.
 		IdleTimeout: 60 * time.Second,
@@ -516,25 +522,32 @@ func run(opts serve.Options) error {
 
 	var mcpHTTPSrv *http.Server
 	var mcpSwitcher *hostapi.SwitchHandler
+	var mcpGuard mcpapi.MCPHTTPGuardOptions
 	mcpRequestsCtx, cancelMCPRequests := context.WithCancel(context.Background())
 	defer cancelMCPRequests()
+	// MCP handlers on the primary listener follow the MCP shutdown contract
+	// rather than the primary listener's drain.
+	mainMCPGate := mcpapi.NewRequestGate(mcpRequestsCtx)
 	agentMCPLn, agentMCPHTTPSrv, agentMCPSwitcher, err := newAgentMCPHTTP(mcpRequestsCtx, authToken)
 	if err != nil {
 		closeListeners()
 		return fmt.Errorf("listen for agent MCP: %w", err)
 	}
 	defer agentMCPLn.Close()
-	if mcpLn != nil {
+	if mcpListenAddr != "" {
 		bind, parseErr := config.ParseHostKey(mcpListenAddr)
 		if parseErr != nil {
 			closeListeners()
 			return fmt.Errorf("parse MCP listener address %s: %w", mcpListenAddr, parseErr)
 		}
+		mcpGuard = mcpapi.MCPHTTPGuardOptions{
+			Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
+		}
+	}
+	if mcpLn != nil {
 		mcpSwitcher = hostapi.NewSwitchHandler(newMCPStartupHandler())
 		mcpHTTPSrv = &http.Server{
-			Handler: mcpapi.NewMCPHTTPGuard(mcpSwitcher, mcpapi.MCPHTTPGuardOptions{
-				Bind: bind, Token: authToken, RequireAuth: cfg.API.RequireAuth,
-			}),
+			Handler:           mcpapi.NewMCPHTTPGuard(mcpSwitcher, mcpGuard),
 			ReadHeaderTimeout: 5 * time.Second,
 			// Handlers inherit this context so shutdown can cancel
 			// long-running MCP requests once the grace period expires.
@@ -601,7 +614,8 @@ func run(opts serve.Options) error {
 					return backgroundLoops.Stop(ctx)
 				},
 				ShutdownMCPHTTP: func(shutdownCtx context.Context) error {
-					// Both listeners must stop before their shared backend closes.
+					// Every MCP surface must stop before the shared backend closes.
+					mainMCPGate.Stop()
 					var shutdownErr error
 					for _, httpServer := range []*http.Server{agentMCPHTTPSrv, mcpHTTPSrv} {
 						if httpServer == nil {
@@ -609,6 +623,7 @@ func run(opts serve.Options) error {
 						}
 						shutdownErr = errors.Join(shutdownErr, httpServer.Shutdown(shutdownCtx), httpServer.Close())
 					}
+					shutdownErr = errors.Join(shutdownErr, mainMCPGate.Wait(shutdownCtx))
 					cancelMCPRequests()
 					return shutdownErr
 				},
@@ -915,9 +930,13 @@ func run(opts serve.Options) error {
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
 	switcher.Swap(srv)
+	if mcpListenAddr != "" {
+		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
+	}
 	if mcpSwitcher != nil {
 		mcpSwitcher.Swap(mcpSrv.HTTPHandler())
-		srv.SetTailnetMCPHandler(mcpSrv.TailnetHTTPHandler())
+	} else if mcpListenAddr != "" {
+		srv.SetLocalMCPHandler(mainMCPGate.Wrap(mcpSrv.HTTPHandler()), mcpGuard)
 	}
 
 	if syncer != nil && !opts.DisableSync {

@@ -53,6 +53,8 @@ back to TOML.
   restores the previous config before restarting the previous service
   (`internal/fleetsetup/setup.go::Runner.Apply`).
 - `activity.use_workspace_activity_for_recency` is one global PR, Issue, and Activity opt-in. Its zero value is intentionally false; successful settings writes and file reloads publish the committed value to handler snapshots (`internal/server/streamapi/server.go::PullConfigSnapshot`).
+- Activity item/event defaults distinguish omitted lists (all selected) from empty lists (none);
+  preserve empty lists through settings writes and TOML saves (`internal/config/config.go::Activity`).
 - `detail.initial_timeline_entry_limit` is a global PR/issue presentation preference.
   Omitted or zero values default to 50; explicit values must remain within 10-250
   in both config loading and settings writes (`internal/config/config.go::Detail`).

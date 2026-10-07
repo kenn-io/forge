@@ -971,6 +971,47 @@ name = "b"
 	assert.False(cfg.Activity.HideBots)
 	assert.True(cfg.Activity.CollapseThreads)
 	assert.False(cfg.Activity.UseWorkspaceActivityForRecency)
+	assert.Equal([]string{"pr", "issue"}, cfg.Activity.ItemTypes)
+	assert.Equal([]string{"comment", "review", "commit", "force_push"}, cfg.Activity.EventTypes)
+}
+
+func TestActivityFilterDefaultsRoundTrip(t *testing.T) {
+	for _, selection := range []struct {
+		name       string
+		items      string
+		events     string
+		wantItems  []string
+		wantEvents []string
+	}{
+		{"subset", `["issue"]`, `["comment", "force_push"]`, []string{"issue"}, []string{"comment", "force_push"}},
+		{"empty", `[]`, `[]`, []string{}, []string{}},
+	} {
+		t.Run(selection.name, func(t *testing.T) {
+			assert := assert.New(t)
+			_, reloaded := roundTripConfigString(t, fmt.Sprintf(`
+[activity]
+item_types = %s
+event_types = %s
+hide_notifications = true
+hide_default_branch = true
+roll_up_commits = true
+`, selection.items, selection.events))
+			assert.Equal(selection.wantItems, reloaded.Activity.ItemTypes)
+			assert.Equal(selection.wantEvents, reloaded.Activity.EventTypes)
+			assert.True(reloaded.Activity.HideNotifications)
+			assert.True(reloaded.Activity.HideDefaultBranch)
+			assert.True(reloaded.Activity.RollUpCommits)
+		})
+	}
+}
+
+func TestLoadActivityInvalidSelections(t *testing.T) {
+	for _, field := range []string{"item_types", "event_types"} {
+		t.Run(field, func(t *testing.T) {
+			_, err := Load(writeConfig(t, "[activity]\n"+field+" = [\"unknown\"]\n"))
+			require.ErrorContains(t, err, "invalid activity "+field)
+		})
+	}
 }
 
 func TestLoadActivityExplicit(t *testing.T) {

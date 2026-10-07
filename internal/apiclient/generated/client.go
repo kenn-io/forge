@@ -56100,8 +56100,13 @@ type Activity struct {
 	CollapseThreads                bool              `json:"collapse_threads"`
 	DefaultBranchMaxCommits        int64             `json:"default_branch_max_commits"`
 	DefaultBranchRetentionDays     int64             `json:"default_branch_retention_days"`
+	EventTypes                     []string          `json:"event_types"`
 	HideBots                       bool              `json:"hide_bots"`
 	HideClosed                     bool              `json:"hide_closed"`
+	HideDefaultBranch              bool              `json:"hide_default_branch"`
+	HideNotifications              bool              `json:"hide_notifications"`
+	ItemTypes                      []string          `json:"item_types"`
+	RollUpCommits                  bool              `json:"roll_up_commits"`
 	TimeRange                      ActivityTimeRange `json:"time_range"`
 	UseWorkspaceActivityForRecency bool              `json:"use_workspace_activity_for_recency"`
 	ViewMode                       ActivityViewMode  `json:"view_mode"`

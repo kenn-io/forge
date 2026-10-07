@@ -109,10 +109,12 @@ function writeSelectedFilters<T extends string>(
   searchParams: URLSearchParams,
   name: string,
   selected: ReadonlySet<T>,
+  available: readonly T[],
   defaults: readonly T[],
+  preserve: boolean,
 ): void {
-  const ordered = defaults.filter((candidate) => selected.has(candidate));
-  if (ordered.length === defaults.length) {
+  const ordered = available.filter((candidate) => selected.has(candidate));
+  if (!preserve && ordered.length === defaults.length && defaults.every((value) => selected.has(value))) {
     searchParams.delete(name);
   } else {
     searchParams.set(name, ordered.length > 0 ? ordered.join(",") : NO_ACTIVITY_FILTER_TYPE);
@@ -221,6 +223,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let viewMode = $state<ViewMode>("flat");
   let timeRangeDefault: TimeRange = "7d";
   let viewModeDefault: ViewMode = "flat";
+  let itemTypesDefault: readonly ActivityItemType[] = DEFAULT_ACTIVITY_ITEM_TYPES;
+  let eventTypesDefault: readonly string[] = DEFAULT_EVENT_TYPES;
+  let rollUpCommitsDefault = false;
+  let hideDefaultBranchDefault = false;
+  let showNotificationsDefault = true;
+  const selectedFilters = new Set<string>();
   let defaultsHydrated = false;
   let timeRangeSelected = false;
   let viewModeSelected = false;
@@ -390,6 +398,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setRollUpCommits(value: boolean): void {
+    selectedFilters.add("rollup_commits");
     rollUpCommits = value;
   }
   function collapseAllThreads(): void {
@@ -424,18 +433,22 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setHideDefaultBranchActivity(v: boolean): void {
+    selectedFilters.add("hide_branch");
     hideDefaultBranchActivity = v;
     invalidatePagedActivityRequests();
   }
   function setEnabledItemTypes(itemTypes: Set<ActivityItemType>): void {
+    selectedFilters.add("item_types");
     enabledItemTypes = itemTypes;
     invalidatePagedActivityRequests();
   }
   function setEnabledEvents(events: Set<string>): void {
+    selectedFilters.add("event_types");
     enabledEvents = events;
     invalidatePagedActivityRequests();
   }
   function setShowNotifications(v: boolean): void {
+    selectedFilters.add("notif");
     showNotifications = v;
     invalidatePagedActivityRequests();
   }
@@ -454,6 +467,16 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function hydrateDefaults(activity: ActivitySettings): void {
     timeRangeDefault = activity.time_range;
     viewModeDefault = activity.view_mode;
+    itemTypesDefault = DEFAULT_ACTIVITY_ITEM_TYPES.filter((value) => activity.item_types.includes(value));
+    eventTypesDefault = activity.event_types;
+    rollUpCommitsDefault = activity.roll_up_commits;
+    hideDefaultBranchDefault = activity.hide_default_branch;
+    showNotificationsDefault = !activity.hide_notifications;
+    enabledItemTypes = new Set(itemTypesDefault);
+    enabledEvents = new Set(eventTypesDefault);
+    rollUpCommits = rollUpCommitsDefault;
+    hideDefaultBranchActivity = hideDefaultBranchDefault;
+    showNotifications = showNotificationsDefault;
     defaultsHydrated = true;
     viewMode = activity.view_mode;
     timeRange = activity.time_range;
@@ -463,6 +486,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;
     expandOverrides = new Set();
+    rebuildFilterTypes();
     if (initialized) {
       syncFromURL();
       // Once a settings reload makes the live state match the new default,
@@ -1297,10 +1321,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const legacySelections = sp.has("types") ? readLegacyFilterSelections(sp.get("types") ?? "") : undefined;
     enabledItemTypes = sp.has(ACTIVITY_ITEM_TYPES_PARAM)
       ? readSelectedFilters(sp.get(ACTIVITY_ITEM_TYPES_PARAM), DEFAULT_ACTIVITY_ITEM_TYPES)
-      : (legacySelections?.itemTypes ?? new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
+      : (legacySelections?.itemTypes ?? new Set(itemTypesDefault));
     enabledEvents = sp.has(ACTIVITY_EVENT_TYPES_PARAM)
       ? readSelectedFilters(sp.get(ACTIVITY_EVENT_TYPES_PARAM), DEFAULT_EVENT_TYPES)
-      : (legacySelections?.events ?? new Set(DEFAULT_EVENT_TYPES));
+      : (legacySelections?.events ?? new Set(eventTypesDefault));
     if (sp.has("search")) searchQuery = sp.get("search") ?? undefined;
     authorFilter = sp.get("author")?.trim() || undefined;
     if (sp.has("range")) {
@@ -1311,9 +1335,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const viewParam = sp.get("view");
       if (viewParam === "flat" || viewParam === "threaded") viewMode = viewParam;
     }
-    rollUpCommits = sp.get("rollup_commits") === "1";
-    hideDefaultBranchActivity = sp.get("hide_branch") === "1";
-    showNotifications = sp.get("notif") !== "0";
+    rollUpCommits = sp.has("rollup_commits") ? sp.get("rollup_commits") === "1" : rollUpCommitsDefault;
+    hideDefaultBranchActivity = sp.has("hide_branch") ? sp.get("hide_branch") === "1" : hideDefaultBranchDefault;
+    showNotifications = sp.has("notif") ? sp.get("notif") !== "0" : showNotificationsDefault;
     const hideClosedParam = sp.get("hide_closed");
     hideClosedMergedOverride = hideClosedParam === "1" ? true : hideClosedParam === "0" ? false : undefined;
     if (hideClosedMergedOverride !== undefined) hideClosedMerged = hideClosedMergedOverride;
@@ -1324,9 +1348,25 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function syncToURL(): void {
     const sp = new URLSearchParams(window.location.search);
     rebuildFilterTypes();
+    const legacySelections = sp.has("types");
     sp.delete("types");
-    writeSelectedFilters(sp, ACTIVITY_ITEM_TYPES_PARAM, enabledItemTypes, DEFAULT_ACTIVITY_ITEM_TYPES);
-    writeSelectedFilters(sp, ACTIVITY_EVENT_TYPES_PARAM, enabledEvents, DEFAULT_EVENT_TYPES);
+    const preserve = (name: string) => !defaultsHydrated && (selectedFilters.has(name) || sp.has(name));
+    writeSelectedFilters(
+      sp,
+      ACTIVITY_ITEM_TYPES_PARAM,
+      enabledItemTypes,
+      DEFAULT_ACTIVITY_ITEM_TYPES,
+      itemTypesDefault,
+      preserve(ACTIVITY_ITEM_TYPES_PARAM) || (!defaultsHydrated && legacySelections),
+    );
+    writeSelectedFilters(
+      sp,
+      ACTIVITY_EVENT_TYPES_PARAM,
+      enabledEvents,
+      DEFAULT_EVENT_TYPES,
+      eventTypesDefault,
+      preserve(ACTIVITY_EVENT_TYPES_PARAM) || (!defaultsHydrated && legacySelections),
+    );
     if (searchQuery) sp.set("search", searchQuery);
     else sp.delete("search");
     if (authorFilter) sp.set("author", authorFilter);
@@ -1339,12 +1379,14 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (viewMode !== viewModeDefault || (!defaultsHydrated && (viewModeSelected || sp.has("view"))))
       sp.set("view", viewMode);
     else sp.delete("view");
-    if (rollUpCommits) sp.set("rollup_commits", "1");
-    else sp.delete("rollup_commits");
-    if (hideDefaultBranchActivity) sp.set("hide_branch", "1");
-    else sp.delete("hide_branch");
-    if (!showNotifications) sp.set("notif", "0");
-    else sp.delete("notif");
+    for (const [name, value, defaultValue] of [
+      ["rollup_commits", rollUpCommits, rollUpCommitsDefault],
+      ["hide_branch", hideDefaultBranchActivity, hideDefaultBranchDefault],
+      ["notif", showNotifications, showNotificationsDefault],
+    ] as const) {
+      if (value !== defaultValue || preserve(name)) sp.set(name, value ? "1" : "0");
+      else sp.delete(name);
+    }
     if (collapseThreads !== collapseThreadsDefault) {
       sp.set("collapsed", collapseThreads ? "1" : "0");
     } else {

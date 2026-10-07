@@ -348,14 +348,15 @@ create a local process, PTY, or durable transport session
 - Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
   report under the runtime key and a resume path (hook agents `done`, `input` or
   `approval`, or `idle` after a SessionStart whose `source` is `resume` or `fork`
-  (`agentactivity.Report.Continued`), on an available target whose executable resolves; ACP chats with
+  (`agentactivity.Report.Continued`), on an available target whose executable can run; ACP chats with
   `loadSession`; owners started by an older build record no
   `LoadSession` and lack `ACP.Park`, so they keep running per the no-compatibility rule
   above). Command and tmux sessions never stop. Stopping
   writes the mark first, marks attachments as a recoverable detach, stops ACP owners
   through `ACP.Park` and kills other owner trees, so the saved conversation and row stay;
   an owner that survives a failed stop is unmarked and reattached. The pass holds only
-  the workspace's setup admission, with a bounded deadline per stop.
+  the workspace's setup admission, with a bounded deadline per stop. Each stop uses the
+  live timeout and current idle owner, so a reload affects a pass already underway.
 - The pty-owner workspace terminal stops while idle only with no claimed socket; claim its
   slot through the stop without holding the shared lock. It stays ready and starts a fresh
   shell on attach, without a stop mark (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).

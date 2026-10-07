@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -49,8 +50,8 @@ func (m *Manager) AgentResumable(targetKey, agent, sessionID string) bool {
 	if err != nil {
 		return false
 	}
-	info, err := os.Stat(executable)
-	return err == nil && !info.IsDir()
+	_, err = exec.LookPath(executable)
+	return err == nil
 }
 
 // A successful PTY spawn does not mean tmux attached. Probe before spawning so

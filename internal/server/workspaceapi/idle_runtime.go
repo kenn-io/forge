@@ -108,7 +108,7 @@ func (h *Handler) runIdle(ctx context.Context) {
 		}
 		i := h.syncIdle(ctx)
 		if i != nil && ctx.Err() == nil {
-			i.stopIdle(ctx, h.configSnapshot().IdleRuntimeStopAfter)
+			i.stopIdle(ctx)
 		}
 		i.save()
 		if ctx.Err() != nil {
@@ -247,12 +247,10 @@ func (i *idleRuntimes) idle(ws *db.Workspace, created time.Time) time.Duration {
 	return i.h.now().Sub(last)
 }
 
-// stopIdle stops what has gone unused for after in each ready pty-owner
-// workspace.
-func (i *idleRuntimes) stopIdle(ctx context.Context, after time.Duration) {
+// stopIdle stops unused runtimes in each ready pty-owner workspace.
+func (i *idleRuntimes) stopIdle(ctx context.Context) {
 	h := i.h
-	// A reload that turns the setting off mid-pass yields a zero timeout.
-	if after <= 0 || h.db == nil || h.runtime == nil || h.workspaces == nil {
+	if h.configSnapshot().IdleRuntimeStopAfter <= 0 || h.idle.Load() != i || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return
 	}
 	workspaces, err := h.db.ListWorkspaces(ctx)
@@ -262,14 +260,15 @@ func (i *idleRuntimes) stopIdle(ctx context.Context, after time.Duration) {
 	}
 	for idx := range workspaces {
 		ws := &workspaces[idx]
-		if ctx.Err() != nil {
+		after := h.configSnapshot().IdleRuntimeStopAfter
+		if ctx.Err() != nil || after <= 0 || h.idle.Load() != i {
 			return
 		}
 		i.seen(ws.ID)
 		if ws.Status != "ready" || !h.workspaces.UsesPtyOwnerForWorkspace(ws) || i.idle(ws, time.Time{}) < after {
 			continue
 		}
-		if err := i.stopWorkspace(ctx, ws, after); err != nil {
+		if err := i.stopWorkspace(ctx, ws); err != nil {
 			slog.Warn("stop idle workspace runtimes", "workspace_id", ws.ID, "err", err)
 		}
 	}
@@ -277,7 +276,7 @@ func (i *idleRuntimes) stopIdle(ctx context.Context, after time.Duration) {
 
 // stopWorkspace stops eligible runtimes and the unattached base terminal under setup admission.
 // Setup, deletion, recovery and resume skip when admission is held; a viewing read resumes on its next poll.
-func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace, after time.Duration) error {
+func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace) error {
 	h := i.h
 	done, admitted := h.beginWorkspaceSetup(ws.ID)
 	if !admitted {
@@ -294,8 +293,15 @@ func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace, afte
 		if ctx.Err() != nil {
 			continue
 		}
+		if !i.stoppable(ctx, ws, row) {
+			continue
+		}
+		after := h.configSnapshot().IdleRuntimeStopAfter
+		if after <= 0 || h.idle.Load() != i {
+			break
+		}
 		// Checked after stoppable's reads, so a view or typing during them keeps the runtime.
-		if !i.stoppable(ctx, ws, row) || i.idle(ws, row.CreatedAt) < after {
+		if i.idle(ws, row.CreatedAt) < after {
 			continue
 		}
 		ok, err := i.stop(ctx, ws, row)
@@ -304,7 +310,8 @@ func (i *idleRuntimes) stopWorkspace(ctx context.Context, ws *db.Workspace, afte
 			stopped++
 		}
 	}
-	if ctx.Err() == nil && h.terminal != nil && i.idle(ws, time.Time{}) >= after {
+	after := h.configSnapshot().IdleRuntimeStopAfter
+	if ctx.Err() == nil && after > 0 && h.idle.Load() == i && h.terminal != nil && i.idle(ws, time.Time{}) >= after {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idleRuntimeStopTimeout)
 		errs = append(errs, h.terminal.StopUnattachedTerminal(stopCtx, ws))
 		cancel()

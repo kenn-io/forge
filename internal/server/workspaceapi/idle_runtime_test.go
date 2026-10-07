@@ -77,7 +77,13 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	parkedDir := t.TempDir()
 	var now atomic.Int64
 	now.Store(time.Now().UnixNano())
-	clock := func() time.Time { return time.Unix(0, now.Load()).UTC() }
+	var clockHook atomic.Pointer[func()]
+	clock := func() time.Time {
+		if hook := clockHook.Load(); hook != nil {
+			(*hook)()
+		}
+		return time.Unix(0, now.Load()).UTC()
+	}
 	advance := func(d time.Duration) { now.Add(int64(d)) }
 	// Each daemon gets its own runtime manager and handler over the same owners.
 	daemon := func(stopAfter time.Duration) (*localruntime.Manager, *Handler) {
@@ -113,7 +119,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	}
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(worktree, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond)
 	report("claude", "saved-conversation", "Stop")
-	stopIdle := func() { handler.idle.Load().stopIdle(ctx, time.Hour) }
+	stopIdle := func() { handler.idle.Load().stopIdle(ctx) }
 	running := func(key string) bool {
 		return slices.ContainsFunc(runtime.ListSessions(ws.ID), func(info localruntime.SessionInfo) bool { return info.Key == key })
 	}
@@ -138,8 +144,10 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	unused := func() bool { return handler.idle.Load().idle(ws, time.Time{}) >= time.Hour }
 
 	advance(2 * time.Hour)
-	handler.idle.Load().stopIdle(ctx, 0)
+	handler.ApplyConfig(ConfigSnapshot{})
+	stopIdle()
 	untouched("a pass whose timeout a reload cleared stops nothing")
+	handler.ApplyConfig(ConfigSnapshot{IdleRuntimeStopAfter: time.Hour})
 	view(true)
 	stopIdle()
 	untouched("a page view is use")
@@ -230,6 +238,26 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	assert.True(running(agent.Key))
 	assert.True(running(shell.Key), "a stopped shell starts fresh under its key")
 	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond, "the agent resumes its saved conversation")
+	continued(agent.Key, "saved-conversation")
+
+	// Swap config between the per-runtime idle reads, after the first stop was admitted.
+	require.NoError(workspaces.EnsureTerminal(ctx, ws))
+	advance(2 * time.Hour)
+	var idleReads atomic.Int32
+	reload := func() {
+		if idleReads.Add(1) == 2 {
+			clockHook.Store(nil)
+			handler.ApplyConfig(ConfigSnapshot{})
+		}
+	}
+	clockHook.Store(&reload)
+	stopIdle()
+	clockHook.Store(nil)
+	require.Equal(int32(2), idleReads.Load())
+	assert.Len(runtime.ListSessions(ws.ID), 1, "turning idle stop off mid-pass keeps the next eligible runtime running")
+	assert.True(client.HasState(ws.TmuxSession), "turning idle stop off mid-pass keeps the base terminal running")
+	handler.ApplyConfig(ConfigSnapshot{IdleRuntimeStopAfter: time.Hour})
+	view(true)
 	continued(agent.Key, "saved-conversation")
 	advance(2 * time.Hour)
 	stopIdle()
@@ -387,7 +415,7 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 		require.NoError(handler.RestoreRuntimeSessions(ctx))
 	}
 	restart := func() { restartWith(time.Hour) }
-	stopIdle := func() { handler.idle.Load().stopIdle(ctx, time.Hour) }
+	stopIdle := func() { handler.idle.Load().stopIdle(ctx) }
 
 	attached, err := runtime.AttachSession(ws.ID, shell.Key)
 	require.NoError(err)
@@ -515,7 +543,7 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	}
 	stopIdle := func() {
 		now.Add(int64(2 * time.Hour))
-		handler.idle.Load().stopIdle(ctx, time.Hour)
+		handler.idle.Load().stopIdle(ctx)
 	}
 
 	assert.Equal(localruntime.SessionStatusRunning, read(true))

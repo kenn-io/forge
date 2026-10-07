@@ -497,8 +497,8 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 	require.True(os.IsNotExist(err))
 }
 
-func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
-	for _, name := range []string{"socket refuses", "socket missing", "socket directory missing"} {
+func TestClientReportsDeadOwnerAsGone(t *testing.T) {
+	for _, name := range []string{"state missing", "socket refuses", "socket missing", "socket directory missing"} {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			root := t.TempDir()
@@ -519,17 +519,25 @@ func TestClientAttachReportsDeadOwnerAsGone(t *testing.T) {
 			case "socket directory missing":
 				socket = filepath.Join(filepath.Dir(paths.Socket), "gone", "s")
 			}
-			require.NoError(writeState(paths, ownerState{
-				Session: "kenn-forge-dead",
-				Addr:    "unix://" + socket,
-				Token:   "token",
-				Cwd:     t.TempDir(),
-			}))
+			if name != "state missing" {
+				require.NoError(writeState(paths, ownerState{
+					Session: "kenn-forge-dead",
+					Addr:    "unix://" + socket,
+					Token:   "token",
+					Cwd:     t.TempDir(),
+				}))
+			}
 
 			_, err = (&Client{Root: root}).Attach(t.Context(), "kenn-forge-dead", ptysize.FallbackGeometry(80, 24))
 
 			require.ErrorIs(err, ErrOwnerGone)
-			require.FileExists(paths.StatePath)
+			_, err = (&Client{Root: root}).Snapshot(t.Context(), "kenn-forge-dead")
+			require.ErrorIs(err, ErrOwnerGone)
+			if name == "state missing" {
+				require.NoFileExists(paths.StatePath)
+			} else {
+				require.FileExists(paths.StatePath)
+			}
 		})
 	}
 }

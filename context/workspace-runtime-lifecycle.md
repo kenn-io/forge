@@ -326,7 +326,8 @@ create a local process, PTY, or durable transport session
 - Explicit session stop shares recovery synchronization and forgets the saved
   row before releasing it (`internal/server/workspaceapi/routes_handlers.go::Handler.stopWorkspaceRuntimeSession`).
 - Idle stop has one owner, `idleRuntimes` (`internal/server/workspaceapi/idle_runtime.go`):
-  every stop, resume and stop mark goes through it, and callers only report a page view
+  every stop and resume goes through it, as does every stop mark except the removal when
+  a runtime or workspace is deleted, and callers only report a page view
   or typing, or ask whether a row is stopped. Rule: a ptyowner workspace's runtimes stop
   only after `workspaces.idle_runtime_stop_hours` with no page view and no typing,
   counted from the latest of last use, workspace creation and runtime creation.

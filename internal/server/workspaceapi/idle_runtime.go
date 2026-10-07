@@ -20,8 +20,9 @@ const (
 )
 
 // idleRuntimes owns idle stop: a runtime stops only after the configured hours
-// with no page view and no typing in its workspace. Every stop, resume and
-// stop mark goes through it; callers only report a page view or typing, or ask
+// with no page view and no typing in its workspace. Every stop and resume goes
+// through it, and so does every stop mark except the removal when a runtime or
+// workspace is deleted; callers only report a page view or typing, or ask
 // whether a stored runtime is stopped. A page view is the showing workspace
 // page's viewing runtime read. Typing is input on any terminal socket or an
 // ACP prompt or reply. Socket opens, reconnects, focus and other reads are

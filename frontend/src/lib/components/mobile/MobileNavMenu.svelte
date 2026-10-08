@@ -6,12 +6,13 @@
   import MenuIcon from "@lucide/svelte/icons/menu";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import { untrack } from "svelte";
-  import { MonitorIcon } from "../../icons.ts";
+  import { MonitorIcon, SettingsIcon } from "../../icons.ts";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import ForgeSelector from "../layout/ForgeSelector.svelte";
   import { getMobileNavMenuContext, mobileNavModes, mobileNavSelectedPath } from "./mobile-nav-menu.js";
 
   const nav = getMobileNavMenuContext();
+  const nativeHost = window.ReactNativeWebView;
   let open = $state(false);
 
   const selectedPath = $derived(nav ? mobileNavSelectedPath(nav.page()) : "");
@@ -76,8 +77,18 @@
             </button>
           {/each}
         </nav>
+        {#if nativeHost}
+          <button
+            class="mobile-nav-sheet__action"
+            type="button"
+            onclick={() => choose(() => nativeHost.postMessage(JSON.stringify({ type: "connection-settings" })))}
+          >
+            <SettingsIcon size="18" strokeWidth="1.75" aria-hidden="true" />
+            Connection settings
+          </button>
+        {/if}
         <button
-          class="mobile-nav-sheet__desktop"
+          class="mobile-nav-sheet__action"
           type="button"
           onclick={() => choose(nav.onDesktopView)}
         >
@@ -180,12 +191,15 @@
     color: var(--accent-blue);
   }
 
-  .mobile-nav-sheet button.mobile-nav-sheet__desktop {
+  .mobile-nav-sheet button.mobile-nav-sheet__action {
     width: calc(100% - 1.75rem);
     min-height: var(--mobile-chrome-hit-target);
     gap: 0.5rem;
     margin: 0 0.875rem;
     color: var(--text-secondary);
     background: transparent;
+  }
+  .mobile-nav-sheet__action + .mobile-nav-sheet__action {
+    margin-top: 0.5rem;
   }
 </style>

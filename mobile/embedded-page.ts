@@ -11,7 +11,7 @@ export function embeddedPage(bundle: string, connection: Connection, tablet: boo
   if (connection.token.trim()) bootstrapURL.searchParams.set("auth_token", connection.token.trim());
   return {
     baseUrl,
-    html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,"></head><body><script>
+    html: `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,"><style>html{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:Canvas;color:CanvasText;font:1rem system-ui}</style></head><body><p role="status">Connecting to Forge…</p><script>
 (async () => {
 try {
   window.__BASE_PATH__ = ${scriptValue(basePath)};

@@ -253,6 +253,11 @@ const browserTestProject = defineProject(async () => {
 
 const config = {
   base: "/",
+  define: {
+    __FORGE_APP_ICON__: JSON.stringify(
+      `data:image/svg+xml,${encodeURIComponent(readFileSync(new URL("./public/favicon.svg", import.meta.url), "utf8"))}`,
+    ),
+  },
   // The Go server serves this build under a configurable base_path (default
   // "/", e.g. "/kenn-forge/" behind a reverse proxy) by rewriting index.html's
   // <script src>/<link href> at request time. That rewrite only reaches HTML,

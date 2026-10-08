@@ -36,3 +36,46 @@
      }
 
      public void setBasicAuthCredential(RNCBasicAuthCredential credential) {
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -90,8 +90,12 @@
+       reactWebView.callInjectedJavaScriptBeforeContentLoaded();
+     }
+
+-    @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, String url) {
++    @TargetApi(Build.VERSION_CODES.N)
++    @Override
++    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++        final String url = request.getUrl().toString();
++        final WritableMap event = createWebViewEvent(view, url);
++        event.putBoolean("isTopFrame", request.isForMainFrame());
+         final RNCWebView rncWebView = (RNCWebView) view;
+         final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
+
+@@ -100,7 +104,6 @@
+             final double lockIdentifier = lock.first;
+             final AtomicReference<RNCWebViewModuleImpl.ShouldOverrideUrlLoadingLock.ShouldOverrideCallbackState> lockObject = lock.second;
+
+-            final WritableMap event = createWebViewEvent(view, url);
+             event.putDouble("lockIdentifier", lockIdentifier);
+             rncWebView.dispatchDirectShouldStartLoadWithRequest(event);
+
+@@ -134,16 +137,9 @@
+             int reactTag = RNCWebViewWrapper.getReactTagFromWebView(view);
+             UIManagerHelper.getEventDispatcherForReactTag((ReactContext) view.getContext(), reactTag).dispatchEvent(new TopShouldStartLoadWithRequestEvent(
+                     reactTag,
+-                    createWebViewEvent(view, url)));
++                    event));
+             return true;
+         }
+-    }
+-
+-    @TargetApi(Build.VERSION_CODES.N)
+-    @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+-        final String url = request.getUrl().toString();
+-        return this.shouldOverrideUrlLoading(view, url);
+     }
+
+     @Override

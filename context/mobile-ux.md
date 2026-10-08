@@ -12,8 +12,8 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
   zeroes for those CSS safe-area insets while preserving keyboard insets
   (`mobile/patches/react-native-webview@13.16.1.patch`).
 - Connected native views use the web UI's header without a native server bar.
-  Android Back returns to connection settings after page history; a fresh app
-  launch opens the saved connection form (`mobile/App.tsx`).
+  Connection settings live in the phone menu and desktop Settings page; Android
+  Back also returns there after page history (`mobile/App.tsx`).
 
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 
@@ -87,7 +87,7 @@ In code and tests, name predicates so this distinction is visible. Avoid generic
 ## Typography and sizing
 
 - Phone type comes from the `--font-size-*` scale. `frontend/src/app.css` overrides kit-ui's touch scale (under `kit-type-touch` and the `(hover: none) and (pointer: coarse)` query) with a denser phone scale: 15px body, 13px metadata, 17px titles. The larger kit scale cost too many rows on triage screens.
-- Phone text fields stay at `1rem`. iOS zooms the page when a focused field renders below 16px, so the denser scale must not reach `input`, `textarea`, or `select` (`frontend/src/app.css`, `frontend/tests/e2e-full/mobile-routes.spec.ts::expectReadableFocusList`).
+- Phone text fields stay at least `1rem`; ACP can use a larger configured size. iOS zooms the page when a focused field renders below 16px, so the denser scale must not reach `input`, `textarea`, or `select` (`frontend/src/app.css`, `frontend/tests/e2e-full/mobile-routes.spec.ts::expectReadableFocusList`).
 - Phone detail prose (descriptions, comments, markdown insets) renders at 14px (`--font-size-phone-prose`) with markdown headings on the 15px body step, so long text does not dwarf the 13px detail chrome (`frontend/src/App.svelte::.focus-layout--phone`).
 - Phone controls stay compact next to the denser type: 40px for chrome and list controls (shell menu, search, filters), 38px for detail buttons, and 32px for the header status chips (`frontend/src/app.css::--mobile-chrome-hit-target`, `frontend/src/App.svelte::--focus-detail-hit-target`, `--focus-detail-chip-height`). Larger 44-49px targets made the buttons feel clunky.
 - Phone list rows size to their content with only the hit-target floor as a minimum; fixed multi-line minimum heights waste rows (`frontend/src/lib/components/sidebar/PullItem.svelte`).

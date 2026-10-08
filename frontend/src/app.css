@@ -186,7 +186,7 @@ body {
     --font-size-2xl: 1.375rem;
   }
   #app :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select) {
-    font-size: var(--font-size-touch-field);
+    font-size: max(var(--font-size-touch-field), var(--font-size-acp, var(--font-size-touch-field)));
   }
 }
 
@@ -200,7 +200,7 @@ body {
   --font-size-2xl: 1.375rem;
 }
 .kit-type-touch #app :is(input:not([type="checkbox"], [type="radio"], [type="range"]), textarea, select) {
-  font-size: var(--font-size-touch-field);
+  font-size: max(var(--font-size-touch-field), var(--font-size-acp, var(--font-size-touch-field)));
 }
 
 #app {

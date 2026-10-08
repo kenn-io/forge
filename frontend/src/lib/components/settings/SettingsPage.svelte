@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsIcon from "@lucide/svelte/icons/settings";
   import ArrowLeftIcon from "@lucide/svelte/icons/arrow-left";
   import { Effect } from "effect";
   import { onMount } from "svelte";
@@ -43,6 +44,7 @@
   // source of category order, sidebar labels, and per-panel section header
   // copy. The old scroll-spy page let the nav and section orders drift
   // apart; here they cannot.
+  const nativeHost = window.ReactNativeWebView;
   let searchQuery = $state("");
   const runtime = getAppRuntime();
   const { settings: settingsStore } = getStores();
@@ -226,6 +228,12 @@
           <ArrowLeftIcon size="15" strokeWidth="2" aria-hidden="true" />
           <span>Back to app</span>
         </button>
+        {#if nativeHost}
+          <button class="back-button" type="button" onclick={() => nativeHost.postMessage(JSON.stringify({ type: "connection-settings" }))}>
+            <SettingsIcon size="15" strokeWidth="2" aria-hidden="true" />
+            <span>Connection settings</span>
+          </button>
+        {/if}
         <SearchInput
           bind:value={searchQuery}
           placeholder="Search settings..."

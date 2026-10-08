@@ -235,6 +235,8 @@ function ForgeApp() {
                   const message = JSON.parse(event.nativeEvent.data);
                   if (message.type === "connection-error" && typeof message.message === "string") {
                     setPageError(message.message);
+                  } else if (message.type === "connection-settings") {
+                    disconnect();
                   }
                 } catch {
                   // Other web messages do not change the native connection screen.

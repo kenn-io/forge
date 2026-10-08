@@ -15,6 +15,8 @@ The app remembers one connection in Expo SecureStore. It uses Forge's existing
 `auth_token` cookie bootstrap so API requests, event streams, and WebSockets
 share the WebView session. Connected pages use Forge's own header. On Android,
 Back navigates through page history, then returns to connection settings.
+Use **Menu → Connection settings** on mobile, or **Connection settings** in the
+desktop Settings page, to change servers or credentials on either platform.
 Starting the app again also opens the saved connection form.
 **Forget connection** removes the saved URL and token. WebView cookies and
 browser storage follow the platform WebView’s private-browsing behavior. Links to other origins open in the browser.

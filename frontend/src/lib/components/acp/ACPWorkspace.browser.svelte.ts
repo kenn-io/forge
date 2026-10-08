@@ -326,6 +326,21 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     expect(label.bottom).toBeLessThanOrEqual(bounds.bottom);
   });
 
+  it("keeps the configured composer size under the app touch-field rule", async () => {
+    const { host } = await renderChat(900);
+    host.id = "app";
+    document.documentElement.classList.add("kit-type-touch");
+    try {
+      const composer = page.getByRole("textbox", { name: "Message agent" }).element();
+      settings.setACPSettings({ font_family: "", font_size: 26 });
+      await expect.poll(() => getComputedStyle(composer).fontSize).toBe("26px");
+      settings.setACPSettings({ font_family: "", font_size: 13 });
+      await expect.poll(() => getComputedStyle(composer).fontSize).toBe("16px");
+    } finally {
+      document.documentElement.classList.remove("kit-type-touch");
+    }
+  });
+
   it("applies ACP appearance to messages, code, tools, and composer without changing the app font", async () => {
     const { host } = await renderChat(900);
     const appFont = getComputedStyle(document.body).fontFamily;

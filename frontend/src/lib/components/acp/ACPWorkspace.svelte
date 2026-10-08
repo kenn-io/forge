@@ -338,7 +338,7 @@
       <!-- Questions read as part of the conversation, in the reply column,
            right after the message that asked them. -->
       {#each elicitations as elicitation (elicitation.id)}
-        <Card level="default" padding="md" class="request">
+        <Card level="default" padding="md" class="request request--question">
           <ChatElicitation {elicitation} disabled={!connected || disabled} onrespond={(response) => connection?.send({ type: "elicitation", id: elicitation.id, ...response })} />
         </Card>
       {/each}
@@ -472,6 +472,7 @@
   .empty { color: var(--text-secondary); }
   .dock, .error, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
+  .messages > :global(.request--question) { max-width: none; }
   .permission-title { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
   .permission-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); }
   /* Block axis only: the shared column rule above centers errors with

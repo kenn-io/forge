@@ -2057,6 +2057,47 @@ func TestListActivityAuthors(t *testing.T) {
 	require.Empty(authors, "explicit repo scope must intersect the allowed repo scope")
 }
 
+func TestListActivityAuthorsRankLatestRenderedParentActivity(t *testing.T) {
+	t.Parallel()
+
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	old := base.Add(-30 * 24 * time.Hour)
+	prID := insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRAuthor("alice"), withMRActivity(old)))
+	issueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 2, withIssueAuthor("ALICE"), withIssueActivity(old)))
+	insertTestMRWithOptions(t, d, testMR(repoID, 3, withMRAuthor("Bob"), withMRActivity(base.Add(time.Minute))))
+	quietID := insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRAuthor("Quiet"), withMRActivity(old)))
+	require.NoError(t, d.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: prID, EventType: "issue_comment", Author: "Commenter", CreatedAt: base, DedupeKey: "older-comment"},
+		{MergeRequestID: prID, EventType: "review", Author: "Reviewer", CreatedAt: base.Add(2 * time.Minute), DedupeKey: "latest-review"},
+		{MergeRequestID: prID, EventType: "labeled", Author: "Labeler", CreatedAt: base.Add(5 * time.Minute), DedupeKey: "hidden-pr-event"},
+		{MergeRequestID: quietID, EventType: "labeled", Author: "Labeler", CreatedAt: base.Add(6 * time.Minute), DedupeKey: "quiet-hidden-event"},
+	}))
+	require.NoError(t, d.UpsertIssueEvents(ctx, []IssueEvent{
+		{IssueID: issueID, EventType: "issue_comment", Author: "Commenter", CreatedAt: base.Add(3 * time.Minute), DedupeKey: "latest-comment"},
+		{IssueID: issueID, EventType: "labeled", Author: "Labeler", CreatedAt: base.Add(4 * time.Minute), DedupeKey: "hidden-issue-event"},
+	}))
+
+	for _, tt := range []struct {
+		name  string
+		since *time.Time
+		want  []string
+	}{
+		{name: "window", since: new(base), want: []string{"ALICE", "Bob"}},
+		{name: "boundary", since: new(base.Add(3 * time.Minute)), want: []string{"ALICE"}},
+		{name: "after visible events", since: new(base.Add(4 * time.Minute)), want: []string{}},
+		{name: "all history", want: []string{"ALICE", "Bob", "Quiet"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			authors, err := d.ListActivityAuthors(t.Context(), ListActivityAuthorsOpts{Since: tt.since})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, authors)
+		})
+	}
+}
+
 func TestListActivityNotificationCarriesSubjectState(t *testing.T) {
 	t.Parallel()
 

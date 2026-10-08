@@ -417,6 +417,9 @@ Persisted controls must state their scope clearly.
 - That scope key deduplicates unchanged reads; it is not freshness authority. Feed
   reconciliation, polling changes, and full refetches must revalidate it
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
+- Rank Activity authors from each parent's latest rendered activity; enumerating every
+  timeline event makes the picker cost grow with history rather than the parent set
+  (`internal/db/queries_activity.go::ListActivityAuthors`).
 - Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
   threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
   must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).

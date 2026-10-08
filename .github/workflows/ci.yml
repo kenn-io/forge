@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+env:
+  KENN_FORGE_CI_WORKERS: "14"
 jobs:
   e2e-roborev:
     runs-on: namespace-profile-linux-16cpu

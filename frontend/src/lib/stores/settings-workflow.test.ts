@@ -69,6 +69,87 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
     }),
   );
 
+  it.effect("cancels an abandoned local read so later saves can finish", () =>
+    Effect.gen(function* () {
+      let requestSignal: AbortSignal | undefined;
+      let releaseRead = () => {};
+      let markReadStarted = () => {};
+      const readStarted = new Promise<void>((resolve) => {
+        markReadStarted = resolve;
+      });
+      const settings = makeSettings();
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (request.method === "GET") {
+          assert.strictEqual(new URL(request.url).pathname, "/api/v1/settings/local");
+          requestSignal = request.signal;
+          return new Promise<Response>((resolve, reject) => {
+            releaseRead = () => resolve(Response.json(settings));
+            request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+            markReadStarted();
+          });
+        }
+        assert.strictEqual(request.method, "PUT");
+        assert.strictEqual(new URL(request.url).pathname, "/api/v1/settings");
+        const update = await request.json();
+        assert.strictEqual(update.terminal.font_size, 14);
+        return Response.json({ ...settings, terminal: { ...settings.terminal, font_size: 14 } });
+      });
+      const workflow = yield* SettingsWorkflow;
+      const read = yield* Effect.forkChild(workflow.readLocal);
+      yield* Effect.promise(() => readStarted);
+      try {
+        yield* Fiber.interrupt(read);
+        assert.isTrue(requestSignal?.aborted);
+
+        const saved = yield* workflow.persist(() => ({ terminal: { font_size: 14 } }));
+        assert.strictEqual(saved.terminal.font_size, 14);
+      } finally {
+        releaseRead();
+      }
+    }),
+  );
+
+  it.effect("skips an abandoned read waiting for a save without cancelling that save", () =>
+    Effect.gen(function* () {
+      let releaseSave = () => {};
+      const saveGate = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      let markSaveStarted = () => {};
+      const saveStarted = new Promise<void>((resolve) => {
+        markSaveStarted = resolve;
+      });
+      let settings = makeSettings();
+      const requests: string[] = [];
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        requests.push(request.method);
+        if (request.method === "PUT") {
+          markSaveStarted();
+          await saveGate;
+          const update = await request.json();
+          settings = { ...settings, terminal: { ...settings.terminal, ...update.terminal } };
+        }
+        return Response.json(settings);
+      });
+      const workflow = yield* SettingsWorkflow;
+      const save = yield* Effect.forkChild(workflow.persist(() => ({ terminal: { font_size: 14 } })));
+      yield* Effect.promise(() => saveStarted);
+      const read = yield* Effect.forkChild(workflow.readLocal);
+      yield* Effect.yieldNow;
+      try {
+        yield* Fiber.interrupt(read);
+      } finally {
+        releaseSave();
+      }
+      assert.strictEqual((yield* Fiber.join(save)).terminal.font_size, 14);
+      const saved = yield* workflow.persist(() => ({ terminal: { font_size: 16 } }));
+      assert.strictEqual(saved.terminal.font_size, 16);
+      assert.deepStrictEqual(requests, ["PUT", "PUT"]);
+    }),
+  );
+
   it.effect("confirms a partial ACP update after its response is lost", () =>
     Effect.gen(function* () {
       const saved = { ...makeSettings(), acp: { font_family: "serif", font_size: 18 } };

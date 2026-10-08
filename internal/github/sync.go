@@ -10785,20 +10785,23 @@ func (s *Syncer) buildDetailQueueItems(
 			repo.Owner, repo.Name,
 		) + fmt.Sprintf("#%d", pr.Number)
 		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON)
+		mergeabilityPending := repo.Platform == "github" &&
+			(pr.MergeableState == "" || pr.MergeableState == "unknown")
 		items = append(items, QueueItem{
-			Type:            QueueItemPR,
-			Platform:        platform.Kind(repo.Platform),
-			RepoOwner:       repo.Owner,
-			RepoName:        repo.Name,
-			Number:          pr.Number,
-			PlatformHost:    repo.PlatformHost,
-			UpdatedAt:       pr.UpdatedAt,
-			DetailFetchedAt: pr.DetailFetchedAt,
-			CIHadPending:    ciHadPending,
-			Starred:         pr.Starred,
-			Watched:         watched[watchKey],
-			IsOpen:          true,
-			LargeRepo:       prCountsByRepoID[pr.RepoID] >= largeRepoBulkGraphQLThreshold,
+			Type:                QueueItemPR,
+			Platform:            platform.Kind(repo.Platform),
+			RepoOwner:           repo.Owner,
+			RepoName:            repo.Name,
+			Number:              pr.Number,
+			PlatformHost:        repo.PlatformHost,
+			UpdatedAt:           pr.UpdatedAt,
+			DetailFetchedAt:     pr.DetailFetchedAt,
+			CIHadPending:        ciHadPending,
+			MergeabilityPending: mergeabilityPending,
+			Starred:             pr.Starred,
+			Watched:             watched[watchKey],
+			IsOpen:              true,
+			LargeRepo:           prCountsByRepoID[pr.RepoID] >= largeRepoBulkGraphQLThreshold,
 		})
 	}
 

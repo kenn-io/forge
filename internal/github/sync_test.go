@@ -6480,6 +6480,7 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	// Build a list PR with diff stats set so the zero-stats condition
 	// doesn't trigger the full fetch independently.
 	listPR := buildOpenPR(1, now)
+	listPR.Base.SHA = new("base123")
 	additions := 10
 	deletions := 5
 	listPR.Additions = &additions
@@ -6496,12 +6497,13 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	mc.getPullRequestFn = func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
 		fetchCount++
 		p := buildOpenPR(1, now)
+		p.Base.SHA = new("base123")
 		a, d2 := 10, 5
 		p.Additions = &a
 		p.Deletions = &d2
 		state := "unknown"
 		if fetchCount >= 2 {
-			state = "clean"
+			state = "dirty"
 		}
 		p.MergeableState = &state
 		return p, nil
@@ -6518,6 +6520,18 @@ func TestSyncTriggersFullFetchForUnknownMergeableState(t *testing.T) {
 	require.NotNil(stored)
 	assert.Equal("unknown", stored.MergeableState)
 	assert.Equal(1, fetchCount, "first sync should trigger one full fetch via detail drain")
+
+	// GitHub finishes computing mergeability without changing updated_at.
+	// A recent detail fetch must not hide the now-known conflict.
+	syncer.RunOnce(ctx)
+	stored, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("dirty", stored.MergeableState)
+	assert.Equal(2, fetchCount, "unknown mergeability must be checked on the next sync")
+
+	syncer.RunOnce(ctx)
+	assert.Equal(2, fetchCount, "resolved mergeability resumes the normal detail cadence")
 }
 
 func TestSyncPreservesFieldsOnFullFetchFailure(t *testing.T) {
@@ -13362,7 +13376,9 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 		if number == 1 {
 			updatedAt = changedAt
 		}
-		openPRs = append(openPRs, buildOpenPR(number, updatedAt))
+		listed := buildOpenPR(number, updatedAt)
+		listed.Base.SHA = new("base123")
+		openPRs = append(openPRs, listed)
 		_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
 			RepoID:          repoID,
 			PlatformID:      int64(number * 1000),
@@ -13374,6 +13390,8 @@ func TestRunOnceLargeExistingRepoSkipsBulkGraphQLAndFetchesChangedPRDetail(t *te
 			HeadBranch:      "feature-branch",
 			BaseBranch:      "main",
 			PlatformHeadSHA: "abc123def456",
+			PlatformBaseSHA: "base123",
+			MergeableState:  "clean",
 			CreatedAt:       unchangedAt,
 			UpdatedAt:       unchangedAt,
 			LastActivityAt:  unchangedAt,

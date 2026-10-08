@@ -29,14 +29,15 @@ type QueueItem struct {
 	Score        float64
 
 	// Scoring inputs
-	UpdatedAt       time.Time
-	DetailFetchedAt *time.Time
-	CIHadPending    bool
-	Starred         bool
-	Watched         bool
-	IsOpen          bool
-	LargeRepo       bool
-	dailyDue        bool
+	UpdatedAt           time.Time
+	DetailFetchedAt     *time.Time
+	CIHadPending        bool
+	MergeabilityPending bool
+	Starred             bool
+	Watched             bool
+	IsOpen              bool
+	LargeRepo           bool
+	dailyDue            bool
 }
 
 // WorstCaseCost returns the maximum wire attempts this item's
@@ -125,9 +126,8 @@ func isEligible(qi *QueueItem, now time.Time) bool {
 		return true
 	}
 
-	// CI had pending checks — always eligible regardless of
-	// updated_at.
-	if qi.CIHadPending {
+	// CI and mergeability can resolve without changing updated_at.
+	if qi.CIHadPending || qi.MergeabilityPending {
 		return true
 	}
 

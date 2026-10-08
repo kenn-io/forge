@@ -194,3 +194,6 @@
 - Workspace target writes use MCP's in-process backend; HTTP exposes only the
   list needed by the UI. Add HTTP writes only when a concrete client needs them
   (`internal/server/workspaceapi/handler.go::Handler.RegisterExecution`).
+- Workspace-target JSON responses must accept additional properties; output
+  schema inference must not turn a successful tracking write into a tool failure
+  (`internal/mcpserver/tools_workspace_targets.go::Server.registerWorkspaceTargetTools`).

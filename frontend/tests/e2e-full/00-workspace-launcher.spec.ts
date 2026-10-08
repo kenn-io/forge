@@ -207,7 +207,17 @@ test.describe("embedded workspace launcher", () => {
         const workspace = await createIssueWorkspace(api, 10);
 
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
+        // xterm can take focus before its socket attaches; typing then drops input.
+        const terminalReady = page
+          .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
+          .then((socket) =>
+            socket.waitForEvent(
+              "framereceived",
+              ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
+            ),
+          );
         await page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Shell" }).click();
+        await terminalReady;
 
         const terminal = page.locator(".workspace-tab-slot .terminal-container");
         await expect(terminal).toBeVisible();

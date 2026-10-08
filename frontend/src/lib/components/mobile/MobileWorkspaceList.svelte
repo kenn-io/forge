@@ -254,6 +254,16 @@
     return number === null ? null : `#${number}`;
   }
 
+  function itemAccent(workspace: WorkspaceListItem): string {
+    if (mobileWorkspaceLinkedItem(workspace)?.itemType === "issue") {
+      return workspace.mr_state === "closed" ? "var(--accent-red)" : "var(--accent-blue)";
+    }
+    if (workspace.mr_is_draft) return "var(--accent-amber)";
+    if (workspace.mr_state === "merged") return "var(--accent-purple)";
+    if (workspace.mr_state === "closed") return "var(--accent-red)";
+    return "var(--accent-green)";
+  }
+
   function providerItemURL(workspace: WorkspaceListItem): string | null {
     const linked = mobileWorkspaceLinkedItem(workspace);
     if (linked === null) return null;
@@ -596,6 +606,7 @@
         {#if label}
           <button
             class="mobile-workspace-row__item"
+            style:--item-accent={itemAccent(workspace)}
             type="button"
             aria-label={`Open linked item ${label}`}
             onclick={() => openWorkspaceItem(workspace)}
@@ -738,7 +749,7 @@
   .mobile-workspace-row__meta em { color: var(--accent-blue); font-style: normal; font-weight: 650; }
   .mobile-workspace-row__item-stack { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 0.125rem; margin: 0.25rem; }
   .mobile-workspace-row__item, .mobile-workspace-row__more { align-self: center; min-width: 2.75rem; min-height: 2.75rem; margin: 0.25rem; border-radius: var(--radius-md) !important; }
-  .mobile-workspace-row__item { height: 2rem; min-width: auto; min-height: 2rem; margin: 0; padding: 0 0.625rem !important; color: var(--text-on-accent) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-row__item { height: 2rem; min-width: auto; min-height: 2rem; margin: 0; padding: 0 0.625rem !important; color: color-mix(in srgb, var(--item-accent) 25%, var(--bubble-ink)) !important; background: color-mix(in srgb, var(--item-accent) 70%, #ffffff) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
   .mobile-workspace-row__sort-time { color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.35; white-space: nowrap; }
   .mobile-workspace-row__item:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
   .mobile-workspace-row__more { display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted) !important; }

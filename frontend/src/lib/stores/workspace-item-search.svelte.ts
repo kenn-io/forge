@@ -101,6 +101,8 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
     ensureLoaded,
     refreshEffect,
     search,
+    getPulls: () => items?.pulls ?? [],
+    getIssues: () => items?.issues ?? [],
     isLoading: () => items === undefined && !error,
     getError: () => error,
   };

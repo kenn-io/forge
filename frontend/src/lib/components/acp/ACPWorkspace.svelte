@@ -733,6 +733,7 @@
     textarea, .input-hint { padding-block: var(--space-3); font-size: var(--font-size-touch-field); }
     textarea { min-height: var(--mobile-chrome-hit-target); }
     .toolbar { padding-block: var(--space-2); }
-    .dock { padding: var(--space-2) var(--space-4) max(var(--space-4), env(safe-area-inset-bottom)); }
+    /* The workspace layout owns the device safe area, not each chat pane. */
+    .dock { padding: var(--space-2) var(--space-4) var(--space-4); }
   }
 </style>

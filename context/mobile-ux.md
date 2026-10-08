@@ -168,6 +168,9 @@ Avoid by default:
 - ACP sessions use their own chat composer and permission controls inside the phone
   session picker; never overlay terminal input controls on a chat session
   (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`).
+- Workspace layouts own the bottom device safe area. ACP composers add only
+  their normal gutter; a chat pane can also sit above other toolbars
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 
 ## Verification expectations
 

@@ -168,7 +168,7 @@
   .message { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-primary); }
   .schema-title { margin: 0; font-weight: var(--font-weight-medium); color: var(--text-primary); overflow-wrap: anywhere; }
   .schema-description { margin: 0; font-size: var(--font-size-sm); color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
-  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; max-width: 40rem; }
+  .field { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
   .label, legend { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   legend { padding: 0; margin-bottom: var(--space-2); }

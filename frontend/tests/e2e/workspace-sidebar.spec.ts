@@ -1595,7 +1595,7 @@ test("phone list item tabs open a workspace that returns to the list", async ({ 
 
   await page.goto("/m/workspaces");
   await page.getByRole("button", { name: "Open linked item #42" }).click();
-  await page.getByRole("tab", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Files" }).click();
   await page.getByRole("tab", { name: "Conversation" }).click();
   await page.getByRole("button", { name: "Open Workspace" }).click();
 
@@ -1622,7 +1622,7 @@ test("direct phone workspace item tabs return to the workspace terminal", async 
 
   await page.goto("/m/workspaces");
   await page.goto("/m/workspaces/local/ws-123/item");
-  await page.getByRole("tab", { name: "Files changed" }).click();
+  await page.getByRole("tab", { name: "Files" }).click();
   await expect(page).toHaveURL(/\/m\/workspaces\/local\/ws-123\/item\/files$/);
 
   await page.getByRole("button", { name: "Back to workspace terminal" }).click();
@@ -1630,6 +1630,44 @@ test("direct phone workspace item tabs return to the workspace terminal", async 
 
   await page.evaluate(() => history.back());
   await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
+test("phone workspace item fits its tabs and diff controls in two rows", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await setupTerminalMocks(page);
+
+  await page.goto("/m/workspaces/local/ws-123/item/files");
+
+  const header = page.locator(".mobile-workspace-item__toolbar");
+  await expect(header.getByRole("button", { name: "Back to workspace terminal" })).toBeVisible();
+  await expect(header.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  await expect(header.getByRole("button", { name: "Menu" })).toBeVisible();
+
+  const toolbar = page.locator(".diff-toolbar");
+  const category = toolbar.getByRole("combobox", { name: /^Files: All/ });
+  const scope = toolbar.getByRole("button", { name: /Select commit range/ });
+  const jump = toolbar.getByRole("button", { name: "Jump to file" });
+  const more = toolbar.getByRole("button", { name: "More diff filters" });
+  for (const control of [category, scope, jump, more]) await expect(control).toBeVisible();
+
+  // Every diff control shares one row and stays on screen.
+  const boxes = await Promise.all([category, scope, jump, more].map((control) => control.boundingBox()));
+  const tops = boxes.map((box) => Math.round(box!.y));
+  expect(new Set(tops).size).toBe(1);
+  for (const box of boxes) expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+
+  // The file tree and its filter field start hidden; the overflow menu brings them back.
+  await expect(page.locator(".files-sidebar")).toHaveCount(0);
+  await expect(page.getByRole("searchbox", { name: "Filter files" })).toHaveCount(0);
+
+  await category.click();
+  await page.getByRole("option", { name: /^Code/ }).click();
+  await expect(toolbar.getByRole("combobox", { name: /^Files: Code/ })).toBeVisible();
+
+  await more.click();
+  await expect(page.getByRole("button", { name: /(Collapse|Expand) all diffs/ })).toBeVisible();
+  await page.getByRole("switch", { name: "File list" }).click();
+  await expect(page.locator(".files-sidebar")).toBeVisible();
 });
 
 test("phone Fleet workspace keeps its linked item as passive metadata", async ({ page }) => {

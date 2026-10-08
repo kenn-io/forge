@@ -52,6 +52,8 @@
     onViewWorkspaces?: (() => void) | undefined;
     /** Phone-like routes render PR actions as one kit action grid. */
     phonePresentation?: boolean;
+    /** Phone diff layout only; see PullDetailPane. */
+    phoneFilesLayout?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     /**
      * The workspace's own controls, rendered in the tab strip of the leaf holding
@@ -79,6 +81,7 @@
     onOpenWorkspace,
     onViewWorkspaces,
     phonePresentation = false,
+    phoneFilesLayout = false,
     inlineWorkspace = null,
     workspacePaneControls = undefined,
   }: Props = $props();
@@ -287,6 +290,7 @@
           {onViewWorkspaces}
           {inlineWorkspace}
           {phonePresentation}
+          {phoneFilesLayout}
         />
       {:else if paneLayout !== null}
       <DetailPaneLayout
@@ -344,6 +348,7 @@
               {onViewWorkspaces}
               {inlineWorkspace}
               {phonePresentation}
+              {phoneFilesLayout}
             />
           {/if}
         {/snippet}

@@ -423,9 +423,12 @@ lint-config-check:
 	$(KENNLINT) config -check
 
 # Build golangci-lint with the plugins in .custom-gcl.yml. Strip repo-local
-# Git env vars so a hook-spawned build does not inherit GIT_DIR.
+# Git env vars so a hook-spawned build does not inherit GIT_DIR. An existing
+# binary is reused while it is newer than .custom-gcl.yml and reports
+# GOLANGCI_LINT_VERSION.
 custom-gcl: check-mise
-	@unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
+	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
+	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
 	env $$unset_args GOFLAGS=-buildvcs=false \
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 

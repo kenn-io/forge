@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,29 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
+
+func TestStopDormantACPStopsChatWhoseOwnerDied(t *testing.T) {
+	require := require.New(t)
+	manager := newACPTestManager(t, Options{ACPSessionsDir: t.TempDir()})
+	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, "chat")
+	require.NoError(err)
+	require.NoError(os.MkdirAll(paths.Dir, 0o700))
+	data, err := json.Marshal(acpOwnerConfig{Info: SessionInfo{WorkspaceID: "workspace", Key: "chat"}})
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(paths.Dir, "config.json"), data, 0o600))
+	require.NoError(os.WriteFile(manager.acpSessionPath("chat"), []byte("{}"), 0o600))
+	require.NoError(os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
+	if paths.SocketDir != "" {
+		t.Cleanup(func() { _ = os.RemoveAll(paths.SocketDir) })
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: paths.Socket, Net: "unix"})
+	require.NoError(err)
+	listener.SetUnlinkOnClose(false)
+	require.NoError(listener.Close())
+
+	require.NoError(manager.StopDormantACP(t.Context(), "workspace", "chat"))
+	assert.NoFileExists(t, manager.acpSessionPath("chat"))
+}
 
 func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 	for _, backend := range []string{"ptyowner", "tmux"} {
@@ -144,7 +168,7 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	require.NoError(t, err)
 	process, err := os.FindProcess(pid)
 	require.NoError(t, err)
-	require.NoError(t, process.Signal(syscall.SIGTERM))
+	require.NoError(t, process.Kill())
 	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
 	second := newACPTestManager(t, options)
 	require.NoError(t, second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}))

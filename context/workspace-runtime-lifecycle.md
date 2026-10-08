@@ -314,6 +314,7 @@ create a local process, PTY, or durable transport session
   attempts (`internal/server/workspaceapi/agent_resume.go::Handler.restoreWorkspaceTerminals`).
   Pty-owner base terminals are never started by recovery; attach reuses a live
   owner or starts one (`internal/terminal/handler.go::Handler.ServeHTTP`).
+  Activity enrichment reads an absent owner as idle without starting it; real owner errors still fail enrichment (`internal/server/workspaceapi/routes_handlers.go::Handler.probeOneTmuxSession`).
 - Pending startup recovery retries during periodic missing-tmux pruning under
   workspace setup admission; successful recovery restores ordinary exit cleanup
   (`internal/server/workspaceapi/lifecycle.go::Handler.RestoreRuntimeSessions`).

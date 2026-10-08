@@ -2376,6 +2376,9 @@ func (s *Handler) probeOneTmuxSession(
 	)
 	if err != nil {
 		probe.Probe.Cancel()
+		if errors.Is(err, ptyowner.ErrOwnerGone) {
+			return tmuxActivityResult{}, false, nil
+		}
 		slog.Debug(
 			"read tmux pane snapshot",
 			"workspace_id", summary.ID,

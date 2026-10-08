@@ -82,7 +82,7 @@ const (
 var ErrCommandLineTooLong = errors.New("command line exceeds the Windows limit of 32,767 UTF-16 code units; shorten the prompt or launch arguments")
 
 // ErrOwnerGone means no owner is running for a session, as after a reboot or
-// a killed owner, so attaching again cannot succeed.
+// a killed owner; Attach and Snapshot return it when the owner is absent.
 var ErrOwnerGone = errors.New("pty owner is not running")
 
 type Attachment struct {
@@ -357,6 +357,9 @@ func (c *Client) Ping(ctx context.Context, session string) error {
 func (c *Client) Snapshot(ctx context.Context, session string) (Status, error) {
 	conn, state, err := c.connect(ctx, session)
 	if err != nil {
+		if isAbsentOwner(err) {
+			return Status{}, fmt.Errorf("%w: %w", ErrOwnerGone, err)
+		}
 		return Status{}, err
 	}
 	defer conn.Close()
@@ -507,6 +510,10 @@ func cleanupAbsentOwner(paths SessionPaths) {
 	_ = os.RemoveAll(paths.Dir)
 	removeSocketDir(paths)
 }
+
+// IsAbsentOwner reports whether err, from reaching a session's owner, means
+// no owner runs for it.
+func IsAbsentOwner(err error) bool { return isAbsentOwner(err) }
 
 func isAbsentOwner(err error) bool {
 	return errors.Is(err, os.ErrNotExist) ||

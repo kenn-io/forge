@@ -1,6 +1,7 @@
 {
   "expo": {
-    "name": "Forge",
+    "name": "kenn-forge",
+    "icon": "./icon.png",
     "slug": "kenn-forge-mobile",
     "version": "0.1.0",
     "orientation": "default",

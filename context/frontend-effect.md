@@ -39,6 +39,9 @@ service is the supported tool here.
 - Application ownership lasts for the browser runtime unless explicitly persisted.
   Reload may discard presentation and deferred launch intent, but persisted server
   authority must remain discoverable afterward.
+- Settings page reads must follow previously accepted saves but remain page-owned;
+  leaving Settings cancels reads without cancelling saves or blocking later writes
+  (`frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.

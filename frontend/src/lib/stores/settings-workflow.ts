@@ -37,6 +37,7 @@ export type RepoPreviewRow = GeneratedRepoPreviewRow;
 export type RepoPreset = GeneratedRepoPreset;
 export type RepoPresetRepository = GeneratedRepoPresetRepository;
 type SettingsCommand =
+  | { readonly _tag: "AwaitWrites" }
   | { readonly _tag: "Partial"; readonly request: () => UpdateSettingsRequest }
   | { readonly _tag: "Fleet"; readonly request: FleetSettingsUpdate }
   | { readonly _tag: "CreateRepoPreset"; readonly preset: RepoPreset }
@@ -72,6 +73,7 @@ type SettingsCommand =
       readonly exactRepoAlreadyAdded: boolean;
     };
 type SettingsCommandResult =
+  | { readonly _tag: "WritesFinished" }
   | { readonly _tag: "Settings"; readonly settings: SettingsSnapshot }
   | { readonly _tag: "Fleet"; readonly fleet: FleetSettingsSnapshot }
   | { readonly _tag: "RepoRemoved" };
@@ -123,7 +125,7 @@ export type SettingsReadError = ApiProblemError | TransientTransportError;
 export class SettingsWorkflow extends Context.Service<
   SettingsWorkflow,
   {
-    readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsReadError>;
+    readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly testACP: (command: string[]) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
@@ -406,6 +408,9 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
       );
     });
     const persist = Effect.fn("SettingsWorkflow.persist")(function* (command: SettingsCommand) {
+      if (command._tag === "AwaitWrites") {
+        return { _tag: "WritesFinished" } as const;
+      }
       return yield* Effect.gen(function* () {
         switch (command._tag) {
           case "Partial": {
@@ -694,7 +699,8 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
           ),
         );
     return {
-      readLocal,
+      // Order after accepted saves, but let page teardown cancel the network read.
+      readLocal: queue.submit({ _tag: "AwaitWrites" }).pipe(Effect.andThen(readLocal)),
       testACP: (command) =>
         api.execute("test ACP agent", (signal) => api.client.SettingsService.testAcpAgent({ command }, { signal })),
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),

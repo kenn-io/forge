@@ -272,3 +272,42 @@ test("Activity search survives returning after reloading Settings", async ({ pag
   await page.getByRole("button", { name: "Back to app" }).click();
   await expect(search).toHaveValue("caching layer");
 });
+
+test("Activity defaults survive changing several controls and returning from Activity", async ({ page }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await openSettingsPanel(page, "Activity");
+  let releaseSave = () => {};
+  const saveGate = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  let completedSaves = 0;
+  await page.route("**/api/v1/settings", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    await saveGate;
+    const response = await route.fetch();
+    await route.fulfill({ response });
+    completedSaves += 1;
+  });
+  try {
+    await page.getByRole("radio", { name: "90d", exact: true }).click();
+    await page.getByRole("checkbox", { name: "Force pushes", exact: true }).uncheck();
+    await page.getByRole("checkbox", { name: "Issues", exact: true }).uncheck();
+    await page.getByRole("button", { name: "Back to app" }).click();
+    await page.getByTitle("Settings", { exact: true }).click();
+    await expect(page.getByText("Loading settings...", { exact: true })).toBeVisible();
+  } finally {
+    releaseSave();
+  }
+  await expect.poll(() => completedSaves).toBe(3);
+  await openSettingsPanel(page, "Activity");
+  await expect(page.getByRole("radio", { name: "90d", exact: true })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Force pushes", exact: true })).not.toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Issues", exact: true })).not.toBeChecked();
+  const saved: SettingsResponse = await (await api!.get("/api/v1/settings")).json();
+  expect(saved.activity).toMatchObject({
+    time_range: "90d",
+    item_types: ["pr"],
+    event_types: ["comment", "review", "commit"],
+  });
+  await page.unrouteAll({ behavior: "wait" });
+});

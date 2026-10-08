@@ -42,28 +42,33 @@ describe("session duration reporting", () => {
     expect(send.mock.calls).toEqual([["5_to_30m"]]);
   });
 
-  it.each(["timer boundary", "suspended timer"])(
-    "ends a hidden session and starts a fresh session on return: %s",
-    (scenario) => {
-      stop = startSessionDurationReporting(send);
-      advance(120_000);
-      visibility(true);
-      if (scenario === "timer boundary") {
-        advance(1_799_999);
-        expect(send).not.toHaveBeenCalled();
-        advance(1);
-        expect(send.mock.calls).toEqual([["1_to_5m"]]);
-      } else {
-        now += 2_400_000;
-        vi.setSystemTime(Date.now() + 2_400_000);
-        expect(send).not.toHaveBeenCalled();
-      }
-      visibility(false);
-      advance(scenario === "timer boundary" ? 30_000 : 240_000);
-      window.dispatchEvent(new Event("pagehide"));
-      expect(send.mock.calls).toEqual([["1_to_5m"], [scenario === "timer boundary" ? "under_1m" : "1_to_5m"]]);
-    },
-  );
+  it("ends a session after thirty hidden minutes and starts fresh on return", () => {
+    stop = startSessionDurationReporting(send);
+    advance(120_000);
+    visibility(true);
+    advance(1_799_999);
+    expect(send).not.toHaveBeenCalled();
+    advance(1);
+    expect(send.mock.calls).toEqual([["1_to_5m"]]);
+    visibility(false);
+    advance(30_000);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(send.mock.calls).toEqual([["1_to_5m"], ["under_1m"]]);
+  });
+
+  it("ends a session hidden past thirty minutes when its timer was suspended", () => {
+    stop = startSessionDurationReporting(send);
+    advance(120_000);
+    visibility(true);
+    now += 2_400_000;
+    vi.setSystemTime(Date.now() + 2_400_000);
+    expect(send).not.toHaveBeenCalled();
+    visibility(false);
+    expect(send.mock.calls).toEqual([["1_to_5m"]]);
+    advance(240_000);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(send.mock.calls).toEqual([["1_to_5m"], ["1_to_5m"]]);
+  });
 
   it("drops pending time and removes listeners on cleanup", () => {
     stop = startSessionDurationReporting(send);

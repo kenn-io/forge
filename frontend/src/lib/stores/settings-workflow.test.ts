@@ -29,6 +29,46 @@ afterEach(() => {
 });
 
 it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
+  it.effect("reads local settings after previously submitted saves finish", () =>
+    Effect.gen(function* () {
+      let releaseSave = () => {};
+      const saveGate = new Promise<void>((resolve) => {
+        releaseSave = resolve;
+      });
+      let settings = makeSettings();
+      const requests: string[] = [];
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        requests.push(request.method);
+        if (request.method === "PUT") {
+          await saveGate;
+          const update = await request.json();
+          settings = { ...settings, ...update };
+        }
+        return Response.json(settings);
+      });
+      const workflow = yield* SettingsWorkflow;
+      const save = yield* Effect.forkChild(
+        workflow.persist(() => ({
+          activity: { ...settings.activity, time_range: "90d", item_types: ["pr"], event_types: ["comment", "review"] },
+        })),
+      );
+      yield* Effect.yieldNow;
+      const read = yield* Effect.forkChild(workflow.readLocal);
+      yield* Effect.yieldNow;
+      try {
+        assert.deepStrictEqual(requests, ["PUT"]);
+      } finally {
+        releaseSave();
+      }
+      yield* Fiber.join(save);
+      const loaded = yield* Fiber.join(read);
+      assert.strictEqual(loaded.activity.time_range, "90d");
+      assert.deepStrictEqual(loaded.activity.item_types, ["pr"]);
+      assert.deepStrictEqual(loaded.activity.event_types, ["comment", "review"]);
+    }),
+  );
+
   it.effect("confirms a partial ACP update after its response is lost", () =>
     Effect.gen(function* () {
       const saved = { ...makeSettings(), acp: { font_family: "serif", font_size: 18 } };

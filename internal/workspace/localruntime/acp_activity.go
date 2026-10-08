@@ -54,7 +54,7 @@ func reportACPActivity(store *agentactivity.Store, agent *ACP, runtimeSessionKey
 			}
 			last = state
 		case <-agent.Done():
-			if err := store.Remove(ACPActivityAgent, agent.sessionID); err != nil {
+			if err := store.Remove(ACPActivityAgent, agent.sessionID, runtimeSessionKey); err != nil {
 				slog.Warn("remove ACP activity", "session_key", runtimeSessionKey, "err", err)
 			}
 			return

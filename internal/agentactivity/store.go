@@ -43,6 +43,11 @@ type Snapshot struct {
 	UpdatedAt time.Time
 }
 
+type storedReport struct {
+	Report
+	path string
+}
+
 // HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
 // Agent-specific payload fields are ignored unless they affect activity state.
 type HookEvent struct {
@@ -61,7 +66,7 @@ type Store struct {
 
 	cacheMu      sync.Mutex
 	cacheFiles   map[string]os.FileInfo
-	cacheReports []Report
+	cacheReports []storedReport
 }
 
 func NewStore(root string) *Store {
@@ -100,14 +105,7 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 		return nil
 	}
 	if remove {
-		err := os.Remove(s.reportPath(agent, hook.SessionID))
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err == nil {
-			s.invalidateCache()
-		}
-		return err
+		return s.Remove(agent, hook.SessionID, runtimeSessionKey)
 	}
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
@@ -121,8 +119,8 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 			UpdatedAt:         s.now().UTC(),
 		}
 		if state == StateDone {
-			previous, ok := s.readReport(s.reportPath(agent, hook.SessionID))
-			if ok && previous.RuntimeSessionKey == runtimeSessionKey {
+			previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
+			if ok {
 				switch {
 				case isIdlePrompt(hook) && (previous.State == StateInput ||
 					previous.State == StateApproval):
@@ -168,8 +166,8 @@ func (s *Store) Record(agent, sessionID, runtimeSessionKey, cwd string, state St
 		CWD: canonicalCWD, State: state, UpdatedAt: s.now().UTC(),
 	}
 	if state == StateDone {
-		previous, ok := s.readReport(s.reportPath(agent, sessionID))
-		if ok && previous.RuntimeSessionKey == runtimeSessionKey && previous.State == StateDone {
+		previous, ok := s.previousReport(agent, sessionID, runtimeSessionKey)
+		if ok && previous.State == StateDone {
 			report.UpdatedAt = previous.UpdatedAt
 		}
 	}
@@ -177,7 +175,7 @@ func (s *Store) Record(agent, sessionID, runtimeSessionKey, cwd string, state St
 }
 
 // Remove deletes one session's report when its runtime protocol ends it.
-func (s *Store) Remove(agent, sessionID string) error {
+func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
@@ -186,7 +184,12 @@ func (s *Store) Remove(agent, sessionID string) error {
 	if agent == "" || sessionID == "" {
 		return nil
 	}
-	err := os.Remove(s.reportPath(agent, sessionID))
+	legacy := s.legacyReportPath(agent, sessionID)
+	if report, ok := s.readReport(legacy); ok && report.RuntimeSessionKey == runtimeSessionKey {
+		_ = os.Remove(legacy)
+		s.invalidateCache()
+	}
+	err := os.Remove(s.reportPath(agent, sessionID, runtimeSessionKey))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -237,6 +240,9 @@ func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []
 		return nil
 	}
 
+	// Reports saved before terminals had their own name can sit beside a newer copy, and an agent started before the upgrade keeps writing the old one.
+	type identity struct{ agent, session, runtime string }
+	newest := make(map[identity]int)
 	reports := make([]Report, 0)
 	for _, report := range s.reports() {
 		if report.CWD != target {
@@ -245,7 +251,15 @@ func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []
 		if _, ok := live[report.RuntimeSessionKey]; !ok {
 			continue
 		}
-		reports = append(reports, report)
+		id := identity{report.Agent, report.SessionID, report.RuntimeSessionKey}
+		if i, ok := newest[id]; ok {
+			if report.UpdatedAt.After(reports[i].UpdatedAt) {
+				reports[i] = report.Report
+			}
+			continue
+		}
+		newest[id] = len(reports)
+		reports = append(reports, report.Report)
 	}
 	slices.SortFunc(reports, func(a, b Report) int {
 		if order := b.UpdatedAt.Compare(a.UpdatedAt); order != 0 {
@@ -293,7 +307,7 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 		if report.RuntimeSessionKey != runtimeSessionKey {
 			continue
 		}
-		if err := os.Remove(s.reportPath(report.Agent, report.SessionID)); err != nil &&
+		if err := os.Remove(report.path); err != nil &&
 			!errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, err)
 		}
@@ -315,7 +329,7 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 		if _, ok := keep[report.RuntimeSessionKey]; ok {
 			continue
 		}
-		err := os.Remove(s.reportPath(report.Agent, report.SessionID))
+		err := os.Remove(report.path)
 		switch {
 		case err == nil:
 			removed = true
@@ -329,7 +343,7 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	return errors.Join(errs...)
 }
 
-func (s *Store) reports() []Report {
+func (s *Store) reports() []storedReport {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
@@ -355,7 +369,7 @@ func (s *Store) reports() []Report {
 		return slices.Clone(s.cacheReports)
 	}
 
-	reports := make([]Report, 0, len(entries))
+	reports := make([]storedReport, 0, len(entries))
 	cleanupPending := false
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
@@ -376,7 +390,7 @@ func (s *Store) reports() []Report {
 			}
 			continue
 		}
-		reports = append(reports, report)
+		reports = append(reports, storedReport{Report: report, path: path})
 	}
 	s.cacheFiles = files
 	if cleanupPending || !metadataComplete {
@@ -486,7 +500,7 @@ func (s *Store) writeReport(report Report) error {
 	}
 	// Reports are rewritten on every activity event, so skip fsync as
 	// before. ErrPublished means the report is already visible.
-	err = atomicfile.WriteFile(s.reportPath(report.Agent, report.SessionID), data, atomicfile.WithoutSync())
+	err = atomicfile.WriteFile(s.reportPath(report.Agent, report.SessionID, report.RuntimeSessionKey), data, atomicfile.WithoutSync())
 	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
@@ -516,7 +530,23 @@ func (s *Store) readReport(path string) (Report, bool) {
 	return report, true
 }
 
-func (s *Store) reportPath(agent string, sessionID string) string {
+// previousReport returns the newest report for one terminal, including one saved under its name from before terminals had their own.
+func (s *Store) previousReport(agent, sessionID, runtimeSessionKey string) (Report, bool) {
+	report, ok := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
+	legacy, legacyOK := s.readReport(s.legacyReportPath(agent, sessionID))
+	if legacyOK && legacy.RuntimeSessionKey == runtimeSessionKey &&
+		(!ok || legacy.UpdatedAt.After(report.UpdatedAt)) {
+		return legacy, true
+	}
+	return report, ok
+}
+
+func (s *Store) legacyReportPath(agent, sessionID string) string {
 	sum := sha256.Sum256([]byte(agent + "\x00" + sessionID))
+	return filepath.Join(s.root, hex.EncodeToString(sum[:])+".json")
+}
+
+func (s *Store) reportPath(agent, sessionID, runtimeSessionKey string) string {
+	sum := sha256.Sum256([]byte(agent + "\x00" + sessionID + "\x00" + runtimeSessionKey))
 	return filepath.Join(s.root, hex.EncodeToString(sum[:])+".json")
 }

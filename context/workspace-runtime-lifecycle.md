@@ -125,9 +125,14 @@ Rules:
   have no time-based expiry; a launched agent keeps reporting until teardown
   (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`,
   `internal/agentactivity/store.go::Store.LiveReportsForWorkspace`).
+- Reports belong to an agent, coding session, and runtime key; two terminals
+  can share a coding session without sharing activity or recovery records
+  (`internal/agentactivity/store.go::Store.reportPath`).
+- SessionEnd and Remove clear only the calling terminal's report
+  (`internal/agentactivity/store.go::Store.Remove`).
 - A completion keeps its first timestamp: `done` written over `done` for the
-  same session preserves `UpdatedAt`, so the sidebar's acknowledged Done badge
-  does not reappear when Claude Code's `idle_prompt` follows Stop
+  same session and runtime preserves `UpdatedAt`, so the sidebar's acknowledged
+  Done badge does not reappear when Claude Code's `idle_prompt` follows Stop
   (`internal/agentactivity/store.go::Store.HandleEvent`).
 - Claude Code's `idle_prompt` notification fires after a minute of waiting
   whatever the agent waits for. It leaves a pending `input` or `approval`

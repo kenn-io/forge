@@ -1,6 +1,8 @@
 package agentactivity
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -167,38 +169,65 @@ func TestHandleEventRecordsWorkingState(t *testing.T) {
 }
 
 func TestStoreKeysReportsByAgentAndCodingSession(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	workspace := t.TempDir()
-	store := NewStore(t.TempDir())
+	for _, tc := range []struct {
+		name                    string
+		firstAgent, secondAgent string
+		firstKey, secondKey     string
+	}{
+		{"agent", "codex", "claude", "shared-runtime", "shared-runtime"},
+		{"runtime", "opencode", "opencode", "runtime-a", "runtime-b"},
+	} {
+		for _, source := range []string{"hook", "record"} {
+			t.Run(tc.name+"/"+source, func(t *testing.T) {
+				assert := assert.New(t)
+				require := require.New(t)
+				workspace := t.TempDir()
+				store := NewStore(t.TempDir())
+				now := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+				store.now = func() time.Time { return now }
+				recordDone := func(agent, key string) {
+					if source == "record" {
+						require.NoError(store.Record(agent, "shared-session", key, workspace, StateDone))
+						return
+					}
+					require.NoError(store.HandleEvent(agent, HookEvent{
+						SessionID: "shared-session", CWD: workspace, HookEventName: "Stop",
+					}, key))
+				}
 
-	reportAgentHook(t, store, "codex", "runtime-codex", map[string]any{
-		"session_id": "shared-session", "cwd": workspace,
-		"hook_event_name": "UserPromptSubmit",
-	})
-	reportAgentHook(t, store, "claude", "runtime-claude", map[string]any{
-		"session_id": "shared-session", "cwd": workspace,
-		"hook_event_name": "Stop",
-	})
+				recordDone(tc.firstAgent, tc.firstKey)
+				firstCompletion := now
+				now = now.Add(time.Minute)
+				recordDone(tc.secondAgent, tc.secondKey)
+				secondCompletion := now
+				now = now.Add(time.Minute)
+				recordDone(tc.firstAgent, tc.firstKey)
 
-	reports := store.LiveReportsForWorkspace(
-		workspace, []string{"runtime-codex", "runtime-claude"},
-	)
-	require.Len(reports, 2)
-	assert.Equal("claude", reports[0].Agent)
-	assert.Equal(StateDone, reports[0].State)
-	assert.Equal("codex", reports[1].Agent)
-	assert.Equal(StateWorking, reports[1].State)
+				liveKeys := []string{tc.firstKey, tc.secondKey}
+				reports := store.LiveReportsForWorkspace(workspace, liveKeys)
+				require.Len(reports, 2)
+				assert.Equal(tc.secondAgent, reports[0].Agent)
+				assert.Equal(tc.secondKey, reports[0].RuntimeSessionKey)
+				assert.Equal(StateDone, reports[0].State)
+				assert.Equal(secondCompletion, reports[0].UpdatedAt)
+				assert.Equal(tc.firstAgent, reports[1].Agent)
+				assert.Equal(tc.firstKey, reports[1].RuntimeSessionKey)
+				assert.Equal(StateDone, reports[1].State)
+				assert.Equal(firstCompletion, reports[1].UpdatedAt)
 
-	reportAgentHook(t, store, "codex", "runtime-codex", map[string]any{
-		"session_id": "shared-session", "cwd": workspace,
-		"hook_event_name": "SessionEnd",
-	})
-	reports = store.LiveReportsForWorkspace(
-		workspace, []string{"runtime-codex", "runtime-claude"},
-	)
-	require.Len(reports, 1)
-	assert.Equal("claude", reports[0].Agent)
+				if source == "hook" {
+					survivor := reports[0]
+					reportAgentHook(t, store, tc.firstAgent, tc.firstKey, map[string]any{
+						"session_id": "shared-session", "cwd": workspace,
+						"hook_event_name": "SessionEnd",
+					})
+					reports = store.LiveReportsForWorkspace(workspace, liveKeys)
+					require.Len(reports, 1)
+					assert.Equal(survivor, reports[0])
+				}
+			})
+		}
+	}
 }
 
 func TestStoreLiveReportsExcludeWrongWorkspaceDeadAndNestedSessions(t *testing.T) {
@@ -250,6 +279,57 @@ func TestStoreRemovesLegacyAgentlessReportsDuringScan(t *testing.T) {
 	assert.Empty(store.LiveReportsForWorkspace(workspace, []string{"runtime-legacy"}))
 	_, err := os.Stat(legacyPath)
 	require.ErrorIs(err, os.ErrNotExist)
+}
+
+func TestStoreReadsReportsSavedBeforePerTerminalNames(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	root := t.TempDir()
+	workspace := t.TempDir()
+	sum := sha256.Sum256([]byte("claude\x00shared"))
+	legacy := filepath.Join(root, hex.EncodeToString(sum[:])+".json")
+	writeLegacy := func(state, updated string) {
+		require.NoError(os.WriteFile(legacy, fmt.Appendf(nil,
+			`{"agent":"claude","session_id":"shared","runtime_session_key":"runtime-a","cwd":%q,"state":%q,"updated_at":%q}`,
+			workspace, state, updated,
+		), 0o600))
+	}
+	s := NewStore(root)
+	s.now = func() time.Time { return time.Date(2026, 8, 7, 12, 5, 0, 0, time.UTC) }
+	state := func() State {
+		reports := s.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		return reports[0].State
+	}
+
+	writeLegacy("approval", "2026-08-07T12:00:00Z")
+	assert.Equal(StateApproval, state())
+
+	require.NoError(s.Record("claude", "shared", "runtime-a", workspace, StateDone))
+	assert.Equal(StateDone, state())
+
+	// An agent started before the upgrade still writes the old name.
+	writeLegacy("approval", "2026-08-07T12:10:00Z")
+	assert.Equal(StateApproval, state())
+
+	// Claude Code's idle_prompt leaves a pending approval saved under the old name alone.
+	reportAgentHook(t, s, "claude", "runtime-a", map[string]any{
+		"session_id": "shared", "cwd": workspace,
+		"hook_event_name": "Notification", "notification_type": "idle_prompt",
+	})
+	assert.Equal(StateApproval, state())
+
+	writeLegacy("done", "2026-08-07T12:20:00Z")
+	s.now = func() time.Time { return time.Date(2026, 8, 7, 12, 30, 0, 0, time.UTC) }
+	require.NoError(s.Record("claude", "shared", "runtime-a", workspace, StateDone))
+	reports := s.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+	require.Len(reports, 1)
+	assert.Equal(time.Date(2026, 8, 7, 12, 20, 0, 0, time.UTC), reports[0].UpdatedAt)
+
+	require.NoError(s.Remove("claude", "shared", "runtime-a"))
+	entries, err := os.ReadDir(root)
+	require.NoError(err)
+	assert.Empty(entries)
 }
 
 func reportHook(t *testing.T, store *Store, runtimeKey string, input map[string]any) {
@@ -415,6 +495,10 @@ func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
 	assert.Equal(t, now, reports[0].UpdatedAt, "a new turn completes as new")
 	require.Error(t, store.Record("acp", "chat", "runtime", cwd, "unknown"))
 
-	require.NoError(t, store.Remove("acp", "chat"))
+	require.NoError(t, store.Record("acp", "chat", "other-runtime", cwd, StateWorking))
+	require.NoError(t, store.Remove("acp", "chat", "runtime"))
 	assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	reports = store.LiveReportsForWorkspace(cwd, []string{"other-runtime"})
+	require.Len(t, reports, 1)
+	assert.Equal(t, StateWorking, reports[0].State)
 }

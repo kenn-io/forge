@@ -12,15 +12,19 @@
   import BudgetPopover from "./BudgetPopover.svelte";
   import RelayIndicator from "./RelayIndicator.svelte";
   import { formatCompact } from "./budget-utils";
-  import { getPage, navigate } from "../../stores/router.svelte.ts";
+  import { getPage, isWorkspacePage, navigate } from "../../stores/router.svelte.ts";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
-  const { activity, pulls, issues, sync, events, settings } = getStores();
+  const { activity, pulls, issues, workspaceItemSearch, sync, events, settings } = getStores();
   const runtime = getAppRuntime();
   const liveUpdateState = $derived(events.getConnectionState());
 
   let appVersion = $state("");
   let tick = $state(0);
+
+  $effect(() => {
+    if (isWorkspacePage(getPage())) untrack(() => workspaceItemSearch.ensureLoaded());
+  });
 
   $effect(() => {
     const loadVersion = executeGeneratedApiRequest("GET /version", (client, signal) =>
@@ -66,8 +70,12 @@
     return `synced ${Math.floor(mins / 60)}h ago`;
   }
 
-  const openPulls = $derived(pulls.getPulls().filter((pr) => pr.State === "open"));
-  const openIssues = $derived(issues.getIssues().filter((issue) => issue.State === "open"));
+  const openPulls = $derived(
+    (isWorkspacePage(getPage()) ? workspaceItemSearch.getPulls() : pulls.getPulls()).filter((pr) => pr.State === "open"),
+  );
+  const openIssues = $derived(
+    (isWorkspacePage(getPage()) ? workspaceItemSearch.getIssues() : issues.getIssues()).filter((issue) => issue.State === "open"),
+  );
 
   interface RepoBackedItem {
     repo?: {

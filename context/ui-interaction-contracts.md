@@ -1163,6 +1163,9 @@ action, or the two fight and the control renders the inverse of its real state.
 
 Not every visibility control means "remove this entity entirely."
 
+- Workspace status counts must stay current without opening PR or issue lists;
+  use the complete, event-refreshed open-item cache, not page-local lists or capped search results
+  (`frontend/src/lib/components/layout/StatusBar.svelte::globalCounts`).
 - PR inclusion options match any selected option, including involvement and
   unassigned. Cross-section repository, state, search, starred, workflow, and workspace
   filters still narrow the results (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).

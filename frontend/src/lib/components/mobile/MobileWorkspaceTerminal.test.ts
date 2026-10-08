@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -111,6 +111,41 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+  });
+
+  it.each([true, false])("shows only available launch choices (available: %s)", async (available) => {
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({
+      ...runtime,
+      launch_targets: [
+        { key: "helper", label: "Helper", kind: "agent", available, source: "config" },
+        {
+          key: "disabled",
+          label: "Disabled agent",
+          kind: "agent",
+          available: false,
+          disabled_reason: "disabled by config",
+        },
+        {
+          key: "missing",
+          label: "Missing agent",
+          kind: "acp",
+          available: false,
+          disabled_reason: "executable not found",
+        },
+      ],
+    });
+    render(MobileWorkspaceTerminal, { props });
+    await fireEvent.click(await screen.findByRole("button", { name: "Terminal options" }));
+    await fireEvent.click(await screen.findByRole("button", { name: /New terminal/ }));
+    const sheet = within(await screen.findByRole("dialog", { name: "Launch workspace session" }));
+    expect(sheet.queryByText("Disabled agent")).toBeNull();
+    expect(sheet.queryByText("Missing agent")).toBeNull();
+    if (available) {
+      expect(sheet.getByRole("button", { name: /Helper/ }).hasAttribute("disabled")).toBe(false);
+    } else {
+      expect(sheet.queryByRole("button", { name: /Helper/ })).toBeNull();
+      expect(sheet.getByText("No launch targets are available for this workspace.")).toBeTruthy();
+    }
   });
 
   it("starts runtime discovery while workspace details are held", async () => {

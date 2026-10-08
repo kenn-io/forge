@@ -47,6 +47,8 @@ Think about mobile work in this order:
 - The Forge selector navigates with ordinary origin links so other tabs are not
   retargeted (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Preserve human-facing product copy. Remove text that sounds like an implementation note or model instruction.
+- The phone launch menu must omit unavailable agents and shells; disabled choices waste phone space
+  (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte::availableLaunchTargets`).
 - Keep repository/provider identity visible enough to disambiguate similarly named repos, especially on activity cards and detail headers.
 - Give focused PR/issue detail pages their own phone shell treatment even when they reuse desktop detail components internally. Phone-like focus presentation, whether reached from `/m` lists, the activity feed, `/focus/...`, or a narrow canonical URL, renders inside the same `.mobile-shell` as every other phone view, and detail routes add a header with the item badge, a Back control, and the shell menu. Desktop-narrow focus presentation stays chrome-free (`frontend/src/App.svelte::phoneDetailItem`).
 - The phone PR header status row is one control family: state, CI, diff stat, review decision, labels, assignees, and reviewers all render at the action-grid height with the same corner radius, one size, one weight, and plain case. Tone tints still carry status; pills and uppercase labels are desktop density devices. Branch names keep the app mono face at the inline-code ratio so the mono line reads the same size as the sans repository line (`frontend/src/App.svelte` phone `.chips-row` rules).

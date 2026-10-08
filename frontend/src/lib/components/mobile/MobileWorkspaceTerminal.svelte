@@ -128,6 +128,7 @@
 
   const sessions = $derived(mobileTerminalSessions(runtime, workspace));
   const launchTargets = $derived(runtime?.launch_targets ?? []);
+  const availableLaunchTargets = $derived(launchTargets.filter((target) => target.available));
   const sessionOptions = $derived<SelectDropdownOption[]>(
     sessions.map((session) => ({ value: session.key, label: session.label })),
   );
@@ -1020,7 +1021,7 @@
     <div class="mobile-workspace-terminal__empty">
       <div><strong>No terminal sessions</strong><span>Launch an agent or shell in this workspace.</span></div>
       <div class="mobile-workspace-terminal__launch-grid">
-        {#each launchTargets.filter((target) => target.available) as target (target.key)}
+        {#each availableLaunchTargets as target (target.key)}
           <button type="button" disabled={launchingTarget !== null || pendingLaunch !== null} onclick={() => launch(target.key)}>
             {#if launchingTarget === target.key}<Spinner size={16} />{/if}
             {target.kind === "plain_shell" ? "Shell" : target.label}
@@ -1098,13 +1099,13 @@
     <div class="mobile-terminal-sheet">
       <small class="mobile-terminal-sheet__branch">{workspace?.git_head_ref ?? workspaceId}</small>
       <div class="mobile-terminal-sheet__targets">
-        {#each launchTargets as target (target.key)}
-          <button type="button" disabled={!target.available || launchingTarget !== null || pendingLaunch !== null} title={target.disabled_reason} onclick={() => launch(target.key)}>
-            <span><strong><LaunchTargetName {target} label={target.kind === "plain_shell" ? "Shell" : target.label} iconSize={16} /></strong><small>{target.available ? target.source : target.disabled_reason}</small></span>
+        {#each availableLaunchTargets as target (target.key)}
+          <button type="button" disabled={launchingTarget !== null || pendingLaunch !== null} onclick={() => launch(target.key)}>
+            <span><strong><LaunchTargetName {target} label={target.kind === "plain_shell" ? "Shell" : target.label} iconSize={16} /></strong><small>{target.source}</small></span>
             {#if launchingTarget === target.key}<Spinner size={16} />{:else}<PlusIcon size="18" aria-hidden="true" />{/if}
           </button>
         {/each}
-        {#if launchTargets.length === 0}<p>No launch targets are configured for this workspace.</p>{/if}
+        {#if availableLaunchTargets.length === 0}<p>No launch targets are available for this workspace.</p>{/if}
       </div>
     </div>
   </Modal>

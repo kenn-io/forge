@@ -29,6 +29,35 @@ afterEach(() => {
 });
 
 it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
+  it.effect("confirms a partial ACP update after its response is lost", () =>
+    Effect.gen(function* () {
+      const saved = { ...makeSettings(), acp: { font_family: "serif", font_size: 18 } };
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost after commit"))
+          : Promise.resolve(Response.json(saved));
+      });
+      const workflow = yield* SettingsWorkflow;
+      const result = yield* workflow.persist(() => ({ acp: { font_size: 18 } }));
+      assert.deepStrictEqual(result.acp, { font_family: "serif", font_size: 18 });
+    }),
+  );
+
+  it.effect("rejects ACP recovery when the requested field was not persisted", () =>
+    Effect.gen(function* () {
+      vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("response lost before commit"))
+          : Promise.resolve(Response.json(makeSettings()));
+      });
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.persist(() => ({ acp: { font_family: "serif" } })));
+      assert.strictEqual(failure._tag, "TransientTransportError");
+    }),
+  );
+
   it.effect("serializes fleet updates behind shared settings writes", () =>
     Effect.gen(function* () {
       let releaseFirstResponse = () => {};

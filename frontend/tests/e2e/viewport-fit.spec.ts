@@ -61,7 +61,7 @@ test("switching settings categories preserves unsaved drafts", async ({ page }) 
     .getByRole("button")
     .filter({ has: page.getByText("Workspaces", { exact: true }) })
     .click();
-  const fontSize = page.getByLabel("Font size");
+  const fontSize = page.getByLabel("Font size", { exact: true });
   await fontSize.fill("17");
 
   // Panels are hidden, not unmounted, on switch — an unsaved edit must

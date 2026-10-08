@@ -1,5 +1,30 @@
 components:
   schemas:
+    ACP:
+      additionalProperties: false
+      properties:
+        font_family:
+          type: string
+        font_size:
+          format: int64
+          maximum: 32
+          minimum: 8
+          type: integer
+      required:
+        - font_family
+        - font_size
+      type: object
+    ACPSettingsUpdate:
+      additionalProperties: false
+      properties:
+        font_family:
+          type: string
+        font_size:
+          format: int64
+          maximum: 32
+          minimum: 8
+          type: integer
+      type: object
     AbortFederationSpokeInputBody:
       additionalProperties: false
       properties:
@@ -9246,6 +9271,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp:
+          $ref: "#/components/schemas/ACP"
         activity:
           $ref: "#/components/schemas/Activity"
         agents:
@@ -9311,6 +9338,7 @@ components:
         - issues
         - notifications
         - terminal
+        - acp
         - agents
         - quick_actions
         - kata_projects
@@ -10430,6 +10458,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp:
+          $ref: "#/components/schemas/ACPSettingsUpdate"
         activity:
           $ref: "#/components/schemas/Activity"
         agents:

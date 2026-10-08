@@ -8,6 +8,7 @@ import type { StartupSnapshot } from "../lib/app/startup-workflow.js";
 
 export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): StartupSnapshot {
   const defaults = {
+    acp: { font_family: "", font_size: 13 },
     airplane_mode: false,
     activity: {
       view_mode: "threaded",

@@ -1,9 +1,11 @@
 import {
+  DEFAULT_ACP_SETTINGS,
   DEFAULT_MODE_VISIBILITY,
   DEFAULT_DETAIL_SETTINGS,
   DEFAULT_PULL_REQUEST_SETTINGS,
   DEFAULT_TERMINAL_SETTINGS,
   type ConfigRepo,
+  type ACPSettings,
   type DetailSettings,
   type LaunchTarget,
   type ModeVisibility,
@@ -15,6 +17,7 @@ import {
 } from "../api/types.js";
 
 export function createSettingsStore() {
+  let acpSettings = $state.raw<ACPSettings>({ ...DEFAULT_ACP_SETTINGS });
   let repos = $state.raw<ConfigRepo[]>([]);
   let terminalSettings = $state.raw<TerminalSettings>({
     ...DEFAULT_TERMINAL_SETTINGS,
@@ -199,6 +202,10 @@ export function createSettingsStore() {
   }
 
   return {
+    getACPSettings: () => acpSettings,
+    setACPSettings: (settings: ACPSettings) => {
+      acpSettings = settings;
+    },
     getAirplaneMode: () => airplaneMode,
     setAirplaneMode: (enabled: boolean) => {
       airplaneMode = enabled;

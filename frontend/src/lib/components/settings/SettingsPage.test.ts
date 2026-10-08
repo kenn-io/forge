@@ -28,6 +28,8 @@ vi.mock("../../context.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../context.js")>()),
   getStores: () => ({
     settings: {
+      getACPSettings: () => ({ font_family: "", font_size: 13 }),
+      setACPSettings: vi.fn(),
       setAirplaneMode,
       getTerminalSettings: () => DEFAULT_TERMINAL_SETTINGS,
       setTerminalSettings: vi.fn(),

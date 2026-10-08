@@ -420,6 +420,12 @@ Persisted controls must state their scope clearly.
 - Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
   threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
   must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).
+- Restored Activity selections recover and retain verified repository identity from feed rows
+  before loading details, so cached PRs/issues render while the backend is pending; unknown
+  identity must not reuse a mutable route's cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Activity project changes immediately project a recent matching or broader repository snapshot,
+  only within the same remaining filters. Cached rows are previews; every project change still
+  revalidates cursor and paging authority (`frontend/src/lib/stores/activity.svelte.ts::restoreRepositoryActivity`).
 - A foreground Activity load replaces a same-scope author read owned by supersedable
   reconciliation; joining that read can let its interruption strand stale candidates
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).

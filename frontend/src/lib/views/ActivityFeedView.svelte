@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { ActivityItem } from "../api/types.js";
+  import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
   import ActivityFeed from "../components/ActivityFeed.svelte";
   import CommitDiffPanel from "../components/CommitDiffPanel.svelte";
@@ -9,7 +9,7 @@
   import { buildRoutedItemRoute, type PullRequestRouteRef } from "../routes.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
-  import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
+  import { issueDetailMatchesRef, pullDetailMatchesRef, repoIdentityMatches } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -74,7 +74,7 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const { detail: detailStore, issues: issuesStore } = getStores();
+  const { detail: detailStore, issues: issuesStore, activity } = getStores();
   const paneLayout = getPaneLayoutStore("activity");
 
   const ACTIVITY_PANE_WIDTH_KEY = "kenn-forge-activity-pane-width";
@@ -156,10 +156,32 @@
   const controlled = $derived(
     controlledDrawer !== undefined || onCloseDrawer !== undefined,
   );
-  const activeDrawer = $derived(
-    controlled ? (controlledDrawer ?? null) : internalDrawer,
-  );
+  let retainedSelectionIdentity = $state.raw<{ route: string; repositoryKey: RepositoryKey } | null>(null);
+  const activeDrawer = $derived.by(() => {
+    const selection = controlled ? (controlledDrawer ?? null) : internalDrawer;
+    if (!selection || selection.repositoryKey) return selection;
+    // URL selections omit repository identity. Recover it from the retained
+    // feed so a known item can render its cached detail before revalidation.
+    const matches = (item: ActivityItem | ActivitySubject | WorkspaceActivitySubject) =>
+      item.item_type === selection.itemType && item.item_number === selection.number && repoIdentityMatches(item, selection);
+    const item = activity.getItemActivity().find(matches)
+      ?? activity.getActivityItems().find(matches)
+      ?? activity.getWorkspaceActivity().find(matches);
+    const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
+      ? retainedSelectionIdentity.repositoryKey
+      : undefined;
+    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? retainedKey };
+  });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
+  $effect(() => {
+    const repositoryKey = activeDrawer?.repositoryKey;
+    if (!selectedItemRoute || !repositoryKey) {
+      retainedSelectionIdentity = null;
+    } else if (retainedSelectionIdentity?.route !== selectedItemRoute || retainedSelectionIdentity.repositoryKey !== repositoryKey) {
+      // Filtering a row out does not change the still-open detail's identity.
+      retainedSelectionIdentity = { route: selectedItemRoute, repositoryKey };
+    }
+  });
   let lastSelectionRevealKey = 0;
 
   function revealSelectedActivityRow(container: HTMLElement): (() => void) | undefined {

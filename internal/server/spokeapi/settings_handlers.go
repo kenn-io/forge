@@ -22,6 +22,7 @@ type SettingsResponse struct {
 	Issues        config.Issues                   `json:"issues"`
 	Notifications NotificationsSettingsResponse   `json:"notifications"`
 	Terminal      config.Terminal                 `json:"terminal"`
+	ACP           config.ACP                      `json:"acp"`
 	Modes         config.ModeVisibility           `json:"modes,omitzero"`
 	Agents        []config.Agent                  `json:"agents" nullable:"false"`
 	QuickActions  []config.QuickAction            `json:"quick_actions" nullable:"false"`
@@ -68,12 +69,18 @@ type UpdateSettingsRequest struct {
 	Workspaces   *WorkspaceSettingsUpdate         `json:"workspaces,omitempty"`
 	Issues       *config.Issues                   `json:"issues,omitempty"`
 	Terminal     *config.Terminal                 `json:"terminal,omitempty"`
+	ACP          *ACPSettingsUpdate               `json:"acp,omitempty"`
 	Modes        *config.ModeVisibility           `json:"modes,omitempty"`
 	Agents       *[]config.Agent                  `json:"agents,omitempty"`
 	QuickActions *[]config.QuickAction            `json:"quick_actions,omitempty"`
 	KataProjects *[]config.KataProjectRepoMapping `json:"kata_projects,omitempty"`
 	MCP          *McpSettingsUpdate               `json:"mcp,omitempty"`
 	Roborev      *RoborevSettingsUpdate           `json:"roborev,omitempty"`
+}
+
+type ACPSettingsUpdate struct {
+	FontFamily *string `json:"font_family,omitempty"`
+	FontSize   *int    `json:"font_size,omitempty" minimum:"8" maximum:"32"`
 }
 
 type WorkspaceSettingsUpdate struct {

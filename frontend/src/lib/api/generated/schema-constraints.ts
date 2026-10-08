@@ -4,6 +4,12 @@
  */
 
 export const schemaConstraints = {
+  ACP: {
+    font_size: { minimum: 8, maximum: 32 },
+  },
+  ACPSettingsUpdate: {
+    font_size: { minimum: 8, maximum: 32 },
+  },
   Assignment: {
     uid: { minimum: 0 },
   },

@@ -856,6 +856,14 @@ const (
 	DefaultTerminalRetainedSessions = 50
 )
 
+const DefaultACPFontSize = 13
+
+// ACP configures chat appearance independently of terminal appearance.
+type ACP struct {
+	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
+	FontSize   int    `toml:"font_size,omitempty" json:"font_size" minimum:"8" maximum:"32"`
+}
+
 type Terminal struct {
 	FontFamily       string  `toml:"font_family,omitempty" json:"font_family"`
 	FontSize         int     `toml:"font_size,omitempty" json:"font_size"`
@@ -1087,6 +1095,7 @@ type Config struct {
 	Notifications     Notifications            `toml:"notifications"`
 	Relay             Relay                    `toml:"relay"`
 	Terminal          Terminal                 `toml:"terminal"`
+	ACP               ACP                      `toml:"acp"`
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
 	QuickActions      []QuickAction            `toml:"quick_actions"`
@@ -1818,6 +1827,13 @@ func (c *Config) validate() error {
 		)
 	}
 
+	c.ACP.FontFamily = strings.TrimSpace(c.ACP.FontFamily)
+	if c.ACP.FontSize == 0 {
+		c.ACP.FontSize = DefaultACPFontSize
+	}
+	if c.ACP.FontSize < 8 || c.ACP.FontSize > 32 {
+		return fmt.Errorf("config: invalid acp.font_size %d: must be between 8 and 32", c.ACP.FontSize)
+	}
 	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
 	if c.Terminal.FontSize == 0 {
 		c.Terminal.FontSize = DefaultTerminalFontSize
@@ -3765,6 +3781,7 @@ type configFile struct {
 	Notifications               Notifications            `toml:"notifications,omitempty"`
 	Relay                       Relay                    `toml:"relay,omitempty"`
 	Terminal                    Terminal                 `toml:"terminal,omitempty"`
+	ACP                         ACP                      `toml:"acp,omitempty"`
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
 	QuickActions                []QuickAction            `toml:"quick_actions,omitempty"`
@@ -3816,6 +3833,7 @@ func (c *Config) Save(path string) error {
 		Notifications:               cfg.Notifications,
 		Relay:                       cfg.Relay,
 		Terminal:                    cfg.Terminal,
+		ACP:                         cfg.ACP,
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,
 		QuickActions:                cfg.QuickActions,

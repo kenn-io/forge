@@ -219,6 +219,8 @@ function sameValue(left: unknown, right: unknown): boolean {
 
 function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSettingsRequest): boolean {
   return (
+    (request.acp === undefined ||
+      Object.entries(request.acp).every(([key, value]) => settings.acp[key as keyof typeof settings.acp] === value)) &&
     (request.airplane_mode === undefined || settings.airplane_mode === request.airplane_mode) &&
     (request.activity === undefined || sameValue(settings.activity, request.activity)) &&
     (request.agents === undefined || sameValue(settings.agents, request.agents)) &&

@@ -44,6 +44,7 @@ function makeStores(
       }),
       setPullRequestSettings: vi.fn(),
       setDetailSettings: vi.fn(),
+      setACPSettings: vi.fn(),
       getWorkspaceSettings: () => workspaceSettings,
       setWorkspaceSettings: vi.fn((settings) => {
         workspaceSettings = settings;

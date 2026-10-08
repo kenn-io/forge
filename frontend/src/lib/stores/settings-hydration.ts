@@ -2,6 +2,7 @@ import { hydrateTerminalSettings, type TerminalSettingsHydration } from "./termi
 import { hydrateWorkspaceSettings, type WorkspaceSettingsHydration } from "./workspace-settings-persistence.js";
 import { hydrateRoborevSettings, type RoborevSettingsHydration } from "./roborev-settings-persistence.js";
 import type { SettingsResponse as GeneratedSettingsResponse } from "../api/generated/models/index.js";
+import { hydrateACPSettings, type ACPSettingsHydration } from "./acp-settings-persistence.js";
 
 type SettingsResponse = GeneratedSettingsResponse;
 
@@ -47,7 +48,9 @@ export function applySettingsHydration(
   terminalHydration: TerminalSettingsHydration,
   workspaceHydration: WorkspaceSettingsHydration,
   roborevHydration: RoborevSettingsHydration,
+  acpHydration: ACPSettingsHydration,
 ): void {
+  hydrateACPSettings(acpHydration, payload.acp);
   stores.settings.setAirplaneMode(payload.airplane_mode);
   stores.settings.setConfiguredRepos(payload.repos);
   stores.settings.setRepoPresets(payload.repo_presets);

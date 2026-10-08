@@ -364,6 +364,7 @@ export const mockSettings = {
     init_managed_clones: false,
   },
   provider_settings_loaded: true,
+  acp: { font_family: "", font_size: 13 },
 } satisfies SettingsResponse;
 
 export function makeRateLimits() {

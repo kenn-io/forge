@@ -1131,6 +1131,7 @@ auto_assign_on_create = false
 
 	response := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Workspaces: &spokeapi.WorkspaceSettingsUpdate{AutoAssignOnCreate: &autoAssign},
+		ACP:        &spokeapi.ACPSettingsUpdate{FontFamily: new("monospace"), FontSize: new(18)},
 	})
 
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -1138,9 +1139,13 @@ auto_assign_on_create = false
 	require.NoError(json.NewDecoder(response.Body).Decode(&settings))
 	assert.True(settings.Workspaces.AutoAssignOnCreate)
 	assert.False(settings.ProviderSettingsLoaded)
+	assert.Equal("monospace", settings.ACP.FontFamily)
+	assert.Equal(18, settings.ACP.FontSize)
 	persisted, err := config.Load(configPath)
 	require.NoError(err)
 	assert.True(persisted.Workspaces.AutoAssignOnCreate)
+	assert.Equal("monospace", persisted.ACP.FontFamily)
+	assert.Equal(18, persisted.ACP.FontSize)
 }
 
 func TestNodeLocalSettingsSaveStopsWaitingForHubAtPeerTimeout(t *testing.T) {

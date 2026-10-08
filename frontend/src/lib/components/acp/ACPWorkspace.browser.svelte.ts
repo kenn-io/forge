@@ -12,6 +12,10 @@ import "../../../app.css";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
+import { STORES_KEY } from "../../context.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
+
+let settings: ReturnType<typeof createSettingsStore>;
 
 const socket = vi.hoisted(() => ({ options: undefined as TerminalSessionOptions | undefined, sent: [] as string[] }));
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
@@ -40,7 +44,11 @@ async function renderChat(width: number) {
   // Mirrors the pooled session host: a full-size flex column.
   host.style.cssText = `width: ${width}px; height: 600px; display: flex; flex-direction: column;`;
   document.body.append(host);
-  await render(ACPWorkspace, { target: host, props: { websocketPath: "/ws/chat" } });
+  await render(ACPWorkspace, {
+    context: new Map([[STORES_KEY, { settings }]]),
+    target: host,
+    props: { websocketPath: "/ws/chat" },
+  });
   await expect.poll(() => socket.options).toBeDefined();
   socket.options!.onOpen?.();
   socket.options!.onMessage(
@@ -71,6 +79,7 @@ async function renderChat(width: number) {
 }
 
 beforeEach(() => {
+  settings = createSettingsStore();
   socket.options = undefined;
   socket.sent = [];
   runtimeCapture.current = makeAppRuntime();
@@ -284,6 +293,90 @@ describe("ACPWorkspace image output (browser)", () => {
 });
 
 describe("ACPWorkspace grouped activity (browser)", () => {
+  it("fits toolbar labels at the maximum ACP font size", async () => {
+    await renderChat(900);
+    settings.setACPSettings({ font_family: "serif", font_size: 32 });
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [],
+        messageOffset: 0,
+        messageCount: 0,
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "fast",
+            options: [{ value: "fast", name: "Fast model" }],
+          },
+        ],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    const button = page.getByRole("button", { name: "Model: Fast model" });
+    await expect.element(button).toBeVisible();
+    const bounds = button.element().getBoundingClientRect();
+    const label = button.element().querySelector(".tb-chip__label")!.getBoundingClientRect();
+    expect(label.top).toBeGreaterThanOrEqual(bounds.top);
+    expect(label.bottom).toBeLessThanOrEqual(bounds.bottom);
+  });
+
+  it("applies ACP appearance to messages, code, tools, and composer without changing the app font", async () => {
+    const { host } = await renderChat(900);
+    const appFont = getComputedStyle(document.body).fontFamily;
+    const composer = page.getByRole("textbox", { name: "Message agent" });
+    expect(getComputedStyle(composer.element()).fontSize).toBe("13px");
+    expect(getComputedStyle(host.querySelector(".markdown")!).fontSize).toBe("13px");
+    settings.setTerminalSettings({ ...settings.getTerminalSettings(), font_family: "monospace", font_size: 11 });
+    settings.setACPSettings({ font_family: "serif", font_size: 26 });
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [
+          { role: "user", text: "Review the code" },
+          { role: "tool", text: "Read options", status: "completed", toolCallId: "read" },
+          { role: "thought", text: "Compare the available options." },
+          { role: "assistant", text: "Here is the result.\n\n```js\nconst value = 1;\n```" },
+        ],
+        messageOffset: 0,
+        messageCount: 4,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await expect.element(page.getByText("Here is the result.")).toBeVisible();
+    await page.getByRole("button", { name: "1 tool · 1 thought" }).click();
+    await page.getByRole("button", { name: "Thinking", exact: true }).click();
+    for (const element of [
+      composer.element(),
+      page.getByText("Review the code").element(),
+      page.getByText("Here is the result.").element(),
+    ]) {
+      expect(getComputedStyle(element).fontSize).toBe("26px");
+      expect(getComputedStyle(element).fontFamily).toBe("serif");
+    }
+    for (const text of ["Read options", "Compare the available options."]) {
+      expect(getComputedStyle(page.getByText(text).element()).fontSize).toBe("22px");
+      expect(getComputedStyle(page.getByText(text).element()).fontFamily).toBe("serif");
+    }
+    const code = host.querySelector(".markdown pre code")!;
+    expect(getComputedStyle(code).fontFamily).toBe("serif");
+    expect(getComputedStyle(code.parentElement!).fontSize).toBe("24px");
+    expect(getComputedStyle(document.body).fontFamily).toBe(appFont);
+    settings.setACPSettings({ font_family: "", font_size: 13 });
+    await expect.poll(() => getComputedStyle(composer.element()).fontSize).toBe("13px");
+    expect(getComputedStyle(composer.element()).fontFamily).toBe(appFont);
+    expect(getComputedStyle(code).fontFamily).toContain("monospace");
+  });
+
   it("expands interleaved thoughts with the keyboard in a narrow pane", async () => {
     await page.viewport(420, 720);
     const { host } = await renderChat(420);
@@ -354,7 +447,11 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     const host = document.createElement("div");
     host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";
     document.body.append(host);
-    await render(ACPWorkspace, { target: host, props: { websocketPath: "/ws/chat" } });
+    await render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      target: host,
+      props: { websocketPath: "/ws/chat" },
+    });
     await expect.poll(() => socket.options).toBeDefined();
     socket.options!.onOpen?.();
     socket.options!.onMessage(

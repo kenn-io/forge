@@ -1,4 +1,5 @@
 import type {
+  Acp,
   Activity,
   ActivityAuthorsResponse as GeneratedActivityAuthorsResponse,
   ActivityItemResponse,
@@ -144,7 +145,10 @@ export type PullRequestSettings = PullRequests;
 export type DetailSettings = Detail;
 export type SyncSettings = SyncSettingsResponse;
 export type TerminalSettings = Terminal;
+export type ACPSettings = Acp;
 export type ModeVisibility = GeneratedModeVisibility;
+
+export const DEFAULT_ACP_SETTINGS: ACPSettings = { font_family: "", font_size: 13 };
 
 export const DEFAULT_TERMINAL_SETTINGS: TerminalSettings = {
   font_family: "",

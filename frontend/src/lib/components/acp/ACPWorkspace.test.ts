@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
+import { STORES_KEY } from "../../context.js";
+import { createSettingsStore } from "../../stores/settings.svelte.js";
+
+let settings: ReturnType<typeof createSettingsStore>;
 
 // The websocket controller is the only mocked boundary: tests feed it raw
 // state frames and read back the raw command frames the chat sends.
@@ -42,7 +46,10 @@ const baseState = {
 };
 
 async function openChat(state: Record<string, unknown>, props: { disabled?: boolean } = {}) {
-  render(ACPWorkspace, { props: { websocketPath: "/ws/chat", ...props } });
+  render(ACPWorkspace, {
+    context: new Map([[STORES_KEY, { settings }]]),
+    props: { websocketPath: "/ws/chat", ...props },
+  });
   await waitFor(() => expect(socket.options).toBeDefined());
   socket.options!.onOpen?.();
   await push(state);
@@ -62,6 +69,7 @@ function sentCommands(): unknown[] {
 }
 
 beforeEach(() => {
+  settings = createSettingsStore();
   socket.options = undefined;
   socket.sent = [];
   runtimeCapture.current = makeAppRuntime();

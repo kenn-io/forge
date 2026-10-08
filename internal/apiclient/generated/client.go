@@ -56075,6 +56075,16 @@ type RemoveStaleWorktreeResp struct {
 	JSON200      *RemoveStaleWorktreeResponse
 }
 
+type ACP struct {
+	FontFamily string `json:"font_family"`
+	FontSize   int64  `json:"font_size"`
+}
+
+type ACPSettingsUpdate struct {
+	FontFamily *string `json:"font_family,omitempty"`
+	FontSize   *int64  `json:"font_size,omitempty"`
+}
+
 type AbortFederationSpokeInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -59638,6 +59648,7 @@ type SetWorktreeSessionBackendInputBody struct {
 type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string                       `json:"$schema,omitempty"`
+	Acp           ACP                           `json:"acp"`
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
 	AirplaneMode  bool                          `json:"airplane_mode"`
@@ -60047,6 +60058,7 @@ type UpdateRepoPresetInputBody struct {
 type UpdateSettingsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string                  `json:"$schema,omitempty"`
+	Acp          *ACPSettingsUpdate       `json:"acp,omitempty"`
 	Activity     *Activity                `json:"activity,omitempty"`
 	Agents       []Agent                  `json:"agents,omitempty"`
 	AirplaneMode *bool                    `json:"airplane_mode,omitempty"`

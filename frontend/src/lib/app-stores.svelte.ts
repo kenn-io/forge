@@ -33,6 +33,7 @@ import { createWorkspaceItemSearchStore } from "./stores/workspace-item-search.s
 import { beginTerminalSettingsHydration } from "./stores/terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./stores/workspace-settings-persistence.js";
 import { beginRoborevSettingsHydration } from "./stores/roborev-settings-persistence.js";
+import { beginACPSettingsHydration } from "./stores/acp-settings-persistence.js";
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
@@ -183,6 +184,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       const terminalHydration = yield* Effect.sync(() => beginTerminalSettingsHydration(settingsStore));
       const workspaceHydration = yield* Effect.sync(() => beginWorkspaceSettingsHydration(settingsStore));
       const roborevHydration = yield* Effect.sync(() => beginRoborevSettingsHydration(settingsStore));
+      const acpHydration = yield* Effect.sync(() => beginACPSettingsHydration(settingsStore));
       const settings = yield* executeGeneratedApiRequest("GET settings after config change", (client, signal) =>
         client.SettingsService.getSettings({ signal }),
       ).pipe(retryIdempotentRead);
@@ -193,6 +195,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           terminalHydration,
           workspaceHydration,
           roborevHydration,
+          acpHydration,
         );
       });
       yield* refreshVisibleData();

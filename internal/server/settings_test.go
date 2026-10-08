@@ -820,7 +820,7 @@ func TestRoleAwareSettingsRequireOneOwnerPerNodeWrite(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
-	hub, hubDB, _, _ := setupTestServerWithConfigContentAndOptions(t, `
+	hub, hubDB, hubConfigPath, _ := setupTestServerWithConfigContentAndOptions(t, `
 host = "127.0.0.1"
 port = 8091
 
@@ -900,6 +900,38 @@ base_url = %q
 		},
 	)
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
+
+	for _, activity := range []config.Activity{
+		{
+			ViewMode: "flat", TimeRange: "30d",
+			ItemTypes: []string{"issue"}, EventTypes: []string{"review", "commit"},
+			HideNotifications: true, HideDefaultBranch: true, RollUpCommits: true,
+		},
+		{
+			ViewMode: "threaded", TimeRange: "7d",
+			ItemTypes: []string{}, EventTypes: []string{},
+		},
+	} {
+		response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+			Activity: &activity,
+		})
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		var settings spokeapi.SettingsResponse
+		require.NoError(json.NewDecoder(response.Body).Decode(&settings))
+		assert.Equal(activity.ItemTypes, settings.Activity.ItemTypes)
+		assert.Equal(activity.EventTypes, settings.Activity.EventTypes)
+		assert.Equal(activity.HideNotifications, settings.Activity.HideNotifications)
+		assert.Equal(activity.HideDefaultBranch, settings.Activity.HideDefaultBranch)
+		assert.Equal(activity.RollUpCommits, settings.Activity.RollUpCommits)
+
+		persisted, err := config.Load(hubConfigPath)
+		require.NoError(err)
+		assert.Equal(activity.ItemTypes, persisted.Activity.ItemTypes)
+		assert.Equal(activity.EventTypes, persisted.Activity.EventTypes)
+		assert.Equal(activity.HideNotifications, persisted.Activity.HideNotifications)
+		assert.Equal(activity.HideDefaultBranch, persisted.Activity.HideDefaultBranch)
+		assert.Equal(activity.RollUpCommits, persisted.Activity.RollUpCommits)
+	}
 
 	autoAssign := true
 	response := testutil.DoJSON(t, spoke, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{

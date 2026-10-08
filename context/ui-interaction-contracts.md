@@ -299,7 +299,7 @@ pending action state; replacing a known repository ID must reset transient actio
 Persisted controls must state their scope clearly.
 
 - Preserve explicit Activity choices across refresh, Settings navigation, and
-  late hydration; omit time/view overrides only against known server defaults
+  late hydration; omit filter overrides only against known server defaults
   (`frontend/src/lib/stores/activity.svelte.ts::syncToURL`, `frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 
 - Switching Forges is ordinary cross-origin link navigation. Do not keep a
@@ -392,8 +392,8 @@ Persisted controls must state their scope clearly.
 - Refreshing unchanged discussion must preserve highlighted markdown and open disclosures;
   recreated presentation callbacks must not invalidate the rich rendering
   (`frontend/src/lib/components/shared/MarkdownHtml.svelte::renderedHtml`).
-- Activity filters remain URL-backed and session-scoped. Missing filter params on a
-  partial Activity URL inherit the last validated route before store hydration, while
+- Activity filter defaults belong in Settings and `config.toml`; URL overrides remain session-scoped.
+  Missing filter params on a partial Activity URL inherit the last validated route before hydration;
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 - Activity URLs persist item scope (`item_types`) and event toggles (`event_types`)
   independently. Legacy `types` migrates both dimensions and owns them during session

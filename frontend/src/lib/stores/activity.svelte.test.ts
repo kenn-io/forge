@@ -43,6 +43,11 @@ function settings(collapse: boolean, useWorkspaceActivityForRecency = false): Ac
     hide_closed: false,
     hide_bots: false,
     collapse_threads: collapse,
+    item_types: ["pr", "issue"],
+    event_types: ["comment", "review", "commit", "force_push"],
+    hide_notifications: false,
+    hide_default_branch: false,
+    roll_up_commits: false,
     default_branch_retention_days: 90,
     default_branch_max_commits: 5000,
     use_workspace_activity_for_recency: useWorkspaceActivityForRecency,
@@ -52,6 +57,90 @@ function settings(collapse: boolean, useWorkspaceActivityForRecency = false): Ac
 function makeStore() {
   return createActivityStore({ client: fakeClient });
 }
+
+describe("configured Activity filters", () => {
+  const defaults = () => ({
+    ...settings(false),
+    item_types: ["issue"],
+    event_types: ["comment"],
+    hide_notifications: true,
+    hide_default_branch: true,
+    roll_up_commits: true,
+  });
+
+  it.each([false, true])("uses configured filters on opening Activity (late settings: %s)", (late) => {
+    const store = makeStore();
+    if (!late) store.hydrateDefaults(defaults());
+    store.initializeFromMount();
+    if (late) store.hydrateDefaults(defaults());
+    expect([...store.getEnabledItemTypes()]).toEqual(["issue"]);
+    expect([...store.getEnabledEvents()]).toEqual(["comment"]);
+    expect(store.getActivityFilterTypes()).toEqual(["new_issue", "comment"]);
+    expect(store.getShowNotifications()).toBe(false);
+    expect(store.getHideDefaultBranchActivity()).toBe(true);
+    expect(store.getRollUpCommits()).toBe(true);
+    store.syncToURL();
+    expect(window.location.search).toBe("");
+  });
+
+  it.each([false, true])("keeps explicit all/on/off URL overrides (late settings: %s)", (late) => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?item_types=pr,issue&event_types=comment,review,commit,force_push&notif=1&hide_branch=0&rollup_commits=0",
+    );
+    const store = makeStore();
+    if (!late) store.hydrateDefaults(defaults());
+    store.initializeFromMount();
+    if (late) store.hydrateDefaults(defaults());
+    store.syncToURL();
+    store.hydrateDefaults(defaults());
+    expect([...store.getEnabledItemTypes()]).toEqual(["pr", "issue"]);
+    expect([...store.getEnabledEvents()]).toEqual(["comment", "review", "commit", "force_push"]);
+    expect(store.getShowNotifications()).toBe(true);
+    expect(store.getHideDefaultBranchActivity()).toBe(false);
+    expect(store.getRollUpCommits()).toBe(false);
+  });
+
+  it("preserves choices made before settings arrive", () => {
+    const store = makeStore();
+    store.initializeFromMount();
+    store.setEnabledItemTypes(new Set(["pr", "issue"]));
+    store.setEnabledEvents(new Set(["comment", "review", "commit", "force_push"]));
+    store.setShowNotifications(true);
+    store.setHideDefaultBranchActivity(false);
+    store.setRollUpCommits(false);
+    store.syncToURL();
+    store.hydrateDefaults(defaults());
+    expect([...store.getEnabledItemTypes()]).toEqual(["pr", "issue"]);
+    expect([...store.getEnabledEvents()]).toEqual(["comment", "review", "commit", "force_push"]);
+    expect(store.getShowNotifications()).toBe(true);
+    expect(store.getHideDefaultBranchActivity()).toBe(false);
+    expect(store.getRollUpCommits()).toBe(false);
+  });
+
+  it("keeps a legacy all-items bookmark while settings are loading", () => {
+    window.history.replaceState(null, "", "/?types=new_pr,new_issue,comment,review,commit,force_push");
+    const store = makeStore();
+    store.initializeFromMount();
+    store.hydrateDefaults(defaults());
+    expect([...store.getEnabledItemTypes()]).toEqual(["pr", "issue"]);
+    expect([...store.getEnabledEvents()]).toEqual(["comment", "review", "commit", "force_push"]);
+  });
+
+  it("honors empty selections and restores defaults when overrides are removed", () => {
+    const store = makeStore();
+    store.hydrateDefaults({ ...defaults(), item_types: [], event_types: [] });
+    store.initializeFromMount();
+    expect(store.getActivityFilterTypes()).toEqual(["none"]);
+    store.setEnabledItemTypes(new Set(["pr"]));
+    store.setEnabledEvents(new Set(["review"]));
+    store.syncToURL();
+    window.history.replaceState(null, "", "/");
+    store.syncFromURL();
+    expect(store.getActivityFilterTypes()).toEqual(["none"]);
+  });
+});
 
 function workspaceActivity(itemNumber: number): WorkspaceActivitySubject {
   return {
@@ -2214,6 +2303,7 @@ describe("activity store URL hydration", () => {
     ({ legacyTypes, expectedItems, expectedEvents, expectedItemParam, expectedEventParam }) => {
       window.history.replaceState(null, "", `/?types=${legacyTypes}`);
       const first = makeStore();
+      first.hydrateDefaults(settings(false));
       first.initializeFromMount();
 
       expect([...first.getEnabledItemTypes()]).toEqual(expectedItems);
@@ -2233,6 +2323,7 @@ describe("activity store URL hydration", () => {
   it("normalizes explicit default item and event selections out of the URL", () => {
     window.history.replaceState(null, "", "/?item_types=pr,issue&event_types=comment,review,commit,force_push");
     const s = makeStore();
+    s.hydrateDefaults(settings(false));
     s.initializeFromMount();
     expect(s.getActivityFilterTypes()).toEqual([]);
     const normalized = new URLSearchParams(window.location.search);
@@ -2277,6 +2368,7 @@ describe("activity store URL hydration", () => {
   it("round trips default item scope with every event toggle disabled after URL normalization", () => {
     window.history.replaceState(null, "", "/?item_types=pr,issue&event_types=none");
     const first = makeStore();
+    first.hydrateDefaults(settings(false));
     first.initializeFromMount();
 
     expect([...first.getEnabledItemTypes()]).toEqual(DEFAULT_ACTIVITY_ITEM_TYPES);
@@ -2729,6 +2821,7 @@ describe("activity store default-branch visibility", () => {
     expect(new URLSearchParams(window.location.search).get("hide_branch")).toBe("1");
 
     const next = makeStore();
+    next.hydrateDefaults(settings(false));
     next.initializeFromMount();
     expect(next.getHideDefaultBranchActivity()).toBe(true);
 
@@ -2759,6 +2852,7 @@ describe("activity store default-branch visibility", () => {
       "/?types=new_pr,new_issue,comment,review,commit,force_push,notification&hide_branch=1",
     );
     const first = makeStore();
+    first.hydrateDefaults(settings(false));
     first.initializeFromMount();
 
     expect(first.getHideDefaultBranchActivity()).toBe(true);
@@ -2806,6 +2900,7 @@ describe("activity store commit roll-up", () => {
     expect(new URLSearchParams(window.location.search).get("rollup_commits")).toBe("1");
 
     const next = makeStore();
+    next.hydrateDefaults(settings(false));
     next.initializeFromMount();
     expect(next.getRollUpCommits()).toBe(true);
 

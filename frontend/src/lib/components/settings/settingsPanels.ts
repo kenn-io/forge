@@ -48,7 +48,8 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Activity feed defaults",
     group: "Workflow",
     description: "Default activity feed filters",
-    keywords: "activity feed defaults filters time range closed bots",
+    keywords:
+      "activity feed defaults filters time range horizon closed merged bots item event types comments reviews commits force pushes notifications branch rollup",
   },
   {
     id: "settings-workspaces",

@@ -368,6 +368,8 @@ to move sync reads to an installation quota.
 
 ## Activity defaults
 
+Set these in **Settings → Activity**, or edit the `[activity]` section:
+
 ```toml
 [activity]
 view_mode = "threaded"
@@ -375,11 +377,19 @@ time_range = "7d"
 hide_closed = false
 hide_bots = false
 collapse_threads = true
+item_types = ["pr", "issue"]
+event_types = ["comment", "review", "commit", "force_push"]
+hide_notifications = false
+hide_default_branch = false
+roll_up_commits = false
 default_branch_retention_days = 90
 default_branch_max_commits = 5000
 ```
 
-These values set the initial Activity view and local default-branch retention.
+Filter defaults apply when opening Activity; explicit filters in the URL take
+precedence. An empty `item_types` or `event_types` list selects none. The
+`commit` event filter controls default-branch commits; PR commits remain part of
+their PR timeline. The retention limits control locally stored default-branch history.
 
 ## App modes
 

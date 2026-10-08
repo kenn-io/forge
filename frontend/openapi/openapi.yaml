@@ -65,9 +65,23 @@ components:
         default_branch_retention_days:
           format: int64
           type: integer
+        event_types:
+          items:
+            type: string
+          type: array
         hide_bots:
           type: boolean
         hide_closed:
+          type: boolean
+        hide_default_branch:
+          type: boolean
+        hide_notifications:
+          type: boolean
+        item_types:
+          items:
+            type: string
+          type: array
+        roll_up_commits:
           type: boolean
         time_range:
           enum:
@@ -89,6 +103,11 @@ components:
         - hide_closed
         - hide_bots
         - collapse_threads
+        - item_types
+        - event_types
+        - hide_notifications
+        - hide_default_branch
+        - roll_up_commits
         - use_workspace_activity_for_recency
         - default_branch_retention_days
         - default_branch_max_commits

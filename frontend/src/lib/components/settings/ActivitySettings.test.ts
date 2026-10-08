@@ -33,6 +33,11 @@ const initial: ActivitySettingsType = {
   hide_closed: false,
   hide_bots: false,
   collapse_threads: false,
+  item_types: ["pr", "issue"],
+  event_types: ["comment", "review", "commit", "force_push"],
+  hide_notifications: false,
+  hide_default_branch: false,
+  roll_up_commits: false,
   default_branch_retention_days: 90,
   default_branch_max_commits: 5000,
   use_workspace_activity_for_recency: false,
@@ -78,6 +83,19 @@ describe("ActivitySettings", () => {
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ activity: updated });
     expect(mockHydrateDefaults).toHaveBeenCalledWith(updated);
+  });
+
+  it("saves event selections without changing the other defaults", async () => {
+    const updated = { ...initial, event_types: ["comment", "commit", "force_push"] };
+    mockPersistSettings.mockReturnValue(Effect.succeed({ activity: updated }));
+    render(ActivitySettingsTestHarness, { props: { activity: initial, onUpdate: vi.fn() } });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Reviews", exact: true }));
+
+    await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
+    expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ activity: updated });
+    expect(mockHydrateDefaults).toHaveBeenCalledWith(updated);
+    expect((screen.getByRole("checkbox", { name: "Reviews", exact: true }) as HTMLInputElement).checked).toBe(false);
   });
 
   it("restores the previous activity defaults when saving fails", async () => {

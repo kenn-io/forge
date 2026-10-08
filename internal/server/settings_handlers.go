@@ -39,6 +39,7 @@ func (s *Server) buildLocalSettingsResponse(
 	workspaces := s.cfg.Workspaces
 	issues := s.cfg.Issues
 	terminal := s.cfg.Terminal
+	acp := s.cfg.ACP
 	modes := spokeapi.CloneModeVisibility(s.cfg.Modes).WithDefaults()
 	agents := spokeapi.CloneConfigAgents(s.cfg.Agents)
 	quickActions := settingsapi.CloneQuickActions(s.cfg.QuickActions)
@@ -113,6 +114,7 @@ func (s *Server) buildLocalSettingsResponse(
 		// setting; report them as always available.
 		Notifications: spokeapi.NotificationsSettingsResponse{Enabled: true},
 		Terminal:      terminal,
+		ACP:           acp,
 		Modes:         modes,
 		Agents:        agents,
 		QuickActions:  quickActions,
@@ -332,6 +334,7 @@ func (s *Server) commitLocalSettings(
 	prevWorkspaces := s.cfg.Workspaces
 	prevIssues := s.cfg.Issues
 	prevTerminal := s.cfg.Terminal
+	prevACP := s.cfg.ACP
 	prevModes := spokeapi.CloneModeVisibility(s.cfg.Modes)
 	prevAgents := spokeapi.CloneConfigAgents(s.cfg.Agents)
 	prevQuickActions := settingsapi.CloneQuickActions(s.cfg.QuickActions)
@@ -380,6 +383,14 @@ func (s *Server) commitLocalSettings(
 	if input.Body.Terminal != nil {
 		s.cfg.Terminal = *input.Body.Terminal
 	}
+	if input.Body.ACP != nil {
+		if input.Body.ACP.FontFamily != nil {
+			s.cfg.ACP.FontFamily = *input.Body.ACP.FontFamily
+		}
+		if input.Body.ACP.FontSize != nil {
+			s.cfg.ACP.FontSize = *input.Body.ACP.FontSize
+		}
+	}
 	if input.Body.Modes != nil {
 		s.cfg.Modes = spokeapi.CloneModeVisibility(*input.Body.Modes).WithDefaults()
 	}
@@ -415,6 +426,7 @@ func (s *Server) commitLocalSettings(
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues
 		s.cfg.Terminal = prevTerminal
+		s.cfg.ACP = prevACP
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
 		s.cfg.QuickActions = prevQuickActions
@@ -433,6 +445,7 @@ func (s *Server) commitLocalSettings(
 		s.cfg.Workspaces = prevWorkspaces
 		s.cfg.Issues = prevIssues
 		s.cfg.Terminal = prevTerminal
+		s.cfg.ACP = prevACP
 		s.cfg.Modes = prevModes
 		s.cfg.Agents = prevAgents
 		s.cfg.QuickActions = prevQuickActions

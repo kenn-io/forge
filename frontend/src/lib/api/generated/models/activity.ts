@@ -8,8 +8,13 @@ export interface Activity {
   collapse_threads: boolean;
   default_branch_max_commits: number;
   default_branch_retention_days: number;
+  event_types: string[];
   hide_bots: boolean;
   hide_closed: boolean;
+  hide_default_branch: boolean;
+  hide_notifications: boolean;
+  item_types: string[];
+  roll_up_commits: boolean;
   time_range: ActivityTimeRange;
   use_workspace_activity_for_recency: boolean;
   view_mode: ActivityViewMode;

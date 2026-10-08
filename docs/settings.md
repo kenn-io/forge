@@ -18,7 +18,7 @@ a category.
 | Sync | Pause automatic background sync with airplane mode. Relay updates, item visits, and manual Sync remain available. |
 | Pull requests | Choose whether Forge may merge a pull request from the middle of a detected stack. |
 | Detail views and Activity | Set the initial timeline size and the defaults used when Activity opens. |
-| Workspaces | Choose workspace creation behavior, optional Roborev initialization for managed clones, the default right sidebar, and terminal appearance and retention. |
+| Workspaces | Choose workspace creation behavior, optional Roborev initialization for managed clones, the default right sidebar, ACP fonts, and terminal appearance and retention. |
 | Kata mappings | Override the repository matched to a Kata project. |
 | Workspace agents | Enable agents and edit the command and arguments used to launch each one. |
 | Fleet federation | Connect remote Forge hosts and control which sessions they share. |
@@ -38,6 +38,20 @@ Airplane mode is off by default and remembered across restarts. It applies to
 the Forge instance you are viewing. A fleet spoke pauses its local background
 refresh; its hub has a separate setting. See [Airplane mode](configuration.md#airplane-mode)
 for the configuration-file option.
+
+## ACP fonts
+
+Under **Workspaces → ACP**, choose a font family and size for all ACP harnesses.
+The font must be installed on the machine running your browser. Leave the family
+blank to use the app's default fonts. Terminal appearance has separate settings.
+
+Changes apply to open ACP chats and persist in `config.toml`:
+
+```toml
+[acp]
+font_family = '"MesloLGS NF", monospace'
+font_size = 16
+```
 
 ## When to edit the configuration file
 

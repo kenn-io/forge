@@ -879,6 +879,8 @@ func providerSettingsRequestBody(update UpdateSettingsRequest) *generated.Provid
 		body.Activity = &generated.Activity{
 			CollapseThreads: value.CollapseThreads, DefaultBranchMaxCommits: int64(value.DefaultBranchMaxCommits),
 			DefaultBranchRetentionDays: int64(value.DefaultBranchRetentionDays), HideBots: value.HideBots, HideClosed: value.HideClosed,
+			ItemTypes: value.ItemTypes, EventTypes: value.EventTypes,
+			HideNotifications: value.HideNotifications, HideDefaultBranch: value.HideDefaultBranch, RollUpCommits: value.RollUpCommits,
 			TimeRange: generated.ActivityTimeRange(value.TimeRange), ViewMode: generated.ActivityViewMode(value.ViewMode),
 			UseWorkspaceActivityForRecency: value.UseWorkspaceActivityForRecency,
 		}

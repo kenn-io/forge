@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import type { WorkspaceListItem } from "./workspace-list-schema.js";
 
 export type WorkspaceListSort = "repo" | "created" | "activity" | "item-activity" | "agent-status";
@@ -48,6 +49,7 @@ export const defaultWorkspaceListDisplayOptions: WorkspaceListDisplayOptions = {
 
 const sortStorageKey = "kenn-forge:workspaceListSort";
 const displayStorageKey = "kenn-forge:workspaceListDisplayOptions";
+const pinsStorageKey = "kenn-forge:pinnedWorkspaces";
 
 const validSorts = new Set<WorkspaceListSort>(workspaceListSortOptions.map((option) => option.value));
 
@@ -107,6 +109,23 @@ function getStorage(): Storage | null {
     return typeof localStorage === "undefined" ? null : localStorage;
   } catch {
     return null;
+  }
+}
+
+export function loadPinnedWorkspaces(): readonly string[] {
+  try {
+    const raw = getStorage()?.getItem(pinsStorageKey);
+    return raw ? Schema.decodeUnknownSync(Schema.Array(Schema.String))(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function savePinnedWorkspaces(keys: readonly string[]): void {
+  try {
+    getStorage()?.setItem(pinsStorageKey, JSON.stringify(keys));
+  } catch {
+    // Storage blocked - pins still apply for the current page instance.
   }
 }
 

@@ -3,6 +3,12 @@
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
+- Screen telemetry claims belong to the daemon's installation and UTC day, so tabs
+  and restarts share them. Rejected queue admission releases only its exact claim
+  (`internal/server/telemetryapi/telemetry_handlers.go::Handlers.CaptureTelemetryEvent`).
+- Add screen names to both the daemon allowlist and the SPA list; the daemon skips
+  unknown screens without failing, so drift loses data silently
+  (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
 
 ## Package layout
 

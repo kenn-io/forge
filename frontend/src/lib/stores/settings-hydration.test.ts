@@ -5,6 +5,7 @@ import { applySettingsHydration } from "./settings-hydration.js";
 import { createSettingsStore } from "./settings.svelte.js";
 import { beginTerminalSettingsHydration } from "./terminal-settings-persistence.js";
 import { beginWorkspaceSettingsHydration } from "./workspace-settings-persistence.js";
+import { beginACPSettingsHydration } from "./acp-settings-persistence.js";
 import { beginRoborevSettingsHydration } from "./roborev-settings-persistence.js";
 
 const activitySettings: ActivitySettings = {
@@ -13,6 +14,11 @@ const activitySettings: ActivitySettings = {
   hide_closed: false,
   hide_bots: false,
   collapse_threads: false,
+  item_types: ["pr", "issue"],
+  event_types: ["comment", "review", "commit", "force_push"],
+  hide_notifications: false,
+  hide_default_branch: false,
+  roll_up_commits: false,
   default_branch_retention_days: 90,
   default_branch_max_commits: 5000,
   use_workspace_activity_for_recency: false,
@@ -46,6 +52,7 @@ const settingsPayload = makeStartupSnapshot({
   quick_actions: [{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }],
   workspaces: { auto_assign_on_create: false, default_sidebar_view: "item", show_agent_status_in_lists: true },
   roborev: { init_managed_clones: true },
+  acp: { font_family: "MesloLGS NF", font_size: 18 },
 });
 
 function hydrate(
@@ -63,11 +70,26 @@ function hydrate(
     terminalHydration,
     workspaceHydration,
     roborevHydration,
+    beginACPSettingsHydration(settingsStore),
   );
   return { settingsStore, activity, issues };
 }
 
 describe("applySettingsHydration", () => {
+  it("hydrates ACP appearance on initial load and config reload", () => {
+    const { settingsStore } = hydrate();
+    expect(settingsStore.getACPSettings()).toEqual({ font_family: "MesloLGS NF", font_size: 18 });
+    applySettingsHydration(
+      { settings: settingsStore, activity: { hydrateDefaults: vi.fn() }, issues: { hydrateDefaults: vi.fn() } },
+      { ...settingsPayload, acp: { font_family: "serif", font_size: 22 } },
+      beginTerminalSettingsHydration(settingsStore),
+      beginWorkspaceSettingsHydration(settingsStore),
+      beginRoborevSettingsHydration(settingsStore),
+      beginACPSettingsHydration(settingsStore),
+    );
+    expect(settingsStore.getACPSettings()).toEqual({ font_family: "serif", font_size: 22 });
+  });
+
   it("hydrates repository presets into the settings store", () => {
     const { settingsStore } = hydrate();
     expect(settingsStore.getRepoPresets()).toEqual(settingsPayload.repo_presets);
@@ -118,6 +140,7 @@ describe("applySettingsHydration", () => {
       terminalHydration,
       workspaceHydration,
       roborevHydration,
+      beginACPSettingsHydration(settingsStore),
     );
     expect(settingsStore.getLaunchTargets()).toEqual([]);
   });

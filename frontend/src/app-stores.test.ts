@@ -191,6 +191,7 @@ vi.mock("./lib/stores/settings.svelte.js", () => ({
       setPullRequestSettings: vi.fn(),
       getDetailSettings: () => ({ initial_timeline_entry_limit: 50 }),
       setDetailSettings: vi.fn(),
+      setACPSettings: vi.fn(),
       getWorkspaceSettings: () => workspaceSettings,
       setWorkspaceSettings: vi.fn((value: typeof workspaceSettings) => {
         workspaceSettings = value;

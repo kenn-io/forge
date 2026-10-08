@@ -784,14 +784,19 @@ func cleanPath(path string) string {
 }
 
 type Activity struct {
-	ViewMode                       string `toml:"view_mode" json:"view_mode" enum:"flat,threaded"`
-	TimeRange                      string `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
-	HideClosed                     bool   `toml:"hide_closed" json:"hide_closed"`
-	HideBots                       bool   `toml:"hide_bots" json:"hide_bots"`
-	CollapseThreads                bool   `toml:"collapse_threads" json:"collapse_threads"`
-	UseWorkspaceActivityForRecency bool   `toml:"use_workspace_activity_for_recency" json:"use_workspace_activity_for_recency"`
-	DefaultBranchRetentionDays     int    `toml:"default_branch_retention_days" json:"default_branch_retention_days"`
-	DefaultBranchMaxCommits        int    `toml:"default_branch_max_commits" json:"default_branch_max_commits"`
+	ViewMode                       string   `toml:"view_mode" json:"view_mode" enum:"flat,threaded"`
+	TimeRange                      string   `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
+	HideClosed                     bool     `toml:"hide_closed" json:"hide_closed"`
+	HideBots                       bool     `toml:"hide_bots" json:"hide_bots"`
+	CollapseThreads                bool     `toml:"collapse_threads" json:"collapse_threads"`
+	ItemTypes                      []string `toml:"item_types" json:"item_types"`
+	EventTypes                     []string `toml:"event_types" json:"event_types"`
+	HideNotifications              bool     `toml:"hide_notifications" json:"hide_notifications"`
+	HideDefaultBranch              bool     `toml:"hide_default_branch" json:"hide_default_branch"`
+	RollUpCommits                  bool     `toml:"roll_up_commits" json:"roll_up_commits"`
+	UseWorkspaceActivityForRecency bool     `toml:"use_workspace_activity_for_recency" json:"use_workspace_activity_for_recency"`
+	DefaultBranchRetentionDays     int      `toml:"default_branch_retention_days" json:"default_branch_retention_days"`
+	DefaultBranchMaxCommits        int      `toml:"default_branch_max_commits" json:"default_branch_max_commits"`
 }
 
 // PullRequests configures safeguards around pull-request mutations.
@@ -850,6 +855,14 @@ const (
 	DefaultTerminalTmuxMouse        = true
 	DefaultTerminalRetainedSessions = 50
 )
+
+const DefaultACPFontSize = 13
+
+// ACP configures chat appearance independently of terminal appearance.
+type ACP struct {
+	FontFamily string `toml:"font_family,omitempty" json:"font_family"`
+	FontSize   int    `toml:"font_size,omitempty" json:"font_size" minimum:"8" maximum:"32"`
+}
 
 type Terminal struct {
 	FontFamily       string  `toml:"font_family,omitempty" json:"font_family"`
@@ -1082,6 +1095,7 @@ type Config struct {
 	Notifications     Notifications            `toml:"notifications"`
 	Relay             Relay                    `toml:"relay"`
 	Terminal          Terminal                 `toml:"terminal"`
+	ACP               ACP                      `toml:"acp"`
 	Modes             ModeVisibility           `toml:"modes"`
 	Agents            []Agent                  `toml:"agents"`
 	QuickActions      []QuickAction            `toml:"quick_actions"`
@@ -1750,6 +1764,23 @@ func (c *Config) validate() error {
 			c.Activity.TimeRange,
 		)
 	}
+	// Keep omitted selections distinct from an explicitly empty list.
+	if c.Activity.ItemTypes == nil {
+		c.Activity.ItemTypes = []string{"pr", "issue"}
+	}
+	if c.Activity.EventTypes == nil {
+		c.Activity.EventTypes = []string{"comment", "review", "commit", "force_push"}
+	}
+	for _, itemType := range c.Activity.ItemTypes {
+		if itemType != "pr" && itemType != "issue" {
+			return fmt.Errorf("config: invalid activity item_types value %q", itemType)
+		}
+	}
+	for _, eventType := range c.Activity.EventTypes {
+		if !slices.Contains([]string{"comment", "review", "commit", "force_push"}, eventType) {
+			return fmt.Errorf("config: invalid activity event_types value %q", eventType)
+		}
+	}
 	if c.Activity.DefaultBranchRetentionDays == 0 {
 		c.Activity.DefaultBranchRetentionDays = defaultBranchActivityRetentionDays
 	}
@@ -1796,6 +1827,13 @@ func (c *Config) validate() error {
 		)
 	}
 
+	c.ACP.FontFamily = strings.TrimSpace(c.ACP.FontFamily)
+	if c.ACP.FontSize == 0 {
+		c.ACP.FontSize = DefaultACPFontSize
+	}
+	if c.ACP.FontSize < 8 || c.ACP.FontSize > 32 {
+		return fmt.Errorf("config: invalid acp.font_size %d: must be between 8 and 32", c.ACP.FontSize)
+	}
 	c.Terminal.FontFamily = strings.TrimSpace(c.Terminal.FontFamily)
 	if c.Terminal.FontSize == 0 {
 		c.Terminal.FontSize = DefaultTerminalFontSize
@@ -3743,6 +3781,7 @@ type configFile struct {
 	Notifications               Notifications            `toml:"notifications,omitempty"`
 	Relay                       Relay                    `toml:"relay,omitempty"`
 	Terminal                    Terminal                 `toml:"terminal,omitempty"`
+	ACP                         ACP                      `toml:"acp,omitempty"`
 	Modes                       ModeVisibility           `toml:"modes,omitempty"`
 	Agents                      []Agent                  `toml:"agents,omitempty"`
 	QuickActions                []QuickAction            `toml:"quick_actions,omitempty"`
@@ -3794,6 +3833,7 @@ func (c *Config) Save(path string) error {
 		Notifications:               cfg.Notifications,
 		Relay:                       cfg.Relay,
 		Terminal:                    cfg.Terminal,
+		ACP:                         cfg.ACP,
 		Modes:                       cfg.Modes,
 		Agents:                      cfg.Agents,
 		QuickActions:                cfg.QuickActions,

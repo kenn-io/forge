@@ -8,6 +8,7 @@ import type { StartupSnapshot } from "../lib/app/startup-workflow.js";
 
 export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): StartupSnapshot {
   const defaults = {
+    acp: { font_family: "", font_size: 13 },
     airplane_mode: false,
     activity: {
       view_mode: "threaded",
@@ -15,6 +16,11 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
       hide_closed: false,
       hide_bots: false,
       collapse_threads: false,
+      item_types: ["pr", "issue"],
+      event_types: ["comment", "review", "commit", "force_push"],
+      hide_notifications: false,
+      hide_default_branch: false,
+      roll_up_commits: false,
       default_branch_retention_days: 90,
       default_branch_max_commits: 5000,
       use_workspace_activity_for_recency: false,

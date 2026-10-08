@@ -1,5 +1,30 @@
 components:
   schemas:
+    ACP:
+      additionalProperties: false
+      properties:
+        font_family:
+          type: string
+        font_size:
+          format: int64
+          maximum: 32
+          minimum: 8
+          type: integer
+      required:
+        - font_family
+        - font_size
+      type: object
+    ACPSettingsUpdate:
+      additionalProperties: false
+      properties:
+        font_family:
+          type: string
+        font_size:
+          format: int64
+          maximum: 32
+          minimum: 8
+          type: integer
+      type: object
     AbortFederationSpokeInputBody:
       additionalProperties: false
       properties:
@@ -65,9 +90,23 @@ components:
         default_branch_retention_days:
           format: int64
           type: integer
+        event_types:
+          items:
+            type: string
+          type: array
         hide_bots:
           type: boolean
         hide_closed:
+          type: boolean
+        hide_default_branch:
+          type: boolean
+        hide_notifications:
+          type: boolean
+        item_types:
+          items:
+            type: string
+          type: array
+        roll_up_commits:
           type: boolean
         time_range:
           enum:
@@ -89,6 +128,11 @@ components:
         - hide_closed
         - hide_bots
         - collapse_threads
+        - item_types
+        - event_types
+        - hide_notifications
+        - hide_default_branch
+        - roll_up_commits
         - use_workspace_activity_for_recency
         - default_branch_retention_days
         - default_branch_max_commits
@@ -9227,6 +9271,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp:
+          $ref: "#/components/schemas/ACP"
         activity:
           $ref: "#/components/schemas/Activity"
         agents:
@@ -9292,6 +9338,7 @@ components:
         - issues
         - notifications
         - terminal
+        - acp
         - agents
         - quick_actions
         - kata_projects
@@ -10411,6 +10458,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp:
+          $ref: "#/components/schemas/ACPSettingsUpdate"
         activity:
           $ref: "#/components/schemas/Activity"
         agents:

@@ -190,7 +190,7 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 			UpdatedAt: &updated,
 			Comments:  &comments,
 			Head:      &gh.PullRequestBranch{SHA: &headSHA, Ref: &headRef},
-			Base:      &gh.PullRequestBranch{Ref: &baseRef},
+			Base:      &gh.PullRequestBranch{Ref: &baseRef, SHA: new("base123")},
 		}
 	}
 
@@ -266,6 +266,8 @@ func TestE2ELargeRepoSkipsGraphQLAndUsesConditionalPRDetail(t *testing.T) {
 			HeadBranch:      fmt.Sprintf("feature-%d", number),
 			BaseBranch:      "main",
 			PlatformHeadSHA: fmt.Sprintf("head-%d", number),
+			PlatformBaseSHA: "base123",
+			MergeableState:  "clean",
 			CreatedAt:       unchangedAt,
 			UpdatedAt:       unchangedAt,
 			LastActivityAt:  unchangedAt,
@@ -349,7 +351,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 			ID: &id, Number: &number, State: &state, Title: &title, HTMLURL: &url,
 			User: &gh.User{Login: &author}, CreatedAt: &timestamp, UpdatedAt: &timestamp,
 			Head: &gh.PullRequestBranch{SHA: &headSHA, Ref: &headRef},
-			Base: &gh.PullRequestBranch{Ref: &baseRef},
+			Base: &gh.PullRequestBranch{Ref: &baseRef, SHA: new("base123")},
 		}
 	}
 
@@ -418,6 +420,7 @@ func TestE2EConditionalPRDetailRefreshesInlineModerationThroughAPI(t *testing.T)
 			Title: fmt.Sprintf("existing PR %d", number), Author: "alice", State: "open",
 			HeadBranch: fmt.Sprintf("feature-%d", number), BaseBranch: "main",
 			PlatformHeadSHA: fmt.Sprintf("head-%d", number), CreatedAt: now, UpdatedAt: now,
+			PlatformBaseSHA: "base123", MergeableState: "clean",
 			LastActivityAt: now, DetailFetchedAt: detailFetchedAt,
 		})
 		require.NoError(err)

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // relayStatuses forwards every published relay status so tests wait on the
@@ -449,4 +450,104 @@ func TestRelayDisabledIssueRespectsCooldown(t *testing.T) {
 	now = now.Add(24*time.Hour + time.Second)
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
 	assert.Equal(2, calls)
+}
+
+func TestRelayRefsDoesNotConsumeNormalSyncListChange(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Key: platform.RepositoryIDKey(1002), Owner: "team", Name: "project"}
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Key: repo.Key, Owner: repo.Owner, Name: repo.Name,
+	})
+	require.NoError(err)
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/repositories/1002":
+			_, _ = fmt.Fprint(w, `{"id":1002,"name":"project","owner":{"login":"team"},"default_branch":"main","has_issues":true}`)
+		case "/api/v3/repos/team/project/pulls":
+			if r.Header.Get("If-None-Match") == `"new-base"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"new-base"`)
+			_, _ = fmt.Fprint(w, `[{"id":700,"number":7,"title":"Test PR","state":"open","head":{"sha":"head","ref":"feature"},"base":{"sha":"new-base","ref":"main","repo":{"id":1002,"name":"project","owner":{"login":"team"}}},"created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-01T00:00:00Z"}]`)
+		default:
+			http.Error(w, "unexpected provider request", http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(provider.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(provider.URL))
+	require.NoError(err)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), activityrelay.Hint{
+		Provider: "github", Host: "github.com", RepositoryID: 1002, Target: activityrelay.RepositoryRefs,
+	}))
+	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("new-base", stored.PlatformBaseSHA)
+	assert.Empty(stored.MergeableState, "the relay list read has not observed mergeability")
+
+	// Normal sync must still see a changed list so it can run its GraphQL
+	// mergeability refresh. The relay only indexed the REST list fields.
+	prs, err := client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	require.NoError(err)
+	require.Len(prs, 1)
+	assert.Equal(7, prs[0].GetNumber())
+	_, err = client.ListOpenPullRequests(ctx, repo.Owner, repo.Name)
+	assert.True(platformgithub.IsNotModified(err), "normal sync still benefits from its own list ETag")
+}
+
+func TestSyncRefreshesMergeabilityAfterBaseChange(t *testing.T) {
+	t.Parallel()
+	for _, relay := range []bool{false, true} {
+		t.Run(fmt.Sprintf("relay=%v", relay), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
+			updated := time.Now().UTC().Add(-time.Hour)
+			pr := buildOpenPR(1, updated)
+			pr.Base.SHA = new("old-base")
+			pr.MergeableState = new("clean")
+			client := &mockClient{openPRs: []*gh.PullRequest{pr}}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+			syncer.RunOnce(ctx)
+			stored, err := database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal("clean", stored.MergeableState)
+			require.NotNil(stored.DetailFetchedAt)
+
+			// A push to main changes the base, not the PR head or updated_at.
+			listed := buildOpenPR(1, updated)
+			listed.Base.SHA = new("new-base")
+			client.openPRs = []*gh.PullRequest{listed}
+			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+				full := buildOpenPR(1, updated)
+				full.Base.SHA = new("new-base")
+				full.MergeableState = new("dirty")
+				return full, nil
+			}
+			if relay {
+				require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), activityrelay.Hint{
+					Provider: "github", Host: "github.com", RepositoryID: testRepoID("owner", "repo"), Target: activityrelay.RepositoryRefs,
+				}))
+				// The scheduled pass may get a 304 after the hint indexed the list.
+				client.listOpenPRsErr = notModifiedErr()
+			}
+			syncer.RunOnce(ctx)
+			stored, err = database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal("new-base", stored.PlatformBaseSHA)
+			assert.Equal("dirty", stored.MergeableState)
+		})
+	}
 }

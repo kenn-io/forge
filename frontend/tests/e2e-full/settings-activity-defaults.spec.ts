@@ -1,4 +1,6 @@
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { load as loadToml } from "js-toml";
 import type { SettingsResponse as GeneratedSettingsResponse } from "../../src/lib/api/generated/models/index.js";
 import { startIsolatedE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { openSettingsPanel } from "./support/settingsPanel";
@@ -21,6 +23,79 @@ test.afterAll(async () => {
 });
 
 type SettingsResponse = GeneratedSettingsResponse;
+
+test("Activity filter defaults save to TOML and apply in a new browser session", async ({ page, browser }) => {
+  await page.goto(`${isolatedServer!.info.base_url}/settings`);
+  await openSettingsPanel(page, "Activity");
+
+  for (const control of [
+    page.getByRole("radio", { name: "30d", exact: true }),
+    page.getByRole("checkbox", { name: "Pull requests", exact: true }),
+    page.getByRole("checkbox", { name: "Reviews", exact: true }),
+    page.getByRole("button", { name: "Hide notifications", exact: true }),
+    page.getByRole("button", { name: "Hide default-branch activity", exact: true }),
+    page.getByRole("button", { name: "Roll up commits", exact: true }),
+    page.getByRole("button", { name: "Toggle hide closed/merged", exact: true }),
+  ]) {
+    const saved = page.waitForResponse(
+      (response) => response.url().endsWith("/api/v1/settings") && response.request().method() === "PUT",
+    );
+    await control.click();
+    expect((await saved).status()).toBe(200);
+  }
+
+  const saved = loadToml(await readFile(isolatedServer!.info.config_path, "utf8")) as {
+    activity: Record<string, unknown>;
+  };
+  expect(saved.activity).toMatchObject({
+    time_range: "30d",
+    item_types: ["issue"],
+    event_types: ["comment", "commit", "force_push"],
+    hide_notifications: true,
+    hide_default_branch: true,
+    roll_up_commits: true,
+    hide_closed: true,
+  });
+
+  const context = await browser.newContext();
+  try {
+    const freshPage = await context.newPage();
+    await freshPage.goto(isolatedServer!.info.base_url);
+    await expect(freshPage.locator(".activity-filters__trigger")).toContainText("30d");
+    await freshPage.locator(".activity-filters__trigger").click();
+    for (const [name, pressed] of [
+      ["Reviews", false],
+      ["Notifications", false],
+      ["Hide closed/merged", true],
+      ["Hide default-branch activity", true],
+      ["Roll up commits", true],
+    ] as const) {
+      await expect(freshPage.getByRole("button", { name, exact: true })).toHaveAttribute(
+        "aria-pressed",
+        String(pressed),
+      );
+    }
+  } finally {
+    await context.close();
+    // Keep the shared server's defaults independent for the remaining tests.
+    const current: SettingsResponse = await (await api!.get("/api/v1/settings")).json();
+    const reset = await api!.put("/api/v1/settings", {
+      data: {
+        activity: {
+          ...current.activity,
+          time_range: "7d",
+          item_types: ["pr", "issue"],
+          event_types: ["comment", "review", "commit", "force_push"],
+          hide_notifications: false,
+          hide_default_branch: false,
+          roll_up_commits: false,
+          hide_closed: false,
+        },
+      },
+    });
+    expect(reset.ok()).toBe(true);
+  }
+});
 
 test("activity default view mode and time range persist through the segmented controls", async ({ page }) => {
   await page.goto(`${isolatedServer!.info.base_url}/settings`);

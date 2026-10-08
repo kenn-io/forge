@@ -18,6 +18,8 @@ import {
 import StatusBarTestHost from "./StatusBarTestHost.svelte";
 import { Effect } from "effect";
 import { makeAppRuntime } from "../../app/runtime.js";
+import { setGlobalRepo } from "../../stores/filter.svelte.js";
+import type { PullRequest } from "../../api/types.js";
 
 const WAIT = 10_000;
 
@@ -243,11 +245,13 @@ describe("status bar counts", () => {
 
   beforeEach(async () => {
     await page.viewport(1280, 900);
+    setGlobalRepo(undefined);
   });
 
   afterEach(async () => {
     await mounted?.unmount();
     mounted = null;
+    setGlobalRepo(undefined);
     localStorage.clear();
     await resetKeyboardModuleState();
   });
@@ -323,6 +327,62 @@ describe("status bar counts", () => {
 
     await vi.waitFor(() => {
       expect(statusItemTexts()).toEqual(["3 PRs", "2 issues", "3 repos"]);
+    }, WAIT);
+  });
+
+  it("refreshes workspace counts after provider changes without reopening the lists", async () => {
+    let pulls = Array.from({ length: 35 }, (_, index) => pr(index + 1, "open"));
+    let issues = [issue(1, "open"), issue(2, "open", "acme", "other")];
+    mounted = await mountBrowserApp("/workspaces", {
+      overrides: [
+        (req) => (req.url.pathname === "/api/v1/pulls" ? jsonResponse(pulls) : null),
+        (req) => (req.url.pathname === "/api/v1/issues" ? jsonResponse(issues) : null),
+      ],
+    });
+
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["35 PRs", "2 issues", "2 repos"]);
+      expect(getBrowserEventSourceCount()).toBe(1);
+    }, WAIT);
+
+    pulls = [pr(1, "merged"), ...pulls.slice(1)];
+    issues = [issue(1, "open"), issue(2, "closed", "acme", "other")];
+    emitBrowserEventSource("data_changed", {});
+
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["34 PRs", "1 issues", "1 repos"]);
+    }, WAIT);
+
+    pulls = [...pulls, pr(36, "open", "acme", "new-repo")];
+    issues = [...issues, issue(3, "open", "acme", "new-repo")];
+    emitBrowserEventSource("data_changed", {});
+
+    await vi.waitFor(() => {
+      expect(statusItemTexts()).toEqual(["35 PRs", "2 issues", "2 repos"]);
+    }, WAIT);
+  });
+
+  it("keeps repository-filtered counts on the PR page after provider changes", async () => {
+    const allPulls: PullRequest[] = await (await createMockApiFetch().fetch("/api/v1/pulls")).json();
+    setGlobalRepo("github|github.com/acme/widgets");
+    mounted = await mountBrowserApp("/pulls", {
+      overrides: [
+        (req) =>
+          req.url.pathname === "/api/v1/pulls"
+            ? jsonResponse(req.url.searchParams.has("repo") ? [allPulls[0]!] : allPulls)
+            : null,
+        (req) => (req.url.pathname === "/api/v1/issues" ? jsonResponse([]) : null),
+      ],
+    });
+
+    await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+    emitBrowserEventSource("data_changed", {});
+
+    await vi.waitFor(() => {
+      expect(
+        mounted?.api.requests.some((req) => req.url.pathname === "/api/v1/pulls" && !req.url.searchParams.has("repo")),
+      ).toBe(true);
+      expect(statusItemTexts()).toEqual(["1 PRs", "0 issues", "1 repos"]);
     }, WAIT);
   });
 

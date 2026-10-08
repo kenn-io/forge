@@ -48,16 +48,17 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     title: "Activity feed defaults",
     group: "Workflow",
     description: "Default activity feed filters",
-    keywords: "activity feed defaults filters time range closed bots",
+    keywords:
+      "activity feed defaults filters time range horizon closed merged bots item event types comments reviews commits force pushes notifications branch rollup",
   },
   {
     id: "settings-workspaces",
     label: "Workspaces",
     title: "Workspaces",
     group: "Workspace",
-    description: "Workspace behavior, list indicators, and terminal settings",
+    description: "Workspace behavior, list indicators, terminal and ACP appearance",
     keywords:
-      "workspace create pull request issue assign self assignee ownership agent status working approval input done lists activity terminal font cursor scrollback ligatures retained sessions retention tmux graphics",
+      "workspace create pull request issue assign self assignee ownership agent status working approval input done lists activity terminal ACP harness chat appearance font size cursor scrollback ligatures retained sessions retention tmux graphics",
   },
   {
     id: "settings-kata-projects",

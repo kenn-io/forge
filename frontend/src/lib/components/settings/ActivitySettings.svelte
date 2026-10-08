@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SegmentedControl } from "@kenn-io/kit-ui";
+  import { Checkbox, SegmentedControl } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import type { ActivitySettings as ActivitySettingsType } from "../../api/types.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -30,6 +30,37 @@
     { value: "30d", label: "30d" },
     { value: "90d", label: "90d" },
   ];
+
+  const FILTER_GROUPS = [
+    { key: "item_types", label: "Default item types", options: [
+      { value: "pr", label: "Pull requests" },
+      { value: "issue", label: "Issues" },
+    ] },
+    { key: "event_types", label: "Default event types", options: [
+      { value: "comment", label: "Comments" },
+      { value: "review", label: "Reviews" },
+      { value: "commit", label: "Commits" },
+      { value: "force_push", label: "Force pushes" },
+    ] },
+  ] as const;
+
+  const FILTER_TOGGLES = [
+    { key: "hide_notifications", label: "Hide notifications" },
+    { key: "hide_default_branch", label: "Hide default-branch activity" },
+    { key: "roll_up_commits", label: "Roll up commits" },
+  ] as const;
+
+  function update(changes: Partial<ActivitySettingsType>): void {
+    const previous = activity;
+    const updated = { ...activity, ...changes };
+    onUpdate(updated);
+    save(updated, previous);
+  }
+
+  function toggleSelection(key: "item_types" | "event_types", value: string): void {
+    const selected = activity[key];
+    update({ [key]: selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value] });
+  }
 
   function save(updated: ActivitySettingsType, previous: ActivitySettingsType): void {
     if (pendingSaves === 0) confirmedActivity = previous;
@@ -156,6 +187,26 @@
   />
 </div>
 
+{#each FILTER_GROUPS as group (group.key)}
+  <fieldset class="filter-group">
+    <legend class="setting-label">{group.label}</legend>
+    <div class="filter-options">
+      {#each group.options as option (option.value)}
+        <Checkbox label={option.label} checked={activity[group.key].includes(option.value)} onchange={() => toggleSelection(group.key, option.value)} />
+      {/each}
+    </div>
+  </fieldset>
+{/each}
+
+{#each FILTER_TOGGLES as toggle (toggle.key)}
+  <div class="setting-row">
+    <span class="setting-label">{toggle.label}</span>
+    <button class="toggle-btn" class:toggle-on={activity[toggle.key]} onclick={() => update({ [toggle.key]: !activity[toggle.key] })} aria-label={toggle.label} aria-pressed={activity[toggle.key]}>
+      <span class="toggle-track"><span class="toggle-thumb"></span></span>
+    </button>
+  </div>
+{/each}
+
 <div class="setting-row">
   <span class="setting-label">Hide closed/merged</span>
   <button class="toggle-btn" class:toggle-on={activity.hide_closed} onclick={toggleHideClosed} aria-label="Toggle hide closed/merged" aria-pressed={activity.hide_closed}>
@@ -184,6 +235,8 @@
 </div>
 
 <style>
+  .filter-group { margin: 0; padding: 0; border: 0; min-width: 0; }
+  .filter-options { display: flex; flex-wrap: wrap; gap: var(--space-4); padding-block: var(--space-3); }
   .setting-row { display: flex; align-items: center; justify-content: space-between; min-height: 32px; }
   .setting-label { font-size: var(--font-size-md); color: var(--text-secondary); }
   .toggle-btn { cursor: pointer; padding: 0; background: none; }

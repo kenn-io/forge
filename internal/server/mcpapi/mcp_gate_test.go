@@ -13,6 +13,7 @@ import (
 )
 
 func TestRequestGateDrainsThenCancelsInFlightRequests(t *testing.T) {
+	// The drain deadline must expire while the request is still in flight, which only fake time makes deterministic.
 	synctest.Test(t, func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)

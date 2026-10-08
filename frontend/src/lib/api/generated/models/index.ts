@@ -4,6 +4,8 @@
 
 export * from "./abortFederationEnrollmentPathParameters.ts";
 export * from "./abortFederationSpokeInputBody.ts";
+export * from "./acp.ts";
+export * from "./aCPSettingsUpdate.ts";
 export * from "./actionStatusBody.ts";
 export * from "./activateEnrollmentInputBody.ts";
 export * from "./activateFederationEnrollmentPathParameters.ts";

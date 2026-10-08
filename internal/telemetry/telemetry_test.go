@@ -45,7 +45,7 @@ func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
-	_, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	_, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
 	require.NoError(err)
 	assert.False(found)
 }
@@ -64,7 +64,7 @@ func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 	assert.Len(first, 32)
 	assert.Equal(first, second)
 
-	stored, found, err := database.AppMetadataValue(t.Context(), installIDMetadataKey)
+	stored, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
 	require.NoError(err)
 	assert.True(found)
 	assert.Equal(first, stored)
@@ -158,7 +158,7 @@ func TestLoadOrCreateInstallIDLeavesPreexistingIDWithoutCreationTime(t *testing.
 	require := require.New(t)
 
 	database := dbtest.Open(t)
-	_, err := database.GetOrCreateAppMetadataValue(t.Context(), installIDMetadataKey, func() (string, error) {
+	_, err := database.GetOrCreateAppMetadataValue(t.Context(), InstallIDMetadataKey, func() (string, error) {
 		return "existing-install-id", nil
 	})
 	require.NoError(err)

@@ -12,6 +12,8 @@
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
+  import ACPSettings from "./ACPSettings.svelte";
+  import { beginACPSettingsHydration, hydrateACPSettings } from "../../stores/acp-settings-persistence.js";
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
   import AgentSettings from "./AgentSettings.svelte";
   import QuickActionSettings from "./QuickActionSettings.svelte";
@@ -86,6 +88,7 @@
     const terminalHydration = beginTerminalSettingsHydration(settingsStore);
     const workspaceHydration = beginWorkspaceSettingsHydration(settingsStore);
     const roborevHydration = beginRoborevSettingsHydration(settingsStore);
+    const acpHydration = beginACPSettingsHydration(settingsStore);
     loading = true;
     error = null;
     const execution = runtime.runCommand(
@@ -102,6 +105,7 @@
             settingsStore.setAirplaneMode(loaded.airplane_mode);
             settingsStore.setModeVisibility(loaded.modes);
             hydrateTerminalSettings(terminalHydration, loaded.terminal);
+            hydrateACPSettings(acpHydration, loaded.acp);
             settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
             settingsStore.setQuickActions(loaded.quick_actions ?? []);
             hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
@@ -143,6 +147,7 @@
             settingsStore.setAirplaneMode(loaded.airplane_mode);
             settingsStore.setModeVisibility(loaded.modes);
             hydrateTerminalSettings(terminalHydration, loaded.terminal);
+            hydrateACPSettings(acpHydration, loaded.acp);
             settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
             settingsStore.setQuickActions(loaded.quick_actions ?? []);
             hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
@@ -315,6 +320,10 @@
                   settings = { ...settings!, terminal };
                 }}
               />
+            </section>
+            <section class="workspace-settings-group" aria-labelledby="workspace-acp-title">
+              <h3 id="workspace-acp-title">ACP</h3>
+              <ACPSettings />
             </section>
           {:else if meta.id === "settings-kata-projects"}
             <KataProjectMappingsSettings

@@ -688,6 +688,7 @@ func SplitSettingsUpdate(
 	local.AirplaneMode = update.AirplaneMode
 	local.Workspaces = update.Workspaces
 	local.Terminal = update.Terminal
+	local.ACP = update.ACP
 	local.Modes = update.Modes
 	local.Agents = update.Agents
 	local.QuickActions = update.QuickActions
@@ -701,7 +702,7 @@ func HasSettingsUpdate(update spokeapi.UpdateSettingsRequest) bool {
 	return update.AirplaneMode != nil || update.Activity != nil || update.Detail != nil ||
 		update.Sync != nil ||
 		update.PullRequests != nil || update.Workspaces != nil ||
-		update.Issues != nil || update.Terminal != nil ||
+		update.Issues != nil || update.Terminal != nil || update.ACP != nil ||
 		update.Modes != nil || update.Agents != nil ||
 		update.QuickActions != nil ||
 		update.KataProjects != nil || update.MCP != nil ||

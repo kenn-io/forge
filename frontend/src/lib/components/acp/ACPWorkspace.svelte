@@ -13,6 +13,7 @@
   import { AlertIcon } from "../../icons.js";
   import { kbdGlyph } from "../keyboard/useKbdLabel.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { getStores } from "../../context.js";
   import ChatMessageView from "./ChatMessageView.svelte";
   import ChatToolGroup from "./ChatToolGroup.svelte";
   import ChatElicitation from "./ChatElicitation.svelte";
@@ -31,6 +32,8 @@
     onExit?: (code: number) => void;
   } = $props();
   const runtime = getAppRuntime();
+  const { settings } = getStores();
+  const appearance = $derived(settings.getACPSettings());
   let chatState = $state.raw<ChatState | null>(null);
   let connection = $state<ReturnType<typeof makeChatSession> | null>(null);
   let connected = $state(false);
@@ -290,7 +293,10 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section class="acp-workspace" aria-label={`${label} chat`} onclick={focusComposerFromClick}>
+<section class="acp-workspace" aria-label={`${label} chat`} onclick={focusComposerFromClick}
+  style:--font-size-acp={`${appearance.font_size}px`}
+  style:--acp-font-family={appearance.font_family || undefined}
+  style:--font-mono={appearance.font_family || undefined}>
   <div class="chat-status">
     <div class="chat-status__inner">
       <span class="chat-status__text" role="status">
@@ -444,6 +450,16 @@
   /* One reading column for everything in the pane: the conversation, notices,
      requests, and the composer share its width and edges. */
   .acp-workspace { --acp-column: 64rem; --acp-gutter: 5.5rem; container: acp-pane / inline-size; display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; background: var(--bg-primary); color: var(--text-primary); }
+  .acp-workspace {
+    --font-size-xs: calc(var(--font-size-acp) * 11 / 13);
+    --font-size-sm: calc(var(--font-size-acp) * 12 / 13);
+    --font-size-md: var(--font-size-acp);
+    --font-size-lg: calc(var(--font-size-acp) * 14 / 13);
+    --font-size-xl: calc(var(--font-size-acp) * 18 / 13);
+    --font-size-2xl: calc(var(--font-size-acp) * 24 / 13);
+    font-family: var(--acp-font-family, var(--font-sans));
+    font-size: var(--font-size-acp);
+  }
   .chat-status { padding-block: var(--space-4); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
   .chat-status__inner, .chat-status__text { display: flex; align-items: center; gap: var(--space-3); }
   .chat-status__text { min-width: 0; }
@@ -599,7 +615,6 @@
     align-items: center;
     justify-content: flex-start;
     gap: var(--space-2);
-    height: 26px;
     min-height: 26px;
     padding: 0 var(--space-3);
     border: 1px solid transparent;
@@ -727,10 +742,18 @@
   @media (pointer: coarse) {
     .acp-workspace :global(.tb-chip), .round, .permission-actions :global(button) { min-width: var(--mobile-chrome-hit-target); min-height: var(--mobile-chrome-hit-target); }
     /* Enter inserts a newline on touch keyboards, so the key hints do not apply. */
-    .messages { gap: var(--space-4); padding-block: var(--space-4); font-size: var(--font-size-phone-prose); }
+    .acp-workspace {
+      --font-size-xs: calc(var(--font-size-acp) * 12 / 13);
+      --font-size-sm: var(--font-size-acp);
+      --font-size-md: calc(var(--font-size-acp) * 15 / 13);
+      --font-size-lg: calc(var(--font-size-acp) * 16 / 13);
+      --font-size-xl: calc(var(--font-size-acp) * 17 / 13);
+      --font-size-2xl: calc(var(--font-size-acp) * 22 / 13);
+    }
+    .messages { gap: var(--space-4); padding-block: var(--space-4); font-size: max(var(--font-size-acp), var(--font-size-phone-prose)); }
     .messages :global(.markdown) { font-size: inherit; }
     .permission-title { font-size: var(--font-size-sm); }
-    textarea, .input-hint { padding-block: var(--space-3); font-size: var(--font-size-touch-field); }
+    textarea, .input-hint { padding-block: var(--space-3); font-size: max(var(--font-size-acp), var(--font-size-touch-field)); }
     textarea { min-height: var(--mobile-chrome-hit-target); }
     .toolbar { padding-block: var(--space-2); }
     /* The workspace layout owns the device safe area, not each chat pane. */

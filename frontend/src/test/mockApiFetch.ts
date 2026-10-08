@@ -285,6 +285,11 @@ export const mockSettings = {
   repo_presets: [],
   activity: {
     collapse_threads: false,
+    item_types: ["pr", "issue"],
+    event_types: ["comment", "review", "commit", "force_push"],
+    hide_notifications: false,
+    hide_default_branch: false,
+    roll_up_commits: false,
     default_branch_max_commits: 5000,
     use_workspace_activity_for_recency: false,
     default_branch_retention_days: 90,
@@ -359,6 +364,7 @@ export const mockSettings = {
     init_managed_clones: false,
   },
   provider_settings_loaded: true,
+  acp: { font_family: "", font_size: 13 },
 } satisfies SettingsResponse;
 
 export function makeRateLimits() {

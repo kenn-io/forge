@@ -56075,6 +56075,16 @@ type RemoveStaleWorktreeResp struct {
 	JSON200      *RemoveStaleWorktreeResponse
 }
 
+type ACP struct {
+	FontFamily string `json:"font_family"`
+	FontSize   int64  `json:"font_size"`
+}
+
+type ACPSettingsUpdate struct {
+	FontFamily *string `json:"font_family,omitempty"`
+	FontSize   *int64  `json:"font_size,omitempty"`
+}
+
 type AbortFederationSpokeInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -56100,8 +56110,13 @@ type Activity struct {
 	CollapseThreads                bool              `json:"collapse_threads"`
 	DefaultBranchMaxCommits        int64             `json:"default_branch_max_commits"`
 	DefaultBranchRetentionDays     int64             `json:"default_branch_retention_days"`
+	EventTypes                     []string          `json:"event_types"`
 	HideBots                       bool              `json:"hide_bots"`
 	HideClosed                     bool              `json:"hide_closed"`
+	HideDefaultBranch              bool              `json:"hide_default_branch"`
+	HideNotifications              bool              `json:"hide_notifications"`
+	ItemTypes                      []string          `json:"item_types"`
+	RollUpCommits                  bool              `json:"roll_up_commits"`
 	TimeRange                      ActivityTimeRange `json:"time_range"`
 	UseWorkspaceActivityForRecency bool              `json:"use_workspace_activity_for_recency"`
 	ViewMode                       ActivityViewMode  `json:"view_mode"`
@@ -59633,6 +59648,7 @@ type SetWorktreeSessionBackendInputBody struct {
 type SettingsResponse struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string                       `json:"$schema,omitempty"`
+	Acp           ACP                           `json:"acp"`
 	Activity      Activity                      `json:"activity"`
 	Agents        []Agent                       `json:"agents"`
 	AirplaneMode  bool                          `json:"airplane_mode"`
@@ -60042,6 +60058,7 @@ type UpdateRepoPresetInputBody struct {
 type UpdateSettingsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string                  `json:"$schema,omitempty"`
+	Acp          *ACPSettingsUpdate       `json:"acp,omitempty"`
 	Activity     *Activity                `json:"activity,omitempty"`
 	Agents       []Agent                  `json:"agents,omitempty"`
 	AirplaneMode *bool                    `json:"airplane_mode,omitempty"`

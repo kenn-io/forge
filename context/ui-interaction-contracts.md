@@ -299,7 +299,7 @@ pending action state; replacing a known repository ID must reset transient actio
 Persisted controls must state their scope clearly.
 
 - Preserve explicit Activity choices across refresh, Settings navigation, and
-  late hydration; omit time/view overrides only against known server defaults
+  late hydration; omit filter overrides only against known server defaults
   (`frontend/src/lib/stores/activity.svelte.ts::syncToURL`, `frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 
 - Switching Forges is ordinary cross-origin link navigation. Do not keep a
@@ -308,6 +308,9 @@ Persisted controls must state their scope clearly.
   storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 - Browser-local preferences belong in `localStorage` only when the behavior is
   intentionally per-browser and not worth server settings.
+- Workspace pins are browser-local and host-aware; keep them above the normal list with project labels
+  and no duplicate rows. Pins follow the repository filter and text search
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::pinnedWorkspaces`).
 - Agent status visibility uses Forge config across browsers.
   Keep PR, Issue, and Activity labels on the right, matching Workspaces
   (`frontend/src/lib/components/shared/AgentStatusIndicator.svelte`).
@@ -389,8 +392,8 @@ Persisted controls must state their scope clearly.
 - Refreshing unchanged discussion must preserve highlighted markdown and open disclosures;
   recreated presentation callbacks must not invalidate the rich rendering
   (`frontend/src/lib/components/shared/MarkdownHtml.svelte::renderedHtml`).
-- Activity filters remain URL-backed and session-scoped. Missing filter params on a
-  partial Activity URL inherit the last validated route before store hydration, while
+- Activity filter defaults belong in Settings and `config.toml`; URL overrides remain session-scoped.
+  Missing filter params on a partial Activity URL inherit the last validated route before hydration;
   explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
 - Activity URLs persist item scope (`item_types`) and event toggles (`event_types`)
   independently. Legacy `types` migrates both dimensions and owns them during session
@@ -417,6 +420,12 @@ Persisted controls must state their scope clearly.
 - Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
   threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
   must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).
+- Restored Activity selections recover and retain verified repository identity from feed rows
+  before loading details, so cached PRs/issues render while the backend is pending; unknown
+  identity must not reuse a mutable route's cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Activity project changes immediately project a recent matching or broader repository snapshot,
+  only within the same remaining filters. Cached rows are previews; every project change still
+  revalidates cursor and paging authority (`frontend/src/lib/stores/activity.svelte.ts::restoreRepositoryActivity`).
 - A foreground Activity load replaces a same-scope author read owned by supersedable
   reconciliation; joining that read can let its interruption strand stale candidates
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
@@ -449,9 +458,12 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/detail/PullDetail.svelte::submitWorkflow`).
 - Server-backed settings belong in the API only when the preference should
   follow the user/config rather than one browser session.
-- Terminal appearance and retention belong under Workspaces settings; keep them
+- ACP fonts and terminal appearance and retention belong under Workspaces settings; keep them
   searchable there rather than introducing a separate terminal category
   (`frontend/src/lib/components/settings/SettingsPage.svelte`).
+- ACP font preferences apply to all harnesses and persist separately from terminal
+  preferences; changing either must preserve the other
+  (`internal/config/config.go::ACP`).
 - Settings controls persist on change. Do not add a Save button, a dirty draft,
   or a saving state that disables sibling controls; queue saves serially and
   build each payload from the latest persisted values
@@ -1154,6 +1166,9 @@ action, or the two fight and the control renders the inverse of its real state.
 
 Not every visibility control means "remove this entity entirely."
 
+- Workspace status counts must stay current without opening PR or issue lists;
+  use the complete, event-refreshed open-item cache, not page-local lists or capped search results
+  (`frontend/src/lib/components/layout/StatusBar.svelte::globalCounts`).
 - PR inclusion options match any selected option, including involvement and
   unassigned. Cross-section repository, state, search, starred, workflow, and workspace
   filters still narrow the results (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).

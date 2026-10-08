@@ -20,7 +20,8 @@ vi.mock("../../app/runtime-context.js", () => ({
   getAppRuntime: () => runtime,
 }));
 
-vi.mock("../../stores/router.svelte.ts", () => ({
+vi.mock("../../stores/router.svelte.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../stores/router.svelte.ts")>()),
   getPage: () => "activity",
   navigate: vi.fn(),
 }));

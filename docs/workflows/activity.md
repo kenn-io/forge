@@ -25,6 +25,10 @@ that matches "alice", including items alice opened. Quote a phrase to keep it to
 operators. The Pulls, Issues, and Workspaces search boxes read queries the same
 way.
 
+Choose your starting time range, item and event types, visibility filters, and
+commit rollup in **Settings → Activity**. Forge saves these defaults in
+`config.toml` and applies them when you open Activity.
+
 Filter choices stay in the Activity URL. You can bookmark a useful queue or
 send the link to another Kenn Forge user with access to the same repositories.
 Refreshing preserves the selected time range and **Hide closed/merged** choice,

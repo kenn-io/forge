@@ -492,7 +492,9 @@ describe("App feature routes", () => {
     [120_000, "1_to_5m"],
     [300_000, "5_to_30m"],
     [1_800_000, "5_to_30m"],
-    [1_800_001, "over_30m"],
+    [1_800_001, "30m_to_2h"],
+    [7_200_000, "30m_to_2h"],
+    [7_200_001, "over_2h"],
   ])("reports %i visible milliseconds as %s through the daemon route", async (elapsed, bucket) => {
     localStorage.removeItem("kit-ui.app-opened.web");
     let now = 0;

@@ -9,6 +9,7 @@ import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
 import { orvalRequest } from "../api/runtime.js";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 import type { OwnedAppRuntime } from "./runtime.js";
+import { startSessionDurationReporting } from "./session-duration.js";
 
 function renderApplicationFailure(target: HTMLElement): void {
   const alert = target.ownerDocument.createElement("section");
@@ -62,33 +63,17 @@ const reportAppOpens = Effect.acquireRelease(
           body: JSON.stringify(event),
         }),
     });
-    let started = document.hidden ? undefined : performance.now();
-    const end = () => {
-      if (started === undefined) return;
-      const elapsed = performance.now() - started;
-      started = undefined;
-      const duration =
-        elapsed < 60_000 ? "under_1m" : elapsed < 300_000 ? "1_to_5m" : elapsed <= 1_800_000 ? "5_to_30m" : "over_30m";
+    const stopSessions = startSessionDurationReporting((duration) => {
       void orvalRequest(getCaptureTelemetryEventUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event: "session_ended", properties: { surface: "web", duration_bucket: duration } }),
         keepalive: true,
       }).catch(() => undefined);
-    };
-    const resume = () => {
-      if (!document.hidden && started === undefined) started = performance.now();
-    };
-    const visibility = () => (document.hidden ? end() : resume());
-    document.addEventListener("visibilitychange", visibility);
-    window.addEventListener("pagehide", end);
-    window.addEventListener("pageshow", resume);
+    });
     return () => {
       stopOpens();
-      started = undefined;
-      document.removeEventListener("visibilitychange", visibility);
-      window.removeEventListener("pagehide", end);
-      window.removeEventListener("pageshow", resume);
+      stopSessions();
     };
   }),
   (stop) => Effect.sync(stop),

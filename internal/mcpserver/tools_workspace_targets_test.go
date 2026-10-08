@@ -7,10 +7,13 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"uuid"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/platform"
 )
 
 func TestWorkspaceTargetUsesACPScopeOverHTTP(t *testing.T) {
@@ -21,7 +24,7 @@ func TestWorkspaceTargetUsesACPScopeOverHTTP(t *testing.T) {
 		assert.Equal("ws-chat", id)
 		assert.Equal(42, request.Item.Number)
 		assert.Equal("https://github.com/acme/widget/pull/42", request.URL)
-		return WorkspaceTarget{ID: 1, Type: "pr", Number: 42}, nil
+		return WorkspaceTarget{ID: 1, Type: "pr", Number: 42, Repository: new(testRepository())}, nil
 	}})
 	handler := s.HTTPHandler()
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +44,7 @@ func TestWorkspaceTargetUsesACPScopeOverHTTP(t *testing.T) {
 	var result WorkspaceTarget
 	require.NoError(t, json.Unmarshal([]byte(response.Content[0].(*mcp.TextContent).Text), &result))
 	assert.Equal(int64(1), result.ID)
+	assert.Equal(new(testRepository()), result.Repository)
 	rejected, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "kenn_forge_add_workspace_target", Arguments: map[string]any{
 		"workspace_id": "ws-other", "item": itemRefInput{Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42}, "url": "https://github.com/acme/widget/pull/42",
 	}})
@@ -50,19 +54,51 @@ func TestWorkspaceTargetUsesACPScopeOverHTTP(t *testing.T) {
 }
 
 func TestWorkspaceTargetAcceptsTerminalWorkspaceID(t *testing.T) {
+	repo := testRepository()
+	repo.Provider = "bitbucket"
+	repo.PlatformHost = "bitbucket.org"
+	repo.Key = platform.RepositoryUUIDKey(uuid.MustParse("5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f"))
 	called := false
-	s := newMCPTestServer(t, &fakeBackend{addWorkspaceTargetFn: func(_ context.Context, id string, _ WorkspaceTargetRequest) (WorkspaceTarget, error) {
+	s := newMCPTestServer(t, &fakeBackend{addWorkspaceTargetFn: func(_ context.Context, id string, request WorkspaceTargetRequest) (WorkspaceTarget, error) {
 		called = true
 		assert.Equal(t, "ws-terminal", id)
-		return WorkspaceTarget{ID: 1}, nil
+		assert.Equal(t, repo.Key, request.Item.RepoKey)
+		return WorkspaceTarget{ID: 1, Repository: &repo}, nil
 	}})
 	client := connectMCPTestSession(t, s)
 	response, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "kenn_forge_add_workspace_target", Arguments: map[string]any{
-		"workspace_id": "ws-terminal", "item": itemRefInput{Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42}, "url": "https://github.com/acme/widget/pull/42",
+		"workspace_id": "ws-terminal", "item": itemRefInput{Type: "pr", Provider: "bitbucket", PlatformHost: "bitbucket.org", BitbucketRepositoryUUID: "5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f", Owner: "acme", Name: "widget", Number: 42}, "url": "https://bitbucket.org/acme/widget/pull-requests/42",
 	}})
 	require.NoError(t, err)
-	assert.False(t, response.IsError)
+	require.False(t, response.IsError)
 	assert.True(t, called)
+	var result WorkspaceTarget
+	require.NoError(t, json.Unmarshal([]byte(response.Content[0].(*mcp.TextContent).Text), &result))
+	assert.Equal(t, &repo, result.Repository)
+}
+
+func TestWorkspaceTargetsListPreservesRepositoryKeys(t *testing.T) {
+	cloudRepo := testRepository()
+	cloudRepo.Provider = "bitbucket"
+	cloudRepo.PlatformHost = "bitbucket.org"
+	cloudRepo.Key = platform.RepositoryUUIDKey(uuid.MustParse("5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f"))
+	targets := []WorkspaceTarget{
+		{ID: 1, Type: "pr", Number: 42, Repository: new(testRepository())},
+		{ID: 2, Type: "pr", Number: 43, Repository: &cloudRepo},
+	}
+	s := newMCPTestServer(t, &fakeBackend{listWorkspaceTargetsFn: func(_ context.Context, id string) (WorkspaceTargets, error) {
+		assert.Equal(t, "ws-terminal", id)
+		return WorkspaceTargets{Targets: targets}, nil
+	}})
+	client := connectMCPTestSession(t, s)
+	response, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_workspace_targets", Arguments: map[string]any{"workspace_id": "ws-terminal"}})
+	require.NoError(t, err)
+	require.False(t, response.IsError)
+	encoded, err := json.Marshal(response.StructuredContent)
+	require.NoError(t, err)
+	var result WorkspaceTargets
+	require.NoError(t, json.Unmarshal(encoded, &result))
+	assert.Equal(t, targets, result.Targets)
 }
 
 func TestWorkspaceKataToolFollowsAvailabilityOverHTTP(t *testing.T) {

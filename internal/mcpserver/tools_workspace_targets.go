@@ -49,9 +49,12 @@ func workspaceScope(ctx context.Context, id string) (string, error) {
 	return id, nil
 }
 
+// Workspace target results use an open object schema: repository identities add
+// fields during JSON marshaling that Go struct schema inference cannot see.
+// A successful tracking write must not fail on additional response properties.
 func (s *Server) registerWorkspaceTargetTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_target", Description: "Track a PR or issue in this workspace immediately after creating it or starting work on it. Register every PR in a stack. Use the verified item identity from Forge reads and its canonical URL. ACP supplies the workspace automatically; other clients pass workspace_id. Multiple targets are supported and repeated additions are safe. Tracking never changes the workspace owner, branch, push destination, or lifecycle."}, wrapTool(s.addWorkspaceTarget))
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_list_workspace_targets", Description: "List this workspace's owning item, branch-associated PR and explicitly tracked PRs, issues and Kata tasks with current cached state. Check this before finishing to find missing links. Unavailable items remain listed. Kata availability is reported separately."}, wrapTool(s.listWorkspaceTargets))
+	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a PR or issue in this workspace immediately after creating it or starting work on it. Register every PR in a stack. Use the verified item identity from Forge reads and its canonical URL. ACP supplies the workspace automatically; other clients pass workspace_id. Multiple targets are supported and repeated additions are safe. Tracking never changes the workspace owner, branch, push destination, or lifecycle."}, wrapTool(s.addWorkspaceTarget))
+	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_list_workspace_targets", OutputSchema: map[string]any{"type": "object"}, Description: "List this workspace's owning item, branch-associated PR and explicitly tracked PRs, issues and Kata tasks with current cached state. Check this before finishing to find missing links. Unavailable items remain listed. Kata availability is reported separately."}, wrapTool(s.listWorkspaceTargets))
 	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_remove_workspace_target", Description: "Remove an explicit tracking link using its type and ID from the target list. This does not delete or close the target, change the workspace owner, or remove an implicit owner or branch association."}, wrapTool(s.removeWorkspaceTarget))
 }
 
@@ -65,7 +68,7 @@ func (s *Server) syncKataTargetTool() {
 		return
 	}
 	if available {
-		mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", Description: "Track a Kata task in the current workspace using its daemon, project and issue identity. Available only with a configured remote Kata daemon or a discovered configured local daemon. Repeated additions are safe. Kata retains ownership of the task."}, wrapTool(s.addWorkspaceKataTarget))
+		mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a Kata task in the current workspace using its daemon, project and issue identity. Available only with a configured remote Kata daemon or a discovered configured local daemon. Repeated additions are safe. Kata retains ownership of the task."}, wrapTool(s.addWorkspaceKataTarget))
 	} else {
 		s.mcp.RemoveTools("kenn_forge_add_workspace_kata_target")
 	}

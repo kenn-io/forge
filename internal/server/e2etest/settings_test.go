@@ -101,8 +101,10 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 		ts.URL+"/api/v1/settings",
 		generated.UpdateSettingsRequest{
 			Activity: &generated.Activity{
-				ViewMode:  "kanban",
-				TimeRange: "7d",
+				ViewMode:   "kanban",
+				TimeRange:  "7d",
+				ItemTypes:  []string{"pr", "issue"},
+				EventTypes: []string{"comment", "review", "commit", "force_push"},
 			},
 		},
 	)
@@ -127,6 +129,8 @@ func TestSettingsAPIE2EReadUpdateAndValidation(t *testing.T) {
 				HideClosed:      true,
 				HideBots:        true,
 				CollapseThreads: true,
+				ItemTypes:       []string{"pr", "issue"},
+				EventTypes:      []string{"comment", "review", "commit", "force_push"},
 			},
 			Terminal: &generated.Terminal{
 				FontFamily:     "\"Iosevka Term\", monospace",
@@ -467,8 +471,10 @@ command = ["systemd-run", "--user", "--scope", "--pty", "bash"]
 		ts.URL+"/kenn-forge/api/v1/settings",
 		generated.UpdateSettingsRequest{
 			Activity: &generated.Activity{
-				ViewMode:  "flat",
-				TimeRange: "30d",
+				ViewMode:   "flat",
+				TimeRange:  "30d",
+				ItemTypes:  []string{"pr", "issue"},
+				EventTypes: []string{"comment", "review", "commit", "force_push"},
 			},
 		},
 	)

@@ -664,7 +664,13 @@ func TestRunWaitsForWorkDirLockBeforeReusingLiveStatus(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(t.Context(), []string{"-work-dir", dir})
+		// Reusing live status binds no ports; keep allocation out of this lock test.
+		errCh <- run(t.Context(), []string{
+			"-work-dir", dir,
+			"-backend-port", "39411",
+			"-frontend-port", "39412",
+			"-mcp-port", "39413",
+		})
 	}()
 	select {
 	case err := <-errCh:

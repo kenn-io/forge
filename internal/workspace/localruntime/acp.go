@@ -223,6 +223,9 @@ type ACPState struct {
 	Withdrawn []string `json:"withdrawn,omitempty"`
 	// Turns records the newest prompt turns; see ACPTurnRecord.
 	Turns []ACPTurnRecord `json:"turns,omitempty"`
+	// Supervision names the coordinator supervising this chat; see
+	// acp_supervision.go. It is nil for a chat no coordinator has claimed.
+	Supervision *ACPSupervision `json:"supervision,omitempty"`
 }
 type ACPQueuedPrompt struct {
 	ID     string       `json:"id"`
@@ -246,6 +249,11 @@ type ACPCommand struct {
 	// values as a JSON object; it stays raw so the owner RPC can carry it.
 	Action  string         `json:"action,omitempty"`
 	Content jsontext.Value `json:"content,omitempty"`
+	// Generation is the supervision generation the sender holds. Supervised
+	// sessions reject input whose generation differs.
+	Generation uint64 `json:"generation,omitempty"`
+	// Supervisor names the coordinator claiming supervision.
+	Supervisor string `json:"supervisor,omitempty"`
 }
 
 func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
@@ -477,6 +485,17 @@ func (a *ACP) Subscribe() (<-chan struct{}, func()) {
 
 func (a *ACP) Command(command ACPCommand) error {
 	switch command.Type {
+	case "config", "unqueue", "resume", "permission", "elicitation":
+		// Prompts pass the same gate inside submit; cancel always passes.
+		if err := a.supervisionGate(command.Generation); err != nil {
+			return err
+		}
+	}
+	switch command.Type {
+	case "supervise":
+		return a.supervise(command)
+	case "takeover":
+		return a.takeover()
 	case "config":
 		return a.configure(command.ID, command.Value)
 	case "prompt":
@@ -506,7 +525,8 @@ func (a *ACP) Command(command ACPCommand) error {
 }
 
 // Prompt submits text as a send: it starts a turn when idle and queues behind
-// a running one.
+// a running one. It carries no supervision generation, so a supervised chat
+// refuses it until a person takes over.
 func (a *ACP) Prompt(text string) error { return a.submit(ACPCommand{Type: "prompt", Text: text}) }
 
 // startPromptLocked starts a turn. The caller holds turnMu. A queued prompt

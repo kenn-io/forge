@@ -69,6 +69,7 @@ func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.state.Plan = saved.Plan
 	a.state.Answered = saved.Answered
+	a.state.Supervision = saved.Supervision
 	// Commands the agent advertised while reloading are current; otherwise
 	// keep the last set until it sends a new one.
 	if a.state.Commands == nil {

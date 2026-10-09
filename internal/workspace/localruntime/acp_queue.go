@@ -25,8 +25,9 @@ type acpTurnResult struct {
 	err        error
 }
 
-// submit never rejects input because a turn is running: a busy chat queues
-// the prompt, or steers it into the turn when asked and supported.
+// submit never rejects people's input because a turn is running: a busy chat
+// queues the prompt, or steers it into the turn when asked and supported. A
+// supervisor's prompt starts a turn or fails with ErrACPBusy.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
 	if strings.TrimSpace(text) == "" && len(command.Images) == 0 {
@@ -43,6 +44,11 @@ func (a *ACP) submit(command ACPCommand) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	supervised, err := a.supervisedPromptLocked(command)
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	if submitted, err := a.submittedLocked(command.ID, text, command.Images); submitted || err != nil {
 		a.mu.Unlock()
 		return err
@@ -52,6 +58,10 @@ func (a *ACP) submit(command ACPCommand) error {
 		return ErrACPAgentUnavailable
 	}
 	running := a.state.Busy || a.state.Steering
+	if supervised && (running || a.state.Configuring) {
+		a.mu.Unlock()
+		return ErrACPBusy
+	}
 	if !running && len(a.state.Queue) == 0 {
 		// A new message after a stop starts work again; a paused backlog
 		// still waits for an explicit resume.
@@ -70,7 +80,10 @@ func (a *ACP) submit(command ACPCommand) error {
 		return err
 	}
 	a.mu.Unlock()
-	err := a.startPromptLocked(text, command.ID, command.Images)
+	err = a.startPromptLocked(text, command.ID, command.Images)
+	if errors.Is(err, errACPNotIdle) && supervised {
+		return ErrACPBusy
+	}
 	if errors.Is(err, errACPNotIdle) {
 		// A settings change began after the check above.
 		a.mu.Lock()

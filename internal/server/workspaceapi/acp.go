@@ -54,8 +54,8 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 		}
 		return marshalErr == nil && conn.Write(ctx, websocket.MessageText, data) == nil
 	}
-	// Prompts and settings can wait on the agent; they run in order on their
-	// own goroutine so a stalled one never stops this connection from reading
+	// Prompts, settings, and supervision claims can wait on the agent; they
+	// run in order on their own goroutine so a stalled one never stops this connection from reading
 	// a stop or an answer (Conn allows concurrent writes). The backlog is
 	// unbounded: the reader never waits on it.
 	var (
@@ -121,7 +121,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				if conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
 					return
 				}
-			case "prompt", "config":
+			case "prompt", "config", "supervise":
 				enqueue(command)
 			default:
 				if !run(command) {

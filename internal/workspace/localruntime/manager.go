@@ -1541,7 +1541,8 @@ func (m *Manager) SubmitInitialMessage(
 
 // SubmitAgentMessage writes one bounded, already-normalized prompt through a
 // live agent runtime. ACP runtimes receive it as a chat prompt, queued behind
-// any running turn, and reject it unwritten only while disconnected. Terminal
+// any running turn. They reject it unwritten while disconnected, and with
+// ErrACPSupervised while a coordinator supervises the chat. Terminal
 // runtimes require observed bracketed-paste mode and receive the complete
 // paste frame and Enter in one serialized terminal operation.
 func (m *Manager) SubmitAgentMessage(

@@ -87,6 +87,10 @@ var acpErrorCodes = []struct {
 }{
 	{"stale_request", ErrACPStaleRequest},
 	{"uncertain", ErrACPSubmissionUncertain},
+	{"busy", ErrACPBusy},
+	{"supervised", ErrACPSupervised},
+	{"stale_generation", ErrACPStaleGeneration},
+	{"queue_pending", ErrACPQueuePending},
 }
 
 // acpErrorCode returns the code for a sentinel error, or "" for any other.

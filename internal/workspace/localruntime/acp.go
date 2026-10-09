@@ -2,6 +2,7 @@ package localruntime
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -45,7 +46,7 @@ type ACP struct {
 	done            chan struct{}
 	client          *acpsdk.ClientSideConnection
 	promptWritten   chan error
-	nextPermission  int
+	nextRequest     int
 	permissions     map[string]chan acpsdk.RequestPermissionOutcome
 	elicitations    map[string]chan acpsdk.UnstableCreateElicitationResponse
 	subscribers     map[chan struct{}]struct{}
@@ -202,6 +203,12 @@ type ACPState struct {
 	// true while a steering request is in flight.
 	SteeringSupported bool `json:"steeringSupported"`
 	Steering          bool `json:"steering"`
+	// RuntimeGeneration names this owner process. Request IDs carry it, so an
+	// answer meant for an earlier agent process is recognized as stale.
+	RuntimeGeneration string `json:"runtimeGeneration"`
+	// Answered holds the newest answered permission and elicitation requests,
+	// so a retried answer gets the same result.
+	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
 }
 type ACPQueuedPrompt struct {
 	ID     string       `json:"id"`
@@ -248,6 +255,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	// Diagnostics are not protocol messages and must never enter the chat stream.
 	cmd.Stderr = os.Stderr
 	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a.state.RuntimeGeneration = rand.Text()[:12]
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
@@ -472,28 +480,7 @@ func (a *ACP) Command(command ACPCommand) error {
 		a.mu.Unlock()
 		return a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 	case "permission":
-		a.mu.Lock()
-		index := -1
-		for i, permission := range a.state.Permissions {
-			if permission.ID == command.ID {
-				for _, option := range permission.Options {
-					if option.OptionID == command.OptionID {
-						index = i
-					}
-				}
-			}
-		}
-		if index < 0 {
-			a.mu.Unlock()
-			return errors.New("permission option is no longer pending")
-		}
-		response := a.permissions[command.ID]
-		delete(a.permissions, command.ID)
-		a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
-		response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
-		a.changedLocked()
-		a.mu.Unlock()
-		return nil
+		return a.answerPermission(command)
 	case "elicitation":
 		return a.answerElicitation(command)
 	default:

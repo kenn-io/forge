@@ -5,7 +5,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"slices"
-	"strconv"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -234,8 +233,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 		a.mu.Unlock()
 		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.NewRequestPermissionOutcomeCancelled()}, nil
 	}
-	a.nextPermission++
-	permission := ACPPermission{ID: strconv.Itoa(a.nextPermission)}
+	permission := ACPPermission{ID: a.newRequestIDLocked("p")}
 	if params.ToolCall.Title != nil {
 		permission.Title = *params.ToolCall.Title
 	}
@@ -275,9 +273,8 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 		a.mu.Unlock()
 		return acpsdk.NewUnstableCreateElicitationResponseCancel(), nil
 	}
-	a.nextPermission++
 	schema := params.Form.RequestedSchema
-	elicitation := ACPElicitation{ID: "elicitation-" + strconv.Itoa(a.nextPermission), Message: params.Form.Message, Schema: ACPElicitationSchema{Properties: schema.Properties, Required: schema.Required}}
+	elicitation := ACPElicitation{ID: a.newRequestIDLocked("e"), Message: params.Form.Message, Schema: ACPElicitationSchema{Properties: schema.Properties, Required: schema.Required}}
 	if schema.Title != nil {
 		elicitation.Schema.Title = *schema.Title
 	}
@@ -317,9 +314,9 @@ func (*ACP) UnstableCompleteElicitation(context.Context, acpsdk.UnstableComplete
 
 func (a *ACP) answerElicitation(command ACPCommand) error {
 	var answer acpsdk.UnstableCreateElicitationResponse
+	content := map[string]any{}
 	switch command.Action {
 	case "accept":
-		content := map[string]any{}
 		if len(command.Content) > 0 {
 			if err := json.Unmarshal(command.Content, &content); err != nil || content == nil {
 				return errors.New("elicitation content must be a JSON object")
@@ -334,17 +331,50 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	default:
 		return errors.New("elicitation action must be accept, decline, or cancel")
 	}
+	key, err := elicitationAnswerKey(command.Action, content)
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	response, ok := a.elicitations[command.ID]
 	if !ok {
+		if replay, err := a.answeredLocked(command.ID, key); replay || err != nil {
+			return err
+		}
 		return errors.New("elicitation is no longer pending")
 	}
 	delete(a.elicitations, command.ID)
 	a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == command.ID })
 	response <- answer
+	a.recordAnswerLocked(command.ID, key)
 	a.changedLocked()
-	return nil
+	return a.persistLocked()
+}
+
+// answerPermission selects one option of a pending permission request.
+func (a *ACP) answerPermission(command ACPCommand) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	response, ok := a.permissions[command.ID]
+	if !ok {
+		if replay, err := a.answeredLocked(command.ID, command.OptionID); replay || err != nil {
+			return err
+		}
+		return errors.New("permission option is no longer pending")
+	}
+	index := slices.IndexFunc(a.state.Permissions, func(p ACPPermission) bool {
+		return p.ID == command.ID && slices.ContainsFunc(p.Options, func(o ACPPermissionOption) bool { return o.OptionID == command.OptionID })
+	})
+	if index < 0 {
+		return errors.New("permission option is no longer pending")
+	}
+	delete(a.permissions, command.ID)
+	a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
+	response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
+	a.recordAnswerLocked(command.ID, command.OptionID)
+	a.changedLocked()
+	return a.persistLocked()
 }
 
 // Forge does not advertise file or terminal capabilities. Agents own these

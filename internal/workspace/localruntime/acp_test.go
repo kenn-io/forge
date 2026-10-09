@@ -26,6 +26,20 @@ import (
 	"go.kenn.io/forge/internal/config"
 )
 
+// recordFixtureResponse logs each answer the fixture receives, so tests can
+// tell how many reached the agent.
+func recordFixtureResponse(dir, response string) {
+	if dir == "" {
+		return
+	}
+	file, err := os.OpenFile(filepath.Join(dir, "responses"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		os.Exit(14)
+	}
+	_, _ = fmt.Fprintln(file, response)
+	_ = file.Close()
+}
+
 // This executable fixture is the foreign ACP peer. It verifies the host's
 // initialization and workspace handoff before serving streamed turns.
 func TestACPStdioHelper(t *testing.T) {
@@ -253,6 +267,7 @@ func TestACPStdioHelper(t *testing.T) {
 				if json.Unmarshal(message.Result, &result) != nil || result.Action != "accept" {
 					os.Exit(12)
 				}
+				recordFixtureResponse(fixtureDir, "elicitation:"+result.Content.Choice)
 				fmt.Printf(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"chose %s"}}}}`+"\n", result.Content.Choice)
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 				continue
@@ -266,6 +281,7 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Result, &result) != nil || string(message.ID) != `"approval"` || result.Outcome.Outcome != "selected" || result.Outcome.OptionID != "allow" {
 				os.Exit(6)
 			}
+			recordFixtureResponse(fixtureDir, "permission:"+result.Outcome.OptionID)
 			fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"tool_call_update","toolCallId":"edit","status":"completed","content":[{"type":"content","content":{"type":"text","text":"Updated file"}}]}}}`)
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
 		}

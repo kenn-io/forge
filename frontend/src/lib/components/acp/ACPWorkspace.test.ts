@@ -1389,7 +1389,7 @@ describe("ACPWorkspace supervision", () => {
     await openChat(supervised);
     await push({ supervision: { supervisor: "coordinator", generation: 3, takenOver: true } });
 
-    expect(screen.getByText("You took over from coordinator")).toBeTruthy();
+    expect(screen.getByText("Taken over from coordinator")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
     expect(composer().disabled).toBe(false);
   });

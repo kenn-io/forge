@@ -387,7 +387,7 @@
           <span>Supervised by {supervision.supervisor}</span>
           <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "takeover" })}>Take over</Button>
         {:else}
-          <span>You took over from {supervision.supervisor}</span>
+          <span>Taken over from {supervision.supervisor}</span>
         {/if}
       </div>
     {/if}

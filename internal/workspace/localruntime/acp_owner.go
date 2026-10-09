@@ -206,9 +206,9 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 // record, even after this daemon saw its agent exit on its own; ordinary
 // restoration skips such sessions. Like workspace reopen it attaches a running
 // owner and relaunches only once the owner's backend is gone, loading the saved
-// native session. It refuses chats nobody supervises, running or not
-// (ErrSessionUnavailable), and agents that cannot reload the session
-// (ErrACPCannotReload); the saved session stays.
+// native session. It refuses chats no coordinator holds, including taken-over
+// chats, running or not (ErrSessionUnavailable), and agents that cannot reload
+// the session (ErrACPCannotReload); the saved session stays.
 func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRuntimeSession) error {
 	restored.WorkspaceID = strings.TrimSpace(restored.WorkspaceID)
 	restored.SessionKey = strings.TrimSpace(restored.SessionKey)
@@ -235,7 +235,7 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRun
 	if err != nil {
 		return fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
 	}
-	if saved.State.Supervision == nil {
+	if !saved.State.Supervision.held() {
 		return fmt.Errorf("%w: %q is not supervised", ErrSessionUnavailable, key)
 	}
 	if m.runningSession(m.sessions, key) != nil {
@@ -244,9 +244,10 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRun
 	return m.startRestoredSession(ctx, restored)
 }
 
-// SupervisedACP reports whether a coordinator supervises the saved chat key,
-// running or not. A chat with no saved session is not supervised. It returns
-// ErrSessionNotFound when workspaceID has no such chat.
+// SupervisedACP reports whether a coordinator holds the saved chat key,
+// running or not. A chat with no saved session, or one people took over, is
+// not supervised. It returns ErrSessionNotFound when workspaceID has no such
+// chat.
 func (m *Manager) SupervisedACP(workspaceID, key string) (bool, error) {
 	if m.acpSessionsDir == "" || workspaceID == "" || key == "" {
 		return false, ErrSessionNotFound
@@ -261,7 +262,7 @@ func (m *Manager) SupervisedACP(workspaceID, key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return saved.State.Supervision != nil, nil
+	return saved.State.Supervision.held(), nil
 }
 
 // requireACPWorkspace returns ErrSessionNotFound unless key names a chat

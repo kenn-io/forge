@@ -152,6 +152,12 @@ func (f *chatFixture) save(supervised bool) {
 	if supervised {
 		state = `{"supervision":{"supervisor":"coordinator","generation":1,"takenOver":false,"changedAt":"2026-10-09T12:00:00Z"}}`
 	}
+	f.saveState(state)
+}
+
+// saveState writes the chat's saved session with state as its ACP state.
+func (f *chatFixture) saveState(state string) {
+	f.t.Helper()
 	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
 	require.NoError(f.t, err)
 	require.NoError(f.t, os.WriteFile(filepath.Join(paths.Dir, "session.json"), []byte(`{"SessionID":"native","State":`+state+`}`), 0o600))
@@ -472,6 +478,22 @@ func TestWorkspaceChatForgetsAnUnsupervisedChatWhenItsAgentExits(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status, string(data))
 	status, data = f.do(http.MethodGet, chatKey+"/chat", "")
 	assert.Equal(t, http.StatusNotFound, status, string(data))
+}
+
+// A taken-over chat is a person's chat. Its coordinator can no longer
+// restore it, and its record is forgotten when its agent exits.
+func TestWorkspaceChatTreatsATakenOverChatAsUnsupervised(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.saveState(`{"supervision":{"supervisor":"coordinator","generation":2,"takenOver":true,"changedAt":"2026-10-09T12:00:00Z"}}`)
+	owner := newChatOwner("generation-1")
+	f.serve(owner)
+	status, data := f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	require.Equal(t, http.StatusConflict, status, string(data))
+	assert.Equal(t, "not_supervised", decodeChat[chatProblem](t, data).Details["reason"])
+
+	f.stop(owner)
+	require.Eventually(t, func() bool { return len(f.storedChats()) == 0 }, 5*time.Second, 10*time.Millisecond)
+	assert.False(t, f.recoveryPending())
 }
 
 // An agent that cannot reload the saved session is reported by code, and the

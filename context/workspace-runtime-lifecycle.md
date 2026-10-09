@@ -63,7 +63,8 @@ Rules:
 - When a supervised chat's agent exits, the daemon keeps its stored record and marks it
   recovery pending, so neither the exit hook nor the missing-backend prune forgets it; the chat
   route reports it as exited until restored or stopped, and the fleet inventory omits it. A
-  taken-over chat keeps its supervision record, so it is kept too. The exited mark is in memory:
+  taken-over chat keeps its supervision record but is a person's chat: it is forgotten like
+  any unsupervised chat, and restore refuses it. The exited mark is in memory:
   after a daemon restart, opening the workspace reloads a kept chat like any chat whose owner
   died while no daemon was attached. Unsupervised chats are forgotten as before
   (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
@@ -122,9 +123,10 @@ Rules:
   before tool activity, when the agent goes quiet, and at turn end; never per token
   (`internal/workspace/localruntime/acp_delivery.go::ACP.deliverTextLocked`).
 - The saved ACP transcript is the conversation of record: drop `session/load` replay, and
-  continue in a new session when the agent lacks `loadSession`. A supervised chat never falls
-  back to a new native session: the start fails with `ErrACPCannotReload`, which the owner
-  records for the waiting daemon, and the saved session stays
+  continue in a new session when the agent lacks `loadSession`. A chat a coordinator holds
+  never falls back to a new native session: the start fails with `ErrACPCannotReload`, which
+  the owner records for the waiting daemon, and the saved session stays. A taken-over chat
+  falls back like any person's chat
   (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
   and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).

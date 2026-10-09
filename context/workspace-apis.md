@@ -148,9 +148,9 @@ embedder protocol for arbitrary host state.
     `stale_generation`, `uncertain`, `stale_request`, `queue_pending`); a disconnected agent or
     a chat that is not running is `503`, and any other refusal is `400`
     (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`).
-  - Restore applies only to supervised chats and uses the stored record. It refuses an
-    unsupervised chat with reason `not_supervised` and an agent without `loadSession` with
-    reason `cannot_reload`.
+  - Restore applies only to chats a coordinator holds and uses the stored record. It refuses
+    an unsupervised or taken-over chat with reason `not_supervised` and an agent without
+    `loadSession` with reason `cannot_reload`.
 - Terminal and mobile pickers read inline workspaces from the projected snapshot;
   they never fan out per-host list reads, and remote actions require advertised
   availability (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::loadWorkspaces`).

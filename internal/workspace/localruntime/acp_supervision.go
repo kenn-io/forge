@@ -102,9 +102,15 @@ func (a *ACP) setSupervisionLocked(next ACPSupervision) error {
 	return nil
 }
 
+// held reports whether a coordinator holds a chat with this record. A chat
+// people took over is theirs, though it keeps the record.
+func (s *ACPSupervision) held() bool {
+	return s != nil && !s.TakenOver
+}
+
 // supervisedLocked reports whether a coordinator holds the chat.
 func (a *ACP) supervisedLocked() bool {
-	return a.state.Supervision != nil && !a.state.Supervision.TakenOver
+	return a.state.Supervision.held()
 }
 
 // heldAtLocked reports whether a coordinator still holds the chat at generation.

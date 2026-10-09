@@ -345,8 +345,9 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 	})
 }
 
-// keepsExitedChat reports whether an exited session is a supervised chat,
-// whose stored record outlives its agent.
+// keepsExitedChat reports whether an exited session is a chat a coordinator
+// holds, whose stored record outlives its agent. A taken-over chat is a
+// person's chat and is forgotten like any other.
 func (h *Handler) keepsExitedChat(info localruntime.SessionInfo) bool {
 	if info.Kind != localruntime.LaunchTargetACP || h.runtime == nil {
 		return false

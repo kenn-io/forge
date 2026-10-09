@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
@@ -345,4 +346,28 @@ func TestACPSuperviseRefusesARunningChat(t *testing.T) {
 	steering.state.Steering = true
 	require.ErrorIs(t, steering.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}), ErrACPBusy)
 	assert.Nil(t, publishedACPState(t, steering).Supervision)
+}
+
+// A person who took a chat over can keep using it when its agent cannot
+// reload the saved session: it continues in a new session like any person's
+// chat, instead of refusing every start.
+func TestACPTakenOverChatContinuesWhenTheAgentCannotReload(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_NO_LOAD", "1")
+	c := newInProcessChat(t)
+	supervision := &ACPSupervision{Supervisor: "coordinator", Generation: 2, TakenOver: true, ChangedAt: "2026-10-09T12:00:00Z"}
+	saved := &acpSavedSession{SessionID: "native", State: ACPState{
+		Messages:    []ACPMessage{{Role: "user", Text: "earlier", CreatedAt: "2026-10-09T12:00:00Z"}},
+		Supervision: supervision,
+	}}
+
+	agent, err := c.manager.startACP(t.Context(), c.info, c.command, c.cwd, nil, saved)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+	state := publishedACPState(t, agent)
+	require.Len(t, state.Messages, 1)
+	assert.Equal(t, "earlier", state.Messages[0].Text)
+	assert.Equal(t, supervision, state.Supervision)
+	require.Len(t, state.Notices, 1)
+	assert.Contains(t, state.Notices[0], "cannot reload its previous session")
+	require.NoError(t, agent.Prompt("continue"), "people can send again")
 }

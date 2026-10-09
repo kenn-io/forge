@@ -515,3 +515,21 @@ func TestACPReportsWhetherASavedChatIsSupervised(t *testing.T) {
 		})
 	}
 }
+
+// A taken-over chat belongs to people, though it keeps its supervision
+// record. Like any person's chat, its record is not kept for a coordinator's
+// restore after its agent exits.
+func TestACPTakenOverChatIsNotSupervised(t *testing.T) {
+	manager, info, _, dir := exitedACPChat(t, true)
+	saved := savedACPSession(t, manager, info.Key)
+	require.NotNil(t, saved.State.Supervision)
+	saved.State.Supervision.TakenOver = true
+	data, err := json.Marshal(saved)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manager.acpSessionPath(info.Key), data, 0o600))
+
+	supervised, err := manager.SupervisedACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.False(t, supervised)
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)), ErrSessionUnavailable)
+}

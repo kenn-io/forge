@@ -45,6 +45,7 @@ import (
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
+	"go.kenn.io/kit/telemetry/posthog"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -835,6 +836,17 @@ func (f *FakeTelemetry) Capture(event string, properties map[string]any) error {
 	return nil
 }
 
+func (f *FakeTelemetry) Report(_ context.Context, event string, properties map[string]any) (posthog.Status, error) {
+	if f.ReportError != nil {
+		return "", f.ReportError
+	}
+	status := f.ReportStatus
+	if status == "" {
+		status = posthog.StatusQueued
+	}
+	return status, f.Capture(event, properties)
+}
+
 func (f *FakeTelemetry) Close() error { return nil }
 
 func (f *FakeTelemetry) Enabled() bool { return f.EnabledValue }
@@ -843,6 +855,8 @@ type FakeTelemetry struct {
 	EnabledValue bool
 	Event        string
 	Properties   map[string]any
+	ReportStatus posthog.Status
+	ReportError  error
 }
 
 const FederationEventTestNodeID = "55555555555555555555555555555555"

@@ -646,6 +646,8 @@ A hidden tab that the browser or phone closes without notice reports nothing.
 Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,
 workspaces, terminal, workspace-item, settings, project-intake, design-system,
 and onboarding. Screen counts persist across tabs and daemon restarts.
+An upgrade preserves prior screen counts in the private `telemetry-daily.json`
+file beside the database. Keep that file to retain daily counts across restarts.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 

@@ -3,9 +3,9 @@ import { launchURL, serverURL, type Connection } from "./connection.ts";
 // JSON is embedded in script text, so a pasted value must not end the script.
 const scriptValue = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export function embeddedPage(bundle: string, connection: Connection, tablet: boolean, target?: string) {
+export function embeddedPage(bundle: string, connection: Connection, tablet: boolean) {
   const server = serverURL(connection.server);
-  const baseUrl = target ?? launchURL(connection, tablet);
+  const baseUrl = launchURL(connection, tablet);
   const basePath = new URL(server).pathname.replace(/\/$/, "") + "/";
   const bootstrapURL = new URL(server + "/api/v1/settings");
   if (connection.token.trim()) bootstrapURL.searchParams.set("auth_token", connection.token.trim());

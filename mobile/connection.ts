@@ -23,7 +23,7 @@ export function serverURL(input: string): string {
 }
 
 export function launchURL(connection: Connection, tablet: boolean): string {
-  const route = connection.desktop && tablet ? "/terminal" : "/m/workspaces";
+  const route = connection.desktop && tablet ? "/workspaces" : "/m/workspaces";
   const url = new URL(serverURL(connection.server) + route);
   if (connection.desktop && tablet) url.searchParams.set("desktop", "1");
   return url.toString();

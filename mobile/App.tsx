@@ -67,7 +67,6 @@ function ForgeApp() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [source, setSource] = useState<{ html: string; baseUrl: string } | null>(null);
   const bundle = useRef("");
-  const [pageRevision, setPageRevision] = useState(0);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -198,7 +197,6 @@ function ForgeApp() {
             </View>
           ) : (
             <WebView
-              key={pageRevision}
               ref={webview}
               source={source}
               style={{ backgroundColor: colors.background }}
@@ -223,8 +221,12 @@ function ForgeApp() {
                   return isServerURL(request.url, connection.server) || /^(data|about):/.test(request.url);
                 }
                 if (isServerURL(request.url, connection.server)) {
-                  setPageRevision((revision) => revision + 1);
-                  setSource(embeddedPage(bundle.current, connection, tablet, request.url));
+                  // Keep the bundled document and its Back history for ordinary links.
+                  webview.current?.injectJavaScript(`
+                    history.pushState({ __forgeURL: ${JSON.stringify(request.url)} }, "", ${JSON.stringify(request.url)});
+                    window.dispatchEvent(new PopStateEvent("popstate"));
+                    true;
+                  `);
                   return false;
                 }
                 openExternal(request.url);

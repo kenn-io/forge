@@ -75,6 +75,7 @@ iPad. Android is the locally verified platform for this initial app.
 ```sh
 node node_modules/typescript/bin/tsc --noEmit
 node --experimental-strip-types --test *.test.ts
+node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts
 node node_modules/expo/bin/cli export --platform android
 ```
 

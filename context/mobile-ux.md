@@ -14,6 +14,10 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 - Connected native views use the web UI's header without a native server bar.
   Connection settings live in the phone menu and desktop Settings page; Android
   Back also returns there after page history (`mobile/App.tsx`).
+- Same-server links stay in the bundled SPA and preserve WebView history so
+  Android Back returns to the previous page (`mobile/App.tsx`).
+- Native history entries carry their URL in state: Android's HTML loader
+  restores state but loses changed URLs on Back (`frontend/src/lib/stores/router.svelte.ts::nativeHistoryState`).
 
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 

@@ -9,7 +9,7 @@
     "android": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:android",
     "ios": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:ios",
     "check": "node node_modules/typescript/bin/tsc --noEmit",
-    "test": "node --experimental-strip-types --test *.test.ts",
+    "test": "node --experimental-strip-types --test *.test.ts && node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts",
     "build:web": "node scripts/build-web.mjs"
   },
   "dependencies": {
@@ -28,6 +28,8 @@
   "devDependencies": {
     "@types/node": "^26.0.0",
     "@types/react": "~19.2.0",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.2.3",
     "typescript": "6.0.3",
     "vite-plugin-singlefile": "^2.3.3"
   },

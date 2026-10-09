@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { launchURL } from "../../../../mobile/connection.ts";
 
 const issueRoute = "/host/ghe.example.com/issues/github/acme/widget/7";
 // Each imported router wraps history.replaceState; restore it so a router from
@@ -20,9 +21,34 @@ describe("router initialization", () => {
     window.history.replaceState = originalReplaceState;
     delete window.__BASE_PATH__;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     window.sessionStorage.clear();
     window.history.replaceState(null, "", "/");
     vi.resetModules();
+  });
+
+  it("opens Workspaces for the native tablet desktop launch URL", async () => {
+    window.__BASE_PATH__ = "/forge/";
+    const url = new URL(launchURL({ server: "https://forge.example.test/forge", token: "", desktop: true }, true));
+    const router = await importRouterAt(url.pathname + url.search);
+    expect(router.getRoute()).toEqual({ page: "workspaces" });
+  });
+
+  it("restores a native workspace URL when Android Back reports the HTML document's initial URL", async () => {
+    vi.stubGlobal("ReactNativeWebView", { postMessage: vi.fn() });
+    window.__BASE_PATH__ = "/forge/";
+    const router = await importRouterAt("/forge/workspaces?desktop=1");
+    router.navigate("/terminal/workspace-a", { origin: "workspaces" });
+    const workspaceState = history.state;
+    router.navigate("/");
+
+    // loadDataWithBaseURL preserves entry state but returns its original URL.
+    originalReplaceState.call(history, workspaceState, "", "/forge/workspaces?desktop=1");
+    window.dispatchEvent(new PopStateEvent("popstate", { state: workspaceState }));
+
+    expect(router.getRoute()).toEqual({ page: "terminal", workspaceId: "workspace-a" });
+    expect(window.location.pathname).toBe("/forge/terminal/workspace-a");
+    expect(history.state.origin).toBe("workspaces");
   });
 
   it("withBasePath prefixes hrefs when mounted under a base path", async () => {

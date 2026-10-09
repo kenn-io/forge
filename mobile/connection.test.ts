@@ -16,7 +16,7 @@ test("desktop is an opt-in tablet layout", () => {
   );
   assert.equal(
     launchURL({ server: "http://10.0.2.2:8080", token: "", desktop: true }, true),
-    "http://10.0.2.2:8080/terminal?desktop=1",
+    "http://10.0.2.2:8080/workspaces?desktop=1",
   );
 });
 

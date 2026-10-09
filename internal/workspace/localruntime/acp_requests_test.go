@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -270,4 +271,57 @@ func TestACPSettledOutcomesCrossTheOwnerAsCodes(t *testing.T) {
 	err = c.chat.Command(ACPCommand{Type: "prompt", Text: "later", ID: "queued"})
 	require.ErrorIs(t, err, errACPSubmissionWithdrawn)
 	assert.Equal(t, "withdrawn", ACPErrorCode(err))
+}
+
+// unsavableACP is a detached chat whose session file can never be written:
+// a directory cannot be replaced by it.
+func unsavableACP(t *testing.T) *ACP {
+	t.Helper()
+	agent := newDetachedACP(t)
+	agent.recordPath = t.TempDir()
+	return agent
+}
+
+// An answer the agent was sent has taken effect, so a failed save after it
+// must not report the answer as refused. The chat shows the save error, and
+// a retry still gets the same result.
+func TestACPAnswersSucceedWhenTheSaveAfterThemFails(t *testing.T) {
+	t.Run("permission", func(t *testing.T) {
+		agent := unsavableACP(t)
+		outcome := make(chan acpsdk.RequestPermissionResponse, 1)
+		go func() {
+			response, _ := agent.RequestPermission(t.Context(), acpsdk.RequestPermissionRequest{
+				SessionId: "session",
+				ToolCall:  acpsdk.ToolCallUpdate{ToolCallId: "build"},
+				Options:   []acpsdk.PermissionOption{{OptionId: "allow", Name: "Allow", Kind: acpsdk.PermissionOptionKindAllowOnce}},
+			})
+			outcome <- response
+		}()
+		require.Eventually(t, func() bool { return len(publishedACPState(t, agent).Permissions) == 1 }, 5*time.Second, 10*time.Millisecond)
+		answer := ACPCommand{Type: "permission", ID: publishedACPState(t, agent).Permissions[0].ID, OptionID: "allow"}
+
+		require.NoError(t, agent.Command(answer))
+		response := <-outcome
+		require.NotNil(t, response.Outcome.Selected)
+		assert.Equal(t, acpsdk.PermissionOptionId("allow"), response.Outcome.Selected.OptionId)
+		assert.Contains(t, publishedACPState(t, agent).Error, "save chat after answering a permission")
+		require.NoError(t, agent.Command(answer), "a retry gets the same result")
+	})
+	t.Run("elicitation", func(t *testing.T) {
+		agent := unsavableACP(t)
+		outcome := make(chan acpsdk.UnstableCreateElicitationResponse, 1)
+		go func() {
+			response, _ := agent.UnstableCreateElicitation(t.Context(), acpsdk.UnstableCreateElicitationRequest{
+				Form: &acpsdk.UnstableCreateElicitationForm{Message: "Pick one"},
+			})
+			outcome <- response
+		}()
+		require.Eventually(t, func() bool { return len(publishedACPState(t, agent).Elicitations) == 1 }, 5*time.Second, 10*time.Millisecond)
+		answer := ACPCommand{Type: "elicitation", ID: publishedACPState(t, agent).Elicitations[0].ID, Action: "decline"}
+
+		require.NoError(t, agent.Command(answer))
+		assert.NotNil(t, (<-outcome).Decline)
+		assert.Contains(t, publishedACPState(t, agent).Error, "save chat after answering an elicitation")
+		require.NoError(t, agent.Command(answer), "a retry gets the same result")
+	})
 }

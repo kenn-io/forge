@@ -153,8 +153,10 @@ embedder protocol for arbitrary host state.
     `stale_generation`, `uncertain`, `stale_request`, `queue_pending`, `withdrawn`,
     `already_answered`, `not_pending`); a disconnected agent or a chat that is not running is
     `503`, and any other refusal is `400`
-    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`). A prompt the agent
-    received is accepted even if the save after it fails; the chat's `error` reports that.
+    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`). A command whose change
+    took effect, such as a sent, steered, queued, or unqueued prompt or a delivered answer, is
+    accepted even if the save after it fails; the chat's `error` reports that
+    (`internal/workspace/localruntime/acp_owner.go::ACP.saveTakenEffectLocked`).
   - Restore applies only to chats a coordinator holds and uses the stored record. It refuses
     an unsupervised or taken-over chat with reason `not_supervised`, an agent without
     `loadSession` with reason `cannot_reload`, and a workspace that setup or deletion owns

@@ -428,3 +428,25 @@ func TestACPPromptIsAcceptedWhenTheSaveAfterTheWriteFails(t *testing.T) {
 	require.Len(t, state.Messages, 1)
 	assert.Contains(t, state.Error, "save chat after sending a prompt")
 }
+
+// A queued prompt drains even when the queue cannot be saved, and an
+// unqueued one never runs. Neither change can be undone by a failed save, so
+// neither is reported as refused.
+func TestACPQueueChangesSucceedWhenTheSaveAfterThemFails(t *testing.T) {
+	agent := newDetachedACP(t)
+	require.NoError(t, agent.Prompt("running"))
+	agent.recordPath = t.TempDir()
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "later", ID: "queued"}))
+	state := publishedACPState(t, agent)
+	require.Len(t, state.Queue, 1)
+	assert.Contains(t, state.Error, "save chat after queueing a prompt")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "later", ID: "queued"}),
+		"a retry finds the queued prompt")
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued"}))
+	state = publishedACPState(t, agent)
+	assert.Empty(t, state.Queue)
+	assert.Equal(t, []string{"queued"}, state.Withdrawn)
+	assert.Contains(t, state.Error, "save chat after unqueueing a prompt")
+}

@@ -364,8 +364,9 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	response <- answer
 	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, key)
+	a.saveTakenEffectLocked("answering an elicitation")
 	a.changedLocked()
-	return a.persistLocked()
+	return nil
 }
 
 // answerPermission selects one option of a pending permission request.
@@ -393,8 +394,9 @@ func (a *ACP) answerPermission(command ACPCommand) error {
 	response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
 	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, command.OptionID)
+	a.saveTakenEffectLocked("answering a permission")
 	a.changedLocked()
-	return a.persistLocked()
+	return nil
 }
 
 // Forge does not advertise file or terminal capabilities. Agents own these

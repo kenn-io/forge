@@ -60,6 +60,16 @@ func (a *ACP) persistLocked() error {
 	return err
 }
 
+// saveTakenEffectLocked saves a change that has already taken effect, such
+// as a prompt the agent received or an answer it was sent. A failed save
+// cannot undo the change, so the command still succeeds and the chat reports
+// the error; a refusal would tell the sender that the change never happened.
+func (a *ACP) saveTakenEffectLocked(change string) {
+	if err := a.persistLocked(); err != nil {
+		a.setErrorLocked(fmt.Errorf("save chat after %s: %w", change, err))
+	}
+}
+
 // restoreTranscriptLocked makes the saved transcript the conversation of
 // record after a reload. A reloaded conversation never starts queued work on
 // its own.

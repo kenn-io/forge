@@ -78,12 +78,10 @@ func (a *ACP) submit(command ACPCommand) error {
 		return a.steerLocked(text, command.ID, command.Images)
 	}
 	if command.Mode == "queue" || running || a.state.Configuring {
-		err := a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
+		a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	}
 	a.mu.Unlock()
 	err = a.startPromptLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, command.AllowanceMillis, command.Generation)
@@ -93,11 +91,10 @@ func (a *ACP) submit(command ACPCommand) error {
 	if errors.Is(err, errACPNotIdle) {
 		// A settings change began after the check above.
 		a.mu.Lock()
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
+		a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
+		go a.drain()
+		return nil
 	}
 	return err
 }
@@ -130,7 +127,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	return false, nil
 }
 
-func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
+// enqueueLocked queues prompt. A queued prompt drains even if saving the
+// queue fails, so the save cannot refuse it.
+func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	if prompt.ID == "" {
 		prompt.ID = "queued-" + rand.Text()
 	}
@@ -139,9 +138,8 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
 	} else {
 		a.state.Queue = append(a.state.Queue, prompt)
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("queueing a prompt")
 	a.changedLocked()
-	return err
 }
 
 func (a *ACP) unqueue(id string, generation uint64) error {
@@ -160,9 +158,9 @@ func (a *ACP) unqueue(id string, generation uint64) error {
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("unqueueing a prompt")
 	a.changedLocked()
-	return err
+	return nil
 }
 
 func (a *ACP) resumeQueue(generation uint64) error {
@@ -342,21 +340,16 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 				}()
 			}
 		}
-		if err := a.persistLocked(); err != nil {
-			// The agent took the text, so the steer succeeded.
-			a.setErrorLocked(fmt.Errorf("save chat after steering: %w", err))
-		}
+		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
 		a.mu.Unlock()
 		return nil
 	case "promptRequired":
 		// The turn ended before the text arrived; it runs next.
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
+		a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	default:
 		a.state.QueuePaused = true
 		a.changedLocked()

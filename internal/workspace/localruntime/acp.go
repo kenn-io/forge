@@ -654,11 +654,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, allowance int64, generat
 		allowance = 0
 	}
 	a.beginTurnRecordLocked(submissionID, allowance, messageIndex)
-	if err := a.persistLocked(); err != nil {
-		// The agent has the prompt and its turn runs, so the send succeeded;
-		// reporting a refusal would hide running work from its sender.
-		a.setErrorLocked(fmt.Errorf("save chat after sending a prompt: %w", err))
-	}
+	a.saveTakenEffectLocked("sending a prompt")
 	a.changedLocked()
 	a.mu.Unlock()
 	go a.finishTurn(completed)

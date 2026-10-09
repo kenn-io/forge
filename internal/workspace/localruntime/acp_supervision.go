@@ -102,6 +102,11 @@ func (a *ACP) supervisedLocked() bool {
 	return a.state.Supervision != nil && !a.state.Supervision.TakenOver
 }
 
+// heldAtLocked reports whether a coordinator still holds the chat at generation.
+func (a *ACP) heldAtLocked(generation uint64) bool {
+	return a.supervisedLocked() && a.state.Supervision.Generation == generation
+}
+
 // supervisionGateLocked rejects input sent under another supervision
 // generation, and input without a generation until a person takes over.
 func (a *ACP) supervisionGateLocked(generation uint64) error {

@@ -516,7 +516,7 @@ func (a *ACP) Subscribe() (<-chan struct{}, func()) {
 func (a *ACP) Command(command ACPCommand) error {
 	// Input commands apply the supervision gate under the lock that guards
 	// their change, so authority cannot change between check and effect.
-	// Cancel always passes.
+	// A person's cancel always passes; a coordinator's names its generation.
 	switch command.Type {
 	case "supervise":
 		return a.supervise(command)
@@ -531,7 +531,7 @@ func (a *ACP) Command(command ACPCommand) error {
 	case "resume":
 		return a.resumeQueue(command.Generation)
 	case "cancel":
-		return a.cancel()
+		return a.cancel(command.Generation)
 	case "permission":
 		return a.answerPermission(command)
 	case "elicitation":

@@ -117,6 +117,30 @@ func TestACPCancelIsAllowedWhileSupervised(t *testing.T) {
 	assert.True(t, publishedACPState(t, agent).Stopping)
 }
 
+func TestACPCoordinatorCancelNeedsTheGenerationItHolds(t *testing.T) {
+	agent, generation := supervisedACP(t)
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first", Generation: generation}))
+
+	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation + 1}), ErrACPStaleGeneration)
+	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation}), ErrACPStaleGeneration,
+		"a retried cancel never stops a turn after a person took over")
+	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation + 1}), ErrACPStaleGeneration,
+		"the taken-over generation is the person's, not the coordinator's")
+	assert.False(t, publishedACPState(t, agent).Stopping)
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}), "a person can still stop the turn")
+	assert.True(t, publishedACPState(t, agent).Stopping)
+}
+
+func TestACPCoordinatorCancelStopsItsTurn(t *testing.T) {
+	agent, generation := supervisedACP(t)
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first", Generation: generation}))
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation}))
+	assert.True(t, publishedACPState(t, agent).Stopping)
+}
+
 func TestACPTakeoverReturnsInputToPeople(t *testing.T) {
 	agent, generation := supervisedACP(t)
 

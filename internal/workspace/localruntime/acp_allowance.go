@@ -186,8 +186,16 @@ func (a *ACP) cancelExhaustedTurn() {
 // cancel stops the running turn. It never waits for a prompt write, steering
 // request, or settings change; a prompt written concurrently is cancelled
 // after its write.
-func (a *ACP) cancel() error {
+// cancel stops the running turn. A person can always stop it. A coordinator
+// names the generation it holds, and is refused once the chat was taken over
+// or claimed again, so a retried cancel cannot stop a turn that someone else
+// started. The check and the stop happen under one lock.
+func (a *ACP) cancel(generation uint64) error {
 	a.mu.Lock()
+	if generation != 0 && !a.heldAtLocked(generation) {
+		a.mu.Unlock()
+		return ErrACPStaleGeneration
+	}
 	a.stopTurnLocked()
 	a.changedLocked()
 	a.mu.Unlock()

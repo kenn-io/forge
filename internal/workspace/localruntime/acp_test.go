@@ -89,6 +89,10 @@ func TestACPStdioHelper(t *testing.T) {
 		}
 		switch message.Method {
 		case "initialize":
+			// A slow start keeps the owner's socket closed while the daemon waits.
+			if delay, err := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_INITIALIZE_DELAY")); err == nil {
+				time.Sleep(delay)
+			}
 			if os.Getenv("KENN_FORGE_ACP_BAD_VERSION") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
 				continue

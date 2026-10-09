@@ -382,8 +382,13 @@ func exitedACPChat(t *testing.T, supervised bool) (*Manager, SessionInfo, ACPSta
 	return manager, info, state, dir
 }
 
+// storedACPChat is the daemon's stored record of a launched chat.
+func storedACPChat(info SessionInfo, dir string) RestoredRuntimeSession {
+	return RestoredRuntimeSession{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Label: "Coordinator task", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}
+}
+
 func restoreACPChat(manager *Manager, info SessionInfo, dir string) error {
-	return manager.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}})
+	return manager.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{storedACPChat(info, dir)})
 }
 
 func savedACPSession(t *testing.T, manager *Manager, key string) acpSavedSession {
@@ -402,7 +407,7 @@ func TestACPRestoresSupervisedChatAfterItsAgentExits(t *testing.T) {
 	manager, info, before, dir := exitedACPChat(t, true)
 	require.ErrorIs(t, restoreACPChat(manager, info, dir), ErrSessionUnavailable, "ordinary restoration still skips exited chats")
 
-	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), "workspace", info.Key, dir))
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
 	agent, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
 	assert.False(t, manager.Exited(info.Key))
@@ -417,9 +422,14 @@ func TestACPRestoresSupervisedChatAfterItsAgentExits(t *testing.T) {
 	assert.Equal("coordinator", state.Supervision.Supervisor)
 	assert.Equal(uint64(1), state.Supervision.Generation)
 	assert.Equal("fixture-session", savedACPSession(t, manager, info.Key).SessionID)
+	// The restored chat keeps the identity in the daemon's stored record.
+	sessions := manager.ListSessions("workspace")
+	require.Len(t, sessions, 1)
+	assert.Equal("Coordinator task", sessions[0].Label)
+	assert.True(info.CreatedAt.Equal(sessions[0].CreatedAt))
 
 	// A running owner is the chat; restoring again starts no second agent.
-	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), "workspace", info.Key, dir))
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
 	again, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
 	assert.Same(agent, again)
@@ -435,7 +445,7 @@ func TestACPSupervisedChatRefusesAgentThatCannotReload(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_NO_LOAD", "1")
 	manager, info, _, dir := exitedACPChat(t, true)
 
-	err := manager.RestoreSupervisedACP(t.Context(), "workspace", info.Key, dir)
+	err := manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir))
 	require.ErrorIs(t, err, ErrACPCannotReload)
 	_, err = manager.ACP("workspace", info.Key)
 	require.ErrorIs(t, err, ErrSessionNotFound)
@@ -456,12 +466,34 @@ func TestACPSupervisedChatRefusesAgentThatCannotReload(t *testing.T) {
 
 func TestACPRestoreSupervisedRefusesUnsupervisedChat(t *testing.T) {
 	manager, info, _, dir := exitedACPChat(t, false)
-	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), "workspace", info.Key, dir), ErrSessionUnavailable)
-	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), "other", info.Key, dir), ErrSessionNotFound)
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)), ErrSessionUnavailable)
+	other := storedACPChat(info, dir)
+	other.WorkspaceID = "other"
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), other), ErrSessionNotFound)
 	_, err := manager.ACP("workspace", info.Key)
 	require.ErrorIs(t, err, ErrSessionNotFound)
 	assert.True(t, manager.Exited(info.Key))
 	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
 	require.NoError(t, err)
 	assert.Equal(t, "session/new\n", string(log))
+}
+
+// A start failure recorded by an earlier owner belongs to that attempt; it
+// must not fail a later restore of an agent that can reload the chat.
+func TestACPRestoreSupervisedIgnoresEarlierStartFailure(t *testing.T) {
+	manager, info, _, dir := exitedACPChat(t, true)
+	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+	require.NoError(t, err)
+	startError := filepath.Join(paths.Dir, acpStartErrorFile)
+	require.NoError(t, os.WriteFile(startError, []byte("cannot_reload"), 0o600))
+	// The daemon reads the record while it waits for the owner's socket.
+	t.Setenv("KENN_FORGE_ACP_INITIALIZE_DELAY", "300ms")
+
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
+	_, err = manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.NoFileExists(t, startError)
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\nsession/load\n", string(log))
 }

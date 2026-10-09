@@ -57,8 +57,9 @@ Rules:
 - A session this daemon saw exit on its own is neither restored nor listed, even before its
   stored record is forgotten; only an owner that died while no daemon was attached is reloaded
   (`internal/workspace/localruntime/manager.go::Manager.Exited`). Supervised chats are the
-  exception: their coordinator may restore one after its agent exits, and a running owner is
-  attached, never duplicated (`internal/workspace/localruntime/acp_owner.go::Manager.RestoreSupervisedACP`).
+  exception: their coordinator may restore one after its agent exits, from the daemon's stored
+  record so the backend check targets the launched backend; a running owner is attached, never
+  duplicated (`internal/workspace/localruntime/acp_owner.go::Manager.RestoreSupervisedACP`).
 - The ACP owner keeps the whole transcript and never deletes messages. State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the

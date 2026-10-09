@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -201,16 +202,26 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	return m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
 }
 
-// RestoreSupervisedACP restores a supervised chat for its coordinator, even
-// after this daemon saw its agent exit on its own; ordinary restoration skips
-// such sessions. Like workspace reopen it attaches a running owner and
-// relaunches only once the owner is gone, loading the saved native session.
-// It refuses chats nobody supervises (ErrSessionUnavailable) and agents that
-// cannot reload the session (ErrACPCannotReload); the saved session stays.
-func (m *Manager) RestoreSupervisedACP(ctx context.Context, workspaceID, key, cwd string) error {
-	if m.acpSessionsDir == "" {
+// RestoreSupervisedACP restores a supervised chat from the daemon's stored
+// record, even after this daemon saw its agent exit on its own; ordinary
+// restoration skips such sessions. Like workspace reopen it attaches a running
+// owner and relaunches only once the owner's backend is gone, loading the saved
+// native session. It refuses chats nobody supervises, running or not
+// (ErrSessionUnavailable), and agents that cannot reload the session
+// (ErrACPCannotReload); the saved session stays.
+func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRuntimeSession) error {
+	restored.WorkspaceID = strings.TrimSpace(restored.WorkspaceID)
+	restored.SessionKey = strings.TrimSpace(restored.SessionKey)
+	restored.TargetKey = strings.TrimSpace(restored.TargetKey)
+	restored.TmuxSession = strings.TrimSpace(restored.TmuxSession)
+	restored.Kind = LaunchTargetACP
+	if m.acpSessionsDir == "" || restored.WorkspaceID == "" || restored.SessionKey == "" {
 		return ErrSessionNotFound
 	}
+	if restored.TargetKey == "" {
+		return errors.New("restore supervised ACP: target key is required")
+	}
+	key := restored.SessionKey
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
 	if err != nil {
 		return err
@@ -226,7 +237,7 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, workspaceID, key, cw
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	if cfg.Info.WorkspaceID != workspaceID {
+	if cfg.Info.WorkspaceID != restored.WorkspaceID {
 		return ErrSessionNotFound
 	}
 	startMu := m.startLock(key)
@@ -249,12 +260,7 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, workspaceID, key, cw
 	if m.runningSession(m.sessions, key) != nil {
 		return nil
 	}
-	// The owner runs in tmux exactly when launches use it; see shellLaunchCommand.
-	var tmuxSession string
-	if tmux, err := m.target(string(LaunchTargetShell)); err == nil && tmux.Available {
-		tmuxSession = tmuxSessionName(workspaceID, key)
-	}
-	return m.startRestoredSession(ctx, RestoredRuntimeSession{WorkspaceID: workspaceID, SessionKey: key, TargetKey: cfg.Info.TargetKey, Label: cfg.Info.Label, Kind: LaunchTargetACP, TmuxSession: tmuxSession, CWD: cwd})
+	return m.startRestoredSession(ctx, restored)
 }
 
 func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
@@ -345,6 +351,9 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))
 		}
 		return err
+	}
+	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.Join(err, agent.Stop(context.Background()))
 	}
 	reported := make(chan struct{})
 	go func() {

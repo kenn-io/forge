@@ -497,6 +497,9 @@ fallback repository listing.
   single-issue endpoint means deleted; map it to `removed_upstream` only at
   that lookup boundary, never across GitHub endpoints.
   (`platform/github/provider_pages.go::Provider.classifyIssueLookup`)
+- A provider-confirmed removed PR is recorded as `removed_upstream` during live
+  sync; preserve its last content snapshot rather than inventing a closure.
+  (`internal/db/queries_archive.go::RecordRemovedMergeRequest`)
 - A previously-open issue whose GitHub-classified lookup is a true removal
   (not_found, no destination) is tombstoned closed locally; otherwise it would
   fail every cycle forever. Transfers and provider-neutral bare 404s (GitLab

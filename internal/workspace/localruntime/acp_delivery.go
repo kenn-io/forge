@@ -177,6 +177,9 @@ func (a *ACP) publishedStateLocked() ACPState {
 	state.MessageCount = len(messages)
 	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
 	state.Messages = messages[state.MessageOffset:]
+	// Only the owner checks retried answers. A digest of a small form domain
+	// can be reversed, so the ledger never leaves the owner.
+	state.Answered = nil
 	return state
 }
 

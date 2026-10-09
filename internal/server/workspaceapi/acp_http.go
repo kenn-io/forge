@@ -26,10 +26,12 @@ type WorkspaceChatMessage struct {
 }
 
 // WorkspaceChatState is a chat's published state carrying one page of
-// transcript messages instead of the recent window.
+// transcript messages instead of the recent window. The answered-request
+// ledger stays with the chat's owner, so it is not part of this body.
 type WorkspaceChatState struct {
 	localruntime.ACPState
 	Messages []WorkspaceChatMessage `json:"messages"`
+	Answered struct{}               `json:"-"`
 }
 
 // WorkspaceChat is a chat snapshot. A chat whose owner has exited carries

@@ -231,7 +231,8 @@ type ACPState struct {
 	// answer meant for an earlier agent process is recognized as stale.
 	RuntimeGeneration string `json:"runtimeGeneration"`
 	// Answered holds the newest answered permission and elicitation requests,
-	// so a retried answer gets the same result.
+	// so a retried answer gets the same result. Only the owner and its saved
+	// session hold it; published state leaves it out.
 	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
 	// Sending is the identified prompt being written to the agent. It is
 	// saved before the write, so an owner that stops before recording the

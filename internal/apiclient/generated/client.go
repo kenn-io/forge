@@ -56535,12 +56535,6 @@ type ACP struct {
 	FontSize   int64  `json:"font_size"`
 }
 
-type ACPAnsweredRequest struct {
-	Answer     string `json:"answer"`
-	AnsweredAt string `json:"answeredAt"`
-	ID         string `json:"id"`
-}
-
 type ACPCommandInfo struct {
 	Description string  `json:"description"`
 	InputHint   *string `json:"inputHint,omitempty"`
@@ -60862,18 +60856,17 @@ type WorkspaceAgentSessionResponse struct {
 
 type WorkspaceChat struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema        *string              `json:"$schema,omitempty"`
-	Answered      []ACPAnsweredRequest `json:"answered,omitempty"`
-	Blocked       *bool                `json:"blocked,omitempty"`
-	Busy          *bool                `json:"busy,omitempty"`
-	Commands      []ACPCommandInfo     `json:"commands,omitempty"`
-	ConfigOptions []ACPConfigOption    `json:"configOptions,omitempty"`
-	Configuring   *bool                `json:"configuring,omitempty"`
-	Connected     *bool                `json:"connected,omitempty"`
-	Elicitations  []ACPElicitation     `json:"elicitations,omitempty"`
-	ErrorData     *string              `json:"error,omitempty"`
-	ErrorCode     *int64               `json:"errorCode,omitempty"`
-	ErrorData1    *string              `json:"errorData,omitempty"`
+	Schema        *string           `json:"$schema,omitempty"`
+	Blocked       *bool             `json:"blocked,omitempty"`
+	Busy          *bool             `json:"busy,omitempty"`
+	Commands      []ACPCommandInfo  `json:"commands,omitempty"`
+	ConfigOptions []ACPConfigOption `json:"configOptions,omitempty"`
+	Configuring   *bool             `json:"configuring,omitempty"`
+	Connected     *bool             `json:"connected,omitempty"`
+	Elicitations  []ACPElicitation  `json:"elicitations,omitempty"`
+	ErrorData     *string           `json:"error,omitempty"`
+	ErrorCode     *int64            `json:"errorCode,omitempty"`
+	ErrorData1    *string           `json:"errorData,omitempty"`
 
 	// Exited The chat's agent has exited; no other field is present.
 	Exited            bool                   `json:"exited"`

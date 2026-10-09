@@ -5,7 +5,6 @@
 export * from "./abortFederationEnrollmentPathParameters.ts";
 export * from "./abortFederationSpokeInputBody.ts";
 export * from "./acp.ts";
-export * from "./aCPAnsweredRequest.ts";
 export * from "./aCPCommandInfo.ts";
 export * from "./aCPConfigChoice.ts";
 export * from "./aCPConfigOption.ts";

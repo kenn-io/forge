@@ -153,8 +153,9 @@ func TestACPPermissionAnswerReachesTheAgentOnce(t *testing.T) {
 
 	require.ErrorContains(t, c.chat.Command(ACPCommand{Type: "permission", ID: permission.ID, OptionID: "deny"}), "request was already answered")
 	assert.Equal(t, []string{"permission:allow"}, c.fixtureResponses())
-	answered := c.state().Answered
-	require.Len(t, answered, 1)
+	assert.Empty(t, c.state().Answered, "the ledger never leaves the owner")
+	answered := savedACPSession(t, c.manager, c.info.Key).State.Answered
+	require.Len(t, answered, 1, "the saved session keeps the ledger for a replacement owner")
 	assert.Equal(t, ACPAnsweredRequest{ID: permission.ID, Answer: "allow", AnswerAt: answered[0].AnswerAt}, answered[0])
 	assert.NotEmpty(t, answered[0].AnswerAt)
 }

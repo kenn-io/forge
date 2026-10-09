@@ -14,20 +14,6 @@ components:
         - font_family
         - font_size
       type: object
-    ACPAnsweredRequest:
-      additionalProperties: false
-      properties:
-        answer:
-          type: string
-        answeredAt:
-          type: string
-        id:
-          type: string
-      required:
-        - id
-        - answer
-        - answeredAt
-      type: object
     ACPCommandInfo:
       additionalProperties: false
       properties:
@@ -11370,10 +11356,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        answered:
-          items:
-            $ref: "#/components/schemas/ACPAnsweredRequest"
-          type: array
         blocked:
           type: boolean
         busy:

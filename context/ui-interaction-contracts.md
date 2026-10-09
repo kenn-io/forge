@@ -1191,6 +1191,9 @@ Not every visibility control means "remove this entity entirely."
   movement at its visible root. (`frontend/src/lib/stores/pulls.svelte.ts::getNavigationIndex`)
 - Controls that toggle detail visibility should preserve the parent row unless
   the feature explicitly removes that category from the result set.
+- Activity author refreshes and retries must keep loaded options selectable, including an empty result;
+  only a new repository or time range restores the picker's loading state
+  (`frontend/src/lib/stores/activity.svelte.ts::isActivityAuthorsLoading`).
 - Activity's Commits filter controls top-level default-branch commits only; it
   neither selects PR or issue opening rows nor hides PR timeline commits while
   PRs are enabled. Opening rows follow only the timeline events that can occur

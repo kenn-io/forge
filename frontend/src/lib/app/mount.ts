@@ -56,6 +56,7 @@ const reportAppOpens = Effect.acquireRelease(
     const stopOpens = startAppOpenedReporting({
       route: getCaptureTelemetryEventUrl(),
       surface: "web",
+      storageKey: "kit-ui.app-opened.web",
       post: (route, event) =>
         orvalRequest(route, {
           method: "POST",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -356,7 +357,7 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 		if replay, err := a.answeredLocked(command.ID, key); replay || err != nil {
 			return err
 		}
-		return errors.New("elicitation is no longer pending")
+		return errACPNotPending
 	}
 	delete(a.elicitations, command.ID)
 	a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == command.ID })
@@ -379,13 +380,13 @@ func (a *ACP) answerPermission(command ACPCommand) error {
 		if replay, err := a.answeredLocked(command.ID, command.OptionID); replay || err != nil {
 			return err
 		}
-		return errors.New("permission option is no longer pending")
+		return errACPNotPending
 	}
 	index := slices.IndexFunc(a.state.Permissions, func(p ACPPermission) bool {
 		return p.ID == command.ID && slices.ContainsFunc(p.Options, func(o ACPPermissionOption) bool { return o.OptionID == command.OptionID })
 	})
 	if index < 0 {
-		return errors.New("permission option is no longer pending")
+		return fmt.Errorf("permission request has no option %q", command.OptionID)
 	}
 	delete(a.permissions, command.ID)
 	a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)

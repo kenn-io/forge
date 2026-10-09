@@ -301,7 +301,7 @@ func TestWorkspaceChatCommandsReportConflictsByCode(t *testing.T) {
 	require.Len(t, commands, 1)
 	assert.Equal(localruntime.ACPCommand{Type: "prompt", Mode: "send", Text: "hello", ID: "submission-1", Generation: 1, AllowanceMillis: 60000}, commands[0])
 
-	for _, code := range []string{"busy", "supervised", "stale_generation", "uncertain", "stale_request", "queue_pending"} {
+	for _, code := range []string{"busy", "supervised", "stale_generation", "uncertain", "stale_request", "queue_pending", "withdrawn", "already_answered", "not_pending"} {
 		owner.mu.Lock()
 		owner.code = code
 		owner.mu.Unlock()
@@ -319,7 +319,7 @@ func TestWorkspaceChatCommandsReportConflictsByCode(t *testing.T) {
 	assert.Equal(http.StatusServiceUnavailable, status, string(data))
 
 	owner.mu.Lock()
-	owner.unavailable, owner.refusal = false, "permission option is no longer pending"
+	owner.unavailable, owner.refusal = false, `permission request has no option "allow"`
 	owner.mu.Unlock()
 	status, data = f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"permission","id":"generation-1-p1","optionId":"allow"}`)
 	require.Equal(t, http.StatusBadRequest, status, string(data))
@@ -466,7 +466,9 @@ func TestWorkspaceChatForgetsAnUnsupervisedChatWhenItsAgentExits(t *testing.T) {
 	f.save(false)
 	owner := newChatOwner("generation-1")
 	f.serve(owner)
-	status, data := f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	status, data = f.do(http.MethodPost, chatKey+"/chat/restore", "")
 	require.Equal(t, http.StatusConflict, status, string(data))
 	problem := decodeChat[chatProblem](t, data)
 	assert.Equal(t, "conflict", problem.Code)
@@ -487,7 +489,9 @@ func TestWorkspaceChatTreatsATakenOverChatAsUnsupervised(t *testing.T) {
 	f.saveState(`{"supervision":{"supervisor":"coordinator","generation":2,"takenOver":true,"changedAt":"2026-10-09T12:00:00Z"}}`)
 	owner := newChatOwner("generation-1")
 	f.serve(owner)
-	status, data := f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	status, data = f.do(http.MethodPost, chatKey+"/chat/restore", "")
 	require.Equal(t, http.StatusConflict, status, string(data))
 	assert.Equal(t, "not_supervised", decodeChat[chatProblem](t, data).Details["reason"])
 
@@ -521,4 +525,144 @@ func TestWorkspaceChatRestoreReportsAnAgentThatCannotReload(t *testing.T) {
 	status, data = f.do(http.MethodGet, chatKey+"/chat", "")
 	require.Equal(t, http.StatusOK, status, string(data))
 	assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
+}
+
+// holdSetup makes workspace setup own the workspace until the test ends.
+func (f *chatFixture) holdSetup() {
+	f.t.Helper()
+	done, admitted := f.handler.beginWorkspaceSetup("workspace")
+	require.True(f.t, admitted)
+	f.t.Cleanup(func() { f.handler.finishWorkspaceSetup("workspace", done) })
+}
+
+// A chat that is already attached answers at once, even while another
+// request holds the restore lock for a slow relaunch.
+func TestWorkspaceChatCommandsDoNotWaitForAnotherRestore(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	owner := newChatOwner("generation-1")
+	f.serve(owner)
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+
+	f.handler.runtimeRestoreMu.Lock()
+	unlocked := false
+	unlock := func() {
+		if !unlocked {
+			unlocked = true
+			f.handler.runtimeRestoreMu.Unlock()
+		}
+	}
+	t.Cleanup(unlock)
+	answered := make(chan int, 2)
+	go func() {
+		status, _ := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel","generation":1}`)
+		answered <- status
+		status, _ = f.do(http.MethodGet, chatKey+"/chat", "")
+		answered <- status
+	}()
+	for range 2 {
+		select {
+		case status := <-answered:
+			assert.Equal(t, http.StatusOK, status)
+		case <-time.After(5 * time.Second):
+			unlock()
+			require.FailNow(t, "an attached chat waited for the restore lock")
+		}
+	}
+}
+
+// Only a chat whose owner is known to be gone is reported as exited. One
+// that could not be attached for another reason, such as setup owning the
+// workspace, may still run, so restoring it would be wrong.
+func TestWorkspaceChatReportsAnUnattachedChatAsUnavailable(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	f.holdSetup()
+
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusServiceUnavailable, status, string(data))
+	status, data = f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel"}`)
+	assert.Equal(t, http.StatusServiceUnavailable, status, string(data))
+}
+
+// A restore refused because setup owns the workspace carries a reason, like
+// every other conflict a coordinator settles.
+func TestWorkspaceChatRestoreDuringSetupReportsItsReason(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	f.holdSetup()
+
+	status, data := f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	require.Equal(t, http.StatusConflict, status, string(data))
+	problem := decodeChat[chatProblem](t, data)
+	assert.Equal(t, "workspaceSetupInProgress", problem.Code)
+	assert.Equal(t, "setup_in_progress", problem.Details["reason"])
+}
+
+// cannotReloadChat is a supervised chat whose owner died while no daemon was
+// attached, so nothing marks it exited, and whose agent refuses to reload it.
+// launches counts the owner starts.
+func cannotReloadChat(t *testing.T) (f *chatFixture, launches func() int) {
+	t.Helper()
+	// Each launch is recorded, then fails the way a real owner does.
+	ownerCommand := []string{"/bin/sh", "-c", `echo launch >> "${1%/*}/launches"; printf cannot_reload > "${1%/*}/start-error"`, "owner"}
+	f = newChatFixture(t, localruntime.Options{
+		ACPOwnerCommand: ownerCommand,
+		PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}, nil),
+	})
+	f.save(true)
+	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	require.NoError(t, err)
+	return f, func() int {
+		data, err := os.ReadFile(filepath.Join(paths.Dir, "launches"))
+		if errors.Is(err, os.ErrNotExist) {
+			return 0
+		}
+		require.NoError(t, err)
+		return strings.Count(string(data), "launch")
+	}
+}
+
+func (f *chatFixture) requireCannotReloadRestore() {
+	f.t.Helper()
+	status, data := f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	require.Equal(f.t, http.StatusConflict, status, string(data))
+	assert.Equal(f.t, "cannot_reload", decodeChat[chatProblem](f.t, data).Details["reason"])
+}
+
+// An agent that refused to reload a chat refuses again on every start.
+// Ordinary reads skip the chat after the first refusal, so polling never
+// starts an agent process per request; only an explicit restore retries.
+func TestWorkspaceChatRemembersAnAgentThatCannotReload(t *testing.T) {
+	f, launches := cannotReloadChat(t)
+
+	for range 3 {
+		status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+		require.Equal(t, http.StatusOK, status, string(data))
+		assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
+	}
+	status, data := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel"}`)
+	assert.Equal(t, http.StatusServiceUnavailable, status, string(data))
+	assert.Equal(t, 1, launches(), "only the first read may start the agent")
+
+	f.requireCannotReloadRestore()
+	assert.Equal(t, 2, launches(), "an explicit restore tries again")
+
+	status, data = f.do(http.MethodDelete, chatKey, "")
+	require.Equal(t, http.StatusNoContent, status, string(data))
+	assert.False(t, f.handler.chatCannotReload(chatKey), "a stopped chat leaves no mark behind")
+}
+
+// A restore starts the chat's agent once. Reconnecting the rest of the
+// workspace in the same request leaves that chat to the restore.
+func TestWorkspaceChatRestoreStartsTheAgentOnce(t *testing.T) {
+	f, launches := cannotReloadChat(t)
+
+	f.requireCannotReloadRestore()
+	assert.Equal(t, 1, launches())
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
+	assert.Equal(t, 1, launches(), "a refused restore is remembered for later reads")
 }

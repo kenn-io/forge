@@ -183,13 +183,16 @@ type Handler struct {
 	runtimeRestoreMu           sync.Mutex
 	runtimeRecoveryMu          sync.Mutex
 	runtimeRecoveryPending     map[string]bool
-	lifecycleMu                sync.Mutex
-	lifecycleCtx               context.Context
-	lifecycleCancel            context.CancelFunc
-	lifecycleWG                sync.WaitGroup
-	lifecycleStarted           bool
-	lifecycleStopping          bool
-	lifecycleDone              chan struct{}
+	// cannotReloadChats holds chats whose agent refused to reload them; see
+	// setChatCannotReload. runtimeRecoveryMu guards it.
+	cannotReloadChats map[string]bool
+	lifecycleMu       sync.Mutex
+	lifecycleCtx      context.Context
+	lifecycleCancel   context.CancelFunc
+	lifecycleWG       sync.WaitGroup
+	lifecycleStarted  bool
+	lifecycleStopping bool
+	lifecycleDone     chan struct{}
 }
 
 // New creates the workspace and project handler.

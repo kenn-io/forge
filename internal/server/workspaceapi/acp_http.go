@@ -112,13 +112,20 @@ type restoreWorkspaceChatOutput struct {
 	}
 }
 
-// errChatNotRunning reports a stored chat whose owner is not running.
+// errChatNotRunning reports a stored chat whose owner is known to be gone.
 var errChatNotRunning = errors.New("chat agent is not running; restore the chat")
+
+// errChatUnavailable reports a stored chat that could not be attached even
+// though its owner may still run, for example while setup owns the workspace.
+var errChatUnavailable = errors.New("chat agent is unavailable; retry later")
 
 func (s *Handler) getWorkspaceChat(ctx context.Context, input *getWorkspaceChatInput) (*getWorkspaceChatOutput, error) {
 	chat, err := s.openWorkspaceChat(ctx, input.ID, input.SessionKey)
 	if errors.Is(err, errChatNotRunning) {
 		return &getWorkspaceChatOutput{Body: WorkspaceChat{Exited: true}}, nil
+	}
+	if errors.Is(err, errChatUnavailable) {
+		return nil, httpapi.ServiceUnavailable(err.Error())
 	}
 	if err != nil {
 		return nil, err
@@ -140,7 +147,7 @@ func (s *Handler) runWorkspaceChatCommand(ctx context.Context, input *runWorkspa
 		return nil, err
 	}
 	chat, err := s.openWorkspaceChat(ctx, input.ID, input.SessionKey)
-	if errors.Is(err, errChatNotRunning) {
+	if errors.Is(err, errChatNotRunning) || errors.Is(err, errChatUnavailable) {
 		return nil, httpapi.ServiceUnavailable(err.Error())
 	}
 	if err != nil {
@@ -171,13 +178,18 @@ func chatCommandProblem(err error) error {
 	return httpapi.ServiceUnavailable("send chat command: " + err.Error())
 }
 
-// openWorkspaceChat reconnects the workspace's chats, as opening the workspace
-// does, and returns the running chat. It returns errChatNotRunning for a
-// stored chat whose owner is not running.
+// openWorkspaceChat returns the attached chat. A chat that is not attached
+// reconnects the workspace's chats first, as opening the workspace does; an
+// attached one never waits for another workspace's restore. It returns
+// errChatNotRunning for a stored chat whose owner is known to be gone, and
+// errChatUnavailable for one that could not be attached for another reason.
 func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string) (localruntime.ACPChat, error) {
 	summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
+	}
+	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
+		return chat, nil
 	}
 	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
@@ -187,10 +199,15 @@ func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string
 	if err != nil {
 		return nil, httpapi.Internal("list runtime sessions: " + err.Error())
 	}
-	if _, ok := storedChat(stored, key); ok {
+	if _, ok := storedChat(stored, key); !ok {
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "chat not found", nil)
+	}
+	// The daemon saw the agent exit, or a relaunch found no owner and its
+	// agent refused to reload the chat.
+	if s.runtime.Exited(key) || s.chatCannotReload(key) {
 		return nil, errChatNotRunning
 	}
-	return nil, httpapi.NotFound(httpapi.CodeNotFound, "chat not found", nil)
+	return nil, errChatUnavailable
 }
 
 func storedChat(stored []db.WorkspaceRuntimeSession, key string) (db.WorkspaceRuntimeSession, bool) {
@@ -208,11 +225,12 @@ func (s *Handler) restoreWorkspaceChat(ctx context.Context, input *restoreWorksp
 	if err != nil {
 		return nil, err
 	}
-	err = s.openWorkspaceACP(ctx, summary.ID, summary.WorktreePath, func(stored []db.WorkspaceRuntimeSession) error {
+	err = s.openWorkspaceACP(ctx, summary.ID, summary.WorktreePath, input.SessionKey, func(stored []db.WorkspaceRuntimeSession) error {
 		return s.restoreSupervisedChat(ctx, summary.WorktreePath, stored, input.SessionKey)
 	})
 	if errors.Is(err, errWorkspaceACPNotAdmitted) {
-		return nil, httpapi.Conflict(httpapi.CodeWorkspaceSetupInProgress, errWorkspaceACPNotAdmitted.Error(), nil)
+		return nil, httpapi.Conflict(httpapi.CodeWorkspaceSetupInProgress, errWorkspaceACPNotAdmitted.Error(),
+			map[string]any{"reason": "setup_in_progress"})
 	}
 	if err != nil {
 		if _, ok := errors.AsType[huma.StatusError](err); ok {
@@ -245,9 +263,13 @@ func (s *Handler) restoreSupervisedChat(ctx context.Context, cwd string, stored 
 		WorkspaceID: item.WorkspaceID, SessionKey: key, TargetKey: item.TargetKey, Label: item.Label,
 		Kind: localruntime.LaunchTargetACP, TmuxSession: item.TmuxSession, CWD: cwd, CreatedAt: item.CreatedAt,
 	})
+	if errors.Is(err, localruntime.ErrACPCannotReload) {
+		s.setChatCannotReload(key, true)
+	}
 	if err != nil {
 		return restoreChatProblem(err)
 	}
+	s.setChatCannotReload(key, false)
 	if err := s.recordResumedACP(ctx, item); err != nil {
 		return httpapi.Internal("record restored chat: " + err.Error())
 	}

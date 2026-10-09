@@ -411,3 +411,20 @@ func TestACPTurnRecordsKeepTheNewestFifty(t *testing.T) {
 	assert.Equal(t, "s5", turns[0].SubmissionID)
 	assert.Equal(t, "s54", turns[len(turns)-1].SubmissionID)
 }
+
+// Once the agent has a prompt, its turn runs whatever happens to the save
+// that follows. Reporting the save failure as a refusal would tell the sender
+// that running work never started, so the send succeeds and the chat shows
+// the error.
+func TestACPPromptIsAcceptedWhenTheSaveAfterTheWriteFails(t *testing.T) {
+	agent := newDetachedACP(t)
+	// A directory cannot be replaced by the session file. A prompt without
+	// an ID saves nothing before the write.
+	agent.recordPath = t.TempDir()
+
+	require.NoError(t, agent.Prompt("question"))
+	state := publishedACPState(t, agent)
+	assert.True(t, state.Busy)
+	require.Len(t, state.Messages, 1)
+	assert.Contains(t, state.Error, "save chat after sending a prompt")
+}

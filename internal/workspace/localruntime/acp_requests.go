@@ -20,6 +20,10 @@ var ErrACPStaleRequest = errors.New("request belongs to an earlier agent process
 
 var errACPAlreadyAnswered = errors.New("request was already answered")
 
+// errACPNotPending rejects an answer to a request that is no longer open:
+// the turn ended, was stopped, or used up its allowance.
+var errACPNotPending = errors.New("request is no longer pending")
+
 // ACPAnsweredRequest records one answered permission or elicitation.
 type ACPAnsweredRequest struct {
 	ID string `json:"id"`

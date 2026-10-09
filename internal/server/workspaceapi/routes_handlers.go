@@ -2912,6 +2912,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 			}
 			if stopped {
 				s.setRuntimeRecoveryPending(input.SessionKey, false)
+				s.setChatCannotReload(input.SessionKey, false)
 				s.removeAgentActivityRuntimeSession(input.SessionKey)
 				s.invalidateWorkspaceEnrichment(summary.ID)
 				return nil, nil
@@ -2926,6 +2927,7 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 		return nil, httpapi.Internal("forget runtime session: " + err.Error())
 	}
 	s.setRuntimeRecoveryPending(input.SessionKey, false)
+	s.setChatCannotReload(input.SessionKey, false)
 	s.removeAgentActivityRuntimeSession(input.SessionKey)
 	s.invalidateWorkspaceEnrichment(summary.ID)
 	return nil, nil

@@ -342,10 +342,13 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 				}()
 			}
 		}
-		err = a.persistLocked()
+		if err := a.persistLocked(); err != nil {
+			// The agent took the text, so the steer succeeded.
+			a.setErrorLocked(fmt.Errorf("save chat after steering: %w", err))
+		}
 		a.changedLocked()
 		a.mu.Unlock()
-		return err
+		return nil
 	case "promptRequired":
 		// The turn ended before the text arrived; it runs next.
 		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)

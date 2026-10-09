@@ -138,19 +138,28 @@ embedder protocol for arbitrary host state.
 - `GET`, `POST .../commands`, and `POST .../restore` under
   `/workspaces/{id}/runtime/sessions/{session_key}/chat` let a coordinator drive a chat over
   HTTP. The daemon serves them under its normal API auth; execution workers accept only their
-  bearer token. They reconnect the workspace's chats as opening it does
-  (`internal/server/workspaceapi/acp_http.go`).
+  bearer token. An attached chat answers at once; a chat that is not attached first reconnects
+  the workspace's chats as opening it does (`internal/server/workspaceapi/acp_http.go`).
   - The snapshot is the published state with transcript messages `[after, after+limit)`, each
     with its transcript `index`, plus `messageCount` (`limit` 1–500, default 100). A stored chat
-    whose owner is not running returns only `exited: true`.
+    returns only `exited: true` when its owner is known to be gone: the daemon saw it exit, or
+    a relaunch failed with `cannot_reload`. A chat that could not be attached for another
+    reason, such as workspace setup, is `503`.
   - Commands take the chat command body for input types only. A refusal with an owner error
     code is `409 conflict` with that code as `details.reason` (`busy`, `supervised`,
-    `stale_generation`, `uncertain`, `stale_request`, `queue_pending`); a disconnected agent or
-    a chat that is not running is `503`, and any other refusal is `400`
-    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`).
+    `stale_generation`, `uncertain`, `stale_request`, `queue_pending`, `withdrawn`,
+    `already_answered`, `not_pending`); a disconnected agent or a chat that is not running is
+    `503`, and any other refusal is `400`
+    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`). A prompt the agent
+    received is accepted even if the save after it fails; the chat's `error` reports that.
   - Restore applies only to chats a coordinator holds and uses the stored record. It refuses
-    an unsupervised or taken-over chat with reason `not_supervised` and an agent without
-    `loadSession` with reason `cannot_reload`.
+    an unsupervised or taken-over chat with reason `not_supervised`, an agent without
+    `loadSession` with reason `cannot_reload`, and a workspace that setup or deletion owns
+    with `workspaceSetupInProgress` and reason `setup_in_progress`.
+  - After a `cannot_reload` failure, ordinary reads, commands, and workspace opens skip the
+    chat instead of starting an agent each time. An explicit restore tries again, and a
+    successful restore or a stop clears the mark
+    (`internal/server/workspaceapi/acp.go::Handler.setChatCannotReload`).
 - Terminal and mobile pickers read inline workspaces from the projected snapshot;
   they never fan out per-host list reads, and remote actions require advertised
   availability (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::loadWorkspaces`).

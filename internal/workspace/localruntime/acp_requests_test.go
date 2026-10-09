@@ -246,3 +246,28 @@ func TestElicitationAnswerKeyKeepsFormValuesOutOfTheLedger(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, key, other)
 }
+
+// Outcomes a coordinator must settle cross the owner RPC as codes, so the
+// daemon can tell them from malformed input.
+func TestACPSettledOutcomesCrossTheOwnerAsCodes(t *testing.T) {
+	c := launchRequestChat(t)
+	generation := c.state().RuntimeGeneration
+	err := c.chat.Command(ACPCommand{Type: "permission", ID: generation + "-p99", OptionID: "allow"})
+	require.ErrorIs(t, err, errACPNotPending)
+	assert.Equal(t, "not_pending", ACPErrorCode(err))
+	require.ErrorIs(t, c.chat.Command(ACPCommand{Type: "elicitation", ID: generation + "-e99", Action: "decline"}), errACPNotPending)
+
+	permission := c.askPermission("permission")
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "permission", ID: permission.ID, OptionID: "allow"}))
+	c.awaitIdle()
+	err = c.chat.Command(ACPCommand{Type: "permission", ID: permission.ID, OptionID: "deny"})
+	require.ErrorIs(t, err, errACPAlreadyAnswered)
+	assert.Equal(t, "already_answered", ACPErrorCode(err))
+
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "running"}))
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "later", ID: "queued"}))
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "unqueue", ID: "queued"}))
+	err = c.chat.Command(ACPCommand{Type: "prompt", Text: "later", ID: "queued"})
+	require.ErrorIs(t, err, errACPSubmissionWithdrawn)
+	assert.Equal(t, "withdrawn", ACPErrorCode(err))
+}

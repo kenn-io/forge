@@ -104,8 +104,9 @@ kenn-forge agent-hook install
 ```
 
 Use `--agent NAME` to limit installation. Active work, approval requests, and
-input requests update while the sidebar is open. Hook reports expire after 30
-minutes without another event, then fall back to tmux activity.
+input requests update while the sidebar is open. Hook reports stay active until
+the agent session ends or its terminal runtime is removed. Terminal-based activity
+detection resumes when the report clears.
 
 See [Work in local sessions](workflows/workspaces.md) for workspace types,
 session layouts, tmux attachment, phone use, deletion, and recovery.

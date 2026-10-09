@@ -130,6 +130,9 @@ Rules:
   (`internal/agentactivity/store.go::Store.reportPath`).
 - SessionEnd and Remove clear only the calling terminal's report
   (`internal/agentactivity/store.go::Store.Remove`).
+- Agents started before an upgrade can keep writing the old report filename;
+  retain read and cleanup support until those sessions end
+  (`internal/agentactivity/store.go::Store.legacyReportPath`).
 - A completion keeps its first timestamp: `done` written over `done` for the
   same session and runtime preserves `UpdatedAt`, so the sidebar's acknowledged
   Done badge does not reappear when Claude Code's `idle_prompt` follows Stop

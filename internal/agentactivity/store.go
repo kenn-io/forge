@@ -185,18 +185,25 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 		return nil
 	}
 	legacy := s.legacyReportPath(agent, sessionID)
+	paths := []string{s.reportPath(agent, sessionID, runtimeSessionKey)}
 	if report, ok := s.readReport(legacy); ok && report.RuntimeSessionKey == runtimeSessionKey {
-		_ = os.Remove(legacy)
+		paths = append(paths, legacy)
+	}
+	var errs []error
+	removed := false
+	for _, path := range paths {
+		err := os.Remove(path)
+		switch {
+		case err == nil:
+			removed = true
+		case !errors.Is(err, os.ErrNotExist):
+			errs = append(errs, err)
+		}
+	}
+	if removed {
 		s.invalidateCache()
 	}
-	err := os.Remove(s.reportPath(agent, sessionID, runtimeSessionKey))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err == nil {
-		s.invalidateCache()
-	}
-	return err
+	return errors.Join(errs...)
 }
 
 func isIdlePrompt(hook HookEvent) bool {

@@ -68,7 +68,10 @@ Rules:
   after a daemon restart, opening the workspace reloads a kept chat like any chat whose owner
   died while no daemon was attached. Unsupervised chats are forgotten as before
   (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
-- The ACP owner keeps the whole transcript and never deletes messages. State
+- The ACP owner keeps the whole transcript and never deletes messages. A prompt start or a
+  steer inserts its user message where sending began, before output that arrived during the
+  send, so later transcript indexes can shift by one; appending would put the reply before
+  the message it answers (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`). State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
   asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).

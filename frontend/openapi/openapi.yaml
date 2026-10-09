@@ -11506,7 +11506,7 @@ components:
             $ref: "#/components/schemas/ACPContent"
           type: array
         index:
-          description: Position of the message in the whole transcript.
+          description: Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId.
           format: int64
           type: integer
         kind:

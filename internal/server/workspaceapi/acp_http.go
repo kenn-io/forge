@@ -21,7 +21,7 @@ import (
 
 // WorkspaceChatMessage is one transcript message with its transcript index.
 type WorkspaceChatMessage struct {
-	Index int `json:"index" doc:"Position of the message in the whole transcript."`
+	Index int `json:"index" doc:"Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId."`
 	localruntime.ACPMessage
 }
 

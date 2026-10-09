@@ -60911,7 +60911,7 @@ type WorkspaceChatMessage struct {
 	CreatedAt string       `json:"createdAt"`
 	Images    []ACPContent `json:"images,omitempty"`
 
-	// Index Position of the message in the whole transcript.
+	// Index Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId.
 	Index            int64             `json:"index"`
 	Kind             *string           `json:"kind,omitempty"`
 	Locations        []ACPToolLocation `json:"locations,omitempty"`

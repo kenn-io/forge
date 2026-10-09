@@ -639,6 +639,8 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, allowance int64, generat
 	message := ACPMessage{Role: "user", Text: text, Images: images, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
 	messageIndex := *a.promptIndex
 	a.promptIndex = nil
+	// The agent's reply can arrive before the write returns. The prompt goes
+	// before it, so the indexes of those messages shift up by one.
 	a.state.Messages = append(a.state.Messages, ACPMessage{})
 	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
 	a.state.Messages[messageIndex] = message

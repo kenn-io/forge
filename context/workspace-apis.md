@@ -144,7 +144,10 @@ embedder protocol for arbitrary host state.
     with its transcript `index`, plus `messageCount` (`limit` 1–500, default 100). A stored chat
     returns only `exited: true` when its owner is known to be gone: the daemon saw it exit, or
     a relaunch failed with `cannot_reload`. A chat that could not be attached for another
-    reason, such as workspace setup, is `503`.
+    reason, such as workspace setup, is `503`. An `index` can shift by one: a prompt start or
+    a steer inserts its user message before output that arrived while it was being sent, so the
+    agent's reply follows it. A reader paging with `after` can then see a message again; the
+    inserted message carries its `submissionId`.
   - Commands take the chat command body for input types only. A refusal with an owner error
     code is `409 conflict` with that code as `details.reason` (`busy`, `supervised`,
     `stale_generation`, `uncertain`, `stale_request`, `queue_pending`, `withdrawn`,

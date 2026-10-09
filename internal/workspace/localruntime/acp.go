@@ -84,9 +84,8 @@ type ACP struct {
 	// beforePromptWrite lets tests stop the owner between saving a prompt
 	// as sending and writing it. It is nil in production.
 	beforePromptWrite func()
-	// now and allowanceTick drive the turn clock; zero values use time.Now
-	// and acpTurnClockTick. See acp_allowance.go.
-	now           func() time.Time
+	// allowanceTick is how often the turn clock ticks; zero uses
+	// acpTurnClockTick. See acp_allowance.go.
 	allowanceTick time.Duration
 	// The running turn's clock: stopClock stops its ticker, activeSince is
 	// when it last started counting (zero while blocked), clockSaved is when

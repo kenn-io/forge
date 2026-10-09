@@ -59,8 +59,9 @@ func (a *ACP) supervise(command ACPCommand) error {
 	return a.setSupervisionLocked(ACPSupervision{Supervisor: command.Supervisor, Generation: current + 1})
 }
 
-// takeover returns a supervised chat to people. Repeating it, or taking over
-// a chat nobody supervises, changes nothing.
+// takeover returns a supervised chat to people. A running turn becomes
+// theirs, so the supervisor's allowance no longer bounds it. Repeating it, or
+// taking over a chat nobody supervises, changes nothing.
 func (a *ACP) takeover() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -70,7 +71,16 @@ func (a *ACP) takeover() error {
 	next := *a.state.Supervision
 	next.TakenOver = true
 	next.Generation++
-	return a.setSupervisionLocked(next)
+	record := a.runningTurnRecordLocked()
+	var allowance int64
+	if record != nil {
+		allowance, record.Allowance = record.Allowance, 0
+	}
+	err := a.setSupervisionLocked(next)
+	if err != nil && record != nil {
+		record.Allowance = allowance
+	}
+	return err
 }
 
 // setSupervisionLocked saves a new supervision record. A record that cannot

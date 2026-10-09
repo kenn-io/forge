@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -22,32 +21,44 @@ var (
 	errACPUnsupervisedAllowance = errors.New("only a supervisor's prompts may set an allowance")
 )
 
-func (a *ACP) clockNow() time.Time {
-	if a.now != nil {
-		return a.now()
-	}
-	return time.Now()
-}
-
 // blockedLocked reports whether the running turn waits only for a person: a
 // permission or elicitation is pending and no tool call of the turn is
 // running. A tool call a pending permission asks to run waits on that
-// permission, so it does not count as running.
+// permission, and so do the subagent tool calls it runs under, so none of
+// them counts as running. An elicitation names no tool call, so every running
+// tool call counts while one is pending.
 func (a *ACP) blockedLocked() bool {
 	if !a.state.Busy || len(a.state.Permissions)+len(a.state.Elicitations) == 0 {
 		return false
 	}
-	for _, message := range a.state.Messages[min(a.turnStart, len(a.state.Messages)):] {
+	turn := a.state.Messages[min(a.turnStart, len(a.state.Messages)):]
+	waiting := waitingToolCalls(turn, a.state.Permissions)
+	for _, message := range turn {
 		running := message.Status == string(acpsdk.ToolCallStatusPending) || message.Status == string(acpsdk.ToolCallStatusInProgress)
-		if message.Role != "tool" || !running {
-			continue
-		}
-		asked := slices.ContainsFunc(a.state.Permissions, func(p ACPPermission) bool { return p.toolCallID == message.ToolCallID })
-		if !asked {
+		if message.Role == "tool" && running && !waiting[message.ToolCallID] {
 			return false
 		}
 	}
 	return true
+}
+
+// waitingToolCalls returns the tool calls pending permissions ask to run,
+// with every tool call each one runs under.
+func waitingToolCalls(turn []ACPMessage, permissions []ACPPermission) map[string]bool {
+	parents := map[string]string{}
+	for _, message := range turn {
+		if message.Role == "tool" && message.ParentToolCallID != "" {
+			parents[message.ToolCallID] = message.ParentToolCallID
+		}
+	}
+	waiting := map[string]bool{}
+	for _, permission := range permissions {
+		// The seen check also ends a cycle in agent-reported lineage.
+		for id := permission.toolCallID; id != "" && !waiting[id]; id = parents[id] {
+			waiting[id] = true
+		}
+	}
+	return waiting
 }
 
 // refreshBlockedLocked recomputes Blocked. Callers run it whenever the turn,
@@ -60,7 +71,7 @@ func (a *ACP) refreshBlockedLocked() {
 	if !counting {
 		a.activeSince = time.Time{}
 	} else if a.activeSince.IsZero() {
-		a.activeSince = a.clockNow()
+		a.activeSince = time.Now()
 	}
 }
 
@@ -71,7 +82,7 @@ func (a *ACP) accrueLocked() {
 	if record == nil || a.activeSince.IsZero() {
 		return
 	}
-	elapsed := a.clockNow().Sub(a.activeSince).Milliseconds()
+	elapsed := time.Since(a.activeSince).Milliseconds()
 	if elapsed <= 0 {
 		return
 	}
@@ -86,10 +97,12 @@ func (a *ACP) startTurnClockLocked(firstMessage int) {
 		// Every turn ends before another begins; never leave a clock behind.
 		close(a.stopClock)
 	}
+	// Time counted before this turn began belongs to no turn.
+	a.activeSince = time.Time{}
 	a.turnStart = firstMessage
 	stop := make(chan struct{})
 	a.stopClock = stop
-	a.clockSaved = a.clockNow()
+	a.clockSaved = time.Now()
 	a.refreshBlockedLocked()
 	tick := a.allowanceTick
 	if tick <= 0 {
@@ -117,6 +130,8 @@ func (a *ACP) runTurnClock(stop <-chan struct{}, tick time.Duration) {
 		select {
 		case <-stop:
 			return
+		case <-a.done:
+			return
 		case <-ticker.C:
 			if a.tickTurnClock(stop) {
 				a.cancelExhaustedTurn()
@@ -139,8 +154,9 @@ func (a *ACP) tickTurnClock(stop <-chan struct{}) bool {
 	if record == nil {
 		return false
 	}
-	exhausted := record.Allowance > 0 && !record.Exhausted && record.ActiveMillis >= record.Allowance
-	now := a.clockNow()
+	// A turn someone already stopped needs no second cancel.
+	exhausted := record.Allowance > 0 && !record.Exhausted && !a.cancelling && record.ActiveMillis >= record.Allowance
+	now := time.Now()
 	if !exhausted && now.Sub(a.clockSaved) < acpTurnClockSaveInterval {
 		return false
 	}

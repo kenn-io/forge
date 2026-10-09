@@ -56,13 +56,19 @@ func (p *scriptedPeer) messages(method string) []jsontext.Value {
 
 func (p *scriptedPeer) cancels() int { return len(p.messages(acpsdk.AgentMethodSessionCancel)) }
 
+// answer responds to the newest request with this method.
+func (p *scriptedPeer) answer(method, result string) {
+	p.t.Helper()
+	requests := p.messages(method)
+	require.NotEmpty(p.t, requests)
+	_, err := fmt.Fprintf(p.writer, `{"jsonrpc":"2.0","id":%s,"result":%s}`+"\n", requests[len(requests)-1], result)
+	require.NoError(p.t, err)
+}
+
 // endTurn answers the newest prompt.
 func (p *scriptedPeer) endTurn(stopReason acpsdk.StopReason) {
 	p.t.Helper()
-	prompts := p.messages(acpsdk.AgentMethodSessionPrompt)
-	require.NotEmpty(p.t, prompts)
-	_, err := fmt.Fprintf(p.writer, `{"jsonrpc":"2.0","id":%s,"result":{"stopReason":%q}}`+"\n", prompts[len(prompts)-1], stopReason)
-	require.NoError(p.t, err)
+	p.answer(acpsdk.AgentMethodSessionPrompt, fmt.Sprintf(`{"stopReason":%q}`, stopReason))
 }
 
 func newScriptedACP(t *testing.T) (*ACP, *scriptedPeer) {
@@ -260,6 +266,153 @@ func TestACPRequestBesideRunningToolIsNotBlocked(t *testing.T) {
 		state := publishedACPState(t, agent)
 		assert.False(t, state.Blocked)
 		assert.Empty(t, state.Elicitations)
+	})
+}
+
+// A subagent's tool call that asks for permission blocks the turn: the
+// subagent tool call it runs under waits on the same answer.
+func TestACPSubagentPermissionBlocksTheTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("work"))
+		subagentToolCall := func(id, parent string, status acpsdk.ToolCallStatus) {
+			claude := map[string]any{"toolName": "Read", "parentToolUseId": parent}
+			if parent == "" {
+				claude = map[string]any{"toolName": "Agent"}
+			}
+			acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+				ToolCallId: acpsdk.ToolCallId(id), Title: id, Status: status, Meta: map[string]any{"claudeCode": claude},
+			}})
+		}
+		subagentToolCall("agent-1", "", acpsdk.ToolCallStatusInProgress)
+		subagentToolCall("child-1", "agent-1", acpsdk.ToolCallStatusPending)
+
+		advance(1500 * time.Millisecond)
+		askPermission(t, agent, "child-1")
+		assert.True(t, publishedACPState(t, agent).Blocked)
+		advance(10 * time.Second)
+		assert.Equal(t, int64(1500), runningTurn(t, agent).ActiveMillis, "waiting for a person is not active time")
+
+		// Another tool call of the same subagent is still work.
+		subagentToolCall("child-2", "agent-1", acpsdk.ToolCallStatusInProgress)
+		assert.False(t, publishedACPState(t, agent).Blocked)
+
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+	})
+}
+
+// A takeover gives the running turn to a person, so the supervisor's
+// allowance can no longer cancel it.
+func TestACPTakeoverDisarmsTheAllowance(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "bounded", Generation: 1, AllowanceMillis: 2000}))
+
+		advance(1500 * time.Millisecond)
+		require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+		assert.Zero(t, readSavedSession(t, agent.recordPath).State.Turns[0].Allowance, "the disarmed turn is saved")
+		advance(time.Minute)
+		assert.Zero(t, peer.cancels())
+		record := runningTurn(t, agent)
+		assert.Zero(t, record.Allowance)
+		assert.False(t, record.Exhausted)
+
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+	})
+}
+
+// A turn the agent starts after a person steers the taken-over turn is the
+// same turn, and the supervisor's allowance does not cancel it either.
+func TestACPTakeoverDisarmsTheAllowanceOfASteerStartedTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		agent.reportsThreadStatus = true
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "bounded", Generation: 1, AllowanceMillis: 2000}))
+		advance(500 * time.Millisecond)
+		require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+
+		steered := make(chan error, 1)
+		go func() {
+			steered <- agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"})
+		}()
+		synctest.Wait()
+		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
+		require.NoError(t, <-steered)
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		require.True(t, publishedACPState(t, agent).Busy, "the agent's own turn runs on")
+
+		advance(time.Minute)
+		assert.Zero(t, peer.cancels())
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Turns, 1)
+		assert.False(t, state.Turns[0].Exhausted)
+
+		acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
+			Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "idle"}}},
+		}})
+		synctest.Wait()
+		assert.False(t, publishedACPState(t, agent).Busy)
+	})
+}
+
+// A turn someone already stopped is not cancelled again when its allowance
+// runs out, and it is not marked as exhausted.
+func TestACPAllowanceSkipsAStoppedTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "bounded", Generation: 1, AllowanceMillis: 2000}))
+		advance(500 * time.Millisecond)
+		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+
+		advance(time.Minute)
+		assert.Equal(t, 1, peer.cancels())
+		assert.False(t, runningTurn(t, agent).Exhausted)
+
+		peer.endTurn(acpsdk.StopReasonCancelled)
+		synctest.Wait()
+	})
+}
+
+// The clock stops counting once the agent process is gone.
+func TestACPTurnClockStopsWhenTheAgentExits(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, _ := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("work"))
+		advance(1500 * time.Millisecond)
+		close(agent.done)
+		advance(10 * time.Second)
+		assert.Equal(t, int64(1000), runningTurn(t, agent).ActiveMillis)
+	})
+}
+
+// A turn's count starts at zero even if an earlier clock was still counting.
+func TestACPNewTurnClockStartsFromZero(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, _ := newScriptedACP(t)
+		agent.mu.Lock()
+		agent.state.Busy = true
+		agent.beginTurnRecordLocked("first", 0, 0)
+		agent.mu.Unlock()
+		advance(1500 * time.Millisecond)
+
+		agent.mu.Lock()
+		agent.beginTurnRecordLocked("second", 0, 0)
+		agent.mu.Unlock()
+		assert.Zero(t, runningTurn(t, agent).ActiveMillis)
+		advance(1500 * time.Millisecond)
+		assert.Equal(t, int64(1000), runningTurn(t, agent).ActiveMillis)
+
+		agent.mu.Lock()
+		agent.endTurnRecordLocked("end_turn", nil)
+		agent.mu.Unlock()
 	})
 }
 

@@ -241,12 +241,12 @@ describe("WorkspaceRightSidebar", () => {
     await fireEvent.click(screen.getByText("Targets"));
     // jsdom does not implement the native details toggle.
     screen.getByText("Targets").closest("details")!.open = true;
-    await fireEvent.click(screen.getByRole("button", { name: /PR #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /^PR #42/ }));
     expect(onselect).toHaveBeenLastCalledWith(
       "pr",
       expect.objectContaining({ owner: "acme", name: "other", number: 42 }),
     );
-    await fireEvent.click(screen.getByRole("button", { name: /Issue #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Issue #42/ }));
     expect(onselect).toHaveBeenLastCalledWith("issue", expect.objectContaining({ number: 42 }));
     expect((screen.getByRole("button", { name: /Task A/ }) as HTMLButtonElement).disabled).toBe(true);
   });

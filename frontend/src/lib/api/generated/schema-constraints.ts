@@ -64,4 +64,7 @@ export const schemaConstraints = {
   WorkspaceLaunchSpec: {
     item_number: { minimum: 1 },
   },
+  WorkspaceTargetSelection: {
+    number: { minimum: 1 },
+  },
 } as const;

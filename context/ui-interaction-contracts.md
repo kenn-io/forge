@@ -346,8 +346,12 @@ Persisted controls must state their scope clearly.
   and airplane-mode polling (`frontend/src/lib/app-stores.svelte.ts::refreshVisibleData`).
 - Workspace item search remembers separate browser-local PR and issue choices per
   workspace and host, preserving the selected item's full repository reference;
-  it must never change workspace associations or the diff merge target
+  it must never change workspace ownership, branch associations, or the diff merge target
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
+- Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit restores a removed target
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
+- Closed and merged targets stay saved but are hidden by default; unavailable targets remain visible
+  (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::visibleTargets`).
 - PR and Issue tabs require a linked item or a remembered choice of that type;
   search remains available without either
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::isSidebarTabSupported`).

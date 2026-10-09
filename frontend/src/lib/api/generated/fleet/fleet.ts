@@ -168,6 +168,9 @@ import type {
   StoreFleetTerminalPasteImagePathParameters,
   StreamFederationProviderEventsHeaders,
   StreamFederationProviderEventsParams,
+  UpdateFleetWorkspaceTargetBody,
+  UpdateFleetWorkspaceTargetDefaultOne,
+  UpdateFleetWorkspaceTargetPathParameters,
   UpdateFleetWorkspaceViewStateBody,
   UpdateFleetWorkspaceViewStatePathParameters,
   ValidateFleetFilesystemRepoDefaultOne,
@@ -1998,6 +2001,32 @@ export const listFleetWorkspaceTargets = async (
   return orvalFetch<WorkspaceTargetsResponse>(getListFleetWorkspaceTargetsUrl({ hostKey, id }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getUpdateFleetWorkspaceTargetUrl = ({ hostKey, id }: UpdateFleetWorkspaceTargetPathParameters) => {
+  return `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Track or hide a workspace target on fleet host
+ */
+export const updateFleetWorkspaceTarget = async (
+  { hostKey, id }: UpdateFleetWorkspaceTargetPathParameters,
+  updateFleetWorkspaceTargetBody: UpdateFleetWorkspaceTargetBody,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<UpdateFleetWorkspaceTargetDefaultOne> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<UpdateFleetWorkspaceTargetDefaultOne>(getUpdateFleetWorkspaceTargetUrl({ hostKey, id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateFleetWorkspaceTargetBody),
   });
 };
 

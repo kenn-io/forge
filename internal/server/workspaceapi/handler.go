@@ -335,6 +335,7 @@ func (s *Handler) RegisterExecution(api huma.API) {
 	huma.Get(api, "/workspaces/{id}", s.getWorkspace,
 		httpapi.DocumentOperation("get-workspace", "Get workspace", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/targets", s.listWorkspaceTargets, httpapi.DocumentOperation("list-workspace-targets", "List workspace targets", "Workspaces"))
+	huma.Put(api, "/workspaces/{id}/targets", s.updateWorkspaceTarget, httpapi.DocumentOperation("update-workspace-target", "Track or hide a workspace target", "Workspaces"))
 	huma.Get(api, "/workspaces/{id}/view-state", s.getWorkspaceViewState,
 		httpapi.DocumentOperation("get-workspace-view-state", "Get workspace view state", "Workspaces"))
 	huma.Put(api, "/workspaces/{id}/view-state", s.updateWorkspaceViewState,

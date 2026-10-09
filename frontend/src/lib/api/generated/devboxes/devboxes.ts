@@ -53,6 +53,7 @@ import type {
   StoreDevboxPasteImagePathParameters,
   SubmitInitialMessageInputBody,
   TerminalPasteImageOutputBody,
+  UpdateDevboxWorkspaceTargetPathParameters,
   UpdateDevboxWorkspaceViewStatePathParameters,
   WatchDevboxDiffParams,
   WatchDevboxDiffPathParameters,
@@ -63,6 +64,7 @@ import type {
   WorkspaceLaunchSpec,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
+  WorkspaceTargetSelection,
   WorkspaceTargetsResponse,
   WorkspaceViewState,
 } from "../models";
@@ -716,6 +718,32 @@ export const listDevboxWorkspaceTargets = async (
   return orvalFetch<WorkspaceTargetsResponse>(getListDevboxWorkspaceTargetsUrl({ connectionId, id }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getUpdateDevboxWorkspaceTargetUrl = ({ connectionId, id }: UpdateDevboxWorkspaceTargetPathParameters) => {
+  return `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Forward an execution operation to its owning devbox
+ */
+export const updateDevboxWorkspaceTarget = async (
+  { connectionId, id }: UpdateDevboxWorkspaceTargetPathParameters,
+  workspaceTargetSelection: NonReadonly<WorkspaceTargetSelection>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<void>(getUpdateDevboxWorkspaceTargetUrl({ connectionId, id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceTargetSelection),
   });
 };
 

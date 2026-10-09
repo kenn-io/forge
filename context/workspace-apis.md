@@ -307,7 +307,7 @@ embedder protocol for arbitrary host state.
 
 - Tracking targets never change workspace ownership, branch association, push routing, or cleanup eligibility; merged targets do not close workspaces
   (`internal/server/workspaceapi/targets.go::Handler.AddWorkspaceTargetService`).
-- Target lists combine explicit links with implicit owner/branch links; removing an explicit link cannot remove its implicit association, and unavailable metadata retains the link
+- Target lists combine explicit links with implicit owner/branch links; UI removal dismisses either until a deliberate revisit, without removing ownership or branch associations. Unavailable metadata retains undismissed links
   (`internal/server/workspaceapi/targets.go::Handler.ListWorkspaceTargetsService`).
 
 

@@ -46,6 +46,58 @@ func (s *Handler) listWorkspaceTargets(ctx context.Context, in *getWorkspaceInpu
 	return &httpapi.BodyOutput[WorkspaceTargetsResponse]{Body: out}, err
 }
 
+type WorkspaceTargetSelection struct {
+	Repository platform.RepositoryIdentity `json:"repository"`
+	Type       string                      `json:"type" enum:"pr,issue"`
+	Number     int                         `json:"number" minimum:"1"`
+	Hidden     bool                        `json:"hidden"`
+}
+
+type updateWorkspaceTargetInput struct {
+	ID   string `path:"id"`
+	Body WorkspaceTargetSelection
+}
+
+func (s *Handler) updateWorkspaceTarget(ctx context.Context, in *updateWorkspaceTargetInput) (*struct{}, error) {
+	if !in.Body.Repository.Valid() {
+		return nil, httpapi.Validation("body.repository", "verified repository identity is required")
+	}
+	ws, err := s.db.GetWorkspace(ctx, in.ID)
+	if err != nil {
+		return nil, httpapi.Internal("get workspace failed")
+	}
+	if ws == nil {
+		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
+	}
+	repo, err := s.db.GetRepositoryByProviderID(ctx, in.Body.Repository)
+	if err != nil {
+		return nil, httpapi.Internal("get target repository failed")
+	}
+	if repo == nil {
+		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "target repository not found", nil)
+	}
+	kind := db.WorkspaceItemTypeIssue
+	if in.Body.Type == "pr" {
+		kind = db.WorkspaceItemTypePullRequest
+	}
+	var metadata WorkspaceTargetMetadata
+	if !in.Body.Hidden {
+		metadata, err = s.readWorkspaceTarget(ctx, repo.Repository, kind, in.Body.Number, false)
+		if err != nil {
+			return nil, err
+		}
+	}
+	_, err = s.db.AddWorkspaceTarget(ctx, db.WorkspaceTarget{
+		WorkspaceID: in.ID, RepoID: repo.Repository.ID, ItemType: kind, ItemNumber: in.Body.Number,
+		URL: metadata.URL, Hidden: in.Body.Hidden,
+	})
+	if err != nil {
+		return nil, httpapi.Internal("save workspace target failed")
+	}
+	s.broadcastWorkspaceStatus(in.ID)
+	return nil, nil
+}
+
 func (s *Handler) AddWorkspaceTargetService(ctx context.Context, id string, in WorkspaceTargetInput) (WorkspaceTarget, error) {
 	if in.Type == "kata" {
 		if s.kataTargets == nil {
@@ -148,6 +200,9 @@ func (s *Handler) ListWorkspaceTargetsService(ctx context.Context, id string) (W
 			continue
 		}
 		seen[key] = true
+		if row.Hidden {
+			continue
+		}
 		repo, err := s.db.GetRepoByID(ctx, row.RepoID)
 		if err != nil {
 			return out, httpapi.Internal("get target repository failed")

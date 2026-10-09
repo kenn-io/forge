@@ -28,6 +28,9 @@ type ProviderRouteRule struct {
 // make an explicit ownership decision before the coverage gate passes.
 var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "list-workspace-targets", Owner: NodeLocal},
+	{OperationID: "update-workspace-target", Owner: NodeLocal},
+	{OperationID: "update-fleet-workspace-target", Owner: NodeLocal},
+	{OperationID: "update-devbox-workspace-target", Owner: NodeLocal},
 	{OperationID: "list-fleet-workspace-targets", Owner: NodeLocal},
 	{OperationID: "list-devbox-workspace-targets", Owner: NodeLocal},
 	{OperationID: "get-mcp-app-resource", Owner: NodeLocal},

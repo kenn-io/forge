@@ -8741,6 +8741,23 @@ components:
         - platformHost
         - platformRepoID
       type: object
+    RepositoryIdentity1:
+      additionalProperties: false
+      properties:
+        bitbucket_repository_uuid:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          format: int64
+          type: integer
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
+      type: object
     RepositoryRoute:
       additionalProperties: false
       properties:
@@ -11685,6 +11702,35 @@ components:
         - source
         - unavailable
       type: object
+    WorkspaceTargetSelection:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceTargetSelection.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepositoryIdentity1"
+        type:
+          enum:
+            - pr
+            - issue
+          type: string
+      required:
+        - repository
+        - type
+        - number
+        - hidden
+      type: object
     WorkspaceTargetsResponse:
       additionalProperties: false
       properties:
@@ -13632,6 +13678,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/WorkspaceTargetsResponse"
           description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward an execution operation to its owning devbox
+      tags:
+        - Devboxes
+    put:
+      operationId: update-devbox-workspace-target
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceTargetSelection"
+        required: true
+      responses:
+        "204":
+          description: No Content
         default:
           content:
             application/problem+json:
@@ -16622,6 +16699,41 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: List workspace targets on fleet host
+      tags:
+        - Fleet
+    put:
+      operationId: update-fleet-workspace-target
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Track or hide a workspace target on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/view-state:
@@ -27626,6 +27738,32 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List workspace targets
+      tags:
+        - Workspaces
+    put:
+      operationId: update-workspace-target
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceTargetSelection"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Track or hide a workspace target
       tags:
         - Workspaces
   /workspaces/{id}/view-state:

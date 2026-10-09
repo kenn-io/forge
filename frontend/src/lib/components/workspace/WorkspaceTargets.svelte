@@ -1,9 +1,13 @@
 <script lang="ts">
+  import { Checkbox, IconButton } from "@kenn-io/kit-ui";
+  import XIcon from "@lucide/svelte/icons/x";
   import { Effect } from "effect";
   import { untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
+  import { updateWorkspaceTarget } from "../../api/workspace-targets.js";
 
   let { workspaceID, workspaceHostKey, refreshToken = 0, disabled = false, onselect }: {
     workspaceID: string;
@@ -16,6 +20,33 @@
   let targets = $state<WorkspaceTarget[]>([]);
   let kataAvailable = $state(false);
   let error = $state(false);
+  let showClosed = $state(false);
+  let removing = $state<WorkspaceTarget | null>(null);
+  let removeError = $state(false);
+  const visibleTargets = $derived(targets.filter((target) =>
+    showClosed || target.unavailable || !["closed", "merged"].includes(target.state.toLowerCase()),
+  ));
+
+  function removeTarget(target: WorkspaceTarget): void {
+    if (!target.repo || (target.type !== "pr" && target.type !== "issue")) return;
+    const repo = target.repo;
+    removing = target;
+    removeError = false;
+    runtime.runCommand(updateWorkspaceTarget(workspaceID, workspaceHostKey, target.type, {
+      provider: repo.provider, platformHost: repo.platform_host, repositoryKey: repositoryKeyFromWire(repo),
+      owner: repo.owner, name: repo.name, repoPath: repo.repo_path, number: target.number,
+    }, true).pipe(
+      Effect.tap(() => Effect.sync(() => {
+        targets = targets.filter((item) => item.type !== target.type || item.number !== target.number ||
+          item.repo?.provider !== repo.provider || item.repo?.platform_host !== repo.platform_host ||
+          repositoryKeyFromWire(item.repo) !== repositoryKeyFromWire(repo));
+      })),
+      Effect.ensuring(Effect.sync(() => { removing = null; })),
+    ), {
+      operation: "remove workspace target", safeContext: { workspaceID },
+      onFailure: () => { removeError = true; },
+    });
+  }
 
   $effect(() => {
     const id = workspaceID;
@@ -43,14 +74,17 @@
 </script>
 
 <details class="workspace-targets">
-  <summary>Targets <span>{targets.length}</span></summary>
+  <summary>Targets <span>{visibleTargets.length}</span></summary>
+  <div class="target-filter"><Checkbox label="Show closed" bind:checked={showClosed} /></div>
   {#if error}
     <p role="status">Could not refresh targets.</p>
   {/if}
+  {#if removeError}<p role="alert">Could not remove target. Try again.</p>{/if}
   <ul aria-label="Workspace targets">
-    {#each targets as target (`${target.type}:${JSON.stringify(target.repo ?? target.kata)}:${target.number}`)}
+    {#each visibleTargets as target (`${target.type}:${JSON.stringify(target.repo ?? target.kata)}:${target.number}`)}
       <li>
         <button
+          class="target-select"
           type="button"
           disabled={disabled || target.unavailable || (target.type === "kata" && (!kataAvailable || !!workspaceHostKey))}
           onclick={() => onselect(target)}
@@ -60,9 +94,15 @@
           <span class="target-title">{target.title || target.url || "Linked task"}</span>
           <span class="target-repo">{target.repo?.repo_path ?? target.kata?.daemon_id} · {target.source}</span>
         </button>
+        {#if target.repo && (target.type === "pr" || target.type === "issue")}
+          <IconButton size="sm" ariaLabel={`Remove ${target.type === "pr" ? "PR" : "Issue"} #${target.number} from targets`}
+            disabled={disabled || removing !== null} onclick={() => removeTarget(target)}>
+            <XIcon size={14} aria-hidden="true" />
+          </IconButton>
+        {/if}
       </li>
     {:else}
-      <li class="empty">No tracked targets yet.</li>
+      <li class="empty">{targets.length ? "No open targets." : "No tracked targets yet."}</li>
     {/each}
   </ul>
 </details>
@@ -72,8 +112,10 @@
   summary { cursor: pointer; padding: var(--space-2) var(--space-3); font-weight: 500; }
   summary span { color: var(--text-muted); margin-left: var(--space-1); }
   ul { list-style: none; padding: 0; margin: 0; }
-  button { display: flex; flex-direction: column; gap: var(--space-1); width: 100%; padding: var(--space-2) var(--space-3); border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
-  button:hover:not(:disabled) { background: var(--bg-surface-hover); }
+  li { display: flex; align-items: center; padding-right: var(--space-2); }
+  .target-filter { padding: var(--space-1) var(--space-3); }
+  .target-select { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+  button:hover:enabled { background: var(--bg-surface-hover); }
   button:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
   button:disabled { cursor: default; color: var(--text-muted); }
   .target-identity { display: flex; justify-content: space-between; gap: var(--space-2); }

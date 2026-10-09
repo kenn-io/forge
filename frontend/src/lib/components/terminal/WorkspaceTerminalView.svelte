@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { updateWorkspaceTarget } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
     quickActionWorkspaceKey,
@@ -2310,6 +2311,18 @@
 
   function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
     if (!workspace || actionsBlocked) return;
+    if (item) {
+      const id = workspaceId;
+      const hostKey = workspaceHostKey;
+      appRuntime.runCommand(updateWorkspaceTarget(id, hostKey, itemType, item, false).pipe(
+        Effect.tap(() => Effect.sync(() => {
+          if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
+        })),
+      ), {
+        operation: "track visited workspace target", safeContext: { workspaceID: id },
+        onFailure: () => { showFlash("Could not save target. Open it again to retry.", { tone: "danger" }); },
+      });
+    }
     viewedItems = { ...viewedItems, [itemType]: item };
     writeLocalStorage(
       itemSelectionStorageKey,

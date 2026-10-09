@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +34,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -165,6 +167,11 @@ func newTestHandler(t *testing.T, database *db.DB, fleetConfig config.Fleet) *Ha
 		RuntimeSnapshot:        workspaceAPI.RuntimeSnapshot,
 	})
 	apiConfig := huma.DefaultConfig("fleet test", "0.0.0")
+	identityType := reflect.TypeFor[platform.RepositoryIdentity]()
+	identityWire, ok, err := platform.RepositoryKeyWireType(identityType)
+	require.NoError(t, err)
+	require.True(t, ok)
+	apiConfig.Components.Schemas.RegisterTypeAlias(identityType, identityWire)
 	apiConfig.OpenAPIPath = ""
 	apiConfig.DocsPath = ""
 	apiConfig.SchemasPath = ""

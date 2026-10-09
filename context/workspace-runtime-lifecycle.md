@@ -81,6 +81,11 @@ Rules:
   when initialize advertises it. The queue drains one prompt per `end_turn` and pauses on
   any other stop, error, exit, or reload
   (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
+- Every ACP owner start gets a new runtime generation, and permission and elicitation IDs
+  carry it, so an answer for an earlier process cannot reach a restarted agent. Answers are
+  idempotent: the same answer to an answered request succeeds, a different one fails, and
+  each turn keeps a short record of its submission ID and outcome
+  (`internal/workspace/localruntime/acp_requests.go`, `acp_submissions.go`).
 - A submission ID that was sending when its owner stopped, or was unqueued, never runs
   again; keep both ID lists uncapped for the session's life, since evicting one would let a
   retry repeat or revive work (`internal/workspace/localruntime/acp_submissions.go`).

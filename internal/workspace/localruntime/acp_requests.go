@@ -1,6 +1,8 @@
 package localruntime
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
 	"slices"
@@ -22,8 +24,9 @@ var errACPAlreadyAnswered = errors.New("request was already answered")
 type ACPAnsweredRequest struct {
 	ID string `json:"id"`
 	// Answer is the permission option ID, or the elicitation action followed
-	// by its content serialized with json.Deterministic, so two answers with
-	// the same action but different field values differ.
+	// by a digest of its content, so two answers with the same action but
+	// different field values differ while the values stay out of the state
+	// every client receives.
 	Answer   string `json:"answer"`
 	AnswerAt string `json:"answeredAt"`
 }
@@ -66,8 +69,9 @@ func (a *ACP) answeredLocked(id, answer string) (bool, error) {
 	return false, nil
 }
 
-// elicitationAnswerKey identifies an elicitation answer. Content keys are
-// sorted so equal field values compare equal.
+// elicitationAnswerKey identifies an elicitation answer by its action and a
+// digest of its content. Content keys are sorted so equal field values compare
+// equal.
 func elicitationAnswerKey(action string, content map[string]any) (string, error) {
 	if action != "accept" {
 		return action, nil
@@ -76,5 +80,6 @@ func elicitationAnswerKey(action string, content map[string]any) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return action + string(data), nil
+	digest := sha256.Sum256(data)
+	return action + ":" + hex.EncodeToString(digest[:]), nil
 }

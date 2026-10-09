@@ -231,3 +231,17 @@ func TestACPRequestsFromAnEarlierOwnerAfterRestart(t *testing.T) {
 	}
 	assert.Equal(t, []string{"permission:allow"}, c.fixtureResponses(), "nothing reached the restarted agent")
 }
+
+func TestElicitationAnswerKeyKeepsFormValuesOutOfTheLedger(t *testing.T) {
+	key, err := elicitationAnswerKey("accept", map[string]any{"token": "private-value", "count": 2})
+	require.NoError(t, err)
+	assert.NotContains(t, key, "private-value")
+
+	same, err := elicitationAnswerKey("accept", map[string]any{"count": 2, "token": "private-value"})
+	require.NoError(t, err)
+	assert.Equal(t, key, same)
+
+	other, err := elicitationAnswerKey("accept", map[string]any{"token": "other-value", "count": 2})
+	require.NoError(t, err)
+	assert.NotEqual(t, key, other)
+}

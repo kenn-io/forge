@@ -1065,6 +1065,9 @@ Rows that contain buttons, links, or toggles need clear event ownership.
   surface is currently active.
 - Focus-visible states matter for controls that are visually subtle, such as tab
   close buttons or compact action affordances.
+- Searchable dropdowns must accept typing as soon as Tab gives them focus;
+  requiring an initial click or Enter breaks keyboard-first forms
+  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
 - Explicit clipboard controls copy provider/repository values exactly; copying is
   not code execution or a shell security boundary, so source UI must not filter,
   quote, escape, or add shell confirmation (`frontend/src/lib/components/diff/DiffFile.svelte`).

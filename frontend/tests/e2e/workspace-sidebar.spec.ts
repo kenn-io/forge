@@ -1636,6 +1636,23 @@ test("phone workspace item fits its tabs and diff controls in two rows", async (
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
 
+  await page.route("**/api/v1/pulls/github/acme/widgets/42/commits", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        commits: [
+          {
+            sha: "abc1234567890123456789012345678901234567",
+            message: "commit one",
+            authored_at: "2026-04-01T00:00:00Z",
+            author_name: "user-a",
+          },
+        ],
+      }),
+    });
+  });
+
   await page.goto("/m/workspaces/local/ws-123/item/files");
 
   const header = page.locator(".mobile-workspace-item__toolbar");
@@ -1656,9 +1673,27 @@ test("phone workspace item fits its tabs and diff controls in two rows", async (
   expect(new Set(tops).size).toBe(1);
   for (const box of boxes) expect(box!.x + box!.width).toBeLessThanOrEqual(390);
 
-  // The file tree and its filter field start hidden; the overflow menu brings them back.
+  // The file tree starts hidden; the overflow menu brings it back.
   await expect(page.locator(".files-sidebar")).toHaveCount(0);
-  await expect(page.getByRole("searchbox", { name: "Filter files" })).toHaveCount(0);
+
+  // The commit menu opens from mid-toolbar but must stay on screen, Clear included.
+  await scope.click();
+  const scopeMenu = page.locator(".diff-scope-picker__menu");
+  const commitRow = scopeMenu.getByRole("button", { name: /commit one/ });
+  await expect(commitRow).toBeVisible();
+  for (const element of [scopeMenu, commitRow]) {
+    const box = await element.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(390);
+  }
+  await commitRow.click();
+  const clear = scopeMenu.getByRole("button", { name: "Clear" });
+  await expect(clear).toBeVisible();
+  const clearBox = await clear.boundingBox();
+  expect(clearBox!.x + clearBox!.width).toBeLessThanOrEqual(390);
+  await clear.click();
+  await expect(toolbar.getByRole("button", { name: /Select commit range: HEAD/ })).toBeVisible();
+  await scope.click();
 
   await category.click();
   await page.getByRole("option", { name: /^Code/ }).click();

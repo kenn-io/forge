@@ -57,6 +57,8 @@ Think about mobile work in this order:
 - Phone Files views keep diff controls on one row and start with the file tree hidden; secondary
   controls belong in the overflow menu, not new rows. The workspace item header holds its own
   Conversation/Files tabs (`frontend/src/lib/components/diff/DiffToolbar.svelte::phone`).
+- Diff toolbar menus must be fixed-positioned and clamped to the viewport; the Files view hides
+  overflow, so a trigger-anchored absolute menu is clipped on phones (`frontend/src/lib/components/diff/DiffScopePicker.svelte::positionMenu`).
 - Mobile escape hatches to desktop views are allowed, but they must be intentional and not the default path.
 
 ## Responsive route and presentation model

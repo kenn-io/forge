@@ -3,6 +3,7 @@ package localruntime
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
-	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 
@@ -28,27 +28,55 @@ func readSavedSession(t *testing.T, path string) acpSavedSession {
 	return saved
 }
 
+// inProcessChat starts ACP agents on the stdio fixture in this process, so
+// tests can reach the owner's internals.
+type inProcessChat struct {
+	t       *testing.T
+	manager *Manager
+	info    SessionInfo
+	command []string
+	cwd     string
+}
+
+func newInProcessChat(t *testing.T) *inProcessChat {
+	t.Helper()
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	c := &inProcessChat{
+		t:       t,
+		manager: NewManager(Options{ACPSessionsDir: filepath.Join(t.TempDir(), "acp")}),
+		info:    SessionInfo{Key: "chat", WorkspaceID: "workspace", TargetKey: "chat", Kind: LaunchTargetACP},
+		command: []string{executable, "-test.run=^TestACPStdioHelper$"},
+		cwd:     cwd,
+	}
+	require.NoError(t, os.MkdirAll(filepath.Dir(c.recordPath()), 0o700))
+	return c
+}
+
+func (c *inProcessChat) recordPath() string { return c.manager.acpSessionPath(c.info.Key) }
+
+func (c *inProcessChat) start(saved *acpSavedSession) *ACP {
+	c.t.Helper()
+	agent, err := c.manager.startACP(c.t.Context(), c.info, c.command, c.cwd, nil, saved)
+	require.NoError(c.t, err)
+	c.t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+	return agent
+}
+
 // An owner that crashes after recording a prompt as sending, but before the
 // agent is known to have it, cannot say whether the agent ran it. The
 // replacement owner reports that submission as uncertain instead of running
 // it a second time.
 func TestACPPromptSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
-	cwd, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	manager := NewManager(Options{ACPSessionsDir: filepath.Join(t.TempDir(), "acp")})
-	info := SessionInfo{Key: "chat", WorkspaceID: "workspace", TargetKey: "chat", Kind: LaunchTargetACP}
-	recordPath := manager.acpSessionPath(info.Key)
-	require.NoError(t, os.MkdirAll(filepath.Dir(recordPath), 0o700))
-
-	first, err := manager.startACP(t.Context(), info, command, cwd, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = first.Stop(t.Context()) })
+	c := newInProcessChat(t)
+	recordPath := c.recordPath()
+	first := c.start(nil)
 	var atCrash []byte
+	var err error
 	first.beforePromptWrite = func() {
 		// session.json now holds what a crashed owner would leave behind.
 		atCrash, err = os.ReadFile(recordPath)
@@ -62,9 +90,7 @@ func TestACPPromptSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
 	var saved acpSavedSession
 	require.NoError(t, json.Unmarshal(atCrash, &saved))
 	require.Equal(t, &ACPQueuedPrompt{ID: "crash", Text: "lost"}, saved.State.Sending)
-	second, err := manager.startACP(t.Context(), info, command, cwd, nil, &saved)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = second.Stop(t.Context()) })
+	second := c.start(&saved)
 
 	state := publishedACPState(t, second)
 	assert.Equal(t, []string{"crash"}, state.Uncertain)
@@ -158,6 +184,33 @@ func TestACPTurnRecordsFollowEachTurn(t *testing.T) {
 // A turn the agent starts after a steer is part of the running turn, which
 // ends only when the agent reports its thread idle.
 func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.state.Busy = true
+	agent.mu.Lock()
+	agent.beginTurnRecordLocked("turn", 0)
+	agent.mu.Unlock()
+	agent.external = &acpExternalTurn{active: true}
+	completed := make(chan acpTurnResult, 1)
+	completed <- acpTurnResult{stopReason: acpsdk.StopReasonEndTurn}
+	agent.finishTurn(completed)
+
+	state := publishedACPState(t, agent)
+	require.True(t, state.Busy, "the agent's own turn is still running")
+	require.Len(t, state.Turns, 1)
+	assert.Empty(t, state.Turns[0].EndedAt, "the prompt completed but the agent's turn did not")
+
+	agent.mu.Lock()
+	agent.threadStatusLocked(map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "idle"}}})
+	agent.mu.Unlock()
+	state = publishedACPState(t, agent)
+	assert.False(t, state.Busy)
+	require.Len(t, state.Turns, 1)
+	assert.Equal(t, "end_turn", state.Turns[0].StopReason)
+	assert.NotEmpty(t, state.Turns[0].EndedAt)
+}
+
+// The same takeover through the fixture: one record, ended with the agent's turn.
+func TestACPTakeoverTurnRecordThroughTheAgent(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
 	c := launchRequestChat(t)
 	// An earlier turn shows the agent reports thread status.
@@ -165,14 +218,9 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	c.awaitIdle()
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
-	time.Sleep(100 * time.Millisecond)
-	state := c.state()
-	require.True(t, state.Busy, "the agent's own turn is still running")
-	require.Len(t, state.Turns, 2)
-	assert.Empty(t, state.Turns[1].EndedAt, "the prompt completed but the agent's turn did not")
 
 	turns := c.awaitState(func(s ACPState) bool { return !s.Busy }).Turns
-	require.Len(t, turns, 2)
+	require.Len(t, turns, 2, "the steer joined the prompt's turn")
 	assert.Equal(t, "turn", turns[1].SubmissionID)
 	assert.Equal(t, "end_turn", turns[1].StopReason)
 	assert.NotEmpty(t, turns[1].EndedAt)
@@ -252,6 +300,79 @@ func TestACPUnqueuedSubmissionCannotRunLater(t *testing.T) {
 	restored := newDetachedACP(t)
 	restored.restoreTranscriptLocked(state)
 	require.ErrorContains(t, restored.Command(queued), "submission was withdrawn")
+}
+
+// A queued prompt stays queued until its message is recorded, so a crash
+// while sending it leaves it both sending and queued. Resuming the restored
+// queue must not send it again.
+func TestACPRestoredUncertainPromptLeavesTheQueue(t *testing.T) {
+	agent := newDetachedACP(t)
+	var written bytes.Buffer
+	agent.stdin = testWriteCloser{Writer: &written}
+	agent.restoreTranscriptLocked(ACPState{
+		Sending: &ACPQueuedPrompt{ID: "sent", Text: "maybe ran"},
+		Queue:   []ACPQueuedPrompt{{ID: "sent", Text: "maybe ran"}},
+	})
+	state := publishedACPState(t, agent)
+	assert.Empty(t, state.Queue)
+	assert.False(t, state.QueuePaused, "nothing is left to resume")
+	assert.Equal(t, []string{"sent"}, state.Uncertain)
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	agent.drain()
+	assert.Empty(t, written.String(), "the uncertain prompt never reaches the agent")
+	assert.Empty(t, publishedACPState(t, agent).Messages)
+}
+
+// drain skips a queued submission that must never run instead of sending it.
+func TestACPDrainDropsSubmissionsThatMustNotRun(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+	var written bytes.Buffer
+	agent.stdin = testWriteCloser{Writer: &written}
+	agent.state.Uncertain = []string{"uncertain"}
+	agent.state.Withdrawn = []string{"withdrawn"}
+	agent.state.Queue = []ACPQueuedPrompt{
+		{ID: "uncertain", Text: "maybe ran"},
+		{ID: "withdrawn", Text: "removed"},
+		{ID: "next", Text: "runs"},
+	}
+	agent.drain()
+
+	assert.NotContains(t, written.String(), "maybe ran")
+	assert.NotContains(t, written.String(), "removed")
+	assert.Contains(t, written.String(), `"text":"runs"`)
+	saved := readSavedSession(t, agent.recordPath)
+	assert.Empty(t, saved.State.Queue)
+	require.Len(t, saved.State.Messages, 1)
+	assert.Equal(t, "next", saved.State.Messages[0].SubmissionID)
+}
+
+func TestACPRestoreDoesNotRepeatAnUncertainID(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.restoreTranscriptLocked(ACPState{Sending: &ACPQueuedPrompt{ID: "sent"}, Uncertain: []string{"sent"}})
+	assert.Equal(t, []string{"sent"}, publishedACPState(t, agent).Uncertain)
+}
+
+// An agent that exits during a turn no prompt response will end, such as one
+// it started after a steer, still ends that turn's record.
+func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
+	c := newInProcessChat(t)
+	agent := c.start(nil)
+	agent.mu.Lock()
+	agent.state.Busy = true
+	agent.beginTurnRecordLocked("steer", 0)
+	agent.external = &acpExternalTurn{active: true, promptDone: true}
+	agent.mu.Unlock()
+	require.NoError(t, agent.cmd.Process.Kill())
+	<-agent.Done()
+
+	for _, state := range []ACPState{publishedACPState(t, agent), readSavedSession(t, c.recordPath()).State} {
+		assert.False(t, state.Busy)
+		require.Len(t, state.Turns, 1)
+		assert.Equal(t, "agent process exited during the turn", state.Turns[0].Error)
+		assert.NotEmpty(t, state.Turns[0].EndedAt)
+	}
 }
 
 func TestACPRestoreEndsTheTurnTheAgentExitedDuring(t *testing.T) {

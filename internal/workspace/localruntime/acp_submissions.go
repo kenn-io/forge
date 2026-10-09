@@ -68,16 +68,41 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 }
 
 // restoreSubmissionsLocked carries submission outcomes into a replacement
-// owner. A prompt that was sending when the owner stopped may have reached
-// the agent, and a turn that was running did not finish in this process.
+// owner after the queue is restored. A prompt that was sending when the owner
+// stopped may have reached the agent, so it leaves the queue it was sent
+// from. A turn that was running did not finish in this process.
 func (a *ACP) restoreSubmissionsLocked(saved ACPState) {
 	a.state.Withdrawn = saved.Withdrawn
 	a.state.Uncertain = saved.Uncertain
 	if saved.Sending != nil {
-		a.state.Uncertain = append(a.state.Uncertain, saved.Sending.ID)
+		id := saved.Sending.ID
+		if !slices.Contains(a.state.Uncertain, id) {
+			a.state.Uncertain = append(a.state.Uncertain, id)
+		}
+		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
 	}
 	a.state.Turns = saved.Turns
 	a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
+}
+
+// dropUnrunnableQueueHeadLocked removes queued submissions at the head of
+// the queue that must never run, so drain cannot send them.
+func (a *ACP) dropUnrunnableQueueHeadLocked() {
+	dropped := 0
+	for dropped < len(a.state.Queue) && a.withdrawnOrUncertainLocked(a.state.Queue[dropped].ID) != nil {
+		dropped++
+	}
+	if dropped == 0 {
+		return
+	}
+	a.state.Queue = slices.Delete(a.state.Queue, 0, dropped)
+	if len(a.state.Queue) == 0 {
+		a.state.QueuePaused = false
+	}
+	if err := a.persistLocked(); err != nil {
+		a.setErrorLocked(err)
+	}
+	a.changedLocked()
 }
 
 // withdrawnOrUncertainLocked rejects a submission ID that must never run.

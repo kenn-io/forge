@@ -158,6 +158,7 @@ func (a *ACP) drain() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	a.dropUnrunnableQueueHeadLocked()
 	if !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
 		a.state.QueuePaused || len(a.state.Queue) == 0 {
 		a.mu.Unlock()

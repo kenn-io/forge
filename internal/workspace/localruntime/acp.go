@@ -433,6 +433,9 @@ func (a *ACP) wait() {
 	a.mu.Lock()
 	a.exitCode = exitCode
 	a.state.Connected = false
+	// A failed in-flight prompt may end the record first; a turn the agent
+	// started itself has no prompt response to end it.
+	a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.state.Permissions = nil

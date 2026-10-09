@@ -2426,6 +2426,86 @@ describe("activity store URL hydration", () => {
 });
 
 describe("activity store author candidates", () => {
+  it.each([{ authors: ["Alice"] }, { authors: [] }])(
+    "keeps loaded candidates available during same-scope refreshes: $authors",
+    async ({ authors }) => {
+      const pending = Promise.withResolvers<{ data: { authors: string[] }; error: null }>();
+      let refresh = false;
+      const get = vi.fn(async (path: string) => {
+        if (path === "/activity/authors") {
+          return refresh ? pending.promise : { data: { authors }, error: null };
+        }
+        return { data: { items: [], capped: false }, error: null };
+      });
+      const s = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+      s.loadActivityAuthors();
+      await vi.waitFor(() => expect(s.isActivityAuthorsLoading()).toBe(false));
+      refresh = true;
+      const reconciliation = runtime!.runCommand(s.reconcileActivityEffect(), {
+        operation: "refresh activity authors in test",
+        safeContext: {},
+        onFailure: () => {},
+      });
+      await vi.waitFor(() => expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(2));
+
+      expect(s.isActivityAuthorsLoading()).toBe(false);
+      expect(s.getActivityAuthors()).toEqual(authors);
+      pending.resolve({ data: { authors: ["Bob"] }, error: null });
+      await reconciliation.exit;
+      expect(s.getActivityAuthors()).toEqual(["Bob"]);
+    },
+  );
+
+  it("retains candidates while retrying a failed same-scope refresh", async () => {
+    const pending = Promise.withResolvers<{ data: { authors: string[] }; error: null }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { authors: ["Alice"] }, error: null })
+      .mockResolvedValueOnce({
+        error: { detail: "authors unavailable" },
+        response: new Response(null, { status: 500 }),
+      })
+      .mockImplementationOnce(() => pending.promise);
+    const s = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+
+    s.loadActivityAuthors(true);
+    await vi.waitFor(() => expect(s.getActivityAuthorsError()).toBe("authors unavailable"));
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    expect(s.getActivityAuthors()).toEqual(["Alice"]);
+    expect(s.isActivityAuthorsLoading()).toBe(false);
+
+    pending.resolve({ data: { authors: ["Alice", "Bob"] }, error: null });
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice", "Bob"]));
+    expect(s.getActivityAuthorsError()).toBeNull();
+  });
+
+  it.each(["repo", "range"])("loads fresh candidates when the %s changes", async (scope) => {
+    let repo = "github|github.com/acme/widgets";
+    const pending = Promise.withResolvers<{ data: { authors: string[] }; error: null }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { authors: ["Alice"] }, error: null })
+      .mockImplementationOnce(() => pending.promise);
+    const s = createActivityStore({ client: { GET: get } as unknown as GeneratedClient, getGlobalRepo: () => repo });
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+
+    if (scope === "repo") repo = "github|github.com/acme/tools";
+    else s.setTimeRange("30d");
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(s.isActivityAuthorsLoading()).toBe(true);
+    expect(s.getActivityAuthors()).toEqual([]);
+
+    pending.resolve({ data: { authors: ["Bob"] }, error: null });
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Bob"]));
+    expect(s.isActivityAuthorsLoading()).toBe(false);
+  });
+
   it("keeps a URL-selected author available when it is absent from the current candidates", () => {
     window.history.replaceState(null, "", "/?author=FormerUser");
     const s = makeStore();

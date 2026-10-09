@@ -229,7 +229,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let filterTypes = $state<string[]>([]);
   let searchQuery = $state<string | undefined>(undefined);
   let authorFilter = $state<string | undefined>(undefined);
-  let authorCandidates = $state.raw<string[]>([]);
+  let authorCandidates = $state.raw<string[] | null>(null);
   let authorsLoading = $state(false);
   let authorsError = $state<string | null>(null);
   let timeRange = $state<TimeRange>("7d");
@@ -258,6 +258,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let bulkRequestToken: symbol | undefined;
   let authorRequestVersion = 0;
   let authorScopeKey: string | null = null;
+  let authorCandidatesScopeKey: string | null = null;
   let pollCount = 0;
   let pollingStarted = false;
   let snapshotScope: string | undefined;
@@ -320,16 +321,17 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getActivityAuthors(): string[] {
     const selected = authorFilter;
-    if (!selected) return authorCandidates;
-    const selectedIndex = authorCandidates.findIndex((candidate) => candidate.toLowerCase() === selected.toLowerCase());
-    if (selectedIndex < 0) return [selected, ...authorCandidates];
-    if (authorCandidates[selectedIndex] === selected) return authorCandidates;
-    const candidates = [...authorCandidates];
-    candidates[selectedIndex] = selected;
-    return candidates;
+    const candidates = authorCandidates ?? [];
+    if (!selected) return candidates;
+    const selectedIndex = candidates.findIndex((candidate) => candidate.toLowerCase() === selected.toLowerCase());
+    if (selectedIndex < 0) return [selected, ...candidates];
+    if (candidates[selectedIndex] === selected) return candidates;
+    const withSelected = [...candidates];
+    withSelected[selectedIndex] = selected;
+    return withSelected;
   }
   function isActivityAuthorsLoading(): boolean {
-    return authorsLoading;
+    return authorsLoading && authorCandidates === null;
   }
   function getActivityAuthorsError(): string | null {
     return authorsError;
@@ -653,8 +655,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const scopeKey = `${repo ?? ""}\0${timeRange}`;
       if (!force && scopeKey === authorScopeKey) return Effect.void;
 
-      if (scopeKey !== authorScopeKey) {
-        authorCandidates = [];
+      // Refreshes and retries keep the picker usable until its repo or range changes.
+      if (scopeKey !== authorCandidatesScopeKey) {
+        authorCandidates = null;
+        authorCandidatesScopeKey = scopeKey;
       }
       authorScopeKey = scopeKey;
       const version = ++authorRequestVersion;

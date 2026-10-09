@@ -135,6 +135,21 @@ embedder protocol for arbitrary host state.
     (`internal/server/kata/workspace.go::Handler.createKataWorkspace`).
 - `GET /workspaces`: list kenn-forge's persisted workspaces for the workspaces
   page and terminal picker.
+- `GET`, `POST .../commands`, and `POST .../restore` under
+  `/workspaces/{id}/runtime/sessions/{session_key}/chat` let a coordinator drive a chat over
+  HTTP on the daemon and on execution workers (bearer only). They reconnect the workspace's
+  chats as opening it does (`internal/server/workspaceapi/acp_http.go`).
+  - The snapshot is the published state with transcript messages `[after, after+limit)`, each
+    with its transcript `index`, plus `messageCount` (`limit` 1–500, default 100). A stored chat
+    whose owner is not running returns only `exited: true`.
+  - Commands take the chat command body for input types only. A refusal with an owner error
+    code is `409 conflict` with that code as `details.reason` (`busy`, `supervised`,
+    `stale_generation`, `uncertain`, `stale_request`, `queue_pending`); a disconnected agent or
+    a chat that is not running is `503`, and any other refusal is `400`
+    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`).
+  - Restore applies only to supervised chats and uses the stored record. It refuses an
+    unsupervised chat with reason `not_supervised` and an agent without `loadSession` with
+    reason `cannot_reload`.
 - Terminal and mobile pickers read inline workspaces from the projected snapshot;
   they never fan out per-host list reads, and remote actions require advertised
   availability (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::loadWorkspaces`).

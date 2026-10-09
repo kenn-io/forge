@@ -289,6 +289,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 
 func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }
 func (c *stallingChat) History(int, int) ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Page(int, int) ([]byte, error)    { return []byte(`{}`), nil }
 func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
 	return make(chan struct{}), func() {}
 }

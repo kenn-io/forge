@@ -11687,6 +11687,104 @@ func (o *GetWorkspaceRuntimeSessionAttachSpecRequestOptions) GetHeader() (map[st
 	return nil, nil
 }
 
+// GetWorkspaceChatRequestOptions is the options needed to make a request to GetWorkspaceChat.
+type GetWorkspaceChatRequestOptions struct {
+	PathParams *GetWorkspaceChatPath
+	Query      *GetWorkspaceChatQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorkspaceChatRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorkspaceChatRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorkspaceChatRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorkspaceChatRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RunWorkspaceChatCommandRequestOptions is the options needed to make a request to RunWorkspaceChatCommand.
+type RunWorkspaceChatCommandRequestOptions struct {
+	PathParams *RunWorkspaceChatCommandPath
+	Body       *RunWorkspaceChatCommandBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RunWorkspaceChatCommandRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RunWorkspaceChatCommandRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RunWorkspaceChatCommandRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RunWorkspaceChatCommandRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// RestoreWorkspaceChatRequestOptions is the options needed to make a request to RestoreWorkspaceChat.
+type RestoreWorkspaceChatRequestOptions struct {
+	PathParams *RestoreWorkspaceChatPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RestoreWorkspaceChatRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RestoreWorkspaceChatRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RestoreWorkspaceChatRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *RestoreWorkspaceChatRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetWorkspaceRuntimeSessionInitialMessageRequestOptions is the options needed to make a request to GetWorkspaceRuntimeSessionInitialMessage.
 type GetWorkspaceRuntimeSessionInitialMessageRequestOptions struct {
 	PathParams *GetWorkspaceRuntimeSessionInitialMessagePath
@@ -12405,6 +12503,9 @@ type ClientInterface interface {
 	StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *StopWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopWorkspaceRuntimeSessionResp, error)
 	RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameWorkspaceRuntimeSessionResp, error)
 	GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionAttachSpecResp, error)
+	GetWorkspaceChatWithResponse(ctx context.Context, options *GetWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceChatResp, error)
+	RunWorkspaceChatCommandWithResponse(ctx context.Context, options *RunWorkspaceChatCommandRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunWorkspaceChatCommandResp, error)
+	RestoreWorkspaceChatWithResponse(ctx context.Context, options *RestoreWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RestoreWorkspaceChatResp, error)
 	GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResp, error)
 	SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResp, error)
 	ListWorkspaceTargetsWithResponse(ctx context.Context, options *ListWorkspaceTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceTargetsResp, error)
@@ -33696,6 +33797,180 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Co
 	}
 }
 
+// GetWorkspaceChat Get workspace chat
+func (c *Client) GetWorkspaceChatWithResponse(ctx context.Context, options *GetWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceChatResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"after": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/runtime/sessions/{session_key}/chat")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorkspaceChatResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorkspaceChatErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorkspaceChatResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceChatResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RunWorkspaceChatCommand Run workspace chat command
+func (c *Client) RunWorkspaceChatCommandWithResponse(ctx context.Context, options *RunWorkspaceChatCommandRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RunWorkspaceChatCommandResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/commands",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/runtime/sessions/{session_key}/chat/commands")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RunWorkspaceChatCommandResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RunWorkspaceChatCommandErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RunWorkspaceChatCommandResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunWorkspaceChatCommandResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// RestoreWorkspaceChat Restore supervised workspace chat
+func (c *Client) RestoreWorkspaceChatWithResponse(ctx context.Context, options *RestoreWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RestoreWorkspaceChatResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/restore",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/runtime/sessions/{session_key}/chat/restore")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RestoreWorkspaceChatResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RestoreWorkspaceChatErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(RestoreWorkspaceChatResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RestoreWorkspaceChatResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetWorkspaceRuntimeSessionInitialMessage Get initial agent message status
 func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResp, error) {
 	var err error
@@ -40663,6 +40938,57 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecRaw(ctx context.Context, ht
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/attach-spec",
 		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetWorkspaceChatRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorkspaceChatRaw(ctx context.Context, httpClient *http.Client, options *GetWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"after": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RunWorkspaceChatCommandRaw returns an unread response. The caller must close its body.
+func (c *Client) RunWorkspaceChatCommandRaw(ctx context.Context, httpClient *http.Client, options *RunWorkspaceChatCommandRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/commands",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// RestoreWorkspaceChatRaw returns an unread response. The caller must close its body.
+func (c *Client) RestoreWorkspaceChatRaw(ctx context.Context, httpClient *http.Client, options *RestoreWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/restore",
+		Method:     "POST",
 		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -47803,6 +48129,60 @@ func NewGetWorkspaceRuntimeSessionAttachSpecRequest(ctx context.Context, baseURL
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetWorkspaceChatRequest constructs a typed request for a caller-owned transport.
+func NewGetWorkspaceChatRequest(ctx context.Context, baseURL string, options *GetWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"after": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRunWorkspaceChatCommandRequest constructs a typed request for a caller-owned transport.
+func NewRunWorkspaceChatCommandRequest(ctx context.Context, baseURL string, options *RunWorkspaceChatCommandRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/commands",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewRestoreWorkspaceChatRequest constructs a typed request for a caller-owned transport.
+func NewRestoreWorkspaceChatRequest(ctx context.Context, baseURL string, options *RestoreWorkspaceChatRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/runtime/sessions/{session_key}/chat/restore",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetWorkspaceRuntimeSessionInitialMessageRequest constructs a typed request for a caller-owned transport.
 func NewGetWorkspaceRuntimeSessionInitialMessageRequest(ctx context.Context, baseURL string, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -48284,6 +48664,20 @@ const (
 	WorkflowStateMetaResponseStatusNew           WorkflowStateMetaResponseStatus = "new"
 	WorkflowStateMetaResponseStatusReviewing     WorkflowStateMetaResponseStatus = "reviewing"
 	WorkflowStateMetaResponseStatusWaiting       WorkflowStateMetaResponseStatus = "waiting"
+)
+
+type WorkspaceChatCommandType string
+
+const (
+	WorkspaceChatCommandTypeCancel      WorkspaceChatCommandType = "cancel"
+	WorkspaceChatCommandTypeConfig      WorkspaceChatCommandType = "config"
+	WorkspaceChatCommandTypeElicitation WorkspaceChatCommandType = "elicitation"
+	WorkspaceChatCommandTypePermission  WorkspaceChatCommandType = "permission"
+	WorkspaceChatCommandTypePrompt      WorkspaceChatCommandType = "prompt"
+	WorkspaceChatCommandTypeResume      WorkspaceChatCommandType = "resume"
+	WorkspaceChatCommandTypeSupervise   WorkspaceChatCommandType = "supervise"
+	WorkspaceChatCommandTypeTakeover    WorkspaceChatCommandType = "takeover"
+	WorkspaceChatCommandTypeUnqueue     WorkspaceChatCommandType = "unqueue"
 )
 
 type WorkspaceLaunchPullHeadRepoKind string
@@ -50407,6 +50801,21 @@ type GetWorkspaceRuntimeSessionAttachSpecPath struct {
 	SessionKey string `json:"session_key"`
 }
 
+type GetWorkspaceChatPath struct {
+	ID         string `json:"id"`
+	SessionKey string `json:"session_key"`
+}
+
+type RunWorkspaceChatCommandPath struct {
+	ID         string `json:"id"`
+	SessionKey string `json:"session_key"`
+}
+
+type RestoreWorkspaceChatPath struct {
+	ID         string `json:"id"`
+	SessionKey string `json:"session_key"`
+}
+
 type GetWorkspaceRuntimeSessionInitialMessagePath struct {
 	ID         string `json:"id"`
 	SessionKey string `json:"session_key"`
@@ -50742,6 +51151,8 @@ type LaunchWorkspaceAgentHandoffBody = LaunchWorkspaceAgentHandoffInputBody
 type LaunchWorkspaceRuntimeSessionBody = LaunchWorkspaceRuntimeSessionInputBody
 
 type RenameWorkspaceRuntimeSessionBody = RenameWorkspaceRuntimeSessionInputBody
+
+type RunWorkspaceChatCommandBody = WorkspaceChatCommand
 
 type SubmitWorkspaceRuntimeSessionInitialMessageBody = SubmitInitialMessageInputBody
 
@@ -51460,6 +51871,14 @@ type GetWorkspaceFilesQuery struct {
 
 	// To End SHA for range diff (inclusive)
 	To *string `json:"to,omitempty"`
+}
+
+type GetWorkspaceChatQuery struct {
+	// After Transcript index of the first message to return.
+	After *int64 `json:"after,omitempty"`
+
+	// Limit Most messages to return.
+	Limit *int64 `json:"limit,omitempty"`
 }
 
 type ListWorkflowRunsResponse = WorkflowRunsResponse
@@ -52883,6 +53302,18 @@ type RenameWorkspaceRuntimeSessionErrorResponse = ProblemError
 type GetWorkspaceRuntimeSessionAttachSpecResponse = RuntimeAttachSpecResponse
 
 type GetWorkspaceRuntimeSessionAttachSpecErrorResponse = ProblemError
+
+type GetWorkspaceChatResponse = WorkspaceChat
+
+type GetWorkspaceChatErrorResponse = ProblemError
+
+type RunWorkspaceChatCommandResponse = RunWorkspaceChatCommandOutputBody
+
+type RunWorkspaceChatCommandErrorResponse = ProblemError
+
+type RestoreWorkspaceChatResponse = RestoreWorkspaceChatOutputBody
+
+type RestoreWorkspaceChatErrorResponse = ProblemError
 
 type GetWorkspaceRuntimeSessionInitialMessageResponse = AgentInitialMessageStatusResponse
 
@@ -56027,6 +56458,30 @@ type GetWorkspaceRuntimeSessionAttachSpecResp struct {
 	JSON200      *GetWorkspaceRuntimeSessionAttachSpecResponse
 }
 
+type GetWorkspaceChatResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetWorkspaceChatErrorResponse
+	JSON200      *GetWorkspaceChatResponse
+}
+
+type RunWorkspaceChatCommandResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RunWorkspaceChatCommandErrorResponse
+	JSON200      *RunWorkspaceChatCommandResponse
+}
+
+type RestoreWorkspaceChatResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *RestoreWorkspaceChatErrorResponse
+	JSON200      *RestoreWorkspaceChatResponse
+}
+
 type GetWorkspaceRuntimeSessionInitialMessageResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -56080,9 +56535,121 @@ type ACP struct {
 	FontSize   int64  `json:"font_size"`
 }
 
+type ACPAnsweredRequest struct {
+	Answer     string `json:"answer"`
+	AnsweredAt string `json:"answeredAt"`
+	ID         string `json:"id"`
+}
+
+type ACPCommandInfo struct {
+	Description string  `json:"description"`
+	InputHint   *string `json:"inputHint,omitempty"`
+	Name        string  `json:"name"`
+}
+
+type ACPConfigChoice struct {
+	Group   *string           `json:"group,omitempty"`
+	Name    string            `json:"name"`
+	Options []ACPConfigChoice `json:"options,omitempty"`
+	Value   *string           `json:"value,omitempty"`
+}
+
+type ACPConfigOption struct {
+	Category     *string           `json:"category,omitempty"`
+	CurrentValue string            `json:"currentValue"`
+	Description  *string           `json:"description,omitempty"`
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Options      []ACPConfigChoice `json:"options"`
+	Type         string            `json:"type"`
+}
+
+type ACPContent struct {
+	Data        *string `json:"data,omitempty"`
+	Description *string `json:"description,omitempty"`
+	MimeType    *string `json:"mimeType,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Size        *int64  `json:"size,omitempty"`
+	Text        *string `json:"text,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	Type        string  `json:"type"`
+	URI         *string `json:"uri,omitempty"`
+}
+
+type ACPElicitation struct {
+	ID      string               `json:"id"`
+	Message string               `json:"message"`
+	Schema  ACPElicitationSchema `json:"schema"`
+}
+
+type ACPElicitationSchema struct {
+	Description *string             `json:"description,omitempty"`
+	Properties  map[string]struct{} `json:"properties"`
+	Required    []string            `json:"required,omitempty"`
+	Title       *string             `json:"title,omitempty"`
+}
+
+type ACPPermission struct {
+	ID      string                `json:"id"`
+	Options []ACPPermissionOption `json:"options"`
+	Title   string                `json:"title"`
+}
+
+type ACPPermissionOption struct {
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	OptionID string `json:"optionId"`
+}
+
+type ACPPlanEntry struct {
+	Content  string `json:"content"`
+	Priority string `json:"priority"`
+	Status   string `json:"status"`
+}
+
+type ACPQueuedPrompt struct {
+	ID     string       `json:"id"`
+	Images []ACPContent `json:"images,omitempty"`
+	Text   string       `json:"text"`
+}
+
 type ACPSettingsUpdate struct {
 	FontFamily *string `json:"font_family,omitempty"`
 	FontSize   *int64  `json:"font_size,omitempty"`
+}
+
+type ACPSupervision struct {
+	ChangedAt  string `json:"changedAt"`
+	Generation int64  `json:"generation"`
+	Supervisor string `json:"supervisor"`
+	TakenOver  bool   `json:"takenOver"`
+}
+
+type ACPToolContent struct {
+	Content    *ACPContent `json:"content,omitempty"`
+	ExitCode   *int64      `json:"exitCode,omitempty"`
+	NewText    *string     `json:"newText,omitempty"`
+	OldText    *string     `json:"oldText,omitempty"`
+	Output     *string     `json:"output,omitempty"`
+	Path       *string     `json:"path,omitempty"`
+	TerminalID *string     `json:"terminalId,omitempty"`
+	Type       string      `json:"type"`
+}
+
+type ACPToolLocation struct {
+	Line *int64 `json:"line,omitempty"`
+	Path string `json:"path"`
+}
+
+type ACPTurnRecord struct {
+	ActiveMillis       int64   `json:"activeMillis"`
+	AllowanceExhausted *bool   `json:"allowanceExhausted,omitempty"`
+	AllowanceMillis    *int64  `json:"allowanceMillis,omitempty"`
+	EndedAt            *string `json:"endedAt,omitempty"`
+	ErrorData          *string `json:"error,omitempty"`
+	StartedAt          string  `json:"startedAt"`
+	StopReason         *string `json:"stopReason,omitempty"`
+	SubmissionID       *string `json:"submissionId,omitempty"`
 }
 
 type AbortFederationSpokeInputBody struct {
@@ -59489,6 +60056,12 @@ type ResolveItemResponse struct {
 	RepoTracked bool   `json:"repo_tracked"`
 }
 
+type RestoreWorkspaceChatOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Restored bool    `json:"restored"`
+}
+
 type ReviewerAccount struct {
 	AvatarURL   string `json:"avatar_url"`
 	DisplayName string `json:"display_name"`
@@ -59532,6 +60105,12 @@ type RoborevStatusResponse struct {
 	Available bool    `json:"available"`
 	Endpoint  string  `json:"endpoint"`
 	Version   string  `json:"version"`
+}
+
+type RunWorkspaceChatCommandOutputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema   *string `json:"$schema,omitempty"`
+	Accepted bool    `json:"accepted"`
 }
 
 type RuntimeAttachSpecResponse struct {
@@ -60279,6 +60858,83 @@ type WorkspaceAgentSessionResponse struct {
 	State             string                             `json:"state"`
 	TargetKey         string                             `json:"target_key"`
 	UpdatedAt         time.Time                          `json:"updated_at"`
+}
+
+type WorkspaceChat struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema        *string              `json:"$schema,omitempty"`
+	Answered      []ACPAnsweredRequest `json:"answered,omitempty"`
+	Blocked       *bool                `json:"blocked,omitempty"`
+	Busy          *bool                `json:"busy,omitempty"`
+	Commands      []ACPCommandInfo     `json:"commands,omitempty"`
+	ConfigOptions []ACPConfigOption    `json:"configOptions,omitempty"`
+	Configuring   *bool                `json:"configuring,omitempty"`
+	Connected     *bool                `json:"connected,omitempty"`
+	Elicitations  []ACPElicitation     `json:"elicitations,omitempty"`
+	ErrorData     *string              `json:"error,omitempty"`
+	ErrorCode     *int64               `json:"errorCode,omitempty"`
+	ErrorData1    *string              `json:"errorData,omitempty"`
+
+	// Exited The chat's agent has exited; no other field is present.
+	Exited            bool                   `json:"exited"`
+	MessageCount      *int64                 `json:"messageCount,omitempty"`
+	MessageOffset     *int64                 `json:"messageOffset,omitempty"`
+	Messages          []WorkspaceChatMessage `json:"messages,omitempty"`
+	Notices           []string               `json:"notices,omitempty"`
+	Permissions       []ACPPermission        `json:"permissions,omitempty"`
+	Plan              []ACPPlanEntry         `json:"plan,omitempty"`
+	Queue             []ACPQueuedPrompt      `json:"queue,omitempty"`
+	QueuePaused       *bool                  `json:"queuePaused,omitempty"`
+	RuntimeGeneration *string                `json:"runtimeGeneration,omitempty"`
+	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
+	Steering          *bool                  `json:"steering,omitempty"`
+	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
+	Stopping          *bool                  `json:"stopping,omitempty"`
+	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
+	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
+	Uncertain         []string               `json:"uncertain,omitempty"`
+	Withdrawn         []string               `json:"withdrawn,omitempty"`
+}
+
+type WorkspaceChatCommand struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string                  `json:"$schema,omitempty"`
+	Action          *string                  `json:"action,omitempty"`
+	AllowanceMillis *int64                   `json:"allowanceMillis,omitempty"`
+	Before          *int64                   `json:"before,omitempty"`
+	Content         map[string]struct{}      `json:"content,omitempty"`
+	Generation      *int64                   `json:"generation,omitempty"`
+	ID              *string                  `json:"id,omitempty"`
+	Images          []ACPContent             `json:"images,omitempty"`
+	Limit           *int64                   `json:"limit,omitempty"`
+	Mode            *string                  `json:"mode,omitempty"`
+	OptionID        *string                  `json:"optionId,omitempty"`
+	Supervisor      *string                  `json:"supervisor,omitempty"`
+	Text            *string                  `json:"text,omitempty"`
+	Type            WorkspaceChatCommandType `json:"type"`
+	Value           *string                  `json:"value,omitempty"`
+}
+
+type WorkspaceChatMessage struct {
+	Content   *ACPContent  `json:"content,omitempty"`
+	CreatedAt string       `json:"createdAt"`
+	Images    []ACPContent `json:"images,omitempty"`
+
+	// Index Position of the message in the whole transcript.
+	Index            int64             `json:"index"`
+	Kind             *string           `json:"kind,omitempty"`
+	Locations        []ACPToolLocation `json:"locations,omitempty"`
+	MessageID        *string           `json:"messageId,omitempty"`
+	ParentToolCallID *string           `json:"parentToolCallId,omitempty"`
+	RawInput         *string           `json:"rawInput,omitempty"`
+	RawOutput        *string           `json:"rawOutput,omitempty"`
+	Role             string            `json:"role"`
+	Status           *string           `json:"status,omitempty"`
+	Subagent         *bool             `json:"subagent,omitempty"`
+	SubmissionID     *string           `json:"submissionId,omitempty"`
+	Text             string            `json:"text"`
+	ToolCallID       *string           `json:"toolCallId,omitempty"`
+	ToolContent      []ACPToolContent  `json:"toolContent,omitempty"`
 }
 
 type WorkspaceDiffWatchResponse struct {

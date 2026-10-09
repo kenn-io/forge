@@ -497,3 +497,21 @@ func TestACPRestoreSupervisedIgnoresEarlierStartFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "session/new\nsession/load\n", string(log))
 }
+
+// The daemon keeps the stored record of a supervised chat whose agent exits,
+// so it asks the saved session whether a coordinator supervises it.
+func TestACPReportsWhetherASavedChatIsSupervised(t *testing.T) {
+	for _, supervised := range []bool{true, false} {
+		t.Run(fmt.Sprintf("supervised=%t", supervised), func(t *testing.T) {
+			manager, info, _, _ := exitedACPChat(t, supervised)
+			got, err := manager.SupervisedACP("workspace", info.Key)
+			require.NoError(t, err)
+			assert.Equal(t, supervised, got)
+
+			_, err = manager.SupervisedACP("other-workspace", info.Key)
+			require.ErrorIs(t, err, ErrSessionNotFound)
+			_, err = manager.SupervisedACP("workspace", "unknown-chat")
+			require.ErrorIs(t, err, ErrSessionNotFound)
+		})
+	}
+}

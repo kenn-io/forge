@@ -10,6 +10,9 @@ export const schemaConstraints = {
   ACPSettingsUpdate: {
     font_size: { minimum: 8, maximum: 32 },
   },
+  ACPSupervision: {
+    generation: { minimum: 0 },
+  },
   Assignment: {
     uid: { minimum: 0 },
   },
@@ -57,6 +60,9 @@ export const schemaConstraints = {
   },
   WorkerIdentity: {
     uid: { minimum: 0 },
+  },
+  WorkspaceChatCommand: {
+    generation: { minimum: 0 },
   },
   WorkspaceLaunchPull: {
     snapshot_revision: { minimum: 1 },

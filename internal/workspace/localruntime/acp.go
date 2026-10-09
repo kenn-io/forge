@@ -26,6 +26,9 @@ type ACPChat interface {
 	// History returns earlier transcript messages [before-limit, before) as
 	// a {"history": ...} client frame.
 	History(before, limit int) ([]byte, error)
+	// Page returns the published state with transcript messages
+	// [after, after+limit) in place of the recent window.
+	Page(after, limit int) ([]byte, error)
 	Subscribe() (<-chan struct{}, func())
 	Command(ACPCommand) error
 	Prompt(string) error

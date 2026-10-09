@@ -98,7 +98,7 @@ func TestACPPromptSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
 	assert.Empty(t, state.Messages)
 	err = second.Command(ACPCommand{Type: "prompt", Text: "lost", ID: "crash"})
 	require.ErrorIs(t, err, ErrACPSubmissionUncertain)
-	assert.Equal(t, "uncertain", acpErrorCode(err))
+	assert.Equal(t, "uncertain", ACPErrorCode(err))
 	require.ErrorIs(t, acpCodeError("uncertain"), ErrACPSubmissionUncertain)
 	assert.Empty(t, publishedACPState(t, second).Messages, "an uncertain submission never runs again")
 

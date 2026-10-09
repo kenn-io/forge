@@ -14,6 +14,8 @@ import type {
   DiffResponse,
   FilePreviewResponse,
   FilesResponse,
+  GetWorkspaceChatParams,
+  GetWorkspaceChatPathParameters,
   GetWorkspaceCommitsPathParameters,
   GetWorkspaceDiffParams,
   GetWorkspaceDiffPathParameters,
@@ -39,8 +41,12 @@ import type {
   RefreshWorkspacePathParameters,
   RenameWorkspaceRuntimeSessionInputBody,
   RenameWorkspaceRuntimeSessionPathParameters,
+  RestoreWorkspaceChatOutputBody,
+  RestoreWorkspaceChatPathParameters,
   RetryWorkspacePathParameters,
   RevealWorkspacePathParameters,
+  RunWorkspaceChatCommandOutputBody,
+  RunWorkspaceChatCommandPathParameters,
   RuntimeAttachSpecResponse,
   SessionInfo,
   StopWorkspaceRuntimeSessionPathParameters,
@@ -50,6 +56,8 @@ import type {
   WatchWorkspaceDiffParams,
   WatchWorkspaceDiffPathParameters,
   WorkspaceAgentHandoffResponse,
+  WorkspaceChat,
+  WorkspaceChatCommand,
   WorkspaceDiffWatchResponse,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
@@ -597,6 +605,82 @@ export const getWorkspaceRuntimeSessionAttachSpec = async (
   return orvalFetch<RuntimeAttachSpecResponse>(getGetWorkspaceRuntimeSessionAttachSpecUrl({ id, sessionKey }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getGetWorkspaceChatUrl = (
+  { id, sessionKey }: GetWorkspaceChatPathParameters,
+  params?: GetWorkspaceChatParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/workspaces/${encodeURIComponent(String(id))}/runtime/sessions/${encodeURIComponent(String(sessionKey))}/chat?${stringifiedParams}`
+    : `/workspaces/${encodeURIComponent(String(id))}/runtime/sessions/${encodeURIComponent(String(sessionKey))}/chat`;
+};
+
+/**
+ * @summary Get workspace chat
+ */
+export const getWorkspaceChat = async (
+  { id, sessionKey }: GetWorkspaceChatPathParameters,
+  params?: GetWorkspaceChatParams,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorkspaceChat> => {
+  return orvalFetch<WorkspaceChat>(getGetWorkspaceChatUrl({ id, sessionKey }, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getRunWorkspaceChatCommandUrl = ({ id, sessionKey }: RunWorkspaceChatCommandPathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/runtime/sessions/${encodeURIComponent(String(sessionKey))}/chat/commands`;
+};
+
+/**
+ * @summary Run workspace chat command
+ */
+export const runWorkspaceChatCommand = async (
+  { id, sessionKey }: RunWorkspaceChatCommandPathParameters,
+  workspaceChatCommand: NonReadonly<WorkspaceChatCommand>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<RunWorkspaceChatCommandOutputBody> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<RunWorkspaceChatCommandOutputBody>(getRunWorkspaceChatCommandUrl({ id, sessionKey }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceChatCommand),
+  });
+};
+
+export const getRestoreWorkspaceChatUrl = ({ id, sessionKey }: RestoreWorkspaceChatPathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/runtime/sessions/${encodeURIComponent(String(sessionKey))}/chat/restore`;
+};
+
+/**
+ * @summary Restore supervised workspace chat
+ */
+export const restoreWorkspaceChat = async (
+  { id, sessionKey }: RestoreWorkspaceChatPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<RestoreWorkspaceChatOutputBody> => {
+  return orvalFetch<RestoreWorkspaceChatOutputBody>(getRestoreWorkspaceChatUrl({ id, sessionKey }), {
+    ...options,
+    method: "POST",
   });
 };
 

@@ -222,6 +222,51 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRun
 		return errors.New("restore supervised ACP: target key is required")
 	}
 	key := restored.SessionKey
+	if err := m.requireACPWorkspace(restored.WorkspaceID, key); err != nil {
+		return err
+	}
+	startMu := m.startLock(key)
+	startMu.Lock()
+	defer startMu.Unlock()
+	if err := m.ensureOpen(); err != nil {
+		return err
+	}
+	saved, err := m.readSavedACP(key)
+	if err != nil {
+		return fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
+	}
+	if saved.State.Supervision == nil {
+		return fmt.Errorf("%w: %q is not supervised", ErrSessionUnavailable, key)
+	}
+	if m.runningSession(m.sessions, key) != nil {
+		return nil
+	}
+	return m.startRestoredSession(ctx, restored)
+}
+
+// SupervisedACP reports whether a coordinator supervises the saved chat key,
+// running or not. A chat with no saved session is not supervised. It returns
+// ErrSessionNotFound when workspaceID has no such chat.
+func (m *Manager) SupervisedACP(workspaceID, key string) (bool, error) {
+	if m.acpSessionsDir == "" || workspaceID == "" || key == "" {
+		return false, ErrSessionNotFound
+	}
+	if err := m.requireACPWorkspace(workspaceID, key); err != nil {
+		return false, err
+	}
+	saved, err := m.readSavedACP(key)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return saved.State.Supervision != nil, nil
+}
+
+// requireACPWorkspace returns ErrSessionNotFound unless key names a chat
+// owner configured for workspaceID.
+func (m *Manager) requireACPWorkspace(workspaceID, key string) error {
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
 	if err != nil {
 		return err
@@ -237,30 +282,20 @@ func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRun
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
-	if cfg.Info.WorkspaceID != restored.WorkspaceID {
+	if cfg.Info.WorkspaceID != workspaceID {
 		return ErrSessionNotFound
 	}
-	startMu := m.startLock(key)
-	startMu.Lock()
-	defer startMu.Unlock()
-	if err := m.ensureOpen(); err != nil {
-		return err
-	}
-	data, err = os.ReadFile(m.acpSessionPath(key))
-	if err != nil {
-		return fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
-	}
+	return nil
+}
+
+func (m *Manager) readSavedACP(key string) (acpSavedSession, error) {
 	var saved acpSavedSession
-	if err := json.Unmarshal(data, &saved); err != nil {
-		return err
+	data, err := os.ReadFile(m.acpSessionPath(key))
+	if err != nil {
+		return saved, err
 	}
-	if saved.State.Supervision == nil {
-		return fmt.Errorf("%w: %q is not supervised", ErrSessionUnavailable, key)
-	}
-	if m.runningSession(m.sessions, key) != nil {
-		return nil
-	}
-	return m.startRestoredSession(ctx, restored)
+	err = json.Unmarshal(data, &saved)
+	return saved, err
 }
 
 func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
@@ -347,7 +382,7 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	}
 	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved)
 	if err != nil {
-		if code := acpErrorCode(err); code != "" {
+		if code := ACPErrorCode(err); code != "" {
 			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))
 		}
 		return err

@@ -67,15 +67,19 @@ Rules:
 - Pasted images stay attached through ACP queueing, steering, retries, and saved history;
   image-only prompts are valid, and composer attachments clear only on acceptance
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte::settlePending`).
-- A running ACP turn never rejects people's input: sends queue, and steering is used only when
-  initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
-  other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
+- A running ACP turn never rejects people's input: sends queue, and steering is used only
+  when initialize advertises it. The queue drains one prompt per `end_turn` and pauses on
+  any other stop, error, exit, or reload
+  (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
 - A submission ID that was sending when its owner stopped, or was unqueued, never runs
   again; keep both ID lists uncapped for the session's life, since evicting one would let a
   retry repeat or revive work (`internal/workspace/localruntime/acp_submissions.go`).
-- A supervised ACP chat accepts input only under the current supervision generation until a
-  takeover; cancel always passes. The supervisor's prompts start a turn or fail busy, never
-  queue, and a claim needs an empty queue so earlier input cannot run under it
+- A supervised ACP chat accepts input only under the current supervision generation until
+  a takeover; cancel always passes. Each command checks the generation under the lock that
+  guards its change. The supervisor's prompts start a turn or fail busy, never queue, and a
+  claim needs an empty queue so earlier input cannot run under it. A stale-generation reply
+  does not prove a prompt never ran: the gate precedes the retry check, so callers settle
+  outcomes from the transcript and turn records
   (`internal/workspace/localruntime/acp_supervision.go`).
 - A turn the agent starts after a steer keeps the chat busy from its first active thread
   status until the thread goes idle, even when that status arrives after the prompt completed.

@@ -484,26 +484,22 @@ func (a *ACP) Subscribe() (<-chan struct{}, func()) {
 }
 
 func (a *ACP) Command(command ACPCommand) error {
-	switch command.Type {
-	case "config", "unqueue", "resume", "permission", "elicitation":
-		// Prompts pass the same gate inside submit; cancel always passes.
-		if err := a.supervisionGate(command.Generation); err != nil {
-			return err
-		}
-	}
+	// Input commands apply the supervision gate under the lock that guards
+	// their change, so authority cannot change between check and effect.
+	// Cancel always passes.
 	switch command.Type {
 	case "supervise":
 		return a.supervise(command)
 	case "takeover":
 		return a.takeover()
 	case "config":
-		return a.configure(command.ID, command.Value)
+		return a.configure(command.ID, command.Value, command.Generation)
 	case "prompt":
 		return a.submit(command)
 	case "unqueue":
-		return a.unqueue(command.ID)
+		return a.unqueue(command.ID, command.Generation)
 	case "resume":
-		return a.resumeQueue()
+		return a.resumeQueue(command.Generation)
 	case "cancel":
 		// Stop never waits for a prompt write, steering request, or settings
 		// change; a prompt written concurrently is cancelled after its write.

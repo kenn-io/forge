@@ -138,9 +138,12 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
 	return err
 }
 
-func (a *ACP) unqueue(id string) error {
+func (a *ACP) unqueue(id string, generation uint64) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		return err
+	}
 	index := slices.IndexFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
 	if index < 0 {
 		return errors.New("message is no longer queued")
@@ -156,8 +159,12 @@ func (a *ACP) unqueue(id string) error {
 	return err
 }
 
-func (a *ACP) resumeQueue() error {
+func (a *ACP) resumeQueue(generation uint64) error {
 	a.mu.Lock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	a.state.QueuePaused = false
 	a.changedLocked()
 	a.mu.Unlock()

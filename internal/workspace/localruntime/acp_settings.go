@@ -34,10 +34,14 @@ func configOffers(option ACPConfigOption, value string) bool {
 	return false
 }
 
-func (a *ACP) configure(id, value string) error {
+func (a *ACP) configure(id, value string, generation uint64) error {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	index := slices.IndexFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool { return option.ID == id })
 	if index < 0 || !configOffers(a.state.ConfigOptions[index], value) {
 		a.mu.Unlock()

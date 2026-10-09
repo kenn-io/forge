@@ -342,6 +342,9 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		return err
+	}
 	response, ok := a.elicitations[command.ID]
 	if !ok {
 		if replay, err := a.answeredLocked(command.ID, key); replay || err != nil {
@@ -361,6 +364,9 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 func (a *ACP) answerPermission(command ACPCommand) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		return err
+	}
 	response, ok := a.permissions[command.ID]
 	if !ok {
 		if replay, err := a.answeredLocked(command.ID, command.OptionID); replay || err != nil {

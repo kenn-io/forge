@@ -3,6 +3,7 @@ package localruntime
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,7 +81,8 @@ func TestACPSupervisedPromptStartsATurnOrFails(t *testing.T) {
 	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", Generation: generation}),
 		"supervised prompts require a submission ID")
 	for _, mode := range []string{"queue", "steer"} {
-		require.Error(t, agent.Command(ACPCommand{Type: "prompt", Mode: mode, Text: "work", ID: mode, Generation: generation}), mode)
+		require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Mode: mode, Text: "work", ID: mode, Generation: generation}),
+			"supervised prompts must be sent, not queued or steered", mode)
 	}
 	require.False(t, publishedACPState(t, agent).Busy, "a rejected prompt starts nothing")
 
@@ -196,4 +198,65 @@ func TestACPSupervisionThroughTheOwner(t *testing.T) {
 	for _, message := range c.state().Messages {
 		assert.NotEqual(t, "queued", message.SubmissionID, "the unqueued input never ran")
 	}
+}
+
+func TestACPTakeoverMakesTheFormerSupervisorsCommandsStale(t *testing.T) {
+	agent, generation := supervisedACP(t)
+	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+
+	for _, command := range []ACPCommand{
+		{Type: "config", ID: "model", Value: "deep", Generation: generation},
+		{Type: "permission", ID: "request", OptionID: "allow", Generation: generation},
+		{Type: "elicitation", ID: "request", Action: "decline", Generation: generation},
+		{Type: "unqueue", ID: "queued", Generation: generation},
+		{Type: "resume", Generation: generation},
+	} {
+		require.ErrorIs(t, agent.Command(command), ErrACPStaleGeneration, command.Type)
+	}
+}
+
+// fixtureModel is the model setting the stdio fixture currently reports.
+func fixtureModel(t *testing.T, agent *ACP) string {
+	t.Helper()
+	for _, option := range publishedACPState(t, agent).ConfigOptions {
+		if option.ID == "model" {
+			return option.CurrentValue
+		}
+	}
+	require.FailNow(t, "the fixture reports no model setting")
+	return ""
+}
+
+func TestACPSettingsChangeFromAPersonAfterTakeover(t *testing.T) {
+	agent := newInProcessChat(t).start(nil)
+	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+	require.ErrorIs(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}), ErrACPSupervised)
+	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep"}))
+	assert.Equal(t, "deep", fixtureModel(t, agent))
+}
+
+// A settings change waits for the turn lock. A takeover that lands while it
+// waits makes it stale: the supervisor that sent it no longer holds the chat.
+func TestACPSettingsChangeWaitingDuringTakeoverIsStale(t *testing.T) {
+	agent := newInProcessChat(t).start(nil)
+	require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+	generation := publishedACPState(t, agent).Supervision.Generation
+	before := fixtureModel(t, agent)
+
+	agent.turnMu.Lock()
+	result := make(chan error, 1)
+	go func() {
+		result <- agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation})
+	}()
+	// Give the command time to reach the turn lock; the outcome must not
+	// depend on whether it did.
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+	agent.turnMu.Unlock()
+
+	require.ErrorIs(t, <-result, ErrACPStaleGeneration)
+	assert.Equal(t, before, fixtureModel(t, agent))
+	assert.NotEqual(t, "deep", before)
 }

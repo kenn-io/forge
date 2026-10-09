@@ -108,12 +108,6 @@ func (a *ACP) supervisionGateLocked(generation uint64) error {
 	return nil
 }
 
-func (a *ACP) supervisionGate(generation uint64) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.supervisionGateLocked(generation)
-}
-
 // supervisedPromptLocked applies the gate to a prompt and reports whether it
 // is the coordinator's. The coordinator's prompts start a turn at once, so
 // they must be identified sends.

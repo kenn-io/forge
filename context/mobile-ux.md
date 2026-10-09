@@ -4,6 +4,21 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 
 ## Core stance
 
+- Bundle the shared web UI in the native app; use the selected server only for
+  APIs, event streams, and WebSockets. Do not duplicate ACP or terminal UI in
+  React Native (`mobile/embedded-page.ts`).
+- Desktop layout is opt-in for tablets (`mobile/connection.ts::launchURL`).
+- The native shell owns system-bar and cutout spacing. Android WebView must pass
+  zeroes for those CSS safe-area insets while preserving keyboard insets
+  (`mobile/patches/react-native-webview@13.16.1.patch`).
+- Connected native views use the web UI's header without a native server bar.
+  Connection settings live in the phone menu and desktop Settings page; Android
+  Back also returns there after page history (`mobile/App.tsx`).
+- Same-server links stay in the bundled SPA and preserve WebView history so
+  Android Back returns to the previous page (`mobile/App.tsx`).
+- Native history entries carry their URL in state: Android's HTML loader
+  restores state but loses changed URLs on Back (`frontend/src/lib/stores/router.svelte.ts::nativeHistoryState`).
+
 Mobile is not the desktop app squeezed into a smaller viewport. It is a separate phone-first workflow for maintainers who need to triage, inspect, and act while holding a phone.
 
 `kenn-forge` can stay dense and information-rich, but phone density must come from hierarchy and summarization, not from tiny desktop controls, compressed split panes, or table layouts.
@@ -83,7 +98,7 @@ In code and tests, name predicates so this distinction is visible. Avoid generic
 ## Typography and sizing
 
 - Phone type comes from the `--font-size-*` scale. `frontend/src/app.css` overrides kit-ui's touch scale (under `kit-type-touch` and the `(hover: none) and (pointer: coarse)` query) with a denser phone scale: 15px body, 13px metadata, 17px titles. The larger kit scale cost too many rows on triage screens.
-- Phone text fields stay at `1rem`. iOS zooms the page when a focused field renders below 16px, so the denser scale must not reach `input`, `textarea`, or `select` (`frontend/src/app.css`, `frontend/tests/e2e-full/mobile-routes.spec.ts::expectReadableFocusList`).
+- Phone text fields stay at least `1rem`; ACP can use a larger configured size. iOS zooms the page when a focused field renders below 16px, so the denser scale must not reach `input`, `textarea`, or `select` (`frontend/src/app.css`, `frontend/tests/e2e-full/mobile-routes.spec.ts::expectReadableFocusList`).
 - Phone detail prose (descriptions, comments, markdown insets) renders at 14px (`--font-size-phone-prose`) with markdown headings on the 15px body step, so long text does not dwarf the 13px detail chrome (`frontend/src/App.svelte::.focus-layout--phone`).
 - Phone controls stay compact next to the denser type: 40px for chrome and list controls (shell menu, search, filters), 38px for detail buttons, and 32px for the header status chips (`frontend/src/app.css::--mobile-chrome-hit-target`, `frontend/src/App.svelte::--focus-detail-hit-target`, `--focus-detail-chip-height`). Larger 44-49px targets made the buttons feel clunky.
 - Phone list rows size to their content with only the hit-target floor as a minimum; fixed multi-line minimum heights waste rows (`frontend/src/lib/components/sidebar/PullItem.svelte`).
@@ -165,6 +180,9 @@ Avoid by default:
 - ACP sessions use their own chat composer and permission controls inside the phone
   session picker; never overlay terminal input controls on a chat session
   (`frontend/src/lib/components/mobile/MobileWorkspaceTerminal.svelte`).
+- Workspace layouts own the bottom device safe area. ACP composers add only
+  their normal gutter; a chat pane can also sit above other toolbars
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 
 ## Verification expectations
 

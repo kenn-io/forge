@@ -292,6 +292,40 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await mobile.screenshot({ path: testInfo.outputPath("acp-phone.png") });
       await mobileChat.getByRole("button", { name: "Allow once" }).tap();
       await expect(mobileChat.getByRole("button", { name: "Stop reply" })).toHaveCount(0);
+      // Android gesture navigation reports a bottom inset inside the viewport.
+      // The workspace shell reserves it; the composer must not reserve it again.
+      const mobileCDP = await phone.newCDPSession(mobile);
+      await mobileCDP.send("Emulation.setSafeAreaInsetsOverride", { insets: { bottom: 32 } });
+      for (const viewport of [
+        { width: 1280, height: 800 },
+        { width: 800, height: 1280 },
+      ]) {
+        await mobile.setViewportSize(viewport);
+        await expect
+          .poll(() =>
+            mobileChat.locator(".composer").evaluate((composer) => {
+              const gutter = Number.parseFloat(getComputedStyle(composer.parentElement!).paddingRight);
+              return Math.round(window.innerHeight - composer.getBoundingClientRect().bottom - gutter);
+            }),
+          )
+          .toBe(32);
+      }
+      await mobile.setViewportSize({ width: 1280, height: 800 });
+      await mobile.goto(`${origin}/terminal/${workspace.id}?desktop=1`);
+      await mobile.getByRole("tab", { name: /Workspace Chat/ }).click();
+      await expect
+        .poll(() =>
+          mobileChat.locator(".dock").evaluate((dock) => {
+            const composer = dock.querySelector(".composer")!;
+            const gutter = Number.parseFloat(getComputedStyle(dock).paddingRight);
+            return Math.round(dock.getBoundingClientRect().bottom - composer.getBoundingClientRect().bottom - gutter);
+          }),
+        )
+        .toBe(0);
+      await mobile.goto(`${origin}/m/workspaces/local/${workspace.id}`);
+      await mobileCDP.send("Emulation.setSafeAreaInsetsOverride", { insets: { bottom: 0 } });
+      await mobile.setViewportSize(devices["iPhone 13"].viewport);
+      await mobileCDP.detach();
       await mobile.getByRole("button", { name: "Chat options" }).tap();
       await mobile.getByRole("button", { name: "Stop chat Workspace Chat", exact: true }).tap();
       await expect(mobile.getByText(`Stop chat "Workspace Chat"?`)).toBeVisible();

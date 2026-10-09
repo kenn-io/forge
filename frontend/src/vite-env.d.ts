@@ -17,6 +17,7 @@ declare module "@xterm/addon-ligatures/lib/addon-ligatures.mjs" {
 }
 
 interface Window {
+  ReactNativeWebView?: { postMessage: (message: string) => void };
   __BASE_PATH__?: string;
   __KENN_FORGE_DEV_API_URL__?: string;
   __KENN_FORGE_FORCE_MOBILE_ROUTES__?: boolean;
@@ -68,3 +69,5 @@ interface Window {
     reset: () => void;
   };
 }
+
+declare const __FORGE_APP_ICON__: string;

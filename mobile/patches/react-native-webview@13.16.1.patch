@@ -1,0 +1,81 @@
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -9,6 +9,7 @@
+ import android.view.MenuItem;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.WindowInsets;
+ import android.webkit.JavascriptInterface;
+ import android.webkit.ValueCallback;
+ import android.webkit.WebChromeClient;
+@@ -17,6 +18,8 @@
+
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
++import androidx.core.graphics.Insets;
++import androidx.core.view.WindowInsetsCompat;
+ import androidx.webkit.JavaScriptReplyProxy;
+ import androidx.webkit.WebMessageCompat;
+ import androidx.webkit.WebViewCompat;
+@@ -89,6 +92,18 @@
+         super(reactContext);
+         mMessagingJSModule = ((ThemedReactContext) this.getContext()).getReactApplicationContext().getJSModule(RNCWebViewMessagingModule.class);
+         progressChangedFilter = new ProgressChangedFilter();
++    }
++
++    @Override
++    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
++        // Forge's native SafeAreaView already handles system bars and cutouts.
++        // Pass zeroes to web CSS, but keep IME updates for keyboard resizing.
++        int handledTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
++        WindowInsetsCompat remaining = new WindowInsetsCompat.Builder(WindowInsetsCompat.toWindowInsetsCompat(insets))
++                .setInsets(handledTypes, Insets.NONE)
++                .setInsetsIgnoringVisibility(handledTypes, Insets.NONE)
++                .build();
++        return super.onApplyWindowInsets(remaining.toWindowInsets());
+     }
+
+     public void setBasicAuthCredential(RNCBasicAuthCredential credential) {
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -90,8 +90,12 @@
+       reactWebView.callInjectedJavaScriptBeforeContentLoaded();
+     }
+
+-    @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, String url) {
++    @TargetApi(Build.VERSION_CODES.N)
++    @Override
++    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++        final String url = request.getUrl().toString();
++        final WritableMap event = createWebViewEvent(view, url);
++        event.putBoolean("isTopFrame", request.isForMainFrame());
+         final RNCWebView rncWebView = (RNCWebView) view;
+         final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
+
+@@ -100,7 +104,6 @@
+             final double lockIdentifier = lock.first;
+             final AtomicReference<RNCWebViewModuleImpl.ShouldOverrideUrlLoadingLock.ShouldOverrideCallbackState> lockObject = lock.second;
+
+-            final WritableMap event = createWebViewEvent(view, url);
+             event.putDouble("lockIdentifier", lockIdentifier);
+             rncWebView.dispatchDirectShouldStartLoadWithRequest(event);
+
+@@ -134,16 +137,9 @@
+             int reactTag = RNCWebViewWrapper.getReactTagFromWebView(view);
+             UIManagerHelper.getEventDispatcherForReactTag((ReactContext) view.getContext(), reactTag).dispatchEvent(new TopShouldStartLoadWithRequestEvent(
+                     reactTag,
+-                    createWebViewEvent(view, url)));
++                    event));
+             return true;
+         }
+-    }
+-
+-    @TargetApi(Build.VERSION_CODES.N)
+-    @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+-        final String url = request.getUrl().toString();
+-        return this.shouldOverrideUrlLoading(view, url);
+     }
+
+     @Override

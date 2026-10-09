@@ -1,0 +1,40 @@
+{
+  "name": "kenn-forge-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Elastic-2.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "node node_modules/expo/bin/cli start",
+    "android": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:android",
+    "ios": "node scripts/build-web.mjs && node node_modules/expo/bin/cli run:ios",
+    "check": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --experimental-strip-types --test *.test.ts && node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts",
+    "build:web": "node scripts/build-web.mjs"
+  },
+  "dependencies": {
+    "expo": "57.0.26",
+    "expo-asset": "~57.0.5",
+    "expo-build-properties": "~57.0.22",
+    "expo-file-system": "~57.0.5",
+    "expo-secure-store": "~57.0.4",
+    "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
+    "react": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-webview": "13.16.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "@types/react": "~19.2.0",
+    "@types/react-test-renderer": "19.1.0",
+    "react-test-renderer": "19.2.3",
+    "typescript": "6.0.3",
+    "vite-plugin-singlefile": "^2.3.3"
+  },
+  "packageManager": "bun@1.4.0",
+  "patchedDependencies": {
+    "react-native-webview@13.16.1": "patches/react-native-webview@13.16.1.patch"
+  }
+}

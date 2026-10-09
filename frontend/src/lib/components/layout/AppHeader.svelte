@@ -85,7 +85,7 @@
     };
   });
 
-  const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
+  const appIconSrc = __FORGE_APP_ICON__;
 
   const hasSidebarStrip = $derived(
     getPage() === "issues"

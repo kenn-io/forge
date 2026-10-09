@@ -223,7 +223,7 @@
     doc: null,
   });
   let cleanupFullAppShell: (() => void) | undefined;
-  const appIconSrc = `${getBasePath().replace(/\/$/, "")}/favicon.svg`;
+  const appIconSrc = __FORGE_APP_ICON__;
 
   const docsAPI = createDocsAPI();
   const onboardingActive = $derived(

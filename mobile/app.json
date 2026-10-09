@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "kenn-forge",
+    "icon": "./icon.png",
+    "slug": "kenn-forge-mobile",
+    "version": "0.1.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "io.kenn.forge.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoadsInWebContent": true
+        },
+        "NSLocalNetworkUsageDescription": "Connect to your Forge server on your local network.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "io.kenn.forge.mobile",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": ["expo-secure-store", ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]]
+  }
+}

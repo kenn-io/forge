@@ -526,13 +526,23 @@ function rememberWorkspaceRoute(): void {
 // Seed the cache when the app loads directly on a workspace URL.
 rememberWorkspaceRoute();
 
+function nativeHistoryState(data: unknown, url?: string | URL | null): unknown {
+  if (!window.ReactNativeWebView) return data;
+  // Android's loadDataWithBaseURL restores entry state but not pushState URLs.
+  return {
+    ...(typeof data === "object" && data !== null ? data : {}),
+    __forgeURL: new URL(url ?? window.location.href, window.location.href).href,
+  };
+}
+
 if (typeof window !== "undefined") {
   const originalReplaceState = history.replaceState.bind(history);
   history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
-    originalReplaceState(data, unused, url);
+    originalReplaceState(nativeHistoryState(data, url), unused, url);
     rememberActivityRoute();
     rememberWorkspaceRoute();
   }) as History["replaceState"];
+  if (window.ReactNativeWebView) history.replaceState(history.state, "", window.location.href);
 }
 
 export function getRoute(): Route {
@@ -556,7 +566,7 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
   rememberActivityRoute();
   rememberWorkspaceRoute();
   const fullPath = basePrefix + path;
-  history.pushState(state ?? null, "", fullPath);
+  history.pushState(nativeHistoryState(state ?? null, fullPath), "", fullPath);
   route = parseRoute(fullPath);
   restoreMissingActivityFilters();
   // Record the workspace destination too: leaving it via browser
@@ -622,6 +632,9 @@ export function replaceUrl(path: string, state?: Record<string, unknown>): void 
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
+    if (window.ReactNativeWebView && typeof history.state?.__forgeURL === "string") {
+      history.replaceState(history.state, "", history.state.__forgeURL);
+    }
     route = parseRoute(currentLocationPath());
     restoreMissingActivityFilters();
     rememberActivityRoute();

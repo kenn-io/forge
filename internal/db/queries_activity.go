@@ -861,11 +861,13 @@ func (d *DB) ListActivityAuthors(
 			      )` + notificationScope
 	}
 
+	// One candidate per parent is enough: only its latest activity can affect
+	// author eligibility, ordering, or casing. Avoid ranking every ledger event.
 	query := fmt.Sprintf(`
 		WITH candidates AS (
 			SELECT r.id AS repo_id, r.platform, r.platform_host, r.owner AS repo_owner,
 			       r.name AS repo_name, r.repo_path_key,
-			       p.author, p.created_at
+			       p.author, %[3]s AS created_at
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -877,7 +879,7 @@ func (d *DB) ListActivityAuthors(
 			)
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       i.author, i.created_at
+			       i.author, %[4]s
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -887,60 +889,6 @@ func (d *DB) ListActivityAuthors(
 			      AND ai.item_number = i.number
 			      AND ai.lifecycle_state = 'removed_upstream'
 			)
-			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       p.author, e.created_at
-			FROM forge_mr_events e
-			JOIN forge_merge_requests p ON e.merge_request_id = p.id
-			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE e.event_type IN ('issue_comment', 'review', 'commit', 'force_push', 'reopened')
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = p.repo_id
-			        AND ai.item_type = 'merge_request'
-			        AND ai.item_number = p.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       i.author, e.created_at
-			FROM forge_issue_events e
-			JOIN forge_issues i ON e.issue_id = i.id
-			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE e.event_type IN ('issue_comment', 'reopened')
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = i.repo_id
-			        AND ai.item_type = 'issue'
-			        AND ai.item_number = i.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       p.author, MAX(COALESCE(p.merged_at, p.closed_at), COALESCE(p.closed_at, p.merged_at))
-			FROM forge_merge_requests p
-			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE (p.merged_at IS NOT NULL OR p.closed_at IS NOT NULL)
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = p.repo_id
-			        AND ai.item_type = 'merge_request'
-			        AND ai.item_number = p.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
-			       i.author, i.closed_at
-			FROM forge_issues i
-			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE i.closed_at IS NOT NULL
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = i.repo_id
-			        AND ai.item_type = 'issue'
-			        AND ai.item_number = i.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
 			%[1]s
 		), scoped AS (
 			SELECT author, created_at
@@ -961,6 +909,8 @@ func (d *DB) ListActivityAuthors(
 		ORDER BY last_seen DESC, LOWER(author), author`,
 		notificationUnion,
 		strings.Join(whereClauses, " AND "),
+		prActivityAtExpr("p"),
+		issueActivityAtExpr("i"),
 	)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args))

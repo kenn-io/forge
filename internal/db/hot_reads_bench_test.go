@@ -184,6 +184,10 @@ func BenchmarkHotReads(b *testing.B) {
 			_, err := d.ListActivity(ctx, ListActivityOpts{Limit: 50, Since: &windowStart})
 			return err
 		}},
+		{name: "ActivityAuthorsWindowed", run: func(d *DB) error {
+			_, err := d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{Since: &windowStart})
+			return err
+		}},
 	}
 	for _, read := range reads {
 		b.Run(read.name, func(b *testing.B) {

@@ -211,8 +211,6 @@ func (s *Server) wireHandlers() {
 	}
 	s.telemetryapi = &telemetryapi.Handlers{
 		Telemetry: s.telemetry,
-		DB:        s.db,
-		Now:       &s.now,
 	}
 	s.activityapi.DefaultPlatformHost = s.settingsapi.DefaultPlatformHost
 	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync

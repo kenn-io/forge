@@ -1,12 +1,14 @@
 package telemetry
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/kit/telemetry/posthog"
 )
 
 type capturedEvent struct {
@@ -22,6 +24,10 @@ type fakeKitClient struct {
 func (f *fakeKitClient) Capture(event string, properties map[string]any) error {
 	f.captures = append(f.captures, capturedEvent{event: event, properties: properties})
 	return nil
+}
+
+func (f *fakeKitClient) Report(_ context.Context, event string, properties map[string]any) (posthog.Status, error) {
+	return posthog.StatusQueued, f.Capture(event, properties)
 }
 
 func (f *fakeKitClient) Close() error {

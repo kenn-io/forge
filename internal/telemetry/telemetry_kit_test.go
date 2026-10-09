@@ -3,6 +3,7 @@
 package telemetry
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 )
 
 // swapKitReporter replaces newKitReporter for the test and restores it after.
-func swapKitReporter(t *testing.T, factory func(posthog.Options, ...posthog.Option) (posthog.Client, error)) {
+func swapKitReporter(t *testing.T, factory func(posthog.Options, ...posthog.Option) (Client, error)) {
 	t.Helper()
 	original := newKitReporter
 	newKitReporter = factory
@@ -27,14 +28,14 @@ func TestNewReporterHandsKitTheStoredInstallIdentity(t *testing.T) {
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
 	var built []posthog.Options
-	swapKitReporter(t, func(opts posthog.Options, _ ...posthog.Option) (posthog.Client, error) {
+	swapKitReporter(t, func(opts posthog.Options, _ ...posthog.Option) (Client, error) {
 		built = append(built, opts)
 		return &fakeKitClient{}, nil
 	})
 	database := dbtest.Open(t)
 	created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
-	_, err := newReporter(Options{Database: database}, created)
+	_, err := newReporter(Options{Database: database, DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, created)
 	require.NoError(err)
 
 	storedID, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
@@ -85,8 +86,13 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		assert.NotContains(properties, "repo")
 	}
 	for _, invalid := range []any{nil, 7, "owner/repo", ""} {
-		_, valid := ScreenName(invalid)
+		_, valid := screenFilter(invalid)
 		assert.False(valid)
+	}
+	for _, duration := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
+		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
+		require.NoError(err)
+		assert.Equal(duration, properties["duration_bucket"])
 	}
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",

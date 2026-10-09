@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/kit/telemetry/posthog"
 )
 
 func TestNotificationLoopStopWaitsForInFlightRun(t *testing.T) {
@@ -149,6 +150,10 @@ func (f *fakeTelemetryClient) Capture(event string, properties map[string]any) e
 
 func (f *fakeTelemetryClient) Close() error  { return nil }
 func (f *fakeTelemetryClient) Enabled() bool { return true }
+
+func (f *fakeTelemetryClient) Report(_ context.Context, event string, properties map[string]any) (posthog.Status, error) {
+	return posthog.StatusQueued, f.Capture(event, properties)
+}
 
 func (f *fakeTelemetryClient) repoCounts() []any {
 	f.mu.Lock()

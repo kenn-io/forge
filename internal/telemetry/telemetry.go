@@ -30,17 +30,18 @@ const HeartbeatInterval = 24 * time.Hour
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
-var screenFilter = posthog.AllowStringValues(
+var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
 	"workspaces", "terminal", "workspace-item", "settings", "project-intake",
 	"design-system", "onboarding",
-)
+}
 
-// ScreenName uses the reporter's allowlist for the daily claim too.
-func ScreenName(value any) (string, bool) {
-	filtered, ok := screenFilter(value)
-	name, _ := filtered.(string)
-	return name, ok
+var screenFilter = posthog.AllowStringValues(screenNames...)
+
+var durationFilter = posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h")
+
+func SessionDuration(value any) (any, bool) {
+	return durationFilter(value)
 }
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
@@ -52,33 +53,35 @@ var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 		"surface": posthog.AllowStringValues("web"),
 	},
 	"session_ended": {
-		"surface": posthog.AllowStringValues("web"),
-		"duration_bucket": posthog.AllowStringValues(
-			"under_1m", "1_to_5m", "5_to_30m", "30m_to_2h", "over_2h",
-		),
+		"surface":         posthog.AllowStringValues("web"),
+		"duration_bucket": durationFilter,
 	},
 	"daemon_active": {
 		"repo_count": posthog.AllowNumber,
 	},
 }
 
-type Client = posthog.Client
+type Client interface {
+	posthog.Client
+	Report(context.Context, string, map[string]any) (posthog.Status, error)
+}
 
 // Reporter routes each event to the kit reporter for its source, since kit
 // fixes the source property per reporter.
 type Reporter struct {
-	daemon  posthog.Client
-	backend posthog.Client
+	daemon  Client
+	backend Client
 }
 
 type Options struct {
-	Database *db.DB
-	Version  string
-	Commit   string
+	Database        *db.DB
+	DailyClaimsPath string
+	Version         string
+	Commit          string
 }
 
 // newKitReporter builds one kit reporter; tests replace it.
-var newKitReporter = func(opts posthog.Options, options ...posthog.Option) (posthog.Client, error) {
+var newKitReporter = func(opts posthog.Options, options ...posthog.Option) (Client, error) {
 	return posthog.NewReporter(opts, options...)
 }
 
@@ -119,6 +122,9 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := initializeDailyClaims(opts.Database, distinctID, opts.DailyClaimsPath); err != nil {
+		return nil, err
+	}
 
 	base := posthog.Options{
 		APIKey:      postHogAPIKey,
@@ -138,7 +144,8 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 	backendOpts := base
 	backendOpts.Source = "backend"
-	backend, err := newKitReporter(backendOpts, kitAllowedEvents("backend")...)
+	backendOptions := append(kitAllowedEvents("backend"), posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
+	backend, err := newKitReporter(backendOpts, backendOptions...)
 	if err != nil {
 		return nil, errors.Join(err, daemon.Close())
 	}
@@ -154,7 +161,11 @@ func kitAllowedEvents(source string) []posthog.Option {
 		}
 		allowed := make([]posthog.AllowedProperty, 0, len(properties))
 		for name, filter := range properties {
-			allowed = append(allowed, posthog.AllowProperty(name, filter))
+			if name == "screen" || name == "duration_bucket" {
+				allowed = append(allowed, posthog.RequireProperty(name, filter))
+			} else {
+				allowed = append(allowed, posthog.AllowProperty(name, filter))
+			}
 		}
 		options = append(options, posthog.WithAllowedEvent(event, allowed...))
 	}
@@ -182,16 +193,23 @@ func (r *Reporter) Enabled() bool {
 }
 
 func (r *Reporter) Capture(event string, properties map[string]any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), posthog.ShutdownTimeout)
+	defer cancel()
+	_, err := r.Report(ctx, event, properties)
+	return err
+}
+
+func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
 	if !r.Enabled() {
-		return nil
+		return posthog.StatusDisabled, nil
 	}
 
 	event = strings.TrimSpace(event)
 	if event == "" {
-		return errors.New("telemetry event is required")
+		return "", errors.New("telemetry event is required")
 	}
 	if !EventAllowed(event) {
-		return ErrUnsupportedEvent
+		return "", ErrUnsupportedEvent
 	}
 
 	client := r.backend
@@ -199,9 +217,9 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 		client = r.daemon
 	}
 	if client == nil {
-		return nil
+		return posthog.StatusDisabled, nil
 	}
-	return client.Capture(event, properties)
+	return client.Report(ctx, event, properties)
 }
 
 func sourceForEvent(event string) string {

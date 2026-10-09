@@ -822,9 +822,10 @@ func run(opts serve.Options) error {
 	}
 
 	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
-		Database: database,
-		Version:  version,
-		Commit:   commit,
+		Database:        database,
+		DailyClaimsPath: filepath.Join(cfg.DataDir, "telemetry-daily.json"),
+		Version:         version,
+		Commit:          commit,
 	})
 	if telemetryReporter.Enabled() {
 		repoCount := func() int {

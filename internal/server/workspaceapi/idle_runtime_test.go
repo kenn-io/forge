@@ -221,7 +221,8 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	report("claude", "other-conversation", "SessionEnd")
 	report("claude", "saved-conversation", "UserPromptSubmit")
 	report("claude", "saved-conversation", "Stop")
-	report("gemini", "no-resume", "Stop")
+	// Hermes reports hooks, and it has no interactive resume command.
+	report("hermes", "no-resume", "Stop")
 	stopIdle()
 	assert.True(running(agent.Key), "an agent that cannot be resumed keeps running")
 	report("claude", "saved-conversation", "PermissionRequest")

@@ -142,6 +142,7 @@ Rules:
   state untouched and otherwise maps to `done`; only `elicitation_dialog` and
   user-input tools put a session into `input`
   (`internal/agentactivity/store.go::Store.HandleEvent`).
+- Only Stop refreshes pending background work and scheduled wakeups; every other event preserves it for the same conversation and runtime (`internal/agentactivity/store.go::Store.HandleEvent`).
 - Reports are reconciled against persisted and live runtime session keys
   after startup restoration and after every missing-tmux prune, so a report
   whose runtime row was pruned does not outlive it
@@ -256,6 +257,8 @@ Workspace deletion is intentionally conservative.
 - Only after a clean preflight may runtime sessions and shells be stopped.
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
+- Deletion clears activity reports and stop marks for stored runtimes, including
+  parked sessions absent from the live manager inventory.
 - A live worktree registration at the persisted path in the resolved repository
   authorizes cleanup without an ownership marker; a same-repository replacement
   is the workspace, but a symlink to another worktree is not.
@@ -326,6 +329,49 @@ create a local process, PTY, or durable transport session
   not starve later sessions (`internal/server/workspaceapi/lifecycle.go::Handler.restoreRuntimeSessions`).
 - Explicit session stop shares recovery synchronization and forgets the saved
   row before releasing it (`internal/server/workspaceapi/routes_handlers.go::Handler.stopWorkspaceRuntimeSession`).
+- Idle stop has one owner, `idleRuntimes` (`internal/server/workspaceapi/idle_runtime.go`):
+  every stop and resume goes through it, as does every stop mark except the removal when
+  a runtime or workspace is deleted, and callers only report a page view
+  or typing, or ask whether a row is stopped. Rule: a ptyowner workspace's runtimes stop
+  only after `workspaces.idle_runtime_stop_hours` with no page view and no typing,
+  counted from the latest of last use, workspace creation and runtime creation.
+  `Handler.idle` holds the owner only while the setting is on; one loop
+  (`Handler.runIdle`, woken by `ApplyConfig`) and startup switch it, so with the setting
+  off nothing is recorded, saved or read. Turning it on starts every workspace's clock
+  then. Turning it off, at runtime or startup, marks stopped agents and ACP chats
+  recovery-pending, as after a reboot (a stopped shell reads as `error`), and removes the
+  stop marks and the saved clock (`localruntime.Manager.ClearIdleState`). While on, the
+  5-minute pass and shutdown save last use per workspace beside the stop marks
+  (`localruntime.Manager.SaveIdleActivity`) and startup loads it, so a restart keeps idle
+  time; the pass gives a workspace with none saved a last use of now. A page
+  view is the showing page's `viewing=true` runtime read. Typing is terminal input beyond
+  automatic replies, a submitted agent message, or an ACP
+  prompt, permission or elicitation reply (`localruntime.Manager.SetInputObserver`), or
+  binary input beyond automatic replies on the workspace terminal socket (`terminal.Handler.Typed`). Socket opens,
+  reconnects, focus, heartbeats, history and other reads are neither.
+- Eligibility lives in `idleRuntimes.stoppable`: plain shells; agents with no working
+  report under the runtime key, no pending background work or scheduled wakeups in their
+  reports, and a resume path (hook agents `done`, `input` or
+  `approval`, or `idle` after a SessionStart whose `source` is `resume` or `fork`
+  (`agentactivity.Report.Continued`), on an available target whose executable can run; ACP chats with
+  `loadSession`; owners started by an older build record no
+  `LoadSession` and lack `ACP.Park`, so they keep running per the no-compatibility rule
+  above). Command and tmux sessions never stop. Stopping
+  writes the mark first, marks attachments as a recoverable detach, stops ACP owners
+  through `ACP.Park` and kills other owner trees, so the saved conversation and row stay;
+  an owner that survives a failed stop is unmarked and reattached. The pass holds only
+  the workspace's setup admission, with a bounded deadline per stop. Each stop uses the
+  live timeout, so a reload affects a pass already underway.
+- The pty-owner workspace terminal stops while idle only with no claimed socket; claim its
+  slot through the stop without holding the shared lock. It stays ready and starts a fresh
+  shell on attach, without a stop mark (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).
+- Only a page view resumes a marked row whose owner is gone (`ptyowner.Client.Gone`):
+  agents resume their conversation, shells start fresh under their key, ACP chats
+  reload, in the viewing read's one recovery pass. A failed resume clears
+  the mark and marks the row recovery-pending, so the maintenance pass retries an agent,
+  each read retries an ACP chat, and a shell reads as `error`. Sockets, other
+  reads and MCP list
+  it as `parked`; startup recovery skips it and drops marks of forgotten rows.
 - Removal of a created runtime backend is attempted when launch or persistence
   fails; it is best-effort, not retried, and a backend that survives a failed
   compensation is unrecorded until startup reaping. Reaping must protect stored

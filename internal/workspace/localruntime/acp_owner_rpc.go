@@ -27,6 +27,8 @@ type acpOwnerRPC struct {
 	stopped chan struct{}
 	stopErr error
 	once    sync.Once
+	// park keeps the saved session for a replacement owner.
+	park bool
 }
 
 func (o *acpOwnerRPC) Snapshot(_ struct{}, reply *ACPUpdate) error {
@@ -96,7 +98,18 @@ func (o *acpOwnerRPC) Command(command ACPCommand, reply *ACPCommandReply) error 
 func (o *acpOwnerRPC) Bind(binding ACPMCPBinding, _ *struct{}) error { return o.proxy.Bind(binding) }
 
 func (o *acpOwnerRPC) Stop(_ struct{}, _ *struct{}) error {
+	return o.shutdown(false)
+}
+
+// Park stops the agent like Stop but keeps its saved session, so reopening
+// the workspace loads it into a new owner.
+func (o *acpOwnerRPC) Park(_ struct{}, _ *struct{}) error {
+	return o.shutdown(true)
+}
+
+func (o *acpOwnerRPC) shutdown(park bool) error {
 	o.once.Do(func() {
+		o.park = park
 		close(o.stop)
 	})
 	<-o.stopped

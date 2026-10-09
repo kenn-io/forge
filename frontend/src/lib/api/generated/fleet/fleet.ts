@@ -82,6 +82,7 @@ import type {
   GetFleetWorkspaceFilesPathParameters,
   GetFleetWorkspacePathParameters,
   GetFleetWorkspaceRuntimeDefaultOne,
+  GetFleetWorkspaceRuntimeParams,
   GetFleetWorkspaceRuntimePathParameters,
   GetFleetWorkspaceRuntimeSessionAttachSpecDefaultOne,
   GetFleetWorkspaceRuntimeSessionAttachSpecPathParameters,
@@ -1854,8 +1855,23 @@ export const revealFleetWorkspace = async (
   });
 };
 
-export const getGetFleetWorkspaceRuntimeUrl = ({ hostKey, id }: GetFleetWorkspaceRuntimePathParameters) => {
-  return `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/runtime`;
+export const getGetFleetWorkspaceRuntimeUrl = (
+  { hostKey, id }: GetFleetWorkspaceRuntimePathParameters,
+  params?: GetFleetWorkspaceRuntimeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/runtime?${stringifiedParams}`
+    : `/fleet/hosts/${encodeURIComponent(String(hostKey))}/workspaces/${encodeURIComponent(String(id))}/runtime`;
 };
 
 /**
@@ -1863,9 +1879,10 @@ export const getGetFleetWorkspaceRuntimeUrl = ({ hostKey, id }: GetFleetWorkspac
  */
 export const getFleetWorkspaceRuntime = async (
   { hostKey, id }: GetFleetWorkspaceRuntimePathParameters,
+  params?: GetFleetWorkspaceRuntimeParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<GetFleetWorkspaceRuntimeDefaultOne> => {
-  return orvalFetch<GetFleetWorkspaceRuntimeDefaultOne>(getGetFleetWorkspaceRuntimeUrl({ hostKey, id }), {
+  return orvalFetch<GetFleetWorkspaceRuntimeDefaultOne>(getGetFleetWorkspaceRuntimeUrl({ hostKey, id }, params), {
     ...options,
     method: "GET",
   });

@@ -3,11 +3,13 @@ package workspaceapi
 import (
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
 
 	"github.com/coder/websocket"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -145,40 +147,58 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	}
 }
 
-// Reconnect only this workspace. Failed restoration leaves its stored identity
-// available for another attempt instead of silently creating a fresh chat.
-func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd string) {
+// Reconnect this workspace's ACP chats. Failed restoration leaves its stored
+// identity available for another attempt instead of silently creating a fresh
+// chat. Runtimes idle stop stopped wait for a page view, which resumes them in
+// this same pass.
+func (s *Handler) restoreWorkspaceACP(ctx context.Context, ws *db.Workspace, viewing bool) {
 	s.runtimeRestoreMu.Lock()
 	defer s.runtimeRestoreMu.Unlock()
-	done, admitted := s.beginWorkspaceSetup(workspaceID)
+	done, admitted := s.beginWorkspaceSetup(ws.ID)
 	if !admitted {
 		return
 	}
-	defer s.finishWorkspaceSetup(workspaceID, done)
-	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, workspaceID)
+	defer s.finishWorkspaceSetup(ws.ID, done)
+	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, ws.ID)
 	if err != nil {
 		slog.Warn("list ACP workspaces for reconnect", "err", err)
 		return
 	}
+	idle := s.idle.Load()
 	for _, item := range stored {
+		if (viewing || item.Kind == string(localruntime.LaunchTargetACP)) && idle.Stopped(ctx, item) {
+			if !viewing {
+				continue
+			}
+			if err := idle.Resume(ctx, ws, item); err != nil {
+				slog.Warn("resume stopped workspace runtime", "workspace_id", ws.ID, "session_key", item.SessionKey, "err", err)
+			}
+			continue
+		}
 		if item.Kind != string(localruntime.LaunchTargetACP) {
 			continue
 		}
-		err := s.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{{WorkspaceID: workspaceID, SessionKey: item.SessionKey, TargetKey: item.TargetKey, Label: item.Label, Kind: localruntime.LaunchTargetACP, TmuxSession: item.TmuxSession, CWD: cwd, CreatedAt: item.CreatedAt}})
-		if err != nil {
-			slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "session_key", item.SessionKey, "err", err)
+		if err := s.restoreACPRow(ctx, ws.ID, ws.WorktreePath, item); err != nil {
+			slog.Warn("reconnect ACP workspace", "workspace_id", ws.ID, "session_key", item.SessionKey, "err", err)
+		}
+	}
+}
+
+// restoreACPRow reconnects or reloads one stored ACP chat and records a
+// replacement backend.
+func (s *Handler) restoreACPRow(ctx context.Context, workspaceID, cwd string, item db.WorkspaceRuntimeSession) error {
+	if err := s.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restoredRuntime(item, cwd)}); err != nil {
+		return err
+	}
+	for _, info := range s.runtime.ListSessions(workspaceID) {
+		if info.Key != item.SessionKey || info.TmuxSession == item.TmuxSession {
 			continue
 		}
-		for _, info := range s.runtime.ListSessions(workspaceID) {
-			if info.Key != item.SessionKey || info.TmuxSession == item.TmuxSession {
-				continue
-			}
-			info.DisplayRegion = item.DisplayRegion
-			if err := s.recordRuntimeSession(ctx, workspaceID, info, item.Scope); err != nil {
-				slog.Warn("record resumed ACP backend", "session_key", item.SessionKey, "err", err)
-				return
-			}
+		info.DisplayRegion = item.DisplayRegion
+		if err := s.recordRuntimeSession(ctx, workspaceID, info, item.Scope); err != nil {
+			return fmt.Errorf("record resumed ACP backend: %w", err)
 		}
-		s.setRuntimeRecoveryPending(item.SessionKey, false)
 	}
+	s.setRuntimeRecoveryPending(item.SessionKey, false)
+	return nil
 }

@@ -34,19 +34,36 @@ func (h *Handler) resumeWorkspaceAgent(ctx context.Context, stored db.WorkspaceR
 	if err != nil {
 		return err
 	}
-	session.DisplayRegion = stored.DisplayRegion
-	if err := h.recordRuntimeSession(ctx, restored.WorkspaceID, session, stored.Scope); err != nil {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		if cleanupErr := h.runtime.RollbackLaunch(cleanupCtx, session); cleanupErr != nil {
-			slog.Warn("roll back resumed agent", "session_key", session.Key, "err", cleanupErr)
-		}
+	if err := h.recordRestartedRuntime(ctx, stored, session); err != nil {
 		return err
 	}
 	h.setRuntimeRecoveryPending(session.Key, false)
 	h.forgetRecordedRuntimeSessionIfExited(ctx, session)
 	slog.Info("resumed workspace agent", "workspace_id", session.WorkspaceID, "target_key", session.TargetKey)
 	return nil
+}
+
+// recordRestartedRuntime records a runtime restarted under a stored row's key,
+// or stops it when the record fails.
+func (h *Handler) recordRestartedRuntime(ctx context.Context, stored db.WorkspaceRuntimeSession, session localruntime.SessionInfo) error {
+	session.DisplayRegion = stored.DisplayRegion
+	if err := h.recordRuntimeSession(ctx, stored.WorkspaceID, session, stored.Scope); err != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if cleanupErr := h.runtime.RollbackLaunch(cleanupCtx, session); cleanupErr != nil {
+			slog.Warn("roll back restarted runtime", "session_key", session.Key, "err", cleanupErr)
+		}
+		return err
+	}
+	return nil
+}
+
+// restoredRuntime describes a stored row for the runtime manager.
+func restoredRuntime(stored db.WorkspaceRuntimeSession, cwd string) localruntime.RestoredRuntimeSession {
+	return localruntime.RestoredRuntimeSession{
+		WorkspaceID: stored.WorkspaceID, SessionKey: stored.SessionKey, TargetKey: stored.TargetKey, Label: stored.Label,
+		Kind: localruntime.LaunchTargetKind(stored.Kind), TmuxSession: stored.TmuxSession, CWD: cwd, CreatedAt: stored.CreatedAt,
+	}
 }
 
 // Restore tmux base terminals before agents create new tmux sessions. Otherwise

@@ -344,6 +344,8 @@ func newInitialMessagePTYOwner() *initialMessagePTYOwner {
 	}
 }
 
+func (*initialMessagePTYOwner) Gone(context.Context, string) bool { return false }
+
 func (o *initialMessagePTYOwner) Attach(
 	_ context.Context,
 	session string,

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -17,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/systemclipboard"
+	"go.kenn.io/forge/internal/terminal"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -126,6 +128,7 @@ type Handler struct {
 	config          ConfigSnapshot
 	workspaces      *workspace.Manager
 	runtime         *localruntime.Manager
+	terminal        *terminal.Handler
 	clipboard       systemclipboard.Writer
 	pasteImages     *terminalpaste.Store
 	agentActivity   *agentactivity.Store
@@ -153,6 +156,8 @@ type Handler struct {
 	workspacePushedHeadObserver    *workspace.PushedHeadObserver
 	workspaceDiffCache             *workspaceDiffCache
 	tmuxActivity                   *tmuxActivityTracker
+	idle                           atomic.Pointer[idleRuntimes] // nil while idle stop is off
+	idleWake                       chan struct{}
 	workspaceEnrichmentMu          sync.Mutex
 	workspaceEnrichmentCache       map[string]workspaceEnrichmentCacheEntry
 	workspaceEnrichmentInFlight    map[string]uint64
@@ -265,6 +270,10 @@ func New(deps Deps) *Handler {
 		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(
 			deps.DB, monitorOptions,
 		)
+	}
+	h.idleWake = make(chan struct{}, 1)
+	if h.runtime != nil {
+		h.runtime.SetInputObserver(func(workspaceID string) { h.idle.Load().Typed(workspaceID) })
 	}
 	h.workspaceDiffCache = newWorkspaceDiffCache(lifecycleCtx, workspaceDiffCacheDeps{
 		onReady: func(workspaceID string, revision uint64, version string) {

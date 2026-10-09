@@ -44,13 +44,54 @@ func TestStoreTracksHookLifecycleByRuntimeSession(t *testing.T) {
 	require.True(ok)
 	assert.Equal(StateInput, snapshot.State)
 
-	reportHook(t, store, "runtime-a", map[string]any{
-		"session_id": "agent-a", "cwd": workspace,
-		"hook_event_name": "Stop",
-	})
-	snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
-	require.True(ok)
-	assert.Equal(StateDone, snapshot.State)
+	for _, tc := range []struct {
+		name       string
+		background []any
+		crons      []any
+		pending    bool
+	}{
+		{name: "background task", background: []any{map[string]any{"id": "task-1", "type": "shell", "status": "running"}}, pending: true},
+		{name: "scheduled wakeup", crons: []any{map[string]any{"id": "cron-1", "schedule": "* * * * *", "recurring": true}}, pending: true},
+		{name: "empty arrays", background: []any{}, crons: []any{}},
+		{name: "absent arrays"},
+	} {
+		hook := map[string]any{"session_id": "agent-a", "cwd": workspace, "hook_event_name": "Stop"}
+		if tc.background != nil {
+			hook["background_tasks"] = tc.background
+		}
+		if tc.crons != nil {
+			hook["session_crons"] = tc.crons
+		}
+		reportHook(t, store, "runtime-a", hook)
+		snapshot, ok = store.SnapshotForWorkspace(workspace, []string{"runtime-a"})
+		require.True(ok)
+		assert.Equal(StateDone, snapshot.State, tc.name)
+		reports := store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name)
+		reportHook(t, store, "runtime-a", map[string]any{
+			"session_id": "agent-a", "cwd": workspace,
+			"hook_event_name": "Notification", "notification_type": "idle_prompt",
+		})
+		reports = store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name+" after idle prompt")
+		reportHook(t, store, "runtime-a", map[string]any{
+			"session_id": "agent-a", "cwd": workspace,
+			"hook_event_name": "UserPromptSubmit",
+		})
+		reports = store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name+" after new prompt")
+		reportHook(t, store, "runtime-a", map[string]any{
+			"session_id": "agent-a", "cwd": workspace,
+			"hook_event_name": "PermissionRequest",
+		})
+		reports = store.LiveReportsForWorkspace(workspace, []string{"runtime-a"})
+		require.Len(reports, 1)
+		assert.Equal(StateApproval, reports[0].State, tc.name)
+		assert.Equal(tc.pending, reports[0].PendingWork, tc.name+" while awaiting approval")
+	}
 
 	reportHook(t, store, "runtime-a", map[string]any{
 		"session_id": "agent-a", "cwd": workspace,
@@ -501,4 +542,16 @@ func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
 	reports = store.LiveReportsForWorkspace(cwd, []string{"other-runtime"})
 	require.Len(t, reports, 1)
 	assert.Equal(t, StateWorking, reports[0].State)
+}
+
+func TestSessionStartSourceMarksContinuedConversation(t *testing.T) {
+	t.Parallel()
+	for source, continued := range map[string]bool{"resume": true, "fork": true, "compact": false, "startup": false, "clear": false, "": false} {
+		store := NewStore(t.TempDir())
+		worktree := t.TempDir()
+		require.NoError(t, store.HandleEvent("claude", HookEvent{SessionID: "agent-1", CWD: worktree, HookEventName: "SessionStart", Source: source}, "runtime-1"))
+		reports := store.LiveReportsForWorkspace(worktree, []string{"runtime-1"})
+		require.Len(t, reports, 1)
+		assert.Equal(t, continued, reports[0].Continued, "source %q", source)
+	}
 }

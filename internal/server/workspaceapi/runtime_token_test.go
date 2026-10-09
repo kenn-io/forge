@@ -76,6 +76,8 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 
 type missingTokenRuntimePtyOwner struct{}
 
+func (missingTokenRuntimePtyOwner) Gone(context.Context, string) bool { return false }
+
 func (missingTokenRuntimePtyOwner) Attach(context.Context, string) (ptyownerruntime.PTY, error) {
 	return nil, errors.New("unexpected attach")
 }

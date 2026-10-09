@@ -24,6 +24,7 @@ import type {
   GetDevboxFilePreviewPathParameters,
   GetDevboxFilesParams,
   GetDevboxFilesPathParameters,
+  GetDevboxRuntimeParams,
   GetDevboxRuntimePathParameters,
   GetDevboxWorkspacePathParameters,
   GetDevboxWorkspaceViewStatePathParameters,
@@ -540,8 +541,23 @@ export const retryDevboxWorkspace = async (
   });
 };
 
-export const getGetDevboxRuntimeUrl = ({ connectionId, id }: GetDevboxRuntimePathParameters) => {
-  return `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/runtime`;
+export const getGetDevboxRuntimeUrl = (
+  { connectionId, id }: GetDevboxRuntimePathParameters,
+  params?: GetDevboxRuntimeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/runtime?${stringifiedParams}`
+    : `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/runtime`;
 };
 
 /**
@@ -549,9 +565,10 @@ export const getGetDevboxRuntimeUrl = ({ connectionId, id }: GetDevboxRuntimePat
  */
 export const getDevboxRuntime = async (
   { connectionId, id }: GetDevboxRuntimePathParameters,
+  params?: GetDevboxRuntimeParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<WorkspaceRuntimeResponse> => {
-  return orvalFetch<WorkspaceRuntimeResponse>(getGetDevboxRuntimeUrl({ connectionId, id }), {
+  return orvalFetch<WorkspaceRuntimeResponse>(getGetDevboxRuntimeUrl({ connectionId, id }, params), {
     ...options,
     method: "GET",
   });

@@ -24,10 +24,14 @@ func RegisterTerminalInventory(api huma.API) {
 func (h *Handler) registerTerminal(api huma.API, includeRuntime bool) {
 	var handler *terminal.Handler
 	if h != nil {
-		handler = &terminal.Handler{
-			Workspaces:  h.workspaces,
-			TmuxCommand: slices.Clone(h.tmuxCmd),
+		if h.terminal == nil {
+			h.terminal = &terminal.Handler{
+				Workspaces:  h.workspaces,
+				TmuxCommand: slices.Clone(h.tmuxCmd),
+				Typed:       func(workspaceID string) { h.idle.Load().Typed(workspaceID) },
+			}
 		}
+		handler = h.terminal
 	}
 	op := &huma.Operation{
 		OperationID: "connect-workspace-terminal",

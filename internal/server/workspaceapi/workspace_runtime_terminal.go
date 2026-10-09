@@ -65,7 +65,8 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
-	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	// Sockets only attach; stopped runtimes resume from a page view.
+	s.restoreWorkspaceACP(ctx, &summary.Workspace, false)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
 		endAttachSpan()
 		serveACP(w, r, agent)

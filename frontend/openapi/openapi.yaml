@@ -3810,13 +3810,17 @@ components:
           type: string
         agent_id:
           type: string
+        background_tasks: {}
         cwd:
           type: string
         hook_event_name:
           type: string
         notification_type:
           type: string
+        session_crons: {}
         session_id:
+          type: string
+        source:
           type: string
         tool_name:
           type: string
@@ -13371,6 +13375,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Set to true when the workspace view is showing.
+          explode: false
+          in: query
+          name: viewing
+          schema:
+            description: Set to true when the workspace view is showing.
+            type: boolean
         - in: path
           name: connection_id
           required: true
@@ -16434,6 +16445,11 @@ paths:
           required: true
           schema:
             type: string
+        - description: Set to true when the workspace view is showing.
+          in: query
+          name: viewing
+          schema:
+            type: boolean
       responses:
         default:
           content:
@@ -27368,6 +27384,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: Set to true when the workspace view is showing.
+          explode: false
+          in: query
+          name: viewing
+          schema:
+            description: Set to true when the workspace view is showing.
+            type: boolean
       responses:
         "200":
           content:

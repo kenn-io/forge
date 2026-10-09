@@ -597,7 +597,7 @@ func (b mcpBackend) PreferredWorkspaceAgentTarget(
 func (b mcpBackend) GetWorkspaceRuntime(
 	ctx context.Context, workspaceID string,
 ) (mcpserver.WorkspaceRuntime, error) {
-	result, err := b.server.workspaceAPI.GetWorkspaceRuntimeService(ctx, workspaceID)
+	result, err := b.server.workspaceAPI.GetWorkspaceRuntimeService(ctx, workspaceID, false)
 	if err != nil {
 		return mcpserver.WorkspaceRuntime{}, mcpapi.McpBackendError(err)
 	}

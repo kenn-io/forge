@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strings"
 
@@ -32,6 +33,25 @@ func agentResumeCommand(command []string, agent, sessionID string) ([]string, er
 		return nil, err
 	}
 	return invocation.Argv, nil
+}
+
+// AgentResumable reports whether target is an available terminal agent target
+// whose command can resume the hook-reported session interactively.
+func (m *Manager) AgentResumable(targetKey, agent, sessionID string) bool {
+	target, err := m.target(targetKey)
+	if err != nil || !target.Available || target.Kind != LaunchTargetAgent {
+		return false
+	}
+	command, err := agentResumeCommand(target.Command, agent, sessionID)
+	if err != nil {
+		return false
+	}
+	executable, err := resolveExecutable(command[0])
+	if err != nil {
+		return false
+	}
+	_, err = exec.LookPath(executable)
+	return err == nil
 }
 
 // A successful PTY spawn does not mean tmux attached. Probe before spawning so

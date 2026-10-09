@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -35,6 +36,9 @@ const (
 	SessionStatusRunning  SessionStatus = "running"
 	SessionStatusExited   SessionStatus = "exited"
 	SessionStatusError    SessionStatus = "error"
+	// SessionStatusParked marks a stored runtime idle stop parked; it resumes
+	// when its workspace shows.
+	SessionStatusParked SessionStatus = "parked"
 )
 
 const initialMessageWriteTimeout = 30 * time.Second
@@ -114,6 +118,8 @@ type Options struct {
 	AgentMCPToken      string
 	ACPPreferencesPath string
 	ACPSessionsDir     string
+	// ParkedDir holds a marker per runtime session idle stop parked.
+	ParkedDir string
 	// AgentActivityDir is where ACP owners report turn state for the
 	// workspace activity views, alongside hook-reported agents.
 	AgentActivityDir string
@@ -161,6 +167,8 @@ type Manager struct {
 	acpPreferencesMu   sync.Mutex
 	acpPreferencesPath string
 	acpSessionsDir     string
+	parkedDir          string
+	inputObserver      atomic.Pointer[func(workspaceID string)]
 	agentActivityDir   string
 	acpOwnerCommand    []string
 	acpPreferences     map[string]map[string]string
@@ -318,6 +326,7 @@ func NewManager(options Options) *Manager {
 		agentMCPToken:      options.AgentMCPToken,
 		acpPreferencesPath: options.ACPPreferencesPath,
 		acpSessionsDir:     options.ACPSessionsDir,
+		parkedDir:          options.ParkedDir,
 		agentActivityDir:   options.AgentActivityDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpPreferences:     make(map[string]map[string]string),
@@ -435,14 +444,15 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		)
 	}
 
-	if restored != nil {
-		if target.Kind != LaunchTargetAgent {
-			return SessionInfo{}, fmt.Errorf("target %q is not an agent", targetKey)
-		}
+	switch {
+	case restored == nil:
+	case target.Kind == LaunchTargetAgent:
 		target.Command, err = agentResumeCommand(target.Command, agent, sessionID)
 		if err != nil {
 			return SessionInfo{}, err
 		}
+	case target.Kind != LaunchTargetPlainShell:
+		return SessionInfo{}, fmt.Errorf("target %q is not an agent or shell", targetKey)
 	}
 	initialMessageProvided := initialMessage != "" && target.Kind == LaunchTargetAgent &&
 		strings.TrimSuffix(filepath.Base(target.Command[0]), ".exe") == "claude"
@@ -1508,7 +1518,7 @@ func (m *Manager) AttachSessionWithOptions(
 	s := m.sessions[key]
 	m.mu.Unlock()
 	attachment, err := attachToSession(
-		s, workspaceID, key, m.refreshSession, options,
+		s, workspaceID, key, m.refreshSession, func() { m.noteInput(workspaceID) }, options,
 	)
 	if err != nil {
 		slog.Debug(
@@ -1579,6 +1589,19 @@ func (m *Manager) SubmitAgentMessage(
 		}
 	}
 	return attachment.submitInitialMessage(ctx, message)
+}
+
+// SetInputObserver reports each workspace whose runtimes receive input:
+// terminal input from any attachment, a submitted message, or an ACP prompt
+// or reply.
+func (m *Manager) SetInputObserver(observe func(workspaceID string)) {
+	m.inputObserver.Store(&observe)
+}
+
+func (m *Manager) noteInput(workspaceID string) {
+	if observe := m.inputObserver.Load(); observe != nil {
+		(*observe)(workspaceID)
+	}
 }
 
 func (a *Attachment) Write(data []byte) error {
@@ -3036,6 +3059,7 @@ func attachToSession(
 	workspaceID string,
 	key string,
 	refresh func(context.Context, *session) error,
+	typed func(),
 	options AttachSessionOptions,
 ) (*Attachment, error) {
 	if s == nil {
@@ -3070,9 +3094,17 @@ func attachToSession(
 		write: func(data []byte) error {
 			s.inputMu.Lock()
 			defer s.inputMu.Unlock()
-			return s.writeInput(data)
+			if err := s.writeInput(data); err != nil {
+				return err
+			}
+			if !TerminalRepliesOnly(data) {
+				typed()
+			}
+			return nil
 		},
-		submitInitialMessage: s.submitInitialMessage,
+		submitInitialMessage: func(ctx context.Context, message string) error {
+			return s.submitInitialMessage(ctx, message, typed)
+		},
 		resize: func(geometry ptysize.Geometry) error {
 			_, err := s.resizeAttachment(resizeAttachmentID, geometry, false)
 			return err
@@ -3119,7 +3151,9 @@ func attachToSession(
 	}, nil
 }
 
-func (s *session) submitInitialMessage(ctx context.Context, message string) error {
+// submitInitialMessage reports the paste through typed once it is written,
+// even after the caller stopped waiting.
+func (s *session) submitInitialMessage(ctx context.Context, message string, typed func()) error {
 	s.mu.Lock()
 	if !s.inputModes.observed[2004] {
 		s.mu.Unlock()
@@ -3156,6 +3190,7 @@ func (s *session) submitInitialMessage(ctx context.Context, message string) erro
 			result <- err
 			return
 		}
+		typed()
 		time.Sleep(initialMessageEnterDelay)
 		result <- s.writeInput([]byte("\r"))
 	}()

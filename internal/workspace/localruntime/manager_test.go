@@ -2199,7 +2199,7 @@ func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 	}
 
 	remote, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityRemote,
 			ResizeActive:   true,
@@ -2210,7 +2210,7 @@ func TestAttachmentResizeOwnerPrefersActiveLocalUntilInactive(t *testing.T) {
 	require.NoError(remote.Resize(ptysize.Geometry{Cols: 80, Rows: 24}))
 
 	local, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{ResizePriority: ResizePriorityLocal},
 	)
 	require.NoError(err)
@@ -2252,7 +2252,7 @@ func TestAttachmentResizeOwnerFollowsLatestDeliberateLocalClaim(t *testing.T) {
 	}
 
 	first, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
 			ResizeActive:   true,
@@ -2261,7 +2261,7 @@ func TestAttachmentResizeOwnerFollowsLatestDeliberateLocalClaim(t *testing.T) {
 	require.NoError(err)
 	defer first.Close()
 	second, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
 		},
@@ -2338,7 +2338,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	}
 
 	first, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
 			ResizeActive:   true,
@@ -2350,7 +2350,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	require.NoError(err)
 
 	second, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
 			ResizeActive:   true,
@@ -2362,7 +2362,7 @@ func TestAttachmentResizeOwnerFallbackRestoresLatestRemainingClaim(t *testing.T)
 	require.NoError(err)
 
 	third, err := attachToSession(
-		s, "ws-1", "session-1", nil,
+		s, "ws-1", "session-1", nil, func() {},
 		AttachSessionOptions{
 			ResizePriority: ResizePriorityLocal,
 			ResizeActive:   true,
@@ -2450,10 +2450,13 @@ func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *
 	}
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
+	var noted []string
+	mgr.SetInputObserver(func(workspaceID string) { noted = append(noted, workspaceID) })
 
 	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this")
 	require.ErrorIs(err, ErrBracketedPasteInactive)
 	assert.Empty(pty.written())
+	assert.Empty(noted, "a message that wasn't written isn't input")
 
 	s.broadcast([]byte("\x1b[?2004h"))
 	submit := func(message, framed string) {
@@ -2504,6 +2507,8 @@ func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *tes
 		}
 		mgr := NewManager(Options{})
 		mgr.sessions[s.info.Key] = s
+		noted := make(chan string, 4)
+		mgr.SetInputObserver(func(workspaceID string) { noted <- workspaceID })
 		s.broadcast([]byte("\x1b[?2004h"))
 		ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
@@ -2536,6 +2541,12 @@ func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *tes
 		}
 		require.Equal([]byte("\x1b[200~review this\x1b[201~"), observe())
 		require.Equal([]byte("\r"), observe())
+		select {
+		case workspaceID := <-noted:
+			require.Equal("ws-1", workspaceID)
+		default:
+			require.FailNow("a paste written after the caller stopped waiting is still input")
+		}
 	})
 }
 
@@ -2557,7 +2568,7 @@ func TestManagerSubmitInitialMessageSerializesAttachmentInputUntilEnter(t *testi
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 	s.broadcast([]byte("\x1b[?2004h"))
-	attachment, err := attachToSession(s, "ws-1", "agent-1", nil, AttachSessionOptions{})
+	attachment, err := attachToSession(s, "ws-1", "agent-1", nil, func() {}, AttachSessionOptions{})
 	require.NoError(err)
 	defer attachment.Close()
 
@@ -2631,6 +2642,8 @@ exit 0
 `), 0o755))
 	return tmuxPath
 }
+
+func (*fakeRuntimePtyOwner) Gone(context.Context, string) bool { return false }
 
 func (f *fakeRuntimePtyOwner) Start(
 	_ context.Context,

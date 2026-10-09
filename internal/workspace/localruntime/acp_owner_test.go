@@ -142,18 +142,20 @@ func TestACPReloadsSavedSessionOnlyAfterOwnerExit(t *testing.T) {
 		noLoad     string
 		sessions   string
 		noticeText string
+		park       bool
 	}{
 		{name: "load", sessions: "session/new\nsession/load\n"},
+		{name: "idle park", sessions: "session/new\nsession/load\n", park: true},
 		{name: "no load capability", noLoad: "1", sessions: "session/new\nsession/new\n", noticeText: "cannot reload its previous session"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("KENN_FORGE_ACP_NO_LOAD", tc.noLoad)
-			testACPReloadsSavedSession(t, tc.sessions, tc.noticeText)
+			testACPReloadsSavedSession(t, tc.sessions, tc.noticeText, tc.park)
 		})
 	}
 }
 
-func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
+func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string, park bool) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	dir := t.TempDir()
@@ -161,7 +163,7 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
-	options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), PtyOwnerRuntime: ptyownerruntime.New(owner, nil), Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)}
+	options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), ParkedDir: filepath.Join(dir, "parked"), PtyOwnerRuntime: ptyownerruntime.New(owner, nil), Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)}
 	first := newACPTestManager(t, options)
 	info, err := first.Launch(t.Context(), "workspace", dir, "chat")
 	require.NoError(t, err)
@@ -174,16 +176,35 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 		var state ACPState
 		return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == 2
 	}, 5*time.Second, 10*time.Millisecond)
-	first.Shutdown()
-	pidText, err := os.ReadFile(filepath.Join(dir, "pid"))
-	require.NoError(t, err)
-	pid, err := strconv.Atoi(string(pidText))
-	require.NoError(t, err)
-	process, err := os.FindProcess(pid)
-	require.NoError(t, err)
-	require.NoError(t, process.Kill())
+	assert.Equal(t, noticeText == "", first.ACPReloadable(info.Key), "only an agent that can load sessions is reloadable")
+	if park {
+		// A mark that cannot be written stops nothing.
+		marker, err := first.parkedPath(info.Key)
+		require.NoError(t, err)
+		require.NoError(t, os.MkdirAll(filepath.Join(marker, "blocked"), 0o700))
+		require.Error(t, first.Park(t.Context(), "workspace", info.Key))
+		assert.Len(t, first.ListSessions("workspace"), 1, "an unmarked chat must keep running")
+		require.NoError(t, os.RemoveAll(marker))
+		// Idle parking stops the owner; the saved session must survive it.
+		require.NoError(t, first.Park(t.Context(), "workspace", info.Key))
+		acpPaths, err := ptyowner.NewSessionPaths(filepath.Join(dir, "acp"), info.Key)
+		require.NoError(t, err)
+		assert.NoFileExists(t, acpPaths.Socket, "an owner acknowledges a stop only once its socket is gone")
+		assert.Empty(t, first.ListSessions("workspace"))
+		assert.False(t, first.Exited(info.Key), "a parked session must stay restorable")
+	} else {
+		first.Shutdown()
+		pidText, err := os.ReadFile(filepath.Join(dir, "pid"))
+		require.NoError(t, err)
+		pid, err := strconv.Atoi(string(pidText))
+		require.NoError(t, err)
+		process, err := os.FindProcess(pid)
+		require.NoError(t, err)
+		require.NoError(t, process.Kill())
+	}
 	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
 	second := newACPTestManager(t, options)
+	assert.Equal(t, park, second.Parked(t.Context(), "workspace", info.Key))
 	require.NoError(t, second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}))
 	resumed, err := second.ACP("workspace", info.Key)
 	require.NoError(t, err)
@@ -214,6 +235,7 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string) {
 	require.NoError(t, resumed.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "saved-submission"}))
 	require.NoError(t, second.Detach("workspace", info.Key))
 	require.NoError(t, second.StopDormantACP(t.Context(), "workspace", info.Key))
+	require.NoError(t, second.StopDormantACP(t.Context(), "workspace", info.Key), "a stopped owner's socket is gone, so stopping again finds it dead")
 	require.Eventually(t, func() bool { _, err := second.ACP("workspace", info.Key); return err != nil }, time.Second, 10*time.Millisecond)
 }
 

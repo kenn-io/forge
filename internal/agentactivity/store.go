@@ -30,12 +30,17 @@ const (
 const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 
 type Report struct {
-	Agent             string    `json:"agent"`
-	SessionID         string    `json:"session_id"`
-	RuntimeSessionKey string    `json:"runtime_session_key"`
-	CWD               string    `json:"cwd"`
-	State             State     `json:"state"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	Agent             string `json:"agent"`
+	SessionID         string `json:"session_id"`
+	RuntimeSessionKey string `json:"runtime_session_key"`
+	CWD               string `json:"cwd"`
+	State             State  `json:"state"`
+	// Continued marks an idle session that resumed or forked an earlier
+	// conversation, rather than one that started fresh. A compaction is not one:
+	// it can fire mid-turn.
+	Continued   bool      `json:"continued,omitempty"`
+	PendingWork bool      `json:"pending_work,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Snapshot struct {
@@ -49,15 +54,19 @@ type storedReport struct {
 }
 
 // HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
-// Agent-specific payload fields are ignored unless they affect activity state.
+// Agent-specific payload fields are ignored unless they affect activity or idle stop.
 type HookEvent struct {
-	SessionID        string   `json:"session_id"`
-	CWD              string   `json:"cwd"`
-	HookEventName    string   `json:"hook_event_name"`
-	ToolName         string   `json:"tool_name,omitempty"`
-	NotificationType string   `json:"notification_type,omitempty"`
-	AgentID          string   `json:"agent_id,omitempty"`
-	_                struct{} `json:"-" additionalProperties:"true"`
+	SessionID        string `json:"session_id"`
+	CWD              string `json:"cwd"`
+	HookEventName    string `json:"hook_event_name"`
+	ToolName         string `json:"tool_name,omitempty"`
+	NotificationType string `json:"notification_type,omitempty"`
+	AgentID          string `json:"agent_id,omitempty"`
+	// Source is how a SessionStart session began: startup, resume, clear, compact or fork.
+	Source          string   `json:"source,omitempty"`
+	BackgroundTasks any      `json:"background_tasks,omitempty"`
+	SessionCrons    any      `json:"session_crons,omitempty"`
+	_               struct{} `json:"-" additionalProperties:"true"`
 }
 
 type Store struct {
@@ -110,17 +119,24 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
 	if err == nil {
+		backgroundTasks, _ := hook.BackgroundTasks.([]any)
+		sessionCrons, _ := hook.SessionCrons.([]any)
 		report := Report{
 			Agent:             agent,
 			SessionID:         hook.SessionID,
 			RuntimeSessionKey: runtimeSessionKey,
 			CWD:               cwd,
 			State:             state,
+			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork"),
+			PendingWork:       hook.HookEventName == "Stop" && (len(backgroundTasks) > 0 || len(sessionCrons) > 0),
 			UpdatedAt:         s.now().UTC(),
 		}
-		if state == StateDone {
-			previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
-			if ok {
+		previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
+		if ok {
+			if hook.HookEventName != "Stop" {
+				report.PendingWork = previous.PendingWork
+			}
+			if state == StateDone {
 				switch {
 				case isIdlePrompt(hook) && (previous.State == StateInput ||
 					previous.State == StateApproval):

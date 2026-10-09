@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -96,6 +97,59 @@ func TestHandlerRejectsConcurrentWorkspaceTerminals(t *testing.T) {
 	require.NoError(err)
 	assert.NotNil(release3)
 	release3()
+}
+
+type blockingStopPtyOwnerClient struct {
+	workspace.PtyOwnerClient
+	started chan struct{}
+	release chan struct{}
+}
+
+func (c *blockingStopPtyOwnerClient) Stop(ctx context.Context, _ string) error {
+	close(c.started)
+	select {
+	case <-c.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestStopUnattachedTerminalReservesOnlyWorkspaceSlot(t *testing.T) {
+	require := require.New(t)
+	client := &blockingStopPtyOwnerClient{started: make(chan struct{}), release: make(chan struct{})}
+	unblock := sync.OnceFunc(func() { close(client.release) })
+	t.Cleanup(unblock)
+	mgr := workspace.NewManager(nil, t.TempDir())
+	mgr.SetPtyOwnerClient(client)
+	h := &Handler{Workspaces: mgr}
+	ws := &db.Workspace{ID: "ws-1", TerminalBackend: workspace.TerminalBackendPtyOwner}
+	done := make(chan error, 1)
+	go func() { done <- h.StopUnattachedTerminal(t.Context(), ws) }()
+	require.Eventually(func() bool {
+		select {
+		case <-client.started:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, time.Millisecond)
+
+	require.True(h.mu.TryLock(), "stopping a terminal must release the shared admission lock")
+	h.mu.Unlock()
+	release, err := h.claimTerminalSlot(ws.ID)
+	require.Error(err)
+	require.Nil(release)
+	releaseOther, err := h.claimTerminalSlot("ws-2")
+	require.NoError(err)
+	releaseOther()
+	require.NoError(h.StopUnattachedTerminal(t.Context(), ws))
+
+	unblock()
+	require.NoError(<-done)
+	release, err = h.claimTerminalSlot(ws.ID)
+	require.NoError(err)
+	release()
 }
 
 func TestTmuxAttachCommandForcesUTF8(t *testing.T) {

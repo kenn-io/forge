@@ -41,7 +41,10 @@ export interface WorkspaceRuntimeTarget {
 }
 
 export interface WorkspaceRuntimePort {
-  readonly read: (target: WorkspaceRuntimeTarget) => Effect.Effect<WorkspaceRuntimeState, WorkspaceRuntimePortFailure>;
+  readonly read: (
+    target: WorkspaceRuntimeTarget,
+    viewing?: boolean,
+  ) => Effect.Effect<WorkspaceRuntimeState, WorkspaceRuntimePortFailure>;
   readonly launch: (
     target: WorkspaceRuntimeTarget,
     targetKey: string,
@@ -100,6 +103,8 @@ export interface WorkspaceRuntimeWorkflowOptions {
 
 export interface WorkspaceRuntimeReadOptions {
   readonly force?: boolean | undefined;
+  /** The workspace view is showing: the host counts it as a viewer and resumes idle-stopped agents. */
+  readonly viewing?: boolean | undefined;
 }
 
 export interface AcceptedWorkspaceLaunchReconciliation {
@@ -1135,6 +1140,7 @@ export function makeWorkspaceRuntimeWorkflow(
       const targetKey = runtimeTargetKey(workspaceId, hostKey);
       const fiber = yield* SynchronizedRef.modifyEffect(active, (current) => {
         const existing = current.get(owner);
+        // A viewing poll that joins an in-flight read leaves the view to its next poll.
         if (options.force !== true && existing?.targetKey === targetKey) {
           return Effect.succeed<
             readonly [
@@ -1143,7 +1149,7 @@ export function makeWorkspaceRuntimeWorkflow(
             ]
           >([existing.fiber, current]);
         }
-        return FiberMap.run(reads, owner, port.read(target)).pipe(
+        return FiberMap.run(reads, owner, port.read(target, options.viewing)).pipe(
           Effect.map((nextFiber) => [nextFiber, new Map(current).set(owner, { targetKey, fiber: nextFiber })]),
         );
       });
@@ -1365,18 +1371,28 @@ async function rawResponseBody(response: Response): Promise<unknown> {
 export const WorkspaceRuntimePortLive = Effect.gen(function* () {
   const api = yield* GeneratedApi;
 
-  const read = Effect.fn("WorkspaceRuntimePort.read")(function* (target: WorkspaceRuntimeTarget) {
+  const read = Effect.fn("WorkspaceRuntimePort.read")(function* (target: WorkspaceRuntimeTarget, viewing?: boolean) {
     const { workspaceId, hostKey } = target;
     if (hostKey !== undefined) {
       const data = yield* api.execute<unknown>("load fleet workspace runtime", (signal) =>
         hostKey.startsWith("devbox:")
-          ? api.client.DevboxesService.getDevboxRuntime({ connectionId: hostKey.slice(7), id: workspaceId }, { signal })
-          : api.client.FleetService.getFleetWorkspaceRuntime({ hostKey, id: workspaceId }, { signal }),
+          ? api.client.DevboxesService.getDevboxRuntime(
+              { connectionId: hostKey.slice(7), id: workspaceId },
+              viewing === true ? { viewing } : {},
+              { signal },
+            )
+          : api.client.FleetService.getFleetWorkspaceRuntime(
+              { hostKey, id: workspaceId },
+              viewing === true ? { viewing: true } : {},
+              { signal },
+            ),
       );
       return normalizeWorkspaceRuntime(yield* decodeFleetWorkspaceRuntime(data));
     }
     const runtime = yield* api.execute("load workspace runtime", (signal) =>
-      api.client.WorkspacesService.getWorkspaceRuntime({ id: workspaceId }, { signal }),
+      api.client.WorkspacesService.getWorkspaceRuntime({ id: workspaceId }, viewing === true ? { viewing } : {}, {
+        signal,
+      }),
     );
     return normalizeWorkspaceRuntime(runtime);
   });

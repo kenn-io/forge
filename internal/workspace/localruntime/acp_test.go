@@ -980,9 +980,6 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 				err = manager.StopDormantACP(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
 			}
 			assert.NoError(t, err)
-			if len(options.TmuxCommand) > 0 {
-				assert.NoError(t, manager.killTmuxSession(ctx, tmuxSessionName(cfg.Info.WorkspaceID, cfg.Info.Key)))
-			}
 			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))
 		}
 		manager.Shutdown()

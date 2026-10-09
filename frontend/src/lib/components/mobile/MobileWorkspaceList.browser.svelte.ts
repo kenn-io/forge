@@ -84,6 +84,22 @@ it("colors mobile PR badges by lifecycle state using the desktop palette", async
                   associated_pr_number: 5,
                   mr_state: "merged",
                 },
+                {
+                  ...fixture,
+                  id: "open-issue",
+                  item_number: 10,
+                  item_type: "issue",
+                  associated_pr_number: 6,
+                  mr_state: "open",
+                },
+                {
+                  ...fixture,
+                  id: "closed-issue",
+                  item_number: 11,
+                  item_type: "issue",
+                  associated_pr_number: 7,
+                  mr_state: "closed",
+                },
               ],
             }
           : {},
@@ -91,17 +107,20 @@ it("colors mobile PR badges by lifecycle state using the desktop palette", async
   );
   render(MobileWorkspaceList, { onOpen: vi.fn(), onOpenItem: vi.fn() });
   for (const [number, accent] of [
-    [1, "green"],
-    [2, "purple"],
-    [3, "red"],
-    [4, "amber"],
-    [5, "purple"],
+    [1, "--accent-green"],
+    [2, "--accent-purple"],
+    [3, "--accent-red"],
+    [4, "--accent-amber"],
+    [5, "--accent-purple"],
+    // An issue workspace's mr_state is the issue's state, not the PR's.
+    [6, "--text-muted"],
+    [7, "--text-muted"],
   ] as const) {
     const badge = page.getByRole("button", { name: `Open linked item #${number}`, exact: true });
     await expect.element(badge).toBeVisible();
     const swatch = document.createElement("span");
-    swatch.style.backgroundColor = `color-mix(in srgb, var(--accent-${accent}) 70%, #ffffff)`;
-    swatch.style.color = `color-mix(in srgb, var(--accent-${accent}) 25%, var(--bubble-ink))`;
+    swatch.style.backgroundColor = `color-mix(in srgb, var(${accent}) 70%, #ffffff)`;
+    swatch.style.color = `color-mix(in srgb, var(${accent}) 25%, var(--bubble-ink))`;
     document.body.append(swatch);
     try {
       expect(getComputedStyle(badge.element()).backgroundColor).toBe(getComputedStyle(swatch).backgroundColor);

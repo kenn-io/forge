@@ -81,6 +81,11 @@ Rules:
   does not prove a prompt never ran: the gate precedes the retry check, so callers settle
   outcomes from the transcript and turn records
   (`internal/workspace/localruntime/acp_supervision.go`).
+- Only a supervisor's prompt may carry an active-time allowance. A turn is blocked while a
+  permission or elicitation is pending and none of its tool calls runs; a tool call a pending
+  permission asks to run is waiting, not running. Blocked time is not active time. An
+  exhausted allowance cancels the turn once through the `cancel` command's path, and the
+  turn ends normally (`internal/workspace/localruntime/acp_allowance.go`).
 - A turn the agent starts after a steer keeps the chat busy from its first active thread
   status until the thread goes idle, even when that status arrives after the prompt completed.
   Once the original prompt has completed, any idle ends that turn, active or not: the SDK

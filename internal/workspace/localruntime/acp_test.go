@@ -1097,7 +1097,7 @@ func TestACPRestoredImageQueuePausesWhenAgentDoesNotSupportImages(t *testing.T) 
 	assert := assert.New(t)
 	agent := newDetachedACP(t)
 	var written bytes.Buffer
-	agent.stdin = discardWriteCloser{&written}
+	agent.stdin = testWriteCloser{&written}
 	queued := ACPQueuedPrompt{ID: "saved-image", Images: []ACPContent{{Type: "image", MimeType: "image/png", Data: "aW1hZ2U="}}}
 	agent.restoreTranscriptLocked(ACPState{Queue: []ACPQueuedPrompt{queued}})
 	// Resume the restored queue against the current agent's capabilities.

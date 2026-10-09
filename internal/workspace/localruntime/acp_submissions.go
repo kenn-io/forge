@@ -34,8 +34,9 @@ type ACPTurnRecord struct {
 }
 
 // beginTurnRecordLocked records a turn that starts now, dropping the oldest
-// records beyond the limit.
-func (a *ACP) beginTurnRecordLocked(submissionID string, allowance int64) {
+// records beyond the limit, and starts its clock. firstMessage is the
+// transcript index of the turn's first message.
+func (a *ACP) beginTurnRecordLocked(submissionID string, allowance int64, firstMessage int) {
 	a.state.Turns = append(a.state.Turns, ACPTurnRecord{
 		SubmissionID: submissionID,
 		StartedAt:    time.Now().UTC().Format(time.RFC3339),
@@ -44,6 +45,7 @@ func (a *ACP) beginTurnRecordLocked(submissionID string, allowance int64) {
 	if excess := len(a.state.Turns) - acpTurnRecordLimit; excess > 0 {
 		a.state.Turns = slices.Delete(a.state.Turns, 0, excess)
 	}
+	a.startTurnClockLocked(firstMessage)
 }
 
 // runningTurnRecordLocked returns the record of the running turn, or nil.
@@ -56,6 +58,7 @@ func (a *ACP) runningTurnRecordLocked() *ACPTurnRecord {
 
 // endTurnRecordLocked ends the running turn record, if there is one.
 func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
+	a.stopTurnClockLocked()
 	record := a.runningTurnRecordLocked()
 	if record == nil {
 		return

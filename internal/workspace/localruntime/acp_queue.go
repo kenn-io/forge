@@ -41,10 +41,16 @@ func (a *ACP) submit(command ACPCommand) error {
 	default:
 		return errors.New("prompt mode must be send, queue, or steer")
 	}
+	if command.AllowanceMillis < 0 {
+		return errACPNegativeAllowance
+	}
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
 	supervised, err := a.supervisedPromptLocked(command)
+	if err == nil && command.AllowanceMillis > 0 && !supervised {
+		err = errACPUnsupervisedAllowance
+	}
 	if err != nil {
 		a.mu.Unlock()
 		return err
@@ -80,7 +86,7 @@ func (a *ACP) submit(command ACPCommand) error {
 		return err
 	}
 	a.mu.Unlock()
-	err = a.startPromptLocked(text, command.ID, command.Images)
+	err = a.startPromptLocked(text, command.ID, command.Images, command.AllowanceMillis)
 	if errors.Is(err, errACPNotIdle) && supervised {
 		return ErrACPBusy
 	}
@@ -186,7 +192,7 @@ func (a *ACP) drain() {
 	}
 	next := a.state.Queue[0]
 	a.mu.Unlock()
-	if err := a.startPromptLocked(next.Text, next.ID, next.Images); err != nil && !errors.Is(err, errACPNotIdle) {
+	if err := a.startPromptLocked(next.Text, next.ID, next.Images, 0); err != nil && !errors.Is(err, errACPNotIdle) {
 		a.mu.Lock()
 		a.setErrorLocked(err)
 		a.state.QueuePaused = true
@@ -251,6 +257,7 @@ func (a *ACP) clearPendingLocked() {
 		delete(a.elicitations, id)
 	}
 	a.state.Elicitations = nil
+	a.refreshBlockedLocked()
 }
 
 // setErrorLocked records err for the chat and keeps JSON-RPC error details.
@@ -320,11 +327,11 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 			// leaving the chat busy for good.
 			if a.reportsThreadStatus && a.threadStatus != "idle" {
 				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
+				a.state.Busy = true
 				if a.runningTurnRecordLocked() == nil {
 					// The prompt's turn ended before the agent answered.
-					a.beginTurnRecordLocked(submissionID, 0)
+					a.beginTurnRecordLocked(submissionID, 0, index)
 				}
-				a.state.Busy = true
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true
 			}

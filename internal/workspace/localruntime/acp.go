@@ -84,6 +84,18 @@ type ACP struct {
 	// beforePromptWrite lets tests stop the owner between saving a prompt
 	// as sending and writing it. It is nil in production.
 	beforePromptWrite func()
+	// now and allowanceTick drive the turn clock; zero values use time.Now
+	// and acpTurnClockTick. See acp_allowance.go.
+	now           func() time.Time
+	allowanceTick time.Duration
+	// The running turn's clock: stopClock stops its ticker, activeSince is
+	// when it last started counting (zero while blocked), clockSaved is when
+	// it last saved the session, and turnStart indexes the turn's first
+	// message.
+	stopClock   chan struct{}
+	activeSince time.Time
+	clockSaved  time.Time
+	turnStart   int
 }
 
 // acpExternalTurn is a turn the agent started after a steer. Until it reports
@@ -136,6 +148,8 @@ type ACPPermission struct {
 	ID      string                `json:"id"`
 	Title   string                `json:"title"`
 	Options []ACPPermissionOption `json:"options"`
+	// toolCallID is the tool call the agent asks to run.
+	toolCallID string
 }
 
 // ACPElicitation is a pending form-mode elicitation. Its schema is the
@@ -226,6 +240,9 @@ type ACPState struct {
 	// Supervision names the coordinator supervising this chat; see
 	// acp_supervision.go. It is nil for a chat no coordinator has claimed.
 	Supervision *ACPSupervision `json:"supervision,omitempty"`
+	// Blocked is true while the running turn waits only for a person to
+	// answer a permission or elicitation; see acp_allowance.go.
+	Blocked bool `json:"blocked"`
 }
 type ACPQueuedPrompt struct {
 	ID     string       `json:"id"`
@@ -254,6 +271,9 @@ type ACPCommand struct {
 	Generation uint64 `json:"generation,omitempty"`
 	// Supervisor names the coordinator claiming supervision.
 	Supervisor string `json:"supervisor,omitempty"`
+	// AllowanceMillis bounds the active time of a supervised prompt's turn;
+	// see acp_allowance.go. Only the supervisor's prompts may set it.
+	AllowanceMillis int64 `json:"allowanceMillis,omitempty"`
 }
 
 func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
@@ -448,6 +468,7 @@ func (a *ACP) wait() {
 	a.state.Stopping = false
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
+	a.refreshBlockedLocked()
 	a.state.Steering = false
 	a.external = nil
 	a.takeoverPending = false
@@ -501,16 +522,7 @@ func (a *ACP) Command(command ACPCommand) error {
 	case "resume":
 		return a.resumeQueue(command.Generation)
 	case "cancel":
-		// Stop never waits for a prompt write, steering request, or settings
-		// change; a prompt written concurrently is cancelled after its write.
-		a.mu.Lock()
-		a.cancelling = true
-		a.state.QueuePaused = true
-		a.state.Stopping = a.state.Busy || a.state.Steering
-		a.clearPendingLocked()
-		a.changedLocked()
-		a.mu.Unlock()
-		return a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
+		return a.cancel()
 	case "permission":
 		return a.answerPermission(command)
 	case "elicitation":
@@ -525,9 +537,11 @@ func (a *ACP) Command(command ACPCommand) error {
 // refuses it until a person takes over.
 func (a *ACP) Prompt(text string) error { return a.submit(ACPCommand{Type: "prompt", Text: text}) }
 
-// startPromptLocked starts a turn. The caller holds turnMu. A queued prompt
-// leaves the queue in the same persisted update that records it as sent.
-func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) error {
+// startPromptLocked starts a turn whose active time is bounded by allowance
+// milliseconds, or unbounded when it is 0. The caller holds turnMu. A queued
+// prompt leaves the queue in the same persisted update that records it as
+// sent.
+func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent, allowance int64) error {
 	a.mu.Lock()
 	if !a.state.Connected {
 		a.mu.Unlock()
@@ -614,7 +628,7 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}
 	a.state.Sending = nil
-	a.beginTurnRecordLocked(submissionID, 0)
+	a.beginTurnRecordLocked(submissionID, allowance, messageIndex)
 	persistErr := a.persistLocked()
 	a.changedLocked()
 	a.mu.Unlock()

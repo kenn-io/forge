@@ -187,7 +187,7 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	agent := newDetachedACP(t)
 	agent.state.Busy = true
 	agent.mu.Lock()
-	agent.beginTurnRecordLocked("turn", 0)
+	agent.beginTurnRecordLocked("turn", 0, 0)
 	agent.mu.Unlock()
 	agent.external = &acpExternalTurn{active: true}
 	completed := make(chan acpTurnResult, 1)
@@ -361,7 +361,7 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 	agent := c.start(nil)
 	agent.mu.Lock()
 	agent.state.Busy = true
-	agent.beginTurnRecordLocked("steer", 0)
+	agent.beginTurnRecordLocked("steer", 0, 0)
 	agent.external = &acpExternalTurn{active: true, promptDone: true}
 	agent.mu.Unlock()
 	require.NoError(t, agent.cmd.Process.Kill())
@@ -402,7 +402,7 @@ func TestACPTurnRecordsKeepTheNewestFifty(t *testing.T) {
 	agent := newDetachedACP(t)
 	agent.mu.Lock()
 	for i := range acpTurnRecordLimit + 5 {
-		agent.beginTurnRecordLocked("s"+strconv.Itoa(i), 0)
+		agent.beginTurnRecordLocked("s"+strconv.Itoa(i), 0, 0)
 		agent.endTurnRecordLocked("end_turn", nil)
 	}
 	turns := agent.state.Turns

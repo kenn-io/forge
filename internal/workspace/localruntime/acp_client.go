@@ -58,9 +58,11 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 			RawInput: acpRawJSON(call.RawInput), RawOutput: acpRawJSON(call.RawOutput),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		})
+		a.refreshBlockedLocked()
 	case u.ToolCallUpdate != nil:
 		a.releaseHeldTextLocked()
 		a.updateToolLocked(u.ToolCallUpdate)
+		a.refreshBlockedLocked()
 	default:
 		// User echoes, usage, and mode updates are not shown.
 		return nil
@@ -89,10 +91,10 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		// original prompt has already completed.
 		a.takeoverPending = false
 		a.external = &acpExternalTurn{active: true}
-		if a.runningTurnRecordLocked() == nil {
-			a.beginTurnRecordLocked("", 0)
-		}
 		a.state.Busy = true
+		if a.runningTurnRecordLocked() == nil {
+			a.beginTurnRecordLocked("", 0, len(a.state.Messages))
+		}
 		a.changedLocked()
 		return
 	}
@@ -238,7 +240,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 		a.mu.Unlock()
 		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.NewRequestPermissionOutcomeCancelled()}, nil
 	}
-	permission := ACPPermission{ID: a.newRequestIDLocked("p")}
+	permission := ACPPermission{ID: a.newRequestIDLocked("p"), toolCallID: string(params.ToolCall.ToolCallId)}
 	if params.ToolCall.Title != nil {
 		permission.Title = *params.ToolCall.Title
 	}
@@ -248,6 +250,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 	response := make(chan acpsdk.RequestPermissionOutcome, 1)
 	a.permissions[permission.ID] = response
 	a.state.Permissions = append(a.state.Permissions, permission)
+	a.refreshBlockedLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	defer func() {
@@ -255,6 +258,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 		defer a.mu.Unlock()
 		delete(a.permissions, permission.ID)
 		a.state.Permissions = slices.DeleteFunc(a.state.Permissions, func(p ACPPermission) bool { return p.ID == permission.ID })
+		a.refreshBlockedLocked()
 		a.changedLocked()
 	}()
 	select {
@@ -292,6 +296,7 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 	response := make(chan acpsdk.UnstableCreateElicitationResponse, 1)
 	a.elicitations[elicitation.ID] = response
 	a.state.Elicitations = append(a.state.Elicitations, elicitation)
+	a.refreshBlockedLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	defer func() {
@@ -299,6 +304,7 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 		defer a.mu.Unlock()
 		delete(a.elicitations, elicitation.ID)
 		a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == elicitation.ID })
+		a.refreshBlockedLocked()
 		a.changedLocked()
 	}()
 	select {
@@ -355,6 +361,7 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	delete(a.elicitations, command.ID)
 	a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == command.ID })
 	response <- answer
+	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, key)
 	a.changedLocked()
 	return a.persistLocked()
@@ -383,6 +390,7 @@ func (a *ACP) answerPermission(command ACPCommand) error {
 	delete(a.permissions, command.ID)
 	a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
 	response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
+	a.refreshBlockedLocked()
 	a.recordAnswerLocked(command.ID, command.OptionID)
 	a.changedLocked()
 	return a.persistLocked()

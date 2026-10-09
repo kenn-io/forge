@@ -3,7 +3,6 @@ package localruntime
 import (
 	"context"
 	"encoding/json/v2"
-	"io"
 	"testing"
 	"time"
 
@@ -30,32 +29,11 @@ func TestDeliverableTextPrefix(t *testing.T) {
 	}
 }
 
-type discardWriteCloser struct{ io.Writer }
-
-func (discardWriteCloser) Close() error { return nil }
-
 // newDetachedACP is a chat whose agent never answers; tests drive its session
 // updates directly.
 func newDetachedACP(t *testing.T) *ACP {
 	t.Helper()
-	peerReader, peerWriter := io.Pipe()
-	agent := &ACP{
-		stdin: discardWriteCloser{io.Discard}, done: make(chan struct{}), sessionID: "session",
-		permissions:  make(map[string]chan acpsdk.RequestPermissionOutcome),
-		elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse),
-		subscribers:  make(map[chan struct{}]struct{}),
-		state:        ACPState{Connected: true},
-	}
-	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
-	t.Cleanup(func() {
-		_ = peerWriter.Close()
-		_ = peerReader.Close()
-		select {
-		case <-agent.done:
-		default:
-			close(agent.done)
-		}
-	})
+	agent, _ := newScriptedACP(t)
 	return agent
 }
 

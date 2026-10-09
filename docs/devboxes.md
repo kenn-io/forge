@@ -374,6 +374,29 @@ Run `sudo systemctl daemon-reload` and
 developers to reach the socket; admission is checked using their kernel-supplied
 Unix UID on every request.
 
+#### Service accounts
+
+A service account is a non-SSH Linux account for an unattended coordinator
+rather than a developer. Set `service = true` and use the App's bot user ID as
+`github_user_id`; find it with `gh api /users/example-app%5Bbot%5D --jq .id`.
+
+```toml
+[[accounts]]
+uid = 1002
+github_user_id = 5555
+login = "example-app[bot]"
+service = true
+```
+
+The broker still verifies the installation, organization and repository
+identity, but skips the user, organization membership and repository permission
+checks that apply to developers. A service account is writable for every
+admitted repository, and the `git`, `push` and `pr` profiles receive the same
+permissions as a writable developer. The broker does not keep it away from
+protected branches; the rulesets in
+[Protect the default branch](#protect-the-default-branch) do. Admit only
+repositories the coordinator may change.
+
 ### Per-account worker
 
 Create a private data directory owned by the developer, for example

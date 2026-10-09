@@ -25,6 +25,10 @@ type Account struct {
 	Login        string `toml:"login" json:"login"`
 	CommitName   string `toml:"commit_name" json:"commit_name"`
 	CommitEmail  string `toml:"commit_email" json:"commit_email"`
+	// Service marks a non-human account that acts as the App's bot identity.
+	// Its GitHubUserID is the bot user ID, and it skips the human membership
+	// and repository permission checks.
+	Service bool `toml:"service" json:"service"`
 }
 
 type Repository struct {
@@ -185,20 +189,6 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, err
 	}
-	user, _, err := api.Users.GetByID(ctx, account.GitHubUserID)
-	if err != nil {
-		return nil, fmt.Errorf("resolve enrolled GitHub identity: %w", err)
-	}
-	if user.GetID() != account.GitHubUserID || user.GetLogin() == "" {
-		return nil, errors.New("GitHub identity differs from the enrolled user")
-	}
-	member, _, err := api.Organizations.IsMember(ctx, owner, user.GetLogin())
-	if err != nil {
-		return nil, fmt.Errorf("check GitHub organization membership: %w", err)
-	}
-	if !member {
-		return nil, errors.New("developer is not a member of the admitted GitHub organization")
-	}
 	repo, _, err := api.Repositories.Get(ctx, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("GitHub repository unavailable: %w", err)
@@ -206,17 +196,15 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	if repo.GetID() != repoID || repo.GetOwner().GetID() != b.config.OrganizationID {
 		return nil, errors.New("GitHub repository identity differs from the admitted repository")
 	}
-	permission, _, err := api.Repositories.GetPermissionLevel(ctx, owner, name, user.GetLogin())
-	if err != nil {
-		return nil, fmt.Errorf("check developer GitHub repository permission: %w", err)
-	}
-	level := permission.GetPermission()
-	writable := level == "admin" || level == "maintain" || level == "write"
-	if !writable && level != "read" && level != "triage" {
-		return nil, errors.New("developer has no access to this GitHub repository")
-	}
-	if request.Profile != "git" && !writable {
-		return nil, errors.New("developer does not have write permission for this GitHub repository")
+	writable := true
+	if !account.Service {
+		writable, err = b.humanAccess(ctx, api, owner, name, account)
+		if err != nil {
+			return nil, err
+		}
+		if request.Profile != "git" && !writable {
+			return nil, errors.New("developer does not have write permission for this GitHub repository")
+		}
 	}
 	permissions := map[string]string{"metadata": "read", "contents": "read"}
 	profile := "read"
@@ -236,6 +224,37 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,
 		GitHubUserID: account.GitHubUserID, RepositoryID: repoID, DefaultBranch: repo.GetDefaultBranch(),
 	}, nil
+}
+
+// humanAccess verifies a human account's GitHub identity, organization
+// membership and repository permission, and reports whether it may write.
+func (b *Broker) humanAccess(
+	ctx context.Context, api *gh.Client, owner, name string, account Account,
+) (bool, error) {
+	user, _, err := api.Users.GetByID(ctx, account.GitHubUserID)
+	if err != nil {
+		return false, fmt.Errorf("resolve enrolled GitHub identity: %w", err)
+	}
+	if user.GetID() != account.GitHubUserID || user.GetLogin() == "" {
+		return false, errors.New("GitHub identity differs from the enrolled user")
+	}
+	member, _, err := api.Organizations.IsMember(ctx, owner, user.GetLogin())
+	if err != nil {
+		return false, fmt.Errorf("check GitHub organization membership: %w", err)
+	}
+	if !member {
+		return false, errors.New("developer is not a member of the admitted GitHub organization")
+	}
+	permission, _, err := api.Repositories.GetPermissionLevel(ctx, owner, name, user.GetLogin())
+	if err != nil {
+		return false, fmt.Errorf("check developer GitHub repository permission: %w", err)
+	}
+	level := permission.GetPermission()
+	writable := level == "admin" || level == "maintain" || level == "write"
+	if !writable && level != "read" && level != "triage" {
+		return false, errors.New("developer has no access to this GitHub repository")
+	}
+	return writable, nil
 }
 
 func (b *Broker) token(ctx context.Context, jwt string, repoID int64, profile string, permissions map[string]string) (*githubapp.InstallationToken, error) {

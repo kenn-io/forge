@@ -949,6 +949,41 @@ func (d *DB) RecordRemovedMergeRequest(
 	})
 }
 
+// RecordLiveMergeRequestPresence restores a removed PR when live inventory
+// confirms the retained provider identity. Discovery-only archives have no
+// maintenance pass to make this observation on their behalf.
+func (d *DB) RecordLiveMergeRequestPresence(ctx context.Context, mr *MergeRequest) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		var providerID int64
+		var providerItemID string
+		var updatedAt time.Time
+		err := tx.QueryRowContext(ctx, `
+			SELECT mr.platform_id, mr.updated_at, ai.provider_item_id
+			FROM forge_archive_items ai
+			JOIN forge_merge_requests mr ON mr.repo_id = ai.repo_id AND mr.number = ai.item_number
+			WHERE ai.repo_id = ? AND ai.item_type = 'merge_request' AND ai.item_number = ?
+			  AND ai.lifecycle_state = 'removed_upstream'`, mr.RepoID, mr.Number,
+		).Scan(&providerID, &updatedAt, &providerItemID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read removed PR identity: %w", err)
+		}
+		if mr.PlatformID <= 0 || mr.PlatformID != providerID {
+			return fmt.Errorf("rediscovered PR #%d has a different provider identity", mr.Number)
+		}
+		if mr.UpdatedAt.Before(updatedAt) {
+			return nil
+		}
+		return commitArchiveInventoryItemTx(ctx, tx, mr.RepoID, ArchiveItemTypeMergeRequest,
+			ArchiveInventoryItem{
+				Number: mr.Number, ProviderItemID: providerItemID,
+				ProviderCreatedAt: canonicalUTCTime(mr.CreatedAt), ProviderUpdatedAt: canonicalUTCTime(mr.UpdatedAt),
+			}, ArchiveRefreshReasonPrompt)
+	})
+}
+
 // IsArchiveItemRemovedUpstream reports whether retained canonical data is
 // hidden by a durable provider-removal tombstone.
 func (d *DB) IsArchiveItemRemovedUpstream(

@@ -189,3 +189,69 @@ func TestRemovedGraphQLPRsWithoutExternalIDs(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(pending)
 }
+
+func TestLiveInventoryRestoresRemovedPRInCompletedDiscovery(t *testing.T) {
+	for _, backend := range []string{"REST", "GraphQL"} {
+		t.Run(backend, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			now := time.Now().UTC()
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+			require.NoError(err)
+			pr := buildOpenPR(7, now)
+			pr.NodeID = new("PR_7")
+			parent, err := NormalizePR(repoID, pr)
+			require.NoError(err)
+			_, err = database.UpsertMergeRequest(ctx, parent)
+			require.NoError(err)
+			require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			for _, kind := range []db.ArchiveItemType{db.ArchiveItemTypeIssue, db.ArchiveItemTypeMergeRequest} {
+				require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+					RepoID: repoID, ItemType: kind, Exhausted: true, Now: now,
+				}))
+			}
+			states, err := database.ListArchiveRepoStates(ctx, []int64{repoID})
+			require.NoError(err)
+			require.Len(states, 1)
+			require.Equal(db.ArchiveCollectionModeDiscovery, states[0].CollectionMode)
+			require.True(states[0].IssueInventory.Complete())
+			require.True(states[0].MergeRequestInventory.Complete())
+
+			client := &mockClient{}
+			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+				return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}, Message: "Not Found"}
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			t.Cleanup(syncer.Stop)
+			require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
+			visible, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID})
+			require.NoError(err)
+			require.Empty(visible, "confirmed removal hides the PR")
+
+			// A new inventory response proves presence even if GitHub's PR
+			// updated_at has not changed since the retained snapshot.
+			switch backend {
+			case "REST":
+				reader, err := syncer.mergeRequestReaderFor(repo)
+				require.NoError(err)
+				mr, err := platformgithub.NormalizePullRequest(platformRepoRef(repo), pr)
+				require.NoError(err)
+				require.NoError(syncer.syncMergeRequestsFromList(ctx, reader, repo, repoID, []platform.MergeRequest{mr}, now.Add(time.Minute), false))
+			case "GraphQL":
+				pr.NodeID = nil // GraphQL inventory omits the external ID.
+				require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{PullRequests: []BulkPR{{PR: pr}}}, now.Add(time.Minute), false))
+			}
+			visible, err = database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID})
+			require.NoError(err)
+			require.Len(visible, 1, "fresh live inventory must restore the PR without archive maintenance")
+			assert.Equal(7, visible[0].Number)
+			progress, err := database.GetDatasetProgress(ctx, repoID, db.ArchiveItemTypeMergeRequest, 7, db.ArchiveDatasetLookup)
+			require.NoError(err)
+			assert.Equal(db.ArchiveDatasetProgressPending, progress.Status)
+			assert.Nil(progress.LastErrorCode)
+		})
+	}
+}

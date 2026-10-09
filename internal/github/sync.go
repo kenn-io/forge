@@ -6991,6 +6991,10 @@ func (s *Syncer) indexUpsertMergeRequest(
 	normalized := platformdb.DBMergeRequest(repoID, mr)
 	normalized.MergeableStateObservedAt = &requestedAt
 
+	if err := s.db.RecordLiveMergeRequestPresence(ctx, normalized); err != nil {
+		return err
+	}
+
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, mr.Number,
 	)
@@ -7840,6 +7844,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 		return fmt.Errorf("normalize MR #%d: %w", number, err)
 	}
 	normalized.MergeableStateObservedAt = &requestedAt
+
+	if err := s.db.RecordLiveMergeRequestPresence(ctx, normalized); err != nil {
+		return err
+	}
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if

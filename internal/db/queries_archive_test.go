@@ -1658,3 +1658,50 @@ func TestScanScopedRepositoryFailureIsClaimFenced(t *testing.T) {
 	require.NotNil(repoErrorCode())
 	assert.Equal(string(ArchiveErrorCodeAuthentication), *repoErrorCode())
 }
+
+func TestLiveMergeRequestPresenceRejectsUnprovenRediscovery(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		providerID int64
+		age        time.Duration
+		wantError  bool
+	}{
+		{name: "different identity", providerID: 8, wantError: true},
+		{name: "missing identity", wantError: true},
+		{name: "older snapshot", providerID: 7, age: -time.Minute},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			database := openTestDB(t)
+			ctx := t.Context()
+			now := archiveTestTime()
+			repoID := insertTestRepo(t, database, "owner", "repo")
+			original := &MergeRequest{
+				RepoID: repoID, Number: 1, PlatformID: 7, PlatformExternalID: "PR_7",
+				Title: "Retained snapshot", State: MergeRequestStateOpen,
+				CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+			}
+			_, err := database.UpsertMergeRequest(ctx, original)
+			require.NoError(err)
+			require.NoError(database.RecordRemovedMergeRequest(ctx, repoID, 1, "Not Found", now))
+			observed := *original
+			observed.PlatformID = tc.providerID
+			observed.UpdatedAt = now.Add(tc.age)
+			err = database.RecordLiveMergeRequestPresence(ctx, &observed)
+			if tc.wantError {
+				require.ErrorContains(err, "different provider identity")
+			} else {
+				require.NoError(err)
+			}
+			removed, err := database.IsArchiveItemRemovedUpstream(ctx, repoID, ArchiveItemTypeMergeRequest, 1)
+			require.NoError(err)
+			assert.True(removed)
+			progress, err := database.GetDatasetProgress(ctx, repoID, ArchiveItemTypeMergeRequest, 1, ArchiveDatasetLookup)
+			require.NoError(err)
+			assert.Equal(ArchiveDatasetProgressTerminal, progress.Status)
+			require.NotNil(progress.LastErrorCode)
+			assert.Equal("not_found", *progress.LastErrorCode)
+		})
+	}
+}

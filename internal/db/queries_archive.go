@@ -913,7 +913,8 @@ func (d *DB) RecordRemovedMergeRequest(
 				repo_id, item_type, item_number, provider_item_id,
 				provider_created_at, provider_updated_at, lifecycle_state, refresh_reason
 			)
-			SELECT repo_id, 'merge_request', number, platform_external_id,
+			SELECT repo_id, 'merge_request', number,
+				COALESCE(NULLIF(platform_external_id, ''), CAST(platform_id AS TEXT)),
 				created_at, updated_at, 'removed_upstream', 'prompt'
 			FROM forge_merge_requests WHERE repo_id = ? AND number = ?
 			ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET

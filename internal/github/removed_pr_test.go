@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 func TestRemovedPRStopsFailingRepositorySync(t *testing.T) {
@@ -23,7 +25,7 @@ func TestRemovedPRStopsFailingRepositorySync(t *testing.T) {
 			ctx := t.Context()
 			database := openTestDB(t)
 			now := time.Now().UTC()
-			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
 			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 			require.NoError(err)
 			parent, err := NormalizePR(repoID, buildOpenPR(7, now))
@@ -83,16 +85,18 @@ func TestRemovedPRStopsFailingRepositorySync(t *testing.T) {
 
 func TestMissingPRSyncPreservesUncertainLookups(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		pullStatus int
-		repoStatus int
-		moved      bool
+		name        string
+		pullStatus  int
+		repoStatus  int
+		moved       bool
+		routeReused bool
 	}{
 		{name: "inaccessible", pullStatus: 403},
 		{name: "transient pull failure", pullStatus: 503},
 		{name: "repository unavailable", pullStatus: 404, repoStatus: 503},
 		{name: "repository inaccessible", pullStatus: 404, repoStatus: 404},
 		{name: "transferred", moved: true},
+		{name: "route reused", pullStatus: 404, routeReused: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -100,7 +104,7 @@ func TestMissingPRSyncPreservesUncertainLookups(t *testing.T) {
 			ctx := t.Context()
 			database := openTestDB(t)
 			now := time.Now().UTC()
-			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
 			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 			require.NoError(err)
 			parent, err := NormalizePR(repoID, buildOpenPR(7, now))
@@ -121,9 +125,22 @@ func TestMissingPRSyncPreservesUncertainLookups(t *testing.T) {
 					return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.repoStatus}, Message: "repository unavailable"}
 				}
 			}
+			if tc.routeReused {
+				client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
+					assert.Equal("owner", owner)
+					assert.Equal("repo", name)
+					return &gh.Repository{ID: new(testRepoID("owner", "replacement")), Owner: &gh.User{Login: &owner}, Name: &name}, nil
+				}
+			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
-			require.Error(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
+			err = syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false)
+			require.Error(err)
+			if tc.routeReused {
+				require.ErrorContains(err, "repository identity changed")
+				require.NotErrorIs(err, platform.ErrLookupNotPresent)
+				require.NotErrorIs(err, platform.ErrProviderContract)
+			}
 			removed, err := database.IsArchiveItemRemovedUpstream(ctx, repoID, db.ArchiveItemTypeMergeRequest, 7)
 			require.NoError(err)
 			assert.False(removed)
@@ -132,4 +149,43 @@ func TestMissingPRSyncPreservesUncertainLookups(t *testing.T) {
 			assert.Equal([]int{7}, pending)
 		})
 	}
+}
+
+func TestRemovedGraphQLPRsWithoutExternalIDs(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := time.Now().UTC()
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	for _, number := range []int{7, 8} {
+		parent, err := NormalizePR(repoID, platformgithub.AdaptPR(&platformgithub.GraphQLPR{
+			DatabaseId: int64(1000 + number), Number: number, State: "OPEN", CreatedAt: now, UpdatedAt: now,
+		}))
+		require.NoError(err)
+		require.Empty(parent.PlatformExternalID)
+		_, err = database.UpsertMergeRequest(ctx, parent)
+		require.NoError(err)
+	}
+	client := &mockClient{}
+	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}, Message: "Not Found"}
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
+	for _, number := range []int{7, 8} {
+		removed, err := database.IsArchiveItemRemovedUpstream(ctx, repoID, db.ArchiveItemTypeMergeRequest, number)
+		require.NoError(err)
+		assert.True(removed)
+		stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		require.NoError(err)
+		require.NotNil(stored)
+		assert.Equal(db.MergeRequestState("open"), stored.State)
+	}
+	pending, err := database.GetPreviouslyOpenMRNumbers(ctx, repoID, nil)
+	require.NoError(err)
+	assert.Empty(pending)
 }

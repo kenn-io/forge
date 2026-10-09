@@ -150,8 +150,14 @@ func (p *Provider) classifyMergeRequestLookup(
 		}
 		return "", nil, mapped
 	}
-	if _, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name); repoErr != nil {
+	repo, repoErr := p.client.GetRepository(ctx, ref.Owner, ref.Name)
+	if repoErr != nil {
 		return "", nil, p.archiveRepositoryProbeError(repoErr)
+	}
+	// A reused route can answer successfully for a different repository. That
+	// does not prove removal from the repository whose PR we are refreshing.
+	if ref.Key.IsZero() || platform.RepositoryIDKey(repo.GetID()) != ref.Key {
+		return "", nil, fmt.Errorf("repository identity changed during PR lookup: expected %s, got %d", ref.Key, repo.GetID())
 	}
 	return lookupRemoved, nil, nil
 }

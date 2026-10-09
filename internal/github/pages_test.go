@@ -196,6 +196,7 @@ func TestGitHubLiveGetMapsLookupOutcomes(t *testing.T) {
 	defer srv.Close()
 	provider := newArchiveTestGitHubProvider(t, srv.URL)
 	ref := pagesTestRef()
+	ref.Key = platform.RepositoryIDKey(1)
 
 	_, removedIssueErr := provider.GetIssue(t.Context(), ref, 9)
 	require.ErrorIs(removedIssueErr, platform.ErrNotFound)

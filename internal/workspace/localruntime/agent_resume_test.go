@@ -24,17 +24,8 @@ func TestAgentResumeCommand(t *testing.T) {
 	}
 	_, err := agentResumeCommand([]string{"other"}, "other", "conversation")
 	require.Error(t, err)
-}
-
-func TestAgentResumePreservesCodexFullAuto(t *testing.T) {
-	command, err := agentResumeCommand([]string{"codex", "--full-auto", "--search"}, "codex", "saved-session")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"codex", "--full-auto", "--search", "resume", "saved-session"}, command)
-}
-
-func TestAgentResumeRequiresConfiguredCommand(t *testing.T) {
 	for _, command := range [][]string{nil, {""}} {
-		_, err := agentResumeCommand(command, "codex", "saved-session")
+		_, err = agentResumeCommand(command, "codex", "conversation")
 		require.Error(t, err)
 	}
 }

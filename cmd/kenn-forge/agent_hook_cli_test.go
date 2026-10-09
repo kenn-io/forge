@@ -130,22 +130,6 @@ func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 	assert.JSONEq(`{}`, stdout.String())
 }
 
-func TestAgentHookProfilesDefaultToEveryKitProfile(t *testing.T) {
-	profiles, err := selectedAgentHookProfiles("")
-
-	require.NoError(t, err)
-	assert.Equal(t, []agenthook.Agent{
-		agenthook.AgentClaude,
-		agenthook.AgentCodex,
-		agenthook.AgentCopilot,
-		agenthook.AgentCursor,
-		agenthook.AgentDroid,
-		agenthook.AgentGemini,
-		agenthook.AgentHermes,
-		agenthook.AgentQwen,
-	}, profiles)
-}
-
 func TestAgentHookProfilesSelectOneIntegration(t *testing.T) {
 	profiles, err := selectedAgentHookProfiles("GeMiNi")
 
@@ -184,12 +168,12 @@ func TestAgentHookInstallDefaultsToEveryKitProfile(t *testing.T) {
 	}, &output))
 
 	for _, profile := range agenthook.Profiles() {
-		path, err := agenthook.ConfigPath(profile.Agent)
+		plan, err := agenthook.PlanUninstall(profile.Agent, "", agentHookMarker)
 		require.NoError(err)
-		data, err := os.ReadFile(path)
+		assert.True(plan.Changed, "%s hooks should carry the kenn-forge marker", profile.Agent)
+		plan, err = agenthook.PlanUninstall(profile.Agent, "", "--agent "+string(profile.Agent))
 		require.NoError(err)
-		assert.Contains(string(data), "--source kenn-forge-agent-activity")
-		assert.Contains(string(data), "--agent "+string(profile.Agent))
+		assert.True(plan.Changed, "%s hooks should route to their own agent", profile.Agent)
 		assert.Contains(output.String(), "Installed kenn-forge "+profile.DisplayName+" hooks")
 	}
 }

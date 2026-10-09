@@ -3,6 +3,7 @@ package localruntime
 import (
 	"encoding/json/v2"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,6 +55,9 @@ func TestACPPageReturnsMessagesAfterACursor(t *testing.T) {
 	require.Len(t, state.Messages, 50)
 	assert.Equal("m249", state.Messages[49].Text)
 
+	state = page(240, math.MaxInt)
+	require.Len(t, state.Messages, 10, "a huge limit reads to the end")
+
 	state = page(400, 10)
 	assert.Equal(250, state.MessageOffset, "a cursor past the end reads nothing")
 	assert.Empty(state.Messages)
@@ -103,4 +107,9 @@ func TestACPPageReadsTheOwnersTranscript(t *testing.T) {
 	require.Len(t, state.Messages, 1)
 	assert.Equal(t, "Hello workspace", state.Messages[0].Text)
 	assert.True(t, state.Connected)
+
+	// An owner must survive any limit an internal caller passes.
+	data, err = agent.Page(1, math.MaxInt)
+	require.NoError(t, err)
+	require.Len(t, decodePage(t, data).Messages, 1)
 }

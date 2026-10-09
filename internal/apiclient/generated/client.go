@@ -60901,12 +60901,10 @@ type WorkspaceChatCommand struct {
 	Schema          *string                  `json:"$schema,omitempty"`
 	Action          *string                  `json:"action,omitempty"`
 	AllowanceMillis *int64                   `json:"allowanceMillis,omitempty"`
-	Before          *int64                   `json:"before,omitempty"`
 	Content         map[string]struct{}      `json:"content,omitempty"`
 	Generation      *int64                   `json:"generation,omitempty"`
 	ID              *string                  `json:"id,omitempty"`
 	Images          []ACPContent             `json:"images,omitempty"`
-	Limit           *int64                   `json:"limit,omitempty"`
 	Mode            *string                  `json:"mode,omitempty"`
 	OptionID        *string                  `json:"optionId,omitempty"`
 	Supervisor      *string                  `json:"supervisor,omitempty"`

@@ -10,13 +10,11 @@ export interface WorkspaceChatCommand {
   readonly $schema?: string;
   action?: string;
   allowanceMillis?: number;
-  before?: number;
   content?: WorkspaceChatCommandContent;
   /** @minimum 0 */
   generation?: number;
   id?: string;
   images?: ACPContent[];
-  limit?: number;
   mode?: string;
   optionId?: string;
   supervisor?: string;

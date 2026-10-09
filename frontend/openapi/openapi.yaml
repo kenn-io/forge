@@ -11474,9 +11474,6 @@ components:
         allowanceMillis:
           format: int64
           type: integer
-        before:
-          format: int64
-          type: integer
         content:
           additionalProperties: {}
           type: object
@@ -11490,9 +11487,6 @@ components:
           items:
             $ref: "#/components/schemas/ACPContent"
           type: array
-        limit:
-          format: int64
-          type: integer
         mode:
           type: string
         optionId:

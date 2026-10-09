@@ -62,8 +62,11 @@ Rules:
   duplicated (`internal/workspace/localruntime/acp_owner.go::Manager.RestoreSupervisedACP`).
 - When a supervised chat's agent exits, the daemon keeps its stored record and marks it
   recovery pending, so neither the exit hook nor the missing-backend prune forgets it; the chat
-  route reports it as exited until restored or stopped. Unsupervised chats are forgotten as
-  before (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
+  route reports it as exited until restored or stopped, and the fleet inventory omits it. A
+  taken-over chat keeps its supervision record, so it is kept too. The exited mark is in memory:
+  after a daemon restart, opening the workspace reloads a kept chat like any chat whose owner
+  died while no daemon was attached. Unsupervised chats are forgotten as before
+  (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
 - The ACP owner keeps the whole transcript and never deletes messages. State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the

@@ -163,6 +163,7 @@ func newTestHandler(t *testing.T, database *db.DB, fleetConfig config.Fleet) *Ha
 		WorkspaceSnapshot:      workspaceAPI.FleetSnapshot,
 		WorkspaceStatsSnapshot: workspaceAPI.FleetStatsSnapshot,
 		RuntimeSnapshot:        workspaceAPI.RuntimeSnapshot,
+		RuntimeExited:          workspaceAPI.RuntimeExited,
 	})
 	apiConfig := huma.DefaultConfig("fleet test", "0.0.0")
 	apiConfig.OpenAPIPath = ""

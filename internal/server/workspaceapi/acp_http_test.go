@@ -105,6 +105,7 @@ type chatFixture struct {
 	database *db.DB
 	root     string
 	runtime  *localruntime.Manager
+	handler  *Handler
 	server   *httptest.Server
 }
 
@@ -141,7 +142,7 @@ func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	handler.RegisterExecution(humago.New(mux, huma.DefaultConfig("test", "1")))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
-	return &chatFixture{t: t, database: database, root: root, runtime: runtime, server: server}
+	return &chatFixture{t: t, database: database, root: root, runtime: runtime, handler: handler, server: server}
 }
 
 // save writes the chat's saved session, supervised or not.
@@ -221,6 +222,14 @@ func chatFields(t *testing.T, data []byte) map[string]any {
 	fields := decodeChat[map[string]any](t, data)
 	delete(fields, "$schema")
 	return fields
+}
+
+// recoveryPending reports the flag that keeps the missing-backend prune away
+// from a stored record.
+func (f *chatFixture) recoveryPending() bool {
+	f.handler.runtimeRecoveryMu.Lock()
+	defer f.handler.runtimeRecoveryMu.Unlock()
+	return f.handler.runtimeRecoveryPending[chatKey]
 }
 
 func (f *chatFixture) storedChats() []db.WorkspaceRuntimeSession {
@@ -334,7 +343,7 @@ func TestWorkspaceChatCommandsRefuseOtherTypes(t *testing.T) {
 	owner := newChatOwner("generation-1")
 	f.serve(owner)
 
-	for _, body := range []string{`{"type":"history"}`, `{"type":"heartbeat"}`, `{"type":"launch"}`, `{}`} {
+	for _, body := range []string{`{"type":"history"}`, `{"type":"heartbeat"}`, `{"type":"launch"}`, `{}`, `{"type":"cancel","before":5,"limit":10}`} {
 		status, data := f.do(http.MethodPost, chatKey+"/chat/commands", body)
 		assert.Contains(t, []int{http.StatusBadRequest, http.StatusUnprocessableEntity}, status, "%s: %s", body, data)
 	}
@@ -383,6 +392,65 @@ func TestWorkspaceChatRestoresASupervisedChatAfterItsAgentExits(t *testing.T) {
 	// exits, it is kept for another restore.
 	f.stop(second)
 	assert.Never(func() bool { return len(f.storedChats()) == 0 }, 300*time.Millisecond, 10*time.Millisecond)
+}
+
+// A restored agent can exit before the restore request finishes. That exit is
+// still handled like any other, so the kept record stays exempt from the
+// missing-backend prune.
+func TestWorkspaceChatRecordsAnExitDuringRestore(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	first := newChatOwner("generation-1")
+	f.serve(first)
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	f.stop(first)
+	require.Eventually(t, f.recoveryPending, 5*time.Second, 10*time.Millisecond, "the first exit was not handled")
+
+	second := newChatOwner("generation-2")
+	second.exit()
+	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	require.NoError(t, err)
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	server := rpc.NewServer()
+	require.NoError(t, server.RegisterName("ACP", second))
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go server.ServeConn(conn)
+		}
+	}()
+
+	status, data = f.do(http.MethodPost, chatKey+"/chat/restore", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	require.Eventually(t, func() bool { return f.runtime.Exited(chatKey) }, 5*time.Second, 10*time.Millisecond)
+	assert.Eventually(t, f.recoveryPending, 2*time.Second, 10*time.Millisecond, "the kept record must stay exempt from the missing-backend prune")
+	assert.Len(t, f.storedChats(), 1)
+}
+
+// The interleaving the restore route cannot see: the restored agent exits and
+// the exit hook runs, skipping the chat, while recovery is still pending.
+// Ending the restore must then handle the exit itself.
+func TestWorkspaceChatRestoreHandlesAnExitTheHookSkipped(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	owner := newChatOwner("generation-1")
+	f.serve(owner)
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	f.stop(owner)
+	require.Eventually(t, f.recoveryPending, 5*time.Second, 10*time.Millisecond)
+	stored := f.storedChats()
+	require.Len(t, stored, 1)
+
+	f.handler.finishChatRestore(stored[0])
+	assert.True(t, f.recoveryPending(), "the exited chat lost its exemption from the missing-backend prune")
+	assert.Len(t, f.storedChats(), 1)
 }
 
 // A chat nobody supervises keeps today's lifecycle: restore refuses it while

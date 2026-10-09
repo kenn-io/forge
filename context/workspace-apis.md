@@ -137,8 +137,9 @@ embedder protocol for arbitrary host state.
   page and terminal picker.
 - `GET`, `POST .../commands`, and `POST .../restore` under
   `/workspaces/{id}/runtime/sessions/{session_key}/chat` let a coordinator drive a chat over
-  HTTP on the daemon and on execution workers (bearer only). They reconnect the workspace's
-  chats as opening it does (`internal/server/workspaceapi/acp_http.go`).
+  HTTP. The daemon serves them under its normal API auth; execution workers accept only their
+  bearer token. They reconnect the workspace's chats as opening it does
+  (`internal/server/workspaceapi/acp_http.go`).
   - The snapshot is the published state with transcript messages `[after, after+limit)`, each
     with its transcript `index`, plus `messageCount` (`limit` 1–500, default 100). A stored chat
     whose owner is not running returns only `exited: true`.

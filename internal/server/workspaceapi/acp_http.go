@@ -64,11 +64,14 @@ type getWorkspaceChatInput struct {
 type getWorkspaceChatOutput struct{ Body WorkspaceChat }
 
 // WorkspaceChatCommand is a chat command. Content answers an elicitation with
-// its form values.
+// its form values. History paging belongs to the websocket, so Before and
+// Limit are not part of this body.
 type WorkspaceChatCommand struct {
 	localruntime.ACPCommand
 	Type    string         `json:"type" enum:"supervise,takeover,config,prompt,unqueue,resume,cancel,permission,elicitation"`
 	Content map[string]any `json:"content,omitempty"`
+	Before  struct{}       `json:"-"`
+	Limit   struct{}       `json:"-"`
 }
 
 func (c WorkspaceChatCommand) acpCommand() (localruntime.ACPCommand, error) {
@@ -246,8 +249,23 @@ func (s *Handler) restoreSupervisedChat(ctx context.Context, cwd string, stored 
 	if err := s.recordResumedACP(ctx, item); err != nil {
 		return httpapi.Internal("record restored chat: " + err.Error())
 	}
-	s.setRuntimeRecoveryPending(key, false)
+	s.finishChatRestore(item)
 	return nil
+}
+
+// finishChatRestore ends a restored chat's recovery. The exit hook skips a
+// chat pending recovery, so an agent that exited before the flag cleared is
+// handled here; one that exits later is handled by the hook. The runtime marks
+// a session exited before it calls the hook, so one of the two always sees
+// the exit, and handling it twice is harmless.
+func (s *Handler) finishChatRestore(item db.WorkspaceRuntimeSession) {
+	s.setRuntimeRecoveryPending(item.SessionKey, false)
+	if s.runtime.Exited(item.SessionKey) {
+		s.HandleRuntimeSessionExit(localruntime.SessionInfo{
+			Key: item.SessionKey, WorkspaceID: item.WorkspaceID, TargetKey: item.TargetKey,
+			Kind: localruntime.LaunchTargetACP, CreatedAt: item.CreatedAt, TmuxSession: item.TmuxSession,
+		})
+	}
 }
 
 func restoreChatProblem(err error) error {

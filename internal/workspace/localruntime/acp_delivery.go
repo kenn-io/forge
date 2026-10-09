@@ -243,7 +243,7 @@ func (a *ACP) Page(after, limit int) ([]byte, error) {
 		limit = acpHistoryPage
 	}
 	start := min(max(after, 0), len(messages))
-	end := min(start+limit, len(messages))
+	end := start + min(limit, len(messages)-start)
 	state.MessageOffset = start
 	state.Messages = messages[start:end]
 	return json.Marshal(state, json.Deterministic(true))

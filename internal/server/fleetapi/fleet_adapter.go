@@ -413,6 +413,11 @@ func ownedTmuxSessionsForWorkspace(
 			continue
 		}
 		key := storedSession.SessionKey
+		// A kept record of an exited session, such as a supervised chat
+		// awaiting restore, has nothing running.
+		if s.runtimeExited != nil && s.runtimeExited(key) {
+			continue
+		}
 		session := fleetOwnedTmuxSession{
 			Name:             storedSession.TmuxSession,
 			WorktreeKey:      wtKey,

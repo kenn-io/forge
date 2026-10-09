@@ -1347,3 +1347,57 @@ describe("ACPWorkspace pasted images", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
+
+describe("ACPWorkspace supervision", () => {
+  const supervised = { supervision: { supervisor: "coordinator", generation: 2, takenOver: false } };
+
+  function composer(): HTMLTextAreaElement {
+    return screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+  }
+
+  it("shows the supervisor and locks input while the chat is supervised", async () => {
+    await openChat({
+      ...supervised,
+      permissions: [
+        { id: "g-p1", title: "Run tests", options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }] },
+      ],
+    });
+
+    expect(screen.getByText("Supervised by coordinator")).toBeTruthy();
+    expect(composer().disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("keeps Stop available to a person while a supervised turn runs", async () => {
+    await openChat({ ...supervised, busy: true });
+
+    const stop = screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    await fireEvent.click(stop);
+    expect(sentCommands()).toContainEqual({ type: "cancel" });
+  });
+
+  it("sends a takeover from the Take over button", async () => {
+    await openChat(supervised);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+
+    expect(sentCommands()).toContainEqual({ type: "takeover" });
+  });
+
+  it("unlocks input once the snapshot shows the takeover", async () => {
+    await openChat(supervised);
+    await push({ supervision: { supervisor: "coordinator", generation: 3, takenOver: true } });
+
+    expect(screen.getByText("Taken over from coordinator")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+    expect(composer().disabled).toBe(false);
+  });
+
+  it("shows nothing about supervision for an unsupervised chat", async () => {
+    await openChat({});
+
+    expect(screen.queryByText(/Supervised by/)).toBeNull();
+    expect(composer().disabled).toBe(false);
+  });
+});

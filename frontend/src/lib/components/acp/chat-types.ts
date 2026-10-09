@@ -130,6 +130,11 @@ export const ChatStateSchema = Schema.Struct({
       Schema.Array(Schema.Struct({ content: Schema.String, priority: Schema.String, status: Schema.String })),
     ),
   ),
+  // Present while a coordinator supervises the chat, or after a person took
+  // over from one.
+  supervision: Schema.optional(
+    Schema.NullOr(Schema.Struct({ supervisor: Schema.String, generation: Schema.Number, takenOver: Schema.Boolean })),
+  ),
   busy: Schema.Boolean,
   connected: Schema.Boolean,
   // Degraded but usable session start, such as Forge tools being unavailable.
@@ -147,6 +152,7 @@ export type ChatCommand =
   | { type: "resume" }
   | { type: "history"; before: number; limit: number }
   | { type: "cancel" }
+  | { type: "takeover" }
   | { type: "config"; id: string; value: string }
   | { type: "permission"; id: string; optionId: string }
   | { type: "elicitation"; id: string; action: "accept"; content: Record<string, unknown> }

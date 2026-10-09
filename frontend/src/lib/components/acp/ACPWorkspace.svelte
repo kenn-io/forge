@@ -57,15 +57,20 @@
   const uid = $props.id();
   const commandMenuId = `${uid}-commands`;
   const elicitations = $derived(chatState?.elicitations ?? []);
+  const supervision = $derived(chatState?.supervision ?? null);
+  // A supervised chat takes input only from its coordinator until a person
+  // takes over; Stop stays available to everyone.
+  const supervised = $derived(!!supervision && !supervision.takenOver);
+  const inputLocked = $derived(disabled || supervised);
   const notices = $derived(chatState?.notices ?? []);
   const commands = $derived(chatState?.commands ?? []);
   const slash = $derived(slashToken(draft, caret));
-  const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && chatState?.connected ? matchCommands(commands, slash.query) : []);
+  const commandMatches = $derived(slash && !commandMenuDismissed && !inputLocked && chatState?.connected ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
   const primaryOptions = $derived(chatState?.configOptions.filter(option => !option.category || option.category === "model" || option.category === "thought_level") ?? []);
   const otherOptions = $derived(chatState?.configOptions.filter(option => option.category && option.category !== "model" && option.category !== "thought_level") ?? []);
-  const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || disabled);
+  const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || inputLocked);
   let resyncPending = false;
   let historyLoading = $state(false);
   // Transcript index of the first loaded message; earlier pages load on demand.
@@ -74,7 +79,7 @@
   const rows = $derived(chatRows(chatState?.messages ?? [], firstLoaded));
   // A running turn never blocks the composer: prompts sent while busy steer
   // the turn or queue behind it on the host.
-  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
+  const canSend = $derived(connected && chatState?.connected && !pending && !inputLocked && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
@@ -339,7 +344,7 @@
            right after the message that asked them. -->
       {#each elicitations as elicitation (elicitation.id)}
         <Card level="default" padding="md" class="request request--question">
-          <ChatElicitation {elicitation} disabled={!connected || disabled} onrespond={(response) => connection?.send({ type: "elicitation", id: elicitation.id, ...response })} />
+          <ChatElicitation {elicitation} disabled={!connected || inputLocked} onrespond={(response) => connection?.send({ type: "elicitation", id: elicitation.id, ...response })} />
         </Card>
       {/each}
       {#each chatState?.permissions ?? [] as permission (permission.id)}
@@ -347,7 +352,7 @@
           <p class="permission-title">{permission.title || "Agent requests permission"}</p>
           <div class="permission-actions">
             {#each permission.options as option (option.optionId)}
-              <Button size="sm" disabled={!connected || disabled} onclick={() => connection?.send({type: "permission", id: permission.id, optionId: option.optionId})}>{option.name}</Button>
+              <Button size="sm" disabled={!connected || inputLocked} onclick={() => connection?.send({type: "permission", id: permission.id, optionId: option.optionId})}>{option.name}</Button>
             {/each}
           </div>
         </Card>
@@ -370,11 +375,21 @@
         {subagents}
         {queue}
         {queuePaused}
-        disabled={!connected || disabled}
+        disabled={!connected || inputLocked}
         suppressed={commandMatches.length > 0}
         onresume={() => connection?.send({ type: "resume" })}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
       />
+    {/if}
+    {#if supervision}
+      <div class="supervision" role="status">
+        {#if supervised}
+          <span>Supervised by {supervision.supervisor}</span>
+          <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "takeover" })}>Take over</Button>
+        {:else}
+          <span>Taken over from {supervision.supervisor}</span>
+        {/if}
+      </div>
     {/if}
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(running ? busyMode : "send"); }}>
       {#if commandMatches.length}
@@ -413,7 +428,7 @@
           onkeyup={syncCaret}
           onclick={syncCaret}
           rows="2"
-          disabled={disabled || !chatState?.connected}
+          disabled={inputLocked || !chatState?.connected}
         ></textarea>
         <!-- Placeholder-style hint after an inserted command, which a native
              placeholder cannot show once the field holds text. -->
@@ -511,6 +526,7 @@
     gap: var(--space-4);
     padding-block: var(--space-2) var(--space-5);
   }
+  .supervision { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding-block: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary); }
   .composer {
     position: relative;
     container-type: inline-size;

@@ -183,13 +183,16 @@ type Handler struct {
 	runtimeRestoreMu           sync.Mutex
 	runtimeRecoveryMu          sync.Mutex
 	runtimeRecoveryPending     map[string]bool
-	lifecycleMu                sync.Mutex
-	lifecycleCtx               context.Context
-	lifecycleCancel            context.CancelFunc
-	lifecycleWG                sync.WaitGroup
-	lifecycleStarted           bool
-	lifecycleStopping          bool
-	lifecycleDone              chan struct{}
+	// cannotReloadChats holds chats whose agent refused to reload them; see
+	// setChatCannotReload. runtimeRecoveryMu guards it.
+	cannotReloadChats map[string]bool
+	lifecycleMu       sync.Mutex
+	lifecycleCtx      context.Context
+	lifecycleCancel   context.CancelFunc
+	lifecycleWG       sync.WaitGroup
+	lifecycleStarted  bool
+	lifecycleStopping bool
+	lifecycleDone     chan struct{}
 }
 
 // New creates the workspace and project handler.
@@ -420,6 +423,27 @@ func (s *Handler) RegisterExecution(api huma.API) {
 	huma.Get(api, "/workspaces/{id}/runtime/sessions/{session_key}/initial-message",
 		s.getInitialMessageStatus,
 		httpapi.DocumentOperation("get-workspace-runtime-session-initial-message", "Get initial agent message status", "Workspaces"))
+	huma.Register(api, huma.Operation{
+		OperationID: "get-workspace-chat",
+		Method:      http.MethodGet,
+		Path:        "/workspaces/{id}/runtime/sessions/{session_key}/chat",
+		Summary:     "Get workspace chat",
+		Tags:        []string{"Workspaces"},
+	}, s.getWorkspaceChat)
+	huma.Register(api, huma.Operation{
+		OperationID: "run-workspace-chat-command",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/sessions/{session_key}/chat/commands",
+		Summary:     "Run workspace chat command",
+		Tags:        []string{"Workspaces"},
+	}, s.runWorkspaceChatCommand)
+	huma.Register(api, huma.Operation{
+		OperationID: "restore-workspace-chat",
+		Method:      http.MethodPost,
+		Path:        "/workspaces/{id}/runtime/sessions/{session_key}/chat/restore",
+		Summary:     "Restore supervised workspace chat",
+		Tags:        []string{"Workspaces"},
+	}, s.restoreWorkspaceChat)
 	huma.Register(api, huma.Operation{
 		OperationID: "launch-workspace-agent-handoff",
 		Method:      http.MethodPost,

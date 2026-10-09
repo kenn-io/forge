@@ -20,9 +20,8 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
+func newExecutionWorkerServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	cfg := &config.Config{}
 	cfg.DataDir = t.TempDir()
 	cfg.ExecutionWorker = config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock"}
@@ -35,10 +34,17 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		assert.NoError(srv.Shutdown(ctx))
+		assert.NoError(t, srv.Shutdown(ctx))
 	})
 	server := httptest.NewServer(srv)
 	t.Cleanup(server.Close)
+	return server
+}
+
+func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	server := newExecutionWorkerServer(t)
 	for _, test := range []struct {
 		name, method, path, bearer, cookie, userHeader string
 		status                                         int
@@ -74,6 +80,48 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 				assert.Equal(int64(1234), identity.GitHubUserID)
 				assert.Equal(uint32(1001), identity.UID)
 				assert.Equal("execution", identity.Role)
+			}
+		})
+	}
+}
+
+// A coordinator drives supervised chats on an execution worker with the
+// worker's bearer token, and only with it.
+func TestExecutionWorkerServesChatRoutes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	server := newExecutionWorkerServer(t)
+	chat := server.URL + "/api/v1/workspaces/missing/runtime/sessions/chat/chat"
+	for _, test := range []struct {
+		name, method, path, body, bearer string
+		status                           int
+	}{
+		{name: "snapshot", method: "GET", path: chat, bearer: "worker-test-secret", status: 503},
+		{name: "command", method: "POST", path: chat + "/commands", body: `{"type":"cancel"}`, bearer: "worker-test-secret", status: 503},
+		{name: "restore", method: "POST", path: chat + "/restore", bearer: "worker-test-secret", status: 503},
+		{name: "snapshot without bearer", method: "GET", path: chat, status: 401},
+		{name: "command without bearer", method: "POST", path: chat + "/commands", body: `{"type":"cancel"}`, status: 401},
+		{name: "restore without bearer", method: "POST", path: chat + "/restore", status: 401},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(t.Context(), test.method, test.path, strings.NewReader(test.body))
+			require.NoError(t, err)
+			request.Header.Set("Content-Type", "application/json")
+			if test.bearer != "" {
+				request.Header.Set("Authorization", "Bearer "+test.bearer)
+			}
+			response, err := server.Client().Do(request)
+			require.NoError(t, err)
+			defer response.Body.Close()
+			require.Equal(t, test.status, response.StatusCode)
+			if test.bearer != "" {
+				// The chat route answered; this worker runs no agents.
+				var problem struct {
+					Code   string `json:"code"`
+					Detail string `json:"detail"`
+				}
+				require.NoError(t, json.UnmarshalRead(response.Body, &problem))
+				assert.Equal(t, "serviceUnavailable", problem.Code)
+				assert.Equal(t, "workspace runtime not configured", problem.Detail)
 			}
 		})
 	}

@@ -338,3 +338,198 @@ func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
 	_, err = manager.ACP("workspace", info.Key)
 	assert.Error(t, err, "the exited chat was relaunched")
 }
+
+// exitedACPChat launches a chat whose agent exits on its first prompt while
+// this manager watches, optionally under supervision. The owner is fully gone
+// when it returns.
+func exitedACPChat(t *testing.T, supervised bool) (*Manager, SessionInfo, ACPState, string) {
+	t.Helper()
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_EXIT_ON_PROMPT", "7")
+	dir := t.TempDir()
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	exits := make(chan SessionInfo, 1)
+	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+	manager := newACPTestManager(t, Options{
+		ACPSessionsDir:  filepath.Join(dir, "acp"),
+		PtyOwnerRuntime: ptyownerruntime.New(owner, nil),
+		Targets:         ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
+		OnSessionExit:   func(info SessionInfo) { exits <- info },
+	})
+	info, err := manager.Launch(t.Context(), "workspace", dir, "chat")
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	prompt := ACPCommand{Type: "prompt", Text: "exit", ID: "last"}
+	if supervised {
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+		prompt.Generation = 1
+	}
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	require.NoError(t, agent.Command(prompt))
+	select {
+	case <-exits:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "ACP exit was not reported")
+	}
+	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+	return manager, info, state, dir
+}
+
+// storedACPChat is the daemon's stored record of a launched chat.
+func storedACPChat(info SessionInfo, dir string) RestoredRuntimeSession {
+	return RestoredRuntimeSession{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Label: "Coordinator task", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}
+}
+
+func restoreACPChat(manager *Manager, info SessionInfo, dir string) error {
+	return manager.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{storedACPChat(info, dir)})
+}
+
+func savedACPSession(t *testing.T, manager *Manager, key string) acpSavedSession {
+	t.Helper()
+	data, err := os.ReadFile(manager.acpSessionPath(key))
+	require.NoError(t, err)
+	var saved acpSavedSession
+	require.NoError(t, json.Unmarshal(data, &saved))
+	return saved
+}
+
+// A supervised chat is the exception to the exited-session rule: its
+// coordinator may restore it after its agent exits on its own, and it resumes
+// the same native session in a new agent process.
+func TestACPRestoresSupervisedChatAfterItsAgentExits(t *testing.T) {
+	manager, info, before, dir := exitedACPChat(t, true)
+	require.ErrorIs(t, restoreACPChat(manager, info, dir), ErrSessionUnavailable, "ordinary restoration still skips exited chats")
+
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.False(t, manager.Exited(info.Key))
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	assert := assert.New(t)
+	assert.NotEmpty(state.RuntimeGeneration)
+	assert.NotEqual(before.RuntimeGeneration, state.RuntimeGeneration)
+	require.NotNil(t, state.Supervision)
+	assert.Equal("coordinator", state.Supervision.Supervisor)
+	assert.Equal(uint64(1), state.Supervision.Generation)
+	assert.Equal("fixture-session", savedACPSession(t, manager, info.Key).SessionID)
+	// The restored chat keeps the identity in the daemon's stored record.
+	sessions := manager.ListSessions("workspace")
+	require.Len(t, sessions, 1)
+	assert.Equal("Coordinator task", sessions[0].Label)
+	assert.True(info.CreatedAt.Equal(sessions[0].CreatedAt))
+
+	// A running owner is the chat; restoring again starts no second agent.
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
+	again, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Same(agent, again)
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Equal("session/new\nsession/load\n", string(log))
+}
+
+// A supervised chat never continues in a new native session: an agent that
+// cannot reload it refuses to start, by any restore path, and the saved
+// session stays for a later attempt.
+func TestACPSupervisedChatRefusesAgentThatCannotReload(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_NO_LOAD", "1")
+	manager, info, _, dir := exitedACPChat(t, true)
+
+	err := manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir))
+	require.ErrorIs(t, err, ErrACPCannotReload)
+	_, err = manager.ACP("workspace", info.Key)
+	require.ErrorIs(t, err, ErrSessionNotFound)
+	assert.True(t, manager.Exited(info.Key))
+	saved := savedACPSession(t, manager, info.Key)
+	assert.Equal(t, "fixture-session", saved.SessionID)
+	require.NotNil(t, saved.State.Supervision)
+
+	// A daemon that never saw the exit restores it the ordinary way.
+	manager.Shutdown()
+	second := newACPTestManager(t, Options{ACPSessionsDir: manager.acpSessionsDir, Targets: manager.LaunchTargets()})
+	require.ErrorIs(t, restoreACPChat(second, info, dir), ErrACPCannotReload)
+	assert.FileExists(t, second.acpSessionPath(info.Key))
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\n", string(log), "no restore may start a new native session")
+}
+
+func TestACPRestoreSupervisedRefusesUnsupervisedChat(t *testing.T) {
+	manager, info, _, dir := exitedACPChat(t, false)
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)), ErrSessionUnavailable)
+	other := storedACPChat(info, dir)
+	other.WorkspaceID = "other"
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), other), ErrSessionNotFound)
+	_, err := manager.ACP("workspace", info.Key)
+	require.ErrorIs(t, err, ErrSessionNotFound)
+	assert.True(t, manager.Exited(info.Key))
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\n", string(log))
+}
+
+// A start failure recorded by an earlier owner belongs to that attempt; it
+// must not fail a later restore of an agent that can reload the chat.
+func TestACPRestoreSupervisedIgnoresEarlierStartFailure(t *testing.T) {
+	manager, info, _, dir := exitedACPChat(t, true)
+	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+	require.NoError(t, err)
+	startError := filepath.Join(paths.Dir, acpStartErrorFile)
+	require.NoError(t, os.WriteFile(startError, []byte("cannot_reload"), 0o600))
+	// The daemon reads the record while it waits for the owner's socket.
+	t.Setenv("KENN_FORGE_ACP_INITIALIZE_DELAY", "300ms")
+
+	require.NoError(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)))
+	_, err = manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.NoFileExists(t, startError)
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\nsession/load\n", string(log))
+}
+
+// The daemon keeps the stored record of a supervised chat whose agent exits,
+// so it asks the saved session whether a coordinator supervises it.
+func TestACPReportsWhetherASavedChatIsSupervised(t *testing.T) {
+	for _, supervised := range []bool{true, false} {
+		t.Run(fmt.Sprintf("supervised=%t", supervised), func(t *testing.T) {
+			manager, info, _, _ := exitedACPChat(t, supervised)
+			got, err := manager.SupervisedACP("workspace", info.Key)
+			require.NoError(t, err)
+			assert.Equal(t, supervised, got)
+
+			_, err = manager.SupervisedACP("other-workspace", info.Key)
+			require.ErrorIs(t, err, ErrSessionNotFound)
+			_, err = manager.SupervisedACP("workspace", "unknown-chat")
+			require.ErrorIs(t, err, ErrSessionNotFound)
+		})
+	}
+}
+
+// A taken-over chat belongs to people, though it keeps its supervision
+// record. Like any person's chat, its record is not kept for a coordinator's
+// restore after its agent exits.
+func TestACPTakenOverChatIsNotSupervised(t *testing.T) {
+	manager, info, _, dir := exitedACPChat(t, true)
+	saved := savedACPSession(t, manager, info.Key)
+	require.NotNil(t, saved.State.Supervision)
+	saved.State.Supervision.TakenOver = true
+	data, err := json.Marshal(saved)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(manager.acpSessionPath(info.Key), data, 0o600))
+
+	supervised, err := manager.SupervisedACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.False(t, supervised)
+	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)), ErrSessionUnavailable)
+}

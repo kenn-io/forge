@@ -14,6 +14,176 @@ components:
         - font_family
         - font_size
       type: object
+    ACPCommandInfo:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        inputHint:
+          type: string
+        name:
+          type: string
+      required:
+        - name
+        - description
+      type: object
+    ACPConfigChoice:
+      additionalProperties: false
+      properties:
+        group:
+          type: string
+        name:
+          type: string
+        options:
+          items:
+            $ref: "#/components/schemas/ACPConfigChoice"
+          type: array
+        value:
+          type: string
+      required:
+        - name
+      type: object
+    ACPConfigOption:
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+        currentValue:
+          type: string
+        description:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        options:
+          items:
+            $ref: "#/components/schemas/ACPConfigChoice"
+          type: array
+        type:
+          type: string
+      required:
+        - id
+        - name
+        - type
+        - currentValue
+        - options
+      type: object
+    ACPContent:
+      additionalProperties: false
+      properties:
+        data:
+          type: string
+        description:
+          type: string
+        mimeType:
+          type: string
+        name:
+          type: string
+        size:
+          format: int64
+          type: integer
+        text:
+          type: string
+        title:
+          type: string
+        type:
+          type: string
+        uri:
+          type: string
+      required:
+        - type
+      type: object
+    ACPElicitation:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        message:
+          type: string
+        schema:
+          $ref: "#/components/schemas/ACPElicitationSchema"
+      required:
+        - id
+        - message
+        - schema
+      type: object
+    ACPElicitationSchema:
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+        properties:
+          additionalProperties: {}
+          type: object
+        required:
+          items:
+            type: string
+          type: array
+        title:
+          type: string
+      required:
+        - properties
+      type: object
+    ACPPermission:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        options:
+          items:
+            $ref: "#/components/schemas/ACPPermissionOption"
+          type: array
+        title:
+          type: string
+      required:
+        - id
+        - title
+        - options
+      type: object
+    ACPPermissionOption:
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        name:
+          type: string
+        optionId:
+          type: string
+      required:
+        - optionId
+        - name
+        - kind
+      type: object
+    ACPPlanEntry:
+      additionalProperties: false
+      properties:
+        content:
+          type: string
+        priority:
+          type: string
+        status:
+          type: string
+      required:
+        - content
+        - priority
+        - status
+      type: object
+    ACPQueuedPrompt:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        images:
+          items:
+            $ref: "#/components/schemas/ACPContent"
+          type: array
+        text:
+          type: string
+      required:
+        - id
+        - text
+      type: object
     ACPSettingsUpdate:
       additionalProperties: false
       properties:
@@ -24,6 +194,84 @@ components:
           maximum: 32
           minimum: 8
           type: integer
+      type: object
+    ACPSupervision:
+      additionalProperties: false
+      properties:
+        changedAt:
+          type: string
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        supervisor:
+          type: string
+        takenOver:
+          type: boolean
+      required:
+        - supervisor
+        - generation
+        - takenOver
+        - changedAt
+      type: object
+    ACPToolContent:
+      additionalProperties: false
+      properties:
+        content:
+          $ref: "#/components/schemas/ACPContent"
+        exitCode:
+          format: int64
+          type: integer
+        newText:
+          type: string
+        oldText:
+          type: string
+        output:
+          type: string
+        path:
+          type: string
+        terminalId:
+          type: string
+        type:
+          type: string
+      required:
+        - type
+      type: object
+    ACPToolLocation:
+      additionalProperties: false
+      properties:
+        line:
+          format: int64
+          type: integer
+        path:
+          type: string
+      required:
+        - path
+      type: object
+    ACPTurnRecord:
+      additionalProperties: false
+      properties:
+        activeMillis:
+          format: int64
+          type: integer
+        allowanceExhausted:
+          type: boolean
+        allowanceMillis:
+          format: int64
+          type: integer
+        endedAt:
+          type: string
+        error:
+          type: string
+        startedAt:
+          type: string
+        stopReason:
+          type: string
+        submissionId:
+          type: string
+      required:
+        - startedAt
+        - activeMillis
       type: object
     AbortFederationSpokeInputBody:
       additionalProperties: false
@@ -8845,6 +9093,21 @@ components:
         - number
         - repo_tracked
       type: object
+    RestoreWorkspaceChatOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RestoreWorkspaceChatOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        restored:
+          type: boolean
+      required:
+        - restored
+      type: object
     ReviewerAccount:
       additionalProperties: false
       properties:
@@ -8956,6 +9219,21 @@ components:
         - available
         - version
         - endpoint
+      type: object
+    RunWorkspaceChatCommandOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RunWorkspaceChatCommandOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        accepted:
+          type: boolean
+      required:
+        - accepted
       type: object
     RuntimeAttachSpecResponse:
       additionalProperties: false
@@ -11067,6 +11345,205 @@ components:
         - target_key
         - state
         - updated_at
+      type: object
+    WorkspaceChat:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceChat.json
+          format: uri
+          readOnly: true
+          type: string
+        blocked:
+          type: boolean
+        busy:
+          type: boolean
+        commands:
+          items:
+            $ref: "#/components/schemas/ACPCommandInfo"
+          type: array
+        configOptions:
+          items:
+            $ref: "#/components/schemas/ACPConfigOption"
+          type: array
+        configuring:
+          type: boolean
+        connected:
+          type: boolean
+        elicitations:
+          items:
+            $ref: "#/components/schemas/ACPElicitation"
+          type: array
+        error:
+          type: string
+        errorCode:
+          format: int64
+          type: integer
+        errorData:
+          type: string
+        exited:
+          description: The chat's agent has exited; no other field is present.
+          type: boolean
+        messageCount:
+          format: int64
+          type: integer
+        messageOffset:
+          format: int64
+          type: integer
+        messages:
+          items:
+            $ref: "#/components/schemas/WorkspaceChatMessage"
+          type: array
+        notices:
+          items:
+            type: string
+          type: array
+        permissions:
+          items:
+            $ref: "#/components/schemas/ACPPermission"
+          type: array
+        plan:
+          items:
+            $ref: "#/components/schemas/ACPPlanEntry"
+          type: array
+        queue:
+          items:
+            $ref: "#/components/schemas/ACPQueuedPrompt"
+          type: array
+        queuePaused:
+          type: boolean
+        runtimeGeneration:
+          type: string
+        sending:
+          $ref: "#/components/schemas/ACPQueuedPrompt"
+        steering:
+          type: boolean
+        steeringSupported:
+          type: boolean
+        stopping:
+          type: boolean
+        supervision:
+          $ref: "#/components/schemas/ACPSupervision"
+        turns:
+          items:
+            $ref: "#/components/schemas/ACPTurnRecord"
+          type: array
+        uncertain:
+          items:
+            type: string
+          type: array
+        withdrawn:
+          items:
+            type: string
+          type: array
+      required:
+        - exited
+      type: object
+    WorkspaceChatCommand:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceChatCommand.json
+          format: uri
+          readOnly: true
+          type: string
+        action:
+          type: string
+        allowanceMillis:
+          format: int64
+          type: integer
+        content:
+          additionalProperties: {}
+          type: object
+        generation:
+          format: int64
+          minimum: 0
+          type: integer
+        id:
+          type: string
+        images:
+          items:
+            $ref: "#/components/schemas/ACPContent"
+          type: array
+        mode:
+          type: string
+        optionId:
+          type: string
+        supervisor:
+          type: string
+        text:
+          type: string
+        type:
+          enum:
+            - supervise
+            - takeover
+            - config
+            - prompt
+            - unqueue
+            - resume
+            - cancel
+            - permission
+            - elicitation
+          type: string
+        value:
+          type: string
+      required:
+        - type
+      type: object
+    WorkspaceChatMessage:
+      additionalProperties: false
+      properties:
+        content:
+          $ref: "#/components/schemas/ACPContent"
+        createdAt:
+          type: string
+        images:
+          items:
+            $ref: "#/components/schemas/ACPContent"
+          type: array
+        index:
+          description: Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId.
+          format: int64
+          type: integer
+        kind:
+          type: string
+        locations:
+          items:
+            $ref: "#/components/schemas/ACPToolLocation"
+          type: array
+        messageId:
+          type: string
+        parentToolCallId:
+          type: string
+        rawInput:
+          type: string
+        rawOutput:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        subagent:
+          type: boolean
+        submissionId:
+          type: string
+        text:
+          type: string
+        toolCallId:
+          type: string
+        toolContent:
+          items:
+            $ref: "#/components/schemas/ACPToolContent"
+          type: array
+      required:
+        - index
+        - role
+        - text
+        - createdAt
       type: object
     WorkspaceDiffWatchResponse:
       additionalProperties: false
@@ -27536,6 +28013,123 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get workspace runtime session attach spec
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/sessions/{session_key}/chat:
+    get:
+      operationId: get-workspace-chat
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+        - description: Transcript index of the first message to return.
+          explode: false
+          in: query
+          name: after
+          schema:
+            default: 0
+            description: Transcript index of the first message to return.
+            format: int64
+            minimum: 0
+            type: integer
+        - description: Most messages to return.
+          explode: false
+          in: query
+          name: limit
+          schema:
+            default: 100
+            description: Most messages to return.
+            format: int64
+            maximum: 500
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceChat"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get workspace chat
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/sessions/{session_key}/chat/commands:
+    post:
+      operationId: run-workspace-chat-command
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceChatCommand"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunWorkspaceChatCommandOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Run workspace chat command
+      tags:
+        - Workspaces
+  /workspaces/{id}/runtime/sessions/{session_key}/chat/restore:
+    post:
+      operationId: restore-workspace-chat
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: session_key
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RestoreWorkspaceChatOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Restore supervised workspace chat
       tags:
         - Workspaces
   /workspaces/{id}/runtime/sessions/{session_key}/initial-message:

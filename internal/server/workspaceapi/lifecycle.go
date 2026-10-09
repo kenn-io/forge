@@ -325,6 +325,12 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 		return
 	}
 	h.invalidateWorkspaceEnrichment(info.WorkspaceID)
+	if h.keepsExitedChat(info) {
+		// Its coordinator may restore it from the stored record. Recovery
+		// pending also spares the record from the missing-backend prune.
+		h.setRuntimeRecoveryPending(info.Key, true)
+		return
+	}
 	h.runBackground(func(ctx context.Context) {
 		cleanupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -337,6 +343,24 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 				"err", err)
 		}
 	})
+}
+
+// keepsExitedChat reports whether an exited session is a chat a coordinator
+// holds, whose stored record outlives its agent. A taken-over chat is a
+// person's chat and is forgotten like any other.
+func (h *Handler) keepsExitedChat(info localruntime.SessionInfo) bool {
+	if info.Kind != localruntime.LaunchTargetACP || h.runtime == nil {
+		return false
+	}
+	supervised, err := h.runtime.SupervisedACP(info.WorkspaceID, info.Key)
+	if err != nil {
+		slog.Warn("read exited chat supervision",
+			"workspace_id", info.WorkspaceID,
+			"session_key", info.Key,
+			"err", err)
+		return false
+	}
+	return supervised
 }
 
 func (h *Handler) removeAgentActivityRuntimeSession(sessionKey string) {

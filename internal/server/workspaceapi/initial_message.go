@@ -238,7 +238,8 @@ func (s *Handler) SubmitAgentMessageService(
 		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
 			return AgentMessageResult{}, ErrInitialMessageInputModeNotReady
 		}
-		if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
+		if errors.Is(err, localruntime.ErrInitialMessageNotWritten) ||
+			errors.Is(err, localruntime.ErrACPSupervised) {
 			return AgentMessageResult{}, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
 		return AgentMessageResult{}, httpapi.Internal("submit agent message failed")
@@ -258,7 +259,9 @@ func (s *Handler) handleInitialMessageSubmitError(
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
 		return InitialMessageResult{}, ErrInitialMessageInputModeNotReady
 	}
-	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
+	// A supervised chat refuses the message before anything is written.
+	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) ||
+		errors.Is(err, localruntime.ErrACPSupervised) {
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
 		return InitialMessageResult{}, httpapi.Conflict(
 			httpapi.CodeConflict, err.Error(), nil,

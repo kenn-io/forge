@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"slices"
-	"strconv"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -59,9 +59,11 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 			RawInput: acpRawJSON(call.RawInput), RawOutput: acpRawJSON(call.RawOutput),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339),
 		})
+		a.refreshBlockedLocked()
 	case u.ToolCallUpdate != nil:
 		a.releaseHeldTextLocked()
 		a.updateToolLocked(u.ToolCallUpdate)
+		a.refreshBlockedLocked()
 	default:
 		// User echoes, usage, and mode updates are not shown.
 		return nil
@@ -91,6 +93,9 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.takeoverPending = false
 		a.external = &acpExternalTurn{active: true}
 		a.state.Busy = true
+		if a.runningTurnRecordLocked() == nil {
+			a.beginTurnRecordLocked("", 0, len(a.state.Messages))
+		}
 		a.changedLocked()
 		return
 	}
@@ -101,7 +106,9 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.external.active = true
 	} else if a.external.active || a.external.promptDone {
 		a.external = nil
-		a.endTurnLocked()
+		// A stopped or failed prompt ends this turn in finishTurn, so an
+		// idle thread is a normal end.
+		a.endTurnLocked(string(acpsdk.StopReasonEndTurn), nil)
 		go a.drain()
 	}
 }
@@ -234,8 +241,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 		a.mu.Unlock()
 		return acpsdk.RequestPermissionResponse{Outcome: acpsdk.NewRequestPermissionOutcomeCancelled()}, nil
 	}
-	a.nextPermission++
-	permission := ACPPermission{ID: strconv.Itoa(a.nextPermission)}
+	permission := ACPPermission{ID: a.newRequestIDLocked("p"), toolCallID: string(params.ToolCall.ToolCallId)}
 	if params.ToolCall.Title != nil {
 		permission.Title = *params.ToolCall.Title
 	}
@@ -245,6 +251,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 	response := make(chan acpsdk.RequestPermissionOutcome, 1)
 	a.permissions[permission.ID] = response
 	a.state.Permissions = append(a.state.Permissions, permission)
+	a.refreshBlockedLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	defer func() {
@@ -252,6 +259,7 @@ func (a *ACP) RequestPermission(ctx context.Context, params acpsdk.RequestPermis
 		defer a.mu.Unlock()
 		delete(a.permissions, permission.ID)
 		a.state.Permissions = slices.DeleteFunc(a.state.Permissions, func(p ACPPermission) bool { return p.ID == permission.ID })
+		a.refreshBlockedLocked()
 		a.changedLocked()
 	}()
 	select {
@@ -275,9 +283,8 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 		a.mu.Unlock()
 		return acpsdk.NewUnstableCreateElicitationResponseCancel(), nil
 	}
-	a.nextPermission++
 	schema := params.Form.RequestedSchema
-	elicitation := ACPElicitation{ID: "elicitation-" + strconv.Itoa(a.nextPermission), Message: params.Form.Message, Schema: ACPElicitationSchema{Properties: schema.Properties, Required: schema.Required}}
+	elicitation := ACPElicitation{ID: a.newRequestIDLocked("e"), Message: params.Form.Message, Schema: ACPElicitationSchema{Properties: schema.Properties, Required: schema.Required}}
 	if schema.Title != nil {
 		elicitation.Schema.Title = *schema.Title
 	}
@@ -290,6 +297,7 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 	response := make(chan acpsdk.UnstableCreateElicitationResponse, 1)
 	a.elicitations[elicitation.ID] = response
 	a.state.Elicitations = append(a.state.Elicitations, elicitation)
+	a.refreshBlockedLocked()
 	a.changedLocked()
 	a.mu.Unlock()
 	defer func() {
@@ -297,6 +305,7 @@ func (a *ACP) UnstableCreateElicitation(ctx context.Context, params acpsdk.Unsta
 		defer a.mu.Unlock()
 		delete(a.elicitations, elicitation.ID)
 		a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == elicitation.ID })
+		a.refreshBlockedLocked()
 		a.changedLocked()
 	}()
 	select {
@@ -317,9 +326,9 @@ func (*ACP) UnstableCompleteElicitation(context.Context, acpsdk.UnstableComplete
 
 func (a *ACP) answerElicitation(command ACPCommand) error {
 	var answer acpsdk.UnstableCreateElicitationResponse
+	content := map[string]any{}
 	switch command.Action {
 	case "accept":
-		content := map[string]any{}
 		if len(command.Content) > 0 {
 			if err := json.Unmarshal(command.Content, &content); err != nil || content == nil {
 				return errors.New("elicitation content must be a JSON object")
@@ -334,15 +343,58 @@ func (a *ACP) answerElicitation(command ACPCommand) error {
 	default:
 		return errors.New("elicitation action must be accept, decline, or cancel")
 	}
+	key, err := elicitationAnswerKey(command.Action, content)
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		return err
+	}
 	response, ok := a.elicitations[command.ID]
 	if !ok {
-		return errors.New("elicitation is no longer pending")
+		if replay, err := a.answeredLocked(command.ID, key); replay || err != nil {
+			return err
+		}
+		return errACPNotPending
 	}
 	delete(a.elicitations, command.ID)
 	a.state.Elicitations = slices.DeleteFunc(a.state.Elicitations, func(e ACPElicitation) bool { return e.ID == command.ID })
 	response <- answer
+	a.refreshBlockedLocked()
+	a.recordAnswerLocked(command.ID, key)
+	a.saveTakenEffectLocked("answering an elicitation")
+	a.changedLocked()
+	return nil
+}
+
+// answerPermission selects one option of a pending permission request.
+func (a *ACP) answerPermission(command ACPCommand) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(command.Generation); err != nil {
+		return err
+	}
+	response, ok := a.permissions[command.ID]
+	if !ok {
+		if replay, err := a.answeredLocked(command.ID, command.OptionID); replay || err != nil {
+			return err
+		}
+		return errACPNotPending
+	}
+	index := slices.IndexFunc(a.state.Permissions, func(p ACPPermission) bool {
+		return p.ID == command.ID && slices.ContainsFunc(p.Options, func(o ACPPermissionOption) bool { return o.OptionID == command.OptionID })
+	})
+	if index < 0 {
+		return fmt.Errorf("permission request has no option %q", command.OptionID)
+	}
+	delete(a.permissions, command.ID)
+	a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
+	response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
+	a.refreshBlockedLocked()
+	a.recordAnswerLocked(command.ID, command.OptionID)
+	a.saveTakenEffectLocked("answering a permission")
 	a.changedLocked()
 	return nil
 }

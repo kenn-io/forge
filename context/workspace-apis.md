@@ -135,6 +135,36 @@ embedder protocol for arbitrary host state.
     (`internal/server/kata/workspace.go::Handler.createKataWorkspace`).
 - `GET /workspaces`: list kenn-forge's persisted workspaces for the workspaces
   page and terminal picker.
+- `GET`, `POST .../commands`, and `POST .../restore` under
+  `/workspaces/{id}/runtime/sessions/{session_key}/chat` let a coordinator drive a chat over
+  HTTP. The daemon serves them under its normal API auth; execution workers accept only their
+  bearer token. An attached chat answers at once; a chat that is not attached first reconnects
+  the workspace's chats as opening it does (`internal/server/workspaceapi/acp_http.go`).
+  - The snapshot is the published state with transcript messages `[after, after+limit)`, each
+    with its transcript `index`, plus `messageCount` (`limit` 1–500, default 100). A stored chat
+    returns only `exited: true` when its owner is known to be gone: the daemon saw it exit, or
+    a relaunch failed with `cannot_reload`. A chat that could not be attached for another
+    reason, such as workspace setup, is `503`. An `index` can shift by one: a prompt start or
+    a steer inserts its user message before output that arrived while it was being sent, so the
+    agent's reply follows it. A reader paging with `after` can then see a message again; the
+    inserted message carries its `submissionId`.
+  - Commands take the chat command body for input types only. A refusal with an owner error
+    code is `409 conflict` with that code as `details.reason` (`busy`, `supervised`,
+    `stale_generation`, `uncertain`, `stale_request`, `queue_pending`, `withdrawn`,
+    `already_answered`, `not_pending`); a disconnected agent or a chat that is not running is
+    `503`, and any other refusal is `400`
+    (`internal/server/workspaceapi/acp_http.go::chatCommandProblem`). A command whose change
+    took effect, such as a sent, steered, queued, or unqueued prompt or a delivered answer, is
+    accepted even if the save after it fails; the chat's `error` reports that
+    (`internal/workspace/localruntime/acp_owner.go::ACP.saveTakenEffectLocked`).
+  - Restore applies only to chats a coordinator holds and uses the stored record. It refuses
+    an unsupervised or taken-over chat with reason `not_supervised`, an agent without
+    `loadSession` with reason `cannot_reload`, and a workspace that setup or deletion owns
+    with `workspaceSetupInProgress` and reason `setup_in_progress`.
+  - After a `cannot_reload` failure, ordinary reads, commands, and workspace opens skip the
+    chat instead of starting an agent each time. An explicit restore tries again, and a
+    successful restore or a stop clears the mark
+    (`internal/server/workspaceapi/acp.go::Handler.setChatCannotReload`).
 - Terminal and mobile pickers read inline workspaces from the projected snapshot;
   they never fan out per-host list reads, and remote actions require advertised
   availability (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::loadWorkspaces`).

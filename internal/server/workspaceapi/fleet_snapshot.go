@@ -118,6 +118,12 @@ func fleetWorkspaceSessionBackend(backend string) string {
 	}
 }
 
+// RuntimeExited reports whether the runtime saw the session exit on its own.
+// A supervised chat's stored record outlives such an exit.
+func (h *Handler) RuntimeExited(sessionKey string) bool {
+	return h != nil && h.runtime != nil && h.runtime.Exited(sessionKey)
+}
+
 // RuntimeSnapshot returns a detached view of runtime sessions for a workspace
 // or project-worktree scope.
 func (h *Handler) RuntimeSnapshot(scope string) RuntimeSnapshot {

@@ -160,3 +160,107 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	require.NoError(json.UnmarshalRead(resp.Body, &problem))
 	assert.Equal("unauthorized", problem.Code)
 }
+
+type serviceFixture struct {
+	broker       *Broker
+	uid          uint32
+	humanChecks  atomic.Int32
+	repositoryID atomic.Int64
+	mintedPerms  atomic.Value
+}
+
+func newServiceAccountFixture(t *testing.T) *serviceFixture {
+	t.Helper()
+	fixture := &serviceFixture{uid: 2001}
+	fixture.repositoryID.Store(42)
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/app/installations/23":
+			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected"}`)
+		case r.URL.Path == "/app/installations/23/access_tokens":
+			var request githubapp.InstallationTokenRequest
+			if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) {
+				return
+			}
+			if request.Permissions["contents"] == "write" {
+				fixture.mintedPerms.Store(request.Permissions)
+			}
+			data, err := json.Marshal(githubapp.InstallationToken{
+				Token: "fixture-installation-token", ExpiresAt: time.Now().Add(time.Hour),
+				Repositories: []githubapp.Repository{{ID: 42}}, Permissions: request.Permissions,
+			})
+			if assert.NoError(t, err) {
+				_, _ = w.Write(data)
+			}
+		case r.URL.Path == "/repos/example-org/project-a":
+			_, _ = fmt.Fprintf(w, `{"id":%d,"name":"project-a","owner":{"id":99},"default_branch":"main"}`,
+				fixture.repositoryID.Load())
+		case r.URL.Path == "/user/5555",
+			strings.HasPrefix(r.URL.Path, "/orgs/example-org/members/"),
+			strings.HasPrefix(r.URL.Path, "/repos/example-org/project-a/collaborators/"):
+			fixture.humanChecks.Add(1)
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	keyPath := filepath.Join(t.TempDir(), "app.pem")
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key),
+	}), 0o600))
+	fixture.broker, err = NewBroker(BrokerConfig{
+		Socket: filepath.Join(t.TempDir(), "broker.sock"), AppID: 17, InstallationID: 23,
+		Organization: "example-org", OrganizationID: 99, PrivateKeyFile: keyPath,
+		Accounts: []Account{{
+			UID: fixture.uid, GitHubUserID: 5555, Login: "example-app[bot]", Service: true,
+		}},
+		Repositories: []Repository{{ID: 42, Name: "project-a"}},
+	})
+	require.NoError(t, err)
+	fixture.broker.base, err = url.Parse(api.URL + "/")
+	require.NoError(t, err)
+	fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
+	return fixture
+}
+
+func TestBrokerServiceAccountMintsWritableTokenWithoutMembership(t *testing.T) {
+	fixture := newServiceAccountFixture(t)
+	for _, profile := range []string{"git", "push", "pr"} {
+		credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
+			CredentialRequest{Repository: "example-org/project-a", Profile: profile})
+		require.NoError(t, err, profile)
+		assert.NotEmpty(t, credential.Token, profile)
+		assert.True(t, credential.Writable, profile)
+		assert.Equal(t, int64(5555), credential.GitHubUserID, profile)
+		assert.Equal(t, int64(42), credential.RepositoryID, profile)
+		assert.Equal(t, "main", credential.DefaultBranch, profile)
+	}
+	assert.Zero(t, fixture.humanChecks.Load(), "service accounts skip user, membership, and permission checks")
+	permissions, ok := fixture.mintedPerms.Load().(map[string]string)
+	require.True(t, ok)
+	assert.Equal(t, "write", permissions["contents"])
+	assert.Equal(t, "write", permissions["pull_requests"])
+}
+
+func TestBrokerServiceAccountStillChecksRepositoryIdentity(t *testing.T) {
+	fixture := newServiceAccountFixture(t)
+	fixture.repositoryID.Store(43)
+	_, err := fixture.broker.Credential(t.Context(), fixture.uid,
+		CredentialRequest{Repository: "example-org/project-a", Profile: "pr"})
+	require.ErrorContains(t, err, "repository identity")
+	assert.Zero(t, fixture.humanChecks.Load())
+}
+
+func TestBrokerServiceAccountRejectsUnadmittedRepository(t *testing.T) {
+	fixture := newServiceAccountFixture(t)
+	_, err := fixture.broker.Credential(t.Context(), fixture.uid,
+		CredentialRequest{Repository: "example-org/other", Profile: "pr"})
+	require.ErrorContains(t, err, "not admitted")
+	_, err = fixture.broker.Credential(t.Context(), fixture.uid,
+		CredentialRequest{Repository: "personal/project-a", Profile: "pr"})
+	require.ErrorContains(t, err, "not admitted")
+}

@@ -732,6 +732,9 @@ func newServer(
 			}
 			return s.workspaceAPI.RuntimeSnapshot(scope)
 		},
+		RuntimeExited: func(sessionKey string) bool {
+			return s.workspaceAPI != nil && s.workspaceAPI.RuntimeExited(sessionKey)
+		},
 		RevalidateDiffs: func() {
 			if s.workspaceAPI != nil {
 				s.workspaceAPI.RevalidateSelectedDiffs()

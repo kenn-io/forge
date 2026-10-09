@@ -25,8 +25,9 @@ type acpTurnResult struct {
 	err        error
 }
 
-// submit never rejects input because a turn is running: a busy chat queues
-// the prompt, or steers it into the turn when asked and supported.
+// submit never rejects people's input because a turn is running: a busy chat
+// queues the prompt, or steers it into the turn when asked and supported. A
+// supervisor's prompt starts a turn or fails with ErrACPBusy.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
 	if strings.TrimSpace(text) == "" && len(command.Images) == 0 {
@@ -40,9 +41,20 @@ func (a *ACP) submit(command ACPCommand) error {
 	default:
 		return errors.New("prompt mode must be send, queue, or steer")
 	}
+	if command.AllowanceMillis < 0 {
+		return errACPNegativeAllowance
+	}
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	supervised, err := a.supervisedPromptLocked(command)
+	if err == nil && command.AllowanceMillis > 0 && !supervised {
+		err = errACPUnsupervisedAllowance
+	}
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	if submitted, err := a.submittedLocked(command.ID, text, command.Images); submitted || err != nil {
 		a.mu.Unlock()
 		return err
@@ -52,6 +64,10 @@ func (a *ACP) submit(command ACPCommand) error {
 		return ErrACPAgentUnavailable
 	}
 	running := a.state.Busy || a.state.Steering
+	if supervised && (running || a.state.Configuring) {
+		a.mu.Unlock()
+		return ErrACPBusy
+	}
 	if !running && len(a.state.Queue) == 0 {
 		// A new message after a stop starts work again; a paused backlog
 		// still waits for an explicit resume.
@@ -62,23 +78,23 @@ func (a *ACP) submit(command ACPCommand) error {
 		return a.steerLocked(text, command.ID, command.Images)
 	}
 	if command.Mode == "queue" || running || a.state.Configuring {
-		err := a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
+		a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	}
 	a.mu.Unlock()
-	err := a.startPromptLocked(text, command.ID, command.Images)
+	err = a.startPromptLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, command.AllowanceMillis, command.Generation)
+	if errors.Is(err, errACPNotIdle) && supervised {
+		return ErrACPBusy
+	}
 	if errors.Is(err, errACPNotIdle) {
 		// A settings change began after the check above.
 		a.mu.Lock()
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
+		a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
+		go a.drain()
+		return nil
 	}
 	return err
 }
@@ -88,6 +104,9 @@ func (a *ACP) submit(command ACPCommand) error {
 func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error) {
 	if id == "" {
 		return false, nil
+	}
+	if err := a.withdrawnOrUncertainLocked(id); err != nil {
+		return true, err
 	}
 	for _, message := range a.state.Messages {
 		if message.SubmissionID == id {
@@ -108,7 +127,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	return false, nil
 }
 
-func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
+// enqueueLocked queues prompt. A queued prompt drains even if saving the
+// queue fails, so the save cannot refuse it.
+func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	if prompt.ID == "" {
 		prompt.ID = "queued-" + rand.Text()
 	}
@@ -117,29 +138,37 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
 	} else {
 		a.state.Queue = append(a.state.Queue, prompt)
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("queueing a prompt")
 	a.changedLocked()
-	return err
 }
 
-func (a *ACP) unqueue(id string) error {
+func (a *ACP) unqueue(id string, generation uint64) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		return err
+	}
 	index := slices.IndexFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
 	if index < 0 {
 		return errors.New("message is no longer queued")
 	}
 	a.state.Queue = slices.Delete(a.state.Queue, index, index+1)
+	// A retry of a withdrawn submission must not run the work after all.
+	a.state.Withdrawn = append(a.state.Withdrawn, id)
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("unqueueing a prompt")
 	a.changedLocked()
-	return err
+	return nil
 }
 
-func (a *ACP) resumeQueue() error {
+func (a *ACP) resumeQueue(generation uint64) error {
 	a.mu.Lock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	a.state.QueuePaused = false
 	a.changedLocked()
 	a.mu.Unlock()
@@ -153,6 +182,7 @@ func (a *ACP) drain() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	a.dropUnrunnableQueueHeadLocked()
 	if !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
 		a.state.QueuePaused || len(a.state.Queue) == 0 {
 		a.mu.Unlock()
@@ -160,7 +190,7 @@ func (a *ACP) drain() {
 	}
 	next := a.state.Queue[0]
 	a.mu.Unlock()
-	if err := a.startPromptLocked(next.Text, next.ID, next.Images); err != nil && !errors.Is(err, errACPNotIdle) {
+	if err := a.startPromptLocked(next, 0, 0); err != nil && !errors.Is(err, errACPNotIdle) {
 		a.mu.Lock()
 		a.setErrorLocked(err)
 		a.state.QueuePaused = true
@@ -195,14 +225,15 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.mu.Unlock()
 		return
 	}
-	a.endTurnLocked()
+	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
 	a.drain()
 }
 
-// endTurnLocked settles what a finished turn leaves behind: open questions
-// are cancelled and held text becomes visible.
-func (a *ACP) endTurnLocked() {
+// endTurnLocked settles what a finished turn leaves behind: its record ends,
+// open questions are cancelled, and held text becomes visible.
+func (a *ACP) endTurnLocked(stopReason string, err error) {
+	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.turnCompleted = true
@@ -224,6 +255,7 @@ func (a *ACP) clearPendingLocked() {
 		delete(a.elicitations, id)
 	}
 	a.state.Elicitations = nil
+	a.refreshBlockedLocked()
 }
 
 // setErrorLocked records err for the chat and keeps JSON-RPC error details.
@@ -294,6 +326,10 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 			if a.reportsThreadStatus && a.threadStatus != "idle" {
 				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
 				a.state.Busy = true
+				if a.runningTurnRecordLocked() == nil {
+					// The prompt's turn ended before the agent answered.
+					a.beginTurnRecordLocked(submissionID, 0, index)
+				}
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true
 			}
@@ -304,18 +340,16 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 				}()
 			}
 		}
-		err = a.persistLocked()
+		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
 		a.mu.Unlock()
-		return err
+		return nil
 	case "promptRequired":
 		// The turn ended before the text arrived; it runs next.
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
+		a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	default:
 		a.state.QueuePaused = true
 		a.changedLocked()

@@ -102,11 +102,12 @@ func TestACPReattachesOnWorkspaceOpenNotStartup(t *testing.T) {
 	assert.Equal(int32(1), peer.bindings.Load(), "reopening must reuse the attachment")
 }
 
-// acpPromptPeer rejects prompts the way an owner with a disconnected agent
-// does over the RPC.
+// acpPromptPeer rejects prompts the way an owner with a disconnected agent,
+// or a supervised chat, does over the RPC.
 type acpPromptPeer struct {
 	acpReconnectPeer
 	disconnected atomic.Bool
+	supervised   atomic.Bool
 	prompts      atomic.Int32
 }
 
@@ -116,6 +117,10 @@ func (p *acpPromptPeer) Command(command localruntime.ACPCommand, reply *localrun
 	}
 	if p.disconnected.Load() {
 		reply.Unavailable = true
+		return nil
+	}
+	if p.supervised.Load() {
+		reply.Code = "supervised"
 		return nil
 	}
 	p.prompts.Add(1)
@@ -183,6 +188,23 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Zero(peer.prompts.Load())
 	peer.disconnected.Store(false)
+
+	// A supervised chat refuses input without a supervision generation. The
+	// caller learns why, and the initial message can be sent again later.
+	peer.supervised.Store(true)
+	_, err = handler.SubmitInitialMessageService(ctx, request)
+	problem, ok = errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "a supervised chat must be a proven no-write conflict, got %v", err)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.Contains(problem.Detail, localruntime.ErrACPSupervised.Error())
+	_, err = handler.SubmitAgentMessageService(ctx, "workspace", "chat-runtime", "follow up")
+	problem, ok = errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "a supervised chat must be a conflict, got %v", err)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.Contains(problem.Detail, localruntime.ErrACPSupervised.Error())
+	assert.Zero(peer.prompts.Load())
+	peer.supervised.Store(false)
+
 	status, err := handler.SubmitInitialMessageService(ctx, request)
 	require.NoError(err)
 	assert.Equal(initialMessageDelivered, status.State)
@@ -267,6 +289,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 
 func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }
 func (c *stallingChat) History(int, int) ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Page(int, int) ([]byte, error)    { return []byte(`{}`), nil }
 func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
 	return make(chan struct{}), func() {}
 }

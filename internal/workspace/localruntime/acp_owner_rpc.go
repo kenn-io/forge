@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net"
 	"net/rpc"
 	"sync"
@@ -71,9 +72,51 @@ func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
 	}
 }
 
-// ACPCommandReply types the one command failure callers branch on. net/rpc
-// reduces returned errors to text, so it travels as a successful reply.
-type ACPCommandReply struct{ Unavailable bool }
+// ACPCommandReply types the command failures callers branch on. net/rpc
+// reduces returned errors to text, so they travel as successful replies.
+// Code names a sentinel error; see ACPErrorCode.
+type ACPCommandReply struct {
+	Unavailable bool
+	Code        string
+}
+
+// acpErrorCodes maps the sentinel errors that cross the owner RPC to codes. An
+// owner that fails to start records its code instead; see acpStartErrorFile.
+var acpErrorCodes = []struct {
+	code string
+	err  error
+}{
+	{"stale_request", ErrACPStaleRequest},
+	{"uncertain", ErrACPSubmissionUncertain},
+	{"busy", ErrACPBusy},
+	{"supervised", ErrACPSupervised},
+	{"stale_generation", ErrACPStaleGeneration},
+	{"queue_pending", ErrACPQueuePending},
+	{"cannot_reload", ErrACPCannotReload},
+	{"withdrawn", errACPSubmissionWithdrawn},
+	{"already_answered", errACPAlreadyAnswered},
+	{"not_pending", errACPNotPending},
+}
+
+// ACPErrorCode returns the code for a sentinel error, or "" for any other.
+func ACPErrorCode(err error) string {
+	for _, entry := range acpErrorCodes {
+		if errors.Is(err, entry.err) {
+			return entry.code
+		}
+	}
+	return ""
+}
+
+// acpCodeError restores the sentinel error for a code, or nil for an unknown one.
+func acpCodeError(code string) error {
+	for _, entry := range acpErrorCodes {
+		if entry.code == code {
+			return entry.err
+		}
+	}
+	return nil
+}
 
 // ACPHistoryRequest selects transcript messages [Before-Limit, Before).
 type ACPHistoryRequest struct{ Before, Limit int }
@@ -84,10 +127,23 @@ func (o *acpOwnerRPC) History(request ACPHistoryRequest, reply *[]byte) error {
 	return err
 }
 
+// ACPPageRequest selects transcript messages [After, After+Limit).
+type ACPPageRequest struct{ After, Limit int }
+
+func (o *acpOwnerRPC) Page(request ACPPageRequest, reply *[]byte) error {
+	data, err := o.agent.Page(request.After, request.Limit)
+	*reply = data
+	return err
+}
+
 func (o *acpOwnerRPC) Command(command ACPCommand, reply *ACPCommandReply) error {
 	err := o.agent.Command(command)
 	if errors.Is(err, ErrACPAgentUnavailable) {
 		reply.Unavailable = true
+		return nil
+	}
+	if code := ACPErrorCode(err); code != "" {
+		reply.Code = code
 		return nil
 	}
 	return err
@@ -136,12 +192,24 @@ func (a *acpAttachment) Command(command ACPCommand) error {
 	if reply.Unavailable {
 		return ErrACPAgentUnavailable
 	}
+	if reply.Code != "" {
+		if err := acpCodeError(reply.Code); err != nil {
+			return err
+		}
+		return fmt.Errorf("owner returned unknown error code %q", reply.Code)
+	}
 	return nil
 }
 
 func (a *acpAttachment) History(before, limit int) ([]byte, error) {
 	var reply []byte
 	err := a.client.Call("ACP.History", ACPHistoryRequest{Before: before, Limit: limit}, &reply)
+	return reply, err
+}
+
+func (a *acpAttachment) Page(after, limit int) ([]byte, error) {
+	var reply []byte
+	err := a.client.Call("ACP.Page", ACPPageRequest{After: after, Limit: limit}, &reply)
 	return reply, err
 }
 

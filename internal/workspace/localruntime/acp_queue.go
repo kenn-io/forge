@@ -86,7 +86,7 @@ func (a *ACP) submit(command ACPCommand) error {
 		return err
 	}
 	a.mu.Unlock()
-	err = a.startPromptLocked(text, command.ID, command.Images, command.AllowanceMillis)
+	err = a.startPromptLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, command.AllowanceMillis, command.Generation)
 	if errors.Is(err, errACPNotIdle) && supervised {
 		return ErrACPBusy
 	}
@@ -192,7 +192,7 @@ func (a *ACP) drain() {
 	}
 	next := a.state.Queue[0]
 	a.mu.Unlock()
-	if err := a.startPromptLocked(next.Text, next.ID, next.Images, 0); err != nil && !errors.Is(err, errACPNotIdle) {
+	if err := a.startPromptLocked(next, 0, 0); err != nil && !errors.Is(err, errACPNotIdle) {
 		a.mu.Lock()
 		a.setErrorLocked(err)
 		a.state.QueuePaused = true

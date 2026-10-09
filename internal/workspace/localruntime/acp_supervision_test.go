@@ -284,3 +284,65 @@ func TestACPSettingsChangeWaitingDuringTakeoverIsStale(t *testing.T) {
 	assert.Equal(t, before, fixtureModel(t, agent))
 	assert.NotEqual(t, "deep", before)
 }
+
+// A takeover needs only the state lock, so it can land while a supervised
+// prompt is being written. The turn that starts then belongs to people, and
+// the supervisor's allowance must not cancel it.
+func TestACPTakeoverDuringAPromptWriteDisarmsItsAllowance(t *testing.T) {
+	agent, generation := supervisedACP(t)
+	agent.beforePromptWrite = func() {
+		agent.beforePromptWrite = nil
+		require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+	}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first", Generation: generation, AllowanceMillis: 60000}))
+	state := publishedACPState(t, agent)
+	require.True(t, state.Busy)
+	require.Len(t, state.Turns, 1)
+	assert.Zero(t, state.Turns[0].Allowance, "the person's turn carries the supervisor's allowance")
+	require.NotNil(t, state.Supervision)
+	assert.True(t, state.Supervision.TakenOver)
+}
+
+// After a takeover, the generation it produced belongs to no coordinator. A
+// coordinator that re-reads the snapshot and sends it is stale, exactly as
+// its cancel is, rather than passing as a person.
+func TestACPTakenOverGenerationIsStale(t *testing.T) {
+	agent, generation := supervisedACP(t)
+	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+	current := generation + 1
+
+	for _, command := range []ACPCommand{
+		{Type: "prompt", Text: "work", ID: "late", Generation: current},
+		{Type: "config", ID: "model", Value: "deep", Generation: current},
+		{Type: "permission", ID: "request", OptionID: "allow", Generation: current},
+		{Type: "elicitation", ID: "request", Action: "decline", Generation: current},
+		{Type: "unqueue", ID: "queued", Generation: current},
+		{Type: "resume", Generation: current},
+		{Type: "cancel", Generation: current},
+	} {
+		require.ErrorIs(t, agent.Command(command), ErrACPStaleGeneration, command.Type)
+	}
+	state := publishedACPState(t, agent)
+	assert.False(t, state.Busy)
+	assert.Empty(t, state.Messages)
+	assert.Empty(t, state.Queue)
+}
+
+// A claim made while a person's turn or steering request runs would let the
+// coordinator stop work it never started.
+func TestACPSuperviseRefusesARunningChat(t *testing.T) {
+	agent := newDetachedACP(t)
+	require.NoError(t, agent.Prompt("a person's work"))
+	require.True(t, publishedACPState(t, agent).Busy)
+
+	err := agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"})
+	require.ErrorIs(t, err, ErrACPBusy)
+	assert.Equal(t, "busy", ACPErrorCode(err))
+	assert.Nil(t, publishedACPState(t, agent).Supervision)
+
+	steering := newDetachedACP(t)
+	steering.state.Steering = true
+	require.ErrorIs(t, steering.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}), ErrACPBusy)
+	assert.Nil(t, publishedACPState(t, steering).Supervision)
+}

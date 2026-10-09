@@ -10,7 +10,9 @@ import (
 // restore the sentinel.
 var (
 	// ErrACPBusy rejects a supervisor's prompt while a turn, a steering
-	// request, or a settings change runs: supervised prompts never queue.
+	// request, or a settings change runs: supervised prompts never queue. It
+	// also refuses a claim while a turn or steering request runs, so a
+	// coordinator never holds a turn that someone else started.
 	ErrACPBusy = errors.New("ACP agent is running a turn")
 	// ErrACPSupervised rejects input that carries no supervision generation
 	// while a coordinator supervises the chat.
@@ -55,6 +57,9 @@ func (a *ACP) supervise(command ACPCommand) error {
 	}
 	if len(a.state.Queue) > 0 {
 		return ErrACPQueuePending
+	}
+	if a.state.Busy || a.state.Steering {
+		return ErrACPBusy
 	}
 	return a.setSupervisionLocked(ACPSupervision{Supervisor: command.Supervisor, Generation: current + 1})
 }
@@ -108,13 +113,15 @@ func (a *ACP) heldAtLocked(generation uint64) bool {
 }
 
 // supervisionGateLocked rejects input sent under another supervision
-// generation, and input without a generation until a person takes over.
+// generation, and input without a generation until a person takes over. After
+// a takeover, every generation is stale: people send none, and no coordinator
+// holds the chat, so a coordinator's input never passes as a person's.
 func (a *ACP) supervisionGateLocked(generation uint64) error {
 	supervision := a.state.Supervision
 	if supervision == nil {
 		return nil
 	}
-	if generation != 0 && generation != supervision.Generation {
+	if generation != 0 && !a.heldAtLocked(generation) {
 		return ErrACPStaleGeneration
 	}
 	if generation == 0 && !supervision.TakenOver {

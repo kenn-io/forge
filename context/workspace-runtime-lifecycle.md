@@ -90,9 +90,12 @@ Rules:
   again; keep both ID lists uncapped for the session's life, since evicting one would let a
   retry repeat or revive work (`internal/workspace/localruntime/acp_submissions.go`).
 - A supervised ACP chat accepts input only under the current supervision generation until
-  a takeover; cancel always passes. Each command checks the generation under the lock that
-  guards its change. The supervisor's prompts start a turn or fail busy, never queue, and a
-  claim needs an empty queue so earlier input cannot run under it. A stale-generation reply
+  a takeover; a person's cancel always passes. After a takeover every generation is stale,
+  including the one the takeover produced. Each command checks the generation under the lock
+  that guards its change; a prompt checks again when it starts, and its allowance is armed
+  only if its sender still holds the chat after the write. The supervisor's prompts start a
+  turn or fail busy, never queue, and a claim needs an empty queue and an idle chat so earlier
+  input cannot run under it. A stale-generation reply
   does not prove a prompt never ran: the gate precedes the retry check, so callers settle
   outcomes from the transcript and turn records
   (`internal/workspace/localruntime/acp_supervision.go`).

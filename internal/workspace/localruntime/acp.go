@@ -549,9 +549,16 @@ func (a *ACP) Prompt(text string) error { return a.submit(ACPCommand{Type: "prom
 // startPromptLocked starts a turn whose active time is bounded by allowance
 // milliseconds, or unbounded when it is 0. The caller holds turnMu. A queued
 // prompt leaves the queue in the same persisted update that records it as
-// sent.
-func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent, allowance int64) error {
+// sent. generation is the supervision generation the sender holds: the gate
+// is checked again here because a takeover needs only a.mu, and the allowance
+// is armed only if the sender still holds the chat once the prompt is written.
+func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, allowance int64, generation uint64) error {
+	text, submissionID, images := prompt.Text, prompt.ID, prompt.Images
 	a.mu.Lock()
+	if err := a.supervisionGateLocked(generation); err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	if !a.state.Connected {
 		a.mu.Unlock()
 		return ErrACPAgentUnavailable
@@ -637,6 +644,11 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent, 
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}
 	a.state.Sending = nil
+	if !a.heldAtLocked(generation) {
+		// A person took the chat over while the prompt was being written; the
+		// turn is theirs, so the supervisor's allowance does not bound it.
+		allowance = 0
+	}
 	a.beginTurnRecordLocked(submissionID, allowance, messageIndex)
 	persistErr := a.persistLocked()
 	a.changedLocked()

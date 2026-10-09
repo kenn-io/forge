@@ -932,7 +932,7 @@ test.describe("workspace create-and-launch full stack", () => {
       await phonePage.goto(`${server.info.base_url}/m/workspaces`);
       await phonePage.getByRole("button", { name: "Open linked item #1" }).tap();
       await expect(phonePage).toHaveURL(new RegExp(`/m/workspaces/local/${created.id}/item$`));
-      await phonePage.getByRole("tab", { name: "Files changed" }).tap();
+      await phonePage.getByRole("tab", { name: "Files", exact: true }).tap();
       await phonePage.getByRole("tab", { name: "Conversation" }).tap();
       await phonePage.getByRole("button", { name: "Open Workspace" }).tap();
 

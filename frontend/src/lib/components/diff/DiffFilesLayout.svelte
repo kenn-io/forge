@@ -30,6 +30,9 @@
     onScrollTopChange?: ((scrollTop: number) => void) | undefined;
     keyboardActive?: boolean;
     pageKeyboardActive?: boolean;
+    /** Phone-like presentation: one-row toolbar, file tree hidden until the
+     * user turns on the file list from the overflow menu. */
+    phonePresentation?: boolean;
   }
 
   const {
@@ -47,6 +50,7 @@
     onScrollTopChange,
     keyboardActive = true,
     pageKeyboardActive = keyboardActive,
+    phonePresentation = false,
   }: Props = $props();
 
   const reviewDraftGate = $derived(operationGate(operations?.review_draft));
@@ -120,7 +124,7 @@
   let filesLayout: HTMLDivElement | undefined = $state();
   let filesLayoutWidth = $state(0);
   let fileTreeWidth = $state(loadFileTreeWidth());
-  let fileTreeHidden = $state(false);
+  let fileTreeHidden = $state(untrack(() => phonePresentation));
 
   function toggleFileTree(): void {
     fileTreeHidden = !fileTreeHidden;
@@ -179,6 +183,7 @@
 
 <div class="files-view">
   <DiffToolbar
+    phone={phonePresentation}
     fileListHidden={fileTreeHidden}
     onToggleFileList={toggleFileTree}
   />

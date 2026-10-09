@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { IconButton, SidebarToggle, Toggle } from "@kenn-io/kit-ui";
+  import { IconButton, SelectDropdown, SidebarToggle, Toggle } from "@kenn-io/kit-ui";
   import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
   import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
   import MoreHorizontalIcon from "@lucide/svelte/icons/more-horizontal";
@@ -13,6 +13,9 @@
 
   interface Props {
     compact?: boolean;
+    /** Phone layout: one row with a category dropdown, the commit scope,
+     * file search, and the overflow menu, which also holds collapse-all. */
+    phone?: boolean;
     fileListHidden?: boolean;
     onToggleFileList?: (() => void) | undefined;
     showRichPreview?: boolean;
@@ -23,6 +26,7 @@
 
   let {
     compact = false,
+    phone = false,
     fileListHidden = false,
     onToggleFileList,
     showRichPreview = true,
@@ -42,7 +46,13 @@
   const visibleFileCount = $derived(
     diff.getVisibleFileList()?.files.length ?? diff.getVisibleDiffFiles().length,
   );
-  const shouldShowFileJump = $derived(showFileJump || visibleFileCount >= 10);
+  const categorySelectOptions = $derived(
+    diffFileCategoryOptions.map((option) => ({
+      value: option.value,
+      label: `${option.label} (${categoryCounts[option.value]})`,
+    })),
+  );
+  const shouldShowFileJump = $derived(phone || showFileJump || visibleFileCount >= 10);
   const allVisibleFilesCollapsed = $derived(diff.areAllVisibleFilesCollapsed());
   const collapseAllLabel = $derived(
     allVisibleFilesCollapsed ? "Expand all diffs" : "Collapse all diffs",
@@ -76,6 +86,26 @@
 </script>
 
 {#snippet menuContent(showFileFilters: boolean)}
+  {#if phone}
+    <div class="compact-menu-section">
+      <button
+        class="compact-menu-item compact-menu-item--action"
+        type="button"
+        disabled={disabled || visibleFileCount === 0}
+        onclick={() => {
+          diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed);
+          closeCompactMenu();
+        }}
+      >
+        {#if allVisibleFilesCollapsed}
+          <ChevronsUpDown size={16} aria-hidden="true" />
+        {:else}
+          <ChevronsDownUp size={16} aria-hidden="true" />
+        {/if}
+        <span>{collapseAllLabel}</span>
+      </button>
+    </div>
+  {/if}
   {#if showFileFilters}
     <div class="compact-menu-section">
       <div class="compact-menu-title">Files</div>
@@ -168,8 +198,14 @@
 
 <svelte:document onclick={handleDocumentClick} onkeydown={handleDocumentKeydown} />
 
-<div class={["diff-toolbar", compact && "diff-toolbar--compact"]}>
-  {#if fileListHidden && onToggleFileList}
+<div
+  class={[
+    "diff-toolbar",
+    compact && "diff-toolbar--compact",
+    phone && "diff-toolbar--phone",
+  ]}
+>
+  {#if fileListHidden && onToggleFileList && !phone}
     <SidebarToggle
       state="collapsed"
       label="file tree"
@@ -177,7 +213,16 @@
       class="kit-sidebar-toggle--compact"
     />
   {/if}
-  {#if compact}
+  {#if phone}
+    <SelectDropdown
+      class="diff-toolbar__category-select"
+      title="Files"
+      value={activeCategory}
+      options={categorySelectOptions}
+      {disabled}
+      onchange={(value) => setFileCategoryFilter(value as DiffFileCategoryFilter)}
+    />
+  {:else if compact}
     <div class="compact-summary">
       <span class="toolbar-label">Files</span>
       <span class="compact-summary-value">
@@ -205,22 +250,24 @@
     </div>
   {/if}
   {#if showScopePicker}
-    <DiffScopePicker {disabled} />
+    <DiffScopePicker compact={phone} {disabled} />
   {/if}
   <div class="toolbar-actions">
-    <IconButton
-      size="sm"
-      ariaLabel={collapseAllLabel}
-      title={collapseAllLabel}
-      disabled={disabled || visibleFileCount === 0}
-      onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
-    >
-      {#if allVisibleFilesCollapsed}
-        <ChevronsUpDown size={16} aria-hidden="true" />
-      {:else}
-        <ChevronsDownUp size={16} aria-hidden="true" />
-      {/if}
-    </IconButton>
+    {#if !phone}
+      <IconButton
+        size="sm"
+        ariaLabel={collapseAllLabel}
+        title={collapseAllLabel}
+        disabled={disabled || visibleFileCount === 0}
+        onclick={() => diff.setAllVisibleFilesCollapsed(!allVisibleFilesCollapsed)}
+      >
+        {#if allVisibleFilesCollapsed}
+          <ChevronsUpDown size={16} aria-hidden="true" />
+        {:else}
+          <ChevronsDownUp size={16} aria-hidden="true" />
+        {/if}
+      </IconButton>
+    {/if}
     {#if shouldShowFileJump}
       <FileJumpPicker {disabled} />
     {/if}
@@ -242,7 +289,7 @@
       </button>
       {#if menuOpen}
         <div class="compact-menu">
-          {@render menuContent(compact)}
+          {@render menuContent(compact && !phone)}
         </div>
       {/if}
     </div>
@@ -457,13 +504,62 @@
   }
 
   @media (max-width: 760px) {
-    .diff-toolbar {
+    .diff-toolbar:not(.diff-toolbar--phone) {
       align-items: flex-start;
       flex-direction: column;
     }
 
-    .toolbar-actions {
+    .diff-toolbar:not(.diff-toolbar--phone) .toolbar-actions {
       margin-left: 0;
     }
+  }
+
+  /* Phone: every control on one row at the phone chrome height. The category
+     dropdown takes the leftover width so the row never wraps. */
+  .diff-toolbar--phone {
+    --kit-control-height: var(--mobile-chrome-hit-target);
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+  }
+
+  .diff-toolbar--phone :global(.diff-toolbar__category-select) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .diff-toolbar--phone :global(.diff-toolbar__category-select .kit-select-dropdown__trigger) {
+    border-color: var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+  }
+
+  .diff-toolbar--phone :global(.diff-scope-picker__trigger.kit-button) {
+    height: var(--mobile-chrome-hit-target);
+    font-size: var(--font-size-sm);
+  }
+
+  .diff-toolbar--phone :global(.diff-scope-picker__trigger .diff-scope-label) {
+    font-size: var(--font-size-sm);
+  }
+
+  .diff-toolbar--phone .toolbar-actions {
+    gap: 0.375rem;
+  }
+
+  .diff-toolbar--phone :global(.file-jump .kit-icon-button),
+  .diff-toolbar--phone .compact-more-btn {
+    width: var(--mobile-chrome-hit-target);
+    height: var(--mobile-chrome-hit-target);
+    border: thin solid var(--border-default);
+    border-radius: var(--radius-md);
+  }
+
+  .compact-menu-item--action {
+    justify-content: flex-start;
+  }
+
+  .compact-menu-item:disabled {
+    opacity: var(--opacity-disabled);
   }
 </style>

@@ -39,6 +39,9 @@
     onViewWorkspaces?: (() => void) | undefined;
     /** Phone-like routes render PR actions as one kit action grid. */
     phonePresentation?: boolean;
+    /** Phone diff layout only, for phone screens that keep the desktop
+     * conversation layout. `phonePresentation` implies it. */
+    phoneFilesLayout?: boolean;
   }
 
   const {
@@ -56,6 +59,7 @@
     onOpenWorkspace,
     onViewWorkspaces,
     phonePresentation = false,
+    phoneFilesLayout = false,
   }: Props = $props();
 
   // Provider capabilities are unknown until the detail lands. Assuming the
@@ -145,6 +149,7 @@
       initialScrollTop={filesScrollPositions[scrollKey] ?? 0}
       onScrollTopChange={rememberFilesScroll}
       {keyboardActive}
+      phonePresentation={phonePresentation || phoneFilesLayout}
     />
   {/key}
 {/if}

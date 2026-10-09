@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button } from "@kenn-io/kit-ui";
+  import { autoReposition, Button, floatingPopoverStyle } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import GitCommitHorizontalIcon from "@lucide/svelte/icons/git-commit-horizontal";
   import { getStores } from "../../context.js";
@@ -17,6 +17,8 @@
 
   let open = $state(false);
   let pickerRef = $state<HTMLDivElement>();
+  let menuEl = $state<HTMLDivElement>();
+  let menuStyle = $state("");
 
   const commits = $derived(diffStore.getCommits());
   const commitsLoading = $derived(diffStore.isCommitsLoading());
@@ -27,6 +29,30 @@
   $effect(() => {
     if (disabled) open = false;
   });
+
+  // The menu is fixed-positioned so a clipping ancestor (the phone Files
+  // view hides overflow) cannot cut it off, and clamped to the viewport.
+  $effect(() => {
+    if (!open || !menuEl) return;
+    positionMenu();
+    return autoReposition(() => [menuEl, pickerRef], positionMenu);
+  });
+
+  function positionMenu(): void {
+    if (!pickerRef || !menuEl) return;
+    const narrow = window.innerWidth <= 760;
+    menuStyle = floatingPopoverStyle({
+      trigger: pickerRef.getBoundingClientRect(),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      popoverHeight: menuEl.offsetHeight,
+      align: narrow ? "start" : "end",
+      edgeGap: 8,
+      triggerGap: 4,
+      maxWidth: narrow ? 360 : 520,
+      constrainWidth: true,
+    });
+  }
 
   function toggle(): void {
     if (disabled) return;
@@ -97,7 +123,7 @@
   </Button>
 
   {#if open}
-    <div class="diff-scope-picker__menu">
+    <div class="diff-scope-picker__menu" bind:this={menuEl} style={menuStyle}>
       <div class="diff-scope-picker__menu-header">
         <span>Commit range</span>
         {#if scope.kind !== "head"}
@@ -169,11 +195,8 @@
   }
 
   .diff-scope-picker__menu {
-    position: absolute;
+    position: fixed;
     z-index: var(--z-popover);
-    top: calc(100% + 4px);
-    right: 0;
-    width: min(520px, calc(100cqw - 20px));
     max-height: min(460px, 70vh);
     overflow: hidden;
     border: 1px solid var(--border-default);
@@ -226,12 +249,6 @@
   @media (max-width: 760px) {
     .diff-scope-picker__list {
       grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
-    }
-
-    .diff-scope-picker__menu {
-      left: 0;
-      right: auto;
-      width: min(360px, 86vw);
     }
   }
 </style>

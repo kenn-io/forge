@@ -261,9 +261,9 @@
     // An issue workspace's mr_state describes the issue, not its associated
     // PR, so the PR's lifecycle is unknown here.
     if (workspace.item_type === "issue") return "var(--text-muted)";
-    if (workspace.mr_is_draft) return "var(--accent-amber)";
     if (workspace.mr_state === "merged") return "var(--accent-purple)";
     if (workspace.mr_state === "closed") return "var(--accent-red)";
+    if (workspace.mr_is_draft) return "var(--accent-amber)";
     return "var(--accent-green)";
   }
 

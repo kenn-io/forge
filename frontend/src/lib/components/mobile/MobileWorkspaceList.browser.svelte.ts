@@ -76,6 +76,9 @@ it("colors mobile PR badges by lifecycle state using the desktop palette", async
                 { ...fixture, id: "merged", item_number: 2, mr_state: "merged" },
                 { ...fixture, id: "closed", item_number: 3, mr_state: "closed" },
                 { ...fixture, id: "draft", item_number: 4, mr_is_draft: true },
+                { ...fixture, id: "closed-draft", item_number: 8, mr_state: "closed", mr_is_draft: true },
+                { ...fixture, id: "standalone-open-issue", item_number: 12, item_type: "issue", mr_state: "open" },
+                { ...fixture, id: "standalone-closed-issue", item_number: 13, item_type: "issue", mr_state: "closed" },
                 {
                   ...fixture,
                   id: "associated",
@@ -115,6 +118,9 @@ it("colors mobile PR badges by lifecycle state using the desktop palette", async
     // An issue workspace's mr_state is the issue's state, not the PR's.
     [6, "--text-muted"],
     [7, "--text-muted"],
+    [8, "--accent-red"],
+    [12, "--accent-blue"],
+    [13, "--accent-red"],
   ] as const) {
     const badge = page.getByRole("button", { name: `Open linked item #${number}`, exact: true });
     await expect.element(badge).toBeVisible();

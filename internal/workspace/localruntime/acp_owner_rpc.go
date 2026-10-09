@@ -80,7 +80,8 @@ type ACPCommandReply struct {
 	Code        string
 }
 
-// acpErrorCodes maps the sentinel errors that cross the owner RPC to codes.
+// acpErrorCodes maps the sentinel errors that cross the owner RPC to codes. An
+// owner that fails to start records its code instead; see acpStartErrorFile.
 var acpErrorCodes = []struct {
 	code string
 	err  error
@@ -91,6 +92,7 @@ var acpErrorCodes = []struct {
 	{"supervised", ErrACPSupervised},
 	{"stale_generation", ErrACPStaleGeneration},
 	{"queue_pending", ErrACPQueuePending},
+	{"cannot_reload", ErrACPCannotReload},
 }
 
 // acpErrorCode returns the code for a sentinel error, or "" for any other.

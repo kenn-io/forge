@@ -111,6 +111,11 @@ type acpExternalTurn struct {
 // restore the sentinel. A running turn is never a reason to reject input.
 var ErrACPAgentUnavailable = errors.New("ACP agent is disconnected")
 
+// ErrACPCannotReload refuses to start a supervised chat whose agent cannot
+// load its saved session. A supervised chat never continues in a new native
+// session, so its coordinator's records stay true to the conversation.
+var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
+
 // errACPNotIdle stops a turn from starting over another turn, a steering
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
@@ -329,9 +334,11 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
-		// An agent that cannot load sessions continues the saved conversation in
-		// a new session rather than failing to start.
-		if saved == nil || !initialized.AgentCapabilities.LoadSession {
+		// An agent that cannot load sessions continues an unsupervised saved
+		// conversation in a new session rather than failing to start.
+		if saved != nil && saved.State.Supervision != nil && !initialized.AgentCapabilities.LoadSession {
+			err = ErrACPCannotReload
+		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {

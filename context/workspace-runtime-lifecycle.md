@@ -56,7 +56,9 @@ Rules:
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed, even before its
   stored record is forgotten; only an owner that died while no daemon was attached is reloaded
-  (`internal/workspace/localruntime/manager.go::Manager.Exited`).
+  (`internal/workspace/localruntime/manager.go::Manager.Exited`). Supervised chats are the
+  exception: their coordinator may restore one after its agent exits, and a running owner is
+  attached, never duplicated (`internal/workspace/localruntime/acp_owner.go::Manager.RestoreSupervisedACP`).
 - The ACP owner keeps the whole transcript and never deletes messages. State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
@@ -104,7 +106,9 @@ Rules:
   before tool activity, when the agent goes quiet, and at turn end; never per token
   (`internal/workspace/localruntime/acp_delivery.go::ACP.deliverTextLocked`).
 - The saved ACP transcript is the conversation of record: drop `session/load` replay, and
-  continue in a new session when the agent lacks `loadSession`
+  continue in a new session when the agent lacks `loadSession`. A supervised chat never falls
+  back to a new native session: the start fails with `ErrACPCannotReload`, which the owner
+  records for the waiting daemon, and the saved session stays
   (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
   and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).

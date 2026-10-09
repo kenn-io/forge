@@ -97,6 +97,10 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	if err := atomicfile.WriteFile(configPath, data, atomicfile.WithPerm(0o600)); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return launchCommand{}, err
 	}
+	// A start failure recorded by an earlier owner must not fail this one.
+	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return launchCommand{}, err
+	}
 	command := slices.Clone(m.acpOwnerCommand)
 	if len(command) == 0 {
 		executable, err := os.Executable()
@@ -108,6 +112,11 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	command = append(command, configPath)
 	return m.shellLaunchCommand(ctx, command, workspaceID, key, cwd)
 }
+
+// acpStartErrorFile holds the owner RPC code of a start failure the daemon
+// branches on, such as ErrACPCannotReload. No owner listens after such a
+// failure, so the daemon waiting to attach reads it instead.
+const acpStartErrorFile = "start-error"
 
 func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
 	var backend *session
@@ -192,6 +201,62 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	return m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
 }
 
+// RestoreSupervisedACP restores a supervised chat for its coordinator, even
+// after this daemon saw its agent exit on its own; ordinary restoration skips
+// such sessions. Like workspace reopen it attaches a running owner and
+// relaunches only once the owner is gone, loading the saved native session.
+// It refuses chats nobody supervises (ErrSessionUnavailable) and agents that
+// cannot reload the session (ErrACPCannotReload); the saved session stays.
+func (m *Manager) RestoreSupervisedACP(ctx context.Context, workspaceID, key, cwd string) error {
+	if m.acpSessionsDir == "" {
+		return ErrSessionNotFound
+	}
+	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(paths.Dir, "config.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrSessionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var cfg acpOwnerConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	if cfg.Info.WorkspaceID != workspaceID {
+		return ErrSessionNotFound
+	}
+	startMu := m.startLock(key)
+	startMu.Lock()
+	defer startMu.Unlock()
+	if err := m.ensureOpen(); err != nil {
+		return err
+	}
+	data, err = os.ReadFile(m.acpSessionPath(key))
+	if err != nil {
+		return fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
+	}
+	var saved acpSavedSession
+	if err := json.Unmarshal(data, &saved); err != nil {
+		return err
+	}
+	if saved.State.Supervision == nil {
+		return fmt.Errorf("%w: %q is not supervised", ErrSessionUnavailable, key)
+	}
+	if m.runningSession(m.sessions, key) != nil {
+		return nil
+	}
+	// The owner runs in tmux exactly when launches use it; see shellLaunchCommand.
+	var tmuxSession string
+	if tmux, err := m.target(string(LaunchTargetShell)); err == nil && tmux.Available {
+		tmuxSession = tmuxSessionName(workspaceID, key)
+	}
+	return m.startRestoredSession(ctx, RestoredRuntimeSession{WorkspaceID: workspaceID, SessionKey: key, TargetKey: cfg.Info.TargetKey, Label: cfg.Info.Label, Kind: LaunchTargetACP, TmuxSession: tmuxSession, CWD: cwd})
+}
+
 func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
@@ -205,6 +270,11 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 		if err == nil {
 			return m.acpAttachment(ctx, info, conn)
+		}
+		if code, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
+			if sentinel := acpCodeError(string(code)); sentinel != nil {
+				return nil, fmt.Errorf("start ACP owner: %w", sentinel)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -271,6 +341,9 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	}
 	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved)
 	if err != nil {
+		if code := acpErrorCode(err); code != "" {
+			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))
+		}
 		return err
 	}
 	reported := make(chan struct{})

@@ -6991,6 +6991,10 @@ func (s *Syncer) indexUpsertMergeRequest(
 	normalized := platformdb.DBMergeRequest(repoID, mr)
 	normalized.MergeableStateObservedAt = &requestedAt
 
+	if err := s.db.RecordLiveMergeRequestPresence(ctx, normalized); err != nil {
+		return err
+	}
+
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(
 		ctx, repoID, mr.Number,
 	)
@@ -7840,6 +7844,10 @@ func (s *Syncer) syncOpenMRFromBulk(
 		return fmt.Errorf("normalize MR #%d: %w", number, err)
 	}
 	normalized.MergeableStateObservedAt = &requestedAt
+
+	if err := s.db.RecordLiveMergeRequestPresence(ctx, normalized); err != nil {
+		return err
+	}
 
 	// Preserve derived fields that NormalizePR doesn't populate.
 	// Without this, upsert overwrites them with zero values; if
@@ -12187,6 +12195,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
 	if outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, ghPR, err); outcomeErr != nil {
+		if errors.Is(outcomeErr, platform.ErrLookupNotPresent) &&
+			errors.Is(outcomeErr, platform.ErrNotFound) && lookupDestination(outcomeErr) == nil {
+			return s.db.RecordRemovedMergeRequest(ctx, repoID, number, outcomeErr.Error(), s.nowUTC())
+		}
 		return fmt.Errorf("get closed PR #%d: %w", number, outcomeErr)
 	}
 	if err != nil {

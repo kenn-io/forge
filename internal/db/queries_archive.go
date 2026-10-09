@@ -902,6 +902,88 @@ type ArchiveItemTerminal struct {
 	At         time.Time
 }
 
+// RecordRemovedMergeRequest records a provider-confirmed removal during live
+// sync without inventing a closed state or changing the retained PR content.
+func (d *DB) RecordRemovedMergeRequest(
+	ctx context.Context, repoID int64, number int, detail string, now time.Time,
+) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state, refresh_reason
+			)
+			SELECT repo_id, 'merge_request', number,
+				COALESCE(NULLIF(platform_external_id, ''), CAST(platform_id AS TEXT)),
+				created_at, updated_at, 'removed_upstream', 'prompt'
+			FROM forge_merge_requests WHERE repo_id = ? AND number = ?
+			ON CONFLICT(repo_id, item_type, item_number) DO UPDATE SET
+				lifecycle_state = 'removed_upstream'`, repoID, number)
+		if err != nil {
+			return fmt.Errorf("record removed PR #%d: %w", number, err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("record removed PR #%d rows affected: %w", number, err)
+		}
+		if changed == 0 {
+			return fmt.Errorf("record removed PR #%d: parent is not stored", number)
+		}
+		if err := seedArchiveItemProgressTx(ctx, tx, repoID, ArchiveItemTypeMergeRequest, number); err != nil {
+			return err
+		}
+		// Invalidate older archive work before sealing the removal observation.
+		nowText := formatDatasetProgressTime(now)
+		_, err = tx.ExecContext(ctx, `
+			UPDATE forge_archive_dataset_progress
+			SET scan_generation = scan_generation + 2,
+				status = 'terminal', next_cursor = NULL, last_input_cursor = NULL,
+				next_retry_at = NULL, last_error_code = 'not_found', last_error_detail = ?,
+				completed_at = ?, updated_at = ?
+			WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = ? AND dataset = 'lookup'`,
+			sanitizeArchiveErrorDetail(detail), nowText, nowText, repoID, number)
+		if err != nil {
+			return fmt.Errorf("record removed PR #%d lookup: %w", number, err)
+		}
+		return completeArchiveInitialIfReadyTx(ctx, tx, repoID, now)
+	})
+}
+
+// RecordLiveMergeRequestPresence restores a removed PR when live inventory
+// confirms the retained provider identity. Discovery-only archives have no
+// maintenance pass to make this observation on their behalf.
+func (d *DB) RecordLiveMergeRequestPresence(ctx context.Context, mr *MergeRequest) error {
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		var providerID int64
+		var providerItemID string
+		var updatedAt time.Time
+		err := tx.QueryRowContext(ctx, `
+			SELECT mr.platform_id, mr.updated_at, ai.provider_item_id
+			FROM forge_archive_items ai
+			JOIN forge_merge_requests mr ON mr.repo_id = ai.repo_id AND mr.number = ai.item_number
+			WHERE ai.repo_id = ? AND ai.item_type = 'merge_request' AND ai.item_number = ?
+			  AND ai.lifecycle_state = 'removed_upstream'`, mr.RepoID, mr.Number,
+		).Scan(&providerID, &updatedAt, &providerItemID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read removed PR identity: %w", err)
+		}
+		if mr.PlatformID <= 0 || mr.PlatformID != providerID {
+			return fmt.Errorf("rediscovered PR #%d has a different provider identity", mr.Number)
+		}
+		if mr.UpdatedAt.Before(updatedAt) {
+			return nil
+		}
+		return commitArchiveInventoryItemTx(ctx, tx, mr.RepoID, ArchiveItemTypeMergeRequest,
+			ArchiveInventoryItem{
+				Number: mr.Number, ProviderItemID: providerItemID,
+				ProviderCreatedAt: canonicalUTCTime(mr.CreatedAt), ProviderUpdatedAt: canonicalUTCTime(mr.UpdatedAt),
+			}, ArchiveRefreshReasonPrompt)
+	})
+}
+
 // IsArchiveItemRemovedUpstream reports whether retained canonical data is
 // hidden by a durable provider-removal tombstone.
 func (d *DB) IsArchiveItemRemovedUpstream(

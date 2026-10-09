@@ -81,6 +81,9 @@ type ACP struct {
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
+	// beforePromptWrite lets tests stop the owner between saving a prompt
+	// as sending and writing it. It is nil in production.
+	beforePromptWrite func()
 }
 
 // acpExternalTurn is a turn the agent started after a steer. Until it reports
@@ -209,6 +212,17 @@ type ACPState struct {
 	// Answered holds the newest answered permission and elicitation requests,
 	// so a retried answer gets the same result.
 	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
+	// Sending is the identified prompt being written to the agent. It is
+	// saved before the write, so an owner that stops before recording the
+	// message leaves it behind for the replacement to report as uncertain.
+	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
+	// Uncertain and Withdrawn hold submission IDs that must never run: one
+	// may have reached an agent before its owner stopped, and the other was
+	// removed from the queue. Both last for the life of the session.
+	Uncertain []string `json:"uncertain,omitempty"`
+	Withdrawn []string `json:"withdrawn,omitempty"`
+	// Turns records the newest prompt turns; see ACPTurnRecord.
+	Turns []ACPTurnRecord `json:"turns,omitempty"`
 }
 type ACPQueuedPrompt struct {
 	ID     string       `json:"id"`
@@ -508,6 +522,14 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 		a.mu.Unlock()
 		return errors.New("this agent does not accept image prompts")
 	}
+	if submissionID != "" {
+		a.state.Sending = &ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}
+		if err := a.persistLocked(); err != nil {
+			a.state.Sending = nil
+			a.mu.Unlock()
+			return err
+		}
+	}
 	a.state.Busy = true
 	a.cancelling = false
 	// Status from here on describes this prompt, not an earlier takeover.
@@ -517,6 +539,9 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 	written := make(chan error, 1)
 	a.promptWritten = written
 	a.mu.Unlock()
+	if a.beforePromptWrite != nil {
+		a.beforePromptWrite()
+	}
 	completed := make(chan acpTurnResult, 1)
 	go func() {
 		response, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
@@ -543,9 +568,14 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 		a.promptIndex = nil
 		a.promptWritten = nil
 		a.setErrorLocked(err)
+		var persistErr error
+		if a.state.Sending != nil {
+			a.state.Sending = nil
+			persistErr = a.persistLocked()
+		}
 		a.changedLocked()
 		a.mu.Unlock()
-		return err
+		return errors.Join(err, persistErr)
 	}
 	a.mu.Lock()
 	if a.cancelling {
@@ -564,6 +594,8 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 	if submissionID != "" {
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}
+	a.state.Sending = nil
+	a.beginTurnRecordLocked(submissionID, 0)
 	persistErr := a.persistLocked()
 	a.changedLocked()
 	a.mu.Unlock()

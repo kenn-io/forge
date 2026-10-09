@@ -70,6 +70,9 @@ Rules:
 - A running ACP turn never rejects input: sends queue, and steering is used only when
   initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
   other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
+- A submission ID that was sending when its owner stopped, or was unqueued, never runs
+  again; keep both ID lists uncapped for the session's life, since evicting one would let a
+  retry repeat or revive work (`internal/workspace/localruntime/acp_submissions.go`).
 - A turn the agent starts after a steer keeps the chat busy from its first active thread
   status until the thread goes idle, even when that status arrives after the prompt completed.
   Once the original prompt has completed, any idle ends that turn, active or not: the SDK

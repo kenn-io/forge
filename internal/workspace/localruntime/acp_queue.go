@@ -89,6 +89,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	if id == "" {
 		return false, nil
 	}
+	if err := a.withdrawnOrUncertainLocked(id); err != nil {
+		return true, err
+	}
 	for _, message := range a.state.Messages {
 		if message.SubmissionID == id {
 			if message.Text != text || !slices.Equal(message.Images, images) {
@@ -130,6 +133,8 @@ func (a *ACP) unqueue(id string) error {
 		return errors.New("message is no longer queued")
 	}
 	a.state.Queue = slices.Delete(a.state.Queue, index, index+1)
+	// A retry of a withdrawn submission must not run the work after all.
+	a.state.Withdrawn = append(a.state.Withdrawn, id)
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
@@ -195,14 +200,15 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.mu.Unlock()
 		return
 	}
-	a.endTurnLocked()
+	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
 	a.drain()
 }
 
-// endTurnLocked settles what a finished turn leaves behind: open questions
-// are cancelled and held text becomes visible.
-func (a *ACP) endTurnLocked() {
+// endTurnLocked settles what a finished turn leaves behind: its record ends,
+// open questions are cancelled, and held text becomes visible.
+func (a *ACP) endTurnLocked(stopReason string, err error) {
+	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.turnCompleted = true
@@ -293,6 +299,10 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 			// leaving the chat busy for good.
 			if a.reportsThreadStatus && a.threadStatus != "idle" {
 				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
+				if a.runningTurnRecordLocked() == nil {
+					// The prompt's turn ended before the agent answered.
+					a.beginTurnRecordLocked(submissionID, 0)
+				}
 				a.state.Busy = true
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true

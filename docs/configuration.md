@@ -639,6 +639,8 @@ analytics service.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.
+Tabs opened before an upgrade may report `over_30m`, meaning more than 30 minutes
+without finer detail. Forge accepts that bucket and rejects missing or unknown durations.
 Each duration sums visible time across tab switches and excludes hidden time.
 A hidden tab that the browser or phone closes without notice reports nothing.
 Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,

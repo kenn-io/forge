@@ -36,6 +36,12 @@ var screenFilter = posthog.AllowStringValues(
 	"design-system", "onboarding",
 )
 
+var durationFilter = posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h")
+
+func SessionDuration(value any) (any, bool) {
+	return durationFilter(value)
+}
+
 // ScreenName uses the reporter's allowlist for the daily claim too.
 func ScreenName(value any) (string, bool) {
 	filtered, ok := screenFilter(value)
@@ -52,10 +58,8 @@ var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 		"surface": posthog.AllowStringValues("web"),
 	},
 	"session_ended": {
-		"surface": posthog.AllowStringValues("web"),
-		"duration_bucket": posthog.AllowStringValues(
-			"under_1m", "1_to_5m", "5_to_30m", "30m_to_2h", "over_2h",
-		),
+		"surface":         posthog.AllowStringValues("web"),
+		"duration_bucket": durationFilter,
 	},
 	"daemon_active": {
 		"repo_count": posthog.AllowNumber,

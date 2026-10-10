@@ -107,7 +107,7 @@ func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testin
 
 func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	for _, disabled := range []bool{false, true} {
+	for _, state := range []string{"enabled", "disabled", "unavailable"} {
 		for _, tc := range []struct {
 			name, properties string
 			valid            bool
@@ -123,9 +123,12 @@ func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 			{"null", `{"duration_bucket":null}`, false},
 			{"number", `{"duration_bucket":31}`, false},
 		} {
-			t.Run(tc.name+map[bool]string{false: "/enabled", true: "/disabled"}[disabled], func(t *testing.T) {
+			t.Run(tc.name+"/"+state, func(t *testing.T) {
 				assert := assert.New(t)
-				telemetry := &serverfake.FakeTelemetry{EnabledValue: !disabled}
+				var telemetry *serverfake.FakeTelemetry
+				if state != "unavailable" {
+					telemetry = &serverfake.FakeTelemetry{EnabledValue: state == "enabled"}
+				}
 				srv := servertest.NewTelemetryTestServer(t, telemetry)
 				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"session_ended","properties":`+tc.properties+`}`))
 				req.Header.Set("Content-Type", "application/json")
@@ -134,12 +137,19 @@ func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 				if !tc.valid {
 					assert.Equal(http.StatusBadRequest, rr.Code)
 					assert.Contains(rr.Body.String(), "unsupported or missing session duration")
-					assert.Empty(telemetry.Event)
+					if telemetry != nil {
+						assert.Empty(telemetry.Event)
+					}
 					return
 				}
 				assert.Equal(http.StatusAccepted, rr.Code)
-				if disabled {
-					assert.Empty(telemetry.Event)
+				if state != "enabled" {
+					var body telemetryapi.TelemetryEventResponse
+					require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+					assert.Equal("disabled", body.Status)
+					if telemetry != nil {
+						assert.Empty(telemetry.Event)
+					}
 				} else {
 					assert.Equal("session_ended", telemetry.Event)
 					assert.Equal(tc.name, telemetry.Properties["duration_bucket"])

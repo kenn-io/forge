@@ -1240,6 +1240,466 @@ describe("PullDetail activity refresh", () => {
   });
 });
 
+describe("PullDetail pending mutations across selections", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(() => {
+    cleanup();
+    for (const item of getFlashes()) dismissFlash(item.id);
+  });
+
+  const labelCatalog: Label[] = [
+    { name: "bug", color: "ff0000", description: "" },
+    { name: "enhancement", color: "00ff00", description: "" },
+  ];
+
+  function renderPendingMutations(configure?: (detail: PullDetail) => void, initialNumber = 1) {
+    const pulls = [pullDetail(), pullDetail()];
+    pulls.forEach((detail, index) => {
+      detail.merge_request = {
+        ...detail.merge_request,
+        ID: index + 1,
+        Number: index + 1,
+        URL: `https://github.com/acme/widget/pull/${index + 1}`,
+        Title: `Pull request ${index + 1}`,
+        Body: `Description ${index + 1}`,
+      };
+      configure?.(detail);
+    });
+    type MutationResponse = { data?: unknown; error?: ProblemBody };
+    const responses = pulls.map(() => Promise.withResolvers<MutationResponse>());
+    const reloads = new Map<number, Promise<{ data: PullDetail }>>();
+    const mutation = vi.fn((path: string, options?: Record<string, unknown>) => {
+      if (
+        path !== "/pulls/{provider}/{owner}/{name}/{number}" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/github-state" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/labels" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/assignees" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}"
+      ) {
+        throw new Error(`Unexpected mutation: ${path}`);
+      }
+      const {
+        path: { number },
+      } = options?.params as { path: { number: number } };
+      return responses[number - 1].promise;
+    });
+    detailRuntime = makeTestAppRuntime({
+      GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/repo/{provider}/{owner}/{name}/labels") return { data: { labels: labelCatalog } };
+        if (path === "/repo/{provider}/{owner}/{name}/comment-autocomplete")
+          return { data: { users: ["alice", "bob"] } };
+        if (path !== "/pulls/{provider}/{owner}/{name}/{number}") return { data: {} };
+        const {
+          path: { number },
+        } = options?.params as { path: { number: number } };
+        return reloads.get(number) ?? { data: pulls[number - 1] };
+      }),
+      PUT: mutation,
+      PATCH: mutation,
+      POST: mutation,
+    });
+    const commands = vi.spyOn(detailRuntime, "runCommand");
+    const store = createDetailStore({ runtime: detailRuntime });
+    const view = renderPullDetail(pulls[0], undefined, undefined, {
+      store,
+      detailProps: {
+        number: initialNumber,
+        repositoryKey: repositoryKeyFromWire(pulls[0].repo),
+        autoSync: false,
+        hideStaleWhileLoading: true,
+      },
+    });
+    const finishMutation = async (number: number, response: MutationResponse = { data: pulls[number - 1] }) => {
+      const index = commands.mock.calls.findIndex(
+        ([, options]) =>
+          options.safeContext.number === number &&
+          [
+            "update pull request content",
+            "change pull request state",
+            "update pull request labels",
+            "update pull request assignees",
+            "edit pull request comment",
+          ].includes(options.operation),
+      );
+      expect(index).toBeGreaterThanOrEqual(0);
+      responses[number - 1].resolve(response);
+      expect((await commands.mock.results[index].value.exit)._tag).toBe(response.error ? "Failure" : "Success");
+      await tick();
+    };
+    const selectCachedPull = async (number: number) => {
+      const pending = Promise.withResolvers<{ data: PullDetail }>();
+      reloads.set(number, pending.promise);
+      await view.rerender({ number });
+      await waitFor(() => expect(store.isDetailFromCache()).toBe(true));
+      expect(screen.getByRole("heading", { name: `Pull request ${number}`, exact: true })).toBeTruthy();
+      reloads.delete(number);
+      pending.resolve({ data: pulls[number - 1] });
+      await waitFor(() => expect(store.isDetailFromCache()).toBe(false));
+    };
+    return { ...view, pulls, mutation, finishMutation, selectCachedPull };
+  }
+
+  it.each([
+    ["route", false],
+    ["route", true],
+    ["repository ID", false],
+    ["repository ID", true],
+  ] as const)("discards another repository's label catalog after a %s change (failure=%s)", async (change, fail) => {
+    const oldDetail = pullDetail();
+    const nextDetail = pullDetail();
+    const nextName = change === "route" ? "other" : "widget";
+    const retainedLabel = { name: "priority", color: "0000ff", description: "" };
+    for (const [index, detail] of [oldDetail, nextDetail].entries()) {
+      detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
+      detail.merge_request.Title = `Repository ${index + 1} pull request`;
+    }
+    nextDetail.repo_name = nextName;
+    nextDetail.repo = {
+      ...nextDetail.repo,
+      ID: 2,
+      Name: nextName,
+      name: nextName,
+      repo_path: `acme/${nextName}`,
+      platform_repo_id: 1002,
+    };
+    nextDetail.merge_request.RepoID = 2;
+    nextDetail.merge_request.labels = [labelCatalog[0], retainedLabel];
+    let selectedDetail = oldDetail;
+    const pendingCatalog = Promise.withResolvers<{ data?: { labels: Label[] }; error?: ProblemBody }>();
+    const loadCatalog = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { labels: labelCatalog } })
+      .mockImplementation(() => pendingCatalog.promise);
+    const mutation = vi.fn(async () => ({ data: { labels: [retainedLabel] } }));
+    detailRuntime = makeTestAppRuntime({
+      GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/repo/{provider}/{owner}/{name}/labels") return loadCatalog(options);
+        if (path === "/pulls/{provider}/{owner}/{name}/{number}") return { data: selectedDetail };
+        return { data: {} };
+      }),
+      PUT: mutation,
+    });
+    const store = createDetailStore({ runtime: detailRuntime });
+    const view = renderPullDetail(oldDetail, undefined, undefined, {
+      store,
+      detailProps: {
+        repositoryKey: repositoryKeyFromWire(oldDetail.repo),
+        autoSync: false,
+        hideStaleWhileLoading: true,
+      },
+    });
+    await screen.findByRole("heading", { name: oldDetail.merge_request.Title, exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true });
+
+    selectedDetail = nextDetail;
+    await view.rerender({
+      name: nextName,
+      repoPath: `acme/${nextName}`,
+      repositoryKey: repositoryKeyFromWire(nextDetail.repo),
+    });
+    await screen.findByRole("heading", { name: nextDetail.merge_request.Title, exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await waitFor(() => expect(loadCatalog).toHaveBeenCalledTimes(2));
+    expect(loadCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "acme", name: nextName } },
+      }),
+    );
+    const picker = within(screen.getByRole("dialog", { name: "Edit labels" }));
+    if (fail) {
+      pendingCatalog.resolve({
+        error: { code: "internalError", status: 500, title: "Catalog unavailable", type: "about:blank" },
+      });
+      await picker.findByRole("alert");
+    }
+    expect(picker.queryAllByRole("menuitemcheckbox")).toHaveLength(0);
+    expect(mutation).not.toHaveBeenCalled();
+    if (fail) return;
+
+    pendingCatalog.resolve({ data: { labels: [labelCatalog[0], retainedLabel] } });
+    await picker.findByRole("menuitemcheckbox", { name: "priority", exact: true });
+    await fireEvent.click(picker.getByRole("menuitemcheckbox", { name: "bug", exact: true }));
+    await waitFor(() =>
+      expect(mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: nextName, number: 1 } },
+          body: { labels: ["priority"] },
+        }),
+      ),
+    );
+  });
+
+  it.each(["toggle", "clear"] as const)(
+    "keeps pending assignee %s acknowledgements with their cached PR",
+    async (action) => {
+      const view = renderPendingMutations((detail) => {
+        detail.repo.capabilities = { ...detail.repo.capabilities, assignee_mutation: true };
+        detail.merge_request.assignees = ["alice"];
+      }, 2);
+      await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+      await view.rerender({ number: 1 });
+      await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+      for (const number of [1, 2]) {
+        if (number === 2) await view.selectCachedPull(2);
+        await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+        const picker = within(await screen.findByRole("dialog", { name: "Edit assignees" }));
+        const bob = await picker.findByRole("menuitemcheckbox", { name: "bob", exact: true });
+        await fireEvent.click(action === "toggle" ? bob : picker.getByRole("button", { name: "Clear selected users" }));
+        await waitFor(() =>
+          expect(view.mutation).toHaveBeenCalledWith(
+            "/pulls/{provider}/{owner}/{name}/{number}/assignees",
+            expect.objectContaining({
+              params: { path: { provider: "github", owner: "acme", name: "widget", number } },
+              body: { assignees: action === "toggle" ? ["alice", "bob"] : [] },
+            }),
+          ),
+        );
+      }
+
+      const picker = within(screen.getByRole("dialog", { name: "Edit assignees" }));
+      const bob = picker.getByRole("menuitemcheckbox", { name: /bob/ }) as HTMLButtonElement;
+      expect(bob.disabled).toBe(true);
+      const response = { data: { assignees: action === "toggle" ? ["alice", "bob"] : [] } };
+      await view.finishMutation(1, response);
+      expect(bob.disabled).toBe(true);
+      if (action === "toggle") expect(picker.getByText("Saving…")).toBeTruthy();
+      await view.finishMutation(2, response);
+      expect(bob.disabled).toBe(false);
+      expect(bob.getAttribute("aria-checked")).toBe(String(action === "toggle"));
+    },
+  );
+
+  it("keeps pending comment edits separate when navigating to a cached PR", async () => {
+    // jsdom has no layout API for ProseMirror's selection scrolling.
+    for (const [name, value] of Object.entries({
+      getClientRects: () => [],
+      getBoundingClientRect: () => new DOMRect(),
+    })) {
+      const descriptor = Object.getOwnPropertyDescriptor(Range.prototype, name);
+      Object.defineProperty(Range.prototype, name, { configurable: true, value });
+      onTestFinished(() => {
+        if (descriptor) Object.defineProperty(Range.prototype, name, descriptor);
+        else Reflect.deleteProperty(Range.prototype, name);
+      });
+    }
+    const view = renderPendingMutations((detail) => {
+      detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+      detail.events = [
+        {
+          ...reviewEvent("alice"),
+          ID: detail.merge_request.Number + 100,
+          PlatformID: detail.merge_request.Number + 100,
+          EventType: "issue_comment",
+          Body: `Comment on PR ${detail.merge_request.Number}`,
+        },
+      ];
+    }, 2);
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await view.rerender({ number: 1 });
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    for (const number of [1, 2]) {
+      if (number === 2) await view.selectCachedPull(2);
+      const edit = (await screen.findByRole("button", { name: "Edit comment" })) as HTMLButtonElement;
+      expect(edit.disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Delete comment" }) as HTMLButtonElement).disabled).toBe(false);
+      await fireEvent.click(edit);
+      const input = view.container.querySelector<HTMLElement>(".edit-panel .comment-editor-input")!;
+      input.focus();
+      input.innerHTML = `<p>Edited comment on PR ${number}</p>`;
+      await fireEvent.input(input);
+      // Let ProseMirror's DOM observer publish the edited content before saving.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await waitFor(() =>
+        expect(view.container.querySelector<HTMLButtonElement>(".edit-action--primary")?.disabled).toBe(false),
+      );
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+      await waitFor(() =>
+        expect(view.mutation).toHaveBeenCalledWith(
+          "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
+          expect.objectContaining({
+            params: { path: { provider: "github", owner: "acme", name: "widget", number, comment_id: number + 100 } },
+            body: { body: `Edited comment on PR ${number}` },
+          }),
+        ),
+      );
+    }
+    await view.finishMutation(1, { data: {} });
+    expect(view.container.querySelector(".edit-panel .comment-editor-input")?.textContent).toBe(
+      "Edited comment on PR 2",
+    );
+    expect((screen.getByRole("button", { name: "Saving...", exact: true }) as HTMLButtonElement).disabled).toBe(true);
+    view.pulls[1].events[0].Body = "Edited comment on PR 2";
+    await view.finishMutation(2, { data: {} });
+    expect(view.container.querySelector(".edit-panel")).toBeNull();
+    expect(screen.getByText("Edited comment on PR 2", { exact: true })).toBeTruthy();
+  });
+
+  it.each([
+    ["toggle", false],
+    ["toggle", true],
+    ["clear", false],
+    ["clear", true],
+  ] as const)("keeps an old %s-label result out of the next picker (failure=%s)", async (action, failFirst) => {
+    const view = renderPendingMutations((detail) => {
+      detail.repo.capabilities = { ...detail.repo.capabilities, read_labels: true, label_mutation: true };
+      detail.merge_request.labels = [labelCatalog[0]];
+    });
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true });
+    await fireEvent.click(
+      action === "toggle"
+        ? screen.getByRole("menuitemcheckbox", { name: "enhancement", exact: true })
+        : screen.getByRole("button", { name: "Clear selected labels" }),
+    );
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { labels: action === "toggle" ? ["bug", "enhancement"] : [] },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { labels: ["bug", "enhancement"] },
+        }),
+      ),
+    );
+
+    await view.finishMutation(
+      1,
+      failFirst
+        ? {
+            error: {
+              code: "internalError",
+              status: 500,
+              title: "Label update failed",
+              detail: "PR 1 label update failed",
+              type: "about:blank",
+            },
+          }
+        : { data: { labels: action === "toggle" ? labelCatalog : [] } },
+    );
+    const picker = within(screen.getByRole("dialog", { name: "Edit labels" }));
+    const pending = picker.getByRole("menuitemcheckbox", { name: /enhancement/ }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    expect(picker.getByText("Saving…")).toBeTruthy();
+    expect(picker.queryByRole("alert")).toBeNull();
+
+    await view.finishMutation(2, { data: { labels: labelCatalog } });
+    expect(pending.disabled).toBe(false);
+    expect(pending.getAttribute("aria-checked")).toBe("true");
+    expect(picker.queryByRole("alert")).toBeNull();
+  });
+
+  it.each([
+    ["title", false],
+    ["title", true],
+    ["body", false],
+    ["body", true],
+  ] as const)("keeps a pending %s save scoped to its selection (next PR saving=%s)", async (field, savingNext) => {
+    const view = renderPendingMutations();
+    const editorSelector = field === "title" ? ".title-edit-input" : ".body-edit-textarea";
+    const editor = () => view.container.querySelector<HTMLInputElement | HTMLTextAreaElement>(editorSelector)!;
+    const editButton = () => view.container.querySelector<HTMLButtonElement>(`.edit-${field}-btn`)!;
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(editButton());
+    await fireEvent.input(editor(), { target: { value: "Saved on PR 1" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { [field]: "Saved on PR 1" },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await fireEvent.click(editButton());
+    expect(editor().disabled).toBe(false);
+    await fireEvent.input(editor(), { target: { value: "Draft on PR 2" } });
+    if (savingNext) {
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+      await waitFor(() => expect(view.mutation).toHaveBeenCalledTimes(2));
+    }
+
+    await view.finishMutation(1);
+    expect(editor()).not.toBeNull();
+    expect(editor().value).toBe("Draft on PR 2");
+    expect(editor().disabled).toBe(savingNext);
+    if (!savingNext) {
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+    }
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { [field]: "Draft on PR 2" },
+        }),
+      ),
+    );
+    if (field === "title") view.pulls[1].merge_request.Title = "Draft on PR 2";
+    else view.pulls[1].merge_request.Body = "Draft on PR 2";
+    await view.finishMutation(2);
+    expect(editor()).toBeNull();
+    expect(await screen.findByText("Draft on PR 2", { exact: true })).toBeTruthy();
+  });
+
+  it("keeps pending state changes scoped to their selections", async () => {
+    const view = renderPendingMutations();
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/github-state",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { state: "closed" },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    const close = screen.getByRole("button", { name: "Close", exact: true }) as HTMLButtonElement;
+    expect(close.disabled).toBe(false);
+    await fireEvent.click(close);
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/github-state",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { state: "closed" },
+        }),
+      ),
+    );
+
+    await view.finishMutation(1);
+    const closing = screen.getByRole("button", { name: "Closing...", exact: true }) as HTMLButtonElement;
+    expect(closing.disabled).toBe(true);
+    view.pulls[1].merge_request.State = "closed";
+    await view.finishMutation(2);
+    const reopen = (await screen.findByRole("button", { name: "Reopen", exact: true })) as HTMLButtonElement;
+    expect(reopen.disabled).toBe(false);
+  });
+});
+
 describe("PullDetail approvals", () => {
   beforeEach(() => {
     localStorage.clear();

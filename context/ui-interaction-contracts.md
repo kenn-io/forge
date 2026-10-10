@@ -84,6 +84,8 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
 - Workspace sidebars show cached details for the selected PR or issue during revalidation;
   a cache miss must hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
+- Workspace PR stack links select and remember the viewed PR within the same workspace;
+  keep the stack expanded (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte::displayedPR`).
 - Restore recent details only with a verified provider/host/repository ID; an unknown
   ID requires a fresh response because owner/name routes can be reused
   (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).

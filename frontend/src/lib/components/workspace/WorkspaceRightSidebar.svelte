@@ -132,13 +132,18 @@
     {/key}
   {:else if activeTab === "pr"}
     {#if displayedPR}
-      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedPR)}:${refreshToken}`}
+      {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
             {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}
             hideStaleWhileLoading={true}
+            onStackMemberNavigate={(ref) => {
+              if (!onselect) return false;
+              onselect("pr", { ...displayedPR, ...ref });
+              return true;
+            }}
           />
         </div>
       {/key}

@@ -788,6 +788,9 @@
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
+    savingTitle = false;
+    savingBody = false;
+    stateSubmitting = false;
     titleDraft = "";
     bodyDraft = "";
     // Flush any pending checkbox/reorder save before clearing state.
@@ -797,6 +800,7 @@
     flushBodySave();
     clearDragState();
     closeLabelPicker();
+    labelCatalog = [];
   });
 
 
@@ -874,13 +878,16 @@
       cancelEditTitle();
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     savingTitle = true;
     detailStore.updatePRContent(routeRef, number, { title: trimmed }, {
       onSuccess: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         editingTitle = false;
         titleDraft = "";
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         savingTitle = false;
       },
     });
@@ -922,13 +929,16 @@
       cancelEditBody();
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     savingBody = true;
     detailStore.updatePRContent(routeRef, number, { body: bodyDraft }, {
       onSuccess: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         editingBody = false;
         bodyDraft = "";
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         savingBody = false;
       },
     });
@@ -950,10 +960,12 @@
     } else if (!caps.state_mutation) {
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     stateSubmitting = true;
     detailStore.setPullState(routeRef, number, newState, {
       onSuccess: () => activity.loadActivity(),
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         stateSubmitting = false;
       },
     });
@@ -1663,14 +1675,17 @@
   function toggleLabel(labelName: string): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null) return;
+    const requestGeneration = mutationRouteGeneration;
     pendingLabel = labelName;
     labelPickerError = null;
     const nextLabels = nextCatalogLabels(labels, labelCatalog, labelName);
     detailStore.setPullLabels(owner, name, number, nextLabels, {
       onFailure: (message) => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         labelPickerError = message;
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         pendingLabel = null;
       },
     });
@@ -1679,13 +1694,16 @@
   function clearLabels(): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null || labels.length === 0) return;
+    const requestGeneration = mutationRouteGeneration;
     pendingLabel = CLEAR_LABELS_PENDING;
     labelPickerError = null;
     detailStore.setPullLabels(owner, name, number, [], {
       onFailure: (message) => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         labelPickerError = message;
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         pendingLabel = null;
       },
     });
@@ -2517,6 +2535,7 @@
             {@render labelActionButton()}
           </div>
         {/if}
+        {#key mutationRouteGeneration}
         <UserListEditor
           label="Assignees"
           users={prAssignees}
@@ -2531,6 +2550,7 @@
             <UsersIcon size={12} aria-hidden="true" />
           {/snippet}
         </UserListEditor>
+        {/key}
         {#key `${provider}:${platformHost}:${owner}:${name}:${number}`}
         <UserListEditor
           label="Reviewers"
@@ -3437,6 +3457,7 @@
           </div>
         </div>
         {#if detailStore.getDiscussionLoaded()}
+          {#key mutationRouteGeneration}
           <EventTimeline
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}
@@ -3473,6 +3494,7 @@
                 : undefined}
             {jumpToReviewThread}
           />
+          {/key}
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">
             <Spinner size={14} label="Syncing" />

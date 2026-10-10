@@ -4445,6 +4445,65 @@ test.describe("sidebar PR tab", () => {
     await expect(page.locator(".right-sidebar .detail-title")).toContainText("Add browser regression coverage");
   });
 
+  test("stack links change the workspace sidebar PR without leaving the workspace", async ({ page }) => {
+    const api = createMockApiHandler();
+    const members = [
+      { number: 42, title: "Add browser regression coverage", position: 1, base_branch: "main" },
+      { number: 55, title: "Refactor theme system", position: 2, base_branch: "feature/coverage" },
+    ].map((member) => ({
+      ...member,
+      state: "open",
+      ci_status: "success",
+      review_decision: "APPROVED",
+      mergeable_state: "clean",
+      is_draft: false,
+      blocked_by: null,
+    }));
+    await page.route(
+      /\/api\/v1\/pulls\/github\/acme\/widgets\/(42|55)(?:\/stack|\/sync(?:\/async)?)?$/,
+      async (route) => {
+        const url = new URL(route.request().url());
+        const number = Number(url.pathname.split("/")[7]);
+        const stack = {
+          stack_id: 1,
+          stack_name: "theme",
+          position: number === 42 ? 1 : 2,
+          size: 2,
+          health: "healthy",
+          members,
+        };
+        if (url.pathname.endsWith("/stack")) {
+          await route.fulfill({ json: stack });
+          return;
+        }
+        const detail = await api
+          .handle({ method: "GET", url: new URL(`/api/v1/pulls/github/acme/widgets/${number}`, url), bodyText: "" })
+          .json();
+        await route.fulfill({ json: { ...detail, stack } });
+      },
+    );
+
+    await page.goto("/workspaces");
+    await page.locator(".workspace-list-sidebar .ws-row .item-bubble").click();
+    await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+    const sidebar = page.locator(".right-sidebar");
+    await sidebar.getByTestId("stack-chip").click();
+    await sidebar.getByRole("button", { name: "#55 Refactor theme system" }).click();
+
+    await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await expect(sidebar.locator(".stack-row--current")).toContainText("#55 Refactor theme system");
+    await page.screenshot({ path: test.info().outputPath("workspace-stack-navigation.png") });
+    await sidebar.getByRole("button", { name: "#42 Add browser regression coverage" }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Add browser regression coverage");
+    await sidebar.getByRole("button", { name: "#55 Refactor theme system" }).click();
+
+    await page.reload();
+    await page.locator(".panel-toggle-btn", { hasText: "PR" }).click();
+    await expect(sidebar.locator(".detail-title")).toHaveText("Refactor theme system");
+    await expect(page).toHaveURL(/\/terminal\/ws-123$/);
+  });
+
   test("searches PRs by title and zero-padded number and remembers the viewed PR after reload", async ({ page }) => {
     const searches: URL[] = [];
     const api = createMockApiHandler();

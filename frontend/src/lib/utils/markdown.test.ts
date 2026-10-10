@@ -666,6 +666,15 @@ describe("markdown video", () => {
     expect(html).toContain(`href="${attachment}"`);
   });
 
+  it.each([
+    ["alone in a quoted paragraph", `> ${attachment}`],
+    ["alone in a loose list item paragraph", `- ${attachment}\n\n- more`],
+  ])("plays an attachment %s", (_label, markdown) => {
+    const html = renderMarkdownSync(markdown, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
+
+    expect(videos(html)).toHaveLength(1);
+  });
+
   it("lists only standalone attachment paragraphs as probe candidates", () => {
     const other = "https://github.com/user-attachments/assets/b2";
     const ownRepoAsset = "https://github.com/acme/widgets/assets/12/0f8e1a52-3c55-4d39-8a43-7c1f0b5d9e21";

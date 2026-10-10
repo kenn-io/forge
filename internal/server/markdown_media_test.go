@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,4 +210,77 @@ type closeRecorder struct {
 func (c closeRecorder) Close() error {
 	*c.closed = true
 	return nil
+}
+
+// blockedMediaBody returns its first chunk and then blocks until released,
+// like an upstream that is still sending the rest of a long video.
+type blockedMediaBody struct {
+	first   []byte
+	release chan struct{}
+}
+
+func (b *blockedMediaBody) Read(p []byte) (int, error) {
+	if len(b.first) > 0 {
+		n := copy(p, b.first)
+		b.first = b.first[n:]
+		return n, nil
+	}
+	<-b.release
+	return 0, io.EOF
+}
+
+func (*blockedMediaBody) Close() error { return nil }
+
+type headerSignalRecorder struct {
+	*httptest.ResponseRecorder
+	once  sync.Once
+	wrote chan struct{}
+}
+
+func (r *headerSignalRecorder) WriteHeader(code int) {
+	r.ResponseRecorder.WriteHeader(code)
+	r.once.Do(func() { close(r.wrote) })
+}
+
+func (r *headerSignalRecorder) Write(p []byte) (int, error) {
+	r.once.Do(func() { close(r.wrote) })
+	return r.ResponseRecorder.Write(p)
+}
+
+func TestMarkdownMediaRouteSendsHeadersBeforeBodyEndsWhenCompressionAccepted(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	release := make(chan struct{})
+	mock := &serverfake.MockGH{OpenMarkdownMediaFn: func(
+		context.Context, string, string, string, string,
+	) (platform.MarkdownMedia, error) {
+		return platform.MarkdownMedia{
+			Body:        &blockedMediaBody{first: make([]byte, 64<<10), release: release},
+			ContentType: "video/mp4", ContentLength: -1,
+		}, nil
+	}}
+	srv, _, _ := setupTestServerWithMock(t, mock)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"/api/v1/repo/github/acme/widget/markdown-media?source="+url.QueryEscape(markdownMediaSource), nil)
+	// fetch() always advertises compression; the media route must not hold
+	// the stream back to compress it.
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	rec := &headerSignalRecorder{ResponseRecorder: httptest.NewRecorder(), wrote: make(chan struct{})}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.ServeHTTP(rec, req)
+	}()
+
+	select {
+	case <-rec.wrote:
+	case <-time.After(5 * time.Second):
+		close(release)
+		<-done
+		require.Fail(t, "response headers waited for the media body to finish")
+		return
+	}
+	close(release)
+	<-done
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 }

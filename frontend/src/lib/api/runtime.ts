@@ -55,7 +55,11 @@ export async function orvalRequest(url: string, options: OrvalRequestOptions = {
 export async function orvalFetch<A>(url: string, options: OrvalRequestOptions = {}): Promise<A> {
   const response = await orvalRequest(url, options);
   const contentType = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
-  const binary = response.ok && (contentType === "application/octet-stream" || contentType?.startsWith("image/"));
+  const binary =
+    response.ok &&
+    (contentType === "application/octet-stream" ||
+      contentType?.startsWith("image/") ||
+      contentType?.startsWith("video/"));
   const body = [204, 205, 304].includes(response.status) ? "" : binary ? await response.blob() : await response.text();
   const value: unknown = body
     ? typeof body === "string" && contentType?.includes("json")

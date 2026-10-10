@@ -6,7 +6,7 @@ import { readDocsBlob } from "./generated/docs/docs.js";
 import { GeneratedProblemResponse, orvalFetch } from "./runtime.js";
 
 describe("runtime", () => {
-  it.each(["image/png", "application/octet-stream"])(
+  it.each(["image/png", "application/octet-stream", "video/mp4"])(
     "preserves binary bytes from generated Blob responses (%s)",
     async (contentType) => {
       const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);

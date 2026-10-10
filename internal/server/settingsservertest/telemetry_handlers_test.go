@@ -134,7 +134,7 @@ func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 				rr := httptest.NewRecorder()
 				srv.ServeHTTP(rr, req)
-				if !tc.valid && !disabled {
+				if !tc.valid {
 					assert.Equal(http.StatusBadRequest, rr.Code)
 					assert.Contains(rr.Body.String(), "unsupported or missing telemetry property")
 					assert.Empty(telemetry.Event)

@@ -65,8 +65,14 @@
     border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
   }
 
+  /* Mirrors the header button's optical 6px/4px block padding so action
+   * controls center on the label rather than on the heading box. */
   .sidebar-group-actions {
+    display: flex;
+    align-self: stretch;
+    align-items: center;
     flex-shrink: 0;
+    padding-block: 6px 4px;
     padding-right: var(--space-4);
     color: var(--text-muted);
     font-size: var(--font-size-xs);

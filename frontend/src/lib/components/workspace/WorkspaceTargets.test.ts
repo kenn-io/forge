@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
+import { repositoryIdKey } from "../../api/repository-key.js";
 import WorkspaceTargets from "./WorkspaceTargets.svelte";
 
 let runtime: OwnedAppRuntime;
@@ -227,4 +228,50 @@ it("refreshes a devbox target list after removal and discards an older response"
   await screen.findByText("Updated remaining issue");
   expect(screen.queryByText("Dismissed issue")).toBeNull();
   expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("1");
+});
+
+it("marks only the target shown in the panel as current", async () => {
+  const repoFor = (name: string, id: number) => ({
+    provider: "github",
+    platform_host: "github.com",
+    platform_repo_id: id,
+    owner: "acme",
+    name,
+    repo_path: `acme/${name}`,
+  });
+  const base = { id: 1, number: 7, state: "open", source: "tracked", unavailable: false, url: "" } as const;
+  const targets: WorkspaceTarget[] = [
+    { ...base, type: "pr", title: "Widgets pull", repo: repoFor("widgets", 101) },
+    { ...base, type: "pr", title: "Tools pull", repo: repoFor("tools", 202) },
+    { ...base, type: "issue", title: "Tools issue", repo: repoFor("tools", 202) },
+    {
+      ...base,
+      type: "kata",
+      number: 0,
+      title: "Kata task",
+      kata: { daemon_id: "work", project_uid: "project-1", issue_uid: "task-1", reference: "TASK-1" },
+    },
+  ];
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ targets, kata_available: true }));
+  const toolsRef = {
+    provider: "github",
+    platformHost: "github.com",
+    repositoryKey: repositoryIdKey(202),
+    owner: "acme",
+    name: "tools",
+    repoPath: "acme/tools",
+    number: 7,
+  };
+  const props = { workspaceID: "ws-1", onselect: vi.fn(), current: { type: "pr" as const, ref: toolsRef } };
+  const view = render(WorkspaceTargets, { props });
+  await fireEvent.click(await screen.findByRole("button", { name: /^Targets/ }));
+  await screen.findByText("Tools pull");
+  const currentTitles = () =>
+    [...document.querySelectorAll("[aria-current='true']")].map((element) => element.getAttribute("title"));
+  expect(currentTitles()).toEqual(["Tools pull"]);
+
+  await view.rerender({ ...props, current: { type: "kata", daemonID: "work", issueUID: "task-1" } });
+  expect(currentTitles()).toEqual(["Kata task"]);
+  await view.rerender({ ...props, current: null });
+  expect(currentTitles()).toEqual([]);
 });

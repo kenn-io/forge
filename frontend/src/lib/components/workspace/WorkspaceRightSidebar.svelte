@@ -1,5 +1,5 @@
 <script lang="ts">
-  import WorkspaceTargets from "./WorkspaceTargets.svelte";
+  import WorkspaceTargets, { type CurrentWorkspaceTarget } from "./WorkspaceTargets.svelte";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
   import { EmptyState } from "@kenn-io/kit-ui";
@@ -102,13 +102,19 @@
       : hasPR
   );
   const defaultDiffBase = $derived(defaultWorkspaceDiffBase(gitState, hasMergeTarget));
+  const currentTarget = $derived.by((): CurrentWorkspaceTarget | null => {
+    if (activeTab === "pr" && displayedPR) return { type: "pr", ref: displayedPR };
+    if (activeTab === "issue" && displayedIssue) return { type: "issue", ref: displayedIssue };
+    if (activeTab === "kata" && selectedKata) return { type: "kata", ...selectedKata };
+    return null;
+  });
 
 </script>
 
 <div class="right-sidebar-content">
   {#if onselect}
     {#key `${workspaceHostKey ?? "self"}:${workspaceID}`}
-      <WorkspaceTargets {workspaceID} {workspaceHostKey} refreshToken={targetsRefreshToken + refreshToken} {disabled} onselect={selectTarget} />
+      <WorkspaceTargets {workspaceID} {workspaceHostKey} refreshToken={targetsRefreshToken + refreshToken} {disabled} current={currentTarget} onselect={selectTarget} />
     {/key}
   {/if}
   {#if activeTab === "diff"}

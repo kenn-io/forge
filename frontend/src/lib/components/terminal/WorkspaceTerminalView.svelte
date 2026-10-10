@@ -75,6 +75,7 @@
     clampTerminalHeight,
     closeSessionInTerminalGroups,
     collectSessionKeys,
+    collectWorkflowTabKeys,
     createTerminalGroup,
     defaultTerminalLayout,
     findLeafBySession,
@@ -2987,25 +2988,7 @@
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
-    const id = workspaceId;
-    const hostKey = workspaceHostKey;
-    runWorkspaceQuickAction(appRuntime, id, action, hostKey, (session) => {
-      if (!isCurrentWorkspace(id, hostKey)) return;
-      const workspaceKey = quickActionWorkspaceKey(id, hostKey);
-      if (quickActionLaunches.get(workspaceKey)?.session === session) {
-        quickActionLaunches.delete(workspaceKey);
-      }
-      clearClosedSession(session);
-      const sessions = upsertRuntimeSession(session);
-      applySessionToWorkflow(session.key, sessions);
-      if (leaf?.surface === "workflow") {
-        appendWorkflowTabToGroup(workflowTabKeyForSession(session.key), leaf.id, sessions);
-      } else if (leaf?.surface === "detail") {
-        surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: leaf.id });
-      }
-      requestSessionFocus(sessionHostKeyFor(session));
-      requestRuntime({ force: true });
-    });
+    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey, undefined, leaf);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -4395,13 +4378,37 @@
 
   $effect(() => {
     const workspaceKey = quickActionWorkspaceKey(workspaceId, workspaceHostKey);
-    const session = quickActionLaunches.get(workspaceKey)?.session;
+    const launch = quickActionLaunches.get(workspaceKey);
+    const session = launch?.session;
     if (!session || !workspaceLive || workspace?.status !== "ready") return;
     untrack(() => {
       quickActionLaunches.delete(workspaceKey);
+      const alreadyPresented = runtimeSessions.some((candidate) => candidate.key === session.key);
       clearClosedSession(session);
-      const sessions = upsertRuntimeSession(session);
-      applySessionToWorkflow(session.key, sessions);
+      upsertRuntimeSession(session);
+      if (!alreadyPresented) {
+        const tabKey = workflowTabKeyForSession(session.key);
+        // A handoff confirms this session, not the absence of the other saved sessions.
+        let tree = normalizeWorkflowTree(terminalLayout.workflowTree, [
+          ...collectWorkflowTabKeys(terminalLayout.workflowTree),
+          tabKey,
+        ]);
+        if (launch?.leaf?.surface === "workflow") {
+          const placed = appendWorkflowTabToLeaf(tree, tabKey, launch.leaf.id);
+          if (placed && findWorkflowLeafByTab(placed, tabKey)?.id === launch.leaf.id) tree = placed;
+        }
+        terminalLayout = {
+          ...terminalLayout,
+          workflowMode: "tabs",
+          sessionRegions: { ...terminalLayout.sessionRegions, [session.key]: "workflow" },
+          workflowTree: tree,
+        };
+        mountSessionTerminal(session.key);
+        selectWorkspaceTab(tabKey);
+        if (launch?.leaf?.surface === "detail") {
+          surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: launch.leaf.id });
+        }
+      }
       requestSessionFocus(sessionHostKeyFor(session));
       requestRuntime({ force: true });
     });

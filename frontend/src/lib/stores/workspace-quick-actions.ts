@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
 
@@ -16,7 +17,14 @@ export const quickActionWorkspaces = new SvelteSet<string>();
 
 // Keep the returned session until a workspace view presents it, including
 // when the handoff finishes before that view mounts.
-export const quickActionLaunches = new SvelteMap<string, { targetKey: string; session?: RuntimeSession }>();
+export const quickActionLaunches = new SvelteMap<
+  string,
+  {
+    targetKey: string;
+    session?: RuntimeSession;
+    leaf?: WorkspaceRuntimeLaunchLeaf;
+  }
+>();
 
 /** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
 export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
@@ -36,10 +44,11 @@ export function runWorkspaceQuickAction(
   action: QuickAction,
   hostKey?: string,
   onLaunched?: (session: RuntimeSession) => void,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   quickActionWorkspaces.add(workspaceKey);
-  const launch = { targetKey: action.agent };
+  const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
   quickActionLaunches.set(workspaceKey, launch);
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
@@ -57,7 +66,7 @@ export function runWorkspaceQuickAction(
     Effect.tap((result) =>
       Effect.sync(() => {
         if (quickActionLaunches.get(workspaceKey) === launch) {
-          quickActionLaunches.set(workspaceKey, { targetKey: action.agent, session: result.session });
+          quickActionLaunches.set(workspaceKey, { ...launch, session: result.session });
         }
         onLaunched?.(result.session);
         if (result.initial_message.state !== "delivered") {

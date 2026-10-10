@@ -65,9 +65,14 @@
     const repo = target.repo;
     if (target.type !== current.type || target.number !== ref.number || !repo) return false;
     if (repo.provider !== ref.provider) return false;
-    if (ref.platformHost && repo.platform_host !== ref.platformHost) return false;
+    if (ref.platformHost && !sameRoutePart(repo.platform_host, ref.platformHost)) return false;
     const key = repositoryKeyFromWire(repo);
-    return key && ref.repositoryKey ? sameRepositoryKey(key, ref.repositoryKey) : repo.repo_path === ref.repoPath;
+    return key && ref.repositoryKey ? sameRepositoryKey(key, ref.repositoryKey) : sameRoutePart(repo.repo_path, ref.repoPath);
+  }
+
+  // Repository routes resolve case-insensitively, so a link may keep casing the catalog does not.
+  function sameRoutePart(a: string, b: string): boolean {
+    return a.toLowerCase() === b.toLowerCase();
   }
 
   function removeTarget(target: WorkspaceTarget): void {

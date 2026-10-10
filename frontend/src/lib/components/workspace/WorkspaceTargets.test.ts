@@ -270,6 +270,16 @@ it("marks only the target shown in the panel as current", async () => {
     [...document.querySelectorAll("[aria-current='true']")].map((element) => element.getAttribute("title"));
   expect(currentTitles()).toEqual(["Tools pull"]);
 
+  const linkedRef = {
+    ...toolsRef,
+    repositoryKey: undefined,
+    platformHost: "GitHub.com",
+    owner: "Acme",
+    repoPath: "Acme/Tools",
+  };
+  await view.rerender({ ...props, current: { type: "pr", ref: linkedRef } });
+  expect(currentTitles()).toEqual(["Tools pull"]);
+
   await view.rerender({ ...props, current: { type: "kata", daemonID: "work", issueUID: "task-1" } });
   expect(currentTitles()).toEqual(["Kata task"]);
   await view.rerender({ ...props, current: null });

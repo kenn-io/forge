@@ -115,7 +115,7 @@
         >{@render labelText(field)}</Checkbox>
       {:else if field.kind === "multi" || field.kind === "select"}
         {@const picked = field.kind === "multi" ? picksOf(field.key) : [textOf(field.key)]}
-        {@const preview = field.kind === "select" ? field.choices.find((choice) => choice.value === picked[0])?.preview : ""}
+        {@const previews = field.kind === "select" ? field.choices.filter((choice) => choice.preview) : []}
         <fieldset
           aria-describedby={describedBy || undefined}
           role={field.kind === "select" ? "radiogroup" : undefined}
@@ -147,7 +147,21 @@
               {/if}
             {/each}
           </div>
-          {#if preview}<pre class="preview" aria-label={`${field.label} preview`}>{preview}</pre>{/if}
+          <!-- Every preview sits in one grid cell from the first render, so the
+               slot is as tall as the tallest one and picking an option only
+               changes which preview is visible; the form below never moves. -->
+          {#if previews.length}
+            <div class="preview">
+              {#each previews as choice (choice.value)}
+                {@const shown = picked[0] === choice.value}
+                <pre
+                  class={["preview-text", !shown && "preview-text--hidden"]}
+                  aria-hidden={shown ? undefined : "true"}
+                  aria-label={shown ? `${field.label} preview` : undefined}
+                >{choice.preview}</pre>
+              {/each}
+            </div>
+          {/if}
         </fieldset>
       {:else}
         <label class="label" for={id}>{@render labelText(field)}</label>
@@ -196,7 +210,9 @@
   .choice-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .choice-title { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); overflow-wrap: anywhere; }
   .choice-description { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
-  .preview { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 16rem; overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--bg-inset); font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-primary); white-space: pre; }
+  .preview { display: grid; margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 16rem; overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--bg-inset); }
+  .preview-text { grid-area: 1 / 1; margin: 0; font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-primary); white-space: pre; }
+  .preview-text--hidden { visibility: hidden; }
   .required { color: var(--accent-red); }
   small { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
   .problem { color: var(--accent-red); }

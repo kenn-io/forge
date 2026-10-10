@@ -198,7 +198,8 @@ Interactive surfaces must agree on which item is selected.
 - ACP elicitation choices render as an always-visible radio/checkbox list showing each
   option's description and the picked option's `_meta` preview; never a dropdown. An
   optional single choice clears by clicking or pressing Space on the picked option again, never
-  through a control that appears on selection and shifts the form. Submit
+  through a control that appears on selection. Picking never moves the form: option previews
+  share one slot sized to the tallest preview from the first render. Submit
   stays enabled and reports field problems; one answer locks the form until reconnect
   (`frontend/src/lib/components/acp/ChatElicitation.svelte`).
 - Composer popovers such as the slash menu are kit popover cards sized to their content and

@@ -2599,7 +2599,7 @@ test.describe("diff view", () => {
       )
       .toBe(true);
     await expect
-      .poll(() => markdownFile.locator(".markdown-rich-diff--unified .review-thread-body").allTextContents())
+      .poll(() => markdownFile.locator(".markdown-rich-diff--unified .review-thread-body").allInnerTexts())
       .toEqual(["Issues review note", "Actions review note"]);
 
     const issuesCard = markdownFile

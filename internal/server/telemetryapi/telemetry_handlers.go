@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"go.kenn.io/forge/internal/server/httpapi"
 	telemetrypkg "go.kenn.io/forge/internal/telemetry"
@@ -22,6 +23,8 @@ type TelemetryEventResponse struct {
 }
 
 type telemetryEventOutput = httpapi.AcceptedBodyOutput[TelemetryEventResponse]
+
+var disabledReporter = sync.OnceValue(telemetrypkg.DisabledReporter)
 
 func (s *Handlers) CaptureTelemetryEvent(
 	ctx context.Context,
@@ -45,7 +48,7 @@ func (s *Handlers) CaptureTelemetryEvent(
 	}
 	reporter := s.Telemetry
 	if reporter == nil {
-		reporter = telemetrypkg.DisabledReporter()
+		reporter = disabledReporter()
 	}
 
 	status, err := reporter.Report(ctx, event, input.Body.Properties)

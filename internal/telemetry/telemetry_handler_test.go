@@ -45,7 +45,9 @@ func TestCaptureTelemetryEvent_ValidatesSessionDurationWithRealReporter(t *testi
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer endpoint.Close()
+	constructions := 0
 	telemetry.SwapKitReporterForTest(t, func(opts posthog.Options, options ...posthog.Option) (telemetry.Client, error) {
+		constructions++
 		if mode == "validation failure" {
 			return nil, errors.New("allowlist construction failed")
 		}
@@ -107,4 +109,7 @@ func TestCaptureTelemetryEvent_ValidatesSessionDurationWithRealReporter(t *testi
 		})
 	}
 	assert.Equal(t, mode == "init failure" || mode == "nil reporter" || mode == "validation failure", posthog.ProcessDisabled())
+	if mode == "nil reporter" {
+		assert.Equal(t, 2, constructions)
+	}
 }

@@ -189,7 +189,7 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	var errs []error
 	report, ok, err := s.readReport(legacy)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		errs = append(errs, err)
+		errs = append(errs, fmt.Errorf("read activity report %s: %w", legacy, err))
 	} else if ok && report.RuntimeSessionKey == runtimeSessionKey {
 		paths = append(paths, legacy)
 	}

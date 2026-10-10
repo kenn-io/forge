@@ -510,7 +510,7 @@ func TestStoreRemoveReturnsLegacyReadError(t *testing.T) {
 	require.NoError(t, os.Mkdir(legacy, 0o700))
 	require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
 
-	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), legacy)
+	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), "read activity report "+legacy+":")
 	assert.DirExists(t, legacy)
 	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
 }

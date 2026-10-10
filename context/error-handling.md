@@ -164,8 +164,6 @@ while local workspace navigation remains available
 
 ## Tests
 
-Telemetry fallbacks disable delivery for the process and retain Kit property validation; allowlist construction errors return 500 (`internal/telemetry/telemetry.go::DisabledReporter`).
-
 Use wire-level server tests with real SQLite for API error contracts. Coverage
 should assert status, content type, top-level `code`, and relevant `details`.
 At minimum, protect:

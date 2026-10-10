@@ -583,6 +583,13 @@ function normalizePlayer(video: HTMLVideoElement): void {
   video.setAttribute("controls", "");
   video.setAttribute("preload", "metadata");
   video.classList.add("markdown-video");
+  // The frame gives the load-failure notice a stable parent to swap the
+  // player in (markdown-video-fallback.ts). A span stays valid inside a
+  // paragraph.
+  const frame = video.ownerDocument.createElement("span");
+  frame.className = "markdown-video-frame";
+  video.replaceWith(frame);
+  frame.append(video);
 }
 
 function sanitizeMarkdownHtml(html: string): string {

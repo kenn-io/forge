@@ -100,3 +100,22 @@ test("keeps the player inside the content width on a phone", async ({ page }) =>
   await expectContained(video, body);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
+
+test("replaces a player that cannot load with a link to the original", async ({ page }) => {
+  const missing = "https://github.com/user-attachments/assets/e2e-missing-video";
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  // Match on the issue text: the body loses its video once the notice replaces it.
+  const body = page.locator(".markdown-body").filter({ hasText: "Screen recording" }).first();
+  const video = body.locator("video.markdown-video");
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1);
+
+  await video.evaluate((v: HTMLVideoElement, source: string) => {
+    const url = new URL(v.getAttribute("src")!, window.location.href);
+    url.searchParams.set("source", source);
+    v.setAttribute("src", `${url.pathname}${url.search}`);
+  }, missing);
+
+  await expect(body.getByText("Video could not be loaded.")).toBeVisible();
+  await expect(body.getByRole("link", { name: "Open the original" })).toHaveAttribute("href", missing);
+  await expect(body.locator("video")).toHaveCount(0);
+});

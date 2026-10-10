@@ -579,6 +579,10 @@ Rendered markdown plays video only where the provider itself plays it:
 Markdown without a repository keeps raw `<video>` tags. Every player gets
 `controls`, `preload="metadata"`, and no `autoplay`, and never exceeds the
 content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
+A player that cannot load becomes a short notice linking to the original
+attachment. Each player sits in its own frame element so the swap never
+disturbs the nodes the markdown host inserted
+(`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
 
 - GitHub and GitLab declare `read_markdown_media`; their video loads through
   `GET .../markdown-media?source=` on default and host routes with the

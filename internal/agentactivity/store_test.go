@@ -503,16 +503,25 @@ func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
 	assert.Equal(t, StateWorking, reports[0].State)
 }
 
-func TestStoreRemoveIgnoresLegacyDirectory(t *testing.T) {
+func TestStoreRemoveReturnsLegacyReadError(t *testing.T) {
 	t.Parallel()
 	store := NewStore(t.TempDir())
 	legacy := store.legacyReportPath("claude", "chat")
 	require.NoError(t, os.Mkdir(legacy, 0o700))
 	require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
 
-	require.NoError(t, store.Remove("claude", "chat", "runtime"))
+	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), legacy)
 	assert.DirExists(t, legacy)
 	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
+}
+
+func TestStoreRemoveReturnsCurrentRemovalError(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	path := store.reportPath("claude", "chat", "runtime")
+	require.NoError(t, os.Mkdir(path, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(path, "child"), nil, 0o600))
+	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), path)
 }
 
 func TestStoreRemoveIgnoresCorruptLegacyReport(t *testing.T) {

@@ -40,11 +40,6 @@ var screenFilter = posthog.AllowStringValues(screenNames...)
 
 var durationFilter = posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h")
 
-func SessionDurationAllowed(value any) bool {
-	_, valid := durationFilter(value)
-	return valid
-}
-
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"screen_viewed": {
 		"screen":  screenFilter,
@@ -174,7 +169,19 @@ func kitAllowedEvents(source string) []posthog.Option {
 }
 
 func DisabledReporter() *Reporter {
-	return &Reporter{}
+	options := append(kitAllowedEvents("backend"), kitAllowedEvents("daemon")...)
+	client, err := posthog.NewReporter(posthog.Options{
+		APIKey: postHogAPIKey, Application: applicationSlug, EnvPrefix: envPrefix, DistinctID: "disabled",
+	}, options...)
+	if err != nil {
+		slog.Warn("build disabled telemetry reporter", "err", err)
+		return &Reporter{}
+	}
+	// Closing keeps Kit's allowlist while preventing event delivery.
+	if err := client.Close(); err != nil {
+		slog.Warn("close disabled telemetry reporter", "err", err)
+	}
+	return &Reporter{daemon: client, backend: client}
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
@@ -201,7 +208,7 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 }
 
 func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
-	if !r.Enabled() {
+	if r == nil {
 		return posthog.StatusDisabled, nil
 	}
 
@@ -218,7 +225,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 		client = r.daemon
 	}
 	if client == nil {
-		return posthog.StatusDisabled, nil
+		return "", errors.New("telemetry reporter unavailable")
 	}
 	return client.Report(ctx, event, properties)
 }

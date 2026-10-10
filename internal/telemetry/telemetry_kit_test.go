@@ -3,6 +3,8 @@
 package telemetry
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,6 +14,40 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/kit/telemetry/posthog"
 )
+
+func TestReporterValidatesSessionDurationInBothModes(t *testing.T) {
+	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer endpoint.Close()
+	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
+		opts.Endpoint = endpoint.URL
+		return posthog.NewReporter(opts, options...)
+	})
+	for _, disabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "enabled", true: "disabled"}[disabled], func(t *testing.T) {
+			reporter := DisabledReporter()
+			if !disabled {
+				var err error
+				reporter, err = newReporter(Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, time.Now())
+				require.NoError(t, err)
+			}
+			defer func() { require.NoError(t, reporter.Close()) }()
+			require.Equal(t, !disabled, reporter.Enabled())
+			_, err := reporter.Report(t.Context(), "session_ended", nil)
+			require.ErrorIs(t, err, posthog.ErrInvalidProperty)
+			status, err := reporter.Report(t.Context(), "session_ended", map[string]any{" duration_bucket ": "under_1m"})
+			require.NoError(t, err)
+			want := posthog.StatusQueued
+			if disabled {
+				want = posthog.StatusDisabled
+			}
+			assert.Equal(t, want, status)
+		})
+	}
+}
 
 // swapKitReporter replaces newKitReporter for the test and restores it after.
 func swapKitReporter(t *testing.T, factory func(posthog.Options, ...posthog.Option) (Client, error)) {
@@ -89,17 +125,6 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		_, valid := screenFilter(invalid)
 		assert.False(valid)
 	}
-	for _, duration := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
-		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
-		require.NoError(err)
-		assert.Equal(duration, properties["duration_bucket"])
-	}
-	for _, duration := range []any{nil, "all_day", 31} {
-		_, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
-		require.ErrorIs(err, posthog.ErrInvalidProperty)
-	}
-	_, err = backend.SanitizeProperties("session_ended", nil)
-	require.ErrorIs(err, posthog.ErrInvalidProperty)
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",
 		"distinct_id":             "spoofed",

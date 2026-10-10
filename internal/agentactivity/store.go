@@ -361,6 +361,10 @@ func (s *Store) scanReports() ([]storedReport, []error) {
 	if err != nil {
 		return nil, []error{err}
 	}
+	return s.loadReports(entries)
+}
+
+func (s *Store) loadReports(entries []os.DirEntry) ([]storedReport, []error) {
 	var reports []storedReport
 	var errs []error
 	for _, entry := range entries {
@@ -405,28 +409,21 @@ func (s *Store) reports() []storedReport {
 		return slices.Clone(s.cacheReports)
 	}
 
-	reports := make([]storedReport, 0, len(entries))
+	loaded, _ := s.loadReports(entries)
+	reports := make([]storedReport, 0, len(loaded))
 	cleanupPending := false
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(s.root, entry.Name())
-		report, ok, _ := s.readReport(path)
-		if !ok {
-			continue
-		}
+	for _, report := range loaded {
 		report.Agent = strings.ToLower(strings.TrimSpace(report.Agent))
 		if report.Agent == "" {
-			if removeErr := os.Remove(path); removeErr == nil ||
+			if removeErr := os.Remove(report.path); removeErr == nil ||
 				errors.Is(removeErr, os.ErrNotExist) {
-				delete(files, entry.Name())
+				delete(files, filepath.Base(report.path))
 			} else {
 				cleanupPending = true
 			}
 			continue
 		}
-		reports = append(reports, storedReport{Report: report, path: path})
+		reports = append(reports, report)
 	}
 	s.cacheFiles = files
 	if cleanupPending || !metadataComplete {
@@ -550,8 +547,12 @@ func (s *Store) readReport(path string) (Report, bool, error) {
 		return Report{}, false, err
 	}
 	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 64<<10))
+	if err != nil {
+		return Report{}, false, err
+	}
 	var report Report
-	if err := json.UnmarshalRead(io.LimitReader(file, 64<<10), &report); err != nil {
+	if err := json.Unmarshal(data, &report); err != nil {
 		return Report{}, false, nil
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||

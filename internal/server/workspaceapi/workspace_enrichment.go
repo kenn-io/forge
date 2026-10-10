@@ -710,7 +710,12 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
 	}
-	// Retry blocked report cleanup even when this pass pruned no runtime rows.
+	s.agentActivityCleanupMu.Lock()
+	cleanupPending := s.agentActivityCleanupError != ""
+	s.agentActivityCleanupMu.Unlock()
+	if !pruned && !cleanupPending {
+		return
+	}
 	reconcileCtx, cancelReconcile := context.WithTimeout(
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)

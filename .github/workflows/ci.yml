@@ -431,7 +431,7 @@ jobs:
         run: go test ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
 
       - name: Run locked activity report cleanup test
-        run: go test ./internal/agentactivity -run 'TestStoreRemoveReturnsLockedReportErrors|TestStoreRuntimeCleanup' -shuffle=on
+        run: go test ./internal/agentactivity -run '^TestStore(RemoveReturnsLockedReportErrors|RuntimeCleanupRetriesLockedReport|RuntimeCleanupReturnsReadDirErrors)$' -shuffle=on
 
       - name: Run activity report maintenance retry test
         run: go test ./internal/server/workspaceapi -run '^TestWorkspaceTmuxPruneRetriesLockedActivityReport$' -shuffle=on

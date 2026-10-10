@@ -160,7 +160,7 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 		return "", nil
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusInternalServerError && resp.StatusCode < 600 {
+	if resp.StatusCode >= http.StatusInternalServerError {
 		var problem generated.ProblemError
 		details := []string{resp.Status}
 		if err := json.UnmarshalRead(io.LimitReader(resp.Body, 8<<10), &problem); err == nil {

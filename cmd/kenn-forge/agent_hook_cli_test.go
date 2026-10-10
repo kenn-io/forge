@@ -15,26 +15,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
-	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/kit/agenthook"
 )
 
 func agentHookDaemonFixture(t *testing.T, handler http.Handler) (*httptest.Server, string, string) {
 	t.Helper()
-	require := require.New(t)
 	daemon := httptest.NewServer(handler)
 	t.Cleanup(daemon.Close)
-	dataDir := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(dataDir)), 0o600))
-	token, err := runtimelock.EnsureAuthToken(dataDir)
-	require.NoError(err)
-	lock, err := runtimelock.Acquire(dataDir)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(lock.Release()) })
-	require.NoError(lock.WriteMetadata(runtimelock.Metadata{
-		ListenAddr: daemon.Listener.Addr().String(), TokenPath: runtimelock.AuthTokenPath(dataDir), RequireAuth: true,
-	}))
+	token := "test-token"
+	configPath := archiveCLITestConfig(t, daemon.URL, "", token)
 	return daemon, configPath, token
 }
 

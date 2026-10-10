@@ -129,7 +129,7 @@ func TestDisabledReporterIsNoOp(t *testing.T) {
 
 	for _, reporter := range []*Reporter{nil, DisabledReporter()} {
 		assert.False(reporter.Enabled())
-		assert.NoError(reporter.Capture("server_started", nil))
+		assert.NoError(reporter.Capture("app_opened", nil))
 		assert.NoError(reporter.Close())
 	}
 }

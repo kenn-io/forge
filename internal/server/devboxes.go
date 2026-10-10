@@ -122,6 +122,7 @@ func (s *Server) registerDevboxAPI(api huma.API) {
 	}, httpapi.DocumentOperation("reconnect-devbox", "Refresh an assigned worker credential and verify identity", "Devboxes"))
 	huma.Post(api, "/devboxes/{connection_id}/workspaces", s.createDevboxWorkspace,
 		httpapi.DocumentOperation("create-devbox-workspace", "Create a workspace on a connected devbox", "Devboxes"))
+	s.registerDevboxTargetAPI(api)
 	for _, route := range devboxapi.DevboxProxyRoutes {
 		s.registerDevboxProxy(api, route)
 	}

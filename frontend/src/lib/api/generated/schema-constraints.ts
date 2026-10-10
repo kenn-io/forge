@@ -58,10 +58,16 @@ export const schemaConstraints = {
   WorkerIdentity: {
     uid: { minimum: 0 },
   },
+  WorkerWorkspaceTargetRequest: {
+    number: { minimum: 1 },
+  },
   WorkspaceLaunchPull: {
     snapshot_revision: { minimum: 1 },
   },
   WorkspaceLaunchSpec: {
     item_number: { minimum: 1 },
+  },
+  WorkspaceTargetSelection: {
+    number: { minimum: 1 },
   },
 } as const;

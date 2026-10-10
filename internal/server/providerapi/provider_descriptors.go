@@ -14,6 +14,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type FederationRepositoryDescriptorInput struct {
@@ -118,17 +119,25 @@ func (s *Handlers) FederationRepositoryDescriptor(
 		)
 	}
 	observedAt := (*s.Now)().UTC()
-	repo, err := s.RepoResolver.LookupSelection(
-		ctx, input.Body.Provider, input.Body.PlatformHost,
-		input.Body.Owner, input.Body.Name, input.Body.Key,
-	)
-	if errors.Is(err, httpapi.ErrRepoNotFound) {
+	var repo *db.ActiveRepo
+	var err error
+	if input.Body.Owner == "" && input.Body.Name == "" {
+		repo, err = s.Db.GetActiveRepoByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: input.Body.Provider, PlatformHost: input.Body.PlatformHost, Key: input.Body.Key,
+		})
+	} else {
+		repo, err = s.RepoResolver.LookupSelection(
+			ctx, input.Body.Provider, input.Body.PlatformHost,
+			input.Body.Owner, input.Body.Name, input.Body.Key,
+		)
+	}
+	if err != nil && !errors.Is(err, httpapi.ErrRepoNotFound) {
+		return nil, httpapi.Internal("resolve repository descriptor failed")
+	}
+	if repo == nil || errors.Is(err, httpapi.ErrRepoNotFound) {
 		return nil, httpapi.NotFound(
 			httpapi.CodeRepoNotFound, "repository not found", nil,
 		)
-	}
-	if err != nil {
-		return nil, httpapi.Internal("resolve repository descriptor failed")
 	}
 	descriptor, err := providerplane.BuildRepositoryDescriptor(
 		repositoryDescriptorSnapshot(repo.Repo, observedAt),

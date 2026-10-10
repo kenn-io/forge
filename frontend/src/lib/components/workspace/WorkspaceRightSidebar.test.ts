@@ -237,16 +237,14 @@ describe("WorkspaceRightSidebar", () => {
       },
       context: new Map([[STORES_KEY, makeStores()]]),
     });
-    await waitFor(() => expect(screen.getByText("Targets").textContent).toContain("3"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("3"));
     await fireEvent.click(screen.getByText("Targets"));
-    // jsdom does not implement the native details toggle.
-    screen.getByText("Targets").closest("details")!.open = true;
-    await fireEvent.click(screen.getByRole("button", { name: /PR #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Stack base PR #42 acme/other open" }));
     expect(onselect).toHaveBeenLastCalledWith(
       "pr",
       expect.objectContaining({ owner: "acme", name: "other", number: 42 }),
     );
-    await fireEvent.click(screen.getByRole("button", { name: /Issue #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Follow up Issue #42 acme/other open" }));
     expect(onselect).toHaveBeenLastCalledWith("issue", expect.objectContaining({ number: 42 }));
     expect((screen.getByRole("button", { name: /Task A/ }) as HTMLButtonElement).disabled).toBe(true);
   });

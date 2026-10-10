@@ -15,6 +15,7 @@ type WorkspaceTarget struct {
 	ItemNumber  int
 	URL         string
 	CreatedAt   time.Time
+	Hidden      bool
 }
 
 func (d *DB) AddWorkspaceTarget(ctx context.Context, target WorkspaceTarget) (int64, error) {
@@ -22,10 +23,10 @@ func (d *DB) AddWorkspaceTarget(ctx context.Context, target WorkspaceTarget) (in
 		return 0, fmt.Errorf("invalid workspace target")
 	}
 	var id int64
-	err := d.rwQueryRowContext(ctx, `INSERT INTO forge_workspace_targets (workspace_id, repo_id, item_type, item_number, url, created_at)
- VALUES (?, ?, ?, ?, ?, ?)
- ON CONFLICT(workspace_id, repo_id, item_type, item_number) DO UPDATE SET url = excluded.url
- RETURNING id`, target.WorkspaceID, target.RepoID, target.ItemType, target.ItemNumber, target.URL, time.Now().UTC()).Scan(&id)
+	err := d.rwQueryRowContext(ctx, `INSERT INTO forge_workspace_targets (workspace_id, repo_id, item_type, item_number, url, created_at, hidden)
+ VALUES (?, ?, ?, ?, ?, ?, ?)
+ ON CONFLICT(workspace_id, repo_id, item_type, item_number) DO UPDATE SET url = excluded.url, hidden = excluded.hidden
+ RETURNING id`, target.WorkspaceID, target.RepoID, target.ItemType, target.ItemNumber, target.URL, time.Now().UTC(), target.Hidden).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("add workspace target: %w", err)
 	}
@@ -33,7 +34,7 @@ func (d *DB) AddWorkspaceTarget(ctx context.Context, target WorkspaceTarget) (in
 }
 
 func (d *DB) ListWorkspaceTargets(ctx context.Context, workspaceID string) ([]WorkspaceTarget, error) {
-	rows, err := d.roQueryContext(ctx, `SELECT id,workspace_id,repo_id,item_type,item_number,url,created_at FROM forge_workspace_targets WHERE workspace_id = ? ORDER BY id`, workspaceID)
+	rows, err := d.roQueryContext(ctx, `SELECT id,workspace_id,repo_id,item_type,item_number,url,created_at,hidden FROM forge_workspace_targets WHERE workspace_id = ? ORDER BY id`, workspaceID)
 	if err != nil {
 		return nil, fmt.Errorf("list workspace targets: %w", err)
 	}
@@ -41,7 +42,7 @@ func (d *DB) ListWorkspaceTargets(ctx context.Context, workspaceID string) ([]Wo
 	targets := make([]WorkspaceTarget, 0)
 	for rows.Next() {
 		var target WorkspaceTarget
-		if err := rows.Scan(&target.ID, &target.WorkspaceID, &target.RepoID, &target.ItemType, &target.ItemNumber, &target.URL, &target.CreatedAt); err != nil {
+		if err := rows.Scan(&target.ID, &target.WorkspaceID, &target.RepoID, &target.ItemType, &target.ItemNumber, &target.URL, &target.CreatedAt, &target.Hidden); err != nil {
 			return nil, fmt.Errorf("scan workspace target: %w", err)
 		}
 		target.CreatedAt = target.CreatedAt.UTC()

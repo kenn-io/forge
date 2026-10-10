@@ -33,6 +33,10 @@ func (s *Handler) RegisterWorker(api huma.API) {
 		OperationID: "refresh-worker-context", Method: http.MethodPut, Path: "/worker/workspaces/{id}/context",
 		Tags: []string{"Devboxes"}, Summary: "Refresh controller-supplied workspace context",
 	}, s.refreshWorkerContext)
+	huma.Register(api, huma.Operation{
+		OperationID: "update-worker-workspace-target", Method: http.MethodPut, Path: "/worker/workspaces/{id}/targets",
+		Tags: []string{"Devboxes"}, Summary: "Save a workspace target verified by the controller",
+	}, s.updateWorkerWorkspaceTarget)
 }
 
 func (s *Handler) admitWorkerRepository(ctx context.Context, repository db.WorkspaceLaunchRepository) (*devbox.Credential, error) {

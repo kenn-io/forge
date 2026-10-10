@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -30,6 +31,7 @@ import (
 
 type fleetRESTProxyRoute struct {
 	responseType reflect.Type
+	responseCode int
 	operationID  string
 	method       string
 	path         string
@@ -167,6 +169,18 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			summary:      "List workspace targets on fleet host",
 			pathParams:   []string{"host_key", "id"},
 			responseType: reflect.TypeFor[workspaceapi.WorkspaceTargetsResponse](),
+			targetPath: func(r *http.Request) string {
+				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/targets"
+			},
+		},
+		{
+			operationID:  "update-fleet-workspace-target",
+			method:       http.MethodPut,
+			path:         "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+			summary:      "Track or hide a workspace target on fleet host",
+			pathParams:   []string{"host_key", "id"},
+			body:         true,
+			responseCode: http.StatusNoContent,
 			targetPath: func(r *http.Request) string {
 				return "/api/v1/workspaces/" + escapePath(r.PathValue("id")) + "/targets"
 			},
@@ -637,6 +651,11 @@ func (s *Handler) registerFleetOperationRoutes(api huma.API) {
 			Parameters:   fleetProxyParams(route.pathParams, route.queryParams...),
 			Responses:    fleetProxyResponses(),
 			MaxBodyBytes: maxBodyBytes,
+		}
+		if route.responseCode != 0 {
+			op.Responses[strconv.Itoa(route.responseCode)] = &huma.Response{
+				Description: http.StatusText(route.responseCode),
+			}
 		}
 		if route.responseType != nil {
 			op.Responses["200"] = &huma.Response{

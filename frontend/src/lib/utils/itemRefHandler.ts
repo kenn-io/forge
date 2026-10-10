@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { GeneratedApi } from "../api/generated-api.js";
+import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import {
   canonicalProvider,
   resolvedPlatformHost,
@@ -9,7 +9,6 @@ import {
 } from "../api/provider-routes.js";
 import { RepositoryReads } from "../api/repository-reads.js";
 import type { RepoCatalog } from "../api/types.js";
-import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
@@ -39,66 +38,49 @@ function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-function resolveAndNavigate(
-  ref: ResolvableItemReference,
-  onNavigate: (ref: RoutableItemRef) => void,
-): Effect.Effect<void, unknown, GeneratedApi> {
+export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(function* (ref: ResolvableItemReference) {
   const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
-  return Effect.gen(function* () {
-    const api = yield* GeneratedApi;
-    const result = yield* Effect.tryPromise({
-      try: (signal) => {
-        const routeRef = { provider, platformHost, owner, name, repoPath };
-        const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
-        const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
-        const request = providerUsesHostRoute(routeRef)
-          ? api.client.RepositoriesService.resolveRepoItemOnHost(
-              { ...providerHostRouteParams(routeRef), number },
-              query,
-              {
-                signal,
-              },
-            )
-          : api.client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
-              signal,
-            });
-        return request.then(
-          (data) => ({ data }) as const,
-          (cause: unknown) => {
-            if (cause instanceof GeneratedProblemResponse) return { problem: cause.problem } as const;
-            throw cause;
-          },
-        );
-      },
-      catch: (cause) => cause,
-    });
-    yield* Effect.sync(() => {
-      if ("problem" in result) {
-        if (result.problem.status === 404) {
-          showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
-        } else {
-          showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
-        }
-        return;
+  const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
+    const routeRef = { provider, platformHost, owner, name, repoPath };
+    const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
+    const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
+    return providerUsesHostRoute(routeRef)
+      ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
+          signal,
+        })
+      : client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
+          signal,
+        });
+  }).pipe(
+    Effect.map((data) => ({ data }) as const),
+    Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
+  );
+  return yield* Effect.sync(() => {
+    if ("problem" in result) {
+      if (result.problem.status === 404) {
+        showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
+      } else {
+        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
       }
+      return;
+    }
 
-      if (!result.data.repo_tracked) {
-        showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
-        return;
-      }
+    if (!result.data.repo_tracked) {
+      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
+      return;
+    }
 
-      onNavigate({
-        itemType: result.data.item_type === "pr" ? "pr" : "issue",
-        provider,
-        platformHost,
-        owner,
-        name,
-        repoPath,
-        number,
-      });
-    });
+    return {
+      itemType: result.data.item_type === "pr" ? "pr" : "issue",
+      provider,
+      platformHost,
+      owner,
+      name,
+      repoPath,
+      number,
+    } satisfies RoutableItemRef;
   });
-}
+});
 
 // Resolves an item reference through the repo resolve endpoint and either
 // navigates to the internal item route or reports that tracking has changed.
@@ -107,19 +89,29 @@ export function resolveItemReference(
   ref: ResolvableItemReference,
   onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
 ): AppExecution<void, unknown> {
-  return runtime.runCommand(resolveAndNavigate(ref, onNavigate), {
-    operation: "resolve item reference",
-    safeContext: {
-      provider: ref.provider,
-      platformHost: ref.platformHost ?? "",
-      owner: ref.owner,
-      name: ref.name,
-      number: ref.number.toString(),
+  return runtime.runCommand(
+    resolveItemReferenceEffect(ref).pipe(
+      Effect.tap((item) =>
+        Effect.sync(() => {
+          if (item) onNavigate(item);
+        }),
+      ),
+      Effect.asVoid,
+    ),
+    {
+      operation: "resolve item reference",
+      safeContext: {
+        provider: ref.provider,
+        platformHost: ref.platformHost ?? "",
+        owner: ref.owner,
+        name: ref.name,
+        number: ref.number.toString(),
+      },
+      onFailure: () => {
+        showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
+      },
     },
-    onFailure: () => {
-      showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
-    },
-  });
+  );
 }
 
 export function initItemRefHandler(
@@ -127,6 +119,8 @@ export function initItemRefHandler(
   onNavigate?: (ref: RoutableItemRef) => void,
   target: HTMLElement | Document = document,
   getProviderContexts: () => ReadonlyArray<{ provider: string; platformHost?: string | undefined }> = () => [],
+  resolveReference: (ref: ResolvableItemReference) => AppExecution<void, unknown> | undefined = (ref) =>
+    resolveItemReference(runtime, ref, onNavigate),
 ): () => void {
   let execution: AppExecution<void, unknown> | null = null;
   let getRepositories: () => readonly RepoCatalog[] = () => [];
@@ -213,7 +207,7 @@ export function initItemRefHandler(
 
     e.preventDefault();
     execution?.interrupt();
-    execution = resolveItemReference(runtime, ref, onNavigate);
+    execution = resolveReference(ref) ?? null;
   }
 
   target.addEventListener("click", handleClick);

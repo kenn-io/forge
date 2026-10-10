@@ -307,8 +307,14 @@ embedder protocol for arbitrary host state.
 
 - Tracking targets never change workspace ownership, branch association, push routing, or cleanup eligibility; merged targets do not close workspaces
   (`internal/server/workspaceapi/targets.go::Handler.AddWorkspaceTargetService`).
-- Target lists combine explicit links with implicit owner/branch links; removing an explicit link cannot remove its implicit association, and unavailable metadata retains the link
+- Target lists combine explicit links with implicit owner/branch links; UI removal dismisses either until a deliberate revisit, without removing ownership or branch associations. Unavailable metadata retains undismissed links
   (`internal/server/workspaceapi/targets.go::Handler.ListWorkspaceTargetsService`).
+- Devbox target links and dismissals belong to the worker; provider identity and display metadata come from the controller. Tracking needs no Git admission or worker provider replicas
+  (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
+- Removing a devbox target needs only its stable identity; missing controller metadata must not prevent dismissal
+  (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
+- A spoke's sparse, stale, or inactive catalog and repository picker visibility must not limit target visits; refresh the hub descriptor by stable identity before every visit
+  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveWorkspaceTargetRepository`).
 
 
 - `item_type`: whether the workspace belongs to a `pull_request`, provider

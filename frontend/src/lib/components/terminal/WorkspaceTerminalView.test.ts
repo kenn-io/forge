@@ -1,10 +1,11 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { flushSync } from "svelte";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import type { QuickAction, RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createWorkspaceItemSearchStore } from "../../stores/workspace-item-search.svelte.js";
 import { clearActiveTabbedPanelDrag, startTabbedPanelTabDrag } from "../shared/tabbed-panel-drag.js";
 import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import {
@@ -29,6 +30,7 @@ import { STORES_KEY } from "../../context.js";
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
+  listWorkspaceTargets: vi.fn(),
   launchWorkspaceSession: vi.fn(),
   mockDispose: vi.fn(),
   mockFit: vi.fn(),
@@ -56,6 +58,7 @@ const mocks = vi.hoisted(() => ({
   subscribeWorkspaceEvents: vi.fn(),
   terminalWrite: vi.fn(),
   diffStore: null as unknown as ReturnType<typeof createDiffStore>,
+  workspaceItemSearch: null as unknown as ReturnType<typeof createWorkspaceItemSearchStore>,
   workspaceSidebarPreference: "diff" as "diff" | "item",
 }));
 
@@ -163,6 +166,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getQuickActions: () => mocks.quickActions,
+        getConfiguredRepos: () => [],
         getModeVisibility: () => ({
           activity: true,
           repos: true,
@@ -186,6 +190,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         }),
       },
       diff: mocks.diffStore,
+      workspaceItemSearch: mocks.workspaceItemSearch,
       events: {
         selectWorkspace: mocks.selectWorkspace,
         subscribeWorkspaceEvents: mocks.subscribeWorkspaceEvents,
@@ -209,7 +214,7 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
   };
   const client = makeGeneratedClient({
     WorkspacesService: {
-      listWorkspaceTargets: async () => ({ targets: [], kata_available: false }),
+      listWorkspaceTargets: mocks.listWorkspaceTargets,
       getWorkspaceRuntime: ({ id }: { id: string }) => getRuntime(id),
       launchWorkspaceRuntimeSession: (
         { id }: { id: string },
@@ -725,9 +730,12 @@ describe("WorkspaceTerminalView", () => {
     sockets = [];
     resetWorkspaceCreatePendingForTest();
     mocks.diffStore = createDiffStore({ runtime: mocks.runtime });
+    mocks.workspaceItemSearch = createWorkspaceItemSearchStore(mocks.runtime);
     mocks.workspaceSidebarPreference = "diff";
     mocks.getWorkspaceRuntime.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    mocks.listWorkspaceTargets.mockReset();
+    mocks.listWorkspaceTargets.mockResolvedValue({ targets: [], kata_available: false });
     mocks.launchWorkspaceSession.mockReset();
     mocks.renameWorkspaceSession.mockReset();
     mocks.selectWorkspace.mockReset();
@@ -805,6 +813,366 @@ describe("WorkspaceTerminalView", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it.each([
+    {
+      itemType: "pr",
+      ownerType: "pull_request",
+      ownerNumber: 7,
+      associatedNumber: null,
+      targetNumber: 7,
+      label: "Use linked PR",
+    },
+    {
+      itemType: "pr",
+      ownerType: "adhoc",
+      ownerNumber: 0,
+      associatedNumber: 42,
+      targetNumber: 42,
+      label: "Use linked PR",
+    },
+    {
+      itemType: "issue",
+      ownerType: "issue",
+      ownerNumber: 9,
+      associatedNumber: null,
+      targetNumber: 9,
+      label: "Use linked issue",
+    },
+    {
+      itemType: "pr",
+      ownerType: "adhoc",
+      ownerNumber: 0,
+      associatedNumber: null,
+      targetNumber: null,
+      label: "Clear PR selection",
+    },
+  ])(
+    "$label restores only an existing linked target for $ownerType #$ownerNumber",
+    async ({ itemType, ownerType, ownerNumber, associatedNumber, targetNumber, label }) => {
+      mocks.workspaceSidebarPreference = "item";
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+      const workspace = {
+        ...workspaceResponse,
+        repo,
+        item_type: ownerType,
+        item_number: ownerNumber,
+        associated_pr_number: associatedNumber,
+      };
+      const storageKey = 'kenn-forge-workspace-viewed-items:["self","ws-1"]';
+      localStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          pr: null,
+          issue: null,
+          [itemType]: {
+            provider: "github",
+            platformHost: "github.com",
+            platformRepoId: 202,
+            owner: "acme",
+            name: "other",
+            repoPath: "acme/other",
+            number: 55,
+          },
+        }),
+      );
+      let hidden = true;
+      const writes: unknown[] = [];
+      mocks.listWorkspaceTargets.mockImplementation(async () => ({
+        kata_available: false,
+        targets: hidden
+          ? []
+          : [
+              {
+                id: 0,
+                type: itemType,
+                number: targetNumber,
+                repo,
+                title: "Restored linked target",
+                state: "open",
+                source: "owner",
+                unavailable: false,
+                url: "",
+              },
+            ],
+      }));
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/api/v1/workspaces/ws-1") return Response.json(workspace);
+        if (path === "/api/v1/pulls" || path === "/api/v1/issues") return Response.json([]);
+        if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+          const body = await request.json();
+          writes.push(body);
+          hidden = body.hidden;
+          return new Response(null, { status: 204 });
+        }
+        return originalFetch(input, init);
+      });
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+      await fireEvent.click(await screen.findByRole("button", { name: "Search PRs and issues" }));
+      await fireEvent.click(await screen.findByRole("option", { name: label }));
+      expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ pr: null, issue: null });
+      if (targetNumber === null) {
+        expect(writes).toEqual([]);
+        return;
+      }
+      await waitFor(() =>
+        expect(writes).toEqual([
+          {
+            repository: { provider: "github", platform_host: "github.com", platform_repo_id: 101 },
+            type: itemType,
+            number: targetNumber,
+            hidden: false,
+          },
+        ]),
+      );
+      await fireEvent.click(await screen.findByRole("button", { name: /^Targets/ }));
+      expect(await screen.findByText("Restored linked target")).toBeTruthy();
+    },
+  );
+
+  it("keeps a later target removal after an earlier clicked reference finishes resolving", async () => {
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.workspaceSidebarPreference = "item";
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+    const target = {
+      id: 1,
+      type: "issue",
+      number: 7,
+      repo,
+      title: "Linked issue",
+      state: "open",
+      source: "tracked",
+      unavailable: false,
+      url: "",
+    };
+    let hidden = false;
+    const writes: boolean[] = [];
+    const resolveStarted = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    mocks.listWorkspaceTargets.mockImplementation(async () => ({
+      targets: hidden ? [] : [target],
+      kata_available: false,
+    }));
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/workspaces/ws-1") return Response.json({ ...workspaceResponse, repo });
+      if (path === "/api/v1/repos")
+        return Response.json([
+          { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+        ]);
+      if (path === "/api/v1/repo/github/acme/widget") return Response.json({ PlatformRepoID: 101 });
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+        resolveStarted.resolve();
+        await releaseResolution.promise;
+        return Response.json({ item_type: "issue", repo_tracked: true, number: 7 });
+      }
+      if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+        const body = await request.json();
+        expect(body.repository.platform_repo_id).toBe(101);
+        hidden = body.hidden;
+        writes.push(hidden);
+        return new Response(null, { status: 204 });
+      }
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await fireEvent.click(await screen.findByRole("button", { name: /^Targets/ }));
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    link.textContent = "Related issue";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await resolveStarted.promise;
+    await fireEvent.click(await screen.findByRole("button", { name: "Remove Issue #7 from targets" }));
+    releaseResolution.resolve();
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes).toEqual([false, true]);
+    expect(hidden).toBe(true);
+  });
+
+  it.each(["newer search selection", "newer missing link", "unmount", "no superseding action"] as const)(
+    "presents a queued reference only while its selection remains current: %s",
+    async (laterAction) => {
+      const previousPath = window.location.pathname + window.location.search + window.location.hash;
+      onTestFinished(() => navigate(previousPath));
+      navigate("/terminal/ws-1");
+      mocks.workspaceSidebarPreference = "item";
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      const storageKey = 'kenn-forge-workspace-viewed-items:["self","ws-1"]';
+      localStorage.setItem(storageKey, JSON.stringify({ pr: null, issue: null }));
+      const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+      const resolveStarted = Promise.withResolvers<void>();
+      const releaseResolution = Promise.withResolvers<void>();
+      onTestFinished(() => releaseResolution.resolve());
+      const writes: number[] = [];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/api/v1/workspaces/ws-1")
+          return Response.json({ ...workspaceResponse, repo, item_type: "issue", item_number: 6 });
+        if (path === "/api/v1/repos")
+          return Response.json([
+            { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+          ]);
+        if (path === "/api/v1/pulls") return Response.json([]);
+        if (path === "/api/v1/issues")
+          return Response.json([{ repo, Number: 8, Title: "Newer issue", State: "open", Author: "maintainer" }]);
+        if (path === "/api/v1/repo/github/acme/widget") return Response.json({ PlatformRepoID: 101 });
+        if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+          resolveStarted.resolve();
+          await releaseResolution.promise;
+          return Response.json({ item_type: "issue", repo_tracked: true, number: 7 });
+        }
+        if (path === "/api/v1/repo/github/acme/widget/resolve/9")
+          return Response.json(
+            { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+            { status: 404 },
+          );
+        if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+          writes.push((await request.json()).number);
+          return new Response(null, { status: 204 });
+        }
+        return originalFetch(input, init);
+      });
+      const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+      await screen.findByText("Issue acme/widget#6");
+      const link = document.createElement("a");
+      link.className = "item-ref";
+      link.textContent = "Related issue";
+      Object.assign(link.dataset, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: "7",
+      });
+      view.container.querySelector(".terminal-view")!.append(link);
+      await fireEvent.click(link);
+      await resolveStarted.promise;
+      if (laterAction === "newer search selection") {
+        await fireEvent.click(screen.getByRole("button", { name: "Search PRs and issues" }));
+        await fireEvent.click(await screen.findByRole("option", { name: /#8.*Newer issue/ }));
+        expect(screen.getByText("Issue acme/widget#8")).toBeTruthy();
+      } else if (laterAction === "newer missing link") {
+        link.dataset.number = "9";
+        await fireEvent.click(link);
+      } else if (laterAction === "unmount") {
+        view.unmount();
+      }
+      releaseResolution.resolve();
+      if (laterAction === "newer search selection") {
+        await waitFor(() => expect(writes).toEqual([7, 8]));
+        expect(screen.getByText("Issue acme/widget#8")).toBeTruthy();
+        expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ issue: { number: 8 } });
+      } else {
+        await waitFor(() => expect(writes).toEqual([7]));
+        if (laterAction === "no superseding action") {
+          expect(screen.getByText("Issue acme/widget#7")).toBeTruthy();
+          expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ issue: { number: 7 } });
+        } else {
+          if (laterAction === "newer missing link") {
+            await waitFor(() =>
+              expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widget#9 not found.", { tone: "danger" }),
+            );
+            expect(screen.getByText("Issue acme/widget#6")).toBeTruthy();
+          }
+          expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ pr: null, issue: null });
+        }
+      }
+    },
+  );
+
+  it.each(["another link", "unmount"])("reports an accepted target save failure after %s", async (laterAction) => {
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.workspaceSidebarPreference = "item";
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    onTestFinished(() => release.resolve());
+    const writes: number[] = [];
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      const repo = {
+        Platform: "github",
+        PlatformHost: "github.com",
+        PlatformRepoID: 101,
+        Owner: "acme",
+        Name: "widget",
+      };
+      if (path === "/api/v1/repos") return Response.json([repo]);
+      if (path === "/api/v1/repo/github/acme/widget") return Response.json(repo);
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7" || path === "/api/v1/repo/github/acme/widget/resolve/8")
+        return Response.json({ item_type: "issue", repo_tracked: true, number: Number(path.split("/").at(-1)) });
+      if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+        const { number } = await request.json();
+        writes.push(number);
+        if (number === 7) {
+          started.resolve();
+          await release.promise;
+          return Response.json(
+            { code: "serviceUnavailable", title: "Service Unavailable", status: 503, detail: "Worker unavailable" },
+            { status: 503 },
+          );
+        }
+        return new Response(null, { status: 204 });
+      }
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await screen.findByRole("button", { name: "Search PRs and issues" });
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await started.promise;
+    if (laterAction === "another link") {
+      link.dataset.number = "8";
+      await fireEvent.click(link);
+    } else {
+      view.unmount();
+    }
+    release.resolve();
+    await waitFor(() =>
+      expect(mocks.showFlash).toHaveBeenCalledWith("Could not save target. Open it again to retry.", {
+        tone: "danger",
+      }),
+    );
+    await waitFor(() => expect(writes).toEqual(laterAction === "another link" ? [7, 8] : [7]));
   });
 
   it("explains workspace creation in the main pane when no workspaces exist", async () => {

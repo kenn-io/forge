@@ -8717,8 +8717,6 @@ components:
       required:
         - provider
         - platform_host
-        - owner
-        - name
       type: object
     RepositoryIdentity:
       additionalProperties: false
@@ -8740,6 +8738,23 @@ components:
         - provider
         - platformHost
         - platformRepoID
+      type: object
+    RepositoryIdentity1:
+      additionalProperties: false
+      properties:
+        bitbucket_repository_uuid:
+          type: string
+        platform_host:
+          type: string
+        platform_repo_id:
+          format: int64
+          type: integer
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - platform_repo_id
       type: object
     RepositoryRoute:
       additionalProperties: false
@@ -10585,6 +10600,39 @@ components:
         - role
         - protocol
       type: object
+    WorkerWorkspaceTargetRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkerWorkspaceTargetRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepoRefResponse"
+        type:
+          enum:
+            - pr
+            - issue
+          type: string
+        url:
+          description: Canonical target URL verified by the controller
+          type: string
+      required:
+        - repository
+        - type
+        - number
+        - hidden
+        - url
+      type: object
     WorkflowApprovalResponse:
       additionalProperties: false
       properties:
@@ -11684,6 +11732,35 @@ components:
         - state
         - source
         - unavailable
+      type: object
+    WorkspaceTargetSelection:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkspaceTargetSelection.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepositoryIdentity1"
+        type:
+          enum:
+            - pr
+            - issue
+          type: string
+      required:
+        - repository
+        - type
+        - number
+        - hidden
       type: object
     WorkspaceTargetsResponse:
       additionalProperties: false
@@ -13616,12 +13693,12 @@ paths:
       operationId: list-devbox-workspace-targets
       parameters:
         - in: path
-          name: id
+          name: connection_id
           required: true
           schema:
             type: string
         - in: path
-          name: connection_id
+          name: id
           required: true
           schema:
             type: string
@@ -13638,7 +13715,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Forward an execution operation to its owning devbox
+      summary: Read worker targets with controller metadata
+      tags:
+        - Devboxes
+    put:
+      operationId: update-devbox-workspace-target
+      parameters:
+        - in: path
+          name: connection_id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceTargetSelection"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update a target on its owning devbox
       tags:
         - Devboxes
   /devboxes/{connection_id}/workspaces/{id}/view-state:
@@ -16622,6 +16730,43 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Response returned by the owning fleet host.
       summary: List workspace targets on fleet host
+      tags:
+        - Fleet
+    put:
+      operationId: update-fleet-workspace-target
+      parameters:
+        - in: path
+          name: host_key
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              additionalProperties: true
+              type: object
+        description: JSON payload forwarded to the owning host.
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Response returned by the owning fleet host.
+      summary: Track or hide a workspace target on fleet host
       tags:
         - Fleet
   /fleet/hosts/{host_key}/workspaces/{id}/view-state:
@@ -26756,6 +26901,33 @@ paths:
       summary: Refresh controller-supplied workspace context
       tags:
         - Devboxes
+  /worker/workspaces/{id}/targets:
+    put:
+      operationId: update-worker-workspace-target
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerWorkspaceTargetRequest"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Save a workspace target verified by the controller
+      tags:
+        - Devboxes
   /workspaces:
     get:
       operationId: list-workspaces
@@ -27626,6 +27798,32 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List workspace targets
+      tags:
+        - Workspaces
+    put:
+      operationId: update-workspace-target
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkspaceTargetSelection"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Track or hide a workspace target
       tags:
         - Workspaces
   /workspaces/{id}/view-state:

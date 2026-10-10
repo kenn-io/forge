@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
     quickActionWorkspaceKey,
@@ -415,6 +416,7 @@
   let deletingWorkspaceTargets = $state<DeletingWorkspaceTarget[]>([]);
   let retainedRuntimePresenterLeases: RetainedRuntimePresenterLease[] = [];
   let workspacePresentationGeneration = 0;
+  let itemSelectionGeneration = 0;
   const deleteTriggerElements = new Map<string, HTMLElement | null>();
   let emptyLaunchTargetsExecution: { interrupt: () => void } | null = null;
   let sidebarRefreshToken = $state(0);
@@ -441,6 +443,8 @@
   let renameSaving = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
   onDestroy(() => {
+    // Accepted visits keep persisting, but can no longer present in this view.
+    itemSelectionGeneration += 1;
     terminalZoom.dispose();
     emptyLaunchTargetsExecution?.interrupt();
     emptyLaunchTargetsExecution = null;
@@ -2310,6 +2314,31 @@
 
   function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
     if (!workspace || actionsBlocked) return;
+    itemSelectionGeneration += 1;
+    const linkedNumber = itemType === "pr" ? getWorkspacePRNumber(workspace)
+      : workspace.item_type === "issue" ? workspace.item_number : null;
+    const repo = workspace.repo;
+    const target = item ?? (linkedNumber === null ? null : {
+      provider: repo.provider, platformHost: repo.platform_host, repositoryKey: repositoryKeyFromWire(repo),
+      owner: repo.owner, name: repo.name, repoPath: repo.repo_path, number: linkedNumber,
+    });
+    if (target) {
+      const id = workspaceId;
+      const hostKey = workspaceHostKey;
+      appRuntime.runCommand(updateWorkspaceTarget(id, hostKey, itemType, target, false).pipe(
+        Effect.tap(() => Effect.sync(() => {
+          if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
+        })),
+      ), {
+        operation: "track visited workspace target", safeContext: { workspaceID: id },
+        onFailure: () => { showFlash("Could not save target. Open it again to retry.", { tone: "danger" }); },
+      });
+    }
+    showWorkspaceItem(itemType, item);
+  }
+
+  function showWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
+    if (!workspace) return;
     viewedItems = { ...viewedItems, [itemType]: item };
     writeLocalStorage(
       itemSelectionStorageKey,
@@ -2325,13 +2354,27 @@
 
   function attachWorkspaceItemReferences(node: HTMLElement): (() => void) | undefined {
     if (getRoute().page !== "terminal") return;
-    return initItemRefHandler(appRuntime, (item) => selectWorkspaceItem(item.itemType, {
-      ...item,
-      platformHost: resolvedPlatformHost(item.provider, item.platformHost),
-    }), node, () => settingsStore.getConfiguredRepos().map(repo => ({
+    return initItemRefHandler(appRuntime, undefined, node, () => settingsStore.getConfiguredRepos().map(repo => ({
       provider: repo.provider,
       platformHost: repo.platform_host,
-    })));
+    })), (reference) => {
+      if (!workspace || actionsBlocked) return;
+      const id = workspaceId;
+      const hostKey = workspaceHostKey;
+      const selectionGeneration = ++itemSelectionGeneration;
+      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
+        if (selectionGeneration !== itemSelectionGeneration || !isCurrentWorkspace(id, hostKey)) return;
+        showWorkspaceItem(item.itemType, {
+          ...item,
+          platformHost: resolvedPlatformHost(item.provider, item.platformHost),
+        });
+      }).pipe(Effect.tap(() => Effect.sync(() => {
+        if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
+      }))), {
+        operation: "track visited workspace target", safeContext: { workspaceID: id },
+        onFailure: () => { showFlash("Could not save target. Open it again to retry.", { tone: "danger" }); },
+      });
+    });
   }
 
   function getWorkspacePRNumber(ws: Workspace): number | null {
@@ -4064,6 +4107,7 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
+    itemSelectionGeneration += 1;
     workspaceReadinessGeneration += 1;
     workspaceTabLoaded = false;
     lastRequestedTabKey = null;

@@ -1241,6 +1241,39 @@ func (o *ListDevboxWorkspaceTargetsRequestOptions) GetHeader() (map[string]strin
 	return nil, nil
 }
 
+// UpdateDevboxWorkspaceTargetRequestOptions is the options needed to make a request to UpdateDevboxWorkspaceTarget.
+type UpdateDevboxWorkspaceTargetRequestOptions struct {
+	PathParams *UpdateDevboxWorkspaceTargetPath
+	Body       *UpdateDevboxWorkspaceTargetBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateDevboxWorkspaceTargetRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateDevboxWorkspaceTargetRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateDevboxWorkspaceTargetRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateDevboxWorkspaceTargetRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetDevboxWorkspaceViewStateRequestOptions is the options needed to make a request to GetDevboxWorkspaceViewState.
 type GetDevboxWorkspaceViewStateRequestOptions struct {
 	PathParams *GetDevboxWorkspaceViewStatePath
@@ -4068,6 +4101,39 @@ func (o *ListFleetWorkspaceTargetsRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *ListFleetWorkspaceTargetsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdateFleetWorkspaceTargetRequestOptions is the options needed to make a request to UpdateFleetWorkspaceTarget.
+type UpdateFleetWorkspaceTargetRequestOptions struct {
+	PathParams *UpdateFleetWorkspaceTargetPath
+	Body       *UpdateFleetWorkspaceTargetBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateFleetWorkspaceTargetRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateFleetWorkspaceTargetRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateFleetWorkspaceTargetRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateFleetWorkspaceTargetRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -10949,6 +11015,39 @@ func (o *RefreshWorkerContextRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// UpdateWorkerWorkspaceTargetRequestOptions is the options needed to make a request to UpdateWorkerWorkspaceTarget.
+type UpdateWorkerWorkspaceTargetRequestOptions struct {
+	PathParams *UpdateWorkerWorkspaceTargetPath
+	Body       *UpdateWorkerWorkspaceTargetBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateWorkerWorkspaceTargetRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateWorkerWorkspaceTargetRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateWorkerWorkspaceTargetRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateWorkerWorkspaceTargetRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateWorkspaceRequestOptions is the options needed to make a request to CreateWorkspace.
 type CreateWorkspaceRequestOptions struct {
 	Body *CreateWorkspaceBody
@@ -11784,6 +11883,39 @@ func (o *ListWorkspaceTargetsRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// UpdateWorkspaceTargetRequestOptions is the options needed to make a request to UpdateWorkspaceTarget.
+type UpdateWorkspaceTargetRequestOptions struct {
+	PathParams *UpdateWorkspaceTargetPath
+	Body       *UpdateWorkspaceTargetBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateWorkspaceTargetRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateWorkspaceTargetRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateWorkspaceTargetRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateWorkspaceTargetRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetWorkspaceViewStateRequestOptions is the options needed to make a request to GetWorkspaceViewState.
 type GetWorkspaceViewStateRequestOptions struct {
 	PathParams *GetWorkspaceViewStatePath
@@ -12042,6 +12174,7 @@ type ClientInterface interface {
 	GetDevboxAttachSpecWithResponse(ctx context.Context, options *GetDevboxAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxAttachSpecResp, error)
 	SendDevboxInitialMessageWithResponse(ctx context.Context, options *SendDevboxInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SendDevboxInitialMessageResp, error)
 	ListDevboxWorkspaceTargetsWithResponse(ctx context.Context, options *ListDevboxWorkspaceTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxWorkspaceTargetsResp, error)
+	UpdateDevboxWorkspaceTargetWithResponse(ctx context.Context, options *UpdateDevboxWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDevboxWorkspaceTargetResp, error)
 	GetDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *GetDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetDevboxWorkspaceViewStateResp, error)
 	UpdateDevboxWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateDevboxWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDevboxWorkspaceViewStateResp, error)
 	BrowseDocsFoldersWithResponse(ctx context.Context, options *BrowseDocsFoldersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*BrowseDocsFoldersResp, error)
@@ -12141,6 +12274,7 @@ type ClientInterface interface {
 	RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Context, options *RenameFleetWorkspaceRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RenameFleetWorkspaceRuntimeSessionResp, error)
 	GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetFleetWorkspaceRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceRuntimeSessionAttachSpecResp, error)
 	ListFleetWorkspaceTargetsWithResponse(ctx context.Context, options *ListFleetWorkspaceTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListFleetWorkspaceTargetsResp, error)
+	UpdateFleetWorkspaceTargetWithResponse(ctx context.Context, options *UpdateFleetWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceTargetResp, error)
 	GetFleetWorkspaceViewStateWithResponse(ctx context.Context, options *GetFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetFleetWorkspaceViewStateResp, error)
 	UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateFleetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceViewStateResp, error)
 	CreateFleetBrowserLoginWithResponse(ctx context.Context, options *CreateFleetBrowserLoginRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateFleetBrowserLoginResp, error)
@@ -12381,6 +12515,7 @@ type ClientInterface interface {
 	GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetWorkerSnapshotResp, error)
 	CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error)
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
+	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error)
 	CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error)
 	DeleteWorkspaceWithResponse(ctx context.Context, options *DeleteWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorkspaceResp, error)
@@ -12408,6 +12543,7 @@ type ClientInterface interface {
 	GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *GetWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceRuntimeSessionInitialMessageResp, error)
 	SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx context.Context, options *SubmitWorkspaceRuntimeSessionInitialMessageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SubmitWorkspaceRuntimeSessionInitialMessageResp, error)
 	ListWorkspaceTargetsWithResponse(ctx context.Context, options *ListWorkspaceTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorkspaceTargetsResp, error)
+	UpdateWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkspaceTargetResp, error)
 	GetWorkspaceViewStateWithResponse(ctx context.Context, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceViewStateResp, error)
 	UpdateWorkspaceViewStateWithResponse(ctx context.Context, options *UpdateWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkspaceViewStateResp, error)
 	RemoveStaleWorktreeWithResponse(ctx context.Context, options *RemoveStaleWorktreeRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RemoveStaleWorktreeResp, error)
@@ -14766,7 +14902,7 @@ func (c *Client) SendDevboxInitialMessageWithResponse(ctx context.Context, optio
 	}
 }
 
-// ListDevboxWorkspaceTargets Forward an execution operation to its owning devbox
+// ListDevboxWorkspaceTargets Read worker targets with controller metadata
 func (c *Client) ListDevboxWorkspaceTargetsWithResponse(ctx context.Context, options *ListDevboxWorkspaceTargetsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListDevboxWorkspaceTargetsResp, error) {
 	var err error
 
@@ -14814,6 +14950,49 @@ func (c *Client) ListDevboxWorkspaceTargetsWithResponse(ctx context.Context, opt
 				}
 			}
 		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateDevboxWorkspaceTarget Update a target on its owning devbox
+func (c *Client) UpdateDevboxWorkspaceTargetWithResponse(ctx context.Context, options *UpdateDevboxWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateDevboxWorkspaceTargetResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/devboxes/{connection_id}/workspaces/{id}/targets")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateDevboxWorkspaceTargetResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateDevboxWorkspaceTargetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -19129,6 +19308,49 @@ func (c *Client) ListFleetWorkspaceTargetsWithResponse(ctx context.Context, opti
 				}
 			}
 		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateFleetWorkspaceTarget Track or hide a workspace target on fleet host
+func (c *Client) UpdateFleetWorkspaceTargetWithResponse(ctx context.Context, options *UpdateFleetWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetWorkspaceTargetResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/fleet/hosts/{host_key}/workspaces/{id}/targets")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateFleetWorkspaceTargetResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateFleetWorkspaceTargetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -32367,6 +32589,49 @@ func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *
 	}
 }
 
+// UpdateWorkerWorkspaceTarget Save a workspace target verified by the controller
+func (c *Client) UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/workspaces/{id}/targets")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateWorkerWorkspaceTargetResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateWorkerWorkspaceTargetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // ListWorkspaces List workspaces
 func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error) {
 	var err error
@@ -33865,6 +34130,49 @@ func (c *Client) ListWorkspaceTargetsWithResponse(ctx context.Context, options *
 	}
 }
 
+// UpdateWorkspaceTarget Track or hide a workspace target
+func (c *Client) UpdateWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkspaceTargetResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/workspaces/{id}/targets")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateWorkspaceTargetResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateWorkspaceTargetErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetWorkspaceViewState Get workspace view state
 func (c *Client) GetWorkspaceViewStateWithResponse(ctx context.Context, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkspaceViewStateResp, error) {
 	var err error
@@ -34772,6 +35080,22 @@ func (c *Client) ListDevboxWorkspaceTargetsRaw(ctx context.Context, httpClient *
 		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/targets",
 		Method:     "GET",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateDevboxWorkspaceTargetRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateDevboxWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateDevboxWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -36313,6 +36637,22 @@ func (c *Client) ListFleetWorkspaceTargetsRaw(ctx context.Context, httpClient *h
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/targets",
 		Method:     "GET",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateFleetWorkspaceTargetRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateFleetWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateFleetWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -40271,6 +40611,22 @@ func (c *Client) RefreshWorkerContextRaw(ctx context.Context, httpClient *http.C
 	return httpClient.Do(req)
 }
 
+// UpdateWorkerWorkspaceTargetRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateWorkerWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListWorkspacesRaw returns an unread response. The caller must close its body.
 func (c *Client) ListWorkspacesRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -40710,6 +41066,22 @@ func (c *Client) ListWorkspaceTargetsRaw(ctx context.Context, httpClient *http.C
 		RequestURL: c.apiClient.GetBaseURL() + "/workspaces/{id}/targets",
 		Method:     "GET",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateWorkspaceTargetRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -41546,6 +41918,23 @@ func NewListDevboxWorkspaceTargetsRequest(ctx context.Context, baseURL string, o
 		RequestURL: c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/targets",
 		Method:     "GET",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateDevboxWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
+func NewUpdateDevboxWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateDevboxWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/devboxes/{connection_id}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -43184,6 +43573,23 @@ func NewListFleetWorkspaceTargetsRequest(ctx context.Context, baseURL string, op
 		RequestURL: c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/targets",
 		Method:     "GET",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateFleetWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
+func NewUpdateFleetWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateFleetWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/fleet/hosts/{host_key}/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -47378,6 +47784,23 @@ func NewRefreshWorkerContextRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdateWorkerWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
+func NewUpdateWorkerWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewListWorkspacesRequest constructs a typed request for a caller-owned transport.
 func NewListWorkspacesRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -47852,6 +48275,23 @@ func NewListWorkspaceTargetsRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdateWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
+func NewUpdateWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/workspaces/{id}/targets",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetWorkspaceViewStateRequest constructs a typed request for a caller-owned transport.
 func NewGetWorkspaceViewStateRequest(ctx context.Context, baseURL string, options *GetWorkspaceViewStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -48267,6 +48707,13 @@ const (
 	SyncStatusLastErrorCodeLocalSyncCeilingExhausted SyncStatusLastErrorCode = "localSyncCeilingExhausted"
 )
 
+type WorkerWorkspaceTargetRequestType string
+
+const (
+	WorkerWorkspaceTargetRequestTypeIssue WorkerWorkspaceTargetRequestType = "issue"
+	WorkerWorkspaceTargetRequestTypePr    WorkerWorkspaceTargetRequestType = "pr"
+)
+
 type WorkflowInputResponseType string
 
 const (
@@ -48365,6 +48812,13 @@ const (
 	WorkspaceTargetTypeIssue WorkspaceTargetType = "issue"
 	WorkspaceTargetTypeKata  WorkspaceTargetType = "kata"
 	WorkspaceTargetTypePr    WorkspaceTargetType = "pr"
+)
+
+type WorkspaceTargetSelectionType string
+
+const (
+	WorkspaceTargetSelectionTypeIssue WorkspaceTargetSelectionType = "issue"
+	WorkspaceTargetSelectionTypePr    WorkspaceTargetSelectionType = "pr"
 )
 
 type WorkspacesDefaultSidebarView string
@@ -48668,8 +49122,13 @@ type SendDevboxInitialMessagePath struct {
 }
 
 type ListDevboxWorkspaceTargetsPath struct {
-	ID           string `json:"id"`
 	ConnectionID string `json:"connection_id"`
+	ID           string `json:"id"`
+}
+
+type UpdateDevboxWorkspaceTargetPath struct {
+	ConnectionID string `json:"connection_id"`
+	ID           string `json:"id"`
 }
 
 type GetDevboxWorkspaceViewStatePath struct {
@@ -49017,6 +49476,11 @@ type GetFleetWorkspaceRuntimeSessionAttachSpecPath struct {
 }
 
 type ListFleetWorkspaceTargetsPath struct {
+	HostKey string `json:"host_key"`
+	ID      string `json:"id"`
+}
+
+type UpdateFleetWorkspaceTargetPath struct {
 	HostKey string `json:"host_key"`
 	ID      string `json:"id"`
 }
@@ -50315,6 +50779,10 @@ type RefreshWorkerContextPath struct {
 	ID string `json:"id"`
 }
 
+type UpdateWorkerWorkspaceTargetPath struct {
+	ID string `json:"id"`
+}
+
 type DeleteWorkspacePath struct {
 	ID string `json:"id"`
 }
@@ -50421,6 +50889,10 @@ type ListWorkspaceTargetsPath struct {
 	ID string `json:"id"`
 }
 
+type UpdateWorkspaceTargetPath struct {
+	ID string `json:"id"`
+}
+
 type GetWorkspaceViewStatePath struct {
 	ID string `json:"id"`
 }
@@ -50450,6 +50922,8 @@ type LaunchDevboxSessionBody = LaunchWorkspaceRuntimeSessionInputBody
 type RenameDevboxSessionBody = RenameWorkspaceRuntimeSessionInputBody
 
 type SendDevboxInitialMessageBody = SubmitInitialMessageInputBody
+
+type UpdateDevboxWorkspaceTargetBody = WorkspaceTargetSelection
 
 type UpdateDevboxWorkspaceViewStateBody = WorkspaceViewState
 
@@ -50532,6 +51006,8 @@ type CreateFleetWorkspaceBody map[string]any
 type LaunchFleetWorkspaceRuntimeSessionBody map[string]any
 
 type RenameFleetWorkspaceRuntimeSessionBody map[string]any
+
+type UpdateFleetWorkspaceTargetBody map[string]any
 
 type UpdateFleetWorkspaceViewStateBody map[string]any
 
@@ -50733,6 +51209,8 @@ type CreateWorkerWorkspaceBody = WorkerCreateRequest
 
 type RefreshWorkerContextBody = WorkspaceLaunchSpec
 
+type UpdateWorkerWorkspaceTargetBody = WorkerWorkspaceTargetRequest
+
 type CreateWorkspaceBody = CreateWorkspaceInputBody
 
 type CreateWorkspaceKataLinkBody = KataCreateLinkRequest
@@ -50744,6 +51222,8 @@ type LaunchWorkspaceRuntimeSessionBody = LaunchWorkspaceRuntimeSessionInputBody
 type RenameWorkspaceRuntimeSessionBody = RenameWorkspaceRuntimeSessionInputBody
 
 type SubmitWorkspaceRuntimeSessionInitialMessageBody = SubmitInitialMessageInputBody
+
+type UpdateWorkspaceTargetBody = WorkspaceTargetSelection
 
 type UpdateWorkspaceViewStateBody = WorkspaceViewState
 
@@ -51622,6 +52102,8 @@ type ListDevboxWorkspaceTargetsResponse = WorkspaceTargetsResponse
 
 type ListDevboxWorkspaceTargetsErrorResponse = ProblemError
 
+type UpdateDevboxWorkspaceTargetErrorResponse = ProblemError
+
 type GetDevboxWorkspaceViewStateResponse = WorkspaceViewState
 
 type GetDevboxWorkspaceViewStateErrorResponse = ProblemError
@@ -51901,6 +52383,12 @@ type ListFleetWorkspaceTargetsResponse = WorkspaceTargetsResponse
 type ListFleetWorkspaceTargetsErrorResponse map[string]any
 
 func (r ListFleetWorkspaceTargetsErrorResponse) Error() string {
+	return "unmapped client error"
+}
+
+type UpdateFleetWorkspaceTargetErrorResponse map[string]any
+
+func (r UpdateFleetWorkspaceTargetErrorResponse) Error() string {
 	return "unmapped client error"
 }
 
@@ -52796,6 +53284,8 @@ type CreateWorkerWorkspaceErrorResponse = ProblemError
 
 type RefreshWorkerContextErrorResponse = ProblemError
 
+type UpdateWorkerWorkspaceTargetErrorResponse = ProblemError
+
 type ListWorkspacesResponse = ListWorkspacesOutputBody
 
 type ListWorkspacesErrorResponse = ProblemError
@@ -52895,6 +53385,8 @@ type SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse = ProblemError
 type ListWorkspaceTargetsResponse = WorkspaceTargetsResponse
 
 type ListWorkspaceTargetsErrorResponse = ProblemError
+
+type UpdateWorkspaceTargetErrorResponse = ProblemError
 
 type GetWorkspaceViewStateResponse = WorkspaceViewState
 
@@ -53238,6 +53730,13 @@ type ListDevboxWorkspaceTargetsResp struct {
 	StatusCode   int
 	Error        *ListDevboxWorkspaceTargetsErrorResponse
 	JSON200      *ListDevboxWorkspaceTargetsResponse
+}
+
+type UpdateDevboxWorkspaceTargetResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateDevboxWorkspaceTargetErrorResponse
 }
 
 type GetDevboxWorkspaceViewStateResp struct {
@@ -53920,6 +54419,13 @@ type ListFleetWorkspaceTargetsResp struct {
 	StatusCode   int
 	Error        *ListFleetWorkspaceTargetsErrorResponse
 	JSON200      *ListFleetWorkspaceTargetsResponse
+}
+
+type UpdateFleetWorkspaceTargetResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateFleetWorkspaceTargetErrorResponse
 }
 
 type GetFleetWorkspaceViewStateResp struct {
@@ -55839,6 +56345,13 @@ type RefreshWorkerContextResp struct {
 	Error        *RefreshWorkerContextErrorResponse
 }
 
+type UpdateWorkerWorkspaceTargetResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateWorkerWorkspaceTargetErrorResponse
+}
+
 type ListWorkspacesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -56049,6 +56562,13 @@ type ListWorkspaceTargetsResp struct {
 	StatusCode   int
 	Error        *ListWorkspaceTargetsErrorResponse
 	JSON200      *ListWorkspaceTargetsResponse
+}
+
+type UpdateWorkspaceTargetResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateWorkspaceTargetErrorResponse
 }
 
 type GetWorkspaceViewStateResp struct {
@@ -59430,8 +59950,8 @@ type RepositoryDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string `json:"$schema,omitempty"`
 	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
+	Name                    *string `json:"name,omitempty"`
+	Owner                   *string `json:"owner,omitempty"`
 	PlatformHost            string  `json:"platform_host"`
 	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
 	Provider                string  `json:"provider"`
@@ -59443,6 +59963,13 @@ type RepositoryIdentity struct {
 	Owner                   *string `json:"owner,omitempty"`
 	PlatformHost            string  `json:"platformHost"`
 	PlatformRepoID          int64   `json:"platformRepoID"`
+	Provider                string  `json:"provider"`
+}
+
+type RepositoryIdentity1 struct {
+	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string  `json:"platform_host"`
+	PlatformRepoID          int64   `json:"platform_repo_id"`
 	Provider                string  `json:"provider"`
 }
 
@@ -60109,6 +60636,18 @@ type WorkerIdentity struct {
 	UID          int32   `json:"uid"`
 }
 
+type WorkerWorkspaceTargetRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                          `json:"$schema,omitempty"`
+	Hidden     bool                             `json:"hidden"`
+	Number     int64                            `json:"number"`
+	Repository RepoRefResponse                  `json:"repository"`
+	Type       WorkerWorkspaceTargetRequestType `json:"type"`
+
+	// URL Canonical target URL verified by the controller
+	URL string `json:"url"`
+}
+
 type WorkflowApprovalResponse struct {
 	Checked  bool  `json:"checked"`
 	Count    int64 `json:"count"`
@@ -60528,6 +61067,15 @@ type WorkspaceTarget struct {
 	// Unavailable Provider metadata is currently unavailable; the link is retained
 	Unavailable bool   `json:"unavailable"`
 	URL         string `json:"url"`
+}
+
+type WorkspaceTargetSelection struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string                      `json:"$schema,omitempty"`
+	Hidden     bool                         `json:"hidden"`
+	Number     int64                        `json:"number"`
+	Repository RepositoryIdentity1          `json:"repository"`
+	Type       WorkspaceTargetSelectionType `json:"type"`
 }
 
 type WorkspaceTargetsResponse struct {

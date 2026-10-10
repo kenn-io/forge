@@ -46,6 +46,7 @@ import type {
   StopWorkspaceRuntimeSessionPathParameters,
   SubmitInitialMessageInputBody,
   SubmitWorkspaceRuntimeSessionInitialMessagePathParameters,
+  UpdateWorkspaceTargetPathParameters,
   UpdateWorkspaceViewStatePathParameters,
   WatchWorkspaceDiffParams,
   WatchWorkspaceDiffPathParameters,
@@ -53,6 +54,7 @@ import type {
   WorkspaceDiffWatchResponse,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
+  WorkspaceTargetSelection,
   WorkspaceTargetsResponse,
   WorkspaceViewState,
 } from "../models";
@@ -669,6 +671,32 @@ export const listWorkspaceTargets = async (
   return orvalFetch<WorkspaceTargetsResponse>(getListWorkspaceTargetsUrl({ id }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getUpdateWorkspaceTargetUrl = ({ id }: UpdateWorkspaceTargetPathParameters) => {
+  return `/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Track or hide a workspace target
+ */
+export const updateWorkspaceTarget = async (
+  { id }: UpdateWorkspaceTargetPathParameters,
+  workspaceTargetSelection: NonReadonly<WorkspaceTargetSelection>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<void>(getUpdateWorkspaceTargetUrl({ id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceTargetSelection),
   });
 };
 

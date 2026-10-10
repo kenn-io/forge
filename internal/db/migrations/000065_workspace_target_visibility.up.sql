@@ -1,0 +1,1 @@
+ALTER TABLE forge_workspace_targets ADD COLUMN hidden BOOLEAN NOT NULL DEFAULT FALSE;

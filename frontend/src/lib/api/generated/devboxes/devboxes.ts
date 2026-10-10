@@ -53,16 +53,20 @@ import type {
   StoreDevboxPasteImagePathParameters,
   SubmitInitialMessageInputBody,
   TerminalPasteImageOutputBody,
+  UpdateDevboxWorkspaceTargetPathParameters,
   UpdateDevboxWorkspaceViewStatePathParameters,
+  UpdateWorkerWorkspaceTargetPathParameters,
   WatchDevboxDiffParams,
   WatchDevboxDiffPathParameters,
   WorkerCreateRequest,
   WorkerIdentity,
+  WorkerWorkspaceTargetRequest,
   WorkspaceAgentHandoffResponse,
   WorkspaceDiffWatchResponse,
   WorkspaceLaunchSpec,
   WorkspaceResponse,
   WorkspaceRuntimeResponse,
+  WorkspaceTargetSelection,
   WorkspaceTargetsResponse,
   WorkspaceViewState,
 } from "../models";
@@ -707,7 +711,7 @@ export const getListDevboxWorkspaceTargetsUrl = ({ connectionId, id }: ListDevbo
 };
 
 /**
- * @summary Forward an execution operation to its owning devbox
+ * @summary Read worker targets with controller metadata
  */
 export const listDevboxWorkspaceTargets = async (
   { connectionId, id }: ListDevboxWorkspaceTargetsPathParameters,
@@ -716,6 +720,32 @@ export const listDevboxWorkspaceTargets = async (
   return orvalFetch<WorkspaceTargetsResponse>(getListDevboxWorkspaceTargetsUrl({ connectionId, id }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getUpdateDevboxWorkspaceTargetUrl = ({ connectionId, id }: UpdateDevboxWorkspaceTargetPathParameters) => {
+  return `/devboxes/${encodeURIComponent(String(connectionId))}/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Update a target on its owning devbox
+ */
+export const updateDevboxWorkspaceTarget = async (
+  { connectionId, id }: UpdateDevboxWorkspaceTargetPathParameters,
+  workspaceTargetSelection: NonReadonly<WorkspaceTargetSelection>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<void>(getUpdateDevboxWorkspaceTargetUrl({ connectionId, id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workspaceTargetSelection),
   });
 };
 
@@ -841,5 +871,31 @@ export const refreshWorkerContext = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(workspaceLaunchSpec),
+  });
+};
+
+export const getUpdateWorkerWorkspaceTargetUrl = ({ id }: UpdateWorkerWorkspaceTargetPathParameters) => {
+  return `/worker/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Save a workspace target verified by the controller
+ */
+export const updateWorkerWorkspaceTarget = async (
+  { id }: UpdateWorkerWorkspaceTargetPathParameters,
+  workerWorkspaceTargetRequest: NonReadonly<WorkerWorkspaceTargetRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<void>(getUpdateWorkerWorkspaceTargetUrl({ id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workerWorkspaceTargetRequest),
   });
 };

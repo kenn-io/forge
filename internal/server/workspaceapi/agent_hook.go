@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/kit/agenthook"
 )
 
@@ -45,7 +46,7 @@ func (s *Handler) receiveAgentHook(
 	); err != nil {
 		slog.Warn("record agent hook activity", "err", err)
 		if input.Body.HookEventName == "SessionEnd" {
-			return nil, huma.Error500InternalServerError("record agent hook activity", err)
+			return nil, httpapi.Internal("record agent hook activity: " + err.Error())
 		}
 	}
 

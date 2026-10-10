@@ -3,6 +3,7 @@ package agentactivity
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
-	for _, current := range []string{"missing", "removable", "locked"} {
+	for _, current := range []string{"missing", "removable", "locked", "legacy-open"} {
 		t.Run(current, func(t *testing.T) {
 			t.Parallel()
 			assert := assert.New(t)
@@ -23,13 +24,18 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 			data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: "runtime", CWD: workspace, State: StateWorking, UpdatedAt: time.Now().UTC()})
 			require.NoError(err)
 			require.NoError(os.WriteFile(legacy, data, 0o600))
-			lockReportForTest(t, legacy)
 			path := store.reportPath("claude", "chat", "runtime")
-			if current != "missing" {
+			if current != "missing" && current != "legacy-open" {
 				require.NoError(store.Record("claude", "chat", "runtime", workspace, StateDone))
 			}
+			require.NotEmpty(store.LiveReportsForWorkspace(workspace, []string{"runtime"}))
+			share := uint32(windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE)
+			if current == "legacy-open" {
+				share = 0
+			}
+			lockReportForTest(t, legacy, share)
 			if current == "locked" {
-				lockReportForTest(t, path)
+				lockReportForTest(t, path, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE)
 			}
 			require.NotEmpty(store.LiveReportsForWorkspace(workspace, []string{"runtime"}))
 
@@ -51,56 +57,64 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 	}
 }
 
-func TestStoreRemoveReturnsLegacyOpenError(t *testing.T) {
+func TestStoreRuntimeCleanupRetriesLockedReport(t *testing.T) {
 	t.Parallel()
-	store := NewStore(t.TempDir())
-	legacy := store.legacyReportPath("claude", "chat")
-	require.NoError(t, os.WriteFile(legacy, []byte("invalid"), 0o600))
-	name, err := windows.UTF16PtrFromString(legacy)
-	require.NoError(t, err)
-	handle, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, windows.CloseHandle(handle)) })
+	for _, method := range []string{"remove", "retain"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			store := NewStore(t.TempDir())
+			workspace := t.TempDir()
+			require.NoError(t, store.Record("claude", "chat", "runtime", workspace, StateWorking))
+			require.Len(t, store.LiveReportsForWorkspace(workspace, []string{"runtime"}), 1)
+			path := store.reportPath("claude", "chat", "runtime")
+			unlock := lockReportForTest(t, path, 0)
+			cleanup := func() error { return store.RemoveRuntimeSession("runtime") }
+			if method == "retain" {
+				cleanup = func() error { return store.RetainRuntimeSessions(nil) }
+			}
 
-	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), legacy)
-	assert.FileExists(t, legacy)
+			assert.Len(t, store.LiveReportsForWorkspace(workspace, []string{"runtime"}), 1)
+			require.ErrorContains(t, cleanup(), path)
+			require.ErrorContains(t, cleanup(), path)
+			assert.FileExists(t, path)
+			unlock()
+			require.NoError(t, cleanup())
+			assert.NoFileExists(t, path)
+		})
+	}
 }
 
-func TestStoreRetainRuntimeSessionsRetriesLockedReport(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	store := NewStore(t.TempDir())
-	workspace := t.TempDir()
-	require.NoError(store.Record("claude", "chat", "runtime", workspace, StateWorking))
-	path := store.reportPath("claude", "chat", "runtime")
-	name, err := windows.UTF16PtrFromString(path)
-	require.NoError(err)
-	handle, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	require.NoError(err)
-	t.Cleanup(func() {
-		if handle != windows.InvalidHandle {
-			require.NoError(windows.CloseHandle(handle))
-		}
-	})
-
-	assert.Empty(store.LiveReportsForWorkspace(workspace, []string{"runtime"}))
-	require.ErrorContains(store.RetainRuntimeSessions(nil), path)
-	require.ErrorContains(store.RetainRuntimeSessions(nil), path)
-	assert.FileExists(path)
-	require.NoError(windows.CloseHandle(handle))
-	handle = windows.InvalidHandle
-
-	require.NoError(store.RetainRuntimeSessions(nil))
-	assert.NoFileExists(path)
-}
-
-func lockReportForTest(t *testing.T, path string) {
+func lockReportForTest(t *testing.T, path string, share uint32) func() {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)
 	require.NoError(t, err)
-	// Readers remain allowed while Windows denies deletion of the report.
-	handle, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ, share, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, windows.CloseHandle(handle)) })
+	unlock := func() {
+		if handle != windows.InvalidHandle {
+			require.NoError(t, windows.CloseHandle(handle))
+			handle = windows.InvalidHandle
+		}
+	}
+	t.Cleanup(unlock)
+	return unlock
+}
+
+func TestStoreRuntimeCleanupReturnsReadDirErrors(t *testing.T) {
+	t.Parallel()
+	for _, method := range []string{"remove", "retain"} {
+		t.Run(method, func(t *testing.T) {
+			t.Parallel()
+			root := filepath.Join(t.TempDir(), "reports")
+			store := NewStore(root)
+			cleanup := func() error { return store.RemoveRuntimeSession("runtime") }
+			if method == "retain" {
+				cleanup = func() error { return store.RetainRuntimeSessions(nil) }
+			}
+			require.NoError(t, cleanup())
+			require.NoError(t, os.Mkdir(root, 0o700))
+			lockReportForTest(t, root, 0)
+			require.ErrorContains(t, cleanup(), root)
+		})
+	}
 }

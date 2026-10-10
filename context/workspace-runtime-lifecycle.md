@@ -142,10 +142,7 @@ Rules:
   state untouched and otherwise maps to `done`; only `elicitation_dialog` and
   user-input tools put a session into `input`
   (`internal/agentactivity/store.go::Store.HandleEvent`).
-- Reports are reconciled against persisted and live runtime session keys
-  after startup restoration and after every missing-tmux prune, so a report
-  whose runtime row was pruned does not outlive it
-  (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
+- Reconcile reports against persisted and live runtime keys after startup and every maintenance pass, including zero-prune passes, so blocked cleanup retries (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
 - Retry resumes setup in place and retains branch, worktree, and runtime records;
   restarting a terminal must never erase local commits or dirty files

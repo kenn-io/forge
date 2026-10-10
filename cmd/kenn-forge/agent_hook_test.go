@@ -50,7 +50,11 @@ func TestAgentHookSessionEndBoundsDaemonDetail(t *testing.T) {
 			}))
 			err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard)
 			require.ErrorContains(t, err, "500")
-			require.LessOrEqual(t, strings.Count(err.Error(), "x"), 1024)
+			if tc.name == "long" {
+				require.Contains(t, err.Error(), strings.Repeat("x", 2000))
+			} else {
+				require.Equal(t, "handle SessionEnd agent hook: daemon rejected agent hook: 500 Internal Server Error", err.Error())
+			}
 		})
 	}
 }

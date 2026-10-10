@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -141,16 +142,18 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 
 func TestReceiveAgentHookReturnsCleanupFailure(t *testing.T) {
 	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
 	root := t.TempDir()
 	activity := agentactivity.NewStore(root)
-	require.NoError(t, activity.Record("claude", "chat", "runtime", t.TempDir(), agentactivity.StateWorking))
+	require.NoError(activity.Record("claude", "chat", "runtime", t.TempDir(), agentactivity.StateWorking))
 	entries, err := os.ReadDir(root)
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
+	require.NoError(err)
+	require.Len(entries, 1)
 	path := filepath.Join(root, entries[0].Name())
-	require.NoError(t, os.Remove(path))
-	require.NoError(t, os.Mkdir(path, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(path, "blocked"), nil, 0o600))
+	require.NoError(os.Remove(path))
+	require.NoError(os.Mkdir(path, 0o700))
+	require.NoError(os.WriteFile(filepath.Join(path, "blocked"), nil, 0o600))
 	mux := http.NewServeMux()
 	New(Deps{AgentActivity: activity}).Register(humago.NewWithPrefix(mux, "/api/v1", huma.DefaultConfig("workspace test", "1")))
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/agent-hooks/claude", bytes.NewBufferString(`{"session_id":"chat","cwd":"/worktree","hook_event_name":"SessionEnd"}`))
@@ -158,5 +161,10 @@ func TestReceiveAgentHookReturnsCleanupFailure(t *testing.T) {
 	req.Header.Set("X-Kenn-Forge-Runtime-Session-Key", "runtime")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	assert.Equal(t, http.StatusInternalServerError, rec.Code)
+	assert.Equal(http.StatusInternalServerError, rec.Code)
+	var problem generated.ProblemError
+	require.NoError(json.Unmarshal(rec.Body.Bytes(), &problem))
+	assert.Equal(generated.ProblemErrorCodeInternalError, problem.Code)
+	require.NotNil(problem.Detail)
+	assert.Contains(*problem.Detail, path)
 }

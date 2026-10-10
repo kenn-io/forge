@@ -254,8 +254,7 @@ func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []
 	type identity struct{ agent, session, runtime string }
 	newest := make(map[identity]int)
 	reports := make([]Report, 0)
-	stored, _ := s.reports()
-	for _, report := range stored {
+	for _, report := range s.reports() {
 		if report.CWD != target {
 			continue
 		}
@@ -313,7 +312,7 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	if runtimeSessionKey == "" {
 		return nil
 	}
-	reports, errs := s.reports()
+	reports, errs := s.scanReports()
 	for _, report := range reports {
 		if report.RuntimeSessionKey != runtimeSessionKey {
 			continue
@@ -334,7 +333,7 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
-	reports, errs := s.reports()
+	reports, errs := s.scanReports()
 	removed := false
 	for _, report := range reports {
 		if _, ok := keep[report.RuntimeSessionKey]; ok {
@@ -354,14 +353,40 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	return errors.Join(errs...)
 }
 
-func (s *Store) reports() ([]storedReport, []error) {
+func (s *Store) scanReports() ([]storedReport, []error) {
+	entries, err := os.ReadDir(s.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, []error{err}
+	}
+	var reports []storedReport
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(s.root, entry.Name())
+		report, ok, err := s.readReport(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
+		if ok {
+			reports = append(reports, storedReport{Report: report, path: path})
+		}
+	}
+	return reports, errs
+}
+
+func (s *Store) reports() []storedReport {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		s.clearCacheLocked()
-		return nil, nil
+		return nil
 	}
 	files := make(map[string]os.FileInfo)
 	metadataComplete := true
@@ -377,21 +402,17 @@ func (s *Store) reports() ([]storedReport, []error) {
 		files[entry.Name()] = info
 	}
 	if metadataComplete && sameReportFiles(files, s.cacheFiles) {
-		return slices.Clone(s.cacheReports), nil
+		return slices.Clone(s.cacheReports)
 	}
 
 	reports := make([]storedReport, 0, len(entries))
 	cleanupPending := false
-	var errs []error
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		path := filepath.Join(s.root, entry.Name())
-		report, ok, err := s.readReport(path)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			errs = append(errs, err)
-		}
+		report, ok, _ := s.readReport(path)
 		if !ok {
 			continue
 		}
@@ -408,11 +429,11 @@ func (s *Store) reports() ([]storedReport, []error) {
 		reports = append(reports, storedReport{Report: report, path: path})
 	}
 	s.cacheFiles = files
-	if cleanupPending || !metadataComplete || len(errs) > 0 {
+	if cleanupPending || !metadataComplete {
 		s.cacheFiles = nil
 	}
 	s.cacheReports = slices.Clone(reports)
-	return reports, errs
+	return reports
 }
 
 func (s *Store) invalidateCache() {

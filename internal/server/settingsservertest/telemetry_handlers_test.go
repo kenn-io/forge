@@ -10,7 +10,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/telemetryapi"
+	telemetrypkg "go.kenn.io/forge/internal/telemetry"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/kit/telemetry/posthog"
@@ -29,7 +31,6 @@ func TestCaptureTelemetryEvent_UsesKitReportResult(t *testing.T) {
 		{"skipped", posthog.StatusSkipped, nil, http.StatusAccepted, false},
 		{"disabled", posthog.StatusDisabled, nil, http.StatusAccepted, true},
 		{"invalid property", "", posthog.ErrInvalidProperty, http.StatusBadRequest, false},
-		{"invalid property when disabled", "", posthog.ErrInvalidProperty, http.StatusBadRequest, true},
 		{"storage failure", "", errors.New("storage unavailable"), http.StatusInternalServerError, false},
 		{"queue failure", "", errors.New("queue full"), http.StatusInternalServerError, false},
 	} {
@@ -51,6 +52,44 @@ func TestCaptureTelemetryEvent_UsesKitReportResult(t *testing.T) {
 			assert.Equal(string(tc.status), body.Status)
 			assert.Equal("screen_viewed", telemetry.Event)
 			assert.Equal(map[string]any{"screen": "activity", "surface": "web"}, telemetry.Properties)
+		})
+	}
+}
+
+func TestCaptureTelemetryEvent_ValidatesSessionDurationWhenDisabled(t *testing.T) {
+	t.Setenv(telemetrypkg.EnabledEnv, "0")
+	for _, mode := range []string{"disabled", "unavailable"} {
+		t.Run(mode, func(t *testing.T) {
+			options := server.ServerOptions{}
+			if mode == "disabled" {
+				options.Telemetry = telemetrypkg.DisabledReporter()
+			}
+			srv := server.New(serverfake.OpenTestDB(t), nil, nil, "/", nil, options)
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			for _, tc := range []struct {
+				name       string
+				properties string
+				code       int
+			}{
+				{"valid", `{"duration_bucket":"under_1m"}`, http.StatusAccepted},
+				{"missing", `{}`, http.StatusBadRequest},
+				{"unknown", `{"duration_bucket":"unknown"}`, http.StatusBadRequest},
+				{"null", `{"duration_bucket":null}`, http.StatusBadRequest},
+				{"numeric", `{"duration_bucket":7}`, http.StatusBadRequest},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"session_ended","properties":`+tc.properties+`}`))
+					req.Header.Set("Content-Type", "application/json")
+					rr := httptest.NewRecorder()
+					srv.ServeHTTP(rr, req)
+					assert.Equal(t, tc.code, rr.Code, rr.Body.String())
+					if tc.code == http.StatusAccepted {
+						var body telemetryapi.TelemetryEventResponse
+						require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+						assert.Equal(t, "disabled", body.Status)
+					}
+				})
+			}
 		})
 	}
 }

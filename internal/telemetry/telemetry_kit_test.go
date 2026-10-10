@@ -48,6 +48,14 @@ func TestReporterValidatesSessionDurationInBothModes(t *testing.T) {
 	}
 }
 
+func TestAllowlistReporterRequiresOptOut(t *testing.T) {
+	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	reporter, err := newAllowlistReporter()
+	require.ErrorContains(t, err, "posthog api key is required")
+	require.Nil(t, reporter)
+}
+
 // swapKitReporter replaces newKitReporter for the test and restores it after.
 func swapKitReporter(t *testing.T, factory func(posthog.Options, ...posthog.Option) (Client, error)) {
 	t.Helper()

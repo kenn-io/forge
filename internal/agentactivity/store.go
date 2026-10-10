@@ -374,7 +374,7 @@ func (s *Store) loadReports(entries []os.DirEntry) ([]storedReport, []error) {
 		path := filepath.Join(s.root, entry.Name())
 		report, ok, err := s.readReport(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			errs = append(errs, err)
+			errs = append(errs, fmt.Errorf("read activity report %s: %w", path, err))
 		}
 		if ok {
 			reports = append(reports, storedReport{Report: report, path: path})

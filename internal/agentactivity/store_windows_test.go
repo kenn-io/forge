@@ -84,6 +84,16 @@ func TestStoreRuntimeCleanupRetriesLockedReport(t *testing.T) {
 	}
 }
 
+func TestStoreRemoveRuntimeSessionLabelsUnreadableOtherReport(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+	require.NoError(t, store.Record("claude", "chat", "other", workspace, StateWorking))
+	path := store.reportPath("claude", "chat", "other")
+	lockReportForTest(t, path, 0)
+	require.ErrorContains(t, store.RemoveRuntimeSession("runtime"), "read activity report "+path+":")
+}
+
 func lockReportForTest(t *testing.T, path string, share uint32) func() {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)

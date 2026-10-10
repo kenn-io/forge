@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -108,15 +109,7 @@ func NewReporter(opts Options) (*Reporter, error) {
 // newReporter is NewReporter without the go test guard.
 func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	if !enabledInBuild() || !EnabledFromEnv() {
-		daemon, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("daemon")...)
-		if err != nil {
-			return nil, err
-		}
-		backend, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("backend")...)
-		if err != nil {
-			return nil, errors.Join(err, daemon.Close())
-		}
-		return &Reporter{daemon: daemon, backend: backend}, nil
+		return newAllowlistReporter()
 	}
 	if opts.Database == nil {
 		return nil, errors.New("telemetry database is required")
@@ -176,12 +169,36 @@ func kitAllowedEvents(source string) []posthog.Option {
 	return options
 }
 
+func newAllowlistReporter() (*Reporter, error) {
+	daemon, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("daemon")...)
+	if err != nil {
+		return nil, err
+	}
+	backend, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("backend")...)
+	if err != nil {
+		return nil, errors.Join(err, daemon.Close())
+	}
+	return &Reporter{daemon: daemon, backend: backend}, nil
+}
+
+var disabledReporter = sync.OnceValue(func() *Reporter {
+	reporter, err := newAllowlistReporter()
+	if err != nil {
+		slog.Warn("telemetry validation unavailable", "err", err)
+		return &Reporter{}
+	}
+	return reporter
+})
+
 func DisabledReporter() *Reporter {
-	return &Reporter{}
+	return disabledReporter()
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
-	reporter, err := NewReporter(opts)
+	return reporterOrDisabled(NewReporter(opts))
+}
+
+func reporterOrDisabled(reporter *Reporter, err error) *Reporter {
 	if err != nil {
 		slog.Warn("telemetry disabled", "err", err)
 		return DisabledReporter()
@@ -205,7 +222,7 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 
 func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
 	if r == nil {
-		return posthog.StatusDisabled, nil
+		r = DisabledReporter()
 	}
 
 	event = strings.TrimSpace(event)

@@ -6,7 +6,7 @@
 - Screen telemetry uses Kit's durable claims per installation and UTC day;
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).
-- Kit validates telemetry properties in every mode; initialization failures and the Go test guard disable delivery until restart before constructing clientless allowlists (`internal/telemetry/telemetry.go::DisabledReporter`).
+- Only telemetry initialization failures disable process-wide delivery until restart; their fallback retains Kit validation. The Go test guard returns a local no-op reporter (`internal/telemetry/telemetry.go::reporterOrDisabled`).
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).

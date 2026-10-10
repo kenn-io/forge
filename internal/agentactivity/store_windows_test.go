@@ -57,7 +57,7 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 	}
 }
 
-func TestStoreRuntimeCleanupRetriesLockedReport(t *testing.T) {
+func TestStoreRuntimeCleanupSucceedsOnLaterPass(t *testing.T) {
 	t.Parallel()
 	for _, method := range []string{"remove", "retain"} {
 		t.Run(method, func(t *testing.T) {
@@ -92,6 +92,23 @@ func TestStoreRemoveRuntimeSessionLabelsUnreadableOtherReport(t *testing.T) {
 	path := store.reportPath("claude", "chat", "other")
 	lockReportForTest(t, path, 0)
 	require.ErrorContains(t, store.RemoveRuntimeSession("runtime"), "read activity report "+path+":")
+}
+
+func TestStoreSessionEndRemovesOwnReportWithUnreadableOtherLegacyReport(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+	legacy := store.legacyReportPath("claude", "chat")
+	data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: "other", CWD: workspace, State: StateWorking, UpdatedAt: time.Now().UTC()})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(legacy, data, 0o600))
+	require.NoError(t, store.Record("claude", "chat", "runtime", workspace, StateWorking))
+	lockReportForTest(t, legacy, 0)
+
+	err = store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime")
+	require.ErrorContains(t, err, "read activity report "+legacy+":")
+	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
+	assert.FileExists(t, legacy)
 }
 
 func lockReportForTest(t *testing.T, path string, share uint32) func() {

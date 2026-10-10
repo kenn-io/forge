@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"sync"
 
 	"go.kenn.io/forge/internal/server/httpapi"
 	telemetrypkg "go.kenn.io/forge/internal/telemetry"
@@ -23,8 +22,6 @@ type TelemetryEventResponse struct {
 }
 
 type telemetryEventOutput = httpapi.AcceptedBodyOutput[TelemetryEventResponse]
-
-var disabledReporter = sync.OnceValue(telemetrypkg.DisabledReporter)
 
 func (s *Handlers) CaptureTelemetryEvent(
 	ctx context.Context,
@@ -46,12 +43,11 @@ func (s *Handlers) CaptureTelemetryEvent(
 			httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 		)
 	}
-	reporter := s.Telemetry
-	if reporter == nil {
-		reporter = disabledReporter()
+	if s.Telemetry == nil {
+		return &telemetryEventOutput{Status: 202, Body: TelemetryEventResponse{Status: string(posthog.StatusDisabled)}}, nil
 	}
 
-	status, err := reporter.Report(ctx, event, input.Body.Properties)
+	status, err := s.Telemetry.Report(ctx, event, input.Body.Properties)
 	if errors.Is(err, posthog.ErrInvalidProperty) {
 		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, "unsupported or missing telemetry property", nil)
 	}

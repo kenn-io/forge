@@ -182,12 +182,7 @@ func newAllowlistReporter() (*Reporter, error) {
 }
 
 func DisabledReporter() *Reporter {
-	posthog.DisableProcess()
-	reporter, err := newAllowlistReporter()
-	if err != nil {
-		return &Reporter{err: err}
-	}
-	return reporter
+	return &Reporter{}
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
@@ -197,7 +192,11 @@ func NewReporterOrDisabled(opts Options) *Reporter {
 func reporterOrDisabled(reporter *Reporter, err error) *Reporter {
 	if err != nil {
 		slog.Warn("telemetry disabled", "err", err)
-		return DisabledReporter()
+		posthog.DisableProcess()
+		reporter, err = newAllowlistReporter()
+		if err != nil {
+			return &Reporter{err: err}
+		}
 	}
 	return reporter
 }
@@ -217,6 +216,9 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 }
 
 func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
+	if r == nil {
+		return posthog.StatusDisabled, nil
+	}
 	if r.err != nil {
 		return "", r.err
 	}
@@ -234,7 +236,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 		client = r.daemon
 	}
 	if client == nil {
-		return "", errors.New("telemetry reporter is unavailable")
+		return posthog.StatusDisabled, nil
 	}
 	return client.Report(ctx, event, properties)
 }

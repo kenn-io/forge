@@ -93,8 +93,11 @@ func TestCaptureTelemetryEvent_ValidatesSessionDurationWithRealReporter(t *testi
 			rr := httptest.NewRecorder()
 			srv.ServeHTTP(rr, req)
 			code := tc.code
-			if mode == "validation failure" {
+			switch mode {
+			case "validation failure":
 				code = http.StatusInternalServerError
+			case "nil reporter":
+				code = http.StatusAccepted
 			}
 			assert.Equal(t, code, rr.Code, rr.Body.String())
 			if code == http.StatusAccepted {
@@ -108,8 +111,8 @@ func TestCaptureTelemetryEvent_ValidatesSessionDurationWithRealReporter(t *testi
 			}
 		})
 	}
-	assert.Equal(t, mode == "init failure" || mode == "nil reporter" || mode == "validation failure", posthog.ProcessDisabled())
+	assert.Equal(t, mode == "init failure" || mode == "validation failure", posthog.ProcessDisabled())
 	if mode == "nil reporter" {
-		assert.Equal(t, 2, constructions)
+		assert.Zero(t, constructions)
 	}
 }

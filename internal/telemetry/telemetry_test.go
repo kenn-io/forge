@@ -2,8 +2,6 @@ package telemetry
 
 import (
 	"context"
-	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -42,20 +40,19 @@ func (f *fakeKitClient) Enabled() bool {
 }
 
 func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
-	if isolateProcessDisable(t) {
-		return
-	}
 	assert := assert.New(t)
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	wasDisabled := posthog.ProcessDisabled()
 	database := dbtest.Open(t)
 
 	reporter, err := NewReporter(Options{Database: database})
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
+	assert.Equal(wasDisabled, posthog.ProcessDisabled())
 	_, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
 	require.NoError(err)
 	assert.False(found)
@@ -130,29 +127,21 @@ func TestReporterCloseClosesBothClients(t *testing.T) {
 }
 
 func TestDisabledReporterIsNoOp(t *testing.T) {
-	if isolateProcessDisable(t) {
-		return
-	}
 	assert := assert.New(t)
+	wasDisabled := posthog.ProcessDisabled()
 
 	reporter := DisabledReporter()
 	assert.False(reporter.Enabled())
 	assert.NoError(reporter.Capture("app_opened", nil))
 	assert.NoError(reporter.Close())
+	assert.Equal(wasDisabled, posthog.ProcessDisabled())
 }
 
-func isolateProcessDisable(t *testing.T) bool {
-	t.Helper()
-	if os.Getenv("FORGE_TELEMETRY_CHILD") == t.Name() {
-		return false
-	}
-	executable, err := os.Executable()
+func TestNilReporterReportIsDisabled(t *testing.T) {
+	var reporter *Reporter
+	status, err := reporter.Report(t.Context(), "session_ended", nil)
 	require.NoError(t, err)
-	cmd := exec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$")
-	cmd.Env = append(os.Environ(), "FORGE_TELEMETRY_CHILD="+t.Name())
-	output, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(output))
-	return true
+	assert.Equal(t, posthog.StatusDisabled, status)
 }
 
 func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {

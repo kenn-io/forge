@@ -49,18 +49,25 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
 - `Capabilities.ReadMarkdownMedia`, registry `MarkdownMediaReader(kind, host)`
   returning `UnsupportedCapability(kind, host, "read_markdown_media")`, API
   capability `read_markdown_media` in repository capabilities.
-- Range-not-satisfiable upstream answers map to a typed platform error the
-  route turns into 416.
+- New platform error codes, translated at the server boundary and added to
+  the `context/error-handling.md` table:
+  - `unsupported_media_type`: the source was fetched and is not an allowed
+    video type. Wire result `415 unsupportedMediaType`. This is the only
+    rejection that proves the asset is not a video.
+  - `range_not_satisfiable`: upstream answered 416. Wire result
+    `416 rangeNotSatisfiable`.
+  A source URL outside the allowed shapes stays `invalid_argument`
+  (`400 badRequest`).
 - GitHub (`platform/github`, provider wrapper, `internal/github` routed
   client): accepts the two attachment URL shapes above on the platform host,
   the old shape only for the route's own repository. Uses the user credential
   like images. Forwards only `Range`. Accepts upstream `video/mp4`,
-  `video/quicktime`, `video/webm`; anything else is an invalid-argument error
-  (`source`). The HTTP client has no whole-request timeout; only the wait for
+  `video/quicktime`, `video/webm`; any other upstream type is
+  `unsupported_media_type`. The HTTP client has no whole-request timeout; only the wait for
   response headers is bounded.
 - GitLab: accepts the same upload URLs as images; content type from the file
   extension: mp4/m4v `video/mp4`, mov `video/quicktime`, webm `video/webm`,
-  ogv `video/ogg`; other extensions are invalid-argument. The foreground
+  ogv `video/ogg`; other extensions are `unsupported_media_type`. The foreground
   timeout bounds only the wait for response headers, not the body.
 - Gitea, Forgejo, Bitbucket: no capability.
 
@@ -115,8 +122,13 @@ Markdown without a repository keeps raw `<video>` tags as today.
 
 - Async render collects standalone GitHub attachment URLs and probes them
   through the media route with `Range: bytes=0-0`, bounded concurrency.
-- Outcome: video type on 200/206 means player; a typed rejection (4xx) means
-  link and is cached; network or 5xx failure means link, not cached.
+- Outcomes:
+  - 200 or 206 with an allowed video type: player, cached.
+  - `415 unsupportedMediaType`: link, cached. Only this answer proves the
+    asset is not a video.
+  - Anything else (400, 403, 404, 409, 429, 5xx, network failure): link,
+    not cached. Credential, quota, and availability failures say nothing
+    about the asset type, so the next render probes again.
 - Probe cache: in-memory per media URL for the browser session.
 - A render with any uncached failure is removed from the rendered-HTML cache
   after it resolves.
@@ -128,6 +140,13 @@ Markdown without a repository keeps raw `<video>` tags as today.
   `MarkdownHtml` with a new `repo` prop and the timeline's
   `collapse_single_line_breaks` setting.
 - `DiffFile` and `DiffRichPreview` pass the repository context.
+- `DiffFile` mounts thread bubbles with Svelte `mount()` inside Pierre
+  annotations, passing only the stores context today. `MarkdownHtml` reads
+  the app runtime from Svelte context and throws without it. `DiffFile`
+  therefore captures its full component context with `getAllContexts()`
+  during initialization and passes that map to every annotation `mount()`.
+  A test mounts a thread bubble through the real annotation path and checks
+  that it renders markdown.
 - If the bubble renders inside a shadow root, it carries the markdown styles
   it needs.
 
@@ -136,12 +155,14 @@ Markdown without a repository keeps raw `<video>` tags as today.
 - Go: GitHub and GitLab adapter tests against fake upstreams (Range
   forwarding, 206 passthrough, type allowlists, source scoping); route tests
   (206 headers on default and host routes, capability gating, body larger than
-  25 MB streams whole); fleet proxy test (streaming rule passes a body larger
+  25 MB streams whole, `415 unsupportedMediaType` for a non-video asset,
+  `416 rangeNotSatisfiable` passthrough); fleet proxy test (streaming rule passes a body larger
   than the limit with 206 and `Content-Range`, non-streaming keeps the cap);
   route ownership table covers the new operations.
 - Frontend Vitest: provider rules, autoplay removal, GitLab image syntax,
-  Gitea and Forgejo resolution, probe outcomes and caching, diff bubble
-  markdown.
+  Gitea and Forgejo resolution, probe outcomes and caching (415 cached; 403,
+  429, and network failure probed again on the next render), diff bubble
+  markdown mounted through the real Pierre annotation path.
 - Real-app check: seeded app screenshots at desktop and phone width for an
   issue body video and a diff bubble video. The seeded backend has no provider
   to stream from, so the check uses a video the browser loads directly (a

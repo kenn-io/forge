@@ -1,7 +1,7 @@
 # Markdown Video Playback Design
 
-Temporary working artifact. Never commit. Distill into `context/` docs and
-delete before the PR.
+Temporary working artifact, committed at the maintainer's request while the
+work is in progress. Distill into `context/` docs and delete before the PR.
 
 ## Goal
 
@@ -63,12 +63,14 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
   the old shape only for the route's own repository. Uses the user credential
   like images. Forwards only `Range`. Accepts upstream `video/mp4`,
   `video/quicktime`, `video/webm`; any other upstream type is
-  `unsupported_media_type`. The HTTP client has no whole-request timeout; only the wait for
-  response headers is bounded.
+  `unsupported_media_type`. The HTTP client has no whole-request timeout;
+  only the wait for response headers is bounded.
 - GitLab: accepts the same upload URLs as images; content type from the file
   extension: mp4/m4v `video/mp4`, mov `video/quicktime`, webm `video/webm`,
-  ogv `video/ogg`; other extensions are `unsupported_media_type`. The foreground
-  timeout bounds only the wait for response headers, not the body.
+  ogv `video/ogg`; other extensions are `unsupported_media_type`. The
+  foreground timeout bounds only the wait for response headers, not the body.
+  The request keeps the existing auth transport's origin check, so a
+  redirect to another origin fails instead of carrying the token.
 - Gitea, Forgejo, Bitbucket: no capability.
 
 ### Route
@@ -76,7 +78,8 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
 - `GET /repo/{provider}/{owner}/{name}/markdown-media?source=` and
   `GET /host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media?source=`,
   operation IDs `get-markdown-media` and `get-markdown-media-on-host`, `Range`
-  request header input.
+  request header input. The OpenAPI responses declare 200 and 206 with the
+  four allowed video types, like the image route declares its image types.
 - Requires `read_markdown_media`. Opens the media before streaming so failures
   return normal problem responses.
 - Success: status 200 or 206, `Content-Type`, `Content-Length` when known,
@@ -90,10 +93,13 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
 
 - `ProviderRouteRule.Streaming`, set for the two media routes (owner
   `ProviderHubOnly`, scope provider-read).
-- For streaming rules `ProviderProxy` uses the provider-plane client's
-  streaming HTTP client (no whole-request timeout, existing connect, TLS,
-  header bounds) and copies status, safe headers including `Content-Range`
-  and `Accept-Ranges`, and the body as it arrives instead of the 32 MB buffer.
+- `providerplane.Client` exposes only `Do`, and the hub client picks its
+  no-timeout streaming transport only for the events scope. The client gains
+  a way to send a provider-read request over that streaming transport
+  (connect, TLS, and response-header bounds stay).
+- For streaming rules `ProviderProxy` uses that path and copies the status,
+  the safe headers (the existing filter already keeps `Content-Range` and
+  `Accept-Ranges`), and the body as it arrives instead of the 32 MB buffer.
   Non-streaming routes are unchanged.
 
 ## Frontend
@@ -104,7 +110,7 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
 | --- | --- | --- |
 | GitHub | Paragraph whose only content is a bare attachment URL, after the probe confirms video | Kept only when its source or a `<source>` child is an attachment URL, rewritten to the media route; otherwise removed |
 | GitLab | Image syntax with a video extension; upload URLs rewritten to the media route | Removed |
-| Gitea, Forgejo | none | Kept; `attachments/<uuid>` resolved against the repository web URL, `/attachments/<uuid>` against the host; loaded directly |
+| Gitea, Forgejo | none | Kept; `attachments/<uuid>` resolved against `https://<platformHost>/<repoPath>/` (the same base `item-reference.ts` uses for item links), `/attachments/<uuid>` against `https://<platformHost>/`; loaded directly |
 | Bitbucket | none | Removed |
 
 Markdown without a repository keeps raw `<video>` tags as today.
@@ -166,8 +172,11 @@ to each provider's declared capabilities.
   during initialization and passes that map to every annotation `mount()`.
   A test mounts a thread bubble through the real annotation path and checks
   that it renders markdown.
-- If the bubble renders inside a shadow root, it carries the markdown styles
-  it needs.
+- Pierre appends each annotation wrapper to its host element's light DOM
+  with a `slot` attribute (`@pierre/diffs` 1.3.5,
+  `FileDiff.renderAnnotations`), so the global `.markdown-body` styles in
+  `app.css` reach the bubble. The bubble wraps the rendered body in
+  `.markdown-body`.
 
 ## Testing
 
@@ -175,8 +184,9 @@ to each provider's declared capabilities.
   forwarding, 206 passthrough, type allowlists, source scoping); route tests
   (206 headers on default and host routes, capability gating, body larger than
   25 MB streams whole, `415 unsupportedMediaType` for a non-video asset,
-  `416 rangeNotSatisfiable` passthrough); fleet proxy test (streaming rule passes a body larger
-  than the limit with 206 and `Content-Range`, non-streaming keeps the cap);
+  `416 rangeNotSatisfiable` passthrough); fleet proxy test (streaming rule
+  passes a body larger than the limit with 206 and `Content-Range`,
+  non-streaming keeps the cap);
   route ownership table covers the new operations.
 - Frontend Vitest: provider rules, autoplay removal, GitLab image syntax,
   Gitea and Forgejo resolution, probe outcomes and caching (415 cached; 403,
@@ -184,14 +194,17 @@ to each provider's declared capabilities.
   interruption and body cancellation on a 200 answer, diff bubble
   markdown mounted through the real Pierre annotation path.
 - Real-app check: seeded app screenshots at desktop and phone width for an
-  issue body video and a diff bubble video. The seeded backend has no provider
-  to stream from, so the check uses a video the browser loads directly (a
-  Gitea-style raw tag or a locally served file); the proxy path is covered by
-  the Go tests.
+  issue body video and a diff bubble video, using synthetic data only. The
+  seeded backend has no real provider credential, so the seeded items must
+  use sources that play without one: a raw `<video>` in a Gitea or Forgejo
+  repository item (a raw tag in a GitHub item would be removed by the GitHub
+  rule), or GitHub attachment URLs served by a local fake upstream if the e2e
+  server can provide one. The Go tests cover the proxy path either way.
 
 ## Docs
 
 - `context/platform-sync-invariants.md`: media proxy rules and allowlists.
 - `context/fleet-architecture.md`: streaming routes.
+- `context/error-handling.md`: the two new platform error codes.
 - `context/inline-review-comments.md`: diff bubbles render markdown.
 - One sentence in the user docs where markdown rendering is described.

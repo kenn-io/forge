@@ -33,7 +33,11 @@ import {
 } from "../api/provider-routes.js";
 import { configuredAPIPath } from "../api/runtime-base.js";
 import { itemReferenceAnchorAttributes, parseProviderItemURL } from "./item-reference.js";
-import { resolveMarkdownMediaOutcomes } from "./markdown-media.js";
+import {
+  resolveMarkdownMediaOutcomes,
+  settledMarkdownMediaOutcomes,
+  type MarkdownMediaCandidate,
+} from "./markdown-media.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
 export interface RepoContext {
@@ -338,8 +342,7 @@ const taskListRenderer: RendererObject = {
     if (!repo || canonicalProvider(repo.provider) !== "gitlab") return false;
     const path = token.href.split(/[?#]/, 1)[0] ?? "";
     if (!GITLAB_VIDEO_EXTENSION.test(path)) return false;
-    const host = repo.platformHost?.trim() || "gitlab.com";
-    return generatedPlayer(normalizedGitLabMarkdownImageSource(token.href, host, repo.repoPath) ?? token.href);
+    return generatedPlayer(gitLabUploadURL(token.href, repo)?.toString() ?? token.href);
   },
   blockquote(token): string {
     renderState.blockquoteDepth++;
@@ -506,20 +509,9 @@ export function markdownMediaRequestPath(source: string, repo: RepoContext): str
     if (!isGitHubAttachment(source, repo)) return null;
     url = new URL(source);
   } else if (provider === "gitlab") {
-    const host = repo.platformHost?.trim() || "gitlab.com";
-    const normalized = normalizedGitLabMarkdownImageSource(source, host, repo.repoPath);
-    if (!normalized) return null;
-    try {
-      url = new URL(normalized);
-    } catch {
-      return null;
-    }
-    if (
-      url.protocol !== "https:" ||
-      url.host.toLowerCase() !== host.toLowerCase() ||
-      (!url.pathname.startsWith(`/${repo.repoPath}/uploads/`) && !/^\/-\/project\/\d+\/uploads\//.test(url.pathname))
-    )
-      return null;
+    const upload = gitLabUploadURL(source, repo);
+    if (!upload) return null;
+    url = upload;
   } else {
     return null;
   }
@@ -620,19 +612,16 @@ function proxiedMarkdownImageSource(source: string, repo: RepoContext): string |
   const provider = canonicalProvider(repo.provider);
   if (provider !== "github" && provider !== "gitlab") return null;
   try {
-    const host = repo.platformHost?.trim() || (provider === "github" ? "github.com" : "gitlab.com");
-    const normalizedSource =
-      provider === "gitlab" ? normalizedGitLabMarkdownImageSource(source, host, repo.repoPath) : source;
-    if (!normalizedSource) return null;
-    const url = new URL(normalizedSource);
-    if (url.protocol !== "https:") return null;
-    if (provider === "github" && !isProxiedGitHubImage(url, host, repo.repoPath)) return null;
-    if (
-      provider === "gitlab" &&
-      (url.host.toLowerCase() !== host.toLowerCase() ||
-        (!url.pathname.startsWith(`/${repo.repoPath}/uploads/`) && !/^\/-\/project\/\d+\/uploads\//.test(url.pathname)))
-    )
-      return null;
+    let url: URL;
+    if (provider === "gitlab") {
+      const upload = gitLabUploadURL(source, repo);
+      if (!upload) return null;
+      url = upload;
+    } else {
+      url = new URL(source);
+      if (url.protocol !== "https:") return null;
+      if (!isProxiedGitHubImage(url, repo.platformHost?.trim() || "github.com", repo.repoPath)) return null;
+    }
     const params = { source: url.toString() };
     return configuredAPIPath(
       providerUsesHostRoute(repo)
@@ -664,11 +653,24 @@ function isProxiedGitHubImage(url: URL, host: string, repoPath: string): boolean
   return false;
 }
 
-function normalizedGitLabMarkdownImageSource(source: string, host: string, repoPath: string): string | null {
-  if (/^https:\/\//i.test(source)) return source;
-  const uploadPath = source.replace(/^\//, "");
-  if (uploadPath.startsWith("uploads/")) return `https://${host}/${repoPath}/${uploadPath}`;
-  if (uploadPath.startsWith(`${repoPath}/uploads/`)) return `https://${host}/${uploadPath}`;
+// A GitLab upload the repository credential can read, as an absolute URL on
+// the platform host. Images and videos share this rule, and so does the
+// server (platform/gitlab/markdown_images.go).
+function gitLabUploadURL(source: string, repo: RepoContext): URL | null {
+  const host = repo.platformHost?.trim() || "gitlab.com";
+  const path = source.replace(/^\//, "");
+  let absolute = source;
+  if (path.startsWith("uploads/")) absolute = `https://${host}/${repo.repoPath}/${path}`;
+  else if (!/^https:\/\//i.test(source)) absolute = `https://${host}/${path}`;
+  let url: URL;
+  try {
+    url = new URL(absolute);
+  } catch {
+    return null;
+  }
+  if (url.host.toLowerCase() !== host.toLowerCase()) return null;
+  if (url.pathname.startsWith(`/${repo.repoPath}/uploads/`) || /^\/-\/project\/\d+\/uploads\//.test(url.pathname))
+    return url;
   return null;
 }
 
@@ -841,12 +843,7 @@ export const renderMarkdownEffect = Effect.fn("Markdown.render")(function* (
 ) {
   // GitHub decides from upload metadata whether a bare attachment link is a
   // video; Forge only has the URL, so it asks the media route first.
-  const candidates = repo
-    ? githubAttachmentParagraphSources(raw, repo).flatMap((source) => {
-        const mediaURL = markdownMediaRequestPath(source, repo);
-        return mediaURL === null ? [] : [{ source, mediaURL }];
-      })
-    : [];
+  const candidates = markdownMediaCandidates(raw, repo);
   const mediaOutcomes = candidates.length > 0 ? yield* resolveMarkdownMediaOutcomes(candidates) : opts.mediaOutcomes;
   return yield* Effect.tryPromise({
     try: () => renderMarkdown(raw, repo, { ...opts, mediaOutcomes }),
@@ -868,11 +865,22 @@ async function renderMarkdownUncached(
   return renderMarkdownTokens(marked, tokens, opts, repo, true, highlightPlan.tokens);
 }
 
+function markdownMediaCandidates(raw: string, repo?: RepoContext): MarkdownMediaCandidate[] {
+  if (!repo) return [];
+  return githubAttachmentParagraphSources(raw, repo).flatMap((source) => {
+    const mediaURL = markdownMediaRequestPath(source, repo);
+    return mediaURL === null ? [] : [{ source, mediaURL }];
+  });
+}
+
 export function renderMarkdownSync(raw: string, repo?: RepoContext, opts: RenderMarkdownOpts = {}): string {
   if (!raw) return "";
   const marked = getMarked(repo, opts);
   const tokens = marked.lexer(raw) as Tokens.Generic[];
-  return renderMarkdownTokens(marked, tokens, opts, repo, false);
+  // Known answers apply at once, so a confirmed video mounts as a player
+  // instead of a link that the probe later swaps out.
+  const mediaOutcomes = opts.mediaOutcomes ?? settledMarkdownMediaOutcomes(markdownMediaCandidates(raw, repo));
+  return renderMarkdownTokens(marked, tokens, { ...opts, mediaOutcomes }, repo, false);
 }
 
 function renderMarkdownTokens(

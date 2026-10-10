@@ -699,6 +699,24 @@ describe("markdown video", () => {
     expect(html).not.toContain("<img");
   });
 
+  it("plays a root-relative GitLab project-ID video upload through the media route", () => {
+    const upload = "https://gitlab.com/-/project/42/uploads/abc/demo.mp4";
+    const html = renderMarkdownSync("![demo](/-/project/42/uploads/abc/demo.mp4)", gitlabRepo);
+
+    expect(videos(html)[0]?.getAttribute("src")).toBe(
+      `/api/v1/repo/gitlab/group/project/markdown-media?source=${encodeURIComponent(upload)}`,
+    );
+  });
+
+  it("proxies a root-relative GitLab project-ID image upload", () => {
+    const upload = "https://gitlab.com/-/project/42/uploads/abc/diagram.png";
+    const html = renderMarkdownSync("![d](/-/project/42/uploads/abc/diagram.png)", gitlabRepo);
+
+    expect(html).toContain(
+      `src="/api/v1/repo/gitlab/group/project/markdown-image?source=${encodeURIComponent(upload)}"`,
+    );
+  });
+
   it("keeps GitLab image syntax for non-video uploads as an image", () => {
     const html = renderMarkdownSync("![d](/uploads/abc/diagram.png)", gitlabRepo);
 
@@ -787,6 +805,25 @@ describe("markdown video", () => {
       const html = await Effect.runPromise(renderMarkdownEffect(`Clip:\n\n${source}`, githubRepo));
 
       expect(requested).toEqual([source]);
+      expect(videos(html)).toHaveLength(1);
+      expect(html).toContain(githubMediaSrc(source));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("renders an already confirmed video as a player on the first synchronous paint", async () => {
+    const source = "https://github.com/user-attachments/assets/sync-render-settled";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } })),
+    );
+    try {
+      expect(videos(renderMarkdownSync(source, githubRepo))).toHaveLength(0);
+      await Effect.runPromise(renderMarkdownEffect(source, githubRepo));
+
+      const html = renderMarkdownSync(source, githubRepo);
+
       expect(videos(html)).toHaveLength(1);
       expect(html).toContain(githubMediaSrc(source));
     } finally {

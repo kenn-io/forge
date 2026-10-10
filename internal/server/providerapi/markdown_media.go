@@ -2,7 +2,6 @@ package providerapi
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -86,10 +85,7 @@ func (s *Handlers) getMarkdownMediaFor(
 			status = http.StatusPartialContent
 		}
 		hctx.SetStatus(status)
-		// A copy error means the browser went away or the upstream broke
-		// mid-stream; the status line is already sent, so there is no
-		// response left to change.
-		_, _ = io.Copy(hctx.BodyWriter(), media.Body)
+		httpapi.CopyStream(s.StreamStop, hctx.BodyWriter(), media.Body)
 	}}, nil
 }
 

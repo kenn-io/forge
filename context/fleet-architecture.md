@@ -315,7 +315,9 @@ change-driven and idle-cheap:
   provider-plane client with no whole-request timeout and copy the body as it
   arrives; every other provider route keeps the buffered response cap. Video
   plays for minutes, so a whole-request bound or a 32 MiB buffer would cut it
-  off (`internal/server/routepolicy/provider_proxy.go::ProviderProxy.ServeHTTP`,
+  off. The spoke copies it with the same flush, abort, and shutdown rules as
+  the local media route
+  (`internal/server/routepolicy/provider_proxy.go::ProviderProxy.ServeHTTP`,
   `internal/providerplane/client.go::hubClient.DoStream`).
 - A resolved specification is bound to the exact request and carries stable
   repository identity, base clone/default-branch facts, PR head-repository

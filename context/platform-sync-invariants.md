@@ -599,6 +599,16 @@ content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
   disk cache, and skips response compression, which would buffer the stream
   (`internal/server/providerapi/markdown_media.go::Handlers.getMarkdownMediaFor`,
   `internal/server/compression/compression.go::shouldBypassCompression`).
+- Once the status is sent, the stream flushes headers before the first body
+  byte, aborts the connection when the copy fails so a truncated video never
+  ends like a whole one, and closes when server shutdown starts, before the
+  HTTP drain, so a playing video cannot hold shutdown open
+  (`internal/server/httpapi/stream.go::CopyStream`,
+  `internal/server/server.go::Server.Shutdown`).
+- GitLab images and videos share one upload rule: `uploads/...`,
+  `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the
+  platform host, and only uploads on that host reach the proxy
+  (`frontend/src/lib/utils/markdown.ts::gitLabUploadURL`).
 - GitHub decides player versus link from upload metadata Forge cannot see, so
   the frontend probes each candidate with `Range: bytes=0-0`, at most four at
   a time, and never reads the body: a host that ignores Range sends the whole
@@ -607,6 +617,9 @@ content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
   credential, quota, and availability failures render a link and probe again
   next render. The rendered-HTML cache key includes each candidate's outcome
   (`frontend/src/lib/utils/markdown-media.ts::resolveMarkdownMediaOutcomes`).
+  The synchronous first paint uses the outcomes already proven, so a known
+  video mounts as a player instead of a link that later swaps
+  (`frontend/src/lib/utils/markdown.ts::renderMarkdownSync`).
 - Source-browser previews do not play video: GitHub's blob viewer shows
   "View raw" for video files.
 

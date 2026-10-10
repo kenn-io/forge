@@ -1,6 +1,7 @@
 package routepolicy
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -15,12 +16,15 @@ const providerProxyResponseBodyLimit = 32 << 20
 
 type ProviderProxy struct {
 	client            providerplane.Client
+	streamStop        context.Context
 	ResponseBodyLimit int64
 }
 
-func NewProviderProxy(client providerplane.Client) *ProviderProxy {
+// NewProviderProxy forwards provider routes to the hub. Streaming responses
+// end when streamStop does, so server shutdown does not wait on a long video.
+func NewProviderProxy(client providerplane.Client, streamStop context.Context) *ProviderProxy {
 	return &ProviderProxy{
-		client: client, ResponseBodyLimit: providerProxyResponseBodyLimit,
+		client: client, streamStop: streamStop, ResponseBodyLimit: providerProxyResponseBodyLimit,
 	}
 }
 
@@ -66,11 +70,10 @@ func (p *ProviderProxy) ServeHTTP(
 	defer response.Body.Close()
 
 	if rule.Streaming {
-		// Media can be far larger than the buffered limit. The status line is
-		// sent before the body, so a copy failure can only end the response.
+		// Media can be far larger than the buffered limit.
 		copyProviderResponseHeaders(w.Header(), response.Header)
 		w.WriteHeader(response.StatusCode)
-		_, _ = io.Copy(w, response.Body)
+		httpapi.CopyStream(p.streamStop, w, response.Body)
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, p.ResponseBodyLimit+1))

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -305,4 +306,99 @@ func TestMarkdownMediaRouteServesWholeFileForMultiRange(t *testing.T) {
 	assert.Empty(t, gotRange, "a multi-range request must not reach the provider")
 	assert.Empty(t, rr.Header().Get("Content-Range"))
 	assert.Equal(t, "whole", rr.Body.String())
+}
+
+// pipedMediaServer serves markdown media whose upstream body the test writes.
+func pipedMediaServer(t *testing.T) (*Server, *io.PipeWriter) {
+	t.Helper()
+	body, upstream := io.Pipe()
+	mock := &serverfake.MockGH{OpenMarkdownMediaFn: func(
+		context.Context, string, string, string, string,
+	) (platform.MarkdownMedia, error) {
+		return platform.MarkdownMedia{Body: body, ContentType: "video/mp4", ContentLength: -1}, nil
+	}}
+	srv, _, _ := setupTestServerWithMock(t, mock)
+	// Cleanups run last-first: end the upstream before anything waits on the
+	// handler that reads it.
+	t.Cleanup(func() { _ = upstream.Close() })
+	return srv, upstream
+}
+
+func pipedMediaHTTPServer(t *testing.T) (*httptest.Server, *io.PipeWriter) {
+	t.Helper()
+	srv, upstream := pipedMediaServer(t)
+	ts := httptest.NewServer(srv)
+	t.Cleanup(ts.Close)
+	t.Cleanup(func() { _ = upstream.Close() })
+	return ts, upstream
+}
+
+func getMarkdownMedia(t *testing.T, baseURL string) (*http.Response, error) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		baseURL+"/api/v1/repo/github/acme/widget/markdown-media?source="+url.QueryEscape(markdownMediaSource), nil)
+	require.NoError(t, err)
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	got := make(chan result, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		got <- result{resp, err}
+	}()
+	select {
+	case r := <-got:
+		if r.resp != nil {
+			t.Cleanup(func() { _ = r.resp.Body.Close() })
+		}
+		return r.resp, r.err
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "response headers waited for the media body")
+		return nil, nil
+	}
+}
+
+func TestMarkdownMediaRouteSendsHeadersBeforeUpstreamSendsBody(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	ts, _ := pipedMediaHTTPServer(t)
+
+	resp, err := getMarkdownMedia(t, ts.URL)
+
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "video/mp4", resp.Header.Get("Content-Type"))
+}
+
+func TestMarkdownMediaRouteAbortsWhenUpstreamFailsMidStream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	ts, upstream := pipedMediaHTTPServer(t)
+	resp, err := getMarkdownMedia(t, ts.URL)
+	require.NoError(t, err)
+
+	_, _ = io.WriteString(upstream, "partial")
+	_ = upstream.CloseWithError(io.ErrUnexpectedEOF)
+	_, err = io.ReadAll(resp.Body)
+
+	// A clean end would let the browser cache a truncated video as whole.
+	require.Error(t, err)
+}
+
+func TestServerShutdownEndsActiveMarkdownMediaStream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, _ := pipedMediaServer(t)
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+	resp, err := getMarkdownMedia(t, "http://"+ln.Addr().String())
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
+
+	_, err = io.ReadAll(resp.Body)
+	require.Error(t, err)
+	require.ErrorIs(t, <-serveErr, http.ErrServerClosed)
 }

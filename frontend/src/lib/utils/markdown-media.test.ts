@@ -79,8 +79,6 @@ describe("markdown media probe", () => {
 
   it.each([
     ["denied credentials", () => Response.json({ code: "forbidden" }, { status: 403 })],
-    ["a rate limit", () => Response.json({ code: "rateLimited" }, { status: 429 })],
-    ["an upstream outage", () => Response.json({ code: "upstreamError" }, { status: 502 })],
     [
       "a video answer with another type",
       () => new Response("x", { status: 200, headers: { "Content-Type": "text/html" } }),

@@ -16,6 +16,19 @@ const PROBE_CONCURRENCY = 4;
 // again.
 const settledOutcomes = new Map<string, Exclude<MarkdownMediaOutcome, "unknown">>();
 
+// The answers already known for candidates, so a render can show a confirmed
+// video as a player before any probe runs.
+export function settledMarkdownMediaOutcomes(
+  candidates: ReadonlyArray<MarkdownMediaCandidate>,
+): ReadonlyMap<string, MarkdownMediaOutcome> {
+  return new Map(
+    candidates.flatMap(({ source, mediaURL }) => {
+      const settled = settledOutcomes.get(mediaURL);
+      return settled ? [[source, settled] as const] : [];
+    }),
+  );
+}
+
 // Asks the media route for one byte. The request stays interruptible so a
 // torn-down render aborts it. A host that ignores Range answers with the
 // whole file, so the body is cancelled instead of read.

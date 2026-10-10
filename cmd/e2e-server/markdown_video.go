@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -63,7 +64,7 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 			io.Reader
 			io.Closer
 		}{io.NewSectionReader(file, start, end-start+1), file},
-		ContentType:   "video/mp4",
+		ContentType:   markdownVideoContentType(c.path),
 		ContentLength: end - start + 1,
 		Partial:       partial,
 	}
@@ -71,6 +72,15 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 		media.ContentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, size)
 	}
 	return media, nil
+}
+
+// markdownVideoContentType lets browser tests use a WebM clip, which every
+// Playwright browser decodes, while demos keep MP4.
+func markdownVideoContentType(path string) string {
+	if strings.EqualFold(filepath.Ext(path), ".webm") {
+		return "video/webm"
+	}
+	return "video/mp4"
 }
 
 // parseSingleByteRange accepts "bytes=a-b" and "bytes=a-". Any other value
@@ -135,7 +145,7 @@ func seedMarkdownVideoFixture(
 	}); err != nil {
 		return fmt.Errorf("seed markdown video issue: %w", err)
 	}
-	fc.OpenIssues["acme/widgets"] = append(fc.OpenIssues["acme/widgets"], &gh.Issue{
+	issue := &gh.Issue{
 		ID:        new(int64(3014)),
 		Number:    new(e2eMarkdownVideoIssueNumber),
 		Title:     new(issueTitle),
@@ -145,7 +155,10 @@ func seedMarkdownVideoFixture(
 		User:      &gh.User{Login: new("eve")},
 		CreatedAt: &gh.Timestamp{Time: now},
 		UpdatedAt: &gh.Timestamp{Time: now},
-	})
+	}
+	// Lists read open issues; a detail refresh reads one issue by number.
+	fc.OpenIssues["acme/widgets"] = append(fc.OpenIssues["acme/widgets"], issue)
+	fc.Issues["acme/widgets"] = append(fc.Issues["acme/widgets"], issue)
 
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
 	if err != nil {

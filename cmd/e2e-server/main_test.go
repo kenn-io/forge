@@ -1156,6 +1156,28 @@ func doHTTP(t *testing.T, method, rawURL string, body io.Reader) *http.Response 
 	return resp
 }
 
+func TestMarkdownVideoFixtureServesWebMClipAsWebM(t *testing.T) {
+	assets, err := web.Assets()
+	require.NoError(t, err)
+	clipPath := filepath.Join(t.TempDir(), "demo.webm")
+	require.NoError(t, os.WriteFile(clipPath, []byte("webm"), 0o600))
+	state, err := buildAppState(t.Context(), assets, appOptions{
+		roborevEndpoint: defaultRoborevEndpoint,
+		markdownVideo:   clipPath,
+	})
+	require.NoError(t, err)
+	t.Cleanup(state.close)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"http://127.0.0.1/api/v1/repo/github/acme/widgets/markdown-media?source="+
+			url.QueryEscape("https://github.com/user-attachments/assets/e2e-demo-video"), nil)
+	recorder := httptest.NewRecorder()
+	state.handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, "video/webm", recorder.Header().Get("Content-Type"))
+}
+
 func TestMarkdownVideoFixtureServesRanges(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

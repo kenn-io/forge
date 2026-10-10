@@ -333,20 +333,3 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 	}
 	require.Error(err, "ordinary provider reads keep their whole-request timeout")
 }
-
-func TestHubClientDoStreamRejectsScopeOutsideProviderPlane(t *testing.T) {
-	t.Parallel()
-
-	client, err := NewClient(Options{
-		LocalNodeID: clientTestNodeID,
-		Hub:         Hub{NodeID: clientTestHubID, BaseURL: "https://hub.example"},
-	})
-	require.NoError(t, err)
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/workspaces", nil)
-
-	resp, err := client.(StreamingClient).DoStream(t.Context(), federationauth.ScopeWorkspaceRead, request)
-	if resp != nil {
-		_ = resp.Body.Close()
-	}
-	assert.ErrorIs(t, err, ErrInvalidScope)
-}

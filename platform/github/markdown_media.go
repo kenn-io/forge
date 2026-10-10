@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -53,10 +52,8 @@ func (c *Client) OpenMarkdownMedia(
 		return platform.MarkdownMedia{}, err
 	}
 
-	requestCtx, cancel := context.WithCancel(authCtx)
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, parsed.String(), nil)
+	req, err := http.NewRequestWithContext(authCtx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
-		cancel()
 		return platform.MarkdownMedia{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -67,28 +64,16 @@ func (c *Client) OpenMarkdownMedia(
 	if client == nil {
 		client = &http.Client{}
 	}
-	headerWait := time.AfterFunc(markdownMediaHeaderTimeout, cancel)
-	resp, err := client.Do(req)
-	if !headerWait.Stop() {
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-		cancel()
-		return platform.MarkdownMedia{}, fmt.Errorf(
-			"fetch GitHub markdown media: no response headers within %s", markdownMediaHeaderTimeout,
-		)
-	}
+	resp, err := platform.DoMediaRequest(client, req, markdownMediaHeaderTimeout)
 	if err != nil {
-		cancel()
 		return platform.MarkdownMedia{}, fmt.Errorf("fetch GitHub markdown media: %w", err)
 	}
 	media, err := c.markdownMediaResponse(resp)
 	if err != nil {
 		_ = resp.Body.Close()
-		cancel()
 		return platform.MarkdownMedia{}, err
 	}
-	media.Body = cancelOnClose{ReadCloser: resp.Body, cancel: cancel}
+	media.Body = resp.Body
 	return media, nil
 }
 
@@ -143,17 +128,4 @@ func markdownMediaAttachmentPath(escapedPath, owner, repo string) bool {
 	}
 	_, err := strconv.ParseUint(segments[3], 10, 64)
 	return err == nil
-}
-
-// cancelOnClose releases the request context when the caller closes the
-// stream, which ends the upstream fetch for an abandoned player.
-type cancelOnClose struct {
-	io.ReadCloser
-	cancel context.CancelFunc
-}
-
-func (b cancelOnClose) Close() error {
-	err := b.ReadCloser.Close()
-	b.cancel()
-	return err
 }

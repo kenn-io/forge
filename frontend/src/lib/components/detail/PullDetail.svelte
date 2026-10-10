@@ -788,6 +788,9 @@
     expandedPanel = keepStackExpanded ? "stack" : null;
     editingTitle = false;
     editingBody = false;
+    savingTitle = false;
+    savingBody = false;
+    stateSubmitting = false;
     titleDraft = "";
     bodyDraft = "";
     // Flush any pending checkbox/reorder save before clearing state.
@@ -874,13 +877,16 @@
       cancelEditTitle();
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     savingTitle = true;
     detailStore.updatePRContent(routeRef, number, { title: trimmed }, {
       onSuccess: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         editingTitle = false;
         titleDraft = "";
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         savingTitle = false;
       },
     });
@@ -922,13 +928,16 @@
       cancelEditBody();
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     savingBody = true;
     detailStore.updatePRContent(routeRef, number, { body: bodyDraft }, {
       onSuccess: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         editingBody = false;
         bodyDraft = "";
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         savingBody = false;
       },
     });
@@ -950,10 +959,12 @@
     } else if (!caps.state_mutation) {
       return;
     }
+    const requestGeneration = mutationRouteGeneration;
     stateSubmitting = true;
     detailStore.setPullState(routeRef, number, newState, {
       onSuccess: () => activity.loadActivity(),
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         stateSubmitting = false;
       },
     });

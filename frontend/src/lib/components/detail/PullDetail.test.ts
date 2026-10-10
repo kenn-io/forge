@@ -1240,6 +1240,162 @@ describe("PullDetail activity refresh", () => {
   });
 });
 
+describe("PullDetail pending mutations across selections", () => {
+  beforeEach(() => localStorage.clear());
+  afterEach(cleanup);
+
+  function renderPendingMutations() {
+    const pulls = [pullDetail(), pullDetail()];
+    pulls.forEach((detail, index) => {
+      detail.merge_request = {
+        ...detail.merge_request,
+        ID: index + 1,
+        Number: index + 1,
+        URL: `https://github.com/acme/widget/pull/${index + 1}`,
+        Title: `Pull request ${index + 1}`,
+        Body: `Description ${index + 1}`,
+      };
+    });
+    const responses = pulls.map(() => Promise.withResolvers<{ data: PullDetail }>());
+    const mutation = vi.fn((path: string, options?: Record<string, unknown>) => {
+      if (
+        path !== "/pulls/{provider}/{owner}/{name}/{number}" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/github-state"
+      ) {
+        throw new Error(`Unexpected mutation: ${path}`);
+      }
+      const {
+        path: { number },
+      } = options?.params as { path: { number: number } };
+      return responses[number - 1].promise;
+    });
+    detailRuntime = makeTestAppRuntime({
+      GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path !== "/pulls/{provider}/{owner}/{name}/{number}") return { data: {} };
+        const {
+          path: { number },
+        } = options?.params as { path: { number: number } };
+        return { data: pulls[number - 1] };
+      }),
+      PATCH: mutation,
+      POST: mutation,
+    });
+    const commands = vi.spyOn(detailRuntime, "runCommand");
+    const store = createDetailStore({ runtime: detailRuntime });
+    const view = renderPullDetail(pulls[0], undefined, undefined, {
+      store,
+      detailProps: { autoSync: false },
+    });
+    const finishMutation = async (number: number) => {
+      const index = commands.mock.calls.findIndex(
+        ([, options]) =>
+          options.safeContext.number === number &&
+          ["update pull request content", "change pull request state"].includes(options.operation),
+      );
+      expect(index).toBeGreaterThanOrEqual(0);
+      responses[number - 1].resolve({ data: pulls[number - 1] });
+      expect((await commands.mock.results[index].value.exit)._tag).toBe("Success");
+      await tick();
+    };
+    return { ...view, pulls, mutation, finishMutation };
+  }
+
+  it.each([
+    ["title", false],
+    ["title", true],
+    ["body", false],
+    ["body", true],
+  ] as const)("keeps a pending %s save scoped to its selection (next PR saving=%s)", async (field, savingNext) => {
+    const view = renderPendingMutations();
+    const editorSelector = field === "title" ? ".title-edit-input" : ".body-edit-textarea";
+    const editor = () => view.container.querySelector<HTMLInputElement | HTMLTextAreaElement>(editorSelector)!;
+    const editButton = () => view.container.querySelector<HTMLButtonElement>(`.edit-${field}-btn`)!;
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(editButton());
+    await fireEvent.input(editor(), { target: { value: "Saved on PR 1" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { [field]: "Saved on PR 1" },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await fireEvent.click(editButton());
+    expect(editor().disabled).toBe(false);
+    await fireEvent.input(editor(), { target: { value: "Draft on PR 2" } });
+    if (savingNext) {
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+      await waitFor(() => expect(view.mutation).toHaveBeenCalledTimes(2));
+    }
+
+    await view.finishMutation(1);
+    expect(editor()).not.toBeNull();
+    expect(editor().value).toBe("Draft on PR 2");
+    expect(editor().disabled).toBe(savingNext);
+    if (!savingNext) {
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+    }
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { [field]: "Draft on PR 2" },
+        }),
+      ),
+    );
+    if (field === "title") view.pulls[1].merge_request.Title = "Draft on PR 2";
+    else view.pulls[1].merge_request.Body = "Draft on PR 2";
+    await view.finishMutation(2);
+    expect(editor()).toBeNull();
+    expect(await screen.findByText("Draft on PR 2", { exact: true })).toBeTruthy();
+  });
+
+  it("keeps pending state changes scoped to their selections", async () => {
+    const view = renderPendingMutations();
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Close", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/github-state",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { state: "closed" },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    const close = screen.getByRole("button", { name: "Close", exact: true }) as HTMLButtonElement;
+    expect(close.disabled).toBe(false);
+    await fireEvent.click(close);
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/github-state",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { state: "closed" },
+        }),
+      ),
+    );
+
+    await view.finishMutation(1);
+    const closing = screen.getByRole("button", { name: "Closing...", exact: true }) as HTMLButtonElement;
+    expect(closing.disabled).toBe(true);
+    view.pulls[1].merge_request.State = "closed";
+    await view.finishMutation(2);
+    const reopen = (await screen.findByRole("button", { name: "Reopen", exact: true })) as HTMLButtonElement;
+    expect(reopen.disabled).toBe(false);
+  });
+});
+
 describe("PullDetail approvals", () => {
   beforeEach(() => {
     localStorage.clear();

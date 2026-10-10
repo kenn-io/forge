@@ -577,11 +577,13 @@ Rendered markdown plays video only where the provider itself plays it:
 | Bitbucket | None | Removed |
 
 Markdown without a repository keeps raw `<video>` tags. Every player gets
-`controls`, `preload="metadata"`, and no `autoplay`, and never exceeds the
-content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
-A player that cannot load becomes a short notice linking to the original
-attachment. Each player sits in its own frame element so the swap never
-disturbs the nodes the markdown host inserted
+`controls`, `preload="none"`, and no `autoplay`, and fills the content width
+in a fixed 16:9 frame so first play never resizes it
+(`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`,
+`frontend/src/app.css`). A player that cannot load becomes a short notice
+linking to the original attachment; without preload, that happens only after
+the reader presses play. Each player sits in its own frame element so the
+swap never disturbs the nodes the markdown host inserted
 (`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
 
 - GitHub and GitLab declare `read_markdown_media`; their video loads through
@@ -630,7 +632,10 @@ disturbs the nodes the markdown host inserted
   (`frontend/src/lib/utils/markdown-media.ts::resolveMarkdownMediaOutcomes`).
   The synchronous first paint uses the outcomes already proven, so a known
   video mounts as a player instead of a link that later swaps
-  (`frontend/src/lib/utils/markdown.ts::renderMarkdownSync`).
+  (`frontend/src/lib/utils/markdown.ts::renderMarkdownSync`). Rendered markdown
+  publishes highlighted HTML with the known outcomes before probing, then
+  renders again with the probe answers, so highlighting never waits on a probe
+  (`frontend/src/lib/components/shared/MarkdownHtml.svelte`).
 - Source-browser previews do not play video: GitHub's blob viewer shows
   "View raw" for video files.
 

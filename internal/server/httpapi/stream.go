@@ -27,12 +27,21 @@ func StreamContext(ctx, stop context.Context) (context.Context, context.CancelFu
 // nor a client that stopped reading.
 func CopyStream(stop context.Context, w io.Writer, body io.ReadCloser) {
 	rw, _ := w.(http.ResponseWriter)
-	defer context.AfterFunc(stop, func() {
+	stopped := make(chan struct{})
+	unregister := context.AfterFunc(stop, func() {
+		defer close(stopped)
 		_ = body.Close()
 		if rw != nil {
 			_ = http.NewResponseController(rw).SetWriteDeadline(time.Now())
 		}
-	})()
+	})
+	// A callback that already started may still be using the response, which
+	// must not outlive the handler.
+	defer func() {
+		if !unregister() {
+			<-stopped
+		}
+	}()
 	if rw != nil {
 		_ = http.NewResponseController(rw).Flush()
 	}

@@ -4,6 +4,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
     renderMarkdownEffect,
+    renderMarkdownKnownMediaEffect,
     renderMarkdownSync,
     type RenderMarkdownOpts,
     type RepoContext,
@@ -62,21 +63,25 @@
     const currentRepoKey = repoKey;
     const currentInteractiveTasks = interactiveTasks;
     const currentCollapse = collapseSingleLineBreaks;
-    const execution = untrack(() => runtime.runCommand(
-      renderMarkdownEffect(currentRaw, currentRepo, {
+    const opts = {
+      interactiveTasks: currentInteractiveTasks,
+      collapseSingleLineBreaks: currentCollapse,
+    };
+    const publish = (rendered: string) => Effect.sync(() => {
+      resolved = {
+        raw: currentRaw,
+        repoKey: currentRepoKey,
         interactiveTasks: currentInteractiveTasks,
         collapseSingleLineBreaks: currentCollapse,
-      }).pipe(
-        Effect.tap((rendered) => Effect.sync(() => {
-          resolved = {
-            raw: currentRaw,
-            repoKey: currentRepoKey,
-            interactiveTasks: currentInteractiveTasks,
-            collapseSingleLineBreaks: currentCollapse,
-            html: rendered,
-          };
-        })),
-        Effect.asVoid,
+        html: rendered,
+      };
+    });
+    // Highlighted HTML first, then again once attachment probes answer.
+    const execution = untrack(() => runtime.runCommand(
+      renderMarkdownKnownMediaEffect(currentRaw, currentRepo, opts).pipe(
+        Effect.flatMap(publish),
+        Effect.andThen(renderMarkdownEffect(currentRaw, currentRepo, opts)),
+        Effect.flatMap(publish),
       ),
       {
         operation: "render markdown",

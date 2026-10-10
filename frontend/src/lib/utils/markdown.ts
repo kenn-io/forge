@@ -845,6 +845,12 @@ export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMark
   return html;
 }
 
+const renderMarkdownAttempt = (raw: string, repo: RepoContext | undefined, opts: RenderMarkdownOpts) =>
+  Effect.tryPromise({
+    try: () => renderMarkdown(raw, repo, opts),
+    catch: (cause) => MarkdownRenderError.make({ cause }),
+  });
+
 export const renderMarkdownEffect = Effect.fn("Markdown.render")(function* (
   raw: string,
   repo?: RepoContext,
@@ -854,10 +860,18 @@ export const renderMarkdownEffect = Effect.fn("Markdown.render")(function* (
   // video; Forge only has the URL, so it asks the media route first.
   const candidates = markdownMediaCandidates(raw, repo);
   const mediaOutcomes = candidates.length > 0 ? yield* resolveMarkdownMediaOutcomes(candidates) : opts.mediaOutcomes;
-  return yield* Effect.tryPromise({
-    try: () => renderMarkdown(raw, repo, { ...opts, mediaOutcomes }),
-    catch: (cause) => MarkdownRenderError.make({ cause }),
-  });
+  return yield* renderMarkdownAttempt(raw, repo, { ...opts, mediaOutcomes });
+});
+
+// Renders with only the attachment answers already known, so highlighting
+// never waits on a media probe that can take 30 seconds.
+export const renderMarkdownKnownMediaEffect = Effect.fn("Markdown.renderKnownMedia")(function* (
+  raw: string,
+  repo?: RepoContext,
+  opts: RenderMarkdownOpts = {},
+) {
+  const mediaOutcomes = opts.mediaOutcomes ?? settledMarkdownMediaOutcomes(markdownMediaCandidates(raw, repo));
+  return yield* renderMarkdownAttempt(raw, repo, { ...opts, mediaOutcomes });
 });
 
 async function renderMarkdownUncached(

@@ -42,4 +42,25 @@ describe("MarkdownHtml", () => {
     expect(checkbox?.disabled).toBe(false);
     expect(container.querySelector(".task-drag-handle")).not.toBeNull();
   });
+
+  it("highlights code without waiting for an attachment check", async () => {
+    const pending = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", pending);
+    const { container } = render(AppRuntimeHarness, {
+      props: {
+        component: MarkdownHtml,
+        raw: "```ts\nconst answer = 42;\n```\n\nhttps://github.com/user-attachments/assets/pending-highlight-check",
+        repo: {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repoPath: "acme/widgets",
+        },
+      },
+    });
+
+    await waitFor(() => expect(container.querySelector("pre.shiki")).not.toBeNull(), { timeout: 5_000 });
+    expect(pending).toHaveBeenCalled();
+  });
 });

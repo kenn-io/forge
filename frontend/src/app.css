@@ -346,11 +346,15 @@ a:hover {
   margin: 8px 0;
   color: var(--text-muted);
 }
+/* An idle player does not preload, so it has no intrinsic size; a fixed
+   frame keeps it from resizing on first play. */
 .markdown-body video.markdown-video {
   display: block;
-  max-width: 100%;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   max-height: 640px;
   height: auto;
+  object-fit: contain;
   margin: 8px 0;
   border-radius: var(--radius-sm);
   background: var(--bg-inset);

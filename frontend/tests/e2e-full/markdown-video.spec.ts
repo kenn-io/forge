@@ -96,6 +96,17 @@ test("starts no video download until the player is played", async ({ page }) => 
   expect(downloads).not.toEqual([]);
 });
 
+test("keeps the player size when the first play loads the video", async ({ page }) => {
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const video = page.locator(".markdown-body video.markdown-video").first();
+  await expect(video).toBeVisible();
+  const before = await video.boundingBox();
+
+  await startPlayback(video);
+
+  expect(await video.boundingBox()).toEqual(before);
+});
+
 test("plays a video in a diff review comment", async ({ page }) => {
   await page.goto(route("/pulls/github/acme/widgets/1/files"));
   const bubble = page

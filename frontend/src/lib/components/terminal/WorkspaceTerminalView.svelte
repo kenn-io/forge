@@ -2,6 +2,7 @@
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
+    quickActionLaunches,
     quickActionWorkspaceKey,
     quickActionWorkspaces,
     runWorkspaceQuickAction,
@@ -982,7 +983,8 @@
     const identity = workspaceIdentitySnapshot(workspaceId);
     return (
       (identity !== undefined ? pendingWorkspaceCreateLaunch(identity) : null) ??
-      pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.targetKey ?? null
+      pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.targetKey ??
+      quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey))?.targetKey ?? null
     );
   }
 
@@ -2517,6 +2519,11 @@
           sessions: data.sessions.length,
         });
         if (!isCurrentWorkspace(id, hostKey)) return null;
+        const quickActionKey = quickActionWorkspaceKey(id, hostKey);
+        const quickActionSession = quickActionLaunches.get(quickActionKey)?.session;
+        if (quickActionSession && data.sessions.some((session) => session.key === quickActionSession.key)) {
+          quickActionLaunches.delete(quickActionKey);
+        }
         const fingerprint = JSON.stringify(data);
         const acceptedLaunch = pendingWorkspaceLaunch(id, hostKey);
         if (
@@ -4387,6 +4394,12 @@
     void loadEmptyLaunchTargets();
   });
 
+  $effect(() => {
+    const session = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey))?.session;
+    if (!session || !workspaceLive || workspace?.status !== "ready") return;
+    untrack(() => requestRuntime({ force: true }));
+  });
+
   function reconcileQueuedWorkspaceLaunch(admissionRuntime: WorkspaceRuntimeState): void {
     if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked ||
       (workspaceHostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
@@ -4549,6 +4562,7 @@
         <div class="state-message">
           <Spinner size={18} />
           <span>Setting up workspace...</span>
+          {#if explicitLaunchTargetKey()}<span>Preparing worktree...</span>{/if}
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}

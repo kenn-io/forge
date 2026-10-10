@@ -38,6 +38,7 @@
     pendingWorkspaceLaunch,
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
+  import { quickActionLaunches, quickActionWorkspaceKey } from "../../stores/workspace-quick-actions.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import {
@@ -139,6 +140,12 @@
     selectedSession ? pooledHostKey(selectedSession) : null,
   );
   const pendingLaunch = $derived(pendingWorkspaceLaunch(workspaceId, hostKey));
+  const quickActionLaunch = $derived(quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, hostKey)));
+  const startingTargetKey = $derived(pendingLaunch?.targetKey ?? quickActionLaunch?.targetKey ?? launchingTarget);
+  const startingTargetLabel = $derived(launchTargets.find((target) => target.key === startingTargetKey)?.label ?? startingTargetKey);
+  let sessionSelectionExplicit = $state(false);
+  const showLaunchProgress = $derived(startingTargetKey !== null && startingTargetKey !== undefined &&
+    !selectedSession?.runtimeSession && !sessionSelectionExplicit);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
   const workspaceIdentity = $derived(
     workspace
@@ -501,6 +508,7 @@
 
   function selectSession(sessionKey: string): void {
     provisionalBaseSelection = false;
+    sessionSelectionExplicit = true;
     selectedSessionKey = sessionKey;
     composedInput = "";
     inputError = null;
@@ -718,6 +726,19 @@
   });
 
   $effect(() => {
+    const session = quickActionLaunch?.session;
+    const current = runtime;
+    if (!session || workspace?.status !== "ready" || !current) return;
+    untrack(() => {
+      selectedSessionKey = session.key;
+      provisionalBaseSelection = false;
+      applyRuntime({ ...current, sessions: [...current.sessions.filter((candidate) => candidate.key !== session.key), session] }, false);
+      quickActionLaunches.delete(quickActionWorkspaceKey(workspaceId, hostKey));
+      requestRuntimeRefresh();
+    });
+  });
+
+  $effect(() => {
     if (!terminalOptionsOpen) return;
     return untrack(() => pushModalFrame("mobile-workspace-terminal-options", []));
   });
@@ -735,6 +756,7 @@
       ...(activeHostKey === undefined ? {} : { hostKey: activeHostKey }),
     };
     workspaceReadinessGeneration += 1;
+    sessionSelectionExplicit = false;
     workspace = null;
     runtime = null;
     selectedSessionKey = loadMobileWorkspaceSession(activeWorkspaceId, activeHostKey);
@@ -906,6 +928,9 @@
           : workspace.status === "deletion_failed"
             ? "Workspace deletion failed"
             : "Workspace setup failed"}</strong>
+      {#if workspace.status === "creating" && startingTargetKey}
+        <Spinner size={18} /><span role="status">Preparing worktree…</span>
+      {/if}
       {#if workspace.error_message}<span>{workspace.error_message}</span>{/if}
       {#if runtimeError}<span>{runtimeError}</span>{/if}
       {#if workspace.status === "error"}
@@ -914,6 +939,11 @@
           Retry
         </button>
       {/if}
+    </div>
+  {:else if showLaunchProgress && !runtimeError}
+    <div class="mobile-workspace-terminal__state" role="status">
+      <Spinner size={18} /><strong>Starting {startingTargetLabel}…</strong>
+      <span>Worktree ready. Waiting for the agent session.</span>
     </div>
   {:else if !runtime && !runtimeError && !selectedHostKey}
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading terminal sessions…</span></div>

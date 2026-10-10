@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     getWorkspace: vi.fn(),
     getWorkspaceRuntime: vi.fn(),
     launchWorkspaceRuntimeSession: vi.fn(),
+    launchWorkspaceAgentHandoff: vi.fn(),
     getFleetWorkspace: vi.fn(),
     getFleetWorkspaceRuntime: vi.fn(),
     launchFleetWorkspaceRuntimeSession: vi.fn(),
@@ -43,6 +44,12 @@ vi.mock("../../context.js", async (importOriginal) => {
   };
 });
 
+import {
+  runWorkspaceQuickAction,
+  quickActionWorkspaces,
+  quickActionLaunches,
+} from "../../stores/workspace-quick-actions.js";
+import type { RuntimeSession } from "../../api/types.js";
 import MobileWorkspaceTerminal from "./MobileWorkspaceTerminal.svelte";
 import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js";
 import {
@@ -99,6 +106,8 @@ describe("MobileWorkspaceTerminal", () => {
       }),
     );
     localStorage.clear();
+    quickActionWorkspaces.clear();
+    quickActionLaunches.clear();
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
@@ -111,6 +120,60 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+  });
+
+  it("waits for a directly launched ACP session without showing the base terminal", async () => {
+    const session: RuntimeSession = {
+      key: "chat-a",
+      workspace_id: "ws-a",
+      target_key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    };
+    const launch = Promise.withResolvers<RuntimeSession>();
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({
+      launch_targets: [{ key: "chat", label: "Chat agent", kind: "acp", available: true }],
+      sessions: [],
+    });
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(launch.promise);
+    queueWorkspaceLaunch("ws-a", "chat", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+    expect(screen.getByText("Starting Chat agent…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ launch_targets: [], sessions: [session] });
+    launch.resolve(session);
+    expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
+    expect(screen.queryByText("Starting Chat agent…")).toBeNull();
+  });
+
+  it("selects the quick action's ACP session after an empty runtime selected the base terminal", async () => {
+    const session: RuntimeSession = {
+      key: "chat-a",
+      workspace_id: "ws-a",
+      target_key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    };
+    const handoff = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
+    mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
+    const appRuntime = runtimeState.appRuntime;
+    if (!appRuntime) throw new Error("Missing test runtime");
+    runWorkspaceQuickAction(appRuntime, "ws-a", { label: "Review", agent: "chat", prompt: "Review this change" });
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+    expect(screen.getByText("Starting chat…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...runtime, sessions: [session] });
+    handoff.resolve({ session, initial_message: { state: "delivered" } });
+    expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
   });
 
   it.each([true, false])("shows only available launch choices (available: %s)", async (available) => {

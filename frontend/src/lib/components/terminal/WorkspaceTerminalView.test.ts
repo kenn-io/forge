@@ -25,7 +25,11 @@ import {
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
 import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
-import { runWorkspaceQuickAction, quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
+import {
+  runWorkspaceQuickAction,
+  quickActionWorkspaces,
+  quickActionLaunches,
+} from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
 
 const mocks = vi.hoisted(() => ({
@@ -719,6 +723,7 @@ describe("WorkspaceTerminalView", () => {
       container.appendChild(screen);
     });
     quickActionWorkspaces.clear();
+    quickActionLaunches.clear();
     mocks.quickActions = [];
     mocks.runtime = makeAppRuntime();
     delete window.__BASE_PATH__;

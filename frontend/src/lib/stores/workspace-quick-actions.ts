@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { SvelteSet } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -13,6 +13,10 @@ export function sortQuickActionsByLabel(actions: readonly QuickAction[]): QuickA
 // Choosing a quick action replaces the automatic session picker for this workspace.
 // Entries are keyed by quickActionWorkspaceKey.
 export const quickActionWorkspaces = new SvelteSet<string>();
+
+// Keep the returned session until a workspace view presents it, including
+// when the handoff finishes before that view mounts.
+export const quickActionLaunches = new SvelteMap<string, { targetKey: string; session?: RuntimeSession }>();
 
 /** Identifies a workspace in quickActionWorkspaces; devbox workspace IDs are only unique per host. */
 export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): string {
@@ -33,7 +37,9 @@ export function runWorkspaceQuickAction(
   hostKey?: string,
   onLaunched?: (session: RuntimeSession) => void,
 ): void {
-  quickActionWorkspaces.add(quickActionWorkspaceKey(workspaceId, hostKey));
+  const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
+  quickActionWorkspaces.add(workspaceKey);
+  quickActionLaunches.set(workspaceKey, { targetKey: action.agent });
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
       ? client.DevboxesService.launchDevboxHandoff(
@@ -49,6 +55,7 @@ export function runWorkspaceQuickAction(
   ).pipe(
     Effect.tap((result) =>
       Effect.sync(() => {
+        quickActionLaunches.set(workspaceKey, { targetKey: action.agent, session: result.session });
         onLaunched?.(result.session);
         if (result.initial_message.state !== "delivered") {
           showFlash(`"${action.label}" launched, but the prompt delivery is ${result.initial_message.state}.`, {
@@ -62,6 +69,7 @@ export function runWorkspaceQuickAction(
     operation: "run workspace quick action",
     safeContext: { workspaceId, agent: action.agent },
     onFailure: (failure) => {
+      quickActionLaunches.delete(workspaceKey);
       if (failure._tag !== "ApiProblemError") {
         // The request itself failed. The server keeps running an accepted
         // handoff, so this is reported as unknown rather than as a failure.

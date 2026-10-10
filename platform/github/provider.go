@@ -92,6 +92,14 @@ type markdownImageClient interface {
 	) (platform.MarkdownImage, error)
 }
 
+// markdownMediaClient streams video attachments with the repository's
+// credential, for the same reason markdownImageClient carries the repository.
+type markdownMediaClient interface {
+	OpenMarkdownMedia(
+		ctx context.Context, owner, repo, sourceURL, byteRange string,
+	) (platform.MarkdownMedia, error)
+}
+
 type Provider struct {
 	host           string
 	client         API
@@ -146,6 +154,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	_, reviewers := p.client.(ReviewerAPI)
 	_, archivePages := p.client.(InventoryAPI)
 	_, markdownImages := p.client.(markdownImageClient)
+	_, markdownMedia := p.client.(markdownMediaClient)
 	_, directViewer := p.client.(ViewerAPI)
 	_, routedViewer := p.client.(interface {
 		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
@@ -160,6 +169,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		ReadCI:                      true,
 		ReadLabels:                  labels,
 		ReadMarkdownImages:          markdownImages,
+		ReadMarkdownMedia:           markdownMedia,
 		ReadAuthenticatedUser:       directViewer || routedViewer,
 		ReadNotifications:           true,
 		ReadWorkflows:               workflows,
@@ -215,6 +225,18 @@ func (p *Provider) GetMarkdownImage(
 		return platform.MarkdownImage{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_markdown_images")
 	}
 	return reader.GetMarkdownImage(ctx, ref.Owner, ref.Name, sourceURL)
+}
+
+func (p *Provider) OpenMarkdownMedia(
+	ctx context.Context,
+	ref platform.RepoRef,
+	sourceURL, byteRange string,
+) (platform.MarkdownMedia, error) {
+	reader, ok := p.client.(markdownMediaClient)
+	if !ok {
+		return platform.MarkdownMedia{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "read_markdown_media")
+	}
+	return reader.OpenMarkdownMedia(ctx, ref.Owner, ref.Name, sourceURL, byteRange)
 }
 
 func (p *Provider) OperationRateLimitBuckets(

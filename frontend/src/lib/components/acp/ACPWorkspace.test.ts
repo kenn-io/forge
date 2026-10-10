@@ -311,19 +311,32 @@ describe("ACPWorkspace elicitations", () => {
     expect(screen.queryByLabelText("Cache preview")).toBeNull();
   });
 
-  it("lets an optional choice be cleared so only the typed answer is sent", async () => {
+  it("clears an optional choice when its picked option is activated again", async () => {
     await openChat({ elicitations: [askForm] });
 
-    expect(screen.queryByRole("button", { name: "Clear selection" })).toBeNull();
-    await fireEvent.click(screen.getByRole("radio", { name: /Redis/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Clear selection" }));
-    expect((screen.getByRole("radio", { name: /Redis/ }) as HTMLInputElement).checked).toBe(false);
+    const redis = screen.getByRole("radio", { name: /Redis/ }) as HTMLInputElement;
+    await fireEvent.click(redis);
+    expect(redis.checked).toBe(true);
+    await fireEvent.click(redis);
+    expect(redis.checked).toBe(false);
+    await fireEvent.click(redis);
+    await fireEvent.keyDown(redis, { key: " " });
+    expect(redis.checked).toBe(false);
     await fireEvent.input(screen.getByLabelText(/Other/), { target: { value: "Memcached" } });
     await fireEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     expect(sentCommands()).toEqual([
       { type: "elicitation", id: "elicit-ask", action: "accept", content: { question_0_custom: "Memcached" } },
     ]);
+  });
+
+  it("keeps a required choice picked when its option is activated again", async () => {
+    await openChat({ elicitations: [deployForm] });
+
+    const pro = screen.getByRole("radio", { name: "Pro" }) as HTMLInputElement;
+    await fireEvent.click(pro);
+    await fireEvent.click(pro);
+    expect(pro.checked).toBe(true);
   });
 
   it.each(["Decline", "Cancel"])("sends %s without content", async (name) => {

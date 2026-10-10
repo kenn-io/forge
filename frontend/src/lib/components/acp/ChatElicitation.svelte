@@ -50,6 +50,22 @@
       .map((choice) => choice.value)
       .filter((choice) => (choice === value ? checked : current.includes(choice)));
   }
+  // Activating the picked option of an optional question clears it in place,
+  // so the form never grows a separate clear control. A click on an already
+  // checked radio fires no change event, so this listens to clicks (arrow keys
+  // also click the radio they move to). Space on a checked radio fires nothing,
+  // so its keydown clears instead.
+  function clears(field: ElicitationField, value: string): boolean {
+    return !field.required && textOf(field.key) === value;
+  }
+  function pick(field: ElicitationField, value: string) {
+    values[field.key] = clears(field, value) ? "" : value;
+  }
+  function clearOnSpace(event: KeyboardEvent, field: ElicitationField, value: string) {
+    if (event.key !== " " || !clears(field, value)) return;
+    event.preventDefault();
+    values[field.key] = "";
+  }
   function respond(response: ElicitationResponse) {
     if (disabled || sent) return;
     sent = true;
@@ -123,7 +139,8 @@
                     value={choice.value}
                     {checked}
                     {disabled}
-                    onchange={() => { values[field.key] = choice.value; }}
+                    onclick={() => pick(field, choice.value)}
+                    onkeydown={(event) => clearOnSpace(event, field, choice.value)}
                   />
                   {@render choiceText(choice)}
                 </label>
@@ -131,11 +148,6 @@
             {/each}
           </div>
           {#if preview}<pre class="preview" aria-label={`${field.label} preview`}>{preview}</pre>{/if}
-          {#if field.kind === "select" && !field.required && picked[0]}
-            <div class="clear">
-              <Button size="sm" {disabled} onclick={() => { values[field.key] = ""; }}>Clear selection</Button>
-            </div>
-          {/if}
         </fieldset>
       {:else}
         <label class="label" for={id}>{@render labelText(field)}</label>
@@ -185,7 +197,6 @@
   .choice-title { font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--text-primary); overflow-wrap: anywhere; }
   .choice-description { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; white-space: pre-wrap; }
   .preview { margin: var(--space-2) 0 0; padding: var(--space-2) var(--space-3); max-height: 16rem; overflow: auto; border: 1px solid var(--border-muted); border-radius: var(--radius-md); background: var(--bg-inset); font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-primary); white-space: pre; }
-  .clear { margin-top: var(--space-2); }
   .required { color: var(--accent-red); }
   small { font-size: var(--font-size-xs); color: var(--text-secondary); overflow-wrap: anywhere; }
   .problem { color: var(--accent-red); }

@@ -113,13 +113,15 @@
   outline-color: var(--text-primary) !important;
 }
 
-/* kit-ui-check-ignore: theme existing controls, including kit's own checkbox */
-:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) :is(button, input, textarea, select, .kit-toggle__track, .kit-checkbox__box) {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"])
+  /* kit-ui-check-ignore: theme existing controls, including kit's own checkbox */
+  :is(button, input, textarea, select, .kit-toggle__track, .kit-checkbox__box) {
   border-color: var(--border-default) !important;
   accent-color: var(--text-primary); /* kit-ui-check-ignore: e-reader theme for existing native controls */
 }
 
-:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) :is(button:disabled, input:disabled, textarea:disabled, [aria-disabled="true"]) {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"])
+  :is(button:disabled, input:disabled, textarea:disabled, [aria-disabled="true"]) {
   border-style: dashed;
 }
 

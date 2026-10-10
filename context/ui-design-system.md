@@ -111,6 +111,9 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
   (at least 4.5:1 on white). Diffs in both show +/- signs and take row tints
   from `--diff-add-mark`/`--diff-del-mark`, which Pierre blends at only 12%
   (`frontend/src/e-reader.css`, `frontend/src/lib/components/diff/PierreFileDiff.svelte`).
+- `kit-ui-check` honors an ignore comment only directly above the flagged
+  line. When `vp fmt` wraps a long selector, move the comment onto the wrapped
+  line it flags, and run `vp run -w check` (CI lint) rather than `vp lint`.
 - Disabled styling: native controls that dim when disabled use
   `var(--opacity-disabled)` (kit's `hand-rolled-disabled-state` rule rejects a
   literal); a deliberate no-dim rule uses `opacity: unset`, and hover rules

@@ -5,6 +5,7 @@
   import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import { isEReader } from "../../stores/theme.svelte.js";
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
@@ -100,6 +101,9 @@
 
   let containerEl: HTMLElement;
   let terminal: Terminal | null = $state(null);
+  const terminalTheme = $derived(isEReader()
+    ? { background: "#ffffff", foreground: "#000000", cursor: "#000000", cursorAccent: "#ffffff", selectionBackground: "#dbeafe" }
+    : { background: "#0d1117", foreground: "#c9d1d9", cursor: "#58a6ff" });
   let hoveredTerminalLink: string | null = $state(null);
   let fitAddon: FitAddon | null = null;
   let imageAddon: ImageAddon | null = null;
@@ -1203,6 +1207,12 @@
   $effect(syncRendererState);
 
   $effect(() => {
+    if (!terminal) return;
+    terminal.options.theme = terminalTheme;
+    terminal.options.minimumContrastRatio = isEReader() ? 21 : TERMINAL_MINIMUM_CONTRAST_RATIO;
+  });
+
+  $effect(() => {
     syncImageAddon(terminalGraphics);
   });
 
@@ -1278,11 +1288,7 @@
 
       function startTerminal(): void {
       const term = new Terminal({
-        theme: {
-          background: "#0d1117",
-          foreground: "#c9d1d9",
-          cursor: "#58a6ff",
-        },
+        theme: terminalTheme,
         // The ligatures addon registers a character joiner, which xterm
         // exposes as proposed API. This is constructor-only and must be on
         // before a user enables ligatures at runtime.
@@ -1296,7 +1302,7 @@
         letterSpacing: terminalLetterSpacing,
         lineHeight: terminalLineHeight,
         linkHandler: terminalLinkHandler,
-        minimumContrastRatio: TERMINAL_MINIMUM_CONTRAST_RATIO,
+        minimumContrastRatio: isEReader() ? 21 : TERMINAL_MINIMUM_CONTRAST_RATIO,
         rescaleOverlappingGlyphs: true,
         scrollOnEraseInDisplay: true,
         smoothScrollDuration: TERMINAL_SMOOTH_SCROLL_DURATION,

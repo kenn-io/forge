@@ -7,6 +7,9 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 - Bundle the shared web UI in the native app; use the selected server only for
   APIs, event streams, and WebSockets. Do not duplicate ACP or terminal UI in
   React Native (`mobile/embedded-page.ts`).
+- After rebuilding `mobile/assets/web.bundle`, force Gradle's
+  `:app:createBundleReleaseJsAndAssets --rerun-tasks` before assembling the APK;
+  React Native's task inputs track JS/TS, not this asset (`mobile/scripts/build-web.mjs`).
 - Desktop layout is opt-in for tablets (`mobile/connection.ts::launchURL`).
 - The native shell owns system-bar and cutout spacing. Android WebView must pass
   zeroes for those CSS safe-area insets while preserving keyboard insets

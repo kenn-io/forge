@@ -101,6 +101,14 @@ export const SETTINGS_PANELS: SettingsPanelMeta[] = [
     keywords: "visible modes navigation tabs prs issues docs kata actions github workflows release dispatch",
   },
   {
+    id: "settings-appearance",
+    label: "Appearance",
+    title: "Appearance",
+    group: "Navigation",
+    description: "Color theme and contrast on this device",
+    keywords: "theme light dark system contrast e-reader eink e-ink color",
+  },
+  {
     id: "settings-mcp",
     label: "MCP companion",
     title: "MCP companion",

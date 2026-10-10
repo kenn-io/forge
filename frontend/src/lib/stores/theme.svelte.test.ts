@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { initTheme, isDark, toggleTheme, cleanupTheme } from "./theme.svelte.js";
+import { initTheme, isDark, toggleTheme, cleanupTheme, setAppearanceMode, getAppearanceMode } from "./theme.svelte.js";
 
 function mockMatchMedia(matches: boolean): void {
   Object.defineProperty(window, "matchMedia", {
@@ -23,12 +23,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  document.documentElement.classList.remove("dark");
+  document.documentElement.classList.remove("dark", "high-contrast");
   document.documentElement.style.cssText = "";
   document.documentElement.removeAttribute("data-kit-theme");
   try {
     localStorage.removeItem("kenn-forge-theme");
     localStorage.removeItem("kenn-forge-theme-name");
+    localStorage.removeItem("kenn-forge-theme-high-contrast");
   } catch {
     /* storage blocked */
   }
@@ -65,6 +66,28 @@ describe("standalone mode (no config)", () => {
 });
 
 describe("kit identity", () => {
+  it("restores e-reader mode even when the system is dark", () => {
+    mockMatchMedia(true);
+    initTheme();
+    setAppearanceMode("e-reader");
+    cleanupTheme();
+    initTheme();
+    expect(getAppearanceMode()).toBe("e-reader");
+    expect(document.documentElement.dataset["kitTheme"]).toBe("e-reader");
+    expect(isDark()).toBe(false);
+  });
+
+  it("leaves e-reader mode when the header switches to dark", () => {
+    initTheme();
+    setAppearanceMode("e-reader");
+    toggleTheme();
+    expect(getAppearanceMode()).toBe("dark");
+    expect(document.documentElement.dataset["kitTheme"]).toBe("quiet");
+    cleanupTheme();
+    initTheme();
+    expect(isDark()).toBe(true);
+  });
+
   it("selects the quiet theme even when no theme name is stored", () => {
     initTheme();
     expect(document.documentElement.dataset["kitTheme"]).toBe("quiet");

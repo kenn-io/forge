@@ -289,7 +289,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("Workflow")).toBeTruthy();
     expect(screen.getByText("Workspace")).toBeTruthy();
     expect(screen.getByText("Navigation")).toBeTruthy();
-    expect(screen.getByText("System")).toBeTruthy();
+    expect(screen.getByText("System", { selector: ".kit-settings__group-title" })).toBeTruthy();
     expect(screen.queryByText("Hub policy")).toBeNull();
   });
 

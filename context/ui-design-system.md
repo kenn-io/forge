@@ -99,13 +99,15 @@ otherwise fails only in the Vitest/Playwright transform tier, not in
 
 - Theme tokens come from kit `theme.css` plus the kit `quiet` identity from
   `themes.css`: system type, AA-contrast muted text, sentence-case labels,
-  and tinted label pills. `index.html` sets `data-kit-theme="quiet"` for
-  first paint and embeds; `initTheme` re-asserts it through `setThemeName`
-  because the kit store strips the attribute when no name is set
+  and tinted label pills. Quiet remains the default; preserve an explicit
+  e-reader choice through startup and first paint
   (`frontend/src/lib/stores/theme.svelte.ts`). Dark mode and high contrast
   remain `dark` / `high-contrast` classes on `<html>`. Frontend components additionally
   consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
   `browserAppHarness.ts`.
+- E-reader mode is always light: pure white reading surfaces, pure black text,
+  pale gray/blue fills, and strong edges for color e-ink. Keep its ink overrides
+  across rich content and the bundled mobile UI (`frontend/src/e-reader.css`).
 - Disabled styling: native controls that dim when disabled use
   `var(--opacity-disabled)` (kit's `hand-rolled-disabled-state` rule rejects a
   literal); a deliberate no-dim rule uses `opacity: unset`, and hover rules

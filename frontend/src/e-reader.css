@@ -1,0 +1,95 @@
+/* E-ink needs black ink, light fills, and visible edges, including content
+   with its own inline colors (syntax highlighting and provider labels). */
+:root[data-kit-theme="e-reader"] {
+  color-scheme: light;
+  --bg-primary: #fff; /* kit-ui-check-ignore: e-reader palette */
+  --bg-surface: #fff; /* kit-ui-check-ignore: e-reader palette */
+  --bg-inset: #fff; /* kit-ui-check-ignore: e-reader palette */
+  --bg-surface-hover: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --border-default: #000; /* kit-ui-check-ignore: e-reader palette */
+  --border-muted: #666; /* kit-ui-check-ignore: e-reader palette */
+  --text-primary: #000; /* kit-ui-check-ignore: e-reader palette */
+  --text-secondary: #000; /* kit-ui-check-ignore: e-reader palette */
+  --text-muted: #000; /* kit-ui-check-ignore: e-reader palette */
+  --text-on-accent: #000; /* kit-ui-check-ignore: e-reader palette */
+  --accent-blue: #dbeafe; /* kit-ui-check-ignore: pale fills; ink overridden below */
+  --accent-teal: #dbeafe; /* kit-ui-check-ignore: e-reader palette */
+  --accent-green: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-red: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-amber: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-purple: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --status-waiting: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --bubble-ink: #000; /* kit-ui-check-ignore: e-reader palette */
+  --terminal-bg: #fff; /* kit-ui-check-ignore: e-reader palette */
+  --diff-add-bg: #dbeafe; /* kit-ui-check-ignore: pale blue additions */
+  --diff-del-bg: #eee; /* kit-ui-check-ignore: pale gray deletions */
+  --diff-stale-text: #000; /* kit-ui-check-ignore: e-reader palette */
+  --bg-row-selected: #dbeafe; /* kit-ui-check-ignore: e-reader palette */
+  --focus-ring: 2px solid #000; /* kit-ui-check-ignore: visible e-ink focus */
+  --opacity-disabled: 1;
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --label-transform: none;
+  --letter-spacing-label: normal;
+  --mermaid-bg: #fff; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-viewer-bg: #fff; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-node-bg: #fff; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-node-text: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-node-border: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-cluster-bg: #eee; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-cluster-text: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-cluster-border: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-line: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-text: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-label-bg: #fff; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-label-text: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-note-bg: #eee; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-note-text: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+  --mermaid-note-border: #000; /* kit-ui-check-ignore: e-reader diagram palette */
+}
+
+/* Deliberately override component and inline ink, including Shiki tokens.
+   Images and terminal canvases retain their own rendering. */
+:root[data-kit-theme="e-reader"] *,
+:root[data-kit-theme="e-reader"] ::placeholder {
+  color: var(--text-primary) !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  text-shadow: none !important;
+  transition: none !important;
+}
+
+:root[data-kit-theme="e-reader"] ::placeholder {
+  opacity: 1;
+}
+
+:root[data-kit-theme="e-reader"] ::selection {
+  color: var(--text-primary);
+  background: var(--accent-blue);
+}
+
+:root[data-kit-theme="e-reader"] a {
+  text-decoration: underline;
+}
+
+:root[data-kit-theme="e-reader"] :focus-visible {
+  outline-color: var(--text-primary) !important;
+}
+
+/* kit-ui-check-ignore: theme existing controls, including kit's own checkbox */
+:root[data-kit-theme="e-reader"] :is(button, input, textarea, select, .kit-toggle__track, .kit-checkbox__box) {
+  border-color: var(--border-default) !important;
+  accent-color: var(--text-primary); /* kit-ui-check-ignore: e-reader theme for existing native controls */
+}
+
+:root[data-kit-theme="e-reader"] :is(button:disabled, input:disabled, textarea:disabled, [aria-disabled="true"]) {
+  border-style: dashed;
+}
+
+:root[data-kit-theme="e-reader"] .kit-button--solid {
+  background: var(--accent-blue) !important;
+}
+
+:root[data-kit-theme="e-reader"] .markdown-body pre.shiki[style] {
+  background: var(--bg-surface) !important;
+}

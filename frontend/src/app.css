@@ -8,6 +8,7 @@
 @import "@kenn-io/kit-ui/mermaid.css";
 /* Expand buttons on markdown images; the expanded view is kit MediaViewer. */
 @import "@kenn-io/kit-ui/markdown-images.css";
+@import "./e-reader.css";
 
 /* kit's themes.css tints scrollbars under every named theme; Forge's scroll
    panes keep browser-native scrollbars (tests/e2e/viewport-fit.spec.ts). */

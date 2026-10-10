@@ -9,6 +9,7 @@
   import { MonitorIcon, SettingsIcon } from "../../icons.ts";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import ForgeSelector from "../layout/ForgeSelector.svelte";
+  import AppearanceSettings from "../settings/AppearanceSettings.svelte";
   import { getMobileNavMenuContext, mobileNavModes, mobileNavSelectedPath } from "./mobile-nav-menu.js";
 
   const nav = getMobileNavMenuContext();
@@ -77,6 +78,10 @@
             </button>
           {/each}
         </nav>
+        <section class="mobile-nav-sheet__appearance" aria-label="Appearance">
+          <h2>Appearance</h2>
+          <AppearanceSettings />
+        </section>
         {#if nativeHost}
           <button
             class="mobile-nav-sheet__action"
@@ -148,6 +153,17 @@
     gap: 0.5rem;
     padding: 0.75rem 0.875rem;
     border-bottom: thin solid var(--border-muted);
+  }
+
+  .mobile-nav-sheet__appearance {
+    margin: 0 0.875rem 0.875rem;
+    padding: 0.875rem 0;
+    border-block: thin solid var(--border-default);
+  }
+
+  .mobile-nav-sheet__appearance h2 {
+    margin-bottom: 0.75rem;
+    font-size: var(--font-size-md);
   }
 
   .mobile-nav-sheet nav {

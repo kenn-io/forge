@@ -17,17 +17,25 @@
         background: #151618;
         color-scheme: dark;
       }
+      html[data-kit-theme="e-reader"] {
+        background: #fff;
+        color-scheme: light;
+      }
     </style>
     <script>
       // Apply theme before first paint to avoid flash of wrong theme.
       (function () {
         try {
           var v = localStorage.getItem("kenn-forge-theme");
+          var reader = localStorage.getItem("kenn-forge-theme-name") === "e-reader";
+          var contrast = localStorage.getItem("kenn-forge-theme-high-contrast") === "true";
         } catch (e) {
           var v = null;
         }
         var dark = v === "dark" || v === "light" ? v === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-        if (dark) document.documentElement.classList.add("dark");
+        if (reader) document.documentElement.dataset.kitTheme = "e-reader";
+        if (dark && !reader) document.documentElement.classList.add("dark");
+        if (contrast) document.documentElement.classList.add("high-contrast");
       })();
     </script>
   </head>

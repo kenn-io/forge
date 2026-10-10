@@ -13,6 +13,7 @@
   import RepoSettings from "./RepoSettings.svelte";
   import ActivitySettings from "./ActivitySettings.svelte";
   import TerminalSettings from "./TerminalSettings.svelte";
+  import AppearanceSettings from "./AppearanceSettings.svelte";
   import ACPSettings from "./ACPSettings.svelte";
   import { beginACPSettingsHydration, hydrateACPSettings } from "../../stores/acp-settings-persistence.js";
   import ModeVisibilitySettings from "./ModeVisibilitySettings.svelte";
@@ -297,6 +298,8 @@
                 settingsStore.setPullRequestSettings(pull_requests);
               }}
             />
+          {:else if meta.id === "settings-appearance"}
+            <AppearanceSettings />
           {:else if meta.id === "settings-detail"}
             <DetailSettings
               detail={loaded.detail}

@@ -108,7 +108,15 @@ func NewReporter(opts Options) (*Reporter, error) {
 // newReporter is NewReporter without the go test guard.
 func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	if !enabledInBuild() || !EnabledFromEnv() {
-		return DisabledReporter(), nil
+		daemon, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("daemon")...)
+		if err != nil {
+			return nil, err
+		}
+		backend, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("backend")...)
+		if err != nil {
+			return nil, errors.Join(err, daemon.Close())
+		}
+		return &Reporter{daemon: daemon, backend: backend}, nil
 	}
 	if opts.Database == nil {
 		return nil, errors.New("telemetry database is required")
@@ -169,19 +177,7 @@ func kitAllowedEvents(source string) []posthog.Option {
 }
 
 func DisabledReporter() *Reporter {
-	options := append(kitAllowedEvents("backend"), kitAllowedEvents("daemon")...)
-	client, err := posthog.NewReporter(posthog.Options{
-		APIKey: postHogAPIKey, Application: applicationSlug, EnvPrefix: envPrefix, DistinctID: "disabled",
-	}, options...)
-	if err != nil {
-		slog.Warn("build disabled telemetry reporter", "err", err)
-		return &Reporter{}
-	}
-	// Closing keeps Kit's allowlist while preventing event delivery.
-	if err := client.Close(); err != nil {
-		slog.Warn("close disabled telemetry reporter", "err", err)
-	}
-	return &Reporter{daemon: client, backend: client}
+	return &Reporter{}
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
@@ -225,7 +221,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 		client = r.daemon
 	}
 	if client == nil {
-		return "", errors.New("telemetry reporter unavailable")
+		return posthog.StatusDisabled, nil
 	}
 	return client.Report(ctx, event, properties)
 }

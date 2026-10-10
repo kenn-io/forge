@@ -28,15 +28,14 @@ func TestReporterValidatesSessionDurationInBothModes(t *testing.T) {
 	})
 	for _, disabled := range []bool{false, true} {
 		t.Run(map[bool]string{false: "enabled", true: "disabled"}[disabled], func(t *testing.T) {
-			reporter := DisabledReporter()
-			if !disabled {
-				var err error
-				reporter, err = newReporter(Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, time.Now())
-				require.NoError(t, err)
+			if disabled {
+				t.Setenv(EnabledEnv, "0")
 			}
+			reporter, err := newReporter(Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, time.Now())
+			require.NoError(t, err)
 			defer func() { require.NoError(t, reporter.Close()) }()
 			require.Equal(t, !disabled, reporter.Enabled())
-			_, err := reporter.Report(t.Context(), "session_ended", nil)
+			_, err = reporter.Report(t.Context(), "session_ended", nil)
 			require.ErrorIs(t, err, posthog.ErrInvalidProperty)
 			status, err := reporter.Report(t.Context(), "session_ended", map[string]any{" duration_bucket ": "under_1m"})
 			require.NoError(t, err)

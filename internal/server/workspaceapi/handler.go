@@ -190,9 +190,6 @@ type Handler struct {
 	lifecycleStarted           bool
 	lifecycleStopping          bool
 	lifecycleDone              chan struct{}
-
-	agentActivityCleanupMu    sync.Mutex
-	agentActivityCleanupError string
 }
 
 // New creates the workspace and project handler.

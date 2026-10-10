@@ -282,8 +282,6 @@ func (h *Handler) reconcileAgentActivityReports(ctx context.Context) {
 	if h == nil || h.agentActivity == nil || h.db == nil {
 		return
 	}
-	h.agentActivityCleanupMu.Lock()
-	defer h.agentActivityCleanupMu.Unlock()
 	keep := map[string]struct{}{}
 	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
 	if err != nil {
@@ -305,7 +303,9 @@ func (h *Handler) reconcileAgentActivityReports(ctx context.Context) {
 			}
 		}
 	}
-	h.recordAgentActivityCleanupError(h.agentActivity.RetainRuntimeSessions(keep))
+	if err := h.agentActivity.RetainRuntimeSessions(keep); err != nil {
+		slog.Warn("reconcile agent activity reports", "err", err)
+	}
 }
 
 // HandleRuntimeSessionExit reconciles a workspace runtime exit with persisted
@@ -343,20 +343,9 @@ func (h *Handler) removeAgentActivityRuntimeSession(sessionKey string) {
 	if h == nil || h.agentActivity == nil || sessionKey == "" {
 		return
 	}
-	h.agentActivityCleanupMu.Lock()
-	defer h.agentActivityCleanupMu.Unlock()
 	if err := h.agentActivity.RemoveRuntimeSession(sessionKey); err != nil {
-		h.recordAgentActivityCleanupError(err)
+		slog.Warn("remove agent activity report",
+			"session_key", sessionKey,
+			"err", err)
 	}
-}
-
-func (h *Handler) recordAgentActivityCleanupError(err error) {
-	message := ""
-	if err != nil {
-		message = err.Error()
-		if message != h.agentActivityCleanupError {
-			slog.Warn("cleanup agent activity reports", "err", err)
-		}
-	}
-	h.agentActivityCleanupError = message
 }

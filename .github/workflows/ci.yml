@@ -433,9 +433,6 @@ jobs:
       - name: Run locked activity report cleanup test
         run: go test ./internal/agentactivity -run '^TestStore(RemoveReturnsLockedReportErrors|RuntimeCleanupRetriesLockedReport|RuntimeCleanupReturnsReadDirErrors)$' -shuffle=on
 
-      - name: Run activity report maintenance retry test
-        run: go test ./internal/server/workspaceapi -run '^TestWorkspaceTmuxPruneRetriesLockedActivityReport$' -shuffle=on
-
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 

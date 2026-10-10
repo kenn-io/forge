@@ -1057,23 +1057,6 @@ func TestWorkspaceTmuxPruneUsesEnrichmentBackgroundCapacity(t *testing.T) {
 	assert.False(t, inFlight)
 }
 
-func TestWorkspaceTmuxZeroPruneLeavesReportsWithoutCleanupFailure(t *testing.T) {
-	t.Parallel()
-	database := dbtest.Open(t)
-	root := t.TempDir()
-	activity := agentactivity.NewStore(root)
-	require.NoError(t, activity.Record("claude", "chat", "runtime", t.TempDir(), agentactivity.StateWorking))
-	manager := workspace.NewManager(database, t.TempDir())
-	manager.SetTmuxCommand([]string{filepath.Join(t.TempDir(), "missing-tmux")})
-	handler := New(Deps{DB: database, Workspaces: manager, AgentActivity: activity})
-
-	handler.runWorkspaceTmuxPrune(t.Context())
-
-	entries, err := os.ReadDir(root)
-	require.NoError(t, err)
-	assert.Len(t, entries, 1)
-}
-
 func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

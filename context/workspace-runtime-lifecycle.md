@@ -142,7 +142,10 @@ Rules:
   state untouched and otherwise maps to `done`; only `elicitation_dialog` and
   user-input tools put a session into `input`
   (`internal/agentactivity/store.go::Store.HandleEvent`).
-- Reconcile reports after startup and pruning; zero-prune passes retry only failed runtime cleanup, and unchanged failures log once (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
+- Reports are reconciled against persisted and live runtime session keys
+  after startup restoration and after every missing-tmux prune, so a report
+  whose runtime row was pruned does not outlive it
+  (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
 - Retry resumes setup in place and retains branch, worktree, and runtime records;
   restarting a terminal must never erase local commits or dirty files

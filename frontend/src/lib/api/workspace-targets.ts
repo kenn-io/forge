@@ -8,9 +8,14 @@ import { resolveItemReferenceEffect } from "../utils/itemRefHandler.js";
 import { InvalidExternalPayload, type ApiProblemError, type TransientTransportError } from "./effect-errors.js";
 import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { WorkspaceTargetSelection } from "./generated/models/workspaceTargetSelection.js";
-import { canonicalProvider, resolvedPlatformHost } from "./provider-routes.js";
+import {
+  canonicalProvider,
+  resolvedPlatformHost,
+  providerUsesHostRoute,
+  providerHostRouteParams,
+  providerRouteParams,
+} from "./provider-routes.js";
 import { repositoryKeyFromCatalog, repositoryKeyToRequiredWire } from "./repository-key.js";
-import { RepositoryReads } from "./repository-reads.js";
 
 interface WorkspaceTargetUpdate {
   readonly id: string;
@@ -40,14 +45,11 @@ const persistWorkspaceTarget = Effect.fn("persistWorkspaceTarget")(function* ({
   const platformHost = resolvedPlatformHost(item.provider, item.platformHost).toLowerCase();
   let key = item.repositoryKey;
   if (!key) {
-    const reads = yield* RepositoryReads;
-    const repos = yield* reads.refresh;
-    const repo = repos.find(
-      (candidate) =>
-        canonicalProvider(candidate.Platform) === provider &&
-        resolvedPlatformHost(candidate.Platform, candidate.PlatformHost).toLowerCase() === platformHost &&
-        candidate.Owner.toLowerCase() === item.owner.toLowerCase() &&
-        candidate.Name.toLowerCase() === item.name.toLowerCase(),
+    const ref = { ...item, provider, platformHost };
+    const repo = yield* executeGeneratedApiRequest("resolve target repository", (client, signal) =>
+      providerUsesHostRoute(ref)
+        ? client.RepositoriesService.getRepoOnHost(providerHostRouteParams(ref), { signal })
+        : client.RepositoriesService.getRepo(providerRouteParams(ref), { signal }),
     );
     key = repositoryKeyFromCatalog(repo);
   }

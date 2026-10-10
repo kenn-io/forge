@@ -2362,7 +2362,7 @@
       const id = workspaceId;
       const hostKey = workspaceHostKey;
       const selectionGeneration = ++itemSelectionGeneration;
-      return appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
+      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
         if (selectionGeneration !== itemSelectionGeneration || !isCurrentWorkspace(id, hostKey)) return;
         showWorkspaceItem(item.itemType, {
           ...item,

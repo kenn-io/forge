@@ -350,9 +350,9 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
 - Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit, including "Use linked PR/issue", restores a removed target
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
-- Target visits and removals enter one application-owned queue at the original action, before link or repository resolution; the last action wins. Route-only visits refresh the catalog to avoid tracking a former route occupant
+- Target visits and removals enter one application-owned queue at the original action, before link or repository resolution; the last action wins. Route-only visits resolve current identity outside picker catalogs so hidden repositories and route reuse remain valid
   (`frontend/src/lib/api/workspace-targets.ts::WorkspaceTargetMutationsLive`).
-- Only the latest item-selection action in a live workspace view may change the sidebar or remembered selection; superseded visits still persist
+- Only the latest item-selection action in a live workspace view may change the sidebar or remembered selection; superseded visits still persist and report save failures after navigation or teardown
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::itemSelectionGeneration`).
 - Closed and merged targets stay saved but are hidden by default; unavailable targets remain visible
   (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::visibleTargets`).

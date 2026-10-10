@@ -971,6 +971,7 @@ describe("WorkspaceTerminalView", () => {
         return Response.json([
           { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
         ]);
+      if (path === "/api/v1/repo/github/acme/widget") return Response.json({ PlatformRepoID: 101 });
       if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
         resolveStarted.resolve();
         await releaseResolution.promise;
@@ -1037,6 +1038,7 @@ describe("WorkspaceTerminalView", () => {
         if (path === "/api/v1/pulls") return Response.json([]);
         if (path === "/api/v1/issues")
           return Response.json([{ repo, Number: 8, Title: "Newer issue", State: "open", Author: "maintainer" }]);
+        if (path === "/api/v1/repo/github/acme/widget") return Response.json({ PlatformRepoID: 101 });
         if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
           resolveStarted.resolve();
           await releaseResolution.promise;
@@ -1101,6 +1103,77 @@ describe("WorkspaceTerminalView", () => {
       }
     },
   );
+
+  it.each(["another link", "unmount"])("reports an accepted target save failure after %s", async (laterAction) => {
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.workspaceSidebarPreference = "item";
+    localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    onTestFinished(() => release.resolve());
+    const writes: number[] = [];
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      const repo = {
+        Platform: "github",
+        PlatformHost: "github.com",
+        PlatformRepoID: 101,
+        Owner: "acme",
+        Name: "widget",
+      };
+      if (path === "/api/v1/repos") return Response.json([repo]);
+      if (path === "/api/v1/repo/github/acme/widget") return Response.json(repo);
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7" || path === "/api/v1/repo/github/acme/widget/resolve/8")
+        return Response.json({ item_type: "issue", repo_tracked: true, number: Number(path.split("/").at(-1)) });
+      if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+        const { number } = await request.json();
+        writes.push(number);
+        if (number === 7) {
+          started.resolve();
+          await release.promise;
+          return Response.json(
+            { code: "serviceUnavailable", title: "Service Unavailable", status: 503, detail: "Worker unavailable" },
+            { status: 503 },
+          );
+        }
+        return new Response(null, { status: 204 });
+      }
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await screen.findByRole("button", { name: "Search PRs and issues" });
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await started.promise;
+    if (laterAction === "another link") {
+      link.dataset.number = "8";
+      await fireEvent.click(link);
+    } else {
+      view.unmount();
+    }
+    release.resolve();
+    await waitFor(() =>
+      expect(mocks.showFlash).toHaveBeenCalledWith("Could not save target. Open it again to retry.", {
+        tone: "danger",
+      }),
+    );
+    await waitFor(() => expect(writes).toEqual(laterAction === "another link" ? [7, 8] : [7]));
+  });
 
   it("explains workspace creation in the main pane when no workspaces exist", async () => {
     vi.stubGlobal(

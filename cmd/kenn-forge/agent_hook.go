@@ -160,8 +160,28 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 		return "", nil
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusInternalServerError && resp.StatusCode < 600 {
+		var problem struct {
+			Detail string `json:"detail"`
+			Errors []struct {
+				Message string `json:"message"`
+			} `json:"errors"`
+		}
+		detail := ""
+		if err := json.UnmarshalRead(io.LimitReader(resp.Body, 8<<10), &problem); err == nil {
+			detail = problem.Detail
+			for _, entry := range problem.Errors {
+				detail += ": " + entry.Message
+			}
+			detail = strings.TrimSpace(detail)
+			if len(detail) > 1024 {
+				detail = detail[:1024]
+			}
+		}
+		return "", fmt.Errorf("%w: %s: %s", errAgentHookResponse, resp.Status, detail)
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", fmt.Errorf("%w: %s", errAgentHookResponse, resp.Status)
+		return "", nil
 	}
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil || len(responseBody) > 1<<20 {

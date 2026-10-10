@@ -526,7 +526,7 @@ func (s *Store) readReport(path string) (Report, bool, error) {
 	defer file.Close()
 	var report Report
 	if err := json.UnmarshalRead(io.LimitReader(file, 64<<10), &report); err != nil {
-		return Report{}, false, err
+		return Report{}, false, nil
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||
 		report.CWD == "" || report.UpdatedAt.IsZero() {
@@ -534,7 +534,7 @@ func (s *Store) readReport(path string) (Report, bool, error) {
 	}
 	cwd, err := canonicalWorkspacePath(report.CWD)
 	if err != nil {
-		return Report{}, false, err
+		return Report{}, false, nil
 	}
 	report.CWD = cwd
 	return report, true, nil

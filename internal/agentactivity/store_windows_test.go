@@ -51,6 +51,21 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 	}
 }
 
+func TestStoreRemoveReturnsLegacyOpenError(t *testing.T) {
+	t.Parallel()
+	store := NewStore(t.TempDir())
+	legacy := store.legacyReportPath("claude", "chat")
+	require.NoError(t, os.WriteFile(legacy, []byte("invalid"), 0o600))
+	name, err := windows.UTF16PtrFromString(legacy)
+	require.NoError(t, err)
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, windows.CloseHandle(handle)) })
+
+	require.ErrorContains(t, store.Remove("claude", "chat", "runtime"), legacy)
+	assert.FileExists(t, legacy)
+}
+
 func lockReportForTest(t *testing.T, path string) {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)

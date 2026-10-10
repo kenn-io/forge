@@ -503,14 +503,29 @@ func TestRecordKeepsFirstCompletionAndRemovesSession(t *testing.T) {
 	assert.Equal(t, StateWorking, reports[0].State)
 }
 
-func TestStoreRemoveReturnsLegacyReadError(t *testing.T) {
+func TestStoreRemoveIgnoresLegacyDirectory(t *testing.T) {
 	t.Parallel()
 	store := NewStore(t.TempDir())
 	legacy := store.legacyReportPath("claude", "chat")
 	require.NoError(t, os.Mkdir(legacy, 0o700))
 	require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
 
-	require.Error(t, store.Remove("claude", "chat", "runtime"))
+	require.NoError(t, store.Remove("claude", "chat", "runtime"))
 	assert.DirExists(t, legacy)
 	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
+}
+
+func TestStoreRemoveIgnoresCorruptLegacyReport(t *testing.T) {
+	t.Parallel()
+	for _, content := range []string{"", "invalid", `{"state":`} {
+		t.Run(content, func(t *testing.T) {
+			store := NewStore(t.TempDir())
+			legacy := store.legacyReportPath("claude", "chat")
+			require.NoError(t, os.WriteFile(legacy, []byte(content), 0o600))
+			require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
+
+			require.NoError(t, store.Remove("claude", "chat", "runtime"))
+			assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
+		})
+	}
 }

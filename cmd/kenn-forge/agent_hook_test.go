@@ -1,43 +1,56 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/runtimelock"
 )
 
 func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(server.Close)
-	root := t.TempDir()
-	configPath := filepath.Join(root, "config.toml")
-	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(root)), 0o600))
-	lock, err := runtimelock.Acquire(root)
-	require.NoError(err)
-	t.Cleanup(func() { require.NoError(lock.Release()) })
-	require.NoError(lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: server.Listener.Addr().String()}))
-	_, err = runtimelock.EnsureAuthToken(root)
-	require.NoError(err)
-	for _, event := range []string{"SessionEnd", "SessionStart", "Stop"} {
-		err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"`+event+`","source":"startup","reason":"prompt_input_exit"}`), io.Discard)
-		if event == "SessionEnd" {
-			require.ErrorContains(err, "500")
-		} else {
-			require.NoError(err)
-		}
+	for _, status := range []int{http.StatusInternalServerError, http.StatusUnauthorized} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			require := require.New(t)
+			server, configPath, _ := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+				_, err := io.WriteString(w, `{"detail":"record agent hook activity","errors":[{"message":"remove D:\\activity\\report.json: access denied"}]}`)
+				assert.NoError(t, err)
+			}))
+			for _, event := range []string{"SessionEnd", "SessionStart", "Stop"} {
+				err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"`+event+`","source":"startup","reason":"prompt_input_exit"}`), io.Discard)
+				if event == "SessionEnd" && status >= http.StatusInternalServerError {
+					require.ErrorContains(err, "500")
+					require.ErrorContains(err, `remove D:\activity\report.json: access denied`)
+				} else {
+					require.NoError(err)
+				}
+			}
+			server.Close()
+			require.NoError(receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard))
+		})
 	}
-	server.Close()
-	require.NoError(receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard))
+}
+
+func TestAgentHookSessionEndBoundsDaemonDetail(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, body string }{
+		{"long", `{"detail":"` + strings.Repeat("x", 2000) + `"}`},
+		{"oversized", `{"detail":"` + strings.Repeat("x", 9000) + `"}`},
+		{"malformed", "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, configPath, _ := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, err := io.WriteString(w, tc.body)
+				assert.NoError(t, err)
+			}))
+			err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard)
+			require.ErrorContains(t, err, "500")
+			require.LessOrEqual(t, strings.Count(err.Error(), "x"), 1024)
+		})
+	}
 }

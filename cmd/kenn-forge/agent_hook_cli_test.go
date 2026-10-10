@@ -19,12 +19,31 @@ import (
 	"go.kenn.io/kit/agenthook"
 )
 
+func agentHookDaemonFixture(t *testing.T, handler http.Handler) (*httptest.Server, string, string) {
+	t.Helper()
+	require := require.New(t)
+	daemon := httptest.NewServer(handler)
+	t.Cleanup(daemon.Close)
+	dataDir := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(os.WriteFile(configPath, fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(dataDir)), 0o600))
+	token, err := runtimelock.EnsureAuthToken(dataDir)
+	require.NoError(err)
+	lock, err := runtimelock.Acquire(dataDir)
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(lock.Release()) })
+	require.NoError(lock.WriteMetadata(runtimelock.Metadata{
+		ListenAddr: daemon.Listener.Addr().String(), TokenPath: runtimelock.AuthTokenPath(dataDir), RequireAuth: true,
+	}))
+	return daemon, configPath, token
+}
+
 func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	var receivedPath, receivedRuntimeKey, receivedAuthorization string
 	var receivedPayload []byte
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	_, configPath, token := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
 		receivedRuntimeKey = r.Header.Get("X-Kenn-Forge-Runtime-Session-Key")
 		receivedAuthorization = r.Header.Get("Authorization")
@@ -34,24 +53,6 @@ func TestAgentHookRunRelaysLifecyclePayloadToDaemon(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, err = io.WriteString(w, `{"hook_output":{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"generated workspace context"}}}`)
 		assert.NoError(err)
-	}))
-	t.Cleanup(daemon.Close)
-	dataDir := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(os.WriteFile(
-		configPath,
-		fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(dataDir)),
-		0o600,
-	))
-	token, err := runtimelock.EnsureAuthToken(dataDir)
-	require.NoError(err)
-	lock, err := runtimelock.Acquire(dataDir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = lock.Release() })
-	require.NoError(lock.WriteMetadata(runtimelock.Metadata{
-		ListenAddr:  strings.TrimPrefix(daemon.URL, "http://"),
-		TokenPath:   runtimelock.AuthTokenPath(dataDir),
-		RequireAuth: true,
 	}))
 	t.Setenv(agentactivity.RuntimeSessionKeyEnv, "runtime-1")
 	payload := `{"session_id":"agent-1","cwd":"/tmp/worktree","hook_event_name":"SessionStart","source":"startup"}`
@@ -82,7 +83,7 @@ func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 	require := require.New(t)
 	var receivedPath string
 	var receivedPayload []byte
-	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	_, configPath, _ := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedPath = r.URL.Path
 		var err error
 		receivedPayload, err = io.ReadAll(r.Body)
@@ -90,20 +91,6 @@ func TestAgentHookRunNormalizesGeminiLifecyclePayload(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, err = io.WriteString(w, `{}`)
 		assert.NoError(err)
-	}))
-	t.Cleanup(daemon.Close)
-	dataDir := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(os.WriteFile(
-		configPath,
-		fmt.Appendf(nil, "data_dir = %q\n", filepath.ToSlash(dataDir)),
-		0o600,
-	))
-	lock, err := runtimelock.Acquire(dataDir)
-	require.NoError(err)
-	t.Cleanup(func() { _ = lock.Release() })
-	require.NoError(lock.WriteMetadata(runtimelock.Metadata{
-		ListenAddr: strings.TrimPrefix(daemon.URL, "http://"),
 	}))
 	payload := `{
   "session_id":"gemini-1",

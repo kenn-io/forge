@@ -225,7 +225,7 @@ func (s *HubProviderSource) getRepositoryDescriptor(
 		)
 	}
 	var descriptor providerplane.RepositoryDescriptor
-	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name, PlatformRepoID: optionalProviderQuery(wireRepoID(repoKey)), BitbucketRepositoryUUID: wireRepoUUID(repoKey)}})
+	httpRequest, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: optionalProviderQuery(route.Owner), Name: optionalProviderQuery(route.Name), PlatformRepoID: optionalProviderQuery(wireRepoID(repoKey)), BitbucketRepositoryUUID: wireRepoUUID(repoKey)}})
 	if err != nil {
 		return providerplane.RepositoryDescriptor{}, err
 	}
@@ -898,6 +898,29 @@ func providerSettingsRequestBody(update UpdateSettingsRequest) *generated.Provid
 		body.Sync = &generated.SyncSettingsUpdate{BudgetPerHour: new(int64(*value.BudgetPerHour))}
 	}
 	return body
+}
+
+// ObserveWorkspaceTargetRepository imports only the selected hub repository into
+// the spoke's sparse catalog, retaining the caller's stable provider identity.
+func (s *HubProviderSource) ObserveWorkspaceTargetRepository(ctx context.Context, identity platform.RepositoryIdentity) error {
+	request, err := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{
+		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
+		PlatformRepoID: optionalProviderQuery(wireRepoID(identity.Key)), BitbucketRepositoryUUID: wireRepoUUID(identity.Key),
+	}})
+	if err != nil {
+		return err
+	}
+	var descriptor providerplane.RepositoryDescriptor
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, request, &descriptor); err != nil {
+		return err
+	}
+	if err := descriptor.Validate(); err != nil {
+		return InvalidHubDescriptor(err)
+	}
+	if descriptor.Identity() != identity.Canonical() {
+		return InvalidHubDescriptor(errors.New("repository descriptor does not match selected repository"))
+	}
+	return s.ObserveRepositoryDescriptor(ctx, descriptor)
 }
 
 func (s *HubProviderSource) ReadWorkspaceTarget(ctx context.Context, repo db.Repo, kind string, number int) (workspaceapi.WorkspaceTargetMetadata, error) {

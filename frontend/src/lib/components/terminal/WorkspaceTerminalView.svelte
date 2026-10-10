@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { updateWorkspaceTarget } from "../../api/workspace-targets.js";
+  import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
     quickActionWorkspaceKey,
@@ -2311,10 +2311,17 @@
 
   function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
     if (!workspace || actionsBlocked) return;
-    if (item) {
+    const linkedNumber = itemType === "pr" ? getWorkspacePRNumber(workspace)
+      : workspace.item_type === "issue" ? workspace.item_number : null;
+    const repo = workspace.repo;
+    const target = item ?? (linkedNumber === null ? null : {
+      provider: repo.provider, platformHost: repo.platform_host, repositoryKey: repositoryKeyFromWire(repo),
+      owner: repo.owner, name: repo.name, repoPath: repo.repo_path, number: linkedNumber,
+    });
+    if (target) {
       const id = workspaceId;
       const hostKey = workspaceHostKey;
-      appRuntime.runCommand(updateWorkspaceTarget(id, hostKey, itemType, item, false).pipe(
+      appRuntime.runCommand(updateWorkspaceTarget(id, hostKey, itemType, target, false).pipe(
         Effect.tap(() => Effect.sync(() => {
           if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
         })),
@@ -2323,6 +2330,11 @@
         onFailure: () => { showFlash("Could not save target. Open it again to retry.", { tone: "danger" }); },
       });
     }
+    showWorkspaceItem(itemType, item);
+  }
+
+  function showWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
+    if (!workspace) return;
     viewedItems = { ...viewedItems, [itemType]: item };
     writeLocalStorage(
       itemSelectionStorageKey,
@@ -2338,13 +2350,26 @@
 
   function attachWorkspaceItemReferences(node: HTMLElement): (() => void) | undefined {
     if (getRoute().page !== "terminal") return;
-    return initItemRefHandler(appRuntime, (item) => selectWorkspaceItem(item.itemType, {
-      ...item,
-      platformHost: resolvedPlatformHost(item.provider, item.platformHost),
-    }), node, () => settingsStore.getConfiguredRepos().map(repo => ({
+    return initItemRefHandler(appRuntime, undefined, node, () => settingsStore.getConfiguredRepos().map(repo => ({
       provider: repo.provider,
       platformHost: repo.platform_host,
-    })));
+    })), (reference) => {
+      if (!workspace || actionsBlocked) return;
+      const id = workspaceId;
+      const hostKey = workspaceHostKey;
+      return appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
+        if (!isCurrentWorkspace(id, hostKey)) return;
+        showWorkspaceItem(item.itemType, {
+          ...item,
+          platformHost: resolvedPlatformHost(item.provider, item.platformHost),
+        });
+      }).pipe(Effect.tap(() => Effect.sync(() => {
+        if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
+      }))), {
+        operation: "track visited workspace target", safeContext: { workspaceID: id },
+        onFailure: () => { showFlash("Could not save target. Open it again to retry.", { tone: "danger" }); },
+      });
+    });
   }
 
   function getWorkspacePRNumber(ws: Workspace): number | null {

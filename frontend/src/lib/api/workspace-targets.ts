@@ -1,6 +1,10 @@
 import { Context, Effect, Layer } from "effect";
 import { makeOrderedCommandQueue, type CommandQueueClosed } from "../effect/ordered-command-queue.js";
 import type { NumberedRouteItemRef } from "../routes.js";
+import type { RoutableItemRef } from "../stores/router.svelte.js";
+import { invokeMutationCallback } from "../stores/ordered-mutations.js";
+import type { ResolvableItemReference } from "../utils/item-reference.js";
+import { resolveItemReferenceEffect } from "../utils/itemRefHandler.js";
 import { InvalidExternalPayload, type ApiProblemError, type TransientTransportError } from "./effect-errors.js";
 import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { WorkspaceTargetSelection } from "./generated/models/workspaceTargetSelection.js";
@@ -15,6 +19,15 @@ interface WorkspaceTargetUpdate {
   readonly item: NumberedRouteItemRef;
   readonly hidden: boolean;
 }
+
+interface WorkspaceTargetReferenceVisit {
+  readonly id: string;
+  readonly hostKey: string | undefined;
+  readonly reference: ResolvableItemReference;
+  readonly onResolved: (item: RoutableItemRef) => void;
+}
+
+type WorkspaceTargetCommand = WorkspaceTargetUpdate | WorkspaceTargetReferenceVisit;
 
 const persistWorkspaceTarget = Effect.fn("persistWorkspaceTarget")(function* ({
   id,
@@ -65,14 +78,39 @@ export class WorkspaceTargetMutations extends Context.Service<
   WorkspaceTargetMutations,
   {
     readonly submit: (
-      input: WorkspaceTargetUpdate,
+      input: WorkspaceTargetCommand,
     ) => Effect.Effect<void, ApiProblemError | TransientTransportError | InvalidExternalPayload | CommandQueueClosed>;
   }
 >()("kenn-forge/WorkspaceTargetMutations") {}
 
 export const WorkspaceTargetMutationsLive = Layer.effect(WorkspaceTargetMutations)(
-  makeOrderedCommandQueue("workspace target mutations", persistWorkspaceTarget),
+  makeOrderedCommandQueue(
+    "workspace target mutations",
+    Effect.fn("executeWorkspaceTargetCommand")(function* (command: WorkspaceTargetCommand) {
+      if (!("reference" in command)) return yield* persistWorkspaceTarget(command);
+      const item = yield* resolveItemReferenceEffect(command.reference);
+      if (!item) return;
+      yield* invokeMutationCallback(() => command.onResolved(item));
+      yield* persistWorkspaceTarget({
+        id: command.id,
+        hostKey: command.hostKey,
+        type: item.itemType,
+        item,
+        hidden: false,
+      });
+    }),
+  ),
 );
+
+export const visitWorkspaceTargetReference = Effect.fn("visitWorkspaceTargetReference")(function* (
+  id: string,
+  hostKey: string | undefined,
+  reference: ResolvableItemReference,
+  onResolved: (item: RoutableItemRef) => void,
+) {
+  const mutations = yield* WorkspaceTargetMutations;
+  yield* mutations.submit({ id, hostKey, reference, onResolved });
+});
 
 export const updateWorkspaceTarget = Effect.fn("updateWorkspaceTarget")(function* (
   id: string,

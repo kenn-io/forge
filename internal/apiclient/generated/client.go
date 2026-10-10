@@ -59950,8 +59950,8 @@ type RepositoryDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string `json:"$schema,omitempty"`
 	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
+	Name                    *string `json:"name,omitempty"`
+	Owner                   *string `json:"owner,omitempty"`
 	PlatformHost            string  `json:"platform_host"`
 	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
 	Provider                string  `json:"provider"`

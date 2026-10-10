@@ -50,34 +50,7 @@ func TestDevboxTargetsUseControllerMetadata(t *testing.T) {
 	require.NoError(err)
 	_, err = controllerDB.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: otherID, PlatformID: 7, Number: 7, Title: "Related change", State: "merged", URL: "https://gitlab.example.com/example-org/tools/-/merge_requests/7", CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
 	require.NoError(err)
-	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: workerDB, ExecutionWorker: config.ExecutionWorker{Enabled: true, GitHubUserID: 1234}})
-	t.Cleanup(func() { require.NoError(workerAPI.Shutdown(context.Background())) })
-	workerMux := http.NewServeMux()
-	api := humago.NewWithPrefix(workerMux, "/api/v1", activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("worker", "1")))
-	workerAPI.RegisterExecution(api)
-	workerAPI.RegisterWorker(api)
-	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !assert.Equal("Bearer fixture-bearer", r.Header.Get("Authorization")) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		workerMux.ServeHTTP(w, r)
-	}))
-	t.Cleanup(worker.Close)
-	directory := t.TempDir()
-	raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "fixture-bearer"}}})
-	require.NoError(err)
-	require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
-	connections, err := devbox.OpenConnections(directory)
-	require.NoError(err)
-	t.Cleanup(connections.Close)
-	controllerAPI := workspaceapi.New(workspaceapi.Deps{DB: controllerDB})
-	t.Cleanup(func() { require.NoError(controllerAPI.Shutdown(context.Background())) })
-	controller := &Server{db: controllerDB, workspaceAPI: controllerAPI, options: ServerOptions{Devboxes: connections}}
-	mux := http.NewServeMux()
-	api = humago.New(mux, activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("controller", "1")))
-	controllerAPI.RegisterExecution(api)
-	controller.registerDevboxAPI(api)
+	mux := newDevboxTargetsTestHandler(t, workerDB, controllerDB)
 	request := func(method, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(ctx, method, "/devboxes/compute-a/workspaces/work-a/targets", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -147,4 +120,105 @@ func TestDevboxTargetsUseControllerMetadata(t *testing.T) {
 	response = request(http.MethodPut, strings.Replace(related, `"hidden":false`, `"hidden":true`, 1))
 	require.Equal(http.StatusNoContent, response.Code, response.Body.String())
 	assert.Len(read().Targets, 1)
+}
+
+func TestDevboxTargetsRemoveWithoutControllerRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert, require := assert.New(t), require.New(t)
+	ctx := t.Context()
+	workerDB, controllerDB := dbtest.Open(t), dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "example-org", "project")
+	identity.Key = platform.RepositoryIDKey(1001)
+	repoID, err := reposeed.Seed(ctx, workerDB, identity)
+	require.NoError(err)
+	require.NoError(workerDB.InsertWorkspace(ctx, &db.Workspace{
+		ID: "work-a", RepoID: repoID, Platform: "github", PlatformHost: "github.com", RepoOwner: "example-org", RepoName: "project",
+		ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 1, WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	_, err = workerDB.AddWorkspaceTarget(ctx, db.WorkspaceTarget{
+		WorkspaceID: "work-a", RepoID: repoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		URL: "https://github.com/example-org/project/pull/7",
+	})
+	require.NoError(err)
+	controllerRepo, err := controllerDB.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", Key: identity.Key,
+	})
+	require.NoError(err)
+	require.Nil(controllerRepo)
+	mux := newDevboxTargetsTestHandler(t, workerDB, controllerDB)
+	request := func(method, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(ctx, method, "/devboxes/compute-a/workspaces/work-a/targets", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		mux.ServeHTTP(response, req)
+		return response
+	}
+	read := func() workspaceapi.WorkspaceTargetsResponse {
+		response := request(http.MethodGet, "")
+		require.Equal(http.StatusOK, response.Code, response.Body.String())
+		var targets workspaceapi.WorkspaceTargetsResponse
+		require.NoError(json.Unmarshal(response.Body.Bytes(), &targets))
+		return targets
+	}
+	initial := read()
+	require.Len(initial.Targets, 2)
+	for _, target := range initial.Targets {
+		assert.True(target.Unavailable)
+	}
+	for _, test := range []struct {
+		body string
+		want int
+	}{
+		{`{"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":1001},"type":"pr","number":7,"hidden":true}`, 1},
+		{`{"repository":{"provider":"github","platform_host":"github.com","platform_repo_id":1001},"type":"issue","number":1,"hidden":true}`, 0},
+	} {
+		response := request(http.MethodPut, test.body)
+		require.Equal(http.StatusNoContent, response.Code, response.Body.String())
+		assert.Len(read().Targets, test.want)
+	}
+	stored, err := workerDB.ListWorkspaceTargets(ctx, "work-a")
+	require.NoError(err)
+	require.Len(stored, 2)
+	for _, target := range stored {
+		assert.True(target.Hidden)
+	}
+	workspace, err := workerDB.GetWorkspace(ctx, "work-a")
+	require.NoError(err)
+	require.NotNil(workspace)
+	assert.Equal(db.WorkspaceItemTypeIssue, workspace.ItemType)
+	assert.Equal(1, workspace.ItemNumber)
+}
+
+func newDevboxTargetsTestHandler(t *testing.T, workerDB, controllerDB *db.DB) http.Handler {
+	t.Helper()
+	assert, require := assert.New(t), require.New(t)
+	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: workerDB, ExecutionWorker: config.ExecutionWorker{Enabled: true, GitHubUserID: 1234}})
+	t.Cleanup(func() { require.NoError(workerAPI.Shutdown(context.Background())) })
+	workerMux := http.NewServeMux()
+	api := humago.NewWithPrefix(workerMux, "/api/v1", activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("worker", "1")))
+	workerAPI.RegisterExecution(api)
+	workerAPI.RegisterWorker(api)
+	worker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !assert.Equal("Bearer fixture-bearer", r.Header.Get("Authorization")) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		workerMux.ServeHTTP(w, r)
+	}))
+	t.Cleanup(worker.Close)
+	directory := t.TempDir()
+	raw, err := json.Marshal([]any{map[string]any{"id": "compute-a", "profile": devbox.Profile{Assignment: devbox.Assignment{URL: worker.URL}, Token: "fixture-bearer"}}})
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(directory, "devbox-connections.json"), raw, 0o600))
+	connections, err := devbox.OpenConnections(directory)
+	require.NoError(err)
+	t.Cleanup(connections.Close)
+	controllerAPI := workspaceapi.New(workspaceapi.Deps{DB: controllerDB})
+	t.Cleanup(func() { require.NoError(controllerAPI.Shutdown(context.Background())) })
+	controller := &Server{db: controllerDB, workspaceAPI: controllerAPI, options: ServerOptions{Devboxes: connections}}
+	mux := http.NewServeMux()
+	api = humago.New(mux, activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("controller", "1")))
+	controllerAPI.RegisterExecution(api)
+	controller.registerDevboxAPI(api)
+	return mux
 }

@@ -38,6 +38,7 @@ type WorkspaceTargetMetadata struct{ URL, Title, State string }
 
 // WorkspaceTargetSource reads hub-owned metadata without changing provider state.
 type WorkspaceTargetSource interface {
+	ObserveWorkspaceTargetRepository(context.Context, platform.RepositoryIdentity) error
 	ReadWorkspaceTarget(context.Context, db.Repo, string, int) (WorkspaceTargetMetadata, error)
 }
 
@@ -82,6 +83,15 @@ func (s *Handler) ResolveWorkspaceTargetService(ctx context.Context, selection W
 	repo, err := s.db.GetRepositoryByProviderID(ctx, selection.Repository)
 	if err != nil {
 		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
+	}
+	if repo == nil && s.workspaceTargetSource != nil && !selection.Hidden {
+		if err := s.workspaceTargetSource.ObserveWorkspaceTargetRepository(ctx, selection.Repository); err != nil {
+			return db.Repo{}, WorkspaceTargetMetadata{}, err
+		}
+		repo, err = s.db.GetRepositoryByProviderID(ctx, selection.Repository)
+		if err != nil {
+			return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
+		}
 	}
 	if repo == nil {
 		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.NotFound(httpapi.CodeRepoNotFound, "target repository not found", nil)

@@ -6,8 +6,8 @@ export interface RepositoryDescriptorRequest {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   bitbucket_repository_uuid?: string;
-  name: string;
-  owner: string;
+  name?: string;
+  owner?: string;
   platform_host: string;
   platform_repo_id?: number;
   provider: string;

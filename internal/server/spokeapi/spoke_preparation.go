@@ -147,7 +147,7 @@ func (s *Handlers) ReconcileSpokePreparationProjects(
 		}
 		seen[route] = struct{}{}
 		var descriptor providerplane.RepositoryDescriptor
-		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: route.Owner, Name: route.Name}})
+		httpRequest, requestErr := generated.NewFederationGetRepositoryDescriptorRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationGetRepositoryDescriptorRequestOptions{Body: &generated.RepositoryDescriptorRequest{Provider: route.Provider, PlatformHost: route.PlatformHost, Owner: optionalProviderQuery(route.Owner), Name: optionalProviderQuery(route.Name)}})
 		if err := spokePreparationProviderJSON(ctx, client, federationauth.ScopeProviderRead, httpRequest, requestErr, &descriptor); err != nil {
 			report.HandoffErrors = append(report.HandoffErrors,
 				fmt.Sprintf("resolve project %s repository: %v", project.ID, err))

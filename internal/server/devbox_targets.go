@@ -34,13 +34,21 @@ func (s *Server) updateDevboxWorkspaceTarget(ctx context.Context, in *struct {
 	if err != nil {
 		return nil, err
 	}
-	repo, metadata, err := s.workspaceAPI.ResolveWorkspaceTargetService(ctx, in.Body)
-	if err != nil {
-		return nil, err
+	identity := in.Body.Repository
+	if !identity.Valid() {
+		return nil, httpapi.Validation("body.repository", "verified repository identity is required")
 	}
 	request := workspaceapi.WorkerWorkspaceTargetRequest{
-		Repository: httpapi.RepoRefResponse{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath},
-		Type:       in.Body.Type, Number: in.Body.Number, Hidden: in.Body.Hidden, URL: metadata.URL,
+		Repository: httpapi.RepoRefResponse{Provider: identity.Provider, PlatformHost: identity.PlatformHost, Key: identity.Key},
+		Type:       in.Body.Type, Number: in.Body.Number, Hidden: in.Body.Hidden,
+	}
+	if !in.Body.Hidden {
+		repo, metadata, err := s.workspaceAPI.ResolveWorkspaceTargetService(ctx, in.Body)
+		if err != nil {
+			return nil, err
+		}
+		request.Repository = httpapi.RepoRefResponse{Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key, Owner: repo.Owner, Name: repo.Name, RepoPath: repo.RepoPath}
+		request.URL = metadata.URL
 	}
 	raw, err := json.Marshal(request)
 	if err != nil {

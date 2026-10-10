@@ -348,9 +348,9 @@ Persisted controls must state their scope clearly.
   workspace and host, preserving the selected item's full repository reference;
   it must never change workspace ownership, branch associations, or the diff merge target
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
-- Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit restores a removed target
+- Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit, including "Use linked PR/issue", restores a removed target
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
-- Target visits and removals enter one application-owned queue before identity lookup; the last action wins. Route-only visits refresh the catalog to avoid tracking a former route occupant
+- Target visits and removals enter one application-owned queue at the original action, before link or repository resolution; the last action wins. Route-only visits refresh the catalog to avoid tracking a former route occupant
   (`frontend/src/lib/api/workspace-targets.ts::WorkspaceTargetMutationsLive`).
 - Closed and merged targets stay saved but are hidden by default; unavailable targets remain visible
   (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::visibleTargets`).

@@ -8717,8 +8717,6 @@ components:
       required:
         - provider
         - platform_host
-        - owner
-        - name
       type: object
     RepositoryIdentity:
       additionalProperties: false

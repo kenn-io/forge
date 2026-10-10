@@ -239,12 +239,12 @@ describe("WorkspaceRightSidebar", () => {
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("3"));
     await fireEvent.click(screen.getByText("Targets"));
-    await fireEvent.click(screen.getByRole("button", { name: /^PR #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Stack base PR #42 acme/other open" }));
     expect(onselect).toHaveBeenLastCalledWith(
       "pr",
       expect.objectContaining({ owner: "acme", name: "other", number: 42 }),
     );
-    await fireEvent.click(screen.getByRole("button", { name: /^Issue #42/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Follow up Issue #42 acme/other open" }));
     expect(onselect).toHaveBeenLastCalledWith("issue", expect.objectContaining({ number: 42 }));
     expect((screen.getByRole("button", { name: /Task A/ }) as HTMLButtonElement).disabled).toBe(true);
   });

@@ -39,11 +39,25 @@ type RepositoryRoute struct {
 	Name         string `json:"name"`
 }
 
-// RepositoryDescriptorRequest may bind a cached route to a selected repository.
+// RepositoryDescriptorRequest resolves a stable identity or a provider route.
 // Its JSON form flattens the key; see platform.MarshalKeyedJSON.
 type RepositoryDescriptorRequest struct {
-	RepositoryRoute
-	Key platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	Owner        string                 `json:"owner,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Key          platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+}
+
+func (r RepositoryDescriptorRequest) Validate() error {
+	if r.Owner == "" && r.Name == "" {
+		identity := platform.RepositoryIdentity{Provider: r.Provider, PlatformHost: r.PlatformHost, Key: r.Key}
+		if !identity.Valid() || identity != identity.Canonical() {
+			return errors.New("canonical repository identity is required")
+		}
+		return validateProviderHostPair(platform.Kind(r.Provider), r.PlatformHost)
+	}
+	return (RepositoryRoute{Provider: r.Provider, PlatformHost: r.PlatformHost, Owner: r.Owner, Name: r.Name}).Validate()
 }
 
 func (r RepositoryDescriptorRequest) MarshalJSON() ([]byte, error) {

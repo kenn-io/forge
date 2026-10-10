@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
 )
@@ -90,4 +92,51 @@ func TestFleetWorkspaceTargetsE2E(t *testing.T) {
 		require.Len(t, stored, 1)
 		assert.False(t, stored[0].Hidden)
 	})
+}
+
+func TestFleetWorkspaceTargetInUnobservedRepository(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert, require := assert.New(t), require.New(t)
+	fixture := newFederatedForgesFixture(t)
+	hub, spoke := fixture.Hub, fixture.NodeA
+	identity := db.GitHubRepoIdentity("github.com", "acme", "other-project")
+	identity.Key = platform.RepositoryIDKey(8675)
+	stable := identity.ProviderIdentity()
+	repoID, err := reposeed.Seed(t.Context(), hub.Database, identity)
+	require.NoError(err)
+	require.NoError(hub.Database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{CloneURL: "https://github.com/acme/other-project.git", DefaultBranch: "main"}, nil, nil))
+	require.NoError(hub.Database.SetRepoHiddenFromUI(t.Context(), repoID, true))
+	now := time.Now().UTC()
+	_, err = hub.Database.UpsertIssue(t.Context(), &db.Issue{RepoID: repoID, PlatformID: 7, Number: 7, Title: "Related issue", State: "open", URL: "https://github.com/acme/other-project/issues/7", CreatedAt: now, UpdatedAt: now})
+	require.NoError(err)
+	local, err := spoke.Database.GetRepositoryByProviderID(t.Context(), stable)
+	require.NoError(err)
+	require.Nil(local)
+	client, err := apiclient.NewWithHTTPClient(hub.HTTP.URL, fixture.HTTPClient)
+	require.NoError(err)
+	selection := generated.UpdateFleetWorkspaceTargetBody{"repository": stable, "type": "issue", "number": 7, "hidden": false}
+	response, err := client.HTTP.UpdateFleetWorkspaceTargetWithResponse(t.Context(), &generated.UpdateFleetWorkspaceTargetRequestOptions{
+		PathParams: &generated.UpdateFleetWorkspaceTargetPath{HostKey: spoke.NodeID, ID: "ws-spoke-a"}, Body: &selection,
+	}, func(_ context.Context, request *http.Request) error { localBearer(hub)(request); return nil })
+	require.NoError(err)
+	require.Equal(http.StatusNoContent, response.StatusCode, string(response.Body))
+	local, err = spoke.Database.GetRepositoryByProviderID(t.Context(), stable)
+	require.NoError(err)
+	require.NotNil(local)
+	assert.Equal(identity.Key, local.Repository.Key)
+	rows, err := spoke.Database.ListWorkspaceTargets(t.Context(), "ws-spoke-a")
+	require.NoError(err)
+	require.Len(rows, 1)
+	assert.Equal(local.Repository.ID, rows[0].RepoID)
+	_, body := fixture.browserRequest(t, http.MethodGet, hub.HTTP.URL+"/api/v1/fleet/hosts/"+spoke.NodeID+"/workspaces/ws-spoke-a/targets", "", localBearer(hub))
+	var listed workspaceapi.WorkspaceTargetsResponse
+	require.NoError(json.Unmarshal(body, &listed))
+	require.Len(listed.Targets, 2)
+	assert.Equal("Related issue", listed.Targets[0].Title)
+	assert.Equal("open", listed.Targets[0].State)
+	require.NotNil(listed.Targets[0].Repo)
+	assert.Equal(stable, listed.Targets[0].Repo.Identity())
+	item, err := spoke.Database.GetIssueByRepoIDAndNumber(t.Context(), local.Repository.ID, 7)
+	require.NoError(err)
+	assert.Nil(item, "the spoke observes the repository without replicating provider items")
 }

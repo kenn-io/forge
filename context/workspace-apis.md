@@ -311,6 +311,10 @@ embedder protocol for arbitrary host state.
   (`internal/server/workspaceapi/targets.go::Handler.ListWorkspaceTargetsService`).
 - Devbox target links and dismissals belong to the worker; provider identity and display metadata come from the controller. Tracking needs no Git admission or worker provider replicas
   (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
+- Removing a devbox target needs only its stable identity; missing controller metadata must not prevent dismissal
+  (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
+- A spoke's sparse catalog and repository picker visibility must not limit target visits; observe the selected hub repository by stable identity before saving a new target
+  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveWorkspaceTargetRepository`).
 
 
 - `item_type`: whether the workspace belongs to a `pull_request`, provider

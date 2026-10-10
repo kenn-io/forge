@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Effect } from "effect";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
 import WorkspaceTargets from "./WorkspaceTargets.svelte";
 
 let runtime: OwnedAppRuntime;
@@ -107,4 +108,68 @@ it.each([
       hidden: true,
     },
   ]);
+});
+
+it("names targets with their visible title, repository or daemon, and state", async () => {
+  const targets = [
+    ...["widgets", "tools"].map((name): WorkspaceTarget => ({
+      id: 1,
+      type: "issue",
+      number: 7,
+      state: "open",
+      title: "Fix startup",
+      source: "tracked",
+      unavailable: false,
+      url: "",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: name === "widgets" ? 101 : 202,
+        owner: "acme",
+        name,
+        repo_path: `acme/${name}`,
+      },
+    })),
+    {
+      id: 3,
+      type: "issue",
+      number: 8,
+      state: "",
+      title: "",
+      source: "tracked",
+      unavailable: true,
+      url: "https://github.com/acme/widgets/issues/8",
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 101,
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+      },
+    },
+    ...["work", "personal"].map((daemon_id): WorkspaceTarget => ({
+      id: 4,
+      type: "kata",
+      number: 0,
+      state: "open",
+      title: "",
+      source: "tracked",
+      unavailable: false,
+      url: "",
+      kata: { daemon_id, project_uid: "project-1", issue_uid: "task-1", reference: "TASK-1" },
+    })),
+  ];
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ targets, kata_available: true }));
+  const onselect = vi.fn();
+  render(WorkspaceTargets, { props: { workspaceID: "ws-1", onselect } });
+  await fireEvent.click(await screen.findByRole("button", { name: /^Targets/ }));
+  await fireEvent.click(await screen.findByRole("button", { name: "Fix startup Issue #7 acme/tools open" }));
+  expect(onselect).toHaveBeenCalledWith(targets[1]);
+  expect(screen.getByRole("button", { name: "Fix startup Issue #7 acme/widgets open" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "https://github.com/acme/widgets/issues/8 Issue #8 acme/widgets Unavailable" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Linked task TASK-1 work open" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Linked task TASK-1 personal open" })).toBeTruthy();
 });

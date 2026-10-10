@@ -94,7 +94,6 @@
             type="button"
             disabled={disabled || target.unavailable || (target.type === "kata" && (!kataAvailable || !!workspaceHostKey))}
             onclick={() => onselect(target)}
-            aria-label={`${identity} ${target.title} ${state}`}
             title={target.title}
           >
             <span class="target-icon" class:target-icon--open={!target.unavailable && target.state === "open"}

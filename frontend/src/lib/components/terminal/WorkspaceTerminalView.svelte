@@ -4408,6 +4408,8 @@
         if (launch?.leaf?.surface === "detail") {
           surfaceLayout?.promoteTab(sessionPaneKeyFor(session), { kind: "tab", leafID: launch.leaf.id });
         }
+      } else if (!isPromoted(session)) {
+        openSession(session.key);
       }
       requestSessionFocus(sessionHostKeyFor(session));
       requestRuntime({ force: true });

@@ -54,6 +54,7 @@ import MobileWorkspaceTerminal from "./MobileWorkspaceTerminal.svelte";
 import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js";
 import {
   markWorkspaceIdDeleted,
+  pendingWorkspaceLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
@@ -499,6 +500,36 @@ describe("MobileWorkspaceTerminal", () => {
     quickActionLaunches.set("ws-b", { targetKey: "chat", session });
     await view.rerender({ ...props, workspaceId: "ws-b" });
     expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
+  });
+
+  it("keeps the next workspace terminal accessible while the previous workspace launch settles", async () => {
+    const session: RuntimeSession = {
+      key: "helper-a",
+      workspace_id: "ws-a",
+      target_key: "helper",
+      label: "Helper",
+      kind: "agent",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    };
+    const launch = Promise.withResolvers<RuntimeSession>();
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(launch.promise);
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    const view = render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Starting Helper…");
+    await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, id: "ws-b" });
+    await view.rerender({ ...props, workspaceId: "ws-b" });
+    expect(await screen.findByRole("button", { name: "Open terminal composer" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
+    expect(screen.getByRole("button", { name: /^New terminal/ }).hasAttribute("disabled")).toBe(false);
+
+    launch.resolve(session);
+    await waitFor(() => expect(pendingWorkspaceLaunch("ws-a", undefined)?.phase).toBe("awaiting_session"));
+    expect(screen.getByRole("button", { name: "Open terminal composer" })).toBeTruthy();
+    expect(screen.queryByText("Starting Helper…")).toBeNull();
   });
 
   it("rechecks runtime for queued intent after returning to the same workspace", async () => {

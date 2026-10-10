@@ -761,6 +761,7 @@
     sessionSelectionExplicit = false;
     workspace = null;
     runtime = null;
+    launchingTarget = null;
     selectedSessionKey = loadMobileWorkspaceSession(activeWorkspaceId, activeHostKey);
     provisionalBaseSelection = false;
     loadError = null;

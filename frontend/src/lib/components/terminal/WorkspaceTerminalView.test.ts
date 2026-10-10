@@ -5820,6 +5820,55 @@ describe("WorkspaceTerminalView", () => {
       expect(await screen.findByRole("textbox", { name: "Message agent" })).toBeTruthy();
     });
 
+    it("activates a quick-action session discovered before its acknowledgement without moving it", async () => {
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        persistedTwoSessionWorkflowLayout(runningSession.key, reviewerSession.key),
+      );
+      const polls: Array<{ callback: () => void; delay: number | undefined }> = [];
+      capturePollingIntervals(polls);
+      const handoff = deferred<Response>();
+      const runCommand = vi.spyOn(mocks.runtime, "runCommand");
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) => {
+          if (String(input instanceof Request ? input.url : input).includes("agent-handoff")) return handoff.promise;
+          return originalFetch(input, init);
+        }),
+      );
+      mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+      const helper = await screen.findByRole("tab", { name: /Helper/ });
+      const strip = helper.closest<HTMLElement>('[role="tablist"]')!;
+      await fireEvent.click(within(strip).getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Quick actions" })).getByRole("button", { name: "Review" }),
+      );
+      const execution = runCommand.mock.results.at(-1)!.value;
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        ...runtimeWithTwoWorkflowSessions(),
+        sessions: [runningSession, reviewerSession, duplicateAgentSession],
+      });
+      await waitFor(() => expect(polls.some((poll) => poll.delay === 3000)).toBe(true));
+      polls.find((poll) => poll.delay === 3000)!.callback();
+      const discovered = await within(strip).findByRole("tab", { name: /Helper 2/ });
+      expect(helper.getAttribute("aria-selected")).toBe("true");
+      expect(discovered.getAttribute("aria-selected")).toBe("false");
+
+      handoff.resolve(
+        Response.json({
+          session: duplicateAgentSession,
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        }),
+      );
+      await execution.exit;
+      await waitFor(() => expect(discovered.getAttribute("aria-selected")).toBe("true"));
+      expect(within(strip).getByRole("tab", { name: /Helper 2/ })).toBe(discovered);
+      await waitFor(() => expect(sockets.some((socket) => socket.url.includes(duplicateAgentSession.key))).toBe(true));
+    });
+
     it("keeps a session promoted before its quick action acknowledgement", async () => {
       const polls: Array<{ callback: () => void; delay: number | undefined }> = [];
       capturePollingIntervals(polls);

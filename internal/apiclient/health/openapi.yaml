@@ -67,6 +67,7 @@ components:
             - payloadTooLarge
             - projectNotFound
             - pullNotFound
+            - rangeNotSatisfiable
             - rateLimited
             - repoNotFound
             - resyncRequired
@@ -77,6 +78,7 @@ components:
             - toolUnauthenticated
             - unauthorized
             - unsupportedCapability
+            - unsupportedMediaType
             - upstreamError
             - validationError
             - workspaceAlreadyExists

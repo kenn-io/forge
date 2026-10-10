@@ -18,6 +18,7 @@ export interface ProviderCapabilitiesResponse {
   read_issues: boolean;
   read_labels: boolean;
   read_markdown_images: boolean;
+  read_markdown_media: boolean;
   read_merge_requests: boolean;
   read_releases: boolean;
   read_repositories: boolean;

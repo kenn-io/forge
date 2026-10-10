@@ -22,6 +22,9 @@ type ProviderRouteRule struct {
 	OperationID string
 	Owner       RouteOwner
 	PeerScope   federationauth.Scope
+	// Streaming routes copy the hub response body as it arrives instead of
+	// buffering it under the proxy response limit.
+	Streaming bool
 }
 
 // This table is intentionally exhaustive. A newly registered operation must
@@ -212,6 +215,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "get-local-settings", Owner: NodeLocal},
 	{OperationID: "get-markdown-image", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-markdown-image-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-markdown-media", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead, Streaming: true},
+	{OperationID: "get-markdown-media-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead, Streaming: true},
 	{OperationID: "get-pr-reviewer-accounts", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-pr-reviewer-accounts-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "get-pr-review-draft", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},

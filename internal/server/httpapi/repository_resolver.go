@@ -138,6 +138,8 @@ func CapabilityEnabled(caps ProviderCapabilitiesResponse, capability string) boo
 		return caps.ReadLabels
 	case "read_markdown_images":
 		return caps.ReadMarkdownImages
+	case "read_markdown_media":
+		return caps.ReadMarkdownMedia
 	case "read_workflows":
 		return caps.ReadWorkflows
 	case "read_workflow_runs":
@@ -312,6 +314,7 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		ReadWorkflowRuns:            caps.ReadWorkflowRuns,
 		ReadLabels:                  caps.ReadLabels,
 		ReadMarkdownImages:          caps.ReadMarkdownImages,
+		ReadMarkdownMedia:           caps.ReadMarkdownMedia,
 		ReadAuthenticatedUser:       caps.ReadAuthenticatedUser,
 		CommentMutation:             caps.CommentMutation,
 		StateMutation:               caps.StateMutation,

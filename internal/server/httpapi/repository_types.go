@@ -18,6 +18,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadWorkflowRuns            bool     `json:"read_workflow_runs"`
 	ReadLabels                  bool     `json:"read_labels"`
 	ReadMarkdownImages          bool     `json:"read_markdown_images"`
+	ReadMarkdownMedia           bool     `json:"read_markdown_media"`
 	ReadAuthenticatedUser       bool     `json:"read_authenticated_user"`
 	CommentMutation             bool     `json:"comment_mutation"`
 	StateMutation               bool     `json:"state_mutation"`

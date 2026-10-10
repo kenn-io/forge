@@ -435,6 +435,26 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeBadRequest,
 		},
 		{
+			name:       "UnsupportedMediaType",
+			input:      &platform.Error{Code: platform.ErrCodeUnsupportedMediaType, Provider: "github", PlatformHost: "github.com"},
+			wantStatus: http.StatusUnsupportedMediaType,
+			wantCode:   CodeUnsupportedMediaType,
+			wantDetails: map[string]any{
+				"provider":     "github",
+				"platformHost": "github.com",
+			},
+		},
+		{
+			name:       "RangeNotSatisfiable",
+			input:      &platform.Error{Code: platform.ErrCodeRangeNotSatisfiable, Provider: "gitlab", PlatformHost: "gitlab.com"},
+			wantStatus: http.StatusRequestedRangeNotSatisfiable,
+			wantCode:   CodeRangeNotSatisfiable,
+			wantDetails: map[string]any{
+				"provider":     "gitlab",
+				"platformHost": "gitlab.com",
+			},
+		},
+		{
 			name:       "InvalidRepoRef",
 			input:      &platform.Error{Code: platform.ErrCodeInvalidRepoRef},
 			wantStatus: http.StatusBadRequest,

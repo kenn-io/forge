@@ -75,6 +75,7 @@
     read_releases: true,
     read_labels: true,
     read_markdown_images: false,
+    read_markdown_media: false,
     read_authenticated_user: false,
     read_ci: true,
     read_workflows: false,

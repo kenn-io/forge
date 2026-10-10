@@ -109,6 +109,13 @@ Out of scope: repository source-browser previews. GitHub's blob viewer shows
 
 Markdown without a repository keeps raw `<video>` tags as today.
 
+Gitea and Forgejo declare no markdown image or media capability, so their
+attachments load directly from the browser, exactly like their images today.
+Private Gitea and Forgejo attachments load only when the browser itself can
+reach them. Adding a credentialed media reader to the shared Gitea adapter is
+a separate change, deferred explicitly; the user's constraint scopes coverage
+to each provider's declared capabilities.
+
 ### Player
 
 - Every kept or generated `<video>`: `controls`, `preload="metadata"`, no
@@ -120,8 +127,16 @@ Markdown without a repository keeps raw `<video>` tags as today.
 
 ### Probe
 
-- Async render collects standalone GitHub attachment URLs and probes them
-  through the media route with `Range: bytes=0-0`, bounded concurrency.
+- `renderMarkdownEffect` first lexes the markdown and collects standalone
+  GitHub attachment URLs, then probes them through the media route with
+  `Range: bytes=0-0`, at most four at a time, then renders with the outcomes.
+- Each probe is an interruptible Effect: the request receives the fiber's
+  `AbortSignal`, and a finalizer cancels the response body once the headers
+  are read. A host that ignores Range answers 200 with the whole file, so
+  the body must never be read. Interrupting the render (component teardown
+  in `MarkdownHtml`) aborts its probes.
+- Only settled outcomes enter the probe cache; in-flight probes are not
+  shared between renders.
 - Outcomes:
   - 200 or 206 with an allowed video type: player, cached.
   - `415 unsupportedMediaType`: link, cached. Only this answer proves the
@@ -130,8 +145,12 @@ Markdown without a repository keeps raw `<video>` tags as today.
     not cached. Credential, quota, and availability failures say nothing
     about the asset type, so the next render probes again.
 - Probe cache: in-memory per media URL for the browser session.
-- A render with any uncached failure is removed from the rendered-HTML cache
-  after it resolves.
+- The rendered-HTML cache key includes the media outcome of each candidate
+  (video, link, or unknown), so a render after a failed probe never reuses a
+  stale result once a later probe succeeds.
+- The generated API reader (`frontend/src/lib/api/runtime.ts::orvalFetch`)
+  treats `video/*` responses as binary, like images, so the generated media
+  client returns a `Blob` instead of decoding video bytes as text.
 - Sync renders (first paint, rich-preview blocks) render links.
 
 ### Diff review thread bubbles
@@ -161,7 +180,8 @@ Markdown without a repository keeps raw `<video>` tags as today.
   route ownership table covers the new operations.
 - Frontend Vitest: provider rules, autoplay removal, GitLab image syntax,
   Gitea and Forgejo resolution, probe outcomes and caching (415 cached; 403,
-  429, and network failure probed again on the next render), diff bubble
+  429, and network failure probed again on the next render), probe abort on
+  interruption and body cancellation on a 200 answer, diff bubble
   markdown mounted through the real Pierre annotation path.
 - Real-app check: seeded app screenshots at desktop and phone width for an
   issue body video and a diff bubble video. The seeded backend has no provider

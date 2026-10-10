@@ -442,7 +442,7 @@ lint: ensure-embed-dir lint-config-check custom-gcl
 lint-check: ensure-embed-dir lint-config-check custom-gcl
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run ./...
 
-# Apply the v2 formatters (gofmt, goimports, gofumpt) to every file in place.
+# Apply the v2 formatters (gofmt, gofumpt) to every file in place.
 fmt: custom-gcl
 	$(CUSTOM_GCL) fmt ./...
 
@@ -547,7 +547,7 @@ help:
 	@echo "  lint           - Run kit shared Go lint policy (auto-fix)"
 	@echo "  lint-check     - Run kit shared Go lint policy without modifying files"
 	@echo "  lint-config    - Render .golangci.yml from kit plus the overlay"
-	@echo "  fmt            - Apply gofmt, goimports, and gofumpt"
+	@echo "  fmt            - Apply gofmt and gofumpt"
 	@echo "  fmt-check      - Check Go formatters without modifying files"
 	@echo "  nilaway        - Run NilAway against first-party Go packages"
 	@echo "  huma-route-check - Prevent non-Huma Go route registrations"

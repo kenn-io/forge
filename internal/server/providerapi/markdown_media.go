@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -60,6 +61,11 @@ func (s *Handlers) getMarkdownMediaFor(
 	reader, err := (*s.Syncer).Registry().MarkdownMediaReader(kind, host)
 	if err != nil {
 		return nil, markdownImageError(ctx, err, kind, host)
+	}
+	// A multi-range answer is a multipart body, not a video; serve the whole
+	// file as a server that ignores Range would. Browsers never ask for one.
+	if strings.Contains(byteRange, ",") {
+		byteRange = ""
 	}
 	media, err := reader.OpenMarkdownMedia(ctx, httpapi.PlatformRepoRef(repo.Repo), source, byteRange)
 	if err != nil {

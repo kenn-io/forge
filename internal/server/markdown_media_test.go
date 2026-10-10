@@ -284,3 +284,25 @@ func TestMarkdownMediaRouteSendsHeadersBeforeBodyEndsWhenCompressionAccepted(t *
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Empty(t, rec.Header().Get("Content-Encoding"))
 }
+
+func TestMarkdownMediaRouteServesWholeFileForMultiRange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	gotRange := "unset"
+	mock := &serverfake.MockGH{OpenMarkdownMediaFn: func(
+		_ context.Context, _, _, _, byteRange string,
+	) (platform.MarkdownMedia, error) {
+		gotRange = byteRange
+		return platform.MarkdownMedia{
+			Body: io.NopCloser(strings.NewReader("whole")), ContentType: "video/mp4", ContentLength: 5,
+		}, nil
+	}}
+	srv, _, _ := setupTestServerWithMock(t, mock)
+
+	rr := markdownMediaRequest(t, srv,
+		"/api/v1/repo/github/acme/widget/markdown-media?source="+url.QueryEscape(markdownMediaSource), "bytes=0-1,5-6")
+
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Empty(t, gotRange, "a multi-range request must not reach the provider")
+	assert.Empty(t, rr.Header().Get("Content-Range"))
+	assert.Equal(t, "whole", rr.Body.String())
+}

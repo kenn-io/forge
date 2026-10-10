@@ -586,8 +586,8 @@ content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
   their attachments load directly from the browser, like their images; a
   private attachment plays only when the browser can reach it.
 - Adapters accept only their own attachment URL shapes (GitHub on the platform
-  host; GitLab through the image upload parser) and forward only `Range`.
-  GitHub allows upstream `video/mp4`, `video/quicktime`, and `video/webm`;
+  host; GitLab through the image upload parser) and forward only a
+  single-range `Range`; a multi-range request is served whole. GitHub allows upstream `video/mp4`, `video/quicktime`, and `video/webm`;
   GitLab answers `application/octet-stream`, so its type comes from the
   extension. Anything else is `unsupported_media_type`
   (`platform/github/markdown_media.go::Client.OpenMarkdownMedia`,

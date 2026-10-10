@@ -615,6 +615,7 @@ type Capabilities struct {
 	ReadCI                bool
 	ReadLabels            bool
 	ReadMarkdownImages    bool
+	ReadMarkdownMedia     bool
 	ReadAuthenticatedUser bool
 	ReadNotifications     bool
 	ReadWorkflows         bool

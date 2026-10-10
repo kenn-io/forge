@@ -186,10 +186,13 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	}
 	legacy := s.legacyReportPath(agent, sessionID)
 	paths := []string{s.reportPath(agent, sessionID, runtimeSessionKey)}
-	if report, ok := s.readReport(legacy); ok && report.RuntimeSessionKey == runtimeSessionKey {
+	var errs []error
+	report, ok, err := s.readReport(legacy)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		errs = append(errs, fmt.Errorf("read activity report %s: %w", legacy, err))
+	} else if ok && report.RuntimeSessionKey == runtimeSessionKey {
 		paths = append(paths, legacy)
 	}
-	var errs []error
 	removed := false
 	for _, path := range paths {
 		err := os.Remove(path)
@@ -309,8 +312,8 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	if runtimeSessionKey == "" {
 		return nil
 	}
-	var errs []error
-	for _, report := range s.reports() {
+	reports, errs := s.scanReports()
+	for _, report := range reports {
 		if report.RuntimeSessionKey != runtimeSessionKey {
 			continue
 		}
@@ -330,9 +333,9 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
-	var errs []error
+	reports, errs := s.scanReports()
 	removed := false
-	for _, report := range s.reports() {
+	for _, report := range reports {
 		if _, ok := keep[report.RuntimeSessionKey]; ok {
 			continue
 		}
@@ -348,6 +351,36 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 		s.invalidateCache()
 	}
 	return errors.Join(errs...)
+}
+
+func (s *Store) scanReports() ([]storedReport, []error) {
+	entries, err := os.ReadDir(s.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, []error{err}
+	}
+	return s.loadReports(entries)
+}
+
+func (s *Store) loadReports(entries []os.DirEntry) ([]storedReport, []error) {
+	var reports []storedReport
+	var errs []error
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		path := filepath.Join(s.root, entry.Name())
+		report, ok, err := s.readReport(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, fmt.Errorf("read activity report %s: %w", path, err))
+		}
+		if ok {
+			reports = append(reports, storedReport{Report: report, path: path})
+		}
+	}
+	return reports, errs
 }
 
 func (s *Store) reports() []storedReport {
@@ -376,28 +409,22 @@ func (s *Store) reports() []storedReport {
 		return slices.Clone(s.cacheReports)
 	}
 
-	reports := make([]storedReport, 0, len(entries))
+	// Display paths treat unreadable reports as absent; cleanup paths surface the errors.
+	loaded, _ := s.loadReports(entries)
+	reports := make([]storedReport, 0, len(loaded))
 	cleanupPending := false
-	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
-		path := filepath.Join(s.root, entry.Name())
-		report, ok := s.readReport(path)
-		if !ok {
-			continue
-		}
+	for _, report := range loaded {
 		report.Agent = strings.ToLower(strings.TrimSpace(report.Agent))
 		if report.Agent == "" {
-			if removeErr := os.Remove(path); removeErr == nil ||
+			if removeErr := os.Remove(report.path); removeErr == nil ||
 				errors.Is(removeErr, os.ErrNotExist) {
-				delete(files, entry.Name())
+				delete(files, filepath.Base(report.path))
 			} else {
 				cleanupPending = true
 			}
 			continue
 		}
-		reports = append(reports, storedReport{Report: report, path: path})
+		reports = append(reports, report)
 	}
 	s.cacheFiles = files
 	if cleanupPending || !metadataComplete {
@@ -515,32 +542,37 @@ func (s *Store) writeReport(report Report) error {
 	return nil
 }
 
-func (s *Store) readReport(path string) (Report, bool) {
+func (s *Store) readReport(path string) (Report, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return Report{}, false
+		return Report{}, false, err
 	}
 	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 64<<10))
+	if err != nil {
+		return Report{}, false, err
+	}
 	var report Report
-	if err := json.UnmarshalRead(io.LimitReader(file, 64<<10), &report); err != nil {
-		return Report{}, false
+	if err := json.Unmarshal(data, &report); err != nil {
+		return Report{}, false, nil
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||
 		report.CWD == "" || report.UpdatedAt.IsZero() {
-		return Report{}, false
+		return Report{}, false, nil
 	}
 	cwd, err := canonicalWorkspacePath(report.CWD)
 	if err != nil {
-		return Report{}, false
+		return Report{}, false, nil
 	}
 	report.CWD = cwd
-	return report, true
+	return report, true, nil
 }
 
 // previousReport returns the newest report for one terminal, including one saved under its name from before terminals had their own.
 func (s *Store) previousReport(agent, sessionID, runtimeSessionKey string) (Report, bool) {
-	report, ok := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
-	legacy, legacyOK := s.readReport(s.legacyReportPath(agent, sessionID))
+	// Display paths treat unreadable reports as absent; cleanup paths surface the errors.
+	report, ok, _ := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
+	legacy, legacyOK, _ := s.readReport(s.legacyReportPath(agent, sessionID))
 	if legacyOK && legacy.RuntimeSessionKey == runtimeSessionKey &&
 		(!ok || legacy.UpdatedAt.After(report.UpdatedAt)) {
 		return legacy, true

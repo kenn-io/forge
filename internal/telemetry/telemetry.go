@@ -40,10 +40,6 @@ var screenFilter = posthog.AllowStringValues(screenNames...)
 
 var durationFilter = posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h")
 
-func SessionDuration(value any) (any, bool) {
-	return durationFilter(value)
-}
-
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"screen_viewed": {
 		"screen":  screenFilter,
@@ -71,6 +67,8 @@ type Client interface {
 type Reporter struct {
 	daemon  Client
 	backend Client
+	// Set when fallback allowlist construction fails; Report returns it to avoid accepting unvalidated events.
+	err error
 }
 
 type Options struct {
@@ -112,7 +110,7 @@ func NewReporter(opts Options) (*Reporter, error) {
 // newReporter is NewReporter without the go test guard.
 func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	if !enabledInBuild() || !EnabledFromEnv() {
-		return DisabledReporter(), nil
+		return newAllowlistReporter()
 	}
 	if opts.Database == nil {
 		return nil, errors.New("telemetry database is required")
@@ -138,18 +136,9 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 	daemonOpts := base
 	daemonOpts.Source = "daemon"
-	daemon, err := newKitReporter(daemonOpts, kitAllowedEvents("daemon")...)
-	if err != nil {
-		return nil, err
-	}
 	backendOpts := base
 	backendOpts.Source = "backend"
-	backendOptions := append(kitAllowedEvents("backend"), posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
-	backend, err := newKitReporter(backendOpts, backendOptions...)
-	if err != nil {
-		return nil, errors.Join(err, daemon.Close())
-	}
-	return &Reporter{daemon: daemon, backend: backend}, nil
+	return newReporterClients(daemonOpts, backendOpts, posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
 }
 
 // kitAllowedEvents builds kit's allowlist for one source from allowedEvents.
@@ -172,15 +161,40 @@ func kitAllowedEvents(source string) []posthog.Option {
 	return options
 }
 
+func newAllowlistReporter() (*Reporter, error) {
+	opts := posthog.Options{EnvPrefix: envPrefix}
+	return newReporterClients(opts, opts)
+}
+
+func newReporterClients(daemonOpts, backendOpts posthog.Options, backendOptions ...posthog.Option) (*Reporter, error) {
+	daemon, err := newKitReporter(daemonOpts, kitAllowedEvents("daemon")...)
+	if err != nil {
+		return nil, err
+	}
+	backendOptions = append(kitAllowedEvents("backend"), backendOptions...)
+	backend, err := newKitReporter(backendOpts, backendOptions...)
+	if err != nil {
+		return nil, errors.Join(err, daemon.Close())
+	}
+	return &Reporter{daemon: daemon, backend: backend}, nil
+}
+
 func DisabledReporter() *Reporter {
 	return &Reporter{}
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
-	reporter, err := NewReporter(opts)
+	return reporterOrDisabled(NewReporter(opts))
+}
+
+func reporterOrDisabled(reporter *Reporter, err error) *Reporter {
 	if err != nil {
 		slog.Warn("telemetry disabled", "err", err)
-		return DisabledReporter()
+		posthog.DisableProcess()
+		reporter, err = newAllowlistReporter()
+		if err != nil {
+			return &Reporter{err: err}
+		}
 	}
 	return reporter
 }
@@ -200,8 +214,11 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 }
 
 func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
-	if !r.Enabled() {
+	if r == nil {
 		return posthog.StatusDisabled, nil
+	}
+	if r.err != nil {
+		return "", r.err
 	}
 
 	event = strings.TrimSpace(event)

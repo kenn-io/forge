@@ -641,6 +641,7 @@ Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `30m_to_2h`, or `over_2h`.
 Tabs opened before an upgrade may report `over_30m`, meaning more than 30 minutes
 without finer detail. Forge accepts that bucket and rejects missing or unknown durations.
+With telemetry off, Forge still rejects any UI event whose properties Kit's allowlist rejects.
 Each duration sums visible time across tab switches and excludes hidden time.
 A hidden tab that the browser or phone closes without notice reports nothing.
 Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,

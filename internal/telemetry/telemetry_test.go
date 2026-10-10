@@ -45,12 +45,14 @@ func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
 
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	wasDisabled := posthog.ProcessDisabled()
 	database := dbtest.Open(t)
 
 	reporter, err := NewReporter(Options{Database: database})
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
+	assert.Equal(wasDisabled, posthog.ProcessDisabled())
 	_, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
 	require.NoError(err)
 	assert.False(found)
@@ -126,11 +128,16 @@ func TestReporterCloseClosesBothClients(t *testing.T) {
 
 func TestDisabledReporterIsNoOp(t *testing.T) {
 	assert := assert.New(t)
+	wasDisabled := posthog.ProcessDisabled()
 
 	for _, reporter := range []*Reporter{nil, DisabledReporter()} {
 		assert.False(reporter.Enabled())
-		assert.NoError(reporter.Capture("server_started", nil))
-		assert.NoError(reporter.Close())
+		require.NoError(t, reporter.Capture("app_opened", nil))
+		status, err := reporter.Report(t.Context(), "session_ended", nil)
+		require.NoError(t, err)
+		assert.Equal(posthog.StatusDisabled, status)
+		require.NoError(t, reporter.Close())
+		assert.Equal(wasDisabled, posthog.ProcessDisabled())
 	}
 }
 

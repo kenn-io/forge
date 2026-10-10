@@ -89,11 +89,18 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		_, valid := screenFilter(invalid)
 		assert.False(valid)
 	}
-	for _, duration := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
-		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
+	for _, bucket := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
+		status, err := backend.Report(t.Context(), "session_ended", map[string]any{"duration_bucket": bucket})
 		require.NoError(err)
-		assert.Equal(duration, properties["duration_bucket"])
+		assert.Equal(posthog.StatusDisabled, status)
 	}
+	for _, properties := range []map[string]any{{}, {"duration_bucket": "unknown"}, {"duration_bucket": nil}, {"duration_bucket": 7}} {
+		_, err := backend.Report(t.Context(), "session_ended", properties)
+		require.ErrorIs(err, posthog.ErrInvalidProperty)
+	}
+	status, err := backend.Report(t.Context(), "session_ended", map[string]any{" duration_bucket ": "under_1m"})
+	require.NoError(err)
+	assert.Equal(posthog.StatusDisabled, status)
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",
 		"distinct_id":             "spoofed",

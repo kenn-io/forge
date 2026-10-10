@@ -43,17 +43,8 @@ func (s *Handlers) CaptureTelemetryEvent(
 			httpapi.CodeBadRequest, "unsupported telemetry event", nil,
 		)
 	}
-	if event == "session_ended" {
-		if _, valid := telemetrypkg.SessionDuration(input.Body.Properties["duration_bucket"]); !valid {
-			return nil, httpapi.BadRequest(httpapi.CodeBadRequest, "unsupported or missing session duration", nil)
-		}
-	}
-
-	if s.Telemetry == nil || !s.Telemetry.Enabled() {
-		return &telemetryEventOutput{
-			Status: 202,
-			Body:   TelemetryEventResponse{Status: "disabled"},
-		}, nil
+	if s.Telemetry == nil {
+		return &telemetryEventOutput{Status: 202, Body: TelemetryEventResponse{Status: string(posthog.StatusDisabled)}}, nil
 	}
 
 	status, err := s.Telemetry.Report(ctx, event, input.Body.Properties)

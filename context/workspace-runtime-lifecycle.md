@@ -130,6 +130,7 @@ Rules:
   (`internal/agentactivity/store.go::Store.reportPath`).
 - SessionEnd and Remove clear only the calling terminal's report
   (`internal/agentactivity/store.go::Store.Remove`).
+- Unreadable activity reports have unknown owners; label their errors as file scans rather than removals of the requested session (`internal/agentactivity/store.go::Store.loadReports`).
 - Agents started before an upgrade can keep writing the old report filename;
   retain read and cleanup support until those sessions end
   (`internal/agentactivity/store.go::Store.legacyReportPath`).

@@ -114,6 +114,14 @@ type markdownImageClient interface {
 	) (platform.MarkdownImage, error)
 }
 
+// markdownMediaClient streams video attachments with the credential that owns
+// the repository, for the same reason as markdownImageClient.
+type markdownMediaClient interface {
+	OpenMarkdownMedia(
+		ctx context.Context, owner, repo, sourceURL, byteRange string,
+	) (platform.MarkdownMedia, error)
+}
+
 type conditionalPullRequestGetter interface {
 	GetPullRequestIfChanged(
 		ctx context.Context,

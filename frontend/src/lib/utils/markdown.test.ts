@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vite-plus/test";
+import { Effect } from "effect";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
-import { renderMarkdown, renderMarkdownBlocks, renderMarkdownSync } from "./markdown.js";
+import {
+  githubAttachmentParagraphSources,
+  renderMarkdown,
+  renderMarkdownBlocks,
+  renderMarkdownEffect,
+  renderMarkdownSync,
+  type RepoContext,
+} from "./markdown.js";
 
 describe("renderMarkdown task lists", () => {
   it("proxies private GitHub attachment images through the repo-scoped API", async () => {
@@ -563,5 +571,281 @@ describe("renderMarkdown line breaks", () => {
     expect(soft).not.toContain("<br>");
     expect(renderMarkdownSync(raw)).toContain("<br>");
     expect(renderMarkdownSync(raw, undefined, { collapseSingleLineBreaks: true })).not.toContain("<br>");
+  });
+});
+
+describe("markdown video", () => {
+  const githubRepo: RepoContext = {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "acme",
+    name: "widgets",
+    repoPath: "acme/widgets",
+  };
+  const gitlabRepo: RepoContext = {
+    provider: "gitlab",
+    platformHost: "gitlab.com",
+    owner: "group",
+    name: "project",
+    repoPath: "group/project",
+  };
+  const attachment = "https://github.com/user-attachments/assets/a1";
+  const githubMediaSrc = (source: string) =>
+    `src="/api/v1/repo/github/acme/widgets/markdown-media?source=${encodeURIComponent(source)}"`;
+
+  function videos(html: string): HTMLVideoElement[] {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return [...container.querySelectorAll("video")];
+  }
+
+  it("keeps a raw GitHub attachment video as a proxied player without autoplay", () => {
+    const html = renderMarkdownSync(`<video src="${attachment}" autoplay></video>`, githubRepo);
+
+    const [video, ...rest] = videos(html);
+    expect(rest).toHaveLength(0);
+    expect(video?.classList.contains("markdown-video")).toBe(true);
+    expect(video?.hasAttribute("controls")).toBe(true);
+    expect(video?.getAttribute("preload")).toBe("metadata");
+    expect(video?.hasAttribute("autoplay")).toBe(false);
+    expect(html).toContain(githubMediaSrc(attachment));
+  });
+
+  it("keeps a raw GitHub video whose source child is an attachment", () => {
+    const html = renderMarkdownSync(`<video controls><source src="${attachment}"></video>`, githubRepo);
+
+    expect(videos(html)).toHaveLength(1);
+    expect(html).toContain(githubMediaSrc(attachment));
+  });
+
+  it("drops only a raw GitHub video from another host", () => {
+    const html = renderMarkdownSync(
+      `<p>before</p>\n<video src="https://cdn.example.com/x.mp4"></video>\n<p>after</p>`,
+      githubRepo,
+    );
+
+    expect(videos(html)).toHaveLength(0);
+    expect(html).toContain("<p>before</p>");
+    expect(html).toContain("<p>after</p>");
+    expect(html).not.toContain("cdn.example.com");
+  });
+
+  it("plays a standalone GitHub attachment link once the probe says it is a video", () => {
+    const html = renderMarkdownSync(`Intro\n\n${attachment}\n\nOutro`, githubRepo, {
+      mediaOutcomes: new Map([[attachment, "video"]]),
+    });
+
+    expect(videos(html)).toHaveLength(1);
+    expect(html).toContain(githubMediaSrc(attachment));
+    expect(html).toContain("Intro");
+    expect(html).toContain("Outro");
+  });
+
+  it.each([
+    ["no probe result", undefined],
+    ["a non-video probe result", "link" as const],
+    ["an unknown probe result", "unknown" as const],
+  ])("renders a standalone GitHub attachment as a link with %s", (_label, outcome) => {
+    const html = renderMarkdownSync(attachment, githubRepo, {
+      mediaOutcomes: outcome ? new Map([[attachment, outcome]]) : undefined,
+    });
+
+    expect(videos(html)).toHaveLength(0);
+    expect(html).toContain(`<a href="${attachment}"`);
+  });
+
+  it.each([
+    ["after text on the previous line", `text\n${attachment}`],
+    ["in a list item", `- ${attachment}\n- more`],
+    ["in a quoted paragraph with more text", `> ${attachment}\n> more`],
+    ["as labelled link text", `[demo](${attachment})`],
+  ])("keeps an attachment link %s", (_label, markdown) => {
+    const html = renderMarkdownSync(markdown, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
+
+    expect(videos(html)).toHaveLength(0);
+    expect(html).toContain(`href="${attachment}"`);
+  });
+
+  it.each([
+    ["alone in a quoted paragraph", `> ${attachment}`],
+    ["alone in a loose list item paragraph", `- ${attachment}\n\n- more`],
+  ])("plays an attachment %s", (_label, markdown) => {
+    const html = renderMarkdownSync(markdown, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
+
+    expect(videos(html)).toHaveLength(1);
+  });
+
+  it("lists only standalone attachment paragraphs as probe candidates", () => {
+    const other = "https://github.com/user-attachments/assets/b2";
+    const ownRepoAsset = "https://github.com/acme/widgets/assets/12/0f8e1a52-3c55-4d39-8a43-7c1f0b5d9e21";
+    const foreignRepoAsset = "https://github.com/other/repo/assets/12/0f8e1a52-3c55-4d39-8a43-7c1f0b5d9e21";
+
+    expect(
+      githubAttachmentParagraphSources(
+        `${attachment}\n\ntext ${other}\n\n${ownRepoAsset}\n\n${foreignRepoAsset}`,
+        githubRepo,
+      ),
+    ).toEqual([attachment, ownRepoAsset]);
+  });
+
+  it("plays GitLab image syntax that names a video upload", () => {
+    const upload = "https://gitlab.com/group/project/uploads/abc/DEMO.MOV";
+    const html = renderMarkdownSync("![demo](/uploads/abc/DEMO.MOV)", gitlabRepo);
+
+    expect(videos(html)).toHaveLength(1);
+    expect(html).toContain(
+      `src="/api/v1/repo/gitlab/group/project/markdown-media?source=${encodeURIComponent(upload)}"`,
+    );
+    expect(html).not.toContain("<img");
+  });
+
+  it("plays a root-relative GitLab project-ID video upload through the media route", () => {
+    const upload = "https://gitlab.com/-/project/42/uploads/abc/demo.mp4";
+    const html = renderMarkdownSync("![demo](/-/project/42/uploads/abc/demo.mp4)", gitlabRepo);
+
+    expect(videos(html)[0]?.getAttribute("src")).toBe(
+      `/api/v1/repo/gitlab/group/project/markdown-media?source=${encodeURIComponent(upload)}`,
+    );
+  });
+
+  it("proxies a root-relative GitLab project-ID image upload", () => {
+    const upload = "https://gitlab.com/-/project/42/uploads/abc/diagram.png";
+    const html = renderMarkdownSync("![d](/-/project/42/uploads/abc/diagram.png)", gitlabRepo);
+
+    expect(html).toContain(
+      `src="/api/v1/repo/gitlab/group/project/markdown-image?source=${encodeURIComponent(upload)}"`,
+    );
+  });
+
+  it("keeps GitLab image syntax for non-video uploads as an image", () => {
+    const html = renderMarkdownSync("![d](/uploads/abc/diagram.png)", gitlabRepo);
+
+    expect(videos(html)).toHaveLength(0);
+    expect(html).toContain("<img");
+  });
+
+  it("removes raw GitLab video tags", () => {
+    const html = renderMarkdownSync(
+      '<video src="https://gitlab.com/group/project/uploads/abc/demo.mp4"></video>',
+      gitlabRepo,
+    );
+
+    expect(videos(html)).toHaveLength(0);
+  });
+
+  it("resolves a Gitea repository attachment against the repository", () => {
+    const html = renderMarkdownSync('<video src="attachments/u1" controls></video>', {
+      provider: "gitea",
+      platformHost: "gitea.example.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(videos(html)[0]?.getAttribute("src")).toBe("https://gitea.example.com/acme/widgets/attachments/u1");
+  });
+
+  it.each([
+    ["the configured host", "codeberg.example", "https://codeberg.example/attachments/u1"],
+    ["the provider default host", undefined, "https://codeberg.org/attachments/u1"],
+  ])("resolves a Forgejo host attachment against %s", (_label, platformHost, expected) => {
+    const html = renderMarkdownSync('<video src="/attachments/u1" controls></video>', {
+      provider: "forgejo",
+      platformHost,
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(videos(html)[0]?.getAttribute("src")).toBe(expected);
+  });
+
+  it("removes raw Bitbucket video tags", () => {
+    const html = renderMarkdownSync('<video src="https://bitbucket.org/x.mp4"></video>', {
+      provider: "bitbucket",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+    });
+
+    expect(videos(html)).toHaveLength(0);
+  });
+
+  it("keeps raw video without a repository but never autoplays it", () => {
+    const html = renderMarkdownSync('<video src="https://cdn.example.com/x.mp4" autoplay loop></video>');
+
+    const [video] = videos(html);
+    expect(video?.getAttribute("src")).toBe("https://cdn.example.com/x.mp4");
+    expect(video?.hasAttribute("autoplay")).toBe(false);
+    expect(video?.hasAttribute("controls")).toBe(true);
+  });
+
+  it("treats a forged player marker as raw markup", () => {
+    const html = renderMarkdownSync(
+      '<video data-kenn-forge-media="guess" src="https://cdn.example.com/x.mp4"></video>',
+      githubRepo,
+    );
+
+    expect(videos(html)).toHaveLength(0);
+    expect(html).not.toContain("data-kenn-forge-media");
+  });
+
+  it("probes a standalone attachment and renders the confirmed video as a player", async () => {
+    const source = "https://github.com/user-attachments/assets/effect-render-probe";
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        requested.push(new URL(request.url).searchParams.get("source") ?? "");
+        return new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } });
+      }),
+    );
+    try {
+      const html = await Effect.runPromise(renderMarkdownEffect(`Clip:\n\n${source}`, githubRepo));
+
+      expect(requested).toEqual([source]);
+      expect(videos(html)).toHaveLength(1);
+      expect(html).toContain(githubMediaSrc(source));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("renders an already confirmed video as a player on the first synchronous paint", async () => {
+    const source = "https://github.com/user-attachments/assets/sync-render-settled";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } })),
+    );
+    try {
+      expect(videos(renderMarkdownSync(source, githubRepo))).toHaveLength(0);
+      await Effect.runPromise(renderMarkdownEffect(source, githubRepo));
+
+      const html = renderMarkdownSync(source, githubRepo);
+
+      expect(videos(html)).toHaveLength(1);
+      expect(html).toContain(githubMediaSrc(source));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not reuse a cached link once a later probe confirms the video", async () => {
+    const source = "https://github.com/user-attachments/assets/cache-key-check";
+    const markdown = `Clip:\n\n${source}`;
+
+    const before = await renderMarkdown(markdown, githubRepo, { mediaOutcomes: new Map([[source, "unknown"]]) });
+    const after = await renderMarkdown(markdown, githubRepo, { mediaOutcomes: new Map([[source, "video"]]) });
+
+    expect(videos(before)).toHaveLength(0);
+    expect(videos(after)).toHaveLength(1);
+  });
+
+  it("never leaks the player marker into output", () => {
+    const html = renderMarkdownSync(attachment, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
+
+    expect(videos(html)).toHaveLength(1);
+    expect(html).not.toContain("data-kenn-forge-media");
   });
 });

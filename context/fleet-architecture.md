@@ -311,6 +311,14 @@ change-driven and idle-cheap:
   rebuilding local activity and authors; provider markdown images remain
   hub-owned (`internal/server/activityapi/huma_routes.go::Handlers.overlayLocalActivityWorkspaces`,
   `internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
+- Provider routes marked `Streaming` (markdown video) reach the hub over the
+  provider-plane client with no whole-request timeout and copy the body as it
+  arrives; every other provider route keeps the buffered response cap. Video
+  plays for minutes, so a whole-request bound or a 32 MiB buffer would cut it
+  off. The spoke copies it with the same flush, abort, and shutdown rules as
+  the local media route
+  (`internal/server/routepolicy/provider_proxy.go::ProviderProxy.ServeHTTP`,
+  `internal/providerplane/client.go::hubClient.DoStream`).
 - A resolved specification is bound to the exact request and carries stable
   repository identity, base clone/default-branch facts, PR head-repository
   semantics, and source visibility. Stable identity permits owner/name refresh

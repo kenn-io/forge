@@ -70,6 +70,7 @@
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
+  import { initMarkdownVideoFallback } from "./lib/utils/markdown-video-fallback.js";
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -456,6 +457,7 @@
         platformHost: repo.platform_host,
       }))
     );
+    const cleanupVideoFallback = initMarkdownVideoFallback(document);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
@@ -470,6 +472,7 @@
       cleanupTheme();
       cleanupContainer();
       cleanupItemRefs();
+      cleanupVideoFallback();
     };
   }
 

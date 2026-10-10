@@ -1,6 +1,7 @@
 package routepolicy
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -15,12 +16,15 @@ const providerProxyResponseBodyLimit = 32 << 20
 
 type ProviderProxy struct {
 	client            providerplane.Client
+	streamStop        context.Context
 	ResponseBodyLimit int64
 }
 
-func NewProviderProxy(client providerplane.Client) *ProviderProxy {
+// NewProviderProxy forwards provider routes to the hub. Streaming responses
+// end when streamStop does, so server shutdown does not wait on a long video.
+func NewProviderProxy(client providerplane.Client, streamStop context.Context) *ProviderProxy {
 	return &ProviderProxy{
-		client: client, ResponseBodyLimit: providerProxyResponseBodyLimit,
+		client: client, streamStop: streamStop, ResponseBodyLimit: providerProxyResponseBodyLimit,
 	}
 }
 
@@ -35,7 +39,11 @@ func (p *ProviderProxy) ServeHTTP(
 		))
 		return
 	}
-	response, err := p.client.Do(r.Context(), rule.PeerScope, r)
+	send := p.client.Do
+	if streaming, ok := p.client.(providerplane.StreamingClient); ok && rule.Streaming {
+		send = streaming.DoStream
+	}
+	response, err := send(r.Context(), rule.PeerScope, r)
 	if err != nil {
 		if errors.Is(err, providerplane.ErrRequestBodyTooLarge) {
 			WriteProblemResponse(w, httpapi.NewProblem(
@@ -61,6 +69,13 @@ func (p *ProviderProxy) ServeHTTP(
 	}
 	defer response.Body.Close()
 
+	if rule.Streaming {
+		// Media can be far larger than the buffered limit.
+		copyProviderResponseHeaders(w.Header(), response.Header)
+		w.WriteHeader(response.StatusCode)
+		httpapi.CopyStream(p.streamStop, w, response.Body)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, p.ResponseBodyLimit+1))
 	if err != nil || int64(len(body)) > p.ResponseBodyLimit {
 		if rule.PeerScope == federationauth.ScopeProviderWrite {

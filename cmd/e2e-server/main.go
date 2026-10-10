@@ -112,6 +112,10 @@ func main() {
 		"server-info-file", "",
 		"path to write discovered server port info as JSON",
 	)
+	markdownVideo := flag.String(
+		"markdown-video", "",
+		"serve this local clip as a synthetic GitHub video attachment",
+	)
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(
@@ -133,6 +137,7 @@ func main() {
 			*visibleImportedModes,
 			*providerCollision,
 			*scenario,
+			*markdownVideo,
 		)
 	}
 	stop()
@@ -1286,6 +1291,7 @@ type appOptions struct {
 	preferPtyOwner       bool
 	nodeID               string
 	federation           *e2eFederationRuntime
+	markdownVideo        string
 }
 
 type e2eFederationRuntime struct {
@@ -1905,7 +1911,17 @@ func buildAppState(
 		}
 	}
 
-	workflowClient := newE2EWorkflowClient(fc)
+	baseWorkflowClient := newE2EWorkflowClient(fc)
+	var workflowClient ghclient.Client = baseWorkflowClient
+	if opts.markdownVideo != "" {
+		if err := seedMarkdownVideoFixture(ctx, database, fc, diffRepo.HeadSHA); err != nil {
+			return nil, err
+		}
+		workflowClient = &e2eMarkdownVideoClient{
+			e2eWorkflowClient: baseWorkflowClient,
+			path:              opts.markdownVideo,
+		}
+	}
 	fixtureClients := map[string]ghclient.Client{
 		"github.com":        workflowClient,
 		defaultPlatformHost: workflowClient,
@@ -3798,6 +3814,7 @@ func run(
 	visibleImportedModes bool,
 	providerCollision bool,
 	scenario string,
+	markdownVideo string,
 ) error {
 	assets, err := web.Assets()
 	if err != nil {
@@ -3811,6 +3828,7 @@ func run(
 		visibleImportedModes: visibleImportedModes,
 		providerCollision:    providerCollision,
 		nodeID:               e2eStandaloneNodeID,
+		markdownVideo:        markdownVideo,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)

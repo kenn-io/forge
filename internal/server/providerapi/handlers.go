@@ -21,6 +21,7 @@ type Handlers struct {
 	Now                                     *func() time.Time
 	ProviderDescriptorBeforeSnapshotForTest *func()
 	RepoResolver                            *httpapi.RepositoryResolver
+	StreamStop                              context.Context
 	Syncer                                  **ghclient.Syncer
 	WorkspaceAPI                            **workspaceapi.Handler
 	EnqueueIssueSync                        func(ctx context.Context, input *itemapi.IssueRepoNumberInput) (*itemapi.AcceptedOutput, error)

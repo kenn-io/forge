@@ -41,6 +41,7 @@ function pullDetail(): PullDetail {
     workflow_dispatch: true,
     read_labels: true,
     read_markdown_images: true,
+    read_markdown_media: true,
     read_authenticated_user: true,
     comment_mutation: false,
     state_mutation: true,

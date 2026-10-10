@@ -108,6 +108,19 @@ func (r *Registry) MarkdownImageReader(kind Kind, host string) (MarkdownImageRea
 	return reader, nil
 }
 
+func (r *Registry) MarkdownMediaReader(kind Kind, host string) (MarkdownMediaReader, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, ok := provider.(MarkdownMediaReader)
+	if !ok || !provider.Capabilities().ReadMarkdownMedia {
+		return nil, UnsupportedCapability(kind, host, "read_markdown_media")
+	}
+	return reader, nil
+}
+
 func (r *Registry) MergeRequestReader(kind Kind, host string) (MergeRequestReader, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

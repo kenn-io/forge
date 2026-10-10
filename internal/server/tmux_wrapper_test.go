@@ -640,7 +640,7 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 		}, nil
 	})
 	srv.providerSource = &spokeapi.HubProviderSource{Client: providerClient}
-	srv.providerProxy = routepolicy.NewProviderProxy(providerClient)
+	srv.providerProxy = routepolicy.NewProviderProxy(providerClient, t.Context())
 	srv.providerRouteSpoke = true
 
 	since := time.Now().UTC().Format(time.RFC3339Nano)

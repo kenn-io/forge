@@ -265,6 +265,11 @@ type Server struct {
 	// (*conn).serve finishes before tests tear down dependencies.
 	connWG sync.WaitGroup
 
+	// streamCtx ends markdown media streams when shutdown starts; a video
+	// can play for far longer than any shutdown deadline.
+	streamCtx    context.Context
+	streamCancel context.CancelFunc
+
 	// workspaceDependents tracks Fleet and repository-browser loops started
 	// after Workspace. Root shutdown drains this group before stopping the
 	// Workspace domain they consume.
@@ -360,6 +365,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// client disconnect, hanging the shutdown until ctx expires.
 	if first && s.hub != nil {
 		s.hub.Close()
+	}
+	if first {
+		s.streamCancel()
 	}
 	// Agent handoffs outlive their HTTP requests on purpose; cancel them
 	// here so the HTTP drain below does not wait on a handoff that only the
@@ -474,6 +482,7 @@ func newServer(
 	mux := http.NewServeMux()
 
 	bgBaseCtx, bgCancel := context.WithCancel(context.Background())
+	streamCtx, streamCancel := context.WithCancel(context.Background())
 	bgDeadline := &streamapi.ShutdownDeadline{}
 	hostOpts := streamapi.ResolveHostCheckOptions(
 		cfg,
@@ -537,6 +546,8 @@ func newServer(
 			DeadlineValue: bgDeadline,
 		},
 		bgCancel:                bgCancel,
+		streamCtx:               streamCtx,
+		streamCancel:            streamCancel,
 		bgDeadline:              bgDeadline,
 		workspaceDependentsDone: make(chan struct{}),
 	}
@@ -581,7 +592,7 @@ func newServer(
 				slog.Error("configure hub provider client", "err", err)
 			} else {
 				s.providerSource.Client = client
-				s.providerProxy = routepolicy.NewProviderProxy(client)
+				s.providerProxy = routepolicy.NewProviderProxy(client, s.streamCtx)
 				events, eventsErr := providerplane.NewEventClient(providerplane.EventClientOptions{
 					Client:              client,
 					OnEvent:             s.syncevents.ReceiveHubEvent,

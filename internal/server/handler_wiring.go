@@ -113,6 +113,7 @@ func (s *Server) wireHandlers() {
 		Now:                                     &s.now,
 		ProviderDescriptorBeforeSnapshotForTest: &s.providerDescriptorBeforeSnapshotForTest,
 		RepoResolver:                            s.repoResolver,
+		StreamStop:                              s.streamCtx,
 		Syncer:                                  &s.syncer,
 		WorkspaceAPI:                            &s.workspaceAPI,
 	}

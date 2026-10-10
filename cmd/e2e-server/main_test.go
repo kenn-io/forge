@@ -745,7 +745,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
@@ -842,7 +842,7 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
 	}()
 
 	info := waitForServerInfo(t, serverInfoFile, done)
@@ -877,7 +877,7 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -985,7 +985,7 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
 	}()
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 
@@ -1072,7 +1072,7 @@ func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -1154,4 +1154,82 @@ func doHTTP(t *testing.T, method, rawURL string, body io.Reader) *http.Response 
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	require.NoError(t, err)
 	return resp
+}
+
+func TestMarkdownVideoFixtureServesWebMClipAsWebM(t *testing.T) {
+	assets, err := web.Assets()
+	require.NoError(t, err)
+	clipPath := filepath.Join(t.TempDir(), "demo.webm")
+	require.NoError(t, os.WriteFile(clipPath, []byte("webm"), 0o600))
+	state, err := buildAppState(t.Context(), assets, appOptions{
+		roborevEndpoint: defaultRoborevEndpoint,
+		markdownVideo:   clipPath,
+	})
+	require.NoError(t, err)
+	t.Cleanup(state.close)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"http://127.0.0.1/api/v1/repo/github/acme/widgets/markdown-media?source="+
+			url.QueryEscape("https://github.com/user-attachments/assets/e2e-demo-video"), nil)
+	recorder := httptest.NewRecorder()
+	state.handler.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	assert.Equal(t, "video/webm", recorder.Header().Get("Content-Type"))
+}
+
+func TestMarkdownVideoFixtureServesRanges(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	assets, err := web.Assets()
+	require.NoError(err)
+	clip := make([]byte, 100)
+	for i := range clip {
+		clip[i] = byte(i)
+	}
+	clipPath := filepath.Join(t.TempDir(), "demo.mp4")
+	require.NoError(os.WriteFile(clipPath, clip, 0o600))
+
+	state, err := buildAppState(t.Context(), assets, appOptions{
+		roborevEndpoint: defaultRoborevEndpoint,
+		markdownVideo:   clipPath,
+	})
+	require.NoError(err)
+	t.Cleanup(state.close)
+
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+		"http://127.0.0.1/api/v1/repo/github/acme/widgets/markdown-media?source="+
+			url.QueryEscape("https://github.com/user-attachments/assets/e2e-demo-video"), nil)
+	request.Header.Set("Range", "bytes=10-19")
+	recorder := httptest.NewRecorder()
+	state.handler.ServeHTTP(recorder, request)
+
+	require.Equal(http.StatusPartialContent, recorder.Code, recorder.Body.String())
+	assert.Equal("video/mp4", recorder.Header().Get("Content-Type"))
+	assert.Equal("bytes 10-19/100", recorder.Header().Get("Content-Range"))
+	assert.Equal([]byte{10, 11, 12, 13, 14, 15, 16, 17, 18, 19}, recorder.Body.Bytes())
+
+	repo, err := state.database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NotNil(repo)
+	issue, err := state.database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, e2eMarkdownVideoIssueNumber)
+	require.NoError(err)
+	require.NotNil(issue)
+	assert.Contains(issue.Body, "\n\nhttps://github.com/user-attachments/assets/e2e-demo-video\n\n")
+}
+
+func TestMarkdownVideoFixtureAbsentWithoutFlag(t *testing.T) {
+	require := require.New(t)
+	assets, err := web.Assets()
+	require.NoError(err)
+	state, err := buildAppState(t.Context(), assets, appOptions{roborevEndpoint: defaultRoborevEndpoint})
+	require.NoError(err)
+	t.Cleanup(state.close)
+
+	repo, err := state.database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NotNil(repo)
+	issue, err := state.database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, e2eMarkdownVideoIssueNumber)
+	require.NoError(err)
+	assert.Nil(t, issue)
 }

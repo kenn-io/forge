@@ -217,9 +217,15 @@ func shouldBypassCompression(ctx huma.Context, r *http.Request) bool {
 		r.Header.Get("Upgrade") != "" {
 		return true
 	}
-	if ctx.Operation() != nil && (ctx.Operation().Path == "/events" ||
-		ctx.Operation().Path == "/federation/events") {
-		return true
+	if op := ctx.Operation(); op != nil {
+		if op.Path == "/events" || op.Path == "/federation/events" {
+			return true
+		}
+		// Media streams for as long as the video plays and is already
+		// compressed; buffering it to compress would hold back the headers.
+		if op.OperationID == "get-markdown-media" || op.OperationID == "get-markdown-media-on-host" {
+			return true
+		}
 	}
 	return false
 }

@@ -44,6 +44,10 @@ export type IsolatedE2EServerOptions = {
   visibleImportedModes?: boolean;
   providerCollision?: boolean;
   preferPtyOwner?: boolean;
+  // Serve this clip as a GitHub attachment and seed items that embed it.
+  // The extra items would change other specs' lists, so it always gets a
+  // dedicated process.
+  markdownVideo?: string;
   // Spawn a dedicated server process and kill it on stop() instead of
   // leasing from the per-worker pool. Required when the test depends
   // on process environment the server must inherit at spawn time
@@ -704,6 +708,9 @@ async function spawnServer(
   if (options.providerCollision) {
     args.push("-provider-collision");
   }
+  if (options.markdownVideo) {
+    args.push("-markdown-video", options.markdownVideo);
+  }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);
   }
@@ -1243,7 +1250,7 @@ export async function startIsolatedE2EServer(): Promise<IsolatedE2EServer> {
 export async function startIsolatedE2EServerWithOptions(
   options: IsolatedE2EServerOptions = {},
 ): Promise<IsolatedE2EServer> {
-  if (options.freshProcess || options.federatedForges) {
+  if (options.freshProcess || options.federatedForges || options.markdownVideo) {
     const infoDir = mkdtempSync(path.join(os.tmpdir(), "kenn-forge-e2e-"));
     const infoFile = path.join(infoDir, "server-info.json");
     const started = await spawnServer(infoFile, options);

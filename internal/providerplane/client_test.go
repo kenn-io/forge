@@ -285,3 +285,51 @@ func TestReadJSONRejectsOversizedHubBody(t *testing.T) {
 	)
 	assert.ErrorIs(t, err, ErrResponseBodyTooLarge)
 }
+
+func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(300 * time.Millisecond)
+		_, _ = io.WriteString(w, "late video bytes")
+	}))
+	t.Cleanup(hub.Close)
+	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(clientTestHubID, "stream-secret", federationauth.SpokeToHubScopes()))
+	base := hub.Client()
+	base.Timeout = 100 * time.Millisecond
+	client, err := NewClient(Options{
+		LocalNodeID: clientTestNodeID,
+		Hub:         Hub{NodeID: clientTestHubID, BaseURL: hub.URL},
+		Credentials: credentials,
+		HTTPClient:  base,
+	})
+	require.NoError(err)
+	newRequest := func() *http.Request {
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+			"https://spoke.invalid/api/v1/repo/github/acme/widget/markdown-media", nil)
+		require.NoError(err)
+		return request
+	}
+
+	streaming, ok := client.(StreamingClient)
+	require.True(ok, "the hub client must offer an unbuffered provider-read path")
+	response, err := streaming.DoStream(t.Context(), federationauth.ScopeProviderRead, newRequest())
+	require.NoError(err)
+	body, err := io.ReadAll(response.Body)
+	require.NoError(response.Body.Close())
+	require.NoError(err)
+	assert.Equal(t, "late video bytes", string(body))
+
+	buffered, err := client.Do(t.Context(), federationauth.ScopeProviderRead, newRequest())
+	if err == nil {
+		_, err = io.ReadAll(buffered.Body)
+		_ = buffered.Body.Close()
+	}
+	require.Error(err, "ordinary provider reads keep their whole-request timeout")
+}

@@ -58,6 +58,7 @@ const (
 	CodePayloadTooLarge               ProblemCode = "payloadTooLarge"
 	CodeProjectNotFound               ProblemCode = "projectNotFound"
 	CodePullNotFound                  ProblemCode = "pullNotFound"
+	CodeRangeNotSatisfiable           ProblemCode = "rangeNotSatisfiable"
 	CodeRateLimited                   ProblemCode = "rateLimited"
 	CodeRepoNotFound                  ProblemCode = "repoNotFound"
 	CodeResyncRequired                ProblemCode = "resyncRequired"
@@ -68,6 +69,7 @@ const (
 	CodeToolUnauthenticated           ProblemCode = "toolUnauthenticated"
 	CodeUnauthorized                  ProblemCode = "unauthorized"
 	CodeUnsupportedCapability         ProblemCode = "unsupportedCapability"
+	CodeUnsupportedMediaType          ProblemCode = "unsupportedMediaType"
 	CodeUpstreamError                 ProblemCode = "upstreamError"
 	CodeValidationError               ProblemCode = "validationError"
 	CodeWorkspaceAlreadyExists        ProblemCode = "workspaceAlreadyExists"
@@ -101,6 +103,7 @@ func allProblemCodes() []ProblemCode {
 		CodePayloadTooLarge,
 		CodeProjectNotFound,
 		CodePullNotFound,
+		CodeRangeNotSatisfiable,
 		CodeRateLimited,
 		CodeRepoNotFound,
 		CodeResyncRequired,
@@ -111,6 +114,7 @@ func allProblemCodes() []ProblemCode {
 		CodeToolUnauthenticated,
 		CodeUnauthorized,
 		CodeUnsupportedCapability,
+		CodeUnsupportedMediaType,
 		CodeUpstreamError,
 		CodeValidationError,
 		CodeWorkspaceAlreadyExists,
@@ -158,7 +162,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,gitCredentialUnavailable,hookFailed,hubUnavailable,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,spokePreparationInProgress,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,gitCredentialUnavailable,hookFailed,hubUnavailable,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rangeNotSatisfiable,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,spokePreparationInProgress,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,unsupportedMediaType,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or
@@ -554,7 +558,9 @@ func ProviderMutationProblem(err error, provider, host string) huma.StatusError 
 			platform.ErrCodeNotFound,
 			platform.ErrCodeRateLimited,
 			platform.ErrCodeStaleState,
-			platform.ErrCodeConflict:
+			platform.ErrCodeConflict,
+			platform.ErrCodeUnsupportedMediaType,
+			platform.ErrCodeRangeNotSatisfiable:
 			return ProviderCallProblem(err, provider, host)
 		case platform.ErrCodeProviderContract, platform.ErrCodePageLimit:
 			// Contract and page-limit failures are ambiguous after dispatch.
@@ -702,6 +708,22 @@ func MapPlatformError(err error) huma.StatusError {
 			}
 		}
 		return Conflict(CodeConflict, err.Error(), d)
+	// Only a fetched source of another type proves an attachment is not a
+	// video; clients may remember this answer and no other media failure.
+	case platform.ErrCodeUnsupportedMediaType:
+		return NewProblem(
+			http.StatusUnsupportedMediaType,
+			CodeUnsupportedMediaType,
+			"The source is not a supported video.",
+			platformErrorDetails(provider, host),
+		)
+	case platform.ErrCodeRangeNotSatisfiable:
+		return NewProblem(
+			http.StatusRequestedRangeNotSatisfiable,
+			CodeRangeNotSatisfiable,
+			"The requested byte range is outside the media.",
+			platformErrorDetails(provider, host),
+		)
 	case platform.ErrCodeProviderNotConfigured,
 		platform.ErrCodeMissingToken,
 		platform.ErrCodeInvalidRepoRef,

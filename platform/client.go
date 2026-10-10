@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -54,6 +55,25 @@ type MarkdownImage struct {
 // callers must not be able to turn this into a general-purpose URL fetcher.
 type MarkdownImageReader interface {
 	GetMarkdownImage(ctx context.Context, ref RepoRef, sourceURL string) (MarkdownImage, error)
+}
+
+// MarkdownMedia is an open stream of provider-hosted video. Body stays open
+// until the caller closes it or the request context ends.
+type MarkdownMedia struct {
+	Body        io.ReadCloser
+	ContentType string
+	// ContentLength is -1 when the upstream did not declare a length.
+	ContentLength int64
+	ContentRange  string
+	Partial       bool
+}
+
+// MarkdownMediaReader opens provider-hosted video embedded in repository
+// Markdown. Like MarkdownImageReader, providers accept only their own
+// trusted attachment URLs. byteRange is forwarded verbatim as the Range
+// header when non-empty. The caller must close Body.
+type MarkdownMediaReader interface {
+	OpenMarkdownMedia(ctx context.Context, ref RepoRef, sourceURL, byteRange string) (MarkdownMedia, error)
 }
 
 type MergeRequestReader interface {

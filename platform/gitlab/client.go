@@ -251,6 +251,7 @@ func (c *Client) Capabilities() platform.Capabilities {
 		ReadCI:                 true,
 		ReadLabels:             true,
 		ReadMarkdownImages:     true,
+		ReadMarkdownMedia:      true,
 		ReadAuthenticatedUser:  true,
 		CommentMutation:        true,
 		StateMutation:          true,

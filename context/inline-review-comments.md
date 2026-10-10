@@ -26,6 +26,13 @@ published review-thread ingestion, or review controls in shared diff UI.
   arbitrary range diffs remain disabled until their coordinate mapping is
   explicitly supported
   (`internal/server/pullapi/diff_review_handlers.go::dbReviewLineRange`).
+- Review thread bubbles render their body as markdown with the timeline's
+  line-break setting and the pull request's repository, so provider video
+  rules apply. Pierre annotations mount outside the Svelte tree; `DiffFile`
+  captures `getAllContexts()` at creation and passes it to every annotation
+  `mount()`, because markdown rendering reads the app runtime from context
+  (`frontend/src/lib/components/diff/DiffFile.svelte`,
+  `frontend/src/lib/components/diff/DiffReviewThreadInlineComment.svelte`).
 - Line-number pointer and keyboard selection only change the active review
   range. The gutter utility opens the composer for that range
   (`frontend/src/lib/components/diff/DiffFile.svelte::handlePierreGutterUtility`).

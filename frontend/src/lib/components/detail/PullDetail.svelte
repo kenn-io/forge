@@ -211,6 +211,7 @@
     workflow_dispatch: false,
     read_labels: false,
     read_markdown_images: false,
+    read_markdown_media: false,
     read_authenticated_user: false,
     comment_mutation: true,
     state_mutation: true,

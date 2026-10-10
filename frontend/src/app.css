@@ -338,6 +338,23 @@ a:hover {
   font-weight: 600;
   margin: 8px 0 4px;
 }
+.markdown-body .markdown-video-frame {
+  display: block;
+}
+.markdown-body .markdown-video-error {
+  display: block;
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+.markdown-body video.markdown-video {
+  display: block;
+  max-width: 100%;
+  max-height: 640px;
+  height: auto;
+  margin: 8px 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+}
 .markdown-body img {
   max-width: 100%;
   height: auto;

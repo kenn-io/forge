@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,15 @@ func (c *routeRecordingClient) GetMarkdownImage(
 	c.calls = append(c.calls, "markdown-image:"+owner+"/"+repo+":"+sourceURL)
 	return platform.MarkdownImage{
 		Content: []byte(c.marker), ContentType: "image/png",
+	}, nil
+}
+
+func (c *routeRecordingClient) OpenMarkdownMedia(
+	_ context.Context, owner, repo, sourceURL, byteRange string,
+) (platform.MarkdownMedia, error) {
+	c.calls = append(c.calls, "markdown-media:"+owner+"/"+repo+":"+sourceURL+":"+byteRange)
+	return platform.MarkdownMedia{
+		Body: io.NopCloser(strings.NewReader(c.marker)), ContentType: "video/mp4", ContentLength: -1,
 	}, nil
 }
 
@@ -211,6 +222,44 @@ func TestGitHubProviderRoutesMarkdownImagesByRepositoryCredential(t *testing.T) 
 	assert.Equal("exact", string(image.Content))
 	assert.Equal([]string{"markdown-image:acme/widget:" + source}, exact.calls)
 	assert.Empty(owner.calls)
+	assert.Empty(fallback.calls)
+}
+
+func TestGitHubProviderRoutesMarkdownMediaByRepositoryCredential(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	const source = "https://github.com/user-attachments/assets/2222"
+	fallback := &routeRecordingClient{marker: "fallback"}
+	exact := &routeRecordingClient{marker: "exact"}
+	router, err := NewHostRouter(
+		"github.com",
+		&Route{Key: RouteKey{Host: "github.com"}, Client: fallback},
+		&Route{
+			Key:    RouteKey{Host: "github.com", Owner: "acme", Name: "widget"},
+			Client: exact,
+		},
+	)
+	require.NoError(err)
+	routed, err := NewRoutedClient(router)
+	require.NoError(err)
+	provider := newTestGitHubProvider(t, "github.com", routed)
+
+	require.True(provider.Capabilities().ReadMarkdownMedia,
+		"a routed GitHub host must keep markdown video playback")
+
+	media, err := provider.OpenMarkdownMedia(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com",
+		Owner: "acme", Name: "widget", RepoPath: "acme/widget",
+	}, source, "bytes=0-0")
+	require.NoError(err)
+	defer media.Body.Close()
+
+	body, err := io.ReadAll(media.Body)
+	require.NoError(err)
+	assert.Equal("exact", string(body))
+	assert.Equal([]string{"markdown-media:acme/widget:" + source + ":bytes=0-0"}, exact.calls)
 	assert.Empty(fallback.calls)
 }
 

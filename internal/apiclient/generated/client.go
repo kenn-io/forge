@@ -6722,6 +6722,40 @@ func (o *GetMarkdownImageOnHostRequestOptions) GetHeader() (map[string]string, e
 	return nil, nil
 }
 
+// GetMarkdownMediaOnHostRequestOptions is the options needed to make a request to GetMarkdownMediaOnHost.
+type GetMarkdownMediaOnHostRequestOptions struct {
+	PathParams *GetMarkdownMediaOnHostPath
+	Query      *GetMarkdownMediaOnHostQuery
+	Header     *GetMarkdownMediaOnHostHeaders
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetMarkdownMediaOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetMarkdownMediaOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetMarkdownMediaOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetMarkdownMediaOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return runtime.AsMap[string](o.Header)
+}
+
 // RefreshRepoOnHostRequestOptions is the options needed to make a request to RefreshRepoOnHost.
 type RefreshRepoOnHostRequestOptions struct {
 	PathParams *RefreshRepoOnHostPath
@@ -10213,6 +10247,40 @@ func (o *GetMarkdownImageRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// GetMarkdownMediaRequestOptions is the options needed to make a request to GetMarkdownMedia.
+type GetMarkdownMediaRequestOptions struct {
+	PathParams *GetMarkdownMediaPath
+	Query      *GetMarkdownMediaQuery
+	Header     *GetMarkdownMediaHeaders
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetMarkdownMediaRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetMarkdownMediaRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetMarkdownMediaRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetMarkdownMediaRequestOptions) GetHeader() (map[string]string, error) {
+	return runtime.AsMap[string](o.Header)
+}
+
 // RefreshRepoRequestOptions is the options needed to make a request to RefreshRepo.
 type RefreshRepoRequestOptions struct {
 	PathParams *RefreshRepoPath
@@ -12356,6 +12424,7 @@ type ClientInterface interface {
 	GetRepoCommitDiffOnHostWithResponse(ctx context.Context, options *GetRepoCommitDiffOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoCommitDiffOnHostResp, error)
 	ListRepoLabelsOnHostWithResponse(ctx context.Context, options *ListRepoLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoLabelsOnHostResp, error)
 	GetMarkdownImageOnHostWithResponse(ctx context.Context, options *GetMarkdownImageOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownImageOnHostResp, error)
+	GetMarkdownMediaOnHostWithResponse(ctx context.Context, options *GetMarkdownMediaOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownMediaOnHostResp, error)
 	RefreshRepoOnHostWithResponse(ctx context.Context, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoOnHostResp, error)
 	ResolveRepoItemOnHostWithResponse(ctx context.Context, options *ResolveRepoItemOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemOnHostResp, error)
 	UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityOnHostResp, error)
@@ -12471,6 +12540,7 @@ type ClientInterface interface {
 	GetRepoCommitDiffWithResponse(ctx context.Context, options *GetRepoCommitDiffRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoCommitDiffResp, error)
 	ListRepoLabelsWithResponse(ctx context.Context, options *ListRepoLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListRepoLabelsResp, error)
 	GetMarkdownImageWithResponse(ctx context.Context, options *GetMarkdownImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownImageResp, error)
+	GetMarkdownMediaWithResponse(ctx context.Context, options *GetMarkdownMediaRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownMediaResp, error)
 	RefreshRepoWithResponse(ctx context.Context, options *RefreshRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoResp, error)
 	ResolveRepoItemWithResponse(ctx context.Context, options *ResolveRepoItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ResolveRepoItemResp, error)
 	UpdateRepoUIVisibilityWithResponse(ctx context.Context, options *UpdateRepoUIVisibilityRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateRepoUIVisibilityResp, error)
@@ -23826,6 +23896,45 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 	}
 }
 
+// GetMarkdownMediaOnHost Get markdown media
+func (c *Client) GetMarkdownMediaOnHostWithResponse(ctx context.Context, options *GetMarkdownMediaOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownMediaOnHostResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetMarkdownMediaOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	switch resp.StatusCode {
+	case 200:
+		return out, nil
+	case 206:
+		return out, nil
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // RefreshRepoOnHost Refresh repository
 func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshRepoOnHostResp, error) {
 	var err error
@@ -30185,6 +30294,45 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetMarkdownMedia Get markdown media
+func (c *Client) GetMarkdownMediaWithResponse(ctx context.Context, options *GetMarkdownMediaRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetMarkdownMediaResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-media",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/repo/{provider}/{owner}/{name}/markdown-media")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetMarkdownMediaResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	switch resp.StatusCode {
+	case 200:
+		return out, nil
+	case 206:
+		return out, nil
 	default:
 		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
@@ -38004,6 +38152,25 @@ func (c *Client) GetMarkdownImageOnHostRaw(ctx context.Context, httpClient *http
 	return httpClient.Do(req)
 }
 
+// GetMarkdownMediaOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) GetMarkdownMediaOnHostRaw(ctx context.Context, httpClient *http.Client, options *GetMarkdownMediaOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // RefreshRepoOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) RefreshRepoOnHostRaw(ctx context.Context, httpClient *http.Client, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -39906,6 +40073,25 @@ func (c *Client) GetMarkdownImageRaw(ctx context.Context, httpClient *http.Clien
 	}
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-image",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetMarkdownMediaRaw returns an unread response. The caller must close its body.
+func (c *Client) GetMarkdownMediaRaw(ctx context.Context, httpClient *http.Client, options *GetMarkdownMediaRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-media",
 		Method:        "GET",
 		Options:       options,
 		QueryEncoding: queryEncoding,
@@ -45018,6 +45204,26 @@ func NewGetMarkdownImageOnHostRequest(ctx context.Context, baseURL string, optio
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetMarkdownMediaOnHostRequest constructs a typed request for a caller-owned transport.
+func NewGetMarkdownMediaOnHostRequest(ctx context.Context, baseURL string, options *GetMarkdownMediaOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewRefreshRepoOnHostRequest constructs a typed request for a caller-owned transport.
 func NewRefreshRepoOnHostRequest(ctx context.Context, baseURL string, options *RefreshRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -47046,6 +47252,26 @@ func NewGetMarkdownImageRequest(ctx context.Context, baseURL string, options *Ge
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetMarkdownMediaRequest constructs a typed request for a caller-owned transport.
+func NewGetMarkdownMediaRequest(ctx context.Context, baseURL string, options *GetMarkdownMediaRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"source": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/repo/{provider}/{owner}/{name}/markdown-media",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewRefreshRepoRequest constructs a typed request for a caller-owned transport.
 func NewRefreshRepoRequest(ctx context.Context, baseURL string, options *RefreshRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -48663,6 +48889,7 @@ const (
 	ProblemErrorCodePayloadTooLarge               ProblemErrorCode = "payloadTooLarge"
 	ProblemErrorCodeProjectNotFound               ProblemErrorCode = "projectNotFound"
 	ProblemErrorCodePullNotFound                  ProblemErrorCode = "pullNotFound"
+	ProblemErrorCodeRangeNotSatisfiable           ProblemErrorCode = "rangeNotSatisfiable"
 	ProblemErrorCodeRateLimited                   ProblemErrorCode = "rateLimited"
 	ProblemErrorCodeRepoNotFound                  ProblemErrorCode = "repoNotFound"
 	ProblemErrorCodeResyncRequired                ProblemErrorCode = "resyncRequired"
@@ -48673,6 +48900,7 @@ const (
 	ProblemErrorCodeToolUnauthenticated           ProblemErrorCode = "toolUnauthenticated"
 	ProblemErrorCodeUnauthorized                  ProblemErrorCode = "unauthorized"
 	ProblemErrorCodeUnsupportedCapability         ProblemErrorCode = "unsupportedCapability"
+	ProblemErrorCodeUnsupportedMediaType          ProblemErrorCode = "unsupportedMediaType"
 	ProblemErrorCodeUpstreamError                 ProblemErrorCode = "upstreamError"
 	ProblemErrorCodeValidationError               ProblemErrorCode = "validationError"
 	ProblemErrorCodeWorkspaceAlreadyExists        ProblemErrorCode = "workspaceAlreadyExists"
@@ -48963,9 +49191,19 @@ type StreamFederationProviderEventsHeaders struct {
 	ContentLength                *string `json:"Content-Length,omitempty"`
 }
 
+type GetMarkdownMediaOnHostHeaders struct {
+	// Range Single byte range forwarded to the provider
+	Range *string `json:"Range,omitempty"`
+}
+
 type GetKataProjectMappingsHeaders struct {
 	// XKennForgeKataDaemon Kata daemon id; the effective default daemon when empty
 	XKennForgeKataDaemon *string `json:"X-Kenn-Forge-Kata-Daemon,omitempty"`
+}
+
+type GetMarkdownMediaHeaders struct {
+	// Range Single byte range forwarded to the provider
+	Range *string `json:"Range,omitempty"`
 }
 
 type StoreTerminalPasteImageHeaders struct {
@@ -50092,6 +50330,13 @@ type GetMarkdownImageOnHostPath struct {
 	Name         string `json:"name"`
 }
 
+type GetMarkdownMediaOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+}
+
 type RefreshRepoOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -50723,6 +50968,12 @@ type ListRepoLabelsPath struct {
 }
 
 type GetMarkdownImagePath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+}
+
+type GetMarkdownMediaPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
 	Name     string `json:"name"`
@@ -51646,6 +51897,10 @@ type GetMarkdownImageOnHostQuery struct {
 	Source *string `json:"source,omitempty"`
 }
 
+type GetMarkdownMediaOnHostQuery struct {
+	Source *string `json:"source,omitempty"`
+}
+
 type ResolveRepoItemOnHostQuery struct {
 	// ItemType Optional item type hint for providers whose issues and merge requests have separate number spaces.
 	ItemType *ResolveRepoItemOnHostQueryItemType `json:"item_type,omitempty"`
@@ -51828,6 +52083,10 @@ type GetRepoCommitDiffQuery struct {
 }
 
 type GetMarkdownImageQuery struct {
+	Source *string `json:"source,omitempty"`
+}
+
+type GetMarkdownMediaQuery struct {
 	Source *string `json:"source,omitempty"`
 }
 
@@ -52698,6 +52957,10 @@ type GetMarkdownImageOnHostResponse = []byte
 
 type GetMarkdownImageOnHostErrorResponse = ProblemError
 
+type GetMarkdownMediaOnHostResponse = []byte
+
+type GetMarkdownMediaOnHostResponse206 = []byte
+
 type RefreshRepoOnHostResponse = SettingsResponse
 
 type RefreshRepoOnHostErrorResponse = ProblemError
@@ -53121,6 +53384,10 @@ type ListRepoLabelsErrorResponse = ProblemError
 type GetMarkdownImageResponse = []byte
 
 type GetMarkdownImageErrorResponse = ProblemError
+
+type GetMarkdownMediaResponse = []byte
+
+type GetMarkdownMediaResponse206 = []byte
 
 type RefreshRepoResponse = SettingsResponse
 
@@ -55078,6 +55345,12 @@ type GetMarkdownImageOnHostResp struct {
 	Headers200   *GetMarkdownImageOnHostResp200Headers
 }
 
+type GetMarkdownMediaOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+}
+
 type RefreshRepoOnHostResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -55998,6 +56271,12 @@ type GetMarkdownImageResp struct {
 	StatusCode   int
 	Error        *GetMarkdownImageErrorResponse
 	Headers200   *GetMarkdownImageResp200Headers
+}
+
+type GetMarkdownMediaResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
 }
 
 type RefreshRepoResp struct {
@@ -59176,6 +59455,7 @@ type ProviderCapabilitiesResponse struct {
 	ReadIssues                  bool     `json:"read_issues"`
 	ReadLabels                  bool     `json:"read_labels"`
 	ReadMarkdownImages          bool     `json:"read_markdown_images"`
+	ReadMarkdownMedia           bool     `json:"read_markdown_media"`
 	ReadMergeRequests           bool     `json:"read_merge_requests"`
 	ReadReleases                bool     `json:"read_releases"`
 	ReadRepositories            bool     `json:"read_repositories"`

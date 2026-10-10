@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -741,7 +742,7 @@ func (h *providerDispatchTestHandler) ServeHTTP(w http.ResponseWriter, r *http.R
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	proxy := routepolicy.NewProviderProxy(client)
+	proxy := routepolicy.NewProviderProxy(client, r.Context())
 	rule, ok := providerRouteRuleForRequest(r.Method, r.URL.Path)
 	if ok && rule.Owner != routepolicy.NodeLocal {
 		proxy.ServeHTTP(w, r, rule)
@@ -832,7 +833,7 @@ func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 		HTTPClient:  hub.Client(),
 	})
 	require.NoError(err)
-	proxy := routepolicy.NewProviderProxy(client)
+	proxy := routepolicy.NewProviderProxy(client, t.Context())
 	proxy.ResponseBodyLimit = 3
 	rule, ok := providerRouteRuleForRequest(http.MethodGet, "/api/v1/pulls")
 	require.True(ok)
@@ -851,4 +852,155 @@ func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 
 	assert.Equal(http.StatusBadGateway, response.StatusCode)
 	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
+}
+
+func TestProviderProxyStreamsMarkdownMediaPastBodyLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	serverfake.RunParallelServerTest(t)
+
+	media := strings.Repeat("v", 4096)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v1/repo/github/acme/widget/markdown-media", r.URL.Path)
+		assert.Equal("bytes=0-", r.Header.Get("Range"))
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Range", "bytes 0-4095/40000")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = io.WriteString(w, media)
+	}))
+	t.Cleanup(hub.Close)
+	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(proxyTestHubID, "media-secret", federationauth.SpokeToHubScopes()))
+	client, err := providerplane.NewClient(providerplane.Options{
+		LocalNodeID: proxyTestNodeID,
+		Hub:         providerplane.Hub{NodeID: proxyTestHubID, BaseURL: hub.URL},
+		Credentials: credentials,
+		HTTPClient:  hub.Client(),
+	})
+	require.NoError(err)
+	proxy := routepolicy.NewProviderProxy(client, t.Context())
+	// A limit far below the body proves the streaming rule bypasses it.
+	proxy.ResponseBodyLimit = 3
+	rule, ok := providerRouteRuleForRequest(http.MethodGet, "/api/v1/repo/github/acme/widget/markdown-media")
+	require.True(ok)
+	require.True(rule.Streaming)
+	spoke := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r, rule)
+	}))
+	t.Cleanup(spoke.Close)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		spoke.URL+"/api/v1/repo/github/acme/widget/markdown-media?source=x", nil)
+	require.NoError(err)
+	request.Header.Set("Range", "bytes=0-")
+	response, err := spoke.Client().Do(request)
+	require.NoError(err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(err)
+
+	assert.Equal(http.StatusPartialContent, response.StatusCode)
+	assert.Equal("bytes 0-4095/40000", response.Header.Get("Content-Range"))
+	assert.Equal("bytes", response.Header.Get("Accept-Ranges"))
+	assert.Equal(media, string(body))
+}
+
+// newStreamingProxyTestServer proxies markdown media to hub through a spoke
+// whose streams end when stop does.
+func newStreamingProxyTestServer(
+	t *testing.T, stop context.Context, hub *httptest.Server,
+) *httptest.Server {
+	t.Helper()
+	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
+	require.NoError(t, err)
+	require.NoError(t, credentials.StoreOutbound(proxyTestHubID, "media-secret", federationauth.SpokeToHubScopes()))
+	client, err := providerplane.NewClient(providerplane.Options{
+		LocalNodeID: proxyTestNodeID,
+		Hub:         providerplane.Hub{NodeID: proxyTestHubID, BaseURL: hub.URL},
+		Credentials: credentials,
+		HTTPClient:  hub.Client(),
+	})
+	require.NoError(t, err)
+	proxy := routepolicy.NewProviderProxy(client, stop)
+	rule, ok := providerRouteRuleForRequest(http.MethodGet, "/api/v1/repo/github/acme/widget/markdown-media")
+	require.True(t, ok)
+	spoke := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r, rule)
+	}))
+	t.Cleanup(spoke.Close)
+	return spoke
+}
+
+// startedMediaHub sends the media headers and first bytes, then hands the
+// rest of the response to finish.
+func startedMediaHub(t *testing.T, finish func(*http.Request)) *httptest.Server {
+	t.Helper()
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "video/mp4")
+		_, _ = io.WriteString(w, "partial")
+		_ = http.NewResponseController(w).Flush()
+		finish(r)
+	}))
+	t.Cleanup(hub.Close)
+	return hub
+}
+
+func getProxiedMedia(t *testing.T, spoke *httptest.Server) *http.Response {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		spoke.URL+"/api/v1/repo/github/acme/widget/markdown-media?source=x", nil)
+	require.NoError(t, err)
+	got := make(chan *http.Response, 1)
+	go func() {
+		response, err := spoke.Client().Do(request)
+		assert.NoError(t, err)
+		got <- response
+	}()
+	select {
+	case response := <-got:
+		require.NotNil(t, response)
+		t.Cleanup(func() { _ = response.Body.Close() })
+		return response
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "proxied media headers waited for the hub body")
+		return nil
+	}
+}
+
+func TestProviderProxySendsMediaHeadersBeforeHubBodyEnds(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	hub := startedMediaHub(t, func(r *http.Request) { <-r.Context().Done() })
+	spoke := newStreamingProxyTestServer(t, t.Context(), hub)
+
+	response := getProxiedMedia(t, spoke)
+
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Equal(t, "video/mp4", response.Header.Get("Content-Type"))
+}
+
+func TestProviderProxyAbortsMediaWhenHubFailsMidStream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	hub := startedMediaHub(t, func(*http.Request) { panic(http.ErrAbortHandler) })
+	spoke := newStreamingProxyTestServer(t, t.Context(), hub)
+	response := getProxiedMedia(t, spoke)
+
+	_, err := io.ReadAll(response.Body)
+
+	// A clean end would let the browser cache a truncated video as whole.
+	require.Error(t, err)
+}
+
+func TestProviderProxyEndsMediaStreamWhenStopped(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	hub := startedMediaHub(t, func(r *http.Request) { <-r.Context().Done() })
+	stop, cancel := context.WithCancel(t.Context())
+	spoke := newStreamingProxyTestServer(t, stop, hub)
+	response := getProxiedMedia(t, spoke)
+
+	cancel()
+	_, err := io.ReadAll(response.Body)
+
+	require.Error(t, err)
 }

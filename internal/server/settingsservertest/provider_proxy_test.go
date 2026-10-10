@@ -78,7 +78,7 @@ func TestProviderWriteTransportFailureReportsUnknownMutationOutcome(t *testing.T
 		assert.Equal(federationauth.ScopeProviderWrite, scope)
 		assert.Equal(http.MethodPut, request.Method)
 		return nil, providerplane.ErrHubUnavailable
-	}))
+	}), t.Context())
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", nil)
 	proxy.ServeHTTP(recorder, request, routepolicy.ProviderRouteRule{
@@ -391,7 +391,7 @@ func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *te
 					StatusCode: http.StatusOK, Body: test.body,
 				}, nil
 			})
-			proxy := routepolicy.NewProviderProxy(client)
+			proxy := routepolicy.NewProviderProxy(client, t.Context())
 			proxy.ResponseBodyLimit = test.limit
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/provider-write", nil)

@@ -57,6 +57,8 @@ not an exhaustive enum.
 | `unsupportedCapability` | 409 | Provider lacks the operation capability. Include `details.capability`, `details.provider`, and `details.platformHost`. |
 | `resyncRequired` | 409 | A provider item lacks stable external identity required for a safe mutation. Include `details.subject_kind` and `details.item_number`; clients should request a successful resync before retrying. |
 | `payloadTooLarge` | 413 | A bounded payload exceeds its accepted size. Request-body failures include `details.maxBytes` when known. Archive detailed-report failures use `details.reason = "reportTooLarge"` with integer `observedRecords`, `maxRecords`, `observedTextBytes`, and `maxTextBytes`; clients branch on the reason and camelCase fields, not prose. |
+| `unsupportedMediaType` | 415 | The provider served the markdown media source and it is not an allowed video type. It is the only media rejection that proves the asset is not a video, so clients may remember it; every other media failure says nothing about the asset type. |
+| `rangeNotSatisfiable` | 416 | The provider rejected the requested media byte range. |
 | `rateLimited` | 429 | Upstream provider quota is exhausted. Include `details.retryAfter` as a UTC RFC3339 timestamp when known. |
 | `internalError` | 500 | Generic kenn-forge bug or unexpected local failure. |
 | `mutationOutcomeUnknown` | 502 | A non-idempotent upstream mutation may have been applied despite transport failure. Clients fence related writes, reconcile fresh authority, and never replay the request automatically. |
@@ -120,6 +122,8 @@ Translate `platform` typed errors at the server boundary:
 | `unsupported_capability` | `409 unsupportedCapability` |
 | `stale_state` | `409 conflict` |
 | `conflict` | `409 conflict` |
+| `unsupported_media_type` | `415 unsupportedMediaType` |
+| `range_not_satisfiable` | `416 rangeNotSatisfiable` |
 | `rate_limited` | `429 rateLimited` |
 | `permission_denied` | `403 forbidden` |
 | `not_found` | `404 notFound`, or a more specific not-found code when the caller knows the resource type |

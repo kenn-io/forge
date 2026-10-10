@@ -13,6 +13,12 @@ import type {
   GetMarkdownImageOnHostPathParameters,
   GetMarkdownImageParams,
   GetMarkdownImagePathParameters,
+  GetMarkdownMediaHeaders,
+  GetMarkdownMediaOnHostHeaders,
+  GetMarkdownMediaOnHostParams,
+  GetMarkdownMediaOnHostPathParameters,
+  GetMarkdownMediaParams,
+  GetMarkdownMediaPathParameters,
   GetRepoBrowserAssetOnHostParams,
   GetRepoBrowserAssetOnHostPathParameters,
   GetRepoBrowserAssetParams,
@@ -488,6 +494,47 @@ export const getMarkdownImageOnHost = async (
   });
 };
 
+export const getGetMarkdownMediaOnHostUrl = (
+  { platformHost, provider, owner, name }: GetMarkdownMediaOnHostPathParameters,
+  params?: GetMarkdownMediaOnHostParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-media?${stringifiedParams}`
+    : `/host/${encodeURIComponent(String(platformHost))}/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-media`;
+};
+
+/**
+ * @summary Get markdown media
+ */
+export const getMarkdownMediaOnHost = async (
+  { platformHost, provider, owner, name }: GetMarkdownMediaOnHostPathParameters,
+  params?: GetMarkdownMediaOnHostParams,
+  headers?: GetMarkdownMediaOnHostHeaders,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<Blob> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<Blob>(getGetMarkdownMediaOnHostUrl({ platformHost, provider, owner, name }, params), {
+    ...options,
+    method: "GET",
+    headers: { ...headers, ...getHeaders(options?.headers) },
+  });
+};
+
 export const getResolveRepoItemOnHostUrl = (
   { platformHost, provider, owner, name, number }: ResolveRepoItemOnHostPathParameters,
   params?: ResolveRepoItemOnHostParams,
@@ -898,6 +945,47 @@ export const getMarkdownImage = async (
   return orvalFetch<Blob>(getGetMarkdownImageUrl({ provider, owner, name }, params), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getGetMarkdownMediaUrl = (
+  { provider, owner, name }: GetMarkdownMediaPathParameters,
+  params?: GetMarkdownMediaParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-media?${stringifiedParams}`
+    : `/repo/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/markdown-media`;
+};
+
+/**
+ * @summary Get markdown media
+ */
+export const getMarkdownMedia = async (
+  { provider, owner, name }: GetMarkdownMediaPathParameters,
+  params?: GetMarkdownMediaParams,
+  headers?: GetMarkdownMediaHeaders,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<Blob> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<Blob>(getGetMarkdownMediaUrl({ provider, owner, name }, params), {
+    ...options,
+    method: "GET",
+    headers: { ...headers, ...getHeaders(options?.headers) },
   });
 };
 

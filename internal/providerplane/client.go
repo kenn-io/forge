@@ -63,6 +63,14 @@ type Client interface {
 	Do(context.Context, federationauth.Scope, *http.Request) (*http.Response, error)
 }
 
+// StreamingClient sends a provider request whose response body may stream
+// for as long as the caller reads it, such as markdown video. Connect, TLS,
+// and response-header bounds still apply; only the whole-request timeout is
+// lifted.
+type StreamingClient interface {
+	DoStream(context.Context, federationauth.Scope, *http.Request) (*http.Response, error)
+}
+
 // WriteAdmitter is the narrow mutation-admission contract shared by HTTP,
 // MCP, workspace automation, and deferred work without coupling those
 // packages to the gate's concrete implementation.
@@ -346,6 +354,23 @@ func (c *hubClient) Do(
 	scope federationauth.Scope,
 	request *http.Request,
 ) (*http.Response, error) {
+	return c.do(ctx, scope, request, scope == federationauth.ScopeEventsRead)
+}
+
+func (c *hubClient) DoStream(
+	ctx context.Context,
+	scope federationauth.Scope,
+	request *http.Request,
+) (*http.Response, error) {
+	return c.do(ctx, scope, request, true)
+}
+
+func (c *hubClient) do(
+	ctx context.Context,
+	scope federationauth.Scope,
+	request *http.Request,
+	stream bool,
+) (*http.Response, error) {
 	if scope != federationauth.ScopeProviderRead &&
 		scope != federationauth.ScopeProviderWrite &&
 		scope != federationauth.ScopeProviderHandoff &&
@@ -392,7 +417,7 @@ func (c *hubClient) Do(
 	}
 
 	httpClient := c.httpClient
-	if scope == federationauth.ScopeEventsRead {
+	if stream {
 		httpClient = c.streamClient
 	}
 	response, err := httpClient.Do(proxied)

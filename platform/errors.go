@@ -37,6 +37,12 @@ const (
 	// is larger than a single in-memory collection supports; unbounded
 	// datasets belong on the durable-cursor archive path.
 	ErrCodePageLimit PlatformErrorCode = "page_limit"
+	// ErrCodeUnsupportedMediaType marks a fetched source whose type is not an
+	// allowed video type. It is the only media failure that proves the asset
+	// is not a video, so callers may remember it.
+	ErrCodeUnsupportedMediaType PlatformErrorCode = "unsupported_media_type"
+	// ErrCodeRangeNotSatisfiable marks an upstream 416 for a media Range.
+	ErrCodeRangeNotSatisfiable PlatformErrorCode = "range_not_satisfiable"
 )
 
 var (

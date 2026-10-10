@@ -1224,6 +1224,24 @@ describe("DiffFile", () => {
     expect(host).toBeTruthy();
   });
 
+  it("renders review thread markdown inside the Pierre annotation", async () => {
+    const view = renderDiffFile(makeFile(), {
+      reviewEnabled: true,
+      diffHeadSHA: "diff-head",
+      reviewThreads: [makeReviewThread({ body: "**First** review note" })],
+    });
+
+    await waitFor(() => expect(screen.getByText("First").tagName).toBe("STRONG"));
+    expect(screen.getByText("First").closest("[slot='annotation-additions-2']")).toBeTruthy();
+
+    await view.rerender({
+      reviewThreads: [makeReviewThread({ id: "thread-2", body: "**Second** review note" })],
+    });
+
+    await waitFor(() => expect(screen.getByText("Second").tagName).toBe("STRONG"));
+    expect(screen.queryByText("First")).toBeNull();
+  });
+
   it("releases a mounted review thread when the diff surface unmounts", async () => {
     const view = renderDiffFile(makeFile(), {
       reviewEnabled: true,

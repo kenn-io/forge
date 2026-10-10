@@ -409,6 +409,7 @@ var (
 	_ platformgithub.InventoryAPI         = (*RoutedClient)(nil)
 	_ platformgithub.LandingAPI           = (*RoutedClient)(nil)
 	_ markdownImageClient                 = (*RoutedClient)(nil)
+	_ markdownMediaClient                 = (*RoutedClient)(nil)
 	_ repoUserClient                      = (*RoutedClient)(nil)
 	_ platformgithub.NativeStackClient    = (*RoutedClient)(nil)
 )
@@ -548,6 +549,26 @@ func (c *RoutedClient) GetMarkdownImage(
 		)
 	}
 	return reader.GetMarkdownImage(ctx, owner, repo, sourceURL)
+}
+
+// OpenMarkdownMedia streams a private video attachment with the repository's
+// credential. Without it the embedded Client interface hides the method and
+// routed hosts lose markdown video playback.
+func (c *RoutedClient) OpenMarkdownMedia(
+	ctx context.Context,
+	owner, repo, sourceURL, byteRange string,
+) (platform.MarkdownMedia, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return platform.MarkdownMedia{}, err
+	}
+	reader, ok := client.(markdownMediaClient)
+	if !ok {
+		return platform.MarkdownMedia{}, platform.UnsupportedCapability(
+			platform.KindGitHub, c.routes.host, "read_markdown_media",
+		)
+	}
+	return reader.OpenMarkdownMedia(ctx, owner, repo, sourceURL, byteRange)
 }
 
 // ListOpenPullRequestsWithNativeStackHints and ListNativeStacksPage carry the

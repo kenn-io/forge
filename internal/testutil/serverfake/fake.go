@@ -1205,6 +1205,16 @@ func (m *MockGH) GetMarkdownImage(
 	return platform.MarkdownImage{}, nil
 }
 
+func (m *MockGH) OpenMarkdownMedia(
+	ctx context.Context,
+	owner, repo, sourceURL, byteRange string,
+) (platform.MarkdownMedia, error) {
+	if m.OpenMarkdownMediaFn != nil {
+		return m.OpenMarkdownMediaFn(ctx, owner, repo, sourceURL, byteRange)
+	}
+	return platform.MarkdownMedia{}, &platform.Error{Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub}
+}
+
 func (m *MockGH) GetPullRequest(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error) {
 	if m.GetPullRequestFn != nil {
 		return m.GetPullRequestFn(ctx, owner, repo, number)
@@ -1553,6 +1563,7 @@ type MockGH struct {
 	ListNotificationsFn        func(context.Context, ghclient.NotificationListOptions) ([]ghclient.NotificationThread, bool, error)
 	MarkNotificationReadFn     func(context.Context, string) error
 	GetMarkdownImageFn         func(context.Context, string, string, string) (platform.MarkdownImage, error)
+	OpenMarkdownMediaFn        func(context.Context, string, string, string, string) (platform.MarkdownMedia, error)
 	GetRepositoryByIDFn        func(context.Context, string, int64) (*gh.Repository, error)
 	servedRoutesMu             sync.Mutex
 	servedRoutes               map[int64]mockGHRoute

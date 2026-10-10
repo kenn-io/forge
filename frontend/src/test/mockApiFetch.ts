@@ -27,6 +27,7 @@ const defaultProviderCapabilities = {
   workflow_dispatch: true,
   read_labels: true,
   read_markdown_images: true,
+  read_markdown_media: true,
   read_authenticated_user: true,
   comment_mutation: true,
   state_mutation: true,

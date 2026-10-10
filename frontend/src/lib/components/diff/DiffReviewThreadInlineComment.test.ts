@@ -147,4 +147,36 @@ describe("DiffReviewThreadInlineComment", () => {
       expect(screen.queryByText("Line unavailable")).toBeNull();
     }
   });
+
+  it("renders the review comment as markdown", async () => {
+    render(DiffReviewThreadInlineComment, {
+      props: { thread: makeReviewThread({ body: "**bold** and [link](https://example.com)" }) },
+    });
+
+    await waitFor(() => expect(screen.getByText("bold").tagName).toBe("STRONG"));
+    expect(screen.getByRole("link", { name: "link" }).getAttribute("href")).toBe("https://example.com");
+  });
+
+  it("plays a GitHub attachment video in the review comment", async () => {
+    const source = "https://github.com/user-attachments/assets/a1";
+    render(DiffReviewThreadInlineComment, {
+      props: {
+        thread: makeReviewThread({ body: `<video src="${source}"></video>` }),
+        repo: {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widgets",
+          repoPath: "acme/widgets",
+        },
+      },
+    });
+
+    await waitFor(() => {
+      const video = document.querySelector("video.markdown-video");
+      expect(video?.getAttribute("src")).toBe(
+        `/api/v1/repo/github/acme/widgets/markdown-media?source=${encodeURIComponent(source)}`,
+      );
+    });
+  });
 });

@@ -162,6 +162,7 @@ type RepoSuffix =
   | "/commits/{sha}/diff"
   | "/labels"
   | "/markdown-image"
+  | "/markdown-media"
   | "/refresh"
   | "/ui-visibility"
   | "/worktree-base"

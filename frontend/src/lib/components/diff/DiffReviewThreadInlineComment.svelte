@@ -10,7 +10,11 @@
   import type { AppExecution, AppRuntime } from "../../app/runtime.js";
   import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
   import { observeResize } from "../../browser/observers.js";
+  import { getStores } from "../../context.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
+  import type { StoreInstances } from "../../types.js";
+  import type { RepoContext } from "../../utils/markdown.js";
+  import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import type { ReviewThread, ReviewThreadCardPlacement } from "./review-thread-context.js";
   import { reviewThreadLineLabel, reviewThreadProviderHiddenState } from "./review-thread-context.js";
 
@@ -19,6 +23,7 @@
     thread: ReviewThread;
     placement?: ReviewThreadCardPlacement;
     canReply?: boolean;
+    repo?: RepoContext | undefined;
     onreply?: ((thread: ReviewThread, body: string, callbacks: MutationCallbacks) => void) | undefined;
   }
 
@@ -27,8 +32,14 @@
     thread,
     placement = "inline",
     canReply = false,
+    repo = undefined,
     onreply,
   }: Props = $props();
+  const stores = getStores() as StoreInstances | undefined;
+  // Review comments follow the same line-break setting as the timeline.
+  const markdownOptions = $derived({
+    collapseSingleLineBreaks: stores?.settings?.getDetailSettings().collapse_single_line_breaks ?? false,
+  });
 
   let replying = $state(false);
   let replyBody = $state("");
@@ -198,12 +209,12 @@
     </div>
   {/if}
   {#if bodyVisible}
-    <p
-      class="review-thread-body"
+    <div
+      class="review-thread-body markdown-body"
       class:review-thread-body--with-idle-reply={canReply && !thread.resolved && !replying}
     >
-      {thread.body}
-    </p>
+      <MarkdownHtml raw={thread.body} {repo} options={markdownOptions} />
+    </div>
   {/if}
   {#if bodyVisible && canReply && !thread.resolved}
     {#if replying}
@@ -346,7 +357,6 @@
     margin: 6px 0 0;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 

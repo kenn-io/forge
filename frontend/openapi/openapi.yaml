@@ -6408,6 +6408,7 @@ components:
             - payloadTooLarge
             - projectNotFound
             - pullNotFound
+            - rangeNotSatisfiable
             - rateLimited
             - repoNotFound
             - resyncRequired
@@ -6418,6 +6419,7 @@ components:
             - toolUnauthenticated
             - unauthorized
             - unsupportedCapability
+            - unsupportedMediaType
             - upstreamError
             - validationError
             - workspaceAlreadyExists
@@ -6643,6 +6645,8 @@ components:
           type: boolean
         read_markdown_images:
           type: boolean
+        read_markdown_media:
+          type: boolean
         read_merge_requests:
           type: boolean
         read_releases:
@@ -6693,6 +6697,7 @@ components:
         - read_workflow_runs
         - read_labels
         - read_markdown_images
+        - read_markdown_media
         - read_authenticated_user
         - comment_mutation
         - state_mutation
@@ -20879,6 +20884,91 @@ paths:
       summary: Get markdown image
       tags:
         - Repositories
+  /host/{platform_host}/repo/{provider}/{owner}/{name}/markdown-media:
+    get:
+      operationId: get-markdown-media-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: source
+          schema:
+            type: string
+        - description: Single byte range forwarded to the provider
+          in: header
+          name: Range
+          schema:
+            description: Single byte range forwarded to the provider
+            type: string
+      responses:
+        "200":
+          content:
+            video/mp4:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/ogg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/quicktime:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/webm:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Whole media
+        "206":
+          content:
+            video/mp4:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/ogg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/quicktime:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/webm:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Requested byte range
+      summary: Get markdown media
+      tags:
+        - Repositories
   /host/{platform_host}/repo/{provider}/{owner}/{name}/refresh:
     post:
       operationId: refresh-repo-on-host
@@ -25765,6 +25855,86 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get markdown image
+      tags:
+        - Repositories
+  /repo/{provider}/{owner}/{name}/markdown-media:
+    get:
+      operationId: get-markdown-media
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: source
+          schema:
+            type: string
+        - description: Single byte range forwarded to the provider
+          in: header
+          name: Range
+          schema:
+            description: Single byte range forwarded to the provider
+            type: string
+      responses:
+        "200":
+          content:
+            video/mp4:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/ogg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/quicktime:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/webm:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Whole media
+        "206":
+          content:
+            video/mp4:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/ogg:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/quicktime:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+            video/webm:
+              schema:
+                contentMediaType: application/octet-stream
+                format: binary
+                type: string
+          description: Requested byte range
+      summary: Get markdown media
       tags:
         - Repositories
   /repo/{provider}/{owner}/{name}/refresh:

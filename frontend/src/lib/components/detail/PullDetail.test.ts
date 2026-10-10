@@ -1242,9 +1242,17 @@ describe("PullDetail activity refresh", () => {
 
 describe("PullDetail pending mutations across selections", () => {
   beforeEach(() => localStorage.clear());
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    for (const item of getFlashes()) dismissFlash(item.id);
+  });
 
-  function renderPendingMutations() {
+  const labelCatalog: Label[] = [
+    { name: "bug", color: "ff0000", description: "" },
+    { name: "enhancement", color: "00ff00", description: "" },
+  ];
+
+  function renderPendingMutations(configure?: (detail: PullDetail) => void) {
     const pulls = [pullDetail(), pullDetail()];
     pulls.forEach((detail, index) => {
       detail.merge_request = {
@@ -1255,12 +1263,15 @@ describe("PullDetail pending mutations across selections", () => {
         Title: `Pull request ${index + 1}`,
         Body: `Description ${index + 1}`,
       };
+      configure?.(detail);
     });
-    const responses = pulls.map(() => Promise.withResolvers<{ data: PullDetail }>());
+    type MutationResponse = { data?: unknown; error?: ProblemBody };
+    const responses = pulls.map(() => Promise.withResolvers<MutationResponse>());
     const mutation = vi.fn((path: string, options?: Record<string, unknown>) => {
       if (
         path !== "/pulls/{provider}/{owner}/{name}/{number}" &&
-        path !== "/pulls/{provider}/{owner}/{name}/{number}/github-state"
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/github-state" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/labels"
       ) {
         throw new Error(`Unexpected mutation: ${path}`);
       }
@@ -1271,12 +1282,14 @@ describe("PullDetail pending mutations across selections", () => {
     });
     detailRuntime = makeTestAppRuntime({
       GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/repo/{provider}/{owner}/{name}/labels") return { data: { labels: labelCatalog } };
         if (path !== "/pulls/{provider}/{owner}/{name}/{number}") return { data: {} };
         const {
           path: { number },
         } = options?.params as { path: { number: number } };
         return { data: pulls[number - 1] };
       }),
+      PUT: mutation,
       PATCH: mutation,
       POST: mutation,
     });
@@ -1286,19 +1299,89 @@ describe("PullDetail pending mutations across selections", () => {
       store,
       detailProps: { autoSync: false },
     });
-    const finishMutation = async (number: number) => {
+    const finishMutation = async (number: number, response: MutationResponse = { data: pulls[number - 1] }) => {
       const index = commands.mock.calls.findIndex(
         ([, options]) =>
           options.safeContext.number === number &&
-          ["update pull request content", "change pull request state"].includes(options.operation),
+          ["update pull request content", "change pull request state", "update pull request labels"].includes(
+            options.operation,
+          ),
       );
       expect(index).toBeGreaterThanOrEqual(0);
-      responses[number - 1].resolve({ data: pulls[number - 1] });
-      expect((await commands.mock.results[index].value.exit)._tag).toBe("Success");
+      responses[number - 1].resolve(response);
+      expect((await commands.mock.results[index].value.exit)._tag).toBe(response.error ? "Failure" : "Success");
       await tick();
     };
     return { ...view, pulls, mutation, finishMutation };
   }
+
+  it.each([
+    ["toggle", false],
+    ["toggle", true],
+    ["clear", false],
+    ["clear", true],
+  ] as const)("keeps an old %s-label result out of the next picker (failure=%s)", async (action, failFirst) => {
+    const view = renderPendingMutations((detail) => {
+      detail.repo.capabilities = { ...detail.repo.capabilities, read_labels: true, label_mutation: true };
+      detail.merge_request.labels = [labelCatalog[0]];
+    });
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true });
+    await fireEvent.click(
+      action === "toggle"
+        ? screen.getByRole("menuitemcheckbox", { name: "enhancement", exact: true })
+        : screen.getByRole("button", { name: "Clear selected labels" }),
+    );
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 1 } },
+          body: { labels: action === "toggle" ? ["bug", "enhancement"] : [] },
+        }),
+      ),
+    );
+
+    await view.rerender({ number: 2 });
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true }));
+    await waitFor(() =>
+      expect(view.mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: "widget", number: 2 } },
+          body: { labels: ["bug", "enhancement"] },
+        }),
+      ),
+    );
+
+    await view.finishMutation(
+      1,
+      failFirst
+        ? {
+            error: {
+              code: "internalError",
+              status: 500,
+              title: "Label update failed",
+              detail: "PR 1 label update failed",
+              type: "about:blank",
+            },
+          }
+        : { data: { labels: action === "toggle" ? labelCatalog : [] } },
+    );
+    const picker = within(screen.getByRole("dialog", { name: "Edit labels" }));
+    const pending = picker.getByRole("menuitemcheckbox", { name: /enhancement/ }) as HTMLButtonElement;
+    expect(pending.disabled).toBe(true);
+    expect(picker.getByText("Saving…")).toBeTruthy();
+    expect(picker.queryByRole("alert")).toBeNull();
+
+    await view.finishMutation(2, { data: { labels: labelCatalog } });
+    expect(pending.disabled).toBe(false);
+    expect(pending.getAttribute("aria-checked")).toBe("true");
+    expect(picker.queryByRole("alert")).toBeNull();
+  });
 
   it.each([
     ["title", false],

@@ -1674,14 +1674,17 @@
   function toggleLabel(labelName: string): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null) return;
+    const requestGeneration = mutationRouteGeneration;
     pendingLabel = labelName;
     labelPickerError = null;
     const nextLabels = nextCatalogLabels(labels, labelCatalog, labelName);
     detailStore.setPullLabels(owner, name, number, nextLabels, {
       onFailure: (message) => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         labelPickerError = message;
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         pendingLabel = null;
       },
     });
@@ -1690,13 +1693,16 @@
   function clearLabels(): void {
     if (labelGate.unavailable) return;
     if (pendingLabel !== null || labels.length === 0) return;
+    const requestGeneration = mutationRouteGeneration;
     pendingLabel = CLEAR_LABELS_PENDING;
     labelPickerError = null;
     detailStore.setPullLabels(owner, name, number, [], {
       onFailure: (message) => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         labelPickerError = message;
       },
       onSettled: () => {
+        if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
         pendingLabel = null;
       },
     });

@@ -14,6 +14,10 @@
   export function sendKey(key: TerminalKey): boolean {
     return pane?.sendKey(key) ?? false;
   }
+
+  export function appearanceOptions() {
+    return pane?.appearanceOptions() ?? null;
+  }
 </script>
 
 <XtermTerminalPane bind:this={pane} {...props} />

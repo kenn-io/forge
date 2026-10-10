@@ -162,6 +162,15 @@
     explicitFocusRequested = true;
   }
 
+  /** The live xterm appearance; contrast is not observable through WebGL output. */
+  export function appearanceOptions(): { background: string | undefined; minimumContrastRatio: number } | null {
+    if (!terminal) return null;
+    return {
+      background: terminal.options.theme?.background,
+      minimumContrastRatio: terminal.options.minimumContrastRatio ?? 1,
+    };
+  }
+
   export function sendInput(data: string): boolean {
     if (disabled || !terminal || !terminalSession?.isConnected()) return false;
     terminal.input(data, true);

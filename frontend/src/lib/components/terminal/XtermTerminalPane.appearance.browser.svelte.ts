@@ -68,33 +68,45 @@ describe("XtermTerminalPane appearance", () => {
     flushSync();
   }
 
+  // Plain e-reader forces black ink (21:1); color e-reader keeps ANSI hues at
+  // 7:1. WebGL output hides contrast, so read it from the live instance.
   it("repaints the mounted terminal when entering and leaving e-reader modes", async () => {
     const component = mountPane();
     try {
       expect(await viewportBackground()).toBe("rgb(13, 17, 23)");
+      expect(component.appearanceOptions()?.minimumContrastRatio).toBe(4.5);
       const xterm = target.querySelector(".xterm");
 
       switchTo("e-reader");
       await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(255, 255, 255)"));
+      expect(component.appearanceOptions()?.minimumContrastRatio).toBe(21);
 
       switchTo("e-reader-color");
-      await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(255, 255, 255)"));
+      await vi.waitFor(() => expect(component.appearanceOptions()?.minimumContrastRatio).toBe(7));
+      expect(await viewportBackground()).toBe("rgb(255, 255, 255)");
 
       switchTo("light");
       await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(13, 17, 23)"));
+      expect(component.appearanceOptions()?.minimumContrastRatio).toBe(4.5);
       expect(target.querySelector(".xterm")).toBe(xterm);
     } finally {
       unmount(component);
     }
   });
 
-  it("starts white when e-reader mode is already selected", async () => {
-    switchTo("e-reader");
-    const component = mountPane();
-    try {
-      expect(await viewportBackground()).toBe("rgb(255, 255, 255)");
-    } finally {
-      unmount(component);
+  it("starts with e-reader colors and contrast when the mode is already selected", async () => {
+    for (const [mode, contrast] of [
+      ["e-reader", 21],
+      ["e-reader-color", 7],
+    ] as const) {
+      switchTo(mode);
+      const component = mountPane();
+      try {
+        expect(await viewportBackground()).toBe("rgb(255, 255, 255)");
+        expect(component.appearanceOptions()?.minimumContrastRatio).toBe(contrast);
+      } finally {
+        unmount(component);
+      }
     }
   });
 });

@@ -12,19 +12,31 @@ import {
 export { cleanupTheme, isDark };
 
 export const FORGE_THEME_NAME = "quiet";
-export type AppearanceMode = ThemeMode | "e-reader";
+export type EReaderMode = "e-reader" | "e-reader-color";
+export type AppearanceMode = ThemeMode | EReaderMode;
 
+function isEReaderMode(value: string | null): value is EReaderMode {
+  return value === "e-reader" || value === "e-reader-color";
+}
+
+/** True for both e-reader modes: always-light white pages with black text. */
 export function isEReader(): boolean {
-  return getThemeName() === "e-reader";
+  return isEReaderMode(getThemeName());
+}
+
+/** The e-reader variant that keeps status, diff, code, and terminal color. */
+export function isColorEReader(): boolean {
+  return getThemeName() === "e-reader-color";
 }
 
 export function getAppearanceMode(): AppearanceMode {
-  return isEReader() ? "e-reader" : getThemeMode();
+  const name = getThemeName();
+  return isEReaderMode(name) ? name : getThemeMode();
 }
 
 export function setAppearanceMode(mode: AppearanceMode): void {
-  setThemeName(mode === "e-reader" ? "e-reader" : FORGE_THEME_NAME);
-  setThemeMode(mode === "e-reader" ? "light" : mode);
+  setThemeName(isEReaderMode(mode) ? mode : FORGE_THEME_NAME);
+  setThemeMode(isEReaderMode(mode) ? "light" : mode);
 }
 
 export function initTheme(): void {

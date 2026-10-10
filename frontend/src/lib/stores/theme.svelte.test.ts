@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { initTheme, isDark, toggleTheme, cleanupTheme, setAppearanceMode, getAppearanceMode } from "./theme.svelte.js";
+import {
+  initTheme,
+  isDark,
+  toggleTheme,
+  cleanupTheme,
+  setAppearanceMode,
+  getAppearanceMode,
+  isColorEReader,
+  isEReader,
+} from "./theme.svelte.js";
 
 function mockMatchMedia(matches: boolean): void {
   Object.defineProperty(window, "matchMedia", {
@@ -74,6 +83,19 @@ describe("kit identity", () => {
     initTheme();
     expect(getAppearanceMode()).toBe("e-reader");
     expect(document.documentElement.dataset["kitTheme"]).toBe("e-reader");
+    expect(isDark()).toBe(false);
+  });
+
+  it("restores color e-reader mode as a light e-reader theme", () => {
+    mockMatchMedia(true);
+    initTheme();
+    setAppearanceMode("e-reader-color");
+    cleanupTheme();
+    initTheme();
+    expect(getAppearanceMode()).toBe("e-reader-color");
+    expect(document.documentElement.dataset["kitTheme"]).toBe("e-reader-color");
+    expect(isEReader()).toBe(true);
+    expect(isColorEReader()).toBe(true);
     expect(isDark()).toBe(false);
   });
 

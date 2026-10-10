@@ -486,3 +486,56 @@ test("restores layout focus when history replaces focused same-tab content", asy
   await expect(layout).toBeFocused();
   await expect(page.locator(".tabbed-panel-leaf.input-active")).toHaveCount(0);
 });
+
+for (const theme of ["e-reader", "e-reader-color"] as const) {
+  test(`${theme} diffs mark additions and deletions with distinct fills and signs`, async ({ page }) => {
+    await page.addInitScript((name) => {
+      localStorage.setItem("kenn-forge-theme-name", name);
+      localStorage.setItem("diff-view-mode", "unified");
+    }, theme);
+    await page.goto("/pulls/github/acme/widgets/42/files");
+
+    const rendered = () =>
+      page
+        .locator(".pierre-diff")
+        .first()
+        .evaluate((host) => {
+          const root = host.shadowRoot;
+          const line = (type: string) =>
+            root?.querySelector<HTMLElement>(`[data-line][data-line-type="${type}"]`) ?? null;
+          const addition = line("change-addition");
+          const deletion = line("change-deletion");
+          if (!addition || !deletion) return null;
+          // Paint each computed color over the white page so any CSS color
+          // syntax or alpha compares as the RGB an e-ink panel shows.
+          const canvas = document.createElement("canvas");
+          canvas.width = canvas.height = 1;
+          const context = canvas.getContext("2d")!;
+          const shown = (color: string) => {
+            context.fillStyle = "#fff";
+            context.fillRect(0, 0, 1, 1);
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3));
+          };
+          const page = shown(getComputedStyle(document.body).backgroundColor);
+          const add = shown(getComputedStyle(addition).backgroundColor);
+          const del = shown(getComputedStyle(deletion).backgroundColor);
+          const distance = (a: number[], b: number[]) => Math.max(...a.map((value, i) => Math.abs(value - b[i]!)));
+          return {
+            indicators: root?.querySelector("[data-indicators]")?.getAttribute("data-indicators") ?? null,
+            additionToDeletion: distance(add, del),
+            additionToPage: distance(add, page),
+            deletionToPage: distance(del, page),
+          };
+        });
+
+    await expect.poll(rendered).not.toBeNull();
+    const result = (await rendered())!;
+    // At least 20 of 255 on some channel: visibly different on e-ink.
+    expect(result.additionToDeletion).toBeGreaterThanOrEqual(20);
+    expect(result.additionToPage).toBeGreaterThanOrEqual(20);
+    expect(result.deletionToPage).toBeGreaterThanOrEqual(20);
+    expect(result.indicators).toBe("classic");
+  });
+}

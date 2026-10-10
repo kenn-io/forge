@@ -45,3 +45,21 @@ it("paints e-reader controls with black ink and white surfaces after restoration
   expect(getComputedStyle(button).borderTopColor).toBe("rgb(0, 0, 0)");
   expect(getComputedStyle(container.querySelector("p")!).color).toBe("rgb(0, 0, 0)");
 });
+
+it("keeps accent ink in color e-reader mode but forces black ink in plain e-reader mode", async () => {
+  const { container } = await render(AppearanceSettings);
+  const accent = document.createElement("span");
+  accent.textContent = "Passing";
+  accent.style.color = "var(--accent-green)";
+  container.append(accent);
+
+  await page.getByRole("combobox", { name: "Color theme: Light" }).click();
+  await page.getByRole("option", { name: "Color e-reader" }).click();
+  await expect.element(page.getByText(/color kept for status/)).toBeVisible();
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgb(255, 255, 255)");
+  expect(getComputedStyle(accent).color).toBe("rgb(4, 112, 79)");
+
+  await page.getByRole("combobox", { name: "Color theme: Color e-reader" }).click();
+  await page.getByRole("option", { name: "E-reader", exact: true }).click();
+  expect(getComputedStyle(accent).color).toBe("rgb(0, 0, 0)");
+});

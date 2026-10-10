@@ -1,6 +1,9 @@
-/* E-ink needs black ink, light fills, and visible edges, including content
-   with its own inline colors (syntax highlighting and provider labels). */
-:root[data-kit-theme="e-reader"] {
+/* E-ink needs black ink, light fills, and visible edges. Both e-reader modes
+   share white pages, black text, and strong borders. The plain mode also
+   overrides content with its own inline colors (syntax highlighting and
+   provider labels); the color mode keeps those and uses saturated accents
+   that stay legible on color e-ink. */
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) {
   color-scheme: light;
   --bg-primary: #fff; /* kit-ui-check-ignore: e-reader palette */
   --bg-surface: #fff; /* kit-ui-check-ignore: e-reader palette */
@@ -11,18 +14,8 @@
   --text-primary: #000; /* kit-ui-check-ignore: e-reader palette */
   --text-secondary: #000; /* kit-ui-check-ignore: e-reader palette */
   --text-muted: #000; /* kit-ui-check-ignore: e-reader palette */
-  --text-on-accent: #000; /* kit-ui-check-ignore: e-reader palette */
-  --accent-blue: #dbeafe; /* kit-ui-check-ignore: pale fills; ink overridden below */
-  --accent-teal: #dbeafe; /* kit-ui-check-ignore: e-reader palette */
-  --accent-green: #eee; /* kit-ui-check-ignore: e-reader palette */
-  --accent-red: #eee; /* kit-ui-check-ignore: e-reader palette */
-  --accent-amber: #eee; /* kit-ui-check-ignore: e-reader palette */
-  --accent-purple: #eee; /* kit-ui-check-ignore: e-reader palette */
-  --status-waiting: #eee; /* kit-ui-check-ignore: e-reader palette */
   --bubble-ink: #000; /* kit-ui-check-ignore: e-reader palette */
   --terminal-bg: #fff; /* kit-ui-check-ignore: e-reader palette */
-  --diff-add-bg: #dbeafe; /* kit-ui-check-ignore: pale blue additions */
-  --diff-del-bg: #eee; /* kit-ui-check-ignore: pale gray deletions */
   --diff-stale-text: #000; /* kit-ui-check-ignore: e-reader palette */
   --bg-row-selected: #dbeafe; /* kit-ui-check-ignore: e-reader palette */
   --focus-ring: 2px solid #000; /* kit-ui-check-ignore: visible e-ink focus */
@@ -49,6 +42,43 @@
   --mermaid-note-border: #000; /* kit-ui-check-ignore: e-reader diagram palette */
 }
 
+:root[data-kit-theme="e-reader"] {
+  --text-on-accent: #000; /* kit-ui-check-ignore: e-reader palette */
+  --accent-blue: #dbeafe; /* kit-ui-check-ignore: pale fills; ink overridden below */
+  --accent-teal: #dbeafe; /* kit-ui-check-ignore: e-reader palette */
+  --accent-green: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-red: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-amber: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --accent-purple: #eee; /* kit-ui-check-ignore: e-reader palette */
+  --status-waiting: #eee; /* kit-ui-check-ignore: e-reader palette */
+  /* Additions and deletions differ by fill, and diffs show +/- signs. */
+  --diff-add-bg: #dbeafe; /* kit-ui-check-ignore: pale blue additions */
+  --diff-add-text: #000; /* kit-ui-check-ignore: black addition marks */
+  --diff-del-bg: #e5e5e5; /* kit-ui-check-ignore: pale gray deletions */
+  --diff-del-text: #000; /* kit-ui-check-ignore: black deletion marks */
+  /* Pierre blends these into white at 12%: pale blue and gray rows. */
+  --diff-add-mark: #1d4ed8; /* kit-ui-check-ignore: e-reader diff row tint */
+  --diff-del-mark: #000; /* kit-ui-check-ignore: e-reader diff row tint */
+}
+
+/* Saturated mid-tone accents: color e-ink washes out pale tints, and these
+   keep at least 4.5:1 against the white page. */
+:root[data-kit-theme="e-reader-color"] {
+  --text-on-accent: #fff; /* kit-ui-check-ignore: white ink on saturated accents */
+  --accent-blue: #0050b3; /* kit-ui-check-ignore: color e-reader palette */
+  --accent-teal: #0b6378; /* kit-ui-check-ignore: color e-reader palette */
+  --accent-green: #04704f; /* kit-ui-check-ignore: color e-reader palette */
+  --accent-red: #b42020; /* kit-ui-check-ignore: color e-reader palette */
+  --accent-amber: #9a4406; /* kit-ui-check-ignore: color e-reader palette */
+  --accent-purple: #5b36c8; /* kit-ui-check-ignore: color e-reader palette */
+  --status-waiting: #6f5a2e; /* kit-ui-check-ignore: color e-reader palette */
+  --diff-add-bg: color-mix(in srgb, var(--accent-green) 18%, #fff); /* kit-ui-check-ignore: pale green additions */
+  --diff-del-bg: color-mix(in srgb, var(--accent-red) 16%, #fff); /* kit-ui-check-ignore: pale red deletions */
+  /* Pierre blends these into white at 12%: pale green and red rows. */
+  --diff-add-mark: #16a34a; /* kit-ui-check-ignore: color e-reader diff row tint */
+  --diff-del-mark: #dc2626; /* kit-ui-check-ignore: color e-reader diff row tint */
+}
+
 /* Deliberately override component and inline ink, including Shiki tokens.
    Images and terminal canvases retain their own rendering. */
 :root[data-kit-theme="e-reader"] *,
@@ -59,30 +89,37 @@
   transition: none !important;
 }
 
-:root[data-kit-theme="e-reader"] ::placeholder {
+/* Color mode keeps inline ink but still drops effects e-ink cannot show. */
+:root[data-kit-theme="e-reader-color"] * {
+  text-shadow: none !important;
+  transition: none !important;
+}
+
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) ::placeholder {
+  color: var(--text-primary);
   opacity: 1;
 }
 
-:root[data-kit-theme="e-reader"] ::selection {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) ::selection {
   color: var(--text-primary);
-  background: var(--accent-blue);
+  background: #dbeafe; /* kit-ui-check-ignore: pale blue selection on e-ink */
 }
 
-:root[data-kit-theme="e-reader"] a {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) a {
   text-decoration: underline;
 }
 
-:root[data-kit-theme="e-reader"] :focus-visible {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) :focus-visible {
   outline-color: var(--text-primary) !important;
 }
 
 /* kit-ui-check-ignore: theme existing controls, including kit's own checkbox */
-:root[data-kit-theme="e-reader"] :is(button, input, textarea, select, .kit-toggle__track, .kit-checkbox__box) {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) :is(button, input, textarea, select, .kit-toggle__track, .kit-checkbox__box) {
   border-color: var(--border-default) !important;
   accent-color: var(--text-primary); /* kit-ui-check-ignore: e-reader theme for existing native controls */
 }
 
-:root[data-kit-theme="e-reader"] :is(button:disabled, input:disabled, textarea:disabled, [aria-disabled="true"]) {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) :is(button:disabled, input:disabled, textarea:disabled, [aria-disabled="true"]) {
   border-style: dashed;
 }
 
@@ -90,6 +127,6 @@
   background: var(--accent-blue) !important;
 }
 
-:root[data-kit-theme="e-reader"] .markdown-body pre.shiki[style] {
+:root:is([data-kit-theme="e-reader"], [data-kit-theme="e-reader-color"]) .markdown-body pre.shiki[style] {
   background: var(--bg-surface) !important;
 }

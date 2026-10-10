@@ -19,6 +19,7 @@
   import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
   import { makeMicrotaskScheduler } from "../../browser/microtask.js";
   import { observeMutation, observeResize } from "../../browser/observers.js";
+  import { isEReader } from "../../stores/theme.svelte.js";
   import type { DiffFile } from "../../api/types.js";
   import {
     appThemeType,
@@ -189,9 +190,27 @@
     Boolean(loadFileContext) && hasCollapsedContext(renderFile) && sparseContextMayDistortSyntax(renderFile),
   );
 
+  // E-ink cannot rely on faint tinted bars: e-reader modes show +/- signs and
+  // tint rows from the theme's diff marks. Pierre mixes the row overrides into
+  // the background, so they take the strong mark colors, not final fills.
+  const eReader = $derived(isEReader());
+  const eReaderDiffCSS = `
+      :host {
+        --diffs-bg-addition-override: var(--diff-add-mark);
+        --diffs-bg-deletion-override: var(--diff-del-mark);
+        --diffs-bg-addition-number-override: var(--diff-add-mark);
+        --diffs-bg-deletion-number-override: var(--diff-del-mark);
+        --diffs-addition-color-override: var(--diff-add-text);
+        --diffs-deletion-color-override: var(--diff-del-text);
+        --diffs-fg-number-addition-override: var(--diff-add-text);
+        --diffs-fg-number-deletion-override: var(--diff-del-text);
+        --diffs-bg-addition-emphasis-override: color-mix(in srgb, var(--diff-add-mark) 28%, transparent);
+        --diffs-bg-deletion-emphasis-override: color-mix(in srgb, var(--diff-del-mark) 22%, transparent);
+      }`;
+
   const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
     diffStyle: viewMode,
-    diffIndicators: "bars",
+    diffIndicators: eReader ? "classic" : "bars",
     disableFileHeader: true,
     enableLineSelection,
     enableGutterUtility: enableLineSelection,
@@ -267,6 +286,7 @@
         outline: 2px solid var(--accent-blue);
         outline-offset: -2px;
       }
+      ${eReader ? eReaderDiffCSS : ""}
     `,
   }));
 
@@ -424,6 +444,7 @@
       tabWidth,
       fullContext ? "full" : "patch",
       enableLineSelection,
+      eReader,
       annotationKey(lineAnnotations),
     ].join("\0");
     if (renderAttemptKey === nextRenderAttemptKey) {

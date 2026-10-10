@@ -581,7 +581,9 @@ function resolvedMarkdownVideoSource(
 function normalizePlayer(video: HTMLVideoElement): void {
   video.removeAttribute("autoplay");
   video.setAttribute("controls", "");
-  video.setAttribute("preload", "metadata");
+  // An idle player must not fetch: Firefox keeps reading ahead on each one,
+  // and a few would hold every connection the browser allows to the daemon.
+  video.setAttribute("preload", "none");
   video.classList.add("markdown-video");
   // The frame gives the load-failure notice a stable parent to swap the
   // player in (markdown-video-fallback.ts). A span stays valid inside a

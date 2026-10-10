@@ -603,12 +603,18 @@ disturbs the nodes the markdown host inserted
   disk cache, and skips response compression, which would buffer the stream
   (`internal/server/providerapi/markdown_media.go::Handlers.getMarkdownMediaFor`,
   `internal/server/compression/compression.go::shouldBypassCompression`).
-- Once the status is sent, the stream flushes headers before the first body
-  byte, aborts the connection when the copy fails so a truncated video never
-  ends like a whole one, and closes when server shutdown starts, before the
-  HTTP drain, so a playing video cannot hold shutdown open
+- Media must never hold shutdown or app requests. Server shutdown, before the
+  HTTP drain, cancels a wait for upstream headers, closes the body, and expires
+  pending writes, so neither a slow upstream nor a client that stopped reading
+  holds it open. Once the status is sent, the stream flushes headers before
+  the first body byte and aborts the connection when the copy fails, so a
+  truncated video never ends like a whole one
   (`internal/server/httpapi/stream.go::CopyStream`,
   `internal/server/server.go::Server.Shutdown`).
+- Players use `preload="none"`: Firefox reads ahead on every preloaded player,
+  so a few idle videos would hold every HTTP/1.1 connection the browser allows
+  to the daemon and stall the app
+  (`frontend/src/lib/utils/markdown.ts::normalizePlayer`).
 - GitLab images and videos share one upload rule: `uploads/...`,
   `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the
   platform host, and only uploads on that host reach the proxy

@@ -25,16 +25,10 @@ function route(pathname: string): string {
   return new URL(pathname, server.info.base_url).toString();
 }
 
-// Loads metadata through the media route, plays, and seeks, which needs the
-// route's byte ranges.
-async function expectPlayable(video: Locator): Promise<void> {
-  await expect(video).toHaveAttribute("controls", "");
-  await expect(video).not.toHaveAttribute("autoplay");
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.duration)).toBeCloseTo(3, 0);
-
-  // The diff view rebuilds its comment bubbles once just after load, which
-  // replaces a player started in that window; a player that keeps getting
-  // replaced still fails here.
+// Starts playback through the media route. The diff view rebuilds its
+// comment bubbles once just after load, which replaces a player started in
+// that window; a player that keeps getting replaced still fails here.
+async function startPlayback(video: Locator): Promise<void> {
   await expect(async () => {
     await video.evaluate((v: HTMLVideoElement) => {
       v.muted = true;
@@ -44,6 +38,14 @@ async function expectPlayable(video: Locator): Promise<void> {
       .poll(() => video.evaluate((v: HTMLVideoElement) => v.currentTime), { timeout: 1_000 })
       .toBeGreaterThan(0.2);
   }).toPass();
+}
+
+// Plays and seeks, which needs the route's byte ranges.
+async function expectPlayable(video: Locator): Promise<void> {
+  await expect(video).toHaveAttribute("controls", "");
+  await expect(video).not.toHaveAttribute("autoplay");
+  await startPlayback(video);
+  expect(await video.evaluate((v: HTMLVideoElement) => v.duration)).toBeCloseTo(3, 0);
   const seekedTo = await video.evaluate(
     (v: HTMLVideoElement) =>
       new Promise<number>((resolve) => {
@@ -75,6 +77,25 @@ test("plays an issue description video", async ({ page }) => {
   await expectContained(video, body);
 });
 
+// Firefox reads ahead on every player it preloads, so a page with a few
+// videos would hold every connection the browser allows to the daemon.
+test("starts no video download until the player is played", async ({ page }) => {
+  const downloads: string[] = [];
+  page.on("request", (request) => {
+    if (request.resourceType() === "media") downloads.push(request.url());
+  });
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const video = page.locator(".markdown-body video.markdown-video").first();
+
+  // The player goes idle once it has decided what to fetch before play.
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.networkState)).toBe(1);
+  expect(await video.evaluate((v: HTMLVideoElement) => v.readyState)).toBe(0);
+  expect(downloads).toEqual([]);
+
+  await startPlayback(video);
+  expect(downloads).not.toEqual([]);
+});
+
 test("plays a video in a diff review comment", async ({ page }) => {
   await page.goto(route("/pulls/github/acme/widgets/1/files"));
   const bubble = page
@@ -95,7 +116,7 @@ test("keeps the player inside the content width on a phone", async ({ page }) =>
     .filter({ has: page.locator("video") })
     .first();
   const video = body.locator("video.markdown-video");
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1);
+  await startPlayback(video);
 
   await expectContained(video, body);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -107,12 +128,13 @@ test("replaces a player that cannot load with a link to the original", async ({ 
   // Match on the issue text: the body loses its video once the notice replaces it.
   const body = page.locator(".markdown-body").filter({ hasText: "Screen recording" }).first();
   const video = body.locator("video.markdown-video");
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.readyState)).toBeGreaterThanOrEqual(1);
+  await expect(video).toBeVisible();
 
   await video.evaluate((v: HTMLVideoElement, source: string) => {
     const url = new URL(v.getAttribute("src")!, window.location.href);
     url.searchParams.set("source", source);
     v.setAttribute("src", `${url.pathname}${url.search}`);
+    v.play().catch(() => {});
   }, missing);
 
   await expect(body.getByText("Video could not be loaded.")).toBeVisible();

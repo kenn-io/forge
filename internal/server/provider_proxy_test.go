@@ -1004,3 +1004,23 @@ func TestProviderProxyEndsMediaStreamWhenStopped(t *testing.T) {
 
 	require.Error(t, err)
 }
+
+func TestProviderProxyStopsWaitingOnHubMediaWhenStopped(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	waiting := make(chan struct{})
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(waiting)
+		<-r.Context().Done()
+	}))
+	t.Cleanup(hub.Close)
+	stop, cancel := context.WithCancel(t.Context())
+	spoke := newStreamingProxyTestServer(t, stop, hub)
+	go func() {
+		<-waiting
+		cancel()
+	}()
+
+	response := getProxiedMedia(t, spoke)
+
+	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
+}

@@ -66,11 +66,14 @@ func (s *Handlers) getMarkdownMediaFor(
 	if strings.Contains(byteRange, ",") {
 		byteRange = ""
 	}
-	media, err := reader.OpenMarkdownMedia(ctx, httpapi.PlatformRepoRef(repo.Repo), source, byteRange)
+	streamCtx, release := httpapi.StreamContext(ctx, s.StreamStop)
+	media, err := reader.OpenMarkdownMedia(streamCtx, httpapi.PlatformRepoRef(repo.Repo), source, byteRange)
 	if err != nil {
+		release()
 		return nil, markdownImageError(ctx, err, kind, host)
 	}
 	return &huma.StreamResponse{Body: func(hctx huma.Context) {
+		defer release()
 		defer media.Body.Close()
 		hctx.SetHeader("Content-Type", media.ContentType)
 		if media.ContentLength >= 0 {

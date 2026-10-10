@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -401,4 +402,98 @@ func TestServerShutdownEndsActiveMarkdownMediaStream(t *testing.T) {
 	_, err = io.ReadAll(resp.Body)
 	require.Error(t, err)
 	require.ErrorIs(t, <-serveErr, http.ErrServerClosed)
+}
+
+// endlessMediaBody yields zeros until closed, like a long video upstream.
+type endlessMediaBody struct {
+	reads  atomic.Int64
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (b *endlessMediaBody) Read(p []byte) (int, error) {
+	select {
+	case <-b.closed:
+		return 0, io.ErrClosedPipe
+	default:
+	}
+	b.reads.Add(1)
+	clear(p)
+	return len(p), nil
+}
+
+func (b *endlessMediaBody) Close() error {
+	b.once.Do(func() { close(b.closed) })
+	return nil
+}
+
+func serveMediaForShutdown(
+	t *testing.T, open func(context.Context, string, string, string, string) (platform.MarkdownMedia, error),
+) (*Server, net.Listener, chan error) {
+	t.Helper()
+	srv, _, _ := setupTestServerWithMock(t, &serverfake.MockGH{OpenMarkdownMediaFn: open})
+	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ln) }()
+	return srv, ln, serveErr
+}
+
+func requireShutdownWithin(t *testing.T, srv *Server, serveErr chan error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	require.NoError(t, srv.Shutdown(ctx))
+	require.ErrorIs(t, <-serveErr, http.ErrServerClosed)
+}
+
+func TestServerShutdownEndsMarkdownMediaStreamToStalledClient(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	body := &endlessMediaBody{closed: make(chan struct{})}
+	srv, ln, serveErr := serveMediaForShutdown(t, func(
+		context.Context, string, string, string, string,
+	) (platform.MarkdownMedia, error) {
+		return platform.MarkdownMedia{Body: body, ContentType: "video/mp4", ContentLength: -1}, nil
+	})
+	conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", ln.Addr().String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	require.NoError(t, conn.(*net.TCPConn).SetReadBuffer(4096))
+	_, err = io.WriteString(conn, "GET /api/v1/repo/github/acme/widget/markdown-media?source="+
+		url.QueryEscape(markdownMediaSource)+" HTTP/1.1\r\nHost: "+ln.Addr().String()+"\r\n\r\n")
+	require.NoError(t, err)
+
+	// The client never reads, so the handler ends up blocked in a write.
+	last := int64(-1)
+	require.Eventually(t, func() bool {
+		n := body.reads.Load()
+		stalled := n > 0 && n == last
+		last = n
+		return stalled
+	}, 10*time.Second, 300*time.Millisecond)
+
+	requireShutdownWithin(t, srv, serveErr)
+}
+
+func TestServerShutdownEndsMarkdownMediaWaitingOnUpstream(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	waiting := make(chan struct{})
+	srv, ln, serveErr := serveMediaForShutdown(t, func(
+		ctx context.Context, _, _, _, _ string,
+	) (platform.MarkdownMedia, error) {
+		close(waiting)
+		<-ctx.Done()
+		return platform.MarkdownMedia{}, ctx.Err()
+	})
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+ln.Addr().String()+
+		"/api/v1/repo/github/acme/widget/markdown-media?source="+url.QueryEscape(markdownMediaSource), nil)
+	require.NoError(t, err)
+	go func() {
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-waiting
+
+	requireShutdownWithin(t, srv, serveErr)
 }

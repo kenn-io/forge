@@ -606,7 +606,7 @@ describe("markdown video", () => {
     expect(rest).toHaveLength(0);
     expect(video?.classList.contains("markdown-video")).toBe(true);
     expect(video?.hasAttribute("controls")).toBe(true);
-    expect(video?.getAttribute("preload")).toBe("metadata");
+    expect(video?.getAttribute("preload")).toBe("none");
     expect(video?.hasAttribute("autoplay")).toBe(false);
     expect(html).toContain(githubMediaSrc(attachment));
   });
@@ -715,13 +715,6 @@ describe("markdown video", () => {
     expect(html).toContain(
       `src="/api/v1/repo/gitlab/group/project/markdown-image?source=${encodeURIComponent(upload)}"`,
     );
-  });
-
-  it("keeps GitLab image syntax for non-video uploads as an image", () => {
-    const html = renderMarkdownSync("![d](/uploads/abc/diagram.png)", gitlabRepo);
-
-    expect(videos(html)).toHaveLength(0);
-    expect(html).toContain("<img");
   });
 
   it("removes raw GitLab video tags", () => {

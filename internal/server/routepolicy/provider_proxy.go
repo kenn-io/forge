@@ -20,8 +20,9 @@ type ProviderProxy struct {
 	ResponseBodyLimit int64
 }
 
-// NewProviderProxy forwards provider routes to the hub. Streaming responses
-// end when streamStop does, so server shutdown does not wait on a long video.
+// NewProviderProxy forwards provider routes to the hub. Streaming requests
+// end when streamStop does, so server shutdown waits on neither the hub nor a
+// long video.
 func NewProviderProxy(client providerplane.Client, streamStop context.Context) *ProviderProxy {
 	return &ProviderProxy{
 		client: client, streamStop: streamStop, ResponseBodyLimit: providerProxyResponseBodyLimit,
@@ -39,11 +40,15 @@ func (p *ProviderProxy) ServeHTTP(
 		))
 		return
 	}
+	ctx := r.Context()
 	send := p.client.Do
 	if streaming, ok := p.client.(providerplane.StreamingClient); ok && rule.Streaming {
 		send = streaming.DoStream
+		var release context.CancelFunc
+		ctx, release = httpapi.StreamContext(ctx, p.streamStop)
+		defer release()
 	}
-	response, err := send(r.Context(), rule.PeerScope, r)
+	response, err := send(ctx, rule.PeerScope, r)
 	if err != nil {
 		if errors.Is(err, providerplane.ErrRequestBodyTooLarge) {
 			WriteProblemResponse(w, httpapi.NewProblem(

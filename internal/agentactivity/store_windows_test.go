@@ -66,6 +66,35 @@ func TestStoreRemoveReturnsLegacyOpenError(t *testing.T) {
 	assert.FileExists(t, legacy)
 }
 
+func TestStoreRetainRuntimeSessionsRetriesLockedReport(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	workspace := t.TempDir()
+	require.NoError(store.Record("claude", "chat", "runtime", workspace, StateWorking))
+	path := store.reportPath("claude", "chat", "runtime")
+	name, err := windows.UTF16PtrFromString(path)
+	require.NoError(err)
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ, 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	require.NoError(err)
+	t.Cleanup(func() {
+		if handle != windows.InvalidHandle {
+			require.NoError(windows.CloseHandle(handle))
+		}
+	})
+
+	assert.Empty(store.LiveReportsForWorkspace(workspace, []string{"runtime"}))
+	require.ErrorContains(store.RetainRuntimeSessions(nil), path)
+	require.ErrorContains(store.RetainRuntimeSessions(nil), path)
+	assert.FileExists(path)
+	require.NoError(windows.CloseHandle(handle))
+	handle = windows.InvalidHandle
+
+	require.NoError(store.RetainRuntimeSessions(nil))
+	assert.NoFileExists(path)
+}
+
 func lockReportForTest(t *testing.T, path string) {
 	t.Helper()
 	name, err := windows.UTF16PtrFromString(path)

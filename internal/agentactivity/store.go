@@ -254,7 +254,8 @@ func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []
 	type identity struct{ agent, session, runtime string }
 	newest := make(map[identity]int)
 	reports := make([]Report, 0)
-	for _, report := range s.reports() {
+	stored, _ := s.reports()
+	for _, report := range stored {
 		if report.CWD != target {
 			continue
 		}
@@ -312,8 +313,8 @@ func (s *Store) RemoveRuntimeSession(runtimeSessionKey string) error {
 	if runtimeSessionKey == "" {
 		return nil
 	}
-	var errs []error
-	for _, report := range s.reports() {
+	reports, errs := s.reports()
+	for _, report := range reports {
 		if report.RuntimeSessionKey != runtimeSessionKey {
 			continue
 		}
@@ -333,9 +334,9 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	if s == nil || strings.TrimSpace(s.root) == "" {
 		return nil
 	}
-	var errs []error
+	reports, errs := s.reports()
 	removed := false
-	for _, report := range s.reports() {
+	for _, report := range reports {
 		if _, ok := keep[report.RuntimeSessionKey]; ok {
 			continue
 		}
@@ -353,14 +354,14 @@ func (s *Store) RetainRuntimeSessions(keep map[string]struct{}) error {
 	return errors.Join(errs...)
 }
 
-func (s *Store) reports() []storedReport {
+func (s *Store) reports() ([]storedReport, []error) {
 	s.cacheMu.Lock()
 	defer s.cacheMu.Unlock()
 
 	entries, err := os.ReadDir(s.root)
 	if err != nil {
 		s.clearCacheLocked()
-		return nil
+		return nil, nil
 	}
 	files := make(map[string]os.FileInfo)
 	metadataComplete := true
@@ -376,17 +377,21 @@ func (s *Store) reports() []storedReport {
 		files[entry.Name()] = info
 	}
 	if metadataComplete && sameReportFiles(files, s.cacheFiles) {
-		return slices.Clone(s.cacheReports)
+		return slices.Clone(s.cacheReports), nil
 	}
 
 	reports := make([]storedReport, 0, len(entries))
 	cleanupPending := false
+	var errs []error
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
 			continue
 		}
 		path := filepath.Join(s.root, entry.Name())
-		report, ok, _ := s.readReport(path)
+		report, ok, err := s.readReport(path)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			errs = append(errs, err)
+		}
 		if !ok {
 			continue
 		}
@@ -403,11 +408,11 @@ func (s *Store) reports() []storedReport {
 		reports = append(reports, storedReport{Report: report, path: path})
 	}
 	s.cacheFiles = files
-	if cleanupPending || !metadataComplete {
+	if cleanupPending || !metadataComplete || len(errs) > 0 {
 		s.cacheFiles = nil
 	}
 	s.cacheReports = slices.Clone(reports)
-	return reports
+	return reports, errs
 }
 
 func (s *Store) invalidateCache() {

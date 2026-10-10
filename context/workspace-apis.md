@@ -587,7 +587,7 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 - Hook installs require absolute data roots; kit preserves config symlinks, while
   report/worktree matching uses canonical paths (`cmd/kenn-forge/agent_hook.go::installAgentHooks`,
   `internal/agentactivity/store.go::canonicalWorkspacePath`).
-- The active sidebar polls every five seconds, and hook receipt fails open (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/kenn-forge/agent_hook.go::receiveAgentHook`).
+- The active sidebar polls every five seconds. SessionEnd surfaces daemon cleanup failures; an unreachable daemon stays silent (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::onMount`, `cmd/kenn-forge/agent_hook.go::agentHookRelay.SessionEnd`).
 
 ## Diff Scopes
 

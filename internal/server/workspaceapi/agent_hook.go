@@ -43,7 +43,7 @@ func (s *Handler) receiveAgentHook(
 	if err := s.agentActivity.HandleEvent(
 		string(integration), input.Body, input.RuntimeSessionKey,
 	); err != nil {
-		slog.Warn("record agent hook activity", "err", err)
+		return nil, huma.Error500InternalServerError("record agent hook activity", err)
 	}
 
 	output := &receiveAgentHookOutput{}

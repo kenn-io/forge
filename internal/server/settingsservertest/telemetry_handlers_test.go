@@ -126,14 +126,17 @@ func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 			t.Run(tc.name+map[bool]string{false: "/enabled", true: "/disabled"}[disabled], func(t *testing.T) {
 				assert := assert.New(t)
 				telemetry := &serverfake.FakeTelemetry{EnabledValue: !disabled}
+				if !tc.valid {
+					telemetry.ReportError = posthog.ErrInvalidProperty
+				}
 				srv := servertest.NewTelemetryTestServer(t, telemetry)
 				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"session_ended","properties":`+tc.properties+`}`))
 				req.Header.Set("Content-Type", "application/json")
 				rr := httptest.NewRecorder()
 				srv.ServeHTTP(rr, req)
-				if !tc.valid {
+				if !tc.valid && !disabled {
 					assert.Equal(http.StatusBadRequest, rr.Code)
-					assert.Contains(rr.Body.String(), "unsupported or missing session duration")
+					assert.Contains(rr.Body.String(), "unsupported or missing telemetry property")
 					assert.Empty(telemetry.Event)
 					return
 				}

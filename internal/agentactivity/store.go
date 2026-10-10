@@ -186,10 +186,13 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	}
 	legacy := s.legacyReportPath(agent, sessionID)
 	paths := []string{s.reportPath(agent, sessionID, runtimeSessionKey)}
-	if report, ok := s.readReport(legacy); ok && report.RuntimeSessionKey == runtimeSessionKey {
+	var errs []error
+	report, ok, err := s.readReport(legacy)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		errs = append(errs, err)
+	} else if ok && report.RuntimeSessionKey == runtimeSessionKey {
 		paths = append(paths, legacy)
 	}
-	var errs []error
 	removed := false
 	for _, path := range paths {
 		err := os.Remove(path)
@@ -383,7 +386,7 @@ func (s *Store) reports() []storedReport {
 			continue
 		}
 		path := filepath.Join(s.root, entry.Name())
-		report, ok := s.readReport(path)
+		report, ok, _ := s.readReport(path)
 		if !ok {
 			continue
 		}
@@ -515,32 +518,32 @@ func (s *Store) writeReport(report Report) error {
 	return nil
 }
 
-func (s *Store) readReport(path string) (Report, bool) {
+func (s *Store) readReport(path string) (Report, bool, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return Report{}, false
+		return Report{}, false, err
 	}
 	defer file.Close()
 	var report Report
 	if err := json.UnmarshalRead(io.LimitReader(file, 64<<10), &report); err != nil {
-		return Report{}, false
+		return Report{}, false, err
 	}
 	if statePriority(report.State) == 0 || report.RuntimeSessionKey == "" ||
 		report.CWD == "" || report.UpdatedAt.IsZero() {
-		return Report{}, false
+		return Report{}, false, nil
 	}
 	cwd, err := canonicalWorkspacePath(report.CWD)
 	if err != nil {
-		return Report{}, false
+		return Report{}, false, err
 	}
 	report.CWD = cwd
-	return report, true
+	return report, true, nil
 }
 
 // previousReport returns the newest report for one terminal, including one saved under its name from before terminals had their own.
 func (s *Store) previousReport(agent, sessionID, runtimeSessionKey string) (Report, bool) {
-	report, ok := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
-	legacy, legacyOK := s.readReport(s.legacyReportPath(agent, sessionID))
+	report, ok, _ := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
+	legacy, legacyOK, _ := s.readReport(s.legacyReportPath(agent, sessionID))
 	if legacyOK && legacy.RuntimeSessionKey == runtimeSessionKey &&
 		(!ok || legacy.UpdatedAt.After(report.UpdatedAt)) {
 		return legacy, true

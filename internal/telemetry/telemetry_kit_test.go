@@ -94,6 +94,12 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(duration, properties["duration_bucket"])
 	}
+	for _, duration := range []any{nil, "all_day", 31} {
+		_, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
+		require.ErrorIs(err, posthog.ErrInvalidProperty)
+	}
+	_, err = backend.SanitizeProperties("session_ended", nil)
+	require.ErrorIs(err, posthog.ErrInvalidProperty)
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",
 		"distinct_id":             "spoofed",

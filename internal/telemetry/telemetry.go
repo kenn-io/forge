@@ -40,10 +40,6 @@ var screenFilter = posthog.AllowStringValues(screenNames...)
 
 var durationFilter = posthog.AllowStringValues("under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h")
 
-func SessionDuration(value any) (any, bool) {
-	return durationFilter(value)
-}
-
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"screen_viewed": {
 		"screen":  screenFilter,

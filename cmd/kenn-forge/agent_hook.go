@@ -25,6 +25,8 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
+var errAgentHookResponse = errors.New("daemon rejected agent hook")
+
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)
 	cmd.SetArgs(normalizeSingleDashLongFlags(args))
@@ -48,7 +50,9 @@ func receiveAgentHook(
 			agent:      integration,
 			configPath: configPath,
 		}
-		_ = agenthook.Handle(ctx, integration, stdin, stdout, handler)
+		if err := agenthook.Handle(ctx, integration, stdin, stdout, handler); errors.Is(err, errAgentHookResponse) {
+			return err
+		}
 	}
 	return nil
 }
@@ -63,16 +67,15 @@ func (h agentHookRelay) SessionStart(
 	ctx context.Context,
 	input agenthook.SessionStartInput,
 ) (agenthook.SessionStartOutput, error) {
-	return agenthook.SessionStartOutput{
-		AdditionalContext: h.relay(ctx, input.CommonInput),
-	}, nil
+	additionalContext, _ := h.relay(ctx, input.CommonInput)
+	return agenthook.SessionStartOutput{AdditionalContext: additionalContext}, nil
 }
 
 func (h agentHookRelay) UserPromptSubmit(
 	ctx context.Context,
 	input agenthook.UserPromptSubmitInput,
 ) (agenthook.UserPromptSubmitOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.UserPromptSubmitOutput{}, nil
 }
 
@@ -80,7 +83,7 @@ func (h agentHookRelay) PreToolUse(
 	ctx context.Context,
 	input agenthook.PreToolUseInput,
 ) (agenthook.PreToolUseOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.PreToolUseOutput{}, nil
 }
 
@@ -88,7 +91,7 @@ func (h agentHookRelay) PostToolUse(
 	ctx context.Context,
 	input agenthook.PostToolUseInput,
 ) (agenthook.PostToolUseOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.PostToolUseOutput{}, nil
 }
 
@@ -96,7 +99,7 @@ func (h agentHookRelay) PostToolUseFailure(
 	ctx context.Context,
 	input agenthook.PostToolUseFailureInput,
 ) (agenthook.PostToolUseFailureOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.PostToolUseFailureOutput{}, nil
 }
 
@@ -104,7 +107,7 @@ func (h agentHookRelay) PermissionRequest(
 	ctx context.Context,
 	input agenthook.PermissionRequestInput,
 ) (agenthook.PermissionRequestOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.PermissionRequestOutput{}, nil
 }
 
@@ -112,7 +115,7 @@ func (h agentHookRelay) Notification(
 	ctx context.Context,
 	input agenthook.NotificationInput,
 ) (agenthook.NotificationOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.NotificationOutput{}, nil
 }
 
@@ -120,7 +123,7 @@ func (h agentHookRelay) Stop(
 	ctx context.Context,
 	input agenthook.StopInput,
 ) (agenthook.StopOutput, error) {
-	h.relay(ctx, input.CommonInput)
+	_, _ = h.relay(ctx, input.CommonInput)
 	return agenthook.StopOutput{}, nil
 }
 
@@ -128,24 +131,24 @@ func (h agentHookRelay) SessionEnd(
 	ctx context.Context,
 	input agenthook.SessionEndInput,
 ) (agenthook.SessionEndOutput, error) {
-	h.relay(ctx, input.CommonInput)
-	return agenthook.SessionEndOutput{}, nil
+	_, err := h.relay(ctx, input.CommonInput)
+	return agenthook.SessionEndOutput{}, err
 }
 
-func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) string {
+func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) (string, error) {
 	daemon, err := daemonclient.Discover(h.configPath, 1500*time.Millisecond)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	var body generated.HookEvent
 	if err := json.Unmarshal(input.Raw, &body); err != nil {
-		return ""
+		return "", nil
 	}
 	req, err := generated.NewReceiveAgentHookRequest(ctx, daemon.BaseURL+"/api/v1", &generated.ReceiveAgentHookRequestOptions{
 		PathParams: &generated.ReceiveAgentHookPath{Agent: string(h.agent)}, Body: &body,
 	})
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(
@@ -154,15 +157,15 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 	)
 	resp, err := daemon.Client.Do(req)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return ""
+		return "", fmt.Errorf("%w: %s", errAgentHookResponse, resp.Status)
 	}
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil || len(responseBody) > 1<<20 {
-		return ""
+		return "", nil
 	}
 	var output struct {
 		HookOutput *struct {
@@ -172,9 +175,9 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 		} `json:"hook_output"`
 	}
 	if err := json.Unmarshal(responseBody, &output); err != nil || output.HookOutput == nil {
-		return ""
+		return "", nil
 	}
-	return output.HookOutput.HookSpecificOutput.AdditionalContext
+	return output.HookOutput.HookSpecificOutput.AdditionalContext, nil
 }
 
 func runAgentHookInstall(action string, args []string, stdout io.Writer) error {

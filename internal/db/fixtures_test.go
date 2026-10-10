@@ -67,6 +67,10 @@ func withMRAuthor(author string) testMROpt {
 	return func(mr *MergeRequest) { mr.Author = author }
 }
 
+func withMRDraft() testMROpt {
+	return func(mr *MergeRequest) { mr.IsDraft = true }
+}
+
 func insertTestMRWithOptions(t *testing.T, d *DB, mr *MergeRequest) int64 {
 	t.Helper()
 	id, err := d.UpsertMergeRequest(t.Context(), mr)

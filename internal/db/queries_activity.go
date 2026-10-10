@@ -178,6 +178,11 @@ func listActivityWithQueryer(
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("author"))
 	}
+	if opts.HideDrafts {
+		whereClauses = append(whereClauses,
+			"(item_type != 'pr' OR parent_id IS NULL OR parent_id NOT IN "+
+				"(SELECT id FROM forge_merge_requests WHERE is_draft = 1))")
+	}
 	if opts.HideDefaultBranch {
 		whereClauses = append(whereClauses,
 			"activity_type NOT IN ('default_branch_commit', 'default_branch_force_push')")
@@ -682,6 +687,9 @@ func listActivitySubjectsWithQueryer(
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
 	}
+	if opts.HideDrafts {
+		whereClauses = append(whereClauses, "item_is_draft = 0")
+	}
 	var inclusion []string
 	if opts.Unassigned {
 		inclusion = append(inclusion, activityUnassignedCondition())
@@ -713,7 +721,8 @@ func listActivitySubjectsWithQueryer(
 			       'pr' AS item_type, p.number AS item_number, p.title AS item_title,
 			       p.url AS item_url, p.state AS item_state, p.author AS item_author,
 			       ` + prActivitySubjectAtExpr("p", opts.ExcludeNotificationRecency) + ` AS activity_at,
-			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision
+			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision,
+			       p.is_draft AS item_is_draft
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -728,7 +737,8 @@ func listActivitySubjectsWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       'issue', i.number, i.title, i.url, i.state, i.author,
 			       ` + issueActivitySubjectAtExpr("i", opts.ExcludeNotificationRecency) + `,
-			       ` + issueEventLedgerRevisionExpr("i") + `
+			       ` + issueEventLedgerRevisionExpr("i") + `,
+			       0
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -393,6 +394,69 @@ func TestSpokeUnassignedActivityUsesHubAssignmentWithoutLocalProviderRows(t *tes
 	assert.Equal("ws-issue", response.Items[0].Workspace.ID)
 	assert.Nil(response.Items[1].Workspace)
 	require.Empty(response.WorkspaceActivity)
+}
+
+func TestSpokeHideDraftsUsesHubDraftStateForLocalWorkspaceSubjects(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDatabase, _ := setupTestServer(t)
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 9, func(pr *db.MergeRequest) { pr.IsDraft = true })
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 10)
+
+	spoke, spokeDatabase, _ := setupTestServer(t)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		_ context.Context, scope federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		assert.Equal(federationauth.ScopeProviderRead, scope)
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		assert.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+		return recorder.Result(), nil
+	})}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for _, number := range []int{9, 10} {
+		key := db.WorkspaceSubjectKey{
+			RepoID: spokeRepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: number,
+		}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoKey:   platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(number), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+
+	unfiltered, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	assert.Len(unfiltered.WorkspaceActivity, 2)
+
+	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{HideDrafts: true},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.WorkspaceActivity, 1)
+	assert.Equal(10, response.WorkspaceActivity[0].ItemNumber)
 }
 
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {

@@ -12864,6 +12864,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -12999,6 +13000,7 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -34573,6 +34575,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -34626,6 +34629,7 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -41412,6 +41416,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"hide_bots":           {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -41467,6 +41472,7 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"hide_bots":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -51504,16 +51510,19 @@ type ListActivityQuery struct {
 	InvolvesMe *bool `json:"involves_me,omitempty"`
 
 	// Unassigned Only include activity for pull requests and issues with no assignees.
-	Unassigned        *bool                        `json:"unassigned,omitempty"`
-	After             *string                      `json:"after,omitempty"`
-	Before            *string                      `json:"before,omitempty"`
-	AtOrBefore        *string                      `json:"at_or_before,omitempty"`
-	Since             *string                      `json:"since,omitempty"`
-	Projection        *ListActivityQueryProjection `json:"projection,omitempty"`
-	Limit             *int64                       `json:"limit,omitempty"`
-	HideClosedMerged  *bool                        `json:"hide_closed_merged,omitempty"`
-	HideBots          *bool                        `json:"hide_bots,omitempty"`
-	HideDefaultBranch *bool                        `json:"hide_default_branch,omitempty"`
+	Unassigned       *bool                        `json:"unassigned,omitempty"`
+	After            *string                      `json:"after,omitempty"`
+	Before           *string                      `json:"before,omitempty"`
+	AtOrBefore       *string                      `json:"at_or_before,omitempty"`
+	Since            *string                      `json:"since,omitempty"`
+	Projection       *ListActivityQueryProjection `json:"projection,omitempty"`
+	Limit            *int64                       `json:"limit,omitempty"`
+	HideClosedMerged *bool                        `json:"hide_closed_merged,omitempty"`
+	HideBots         *bool                        `json:"hide_bots,omitempty"`
+
+	// HideDrafts Exclude activity for draft pull requests.
+	HideDrafts        *bool `json:"hide_drafts,omitempty"`
+	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
 type ListActivityAuthorsQuery struct {
@@ -51533,14 +51542,17 @@ type ListActivityThreadEventsQuery struct {
 	Search                  *string                                `json:"search,omitempty"`
 
 	// Unassigned Only include activity for pull requests and issues with no assignees.
-	Unassigned        *bool   `json:"unassigned,omitempty"`
-	Since             *string `json:"since,omitempty"`
-	Before            *string `json:"before,omitempty"`
-	AtOrBefore        *string `json:"at_or_before,omitempty"`
-	Limit             *int64  `json:"limit,omitempty"`
-	HideClosedMerged  *bool   `json:"hide_closed_merged,omitempty"`
-	HideBots          *bool   `json:"hide_bots,omitempty"`
-	HideDefaultBranch *bool   `json:"hide_default_branch,omitempty"`
+	Unassigned       *bool   `json:"unassigned,omitempty"`
+	Since            *string `json:"since,omitempty"`
+	Before           *string `json:"before,omitempty"`
+	AtOrBefore       *string `json:"at_or_before,omitempty"`
+	Limit            *int64  `json:"limit,omitempty"`
+	HideClosedMerged *bool   `json:"hide_closed_merged,omitempty"`
+	HideBots         *bool   `json:"hide_bots,omitempty"`
+
+	// HideDrafts Exclude activity for draft pull requests.
+	HideDrafts        *bool `json:"hide_drafts,omitempty"`
+	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
 type GetArchiveReportQuery struct {

@@ -4481,6 +4481,53 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 	assert.Equal(keptKey.ItemNumber, got[0].ItemNumber)
 }
 
+func TestWorkspaceActivityHideDraftsDropsDraftPullRequests(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	since := now.Add(-time.Hour)
+	draftKey := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 41,
+	}
+	readyKey := db.WorkspaceSubjectKey{
+		RepoID: 7, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
+	}
+	subject := func(key db.WorkspaceSubjectKey, isDraft bool) workspaceapi.SubjectActivity {
+		return workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+				Title: "Workspace work", Author: "alice", State: "open", IsDraft: isDraft,
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(key.ItemNumber), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{
+			draftKey: subject(draftKey, true),
+			readyKey: subject(readyKey, false),
+		},
+	}
+	srv := wiredServer(&Server{
+		repoResolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{}),
+		cfg: &config.Config{Activity: config.Activity{
+			UseWorkspaceActivityForRecency: true,
+		}},
+	})
+
+	got := srv.itemapi.WorkspaceActivityResponse(
+		&itemapi.ListActivityInput{},
+		db.ListActivityOpts{HideDrafts: true, Since: &since},
+		snapshot, nil, true,
+	)
+
+	require.Len(got, 1)
+	assert.Equal(readyKey.ItemNumber, got[0].ItemNumber)
+}
+
 func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

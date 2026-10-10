@@ -124,6 +124,7 @@
     + (activity.getShowNotifications() ? 0 : 1)
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
+    + (activity.getHideDrafts() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
     + (activity.getInvolvesMe() ? 1 : 0)
@@ -371,6 +372,7 @@
     activity.setShowNotifications(true);
     activity.setHideClosedMerged(false);
     activity.setHideBots(false);
+    activity.setHideDrafts(false);
     activity.setHideDefaultBranchActivity(false);
     grouping.setHideOrgName(false);
     activity.setInvolvesMe(false);
@@ -455,6 +457,16 @@
           color: "var(--accent-purple)",
           onSelect: () => {
             activity.setHideBots(!activity.getHideBots());
+            activity.loadActivity();
+          },
+        },
+        {
+          id: "hide-drafts",
+          label: "Hide drafts",
+          active: activity.getHideDrafts(),
+          color: "var(--accent-amber)",
+          onSelect: () => {
+            activity.setHideDrafts(!activity.getHideDrafts());
             activity.loadActivity();
           },
         },

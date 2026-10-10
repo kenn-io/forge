@@ -336,6 +336,33 @@ describe("activity store workspace activity", () => {
     );
   });
 
+  it("sends the Hide drafts filter", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setHideDrafts(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ hide_drafts: true }) },
+      }),
+    );
+
+    store.setHideDrafts(false);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.not.objectContaining({ hide_drafts: true }) },
+      }),
+    );
+  });
+
   it("retains the complete workspace snapshot returned with an activity read", async () => {
     const snapshot = [workspaceActivity(7)];
     const client = {
@@ -598,21 +625,38 @@ describe("activity store collapse state", () => {
       }
       const query = options.params?.query ?? {};
       threadQueries.push(query);
+      const firstPage = query.before === undefined;
       return {
         data: {
-          items: [],
+          items: firstPage ? threadPage("a", Number(query.limit)) : threadPage("b", 3),
           item_activity: [],
           workspace_activity: [],
-          capped: query.before === undefined,
+          capped: false,
           event_cursor: "hidden:9",
-          ...(query.before === undefined ? { next_cursor: "thread-page-2" } : {}),
+          ...(firstPage ? { next_cursor: "thread-page-2" } : {}),
         },
         error: null,
       };
     });
+    const threadPage = (prefix: string, count: number): ActivityItem[] =>
+      Array.from(
+        { length: count },
+        (_, index) =>
+          ({
+            id: `pre:${prefix}${index}`,
+            cursor: `${prefix}${index}`,
+            activity_type: "comment",
+            repo: subject.repo,
+            item_type: "pr",
+            item_number: 7,
+            item_title: subject.item_title,
+            created_at: "2026-04-27T12:00:00Z",
+          }) as unknown as ActivityItem,
+      );
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
     store.hydrateDefaults(settings(true));
     store.setUnassigned(true);
+    store.setHideDrafts(true);
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -630,10 +674,14 @@ describe("activity store collapse state", () => {
         item_type: "pr",
         item_number: 7,
         unassigned: true,
+        hide_drafts: true,
         at_or_before: "hidden:9",
       }),
       expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9", unassigned: true }),
     ]);
+    await vi.waitFor(() =>
+      expect(store.getActivityItems().filter((item) => item.id.startsWith("pre:"))).toHaveLength(103),
+    );
   });
 
   it("loads a Bitbucket Cloud thread by repository UUID", async () => {

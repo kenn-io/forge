@@ -38,5 +38,9 @@ export type ListActivityParams = {
   limit?: number;
   hide_closed_merged?: boolean;
   hide_bots?: boolean;
+  /**
+   * Exclude activity for draft pull requests.
+   */
+  hide_drafts?: boolean;
   hide_default_branch?: boolean;
 };

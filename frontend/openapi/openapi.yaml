@@ -12312,6 +12312,13 @@ paths:
           name: hide_bots
           schema:
             type: boolean
+        - description: Exclude activity for draft pull requests.
+          explode: false
+          in: query
+          name: hide_drafts
+          schema:
+            description: Exclude activity for draft pull requests.
+            type: boolean
         - explode: false
           in: query
           name: hide_default_branch
@@ -12457,6 +12464,13 @@ paths:
           in: query
           name: hide_bots
           schema:
+            type: boolean
+        - description: Exclude activity for draft pull requests.
+          explode: false
+          in: query
+          name: hide_drafts
+          schema:
+            description: Exclude activity for draft pull requests.
             type: boolean
         - explode: false
           in: query

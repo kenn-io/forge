@@ -63,6 +63,12 @@ const setEnabledEvents = vi.hoisted(() =>
     enabledEvents.value = events;
   }),
 );
+const hideDrafts = vi.hoisted(() => ({ value: false }));
+const setHideDrafts = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    hideDrafts.value = value;
+  }),
+);
 const setHideClosedMerged = vi.hoisted(() =>
   vi.fn((value: boolean) => {
     hideClosedMerged.value = value;
@@ -142,6 +148,7 @@ vi.mock("../context.js", () => ({
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
+      getHideDrafts: () => hideDrafts.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => activityLoading.value,
@@ -166,6 +173,7 @@ vi.mock("../context.js", () => ({
       loadThreadPreview,
       markNotificationSeen,
       setHideBots: vi.fn(),
+      setHideDrafts,
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
     },
@@ -237,6 +245,8 @@ describe("MobileActivityView branch activity", () => {
     setActivityAuthor.mockClear();
     setEnabledEvents.mockClear();
     setHideClosedMerged.mockClear();
+    hideDrafts.value = false;
+    setHideDrafts.mockClear();
     loadActivity.mockClear();
     setFullEventProjectionRequired.mockClear();
     setActivityPageLimit.mockClear();
@@ -320,6 +330,20 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.click(control);
 
     expect(setHideClosedMerged).toHaveBeenCalledWith(true);
+  });
+
+  it("reloads activity when draft visibility changes", async () => {
+    render(MobileActivityView, { props: { onSelectItem } });
+    const mountedReads = loadActivity.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide drafts" });
+    expect(control.checked).toBe(false);
+
+    await fireEvent.click(control);
+
+    expect(setHideDrafts).toHaveBeenCalledWith(true);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
   });
 
   it("renders branch activity without a fake PR or issue number", () => {

@@ -21,6 +21,8 @@ beforeEach(() => {
   itemActivity.value = [];
   workspaceActivity.value = [];
   hideBots.value = false;
+  hideDrafts.value = false;
+  setHideDrafts.mockClear();
   useWorkspaceActivityForRecency.value = false;
 });
 
@@ -106,6 +108,12 @@ const rollUpCommits = vi.hoisted(() => ({ value: false }));
 const hideDefaultBranchActivity = vi.hoisted(() => ({ value: false }));
 const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
+const hideDrafts = vi.hoisted(() => ({ value: false }));
+const setHideDrafts = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    hideDrafts.value = value;
+  }),
+);
 const useWorkspaceActivityForRecency = vi.hoisted(() => ({ value: false }));
 const hideOrgName = vi.hoisted(() => ({ value: false }));
 const setActivityFilterTypes = vi.hoisted(() => vi.fn());
@@ -152,6 +160,7 @@ vi.mock("../context.js", () => ({
       getUnassigned: () => unassigned.value,
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
+      getHideDrafts: () => hideDrafts.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getEnabledItemTypes: () => enabledItemTypes.value,
@@ -194,6 +203,7 @@ vi.mock("../context.js", () => ({
       markNotificationSeen,
       setHideClosedMerged: vi.fn(),
       setHideBots: vi.fn(),
+      setHideDrafts,
       setHideDefaultBranchActivity: vi.fn((value: boolean) => {
         hideDefaultBranchActivity.value = value;
       }),
@@ -392,6 +402,7 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith(undefined);
+    expect(setHideDrafts).toHaveBeenCalledWith(false);
     expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
   });
 
@@ -423,8 +434,12 @@ describe("ActivityFeed compact mode", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Hide bots" }));
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 2);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Hide drafts" }));
+    expect(setHideDrafts).toHaveBeenCalledWith(true);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 3);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Unassigned" }));
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 4);
   });
 
   it("keeps the filter popover open and focus on the selected radio during keyboard navigation", async () => {

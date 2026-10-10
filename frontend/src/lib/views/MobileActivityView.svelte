@@ -355,6 +355,7 @@
     + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
     + (EVENT_TYPES.length - activity.getEnabledEvents().size)
     + (activity.getHideBots() ? 1 : 0)
+    + (activity.getHideDrafts() ? 1 : 0)
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
@@ -425,6 +426,11 @@
   function toggleHideBots(): void {
     activity.setHideBots(!activity.getHideBots());
     applyFilters();
+  }
+
+  function toggleHideDrafts(): void {
+    activity.setHideDrafts(!activity.getHideDrafts());
+    activity.loadActivity();
   }
 
   function toggleHideClosedMerged(): void {
@@ -886,6 +892,14 @@
           checked={activity.getHideBots()}
           label="Hide bots"
           onchange={() => toggleHideBots()}
+        />
+      </div>
+
+      <div class="mobile-boolean-toggle">
+        <Toggle
+          checked={activity.getHideDrafts()}
+          label="Hide drafts"
+          onchange={() => toggleHideDrafts()}
         />
       </div>
 

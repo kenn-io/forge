@@ -272,6 +272,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMerged = $state(false);
   let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
+  let hideDrafts = $state(false);
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -356,6 +357,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getHideBots(): boolean {
     return hideBots;
+  }
+  function getHideDrafts(): boolean {
+    return hideDrafts;
   }
   function getUseWorkspaceActivityForRecency(): boolean {
     return useWorkspaceActivityForRecency;
@@ -448,6 +452,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideBots(v: boolean): void {
     hideBots = v;
+    invalidatePagedActivityRequests();
+  }
+  function setHideDrafts(v: boolean): void {
+    hideDrafts = v;
     invalidatePagedActivityRequests();
   }
   function setHideDefaultBranchActivity(v: boolean): void {
@@ -550,6 +558,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (unassigned) p.unassigned = true;
     if (hideClosedMerged) p.hide_closed_merged = true;
     if (hideBots) p.hide_bots = true;
+    if (hideDrafts) p.hide_drafts = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     return p;
   }
@@ -571,6 +580,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.unassigned ?? false,
       params.hide_closed_merged ?? false,
       params.hide_bots ?? false,
+      params.hide_drafts ?? false,
       params.hide_default_branch ?? false,
       params.limit ?? 0,
     ]);
@@ -862,6 +872,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       unassigned ||
       hideClosedMerged ||
       hideBots ||
+      hideDrafts ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const absentThreadKeys = new Set<string>();
     if (reconcileCollapsedThreads && (!result.response.item_activity_capped || parentFilterActive)) {
@@ -1038,6 +1049,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(unassigned ? { unassigned: true } : {}),
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
       ...(hideBots ? { hide_bots: true } : {}),
+      ...(hideDrafts ? { hide_drafts: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1511,6 +1523,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
+    getHideDrafts,
     getUseWorkspaceActivityForRecency,
     getHideDefaultBranchActivity,
     getEnabledItemTypes,
@@ -1534,6 +1547,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     loadThreadPreview,
     setHideClosedMerged,
     setHideBots,
+    setHideDrafts,
     setHideDefaultBranchActivity,
     setEnabledItemTypes,
     setEnabledEvents,

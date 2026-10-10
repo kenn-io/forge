@@ -535,6 +535,67 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 	assert.Empty(body.ItemActivity)
 }
 
+func TestAPIListActivityHideDraftsAppliesToEveryProjection(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	draftID := serverfake.SeedPR(
+		t, database, "acme", "widget", 91,
+		serverfake.WithSeedPRTitle("Draft pull request"),
+		serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+		func(pr *db.MergeRequest) { pr.IsDraft = true },
+	)
+	serverfake.SeedPR(
+		t, database, "acme", "widget", 92,
+		serverfake.WithSeedPRTitle("Ready pull request"),
+		serverfake.WithSeedPRTimes(now.Add(-2*time.Hour), now.Add(-2*time.Hour), now.Add(-2*time.Hour)),
+	)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: draftID,
+		EventType:      "issue_comment",
+		Author:         "reviewer",
+		Body:           "Comment on a draft",
+		CreatedAt:      now,
+		DedupeKey:      "api-draft-comment",
+	}}))
+
+	since := url.QueryEscape(now.Add(-7 * 24 * time.Hour).Format(time.RFC3339))
+	for _, projection := range []string{"full", "collapsed"} {
+		rr := testutil.DoJSON(
+			t,
+			srv,
+			http.MethodGet,
+			"/api/v1/activity?since="+since+"&projection="+projection+"&hide_drafts=true",
+			nil)
+
+		require.Equal(http.StatusOK, rr.Code, projection)
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		for _, item := range body.Items {
+			assert.Equal(92, item.ItemNumber, projection)
+		}
+		require.Len(body.ItemActivity, 1, projection)
+		assert.Equal(92, body.ItemActivity[0].ItemNumber, projection)
+	}
+
+	thread := testutil.DoJSON(
+		t,
+		srv,
+		http.MethodGet,
+		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id="+strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+
+			"&item_type=pr&item_number=91&since="+since+"&hide_drafts=true",
+		nil)
+
+	require.Equal(http.StatusOK, thread.Code)
+	var threadBody itemapi.ActivityResponse
+	require.NoError(json.NewDecoder(thread.Body).Decode(&threadBody))
+	assert.Empty(threadBody.Items)
+}
+
 func TestAPIListActivityReturnsRecentParentWhenItsVisibleEventsAreFiltered(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)

@@ -945,6 +945,7 @@ type WorkspaceSubjectMetadata struct {
 	State        string
 	URL          string
 	Author       string
+	IsDraft      bool
 }
 
 // RepoViewerLogin binds a provider-authenticated login to the stable local
@@ -1619,6 +1620,7 @@ type ListActivityOpts struct {
 	ExcludeNotifications bool
 	HideClosedMerged     bool
 	HideBots             bool
+	HideDrafts           bool
 	HideDefaultBranch    bool
 	ParentRepoID         int64
 	ParentItemType       string
@@ -1665,6 +1667,7 @@ type ListActivitySubjectsOpts struct {
 	ViewerLogins             []RepoViewerLogin
 	HideClosedMerged         bool
 	HideBots                 bool
+	HideDrafts               bool
 	Limit                    int
 	Since                    *time.Time
 }

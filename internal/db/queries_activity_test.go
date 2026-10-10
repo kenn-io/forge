@@ -918,6 +918,69 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 		assert.Equal("human-reviewer", items[0].Author)
 		assert.Equal("human-author", items[1].ItemAuthor)
 	})
+
+	t.Run("hide drafts drops draft pull request events, notifications, and subjects", func(t *testing.T) {
+		require := require.New(t)
+		assert := assert.New(t)
+		d := openTestDB(t)
+		ctx := t.Context()
+		base := baseTime()
+		repoID := insertTestRepo(t, d, "example", "drafts")
+
+		draftID := insertTestMRWithOptions(t, d, testMR(repoID, 1,
+			withMRDraft(),
+			withMRActivity(base.Add(3*time.Minute))))
+		insertTestMRWithOptions(t, d, testMR(repoID, 2,
+			withMRActivity(base.Add(time.Minute))))
+		insertTestIssue(t, d, repoID, 3, "Issue stays visible", base)
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: draftID,
+			EventType:      "issue_comment", Author: "reviewer",
+			CreatedAt: base.Add(5 * time.Minute), DedupeKey: "draft-comment",
+		}}))
+		draftNumber := 1
+		unsyncedNumber := 4
+		require.NoError(d.UpsertNotifications(ctx, []Notification{
+			{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformNotificationID: "ntf-draft",
+				RepoOwner:              "example", RepoName: "drafts",
+				SubjectType: "PullRequest", SubjectTitle: "Draft notification",
+				WebURL:     "https://github.com/example/drafts/pull/1",
+				ItemNumber: &draftNumber, ItemType: "pr", ItemAuthor: "author",
+				Reason: "mention", Unread: true,
+				SourceUpdatedAt: base.Add(4 * time.Minute), SyncedAt: base.Add(4 * time.Minute),
+			},
+			{
+				Platform: "github", PlatformHost: "github.com",
+				PlatformNotificationID: "ntf-unsynced",
+				RepoOwner:              "example", RepoName: "drafts",
+				SubjectType: "PullRequest", SubjectTitle: "Unsynced notification",
+				WebURL:     "https://github.com/example/drafts/pull/4",
+				ItemNumber: &unsyncedNumber, ItemType: "pr", ItemAuthor: "author",
+				Reason: "mention", Unread: true,
+				SourceUpdatedAt: base.Add(2 * time.Minute), SyncedAt: base.Add(2 * time.Minute),
+			},
+		}))
+
+		items, err := d.ListActivity(ctx, ListActivityOpts{HideDrafts: true, Limit: 3})
+		require.NoError(err)
+		require.Len(items, 3)
+		assert.Equal([]string{"notification", "new_pr", "new_issue"}, activityTypes(items))
+		assert.Equal([]int{4, 2, 3}, []int{items[0].ItemNumber, items[1].ItemNumber, items[2].ItemNumber})
+
+		unfiltered, err := d.ListActivity(ctx, ListActivityOpts{Limit: 3})
+		require.NoError(err)
+		assert.Equal([]string{"comment", "notification", "new_pr"}, activityTypes(unfiltered))
+
+		subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{HideDrafts: true, Limit: 10})
+		require.NoError(err)
+		subjectNumbers := make([]int, 0, len(subjects))
+		for _, subject := range subjects {
+			subjectNumbers = append(subjectNumbers, subject.Subject.Key.ItemNumber)
+		}
+		assert.Equal([]int{2, 3}, subjectNumbers)
+	})
 }
 
 func TestListCollapsedActivityProjection(t *testing.T) {

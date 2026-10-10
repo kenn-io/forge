@@ -105,6 +105,7 @@ type ListActivityInput struct {
 	Limit              int      `query:"limit" minimum:"10" maximum:"500"`
 	HideClosedMerged   bool     `query:"hide_closed_merged"`
 	HideBots           bool     `query:"hide_bots"`
+	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
 	HideDefaultBranch  bool     `query:"hide_default_branch"`
 	ParentProvider     string
 	ParentPlatformHost string
@@ -407,6 +408,9 @@ func (s *Handlers) WorkspaceActivityResponse(
 		}
 		_, matchedProviderEvent := matchedSubjects[key]
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
+			continue
+		}
+		if opts.HideDrafts && subject.IsDraft {
 			continue
 		}
 		if !searchQuery.Empty() {

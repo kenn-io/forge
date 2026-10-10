@@ -16,6 +16,7 @@ The filters can narrow the queue by:
 - pull requests, issues, and default-branch commits
 - event type, author, or text
 - open or closed state
+- draft pull requests
 - human or bot activity
 
 Text search matches every word you type. Put `!` or `NOT` before a word to

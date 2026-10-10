@@ -1,7 +1,11 @@
 package spokeapi
 
 import (
+	"context"
+	"strconv"
+
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
@@ -103,4 +107,48 @@ func RetainActivitySubjectsByIdentity(
 			delete(snapshot.OwnReferences, key)
 		}
 	}
+}
+
+// MarkDraftActivitySubjects applies the hub's draft state to pull request
+// subjects. A spoke can hold a workspace for a pull request it has no local
+// row for, so only the hub knows whether that pull request is a draft.
+func (s *HubProviderSource) MarkDraftActivitySubjects(
+	ctx context.Context,
+	snapshot *workspaceapi.WorkspaceSubjectSnapshot,
+	identitiesByKey map[db.WorkspaceSubjectKey]providerplane.ItemIdentity,
+) error {
+	keys := make([]db.WorkspaceSubjectKey, 0, len(snapshot.Subjects))
+	workspaces := make([]fleet.RawWorkspace, 0, len(snapshot.Subjects))
+	for key := range snapshot.Subjects {
+		identity, ok := identitiesByKey[key]
+		if !ok || key.ItemType != db.WorkspaceItemTypePullRequest {
+			continue
+		}
+		workspaces = append(workspaces, fleet.RawWorkspace{
+			ID: strconv.Itoa(len(keys)),
+			Repository: fleet.RepositoryIdentity{
+				Provider:     identity.Repository.Provider,
+				PlatformHost: identity.Repository.PlatformHost,
+				Key:          identity.Repository.Key,
+			},
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: key.ItemNumber,
+		})
+		keys = append(keys, key)
+	}
+	if len(workspaces) == 0 {
+		return nil
+	}
+	enriched, err := s.WorkspaceProviderState(ctx, workspaces)
+	if err != nil {
+		return err
+	}
+	for index, workspace := range enriched {
+		if workspace.MRIsDraft == nil {
+			continue
+		}
+		activity := snapshot.Subjects[keys[index]]
+		activity.Subject.IsDraft = *workspace.MRIsDraft
+		snapshot.Subjects[keys[index]] = activity
+	}
+	return nil
 }

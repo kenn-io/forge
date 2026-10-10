@@ -198,6 +198,9 @@ Rules:
 - Activity applies "Hide closed/merged" before ordering and limits. Notifications use
   linked `subject_state`, and unknown lifecycle stays visible rather than being guessed
   from unread/read state (`internal/db/queries_activity.go::DB.ListActivity`).
+- Activity applies "Hide drafts" before ordering and limits; notification rows match
+  through their linked pull request, so unsynced subjects stay visible
+  (`internal/db/queries_activity.go::listActivityWithQueryer`).
 - Activity applies "Hide bots" before ordering and limits: events test the actor while
   parent summaries test the item author. Presentation filtering remains a defense for
   mixed workspace rows (`internal/db/activity_visibility.go::IsBotLogin`).

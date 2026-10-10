@@ -163,6 +163,18 @@ test.describe("activity feed filters", () => {
     await expect(botCells).toHaveCount(0, { timeout: 5_000 });
   });
 
+  test("hide drafts removes draft pull request activity and restores it when cleared", async ({ page }) => {
+    const draftRows = page.locator(".activity-row", { hasText: "WIP: new dashboard layout" });
+    await expect(draftRows.first()).toBeVisible();
+
+    await selectActivityFilterItem(page, "Hide drafts");
+    await expect(draftRows).toHaveCount(0, { timeout: 5_000 });
+    await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
+
+    await page.locator(".activity-filters__item", { hasText: "Hide drafts" }).click();
+    await expect(draftRows.first()).toBeVisible();
+  });
+
   test("24h range shows fewer items than 7d", async ({ page }) => {
     const rows7d = page.locator(".activity-row");
     const count7d = await rows7d.count();

@@ -33,6 +33,25 @@ func TestListWorkspaceSubjectMetadataReturnsPullRequestAndIssue(t *testing.T) {
 	}].Title)
 }
 
+func TestListWorkspaceSubjectMetadataReportsDraftPullRequests(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRDraft()))
+	insertTestMRWithOptions(t, d, testMR(repoID, 5))
+	draftKey := WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 4}
+	readyKey := WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 5}
+
+	got, err := d.ListWorkspaceSubjectMetadata(t.Context(), []WorkspaceSubjectKey{draftKey, readyKey})
+	require.NoError(err)
+	require.Len(got, 2)
+	assert.True(got[draftKey].IsDraft)
+	assert.False(got[readyKey].IsDraft)
+}
+
 func TestListWorkspaceSubjectMetadataUsesLaunchSpecWithoutProviderReplica(t *testing.T) {
 	t.Parallel()
 

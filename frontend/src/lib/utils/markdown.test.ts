@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vite-plus/test";
+import { Effect } from "effect";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { buildCanonicalProviderItemURL } from "./item-reference.js";
 import {
   githubAttachmentParagraphSources,
   renderMarkdown,
   renderMarkdownBlocks,
+  renderMarkdownEffect,
   renderMarkdownSync,
   type RepoContext,
 } from "./markdown.js";
@@ -759,6 +761,39 @@ describe("markdown video", () => {
 
     expect(videos(html)).toHaveLength(0);
     expect(html).not.toContain("data-kenn-forge-media");
+  });
+
+  it("probes a standalone attachment and renders the confirmed video as a player", async () => {
+    const source = "https://github.com/user-attachments/assets/effect-render-probe";
+    const requested: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        requested.push(new URL(request.url).searchParams.get("source") ?? "");
+        return new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } });
+      }),
+    );
+    try {
+      const html = await Effect.runPromise(renderMarkdownEffect(`Clip:\n\n${source}`, githubRepo));
+
+      expect(requested).toEqual([source]);
+      expect(videos(html)).toHaveLength(1);
+      expect(html).toContain(githubMediaSrc(source));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("does not reuse a cached link once a later probe confirms the video", async () => {
+    const source = "https://github.com/user-attachments/assets/cache-key-check";
+    const markdown = `Clip:\n\n${source}`;
+
+    const before = await renderMarkdown(markdown, githubRepo, { mediaOutcomes: new Map([[source, "unknown"]]) });
+    const after = await renderMarkdown(markdown, githubRepo, { mediaOutcomes: new Map([[source, "video"]]) });
+
+    expect(videos(before)).toHaveLength(0);
+    expect(videos(after)).toHaveLength(1);
   });
 
   it("never leaks the player marker into output", () => {

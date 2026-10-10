@@ -33,6 +33,7 @@ import {
 } from "../api/provider-routes.js";
 import { configuredAPIPath } from "../api/runtime-base.js";
 import { itemReferenceAnchorAttributes, parseProviderItemURL } from "./item-reference.js";
+import { resolveMarkdownMediaOutcomes } from "./markdown-media.js";
 import type { ItemReferenceType } from "./item-reference.js";
 
 export interface RepoContext {
@@ -493,6 +494,12 @@ export function githubAttachmentParagraphSources(raw: string, repo: RepoContext)
 // The media route for a provider-hosted video this repository's credential
 // can read: GitHub attachments and GitLab project uploads.
 export function proxiedMarkdownMediaSource(source: string, repo: RepoContext): string | null {
+  const path = markdownMediaRequestPath(source, repo);
+  return path === null ? null : configuredAPIPath(path);
+}
+
+// The same route relative to the API base, for generated-client requests.
+export function markdownMediaRequestPath(source: string, repo: RepoContext): string | null {
   const provider = canonicalProvider(repo.provider);
   let url: URL;
   if (provider === "github") {
@@ -517,11 +524,9 @@ export function proxiedMarkdownMediaSource(source: string, repo: RepoContext): s
     return null;
   }
   const params = { source: url.toString() };
-  return configuredAPIPath(
-    providerUsesHostRoute(repo)
-      ? getGetMarkdownMediaOnHostUrl(providerHostRouteParams(repo), params)
-      : getGetMarkdownMediaUrl(providerRouteParams(repo), params),
-  );
+  return providerUsesHostRoute(repo)
+    ? getGetMarkdownMediaOnHostUrl(providerHostRouteParams(repo), params)
+    : getGetMarkdownMediaUrl(providerRouteParams(repo), params);
 }
 
 // Applies each provider's rule for <video> markup. Generated players carry
@@ -810,7 +815,13 @@ export function renderMarkdown(raw: string, repo?: RepoContext, opts: RenderMark
   const interactiveTasks = !!opts.interactiveTasks;
   const collapse = !!opts.collapseSingleLineBreaks;
   const repoKey = repo ? `${repo.provider}/${repo.platformHost ?? ""}/${repo.repoPath}` : "";
-  const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${collapse ? 1 : 0}\0${raw}`;
+  // A link rendered while a probe failed must not be reused after a later
+  // probe confirms the video.
+  const mediaKey = [...(opts.mediaOutcomes ?? [])]
+    .map(([source, outcome]) => `${source}=${outcome}`)
+    .sort()
+    .join("\u0001");
+  const key = `${repoKey}\0${interactiveTasks ? 1 : 0}\0${collapse ? 1 : 0}\0${mediaKey}\0${raw}`;
   const cached = htmlCache.get(key);
   if (cached !== undefined) return cached;
 
@@ -828,8 +839,17 @@ export const renderMarkdownEffect = Effect.fn("Markdown.render")(function* (
   repo?: RepoContext,
   opts: RenderMarkdownOpts = {},
 ) {
+  // GitHub decides from upload metadata whether a bare attachment link is a
+  // video; Forge only has the URL, so it asks the media route first.
+  const candidates = repo
+    ? githubAttachmentParagraphSources(raw, repo).flatMap((source) => {
+        const mediaURL = markdownMediaRequestPath(source, repo);
+        return mediaURL === null ? [] : [{ source, mediaURL }];
+      })
+    : [];
+  const mediaOutcomes = candidates.length > 0 ? yield* resolveMarkdownMediaOutcomes(candidates) : opts.mediaOutcomes;
   return yield* Effect.tryPromise({
-    try: () => renderMarkdown(raw, repo, opts),
+    try: () => renderMarkdown(raw, repo, { ...opts, mediaOutcomes }),
     catch: (cause) => MarkdownRenderError.make({ cause }),
   });
 });

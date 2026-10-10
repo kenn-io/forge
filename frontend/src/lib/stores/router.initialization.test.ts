@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { launchURL } from "../../../../mobile/connection.ts";
 
 const issueRoute = "/host/ghe.example.com/issues/github/acme/widget/7";
 // Each imported router wraps history.replaceState; restore it so a router from
@@ -29,8 +28,8 @@ describe("router initialization", () => {
 
   it("opens Workspaces for the native tablet desktop launch URL", async () => {
     window.__BASE_PATH__ = "/forge/";
-    const url = new URL(launchURL({ server: "https://forge.example.test/forge", token: "", desktop: true }, true));
-    const router = await importRouterAt(url.pathname + url.search);
+    // mobile/connection.test.ts pins launchURL to this tablet desktop route.
+    const router = await importRouterAt("/forge/workspaces?desktop=1");
     expect(router.getRoute()).toEqual({ page: "workspaces" });
   });
 

@@ -1,4 +1,6 @@
+import { JSDOM } from "jsdom";
 import { act } from "react";
+import { Linking } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as SecureStore from "expo-secure-store";
@@ -21,7 +23,7 @@ vi.mock("react-native", () => ({
     },
   },
   KeyboardAvoidingView: "KeyboardAvoidingView",
-  Linking: { openURL: vi.fn() },
+  Linking: { openURL: vi.fn(async () => true) },
   Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
@@ -63,6 +65,23 @@ async function press(label: string) {
 
 function webProps(): WebViewProps {
   return app.root.findByType(WebView).props;
+}
+
+async function followLink(url: string) {
+  let allowed: boolean | undefined;
+  await act(async () => {
+    allowed = webProps().onShouldStartLoadWithRequest?.({
+      url,
+      isTopFrame: true,
+      title: "Forge",
+      loading: false,
+      canGoBack: true,
+      canGoForward: false,
+      navigationType: "click",
+      lockIdentifier: 0,
+    });
+  });
+  return allowed;
 }
 
 beforeEach(() => {
@@ -137,24 +156,39 @@ describe("native connection flow", () => {
     await mount();
     await press("Connect");
     const view = app.root.findByType(WebView);
-    const source = webProps().source;
-    await act(async () => {
-      expect(
-        webProps().onShouldStartLoadWithRequest?.({
-          url: "https://forge.example.test/forge/",
-          isTopFrame: true,
-          title: "Forge",
-          loading: false,
-          canGoBack: true,
-          canGoForward: false,
-          navigationType: "click",
-          lockIdentifier: 0,
-        }),
-      ).toBe(false);
-    });
+    const source = webProps().source as { baseUrl: string };
+    const destination = "https://forge.example.test/forge/m/pulls";
+    expect(await followLink(destination)).toBe(false);
     expect(app.root.findByType(WebView) === view).toBe(true);
     expect(webProps().source).toBe(source);
     expect(native.injectJavaScript).toHaveBeenCalledOnce();
+
+    // Run the injected navigation against a real DOM history at the bundled page's URL.
+    const page = new JSDOM("<!doctype html>", { url: source.baseUrl, runScripts: "outside-only" });
+    const { window } = page;
+    const popstates: PopStateEvent[] = [];
+    window.addEventListener("popstate", (event) => popstates.push(event));
+    window.eval(vi.mocked(native.injectJavaScript).mock.calls[0]![0] as string);
+    expect(window.location.href).toBe(destination);
+    expect(popstates).toHaveLength(1);
+    expect(window.history.state).toEqual({ __forgeURL: destination });
+    expect(window.history.length).toBe(2);
+
+    const back = new Promise((resolve) => window.addEventListener("popstate", resolve, { once: true }));
+    window.history.back();
+    await back;
+    expect(window.location.href).toBe(source.baseUrl);
+    expect(window.location.href).not.toBe(destination);
+    window.close();
+  });
+
+  it("opens same-host pages outside the server's base path in the browser", async () => {
+    await mount();
+    await press("Connect");
+    expect(await followLink("https://forge.example.test/reports")).toBe(false);
+    expect(Linking.openURL).toHaveBeenCalledWith("https://forge.example.test/reports");
+    expect(native.injectJavaScript).not.toHaveBeenCalled();
+    expect(app.root.findAllByType(WebView)).toHaveLength(1);
   });
 
   it("opens connection settings on a bridge message and ignores unknown messages", async () => {

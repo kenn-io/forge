@@ -1,0 +1,108 @@
+name: Mobile Android
+
+# PR CI does not build the Expo app under mobile/; check it nightly and on demand.
+# Schedules run only from the default branch and dispatch needs write access,
+# so this repository uses the managed fleet and forks use GitHub-hosted runners.
+on:
+  schedule:
+    - cron: "37 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Mobile checks
+    runs-on: ${{ github.repository == 'kenn-io/forge' && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          version: "1.0.0"
+          node-version-file: package.json
+          cache: false
+          run-install: true
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: mobile
+        run: node node_modules/typescript/bin/tsc --noEmit
+
+      - name: Run node tests
+        working-directory: mobile
+        run: node --experimental-strip-types --test *.test.ts
+
+      - name: Run Vitest suite
+        working-directory: mobile
+        run: node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts
+
+  android:
+    name: Android release build
+    runs-on: ${{ github.repository == 'kenn-io/forge' && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache Bun package downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          version: "1.0.0"
+          node-version-file: package.json
+          cache: false
+          run-install: true
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: bun install --frozen-lockfile
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      # The generated project signs release builds with its debug keystore, so
+      # this verifies the build without signing secrets; the APK is not for distribution.
+      - name: Build release APK
+        working-directory: mobile
+        run: node scripts/release-android.mjs
+
+      - name: Export Android JavaScript bundle
+        working-directory: mobile
+        run: node node_modules/expo/bin/cli export --platform android
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kenn-forge-android-release
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7

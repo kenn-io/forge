@@ -19,7 +19,7 @@ Use **Menu → Connection settings** on mobile, or **Connection settings** in th
 desktop Settings page, to change servers or credentials on either platform.
 Starting the app again also opens the saved connection form.
 **Forget connection** removes the saved URL and token. WebView cookies and
-browser storage follow the platform WebView’s private-browsing behavior. Links to other origins open in the browser.
+browser storage follow the platform WebView’s private-browsing behavior. Links outside the server URL, including other paths on the same host, open in the browser.
 
 ## Run on Android
 
@@ -58,17 +58,25 @@ node node_modules/expo/bin/cli start --localhost
 ```
 
 Rebuild the web bundle with `node scripts/build-web.mjs` after changing the
-frontend. Rebuild the native app after changing dependencies or `app.json`. A standalone
-local Android build, with its native JavaScript and Forge web assets included, is available through
-`node node_modules/expo/bin/cli run:android --variant release`. Distribution still
-needs your own signing configuration.
+frontend. Rebuild the native app after changing dependencies or `app.json`.
+
+For a standalone release APK with the current Forge web UI bundled, run:
+
+```sh
+node scripts/release-android.mjs
+```
+
+It rebuilds the web bundle, generates `android/` if missing, forces Gradle to
+repackage the bundle, and prints the APK path. Add `--dry-run` to print the
+commands without running them. The generated project signs release builds with
+the debug keystore; distribution needs your own signing configuration.
 
 ## iOS
 
-On macOS with Xcode and an iOS simulator installed, run
-`node scripts/build-web.mjs` followed by
-`node node_modules/expo/bin/cli run:ios`. The native shell supports iPhone and
-iPad. Android is the locally verified platform for this initial app.
+The Expo config includes iOS settings, but the iOS app has not been built or
+verified yet. Android is the supported platform for now. To experiment on macOS
+with Xcode, run `node scripts/build-web.mjs` followed by
+`node node_modules/expo/bin/cli run:ios`.
 
 ## Checks
 

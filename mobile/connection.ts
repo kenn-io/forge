@@ -45,6 +45,19 @@ export function readConnection(value: string): Connection {
   return { server: serverURL(data.server), token: data.token, desktop: data.desktop };
 }
 
+// Top-frame navigations stay in the bundled SPA only under the server's base path;
+// other paths on the same host belong to other apps.
+export function isForgePageURL(target: string, server: string): boolean {
+  try {
+    const url = new URL(target);
+    const base = new URL(server);
+    const path = base.pathname.replace(/\/+$/, "");
+    return url.origin === base.origin && (!path || url.pathname === path || url.pathname.startsWith(path + "/"));
+  } catch {
+    return false;
+  }
+}
+
 export function isServerURL(target: string, server: string): boolean {
   try {
     const url = new URL(target);

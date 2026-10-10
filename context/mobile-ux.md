@@ -9,7 +9,8 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
   React Native (`mobile/embedded-page.ts`).
 - After rebuilding `mobile/assets/web.bundle`, force Gradle's
   `:app:createBundleReleaseJsAndAssets --rerun-tasks` before assembling the APK;
-  React Native's task inputs track JS/TS, not this asset (`mobile/scripts/build-web.mjs`).
+  React Native's task inputs track JS/TS, not this asset. Build release APKs
+  through `mobile/scripts/release-android.mjs`, which does both.
 - Desktop layout is opt-in for tablets (`mobile/connection.ts::launchURL`).
 - Frontend tests must not import from `mobile/`: its tsconfig extends
   `expo/tsconfig.base`, which frontend CI does not install. Pin shared
@@ -20,8 +21,10 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
 - Connected native views use the web UI's header without a native server bar.
   Connection settings live in the phone menu and desktop Settings page; Android
   Back also returns there after page history (`mobile/App.tsx`).
-- Same-server links stay in the bundled SPA and preserve WebView history so
-  Android Back returns to the previous page (`mobile/App.tsx`).
+- Top-frame links on the server's origin and under its base path stay in the
+  bundled SPA and preserve WebView history so Android Back returns to the
+  previous page; other same-host paths open externally
+  (`mobile/connection.ts::isForgePageURL`).
 - Native history entries carry their URL in state: Android's HTML loader
   restores state but loses changed URLs on Back (`frontend/src/lib/stores/router.svelte.ts::nativeHistoryState`).
 

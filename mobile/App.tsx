@@ -20,7 +20,7 @@ import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { isServerURL, readConnection, serverURL, type Connection } from "./connection";
+import { isForgePageURL, isServerURL, readConnection, serverURL, type Connection } from "./connection";
 import { embeddedPage } from "./embedded-page";
 import { loadWebBundle } from "./web-bundle";
 
@@ -220,7 +220,7 @@ function ForgeApp() {
                 if (request.isTopFrame === false) {
                   return isServerURL(request.url, connection.server) || /^(data|about):/.test(request.url);
                 }
-                if (isServerURL(request.url, connection.server)) {
+                if (isForgePageURL(request.url, connection.server)) {
                   // Keep the bundled document and its Back history for ordinary links.
                   webview.current?.injectJavaScript(`
                     history.pushState({ __forgeURL: ${JSON.stringify(request.url)} }, "", ${JSON.stringify(request.url)});

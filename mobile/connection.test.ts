@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isServerURL, launchURL, readConnection, serverURL } from "./connection.ts";
+import { isForgePageURL, isServerURL, launchURL, readConnection, serverURL } from "./connection.ts";
 
 test("phones always launch the mobile workspace route, including with a server base path", () => {
   assert.equal(
@@ -52,4 +52,31 @@ test("embedded navigation stays on the configured origin", () => {
   assert.equal(isServerURL("https://forge.example.test/forge/m/pulls", "https://forge.example.test/forge"), true);
   assert.equal(isServerURL("https://github.com/acme/widgets", "https://forge.example.test"), false);
   assert.equal(isServerURL("http://forge.example.test/m/workspaces", "https://forge.example.test"), false);
+});
+
+test("in-app pages stay under the server's base path", () => {
+  const server = "https://forge.example.test/forge";
+  for (const target of [
+    "https://forge.example.test/forge",
+    "https://forge.example.test/forge/",
+    "https://forge.example.test/forge/m/pulls?state=open#top",
+  ]) {
+    assert.equal(isForgePageURL(target, server), true, target);
+  }
+  for (const target of [
+    "https://forge.example.test/forgery",
+    "https://forge.example.test/reports",
+    "https://forge.example.test/",
+    "http://forge.example.test/forge/m/pulls",
+    "https://other.example.test/forge/m/pulls",
+    "not a url",
+  ]) {
+    assert.equal(isForgePageURL(target, server), false, target);
+  }
+});
+
+test("a root server keeps every same-origin page in the app", () => {
+  assert.equal(isForgePageURL("https://forge.example.test/", "https://forge.example.test"), true);
+  assert.equal(isForgePageURL("https://forge.example.test/reports/q3", "https://forge.example.test"), true);
+  assert.equal(isForgePageURL("https://other.example.test/reports", "https://forge.example.test"), false);
 });

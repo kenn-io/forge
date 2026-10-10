@@ -2534,6 +2534,7 @@
             {@render labelActionButton()}
           </div>
         {/if}
+        {#key mutationRouteGeneration}
         <UserListEditor
           label="Assignees"
           users={prAssignees}
@@ -2548,6 +2549,7 @@
             <UsersIcon size={12} aria-hidden="true" />
           {/snippet}
         </UserListEditor>
+        {/key}
         {#key `${provider}:${platformHost}:${owner}:${name}:${number}`}
         <UserListEditor
           label="Reviewers"
@@ -3454,6 +3456,7 @@
           </div>
         </div>
         {#if detailStore.getDiscussionLoaded()}
+          {#key mutationRouteGeneration}
           <EventTimeline
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}
@@ -3490,6 +3493,7 @@
                 : undefined}
             {jumpToReviewThread}
           />
+          {/key}
         {:else if detailStore.isDetailSyncing()}
           <div class="loading-placeholder">
             <Spinner size={14} label="Syncing" />

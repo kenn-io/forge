@@ -1252,7 +1252,7 @@ describe("PullDetail pending mutations across selections", () => {
     { name: "enhancement", color: "00ff00", description: "" },
   ];
 
-  function renderPendingMutations(configure?: (detail: PullDetail) => void) {
+  function renderPendingMutations(configure?: (detail: PullDetail) => void, initialNumber = 1) {
     const pulls = [pullDetail(), pullDetail()];
     pulls.forEach((detail, index) => {
       detail.merge_request = {
@@ -1267,11 +1267,14 @@ describe("PullDetail pending mutations across selections", () => {
     });
     type MutationResponse = { data?: unknown; error?: ProblemBody };
     const responses = pulls.map(() => Promise.withResolvers<MutationResponse>());
+    const reloads = new Map<number, Promise<{ data: PullDetail }>>();
     const mutation = vi.fn((path: string, options?: Record<string, unknown>) => {
       if (
         path !== "/pulls/{provider}/{owner}/{name}/{number}" &&
         path !== "/pulls/{provider}/{owner}/{name}/{number}/github-state" &&
-        path !== "/pulls/{provider}/{owner}/{name}/{number}/labels"
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/labels" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/assignees" &&
+        path !== "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}"
       ) {
         throw new Error(`Unexpected mutation: ${path}`);
       }
@@ -1283,11 +1286,13 @@ describe("PullDetail pending mutations across selections", () => {
     detailRuntime = makeTestAppRuntime({
       GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
         if (path === "/repo/{provider}/{owner}/{name}/labels") return { data: { labels: labelCatalog } };
+        if (path === "/repo/{provider}/{owner}/{name}/comment-autocomplete")
+          return { data: { users: ["alice", "bob"] } };
         if (path !== "/pulls/{provider}/{owner}/{name}/{number}") return { data: {} };
         const {
           path: { number },
         } = options?.params as { path: { number: number } };
-        return { data: pulls[number - 1] };
+        return reloads.get(number) ?? { data: pulls[number - 1] };
       }),
       PUT: mutation,
       PATCH: mutation,
@@ -1297,23 +1302,147 @@ describe("PullDetail pending mutations across selections", () => {
     const store = createDetailStore({ runtime: detailRuntime });
     const view = renderPullDetail(pulls[0], undefined, undefined, {
       store,
-      detailProps: { autoSync: false },
+      detailProps: {
+        number: initialNumber,
+        repositoryKey: repositoryKeyFromWire(pulls[0].repo),
+        autoSync: false,
+        hideStaleWhileLoading: true,
+      },
     });
     const finishMutation = async (number: number, response: MutationResponse = { data: pulls[number - 1] }) => {
       const index = commands.mock.calls.findIndex(
         ([, options]) =>
           options.safeContext.number === number &&
-          ["update pull request content", "change pull request state", "update pull request labels"].includes(
-            options.operation,
-          ),
+          [
+            "update pull request content",
+            "change pull request state",
+            "update pull request labels",
+            "update pull request assignees",
+            "edit pull request comment",
+          ].includes(options.operation),
       );
       expect(index).toBeGreaterThanOrEqual(0);
       responses[number - 1].resolve(response);
       expect((await commands.mock.results[index].value.exit)._tag).toBe(response.error ? "Failure" : "Success");
       await tick();
     };
-    return { ...view, pulls, mutation, finishMutation };
+    const selectCachedPull = async (number: number) => {
+      const pending = Promise.withResolvers<{ data: PullDetail }>();
+      reloads.set(number, pending.promise);
+      await view.rerender({ number });
+      await waitFor(() => expect(store.isDetailFromCache()).toBe(true));
+      expect(screen.getByRole("heading", { name: `Pull request ${number}`, exact: true })).toBeTruthy();
+      reloads.delete(number);
+      pending.resolve({ data: pulls[number - 1] });
+      await waitFor(() => expect(store.isDetailFromCache()).toBe(false));
+    };
+    return { ...view, pulls, mutation, finishMutation, selectCachedPull };
   }
+
+  it.each(["toggle", "clear"] as const)(
+    "keeps pending assignee %s acknowledgements with their cached PR",
+    async (action) => {
+      const view = renderPendingMutations((detail) => {
+        detail.repo.capabilities = { ...detail.repo.capabilities, assignee_mutation: true };
+        detail.merge_request.assignees = ["alice"];
+      }, 2);
+      await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+      await view.rerender({ number: 1 });
+      await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+      for (const number of [1, 2]) {
+        if (number === 2) await view.selectCachedPull(2);
+        await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+        const picker = within(await screen.findByRole("dialog", { name: "Edit assignees" }));
+        const bob = await picker.findByRole("menuitemcheckbox", { name: "bob", exact: true });
+        await fireEvent.click(action === "toggle" ? bob : picker.getByRole("button", { name: "Clear selected users" }));
+        await waitFor(() =>
+          expect(view.mutation).toHaveBeenCalledWith(
+            "/pulls/{provider}/{owner}/{name}/{number}/assignees",
+            expect.objectContaining({
+              params: { path: { provider: "github", owner: "acme", name: "widget", number } },
+              body: { assignees: action === "toggle" ? ["alice", "bob"] : [] },
+            }),
+          ),
+        );
+      }
+
+      const picker = within(screen.getByRole("dialog", { name: "Edit assignees" }));
+      const bob = picker.getByRole("menuitemcheckbox", { name: /bob/ }) as HTMLButtonElement;
+      expect(bob.disabled).toBe(true);
+      const response = { data: { assignees: action === "toggle" ? ["alice", "bob"] : [] } };
+      await view.finishMutation(1, response);
+      expect(bob.disabled).toBe(true);
+      if (action === "toggle") expect(picker.getByText("Saving…")).toBeTruthy();
+      await view.finishMutation(2, response);
+      expect(bob.disabled).toBe(false);
+      expect(bob.getAttribute("aria-checked")).toBe(String(action === "toggle"));
+    },
+  );
+
+  it("keeps pending comment edits separate when navigating to a cached PR", async () => {
+    // jsdom has no layout API for ProseMirror's selection scrolling.
+    for (const [name, value] of Object.entries({
+      getClientRects: () => [],
+      getBoundingClientRect: () => new DOMRect(),
+    })) {
+      const descriptor = Object.getOwnPropertyDescriptor(Range.prototype, name);
+      Object.defineProperty(Range.prototype, name, { configurable: true, value });
+      onTestFinished(() => {
+        if (descriptor) Object.defineProperty(Range.prototype, name, descriptor);
+        else Reflect.deleteProperty(Range.prototype, name);
+      });
+    }
+    const view = renderPendingMutations((detail) => {
+      detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
+      detail.events = [
+        {
+          ...reviewEvent("alice"),
+          ID: detail.merge_request.Number + 100,
+          PlatformID: detail.merge_request.Number + 100,
+          EventType: "issue_comment",
+          Body: `Comment on PR ${detail.merge_request.Number}`,
+        },
+      ];
+    }, 2);
+    await screen.findByRole("heading", { name: "Pull request 2", exact: true });
+    await view.rerender({ number: 1 });
+    await screen.findByRole("heading", { name: "Pull request 1", exact: true });
+    for (const number of [1, 2]) {
+      if (number === 2) await view.selectCachedPull(2);
+      const edit = (await screen.findByRole("button", { name: "Edit comment" })) as HTMLButtonElement;
+      expect(edit.disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Delete comment" }) as HTMLButtonElement).disabled).toBe(false);
+      await fireEvent.click(edit);
+      const input = view.container.querySelector<HTMLElement>(".edit-panel .comment-editor-input")!;
+      input.focus();
+      input.innerHTML = `<p>Edited comment on PR ${number}</p>`;
+      await fireEvent.input(input);
+      // Let ProseMirror's DOM observer publish the edited content before saving.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await waitFor(() =>
+        expect(view.container.querySelector<HTMLButtonElement>(".edit-action--primary")?.disabled).toBe(false),
+      );
+      await fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+      await waitFor(() =>
+        expect(view.mutation).toHaveBeenCalledWith(
+          "/pulls/{provider}/{owner}/{name}/{number}/comments/{comment_id}",
+          expect.objectContaining({
+            params: { path: { provider: "github", owner: "acme", name: "widget", number, comment_id: number + 100 } },
+            body: { body: `Edited comment on PR ${number}` },
+          }),
+        ),
+      );
+    }
+    await view.finishMutation(1, { data: {} });
+    expect(view.container.querySelector(".edit-panel .comment-editor-input")?.textContent).toBe(
+      "Edited comment on PR 2",
+    );
+    expect((screen.getByRole("button", { name: "Saving...", exact: true }) as HTMLButtonElement).disabled).toBe(true);
+    view.pulls[1].events[0].Body = "Edited comment on PR 2";
+    await view.finishMutation(2, { data: {} });
+    expect(view.container.querySelector(".edit-panel")).toBeNull();
+    expect(screen.getByText("Edited comment on PR 2", { exact: true })).toBeTruthy();
+  });
 
   it.each([
     ["toggle", false],

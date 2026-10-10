@@ -27,20 +27,14 @@ type Account struct {
 	CommitEmail  string `toml:"commit_email" json:"commit_email"`
 }
 
-type Repository struct {
-	ID   int64  `toml:"id" json:"id"`
-	Name string `toml:"name" json:"name"`
-}
-
 type BrokerConfig struct {
-	Socket         string       `toml:"socket"`
-	AppID          int64        `toml:"app_id"`
-	InstallationID int64        `toml:"installation_id"`
-	Organization   string       `toml:"organization"`
-	OrganizationID int64        `toml:"organization_id"`
-	PrivateKeyFile string       `toml:"private_key_file"`
-	Accounts       []Account    `toml:"accounts"`
-	Repositories   []Repository `toml:"repositories"`
+	Socket         string    `toml:"socket"`
+	AppID          int64     `toml:"app_id"`
+	InstallationID int64     `toml:"installation_id"`
+	Organization   string    `toml:"organization"`
+	OrganizationID int64     `toml:"organization_id"`
+	PrivateKeyFile string    `toml:"private_key_file"`
+	Accounts       []Account `toml:"accounts"`
 }
 
 type CredentialRequest struct {
@@ -58,7 +52,7 @@ type Credential struct {
 }
 
 type brokerCacheKey struct {
-	repository int64
+	repository string
 	profile    string
 }
 
@@ -86,15 +80,6 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 			return nil, errors.New("broker accounts require unique non-root UIDs and GitHub user IDs")
 		}
 		uids[account.UID], users[account.GitHubUserID] = true, true
-	}
-	repos := make(map[int64]bool)
-	names := make(map[string]bool)
-	for _, repo := range cfg.Repositories {
-		name := strings.ToLower(repo.Name)
-		if repo.ID <= 0 || !validRouteSegment(repo.Name) || repos[repo.ID] || names[name] {
-			return nil, errors.New("broker repositories require unique positive IDs and names")
-		}
-		repos[repo.ID], names[name] = true, true
 	}
 	pem, err := os.ReadFile(cfg.PrivateKeyFile)
 	if err != nil {
@@ -150,16 +135,12 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, err
 	}
-	repoIndex := slices.IndexFunc(b.config.Repositories, func(repo Repository) bool {
-		return strings.EqualFold(owner, b.config.Organization) && strings.EqualFold(name, repo.Name)
-	})
-	if repoIndex < 0 {
+	if !strings.EqualFold(owner, b.config.Organization) {
 		return nil, errors.New("repository is not admitted for devbox GitHub access")
 	}
 	if request.Profile != "git" && request.Profile != "push" && request.Profile != "pr" {
 		return nil, errors.New("unsupported GitHub credential profile")
 	}
-	repoID := b.config.Repositories[repoIndex].ID
 	appJWT, err := githubapp.SignAppJWT(b.config.AppID, b.key, time.Now())
 	if err != nil {
 		return nil, err
@@ -177,10 +158,11 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 		return nil, errors.New("GitHub installation does not match the admitted organization and App")
 	}
 	// This read-only token stays inside the broker, including Members read.
-	auth, err := b.token(ctx, appJWT, repoID, "admission", map[string]string{"metadata": "read", "members": "read"})
+	auth, err := b.token(ctx, appJWT, name, "admission", map[string]string{"metadata": "read", "members": "read"})
 	if err != nil {
 		return nil, err
 	}
+	repoID := auth.Repositories[0].ID
 	api, err := b.api(auth.Token)
 	if err != nil {
 		return nil, err
@@ -204,7 +186,7 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 		return nil, fmt.Errorf("GitHub repository unavailable: %w", err)
 	}
 	if repo.GetID() != repoID || repo.GetOwner().GetID() != b.config.OrganizationID {
-		return nil, errors.New("GitHub repository identity differs from the admitted repository")
+		return nil, errors.New("GitHub repository identity differs from the installation token")
 	}
 	permission, _, err := api.Repositories.GetPermissionLevel(ctx, owner, name, user.GetLogin())
 	if err != nil {
@@ -228,9 +210,12 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 		permissions["checks"], permissions["statuses"] = "read", "read"
 		profile = "pr"
 	}
-	token, err := b.token(ctx, appJWT, repoID, profile, permissions)
+	token, err := b.token(ctx, appJWT, name, profile, permissions)
 	if err != nil {
 		return nil, err
+	}
+	if token.Repositories[0].ID != repoID {
+		return nil, errors.New("GitHub credential repository differs from the authorized repository")
 	}
 	return &Credential{
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,
@@ -238,8 +223,8 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	}, nil
 }
 
-func (b *Broker) token(ctx context.Context, jwt string, repoID int64, profile string, permissions map[string]string) (*githubapp.InstallationToken, error) {
-	key := brokerCacheKey{repository: repoID, profile: profile}
+func (b *Broker) token(ctx context.Context, jwt string, repository string, profile string, permissions map[string]string) (*githubapp.InstallationToken, error) {
+	key := brokerCacheKey{repository: strings.ToLower(repository), profile: profile}
 	b.mu.Lock()
 	cached := b.cache[key]
 	b.mu.Unlock()
@@ -247,13 +232,14 @@ func (b *Broker) token(ctx context.Context, jwt string, repoID int64, profile st
 		return cached, nil
 	}
 	token, err := b.apps.CreateInstallationToken(ctx, jwt, b.config.InstallationID, &githubapp.InstallationTokenRequest{
-		RepositoryIDs: []int64{repoID}, Permissions: permissions,
+		Repositories: []string{repository}, Permissions: permissions,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("mint repository GitHub credential: %w", err)
 	}
 	if token.Token == "" || time.Until(token.ExpiresAt) <= 2*time.Minute ||
-		len(token.Repositories) != 1 || token.Repositories[0].ID != repoID || !maps.Equal(token.Permissions, permissions) {
+		len(token.Repositories) != 1 || token.Repositories[0].ID <= 0 ||
+		!strings.EqualFold(token.Repositories[0].Name, repository) || !maps.Equal(token.Permissions, permissions) {
 		return nil, errors.New("GitHub returned a token with unexpected repository scope, permissions, or expiry")
 	}
 	b.mu.Lock()
@@ -270,17 +256,15 @@ func (b *Broker) Erase(uid uint32, repository string) error {
 	if err != nil {
 		return err
 	}
+	if !strings.EqualFold(owner, b.config.Organization) {
+		return errors.New("repository is not admitted for devbox GitHub access")
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for _, repo := range b.config.Repositories {
-		if strings.EqualFold(owner, b.config.Organization) && strings.EqualFold(name, repo.Name) {
-			for key := range b.cache {
-				if key.repository == repo.ID {
-					delete(b.cache, key)
-				}
-			}
-			return nil
+	for key := range b.cache {
+		if strings.EqualFold(key.repository, name) {
+			delete(b.cache, key)
 		}
 	}
-	return errors.New("repository is not admitted for devbox GitHub access")
+	return nil
 }

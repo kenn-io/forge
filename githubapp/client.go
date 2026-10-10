@@ -98,6 +98,7 @@ type Installation struct {
 // InstallationTokenRequest optionally narrows an installation token's access.
 // Nil fields retain the installation's repository or permission grants.
 type InstallationTokenRequest struct {
+	Repositories  []string          `json:"repositories,omitzero"`
 	RepositoryIDs []int64           `json:"repository_ids,omitzero"`
 	Permissions   map[string]string `json:"permissions,omitzero"`
 }

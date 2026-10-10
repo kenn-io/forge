@@ -71,7 +71,7 @@ Your personal GitHub credentials stay on the controller.
 Repository access follows these steps:
 
 1. **The operator enables the repository.** They install the organization's
-   GitHub App on selected repositories and add the allowed repositories and
+   GitHub App on the repositories developers need and add the
    developer accounts to the broker configuration. Connecting a devbox in Forge
    does not itself grant GitHub access.
 2. **Git asks for a credential.** When Forge clones a repository, or Git needs
@@ -263,9 +263,10 @@ checks below.
    Under **Private keys**, click **Generate a private key**. Keep the downloaded
    PEM on your trusted operator workstation, outside Git, with mode `0600`.
    No client secret is needed.
-7. Open **Install App**, choose your organization, then **Only select
-   repositories**. Select the pilot repository and click **Install**. Add
-   production repositories only after the branch-rule checks pass.
+7. Open **Install App** and choose your organization. Choose **All repositories**
+   for organization-wide devbox access, or **Only select repositories** for a
+   limited rollout, then click **Install**. Complete the branch-rule checks
+   below before granting production repository access.
 
 These are GitHub's standard [registration](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app),
 [key generation](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/managing-private-keys-for-github-apps)
@@ -282,14 +283,12 @@ lookups. Do not sign in with a personal GitHub credential on the devbox.
 gh api --paginate /orgs/example-org/installations \
   --jq '.installations[] | {app_slug, app_id, installation_id: .id, repository_selection}'
 gh api /orgs/example-org --jq .id
-gh api /repos/example-org/project-a --jq '{id, name, full_name}'
 gh api /users/user-a --jq '{id, login}'
 ```
 
-Choose the installation whose `app_slug` matches the App you just created and
-whose `repository_selection` is `selected`. Use its `app_id` and
-`installation_id`, the organization's `id`, and the repository's `id` and `name`
-in the broker TOML below. Use the user's `id` for `github_user_id`; `uid` is
+Choose the installation whose `app_slug` matches the App you just created.
+Use its `app_id` and `installation_id` and the organization's `id` in the
+broker TOML below. Use the user's `id` for `github_user_id`; `uid` is
 that developer's Linux account ID. These IDs are not secrets.
 
 Your deployment tooling installs the PEM at `private_key_file`, readable only
@@ -302,6 +301,9 @@ The broker verifies each Unix UID's rostered GitHub ID, current organization
 membership, repository identity and repository permission before issuing a
 short-lived installation token for one repository. Read-only collaborators get
 read-only Git access. Token caching does not skip those admission checks.
+The App installation controls which repositories are available; the broker
+has no separate repository list. Adding a repository to the installation
+needs no broker configuration change or restart.
 
 #### Protect the default branch
 
@@ -326,10 +328,6 @@ installation_id = 200
 organization_id = 300
 organization = "example-org"
 
-[[repositories]]
-id = 400
-name = "project-a"
-
 [[accounts]]
 uid = 1001
 github_user_id = 1234
@@ -342,6 +340,10 @@ Start `kenn-forge devbox broker --config /etc/forge-broker/broker.toml` as a
 separate service user. On Linux, the broker authenticates the connecting UID
 with `SO_PEERCRED`. Its socket permits local connections; an unlisted UID is
 rejected regardless of request fields. It does not listen on the network.
+
+When upgrading a broker configured with `[[repositories]]`, remove those
+sections together with the binary update. The new broker rejects the old
+settings; repository access now follows the App installation.
 
 For systemd, create a system user named `forge-broker` with no login shell or
 home. Install the configuration and PEM under `/etc/forge-broker`, readable

@@ -62,9 +62,12 @@ and the root event stream.
 - An execution worker owns one Unix account's worktrees and runtimes; its unscoped bearer
   authorizes only the registered execution routes. Never enable Serve-header authentication
   or provider/fleet administration in this role. (`internal/server/devbox_worker.go`)
-- The Linux GitHub broker authenticates Unix peer UIDs, narrows App tokens to admitted repositories,
-  and keeps personal GitHub credentials off workers. Human commit identity and the App push actor
-  are distinct; GitHub rulesets enforce protected-branch restrictions. (`internal/devbox/broker.go`)
+- The Linux GitHub broker follows App installation access, without a separate repository list,
+  and checks each enrolled developer's current permission before returning a single-repository
+  token. (`internal/devbox/broker.go::Broker.Credential`)
+- The broker authenticates Unix peer UIDs and keeps personal GitHub credentials off workers.
+  Human commit identity and the App push actor are distinct; GitHub rulesets enforce
+  protected-branch restrictions. (`internal/devbox/broker.go`)
 
 ## Startup Contracts
 

@@ -30,6 +30,10 @@ change labels or project fields at the provider.
 
 Unsupported actions remain visible but unavailable.
 
+Videos attached to descriptions, comments, and review comments play inline
+where the provider plays them. For private repositories, Forge loads them with
+your provider credential.
+
 In **Files**, select a line to draft an inline comment. When the provider
 supports native multiline ranges, you can also select a contiguous range.
 Drafts stay local until you publish the review. Kenn Forge rejects a draft if

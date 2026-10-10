@@ -136,18 +136,9 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 	daemonOpts := base
 	daemonOpts.Source = "daemon"
-	daemon, err := newKitReporter(daemonOpts, kitAllowedEvents("daemon")...)
-	if err != nil {
-		return nil, err
-	}
 	backendOpts := base
 	backendOpts.Source = "backend"
-	backendOptions := append(kitAllowedEvents("backend"), posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
-	backend, err := newKitReporter(backendOpts, backendOptions...)
-	if err != nil {
-		return nil, errors.Join(err, daemon.Close())
-	}
-	return &Reporter{daemon: daemon, backend: backend}, nil
+	return newReporterClients(daemonOpts, backendOpts, posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
 }
 
 // kitAllowedEvents builds kit's allowlist for one source from allowedEvents.
@@ -171,11 +162,17 @@ func kitAllowedEvents(source string) []posthog.Option {
 }
 
 func newAllowlistReporter() (*Reporter, error) {
-	daemon, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("daemon")...)
+	opts := posthog.Options{EnvPrefix: envPrefix}
+	return newReporterClients(opts, opts)
+}
+
+func newReporterClients(daemonOpts, backendOpts posthog.Options, backendOptions ...posthog.Option) (*Reporter, error) {
+	daemon, err := newKitReporter(daemonOpts, kitAllowedEvents("daemon")...)
 	if err != nil {
 		return nil, err
 	}
-	backend, err := newKitReporter(posthog.Options{EnvPrefix: envPrefix}, kitAllowedEvents("backend")...)
+	backendOptions = append(kitAllowedEvents("backend"), backendOptions...)
+	backend, err := newKitReporter(backendOpts, backendOptions...)
 	if err != nil {
 		return nil, errors.Join(err, daemon.Close())
 	}

@@ -80,18 +80,14 @@ func (s *Handler) ResolveWorkspaceTargetService(ctx context.Context, selection W
 	if !selection.Repository.Valid() {
 		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Validation("body.repository", "verified repository identity is required")
 	}
-	repo, err := s.db.GetRepositoryByProviderID(ctx, selection.Repository)
-	if err != nil {
-		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
-	}
-	if repo == nil && s.workspaceTargetSource != nil && !selection.Hidden {
+	if s.workspaceTargetSource != nil && !selection.Hidden {
 		if err := s.workspaceTargetSource.ObserveWorkspaceTargetRepository(ctx, selection.Repository); err != nil {
 			return db.Repo{}, WorkspaceTargetMetadata{}, err
 		}
-		repo, err = s.db.GetRepositoryByProviderID(ctx, selection.Repository)
-		if err != nil {
-			return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
-		}
+	}
+	repo, err := s.db.GetRepositoryByProviderID(ctx, selection.Repository)
+	if err != nil {
+		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
 	}
 	if repo == nil {
 		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.NotFound(httpapi.CodeRepoNotFound, "target repository not found", nil)

@@ -27,6 +27,7 @@
   let collapsed = $state(true);
   let removing = $state<WorkspaceTarget | null>(null);
   let removeError = $state(false);
+  let removalRevision = $state(0);
   const visibleTargets = $derived(targets.filter((target) =>
     showClosed || target.unavailable || !["closed", "merged"].includes(target.state.toLowerCase()),
   ));
@@ -41,6 +42,7 @@
       owner: repo.owner, name: repo.name, repoPath: repo.repo_path, number: target.number,
     }, true).pipe(
       Effect.tap(() => Effect.sync(() => {
+        removalRevision++;
         targets = targets.filter((item) => item.type !== target.type || item.number !== target.number ||
           item.repo?.provider !== repo.provider || item.repo?.platform_host !== repo.platform_host ||
           repositoryKeyFromWire(item.repo) !== repositoryKeyFromWire(repo));
@@ -56,6 +58,7 @@
     const id = workspaceID;
     const hostKey = workspaceHostKey;
     void refreshToken;
+    void removalRevision;
     const execution = untrack(() => runtime.runCommand(
       executeGeneratedApiRequest("load workspace targets", (client, signal) => {
         if (hostKey?.startsWith("devbox:")) {

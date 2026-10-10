@@ -1008,6 +1008,100 @@ describe("WorkspaceTerminalView", () => {
     expect(hidden).toBe(true);
   });
 
+  it.each(["newer search selection", "newer missing link", "unmount", "no superseding action"] as const)(
+    "presents a queued reference only while its selection remains current: %s",
+    async (laterAction) => {
+      const previousPath = window.location.pathname + window.location.search + window.location.hash;
+      onTestFinished(() => navigate(previousPath));
+      navigate("/terminal/ws-1");
+      mocks.workspaceSidebarPreference = "item";
+      localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      const storageKey = 'kenn-forge-workspace-viewed-items:["self","ws-1"]';
+      localStorage.setItem(storageKey, JSON.stringify({ pr: null, issue: null }));
+      const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+      const resolveStarted = Promise.withResolvers<void>();
+      const releaseResolution = Promise.withResolvers<void>();
+      onTestFinished(() => releaseResolution.resolve());
+      const writes: number[] = [];
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/api/v1/workspaces/ws-1")
+          return Response.json({ ...workspaceResponse, repo, item_type: "issue", item_number: 6 });
+        if (path === "/api/v1/repos")
+          return Response.json([
+            { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+          ]);
+        if (path === "/api/v1/pulls") return Response.json([]);
+        if (path === "/api/v1/issues")
+          return Response.json([{ repo, Number: 8, Title: "Newer issue", State: "open", Author: "maintainer" }]);
+        if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+          resolveStarted.resolve();
+          await releaseResolution.promise;
+          return Response.json({ item_type: "issue", repo_tracked: true, number: 7 });
+        }
+        if (path === "/api/v1/repo/github/acme/widget/resolve/9")
+          return Response.json(
+            { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+            { status: 404 },
+          );
+        if (path === "/api/v1/workspaces/ws-1/targets" && request.method === "PUT") {
+          writes.push((await request.json()).number);
+          return new Response(null, { status: 204 });
+        }
+        return originalFetch(input, init);
+      });
+      const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+      await screen.findByText("Issue acme/widget#6");
+      const link = document.createElement("a");
+      link.className = "item-ref";
+      link.textContent = "Related issue";
+      Object.assign(link.dataset, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: "7",
+      });
+      view.container.querySelector(".terminal-view")!.append(link);
+      await fireEvent.click(link);
+      await resolveStarted.promise;
+      if (laterAction === "newer search selection") {
+        await fireEvent.click(screen.getByRole("button", { name: "Search PRs and issues" }));
+        await fireEvent.click(await screen.findByRole("option", { name: /#8.*Newer issue/ }));
+        expect(screen.getByText("Issue acme/widget#8")).toBeTruthy();
+      } else if (laterAction === "newer missing link") {
+        link.dataset.number = "9";
+        await fireEvent.click(link);
+      } else if (laterAction === "unmount") {
+        view.unmount();
+      }
+      releaseResolution.resolve();
+      if (laterAction === "newer search selection") {
+        await waitFor(() => expect(writes).toEqual([7, 8]));
+        expect(screen.getByText("Issue acme/widget#8")).toBeTruthy();
+        expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ issue: { number: 8 } });
+      } else {
+        await waitFor(() => expect(writes).toEqual([7]));
+        if (laterAction === "no superseding action") {
+          expect(screen.getByText("Issue acme/widget#7")).toBeTruthy();
+          expect(JSON.parse(localStorage.getItem(storageKey)!)).toMatchObject({ issue: { number: 7 } });
+        } else {
+          if (laterAction === "newer missing link") {
+            await waitFor(() =>
+              expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widget#9 not found.", { tone: "danger" }),
+            );
+            expect(screen.getByText("Issue acme/widget#6")).toBeTruthy();
+          }
+          expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ pr: null, issue: null });
+        }
+      }
+    },
+  );
+
   it("explains workspace creation in the main pane when no workspaces exist", async () => {
     vi.stubGlobal(
       "fetch",

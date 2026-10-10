@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -277,6 +278,15 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 	require.NoError(t, err)
 	t.Setenv("KENN_FORGE_ACP_DAEMON_CONFIG", string(cfg))
 	options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), TmuxCommand: command}
+	// Manager cleanup stops the agent before tmux reaps its owner. Register
+	// this first so the owner exits before TempDir removes files it can write.
+	var ownerProcess *os.Process
+	t.Cleanup(func() {
+		if ownerProcess != nil {
+			defer ownerProcess.Release()
+			require.Eventually(t, func() bool { return ownerProcess.Signal(syscall.Signal(0)) != nil }, 10*time.Second, 10*time.Millisecond, "ACP owner must exit before TempDir cleanup")
+		}
+	})
 	second := newACPTestManager(t, options)
 	helper := exec.CommandContext(t.Context(), executable, "-test.run=^TestACPDaemonHelper$")
 	output, err := helper.CombinedOutput()
@@ -285,6 +295,12 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 	require.NoError(t, err)
 	var info SessionInfo
 	require.NoError(t, json.Unmarshal(data, &info))
+	ownerPID, err := exec.CommandContext(t.Context(), command[0], append(slices.Clone(command[1:]), "display-message", "-p", "-t", info.TmuxSession, "#{pane_pid}")...).Output()
+	require.NoError(t, err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(ownerPID)))
+	require.NoError(t, err)
+	ownerProcess, err = os.FindProcess(pid)
+	require.NoError(t, err)
 	require.NoError(t, second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: info.WorkspaceID, SessionKey: info.Key, TargetKey: info.TargetKey, Kind: info.Kind, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}}))
 	agent, err := second.ACP("workspace", info.Key)
 	require.NoError(t, err)

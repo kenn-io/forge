@@ -416,6 +416,7 @@
   let deletingWorkspaceTargets = $state<DeletingWorkspaceTarget[]>([]);
   let retainedRuntimePresenterLeases: RetainedRuntimePresenterLease[] = [];
   let workspacePresentationGeneration = 0;
+  let itemSelectionGeneration = 0;
   const deleteTriggerElements = new Map<string, HTMLElement | null>();
   let emptyLaunchTargetsExecution: { interrupt: () => void } | null = null;
   let sidebarRefreshToken = $state(0);
@@ -442,6 +443,8 @@
   let renameSaving = $state(false);
   let renameInputEl = $state<HTMLInputElement | null>(null);
   onDestroy(() => {
+    // Accepted visits keep persisting, but can no longer present in this view.
+    itemSelectionGeneration += 1;
     terminalZoom.dispose();
     emptyLaunchTargetsExecution?.interrupt();
     emptyLaunchTargetsExecution = null;
@@ -2311,6 +2314,7 @@
 
   function selectWorkspaceItem(itemType: "pr" | "issue", item: NumberedRouteItemRef | null): void {
     if (!workspace || actionsBlocked) return;
+    itemSelectionGeneration += 1;
     const linkedNumber = itemType === "pr" ? getWorkspacePRNumber(workspace)
       : workspace.item_type === "issue" ? workspace.item_number : null;
     const repo = workspace.repo;
@@ -2357,8 +2361,9 @@
       if (!workspace || actionsBlocked) return;
       const id = workspaceId;
       const hostKey = workspaceHostKey;
+      const selectionGeneration = ++itemSelectionGeneration;
       return appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
-        if (!isCurrentWorkspace(id, hostKey)) return;
+        if (selectionGeneration !== itemSelectionGeneration || !isCurrentWorkspace(id, hostKey)) return;
         showWorkspaceItem(item.itemType, {
           ...item,
           platformHost: resolvedPlatformHost(item.provider, item.platformHost),
@@ -4102,6 +4107,7 @@
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     workspacePresentationGeneration += 1;
+    itemSelectionGeneration += 1;
     workspaceReadinessGeneration += 1;
     workspaceTabLoaded = false;
     lastRequestedTabKey = null;

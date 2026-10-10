@@ -29,7 +29,7 @@ it.each([
     name: "widgets",
     repo_path: "acme/widgets",
   };
-  const targets = [
+  let targets = [
     {
       id: 0,
       type: "issue",
@@ -81,6 +81,7 @@ it.each([
     if (request.method === "PUT") {
       expect(new URL(request.url).pathname).toBe(expectedPath);
       writes.push(await request.json());
+      targets = targets.filter((target) => target.number !== 1);
       return new Response(null, { status: 204 });
     }
     return Response.json({ targets, kata_available: false });
@@ -172,4 +173,58 @@ it("names targets with their visible title, repository or daemon, and state", as
   ).toBeTruthy();
   expect(screen.getByRole("button", { name: "Linked task TASK-1 work open" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Linked task TASK-1 personal open" })).toBeTruthy();
+});
+
+it("refreshes a devbox target list after removal and discards an older response", async () => {
+  const target: WorkspaceTarget = {
+    id: 1,
+    type: "issue",
+    number: 7,
+    state: "open",
+    title: "Dismissed issue",
+    source: "tracked",
+    unavailable: false,
+    url: "",
+    repo: {
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: 101,
+      owner: "acme",
+      name: "widgets",
+      repo_path: "acme/widgets",
+    },
+  };
+  let savedTargets = [target, { ...target, id: 2, number: 8, title: "Remaining issue" }];
+  const delayedRead = Promise.withResolvers<Response>();
+  let reads = 0;
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    expect(new URL(request.url).pathname).toBe("/api/v1/devboxes/worker-a/workspaces/ws-1/targets");
+    if (request.method === "PUT") {
+      expect(await request.json()).toEqual({
+        repository: { provider: "github", platform_host: "github.com", platform_repo_id: 101 },
+        type: "issue",
+        number: 7,
+        hidden: true,
+      });
+      savedTargets = [{ ...savedTargets[1]!, title: "Updated remaining issue" }];
+      return new Response(null, { status: 204 });
+    }
+    reads++;
+    if (reads === 2) return delayedRead.promise;
+    return Response.json({ targets: savedTargets, kata_available: false });
+  });
+  const props = { workspaceID: "ws-1", workspaceHostKey: "devbox:worker-a", onselect: vi.fn() };
+  const view = render(WorkspaceTargets, { props });
+  await fireEvent.click(await screen.findByRole("button", { name: /^Targets/ }));
+  await screen.findByText("Dismissed issue");
+  await view.rerender({ ...props, refreshToken: 1 });
+  await waitFor(() => expect(reads).toBe(2));
+  await fireEvent.click(screen.getByRole("button", { name: "Remove Issue #7 from targets" }));
+  await waitFor(() => expect(screen.queryByText("Dismissed issue")).toBeNull());
+
+  delayedRead.resolve(Response.json({ targets: [target], kata_available: false }));
+  await screen.findByText("Updated remaining issue");
+  expect(screen.queryByText("Dismissed issue")).toBeNull();
+  expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("1");
 });

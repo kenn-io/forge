@@ -140,3 +140,72 @@ func TestFleetWorkspaceTargetInUnobservedRepository(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(item, "the spoke observes the repository without replicating provider items")
 }
+
+func TestFleetWorkspaceTargetRefreshesRenamedRepository(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		inactive bool
+	}{
+		{name: "active spoke repository"},
+		{name: "inactive spoke repository", inactive: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
+			assert, require := assert.New(t), require.New(t)
+			ctx := t.Context()
+			fixture := newFederatedForgesFixture(t)
+			hub, spoke := fixture.Hub, fixture.NodeA
+			identity := db.GitHubRepoIdentity("github.com", "acme", "old-project")
+			identity.Key = platform.RepositoryIDKey(8675)
+			stable := identity.ProviderIdentity()
+			repoID, err := reposeed.Seed(ctx, hub.Database, identity)
+			require.NoError(err)
+			spokeRepoID, err := reposeed.Seed(ctx, spoke.Database, identity)
+			require.NoError(err)
+			if test.inactive {
+				_, err = spoke.Database.DeactivateRepository(ctx, stable)
+				require.NoError(err)
+			}
+			identity = db.GitHubRepoIdentity("github.com", "other-org", "renamed-project")
+			identity.Key = stable.Key
+			_, err = hub.Database.ObserveRepository(ctx, identity)
+			require.NoError(err)
+			require.NoError(hub.Database.UpdateRepoProviderObservation(ctx, repoID, db.RepoProviderMetadata{
+				CloneURL: "https://github.com/other-org/renamed-project.git", DefaultBranch: "main",
+			}, nil, nil))
+			now := time.Now().UTC()
+			_, err = hub.Database.UpsertIssue(ctx, &db.Issue{
+				RepoID: repoID, PlatformID: 7, Number: 7, Title: "Renamed repository issue", State: "open",
+				URL: "https://github.com/other-org/renamed-project/issues/7", CreatedAt: now, UpdatedAt: now,
+			})
+			require.NoError(err)
+			client, err := apiclient.NewWithHTTPClient(hub.HTTP.URL, fixture.HTTPClient)
+			require.NoError(err)
+			selection := generated.UpdateFleetWorkspaceTargetBody{"repository": stable, "type": "issue", "number": 7, "hidden": false}
+			response, err := client.HTTP.UpdateFleetWorkspaceTargetWithResponse(ctx, &generated.UpdateFleetWorkspaceTargetRequestOptions{
+				PathParams: &generated.UpdateFleetWorkspaceTargetPath{HostKey: spoke.NodeID, ID: "ws-spoke-a"}, Body: &selection,
+			}, func(_ context.Context, request *http.Request) error { localBearer(hub)(request); return nil })
+			require.NoError(err)
+			require.Equal(http.StatusNoContent, response.StatusCode, string(response.Body))
+			local, err := spoke.Database.GetActiveRepoByProviderID(ctx, stable)
+			require.NoError(err)
+			require.NotNil(local)
+			assert.Equal(spokeRepoID, local.ID)
+			assert.Equal("other-org", local.Owner)
+			assert.Equal("renamed-project", local.Name)
+			rows, err := spoke.Database.ListWorkspaceTargets(ctx, "ws-spoke-a")
+			require.NoError(err)
+			require.Len(rows, 1)
+			assert.Equal(spokeRepoID, rows[0].RepoID)
+			assert.Equal("https://github.com/other-org/renamed-project/issues/7", rows[0].URL)
+			listedResponse, body := fixture.browserRequest(t, http.MethodGet,
+				hub.HTTP.URL+"/api/v1/fleet/hosts/"+spoke.NodeID+"/workspaces/ws-spoke-a/targets", "", localBearer(hub))
+			require.Equal(http.StatusOK, listedResponse.StatusCode, string(body))
+			var listed workspaceapi.WorkspaceTargetsResponse
+			require.NoError(json.Unmarshal(body, &listed))
+			require.Len(listed.Targets, 2)
+			assert.Equal("Renamed repository issue", listed.Targets[0].Title)
+			assert.False(listed.Targets[0].Unavailable)
+		})
+	}
+}

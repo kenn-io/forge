@@ -313,7 +313,7 @@ embedder protocol for arbitrary host state.
   (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
 - Removing a devbox target needs only its stable identity; missing controller metadata must not prevent dismissal
   (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
-- A spoke's sparse catalog and repository picker visibility must not limit target visits; observe the selected hub repository by stable identity before saving a new target
+- A spoke's sparse, stale, or inactive catalog and repository picker visibility must not limit target visits; refresh the hub descriptor by stable identity before every visit
   (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveWorkspaceTargetRepository`).
 
 

@@ -1339,6 +1339,98 @@ describe("PullDetail pending mutations across selections", () => {
     return { ...view, pulls, mutation, finishMutation, selectCachedPull };
   }
 
+  it.each([
+    ["route", false],
+    ["route", true],
+    ["repository ID", false],
+    ["repository ID", true],
+  ] as const)("discards another repository's label catalog after a %s change (failure=%s)", async (change, fail) => {
+    const oldDetail = pullDetail();
+    const nextDetail = pullDetail();
+    const nextName = change === "route" ? "other" : "widget";
+    const retainedLabel = { name: "priority", color: "0000ff", description: "" };
+    for (const [index, detail] of [oldDetail, nextDetail].entries()) {
+      detail.repo.capabilities = { ...capabilities, read_labels: true, label_mutation: true };
+      detail.merge_request.Title = `Repository ${index + 1} pull request`;
+    }
+    nextDetail.repo_name = nextName;
+    nextDetail.repo = {
+      ...nextDetail.repo,
+      ID: 2,
+      Name: nextName,
+      name: nextName,
+      repo_path: `acme/${nextName}`,
+      platform_repo_id: 1002,
+    };
+    nextDetail.merge_request.RepoID = 2;
+    nextDetail.merge_request.labels = [labelCatalog[0], retainedLabel];
+    let selectedDetail = oldDetail;
+    const pendingCatalog = Promise.withResolvers<{ data?: { labels: Label[] }; error?: ProblemBody }>();
+    const loadCatalog = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { labels: labelCatalog } })
+      .mockImplementation(() => pendingCatalog.promise);
+    const mutation = vi.fn(async () => ({ data: { labels: [retainedLabel] } }));
+    detailRuntime = makeTestAppRuntime({
+      GET: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/repo/{provider}/{owner}/{name}/labels") return loadCatalog(options);
+        if (path === "/pulls/{provider}/{owner}/{name}/{number}") return { data: selectedDetail };
+        return { data: {} };
+      }),
+      PUT: mutation,
+    });
+    const store = createDetailStore({ runtime: detailRuntime });
+    const view = renderPullDetail(oldDetail, undefined, undefined, {
+      store,
+      detailProps: {
+        repositoryKey: repositoryKeyFromWire(oldDetail.repo),
+        autoSync: false,
+        hideStaleWhileLoading: true,
+      },
+    });
+    await screen.findByRole("heading", { name: oldDetail.merge_request.Title, exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await screen.findByRole("menuitemcheckbox", { name: "enhancement", exact: true });
+
+    selectedDetail = nextDetail;
+    await view.rerender({
+      name: nextName,
+      repoPath: `acme/${nextName}`,
+      repositoryKey: repositoryKeyFromWire(nextDetail.repo),
+    });
+    await screen.findByRole("heading", { name: nextDetail.merge_request.Title, exact: true });
+    await fireEvent.click(screen.getByRole("button", { name: "Labels", exact: true }));
+    await waitFor(() => expect(loadCatalog).toHaveBeenCalledTimes(2));
+    expect(loadCatalog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        params: { path: { provider: "github", owner: "acme", name: nextName } },
+      }),
+    );
+    const picker = within(screen.getByRole("dialog", { name: "Edit labels" }));
+    if (fail) {
+      pendingCatalog.resolve({
+        error: { code: "internalError", status: 500, title: "Catalog unavailable", type: "about:blank" },
+      });
+      await picker.findByRole("alert");
+    }
+    expect(picker.queryAllByRole("menuitemcheckbox")).toHaveLength(0);
+    expect(mutation).not.toHaveBeenCalled();
+    if (fail) return;
+
+    pendingCatalog.resolve({ data: { labels: [labelCatalog[0], retainedLabel] } });
+    await picker.findByRole("menuitemcheckbox", { name: "priority", exact: true });
+    await fireEvent.click(picker.getByRole("menuitemcheckbox", { name: "bug", exact: true }));
+    await waitFor(() =>
+      expect(mutation).toHaveBeenCalledWith(
+        "/pulls/{provider}/{owner}/{name}/{number}/labels",
+        expect.objectContaining({
+          params: { path: { provider: "github", owner: "acme", name: nextName, number: 1 } },
+          body: { labels: ["priority"] },
+        }),
+      ),
+    );
+  });
+
   it.each(["toggle", "clear"] as const)(
     "keeps pending assignee %s acknowledgements with their cached PR",
     async (action) => {

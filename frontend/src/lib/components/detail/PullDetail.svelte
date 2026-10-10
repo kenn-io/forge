@@ -800,6 +800,7 @@
     flushBodySave();
     clearDragState();
     closeLabelPicker();
+    labelCatalog = [];
   });
 
 

@@ -1262,7 +1262,9 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByText("Refreshing...")).toBeNull();
   });
 
-  it("keeps task checkboxes disabled while highlighted markdown is pending", () => {
+  // The full render can wait up to 30s on a video attachment check, so the
+  // first paint must already accept task toggles.
+  it("keeps task checkboxes usable while highlighted markdown is pending", () => {
     markdownMockState.pending = true;
     const detail = pullDetail();
     detail.merge_request.Body = ["- [ ] pending task", "", "```toml", 'model_provider = "my-custom"', "```"].join("\n");
@@ -1271,8 +1273,8 @@ describe("PullDetail approvals", () => {
 
     const checkbox = container.querySelector<HTMLInputElement>(".markdown-body input[type='checkbox']");
     expect(checkbox).not.toBeNull();
-    expect(checkbox?.disabled).toBe(true);
-    expect(checkbox?.dataset.taskIndex).toBeUndefined();
+    expect(checkbox?.disabled).toBe(false);
+    expect(checkbox?.dataset.taskIndex).toBe("0");
   });
 
   it("explains that creating a workspace enables agent sessions", () => {

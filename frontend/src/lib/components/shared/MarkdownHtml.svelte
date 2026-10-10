@@ -50,7 +50,7 @@
     ) {
       return resolved.html;
     }
-    return renderMarkdownSync(raw, repo, { collapseSingleLineBreaks });
+    return renderMarkdownSync(raw, repo, { interactiveTasks, collapseSingleLineBreaks });
   });
   // Parent refreshes can recreate the transform without changing the markdown.
   // Apply it separately so highlighted content never falls back to plain HTML.

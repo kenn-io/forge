@@ -120,8 +120,8 @@ describe("markdown media probe", () => {
     expect(requests[0]?.signal.aborted).toBe(true);
   });
 
-  it("keeps at most four probes in flight", async () => {
-    const candidates = Array.from({ length: 6 }, uniqueCandidate);
+  it("keeps at most two probes in flight across every render on the page", async () => {
+    const renders = Array.from({ length: 3 }, () => Array.from({ length: 3 }, uniqueCandidate));
     let inFlight = 0;
     let peak = 0;
     stubFetch(async () => {
@@ -132,9 +132,36 @@ describe("markdown media probe", () => {
       return new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } });
     });
 
-    const outcomes = await Effect.runPromise(resolveMarkdownMediaOutcomes(candidates));
+    const outcomes = await Promise.all(
+      renders.map((render) => Effect.runPromise(resolveMarkdownMediaOutcomes(render))),
+    );
 
-    expect(peak).toBe(4);
-    expect([...outcomes.values()]).toEqual(Array(6).fill("video"));
+    expect(peak).toBe(2);
+    expect(outcomes.flatMap((outcome) => [...outcome.values()])).toEqual(Array(9).fill("video"));
+  });
+
+  it("never sends a probe for a render torn down while it waited its turn", async () => {
+    const [first, second, waiting] = Array.from({ length: 3 }, uniqueCandidate);
+    const pending: Array<() => void> = [];
+    const requests = stubFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          pending.push(() =>
+            resolve(new Response(new Uint8Array([0]), { status: 206, headers: { "Content-Type": "video/mp4" } })),
+          );
+        }),
+    );
+    const busy = Effect.runPromise(resolveMarkdownMediaOutcomes([first!, second!]));
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+
+    const fiber = Effect.runFork(resolveMarkdownMediaOutcomes([waiting!]));
+    await Effect.runPromise(Fiber.interrupt(fiber));
+    for (const finish of pending) finish();
+    await busy;
+
+    expect(requests.map((request) => new URL(request.url).searchParams.get("source"))).toEqual([
+      first!.source,
+      second!.source,
+    ]);
   });
 });

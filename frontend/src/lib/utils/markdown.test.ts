@@ -774,9 +774,11 @@ describe("markdown video", () => {
   });
 
   it("treats a forged player marker as raw markup", () => {
+    // GitLab removes raw video but plays a generated player from any host, so
+    // only a rejected marker leaves no player.
     const html = renderMarkdownSync(
       '<video data-kenn-forge-media="guess" src="https://cdn.example.com/x.mp4"></video>',
-      githubRepo,
+      gitlabRepo,
     );
 
     expect(videos(html)).toHaveLength(0);

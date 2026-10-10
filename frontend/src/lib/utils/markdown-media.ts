@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Semaphore } from "effect";
 import { orvalRequest } from "../api/runtime.js";
 import type { MarkdownMediaOutcome } from "./markdown.js";
 
@@ -9,7 +9,10 @@ export interface MarkdownMediaCandidate {
   readonly mediaURL: string;
 }
 
-const PROBE_CONCURRENCY = 4;
+// One limit for the whole page, not per render. A probe can wait 30s on a
+// slow provider while holding one of the six HTTP/1.1 connections the browser
+// allows to the daemon; two leave room for live updates and app requests.
+const probePermits = Semaphore.makeUnsafe(2);
 
 // Settled answers that describe the asset itself. Failed probes say nothing
 // about the asset type, so they are never stored and the next render asks
@@ -63,6 +66,7 @@ export const resolveMarkdownMediaOutcomes = (
       const settled = settledOutcomes.get(mediaURL);
       if (settled) return Effect.succeed([source, settled] as const);
       return probeMarkdownMedia(mediaURL).pipe(
+        Semaphore.withPermit(probePermits),
         Effect.tap((outcome) =>
           Effect.sync(() => {
             if (outcome !== "unknown") settledOutcomes.set(mediaURL, outcome);
@@ -71,5 +75,5 @@ export const resolveMarkdownMediaOutcomes = (
         Effect.map((outcome) => [source, outcome] as const),
       );
     },
-    { concurrency: PROBE_CONCURRENCY },
+    { concurrency: "unbounded" },
   ).pipe(Effect.map((entries) => new Map(entries)));

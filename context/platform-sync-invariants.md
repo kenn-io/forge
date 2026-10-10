@@ -620,8 +620,9 @@ disturbs the nodes the markdown host inserted
   platform host, and only uploads on that host reach the proxy
   (`frontend/src/lib/utils/markdown.ts::gitLabUploadURL`).
 - GitHub decides player versus link from upload metadata Forge cannot see, so
-  the frontend probes each candidate with `Range: bytes=0-0`, at most four at
-  a time, and never reads the body: a host that ignores Range sends the whole
+  the frontend probes each candidate with `Range: bytes=0-0`, at most two at
+  a time across the whole page so slow probes leave connections for the app,
+  and never reads the body: a host that ignores Range sends the whole
   file. Signed storage rejects HEAD, so the probe is a GET. Only proven
   outcomes are cached for the session (video, or `415` for not a video);
   credential, quota, and availability failures render a link and probe again

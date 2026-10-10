@@ -35,7 +35,11 @@ func (p *ProviderProxy) ServeHTTP(
 		))
 		return
 	}
-	response, err := p.client.Do(r.Context(), rule.PeerScope, r)
+	send := p.client.Do
+	if streaming, ok := p.client.(providerplane.StreamingClient); ok && rule.Streaming {
+		send = streaming.DoStream
+	}
+	response, err := send(r.Context(), rule.PeerScope, r)
 	if err != nil {
 		if errors.Is(err, providerplane.ErrRequestBodyTooLarge) {
 			WriteProblemResponse(w, httpapi.NewProblem(
@@ -61,6 +65,14 @@ func (p *ProviderProxy) ServeHTTP(
 	}
 	defer response.Body.Close()
 
+	if rule.Streaming {
+		// Media can be far larger than the buffered limit. The status line is
+		// sent before the body, so a copy failure can only end the response.
+		copyProviderResponseHeaders(w.Header(), response.Header)
+		w.WriteHeader(response.StatusCode)
+		_, _ = io.Copy(w, response.Body)
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, p.ResponseBodyLimit+1))
 	if err != nil || int64(len(body)) > p.ResponseBodyLimit {
 		if rule.PeerScope == federationauth.ScopeProviderWrite {

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -851,4 +852,57 @@ func TestProviderProxyRejectsOversizedHubResponse(t *testing.T) {
 
 	assert.Equal(http.StatusBadGateway, response.StatusCode)
 	assert.Equal(httpapi.CodeUpstreamError, problem.Code)
+}
+
+func TestProviderProxyStreamsMarkdownMediaPastBodyLimit(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	serverfake.RunParallelServerTest(t)
+
+	media := strings.Repeat("v", 4096)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/api/v1/repo/github/acme/widget/markdown-media", r.URL.Path)
+		assert.Equal("bytes=0-", r.Header.Get("Range"))
+		w.Header().Set("Content-Type", "video/mp4")
+		w.Header().Set("Content-Range", "bytes 0-4095/40000")
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = io.WriteString(w, media)
+	}))
+	t.Cleanup(hub.Close)
+	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
+	require.NoError(err)
+	require.NoError(credentials.StoreOutbound(proxyTestHubID, "media-secret", federationauth.SpokeToHubScopes()))
+	client, err := providerplane.NewClient(providerplane.Options{
+		LocalNodeID: proxyTestNodeID,
+		Hub:         providerplane.Hub{NodeID: proxyTestHubID, BaseURL: hub.URL},
+		Credentials: credentials,
+		HTTPClient:  hub.Client(),
+	})
+	require.NoError(err)
+	proxy := routepolicy.NewProviderProxy(client)
+	// A limit far below the body proves the streaming rule bypasses it.
+	proxy.ResponseBodyLimit = 3
+	rule, ok := providerRouteRuleForRequest(http.MethodGet, "/api/v1/repo/github/acme/widget/markdown-media")
+	require.True(ok)
+	require.True(rule.Streaming)
+	spoke := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxy.ServeHTTP(w, r, rule)
+	}))
+	t.Cleanup(spoke.Close)
+
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet,
+		spoke.URL+"/api/v1/repo/github/acme/widget/markdown-media?source=x", nil)
+	require.NoError(err)
+	request.Header.Set("Range", "bytes=0-")
+	response, err := spoke.Client().Do(request)
+	require.NoError(err)
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	require.NoError(err)
+
+	assert.Equal(http.StatusPartialContent, response.StatusCode)
+	assert.Equal("bytes 0-4095/40000", response.Header.Get("Content-Range"))
+	assert.Equal("bytes", response.Header.Get("Accept-Ranges"))
+	assert.Equal(media, string(body))
 }

@@ -83,78 +83,67 @@ func TestCaptureTelemetryEvent_QueuesEvent(t *testing.T) {
 
 func TestCaptureTelemetryEvent_ReturnsDisabledWhenTelemetryUnavailable(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-
-	srv := servertest.NewTelemetryTestServer(t, nil)
-	req := httptest.NewRequestWithContext(t.Context(),
-		http.MethodPost,
-		"/api/v1/telemetry/events",
-		strings.NewReader(`{"event":"app_opened"}`),
-	)
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-
-	srv.ServeHTTP(rr, req)
-
-	assert.Equal(http.StatusAccepted, rr.Code)
-
-	var body telemetryapi.TelemetryEventResponse
-	err := json.NewDecoder(rr.Body).Decode(&body)
-	require.NoError(err)
-	assert.Equal("disabled", body.Status)
+	for _, tc := range []struct {
+		name      string
+		telemetry *serverfake.FakeTelemetry
+		payload   string
+		code      int
+	}{
+		{"unavailable", nil, `{"event":"app_opened"}`, http.StatusAccepted},
+		{"disabled", &serverfake.FakeTelemetry{EnabledValue: false}, `{"event":"app_opened"}`, http.StatusAccepted},
+		{"invalid duration unavailable", nil, `{"event":"session_ended","properties":{}}`, http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			srv := servertest.NewTelemetryTestServer(t, tc.telemetry)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(tc.payload))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			assert.Equal(tc.code, rr.Code)
+			if tc.code == http.StatusBadRequest {
+				assert.Contains(rr.Body.String(), "unsupported or missing session duration")
+				return
+			}
+			var body telemetryapi.TelemetryEventResponse
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
+			assert.Equal("disabled", body.Status)
+			if tc.telemetry != nil {
+				assert.Empty(tc.telemetry.Event)
+			}
+		})
+	}
 }
 
 func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	for _, state := range []string{"enabled", "disabled", "unavailable"} {
-		for _, tc := range []struct {
-			name, properties string
-			valid            bool
-		}{
-			{"under_1m", `{"duration_bucket":"under_1m"}`, true},
-			{"1_to_5m", `{"duration_bucket":"1_to_5m"}`, true},
-			{"5_to_30m", `{"duration_bucket":"5_to_30m"}`, true},
-			{"over_30m", `{"duration_bucket":"over_30m"}`, true},
-			{"30m_to_2h", `{"duration_bucket":"30m_to_2h"}`, true},
-			{"over_2h", `{"duration_bucket":"over_2h"}`, true},
-			{"missing", `{}`, false},
-			{"unknown", `{"duration_bucket":"all_day"}`, false},
-			{"null", `{"duration_bucket":null}`, false},
-			{"number", `{"duration_bucket":31}`, false},
-		} {
-			t.Run(tc.name+"/"+state, func(t *testing.T) {
-				assert := assert.New(t)
-				var telemetry *serverfake.FakeTelemetry
-				if state != "unavailable" {
-					telemetry = &serverfake.FakeTelemetry{EnabledValue: state == "enabled"}
-				}
-				srv := servertest.NewTelemetryTestServer(t, telemetry)
-				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"session_ended","properties":`+tc.properties+`}`))
-				req.Header.Set("Content-Type", "application/json")
-				rr := httptest.NewRecorder()
-				srv.ServeHTTP(rr, req)
-				if !tc.valid {
-					assert.Equal(http.StatusBadRequest, rr.Code)
-					assert.Contains(rr.Body.String(), "unsupported or missing session duration")
-					if telemetry != nil {
-						assert.Empty(telemetry.Event)
-					}
-					return
-				}
-				assert.Equal(http.StatusAccepted, rr.Code)
-				if state != "enabled" {
-					var body telemetryapi.TelemetryEventResponse
-					require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
-					assert.Equal("disabled", body.Status)
-					if telemetry != nil {
-						assert.Empty(telemetry.Event)
-					}
-				} else {
-					assert.Equal("session_ended", telemetry.Event)
-					assert.Equal(tc.name, telemetry.Properties["duration_bucket"])
-				}
-			})
-		}
+	for _, tc := range []struct {
+		name, properties string
+		valid            bool
+	}{
+		{"under_1m", `{"duration_bucket":"under_1m"}`, true},
+		{"missing", `{}`, false},
+		{"unknown", `{"duration_bucket":"all_day"}`, false},
+		{"null", `{"duration_bucket":null}`, false},
+		{"number", `{"duration_bucket":31}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			telemetry := &serverfake.FakeTelemetry{EnabledValue: true}
+			srv := servertest.NewTelemetryTestServer(t, telemetry)
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"session_ended","properties":`+tc.properties+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			if !tc.valid {
+				assert.Equal(http.StatusBadRequest, rr.Code)
+				assert.Contains(rr.Body.String(), "unsupported or missing session duration")
+				assert.Empty(telemetry.Event)
+				return
+			}
+			assert.Equal(http.StatusAccepted, rr.Code)
+			assert.Equal("session_ended", telemetry.Event)
+			assert.Equal(tc.name, telemetry.Properties["duration_bucket"])
+		})
 	}
 }

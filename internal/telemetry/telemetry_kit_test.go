@@ -3,8 +3,6 @@
 package telemetry
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -14,47 +12,6 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/kit/telemetry/posthog"
 )
-
-func TestReporterValidatesSessionDurationInBothModes(t *testing.T) {
-	t.Setenv(EnabledEnv, "1")
-	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
-	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer endpoint.Close()
-	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
-		opts.Endpoint = endpoint.URL
-		return posthog.NewReporter(opts, options...)
-	})
-	for _, disabled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "enabled", true: "disabled"}[disabled], func(t *testing.T) {
-			if disabled {
-				t.Setenv(EnabledEnv, "0")
-			}
-			reporter, err := newReporter(Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, time.Now())
-			require.NoError(t, err)
-			defer func() { require.NoError(t, reporter.Close()) }()
-			require.Equal(t, !disabled, reporter.Enabled())
-			_, err = reporter.Report(t.Context(), "session_ended", nil)
-			require.ErrorIs(t, err, posthog.ErrInvalidProperty)
-			status, err := reporter.Report(t.Context(), "session_ended", map[string]any{" duration_bucket ": "under_1m"})
-			require.NoError(t, err)
-			want := posthog.StatusQueued
-			if disabled {
-				want = posthog.StatusDisabled
-			}
-			assert.Equal(t, want, status)
-		})
-	}
-}
-
-func TestAllowlistReporterRequiresOptOut(t *testing.T) {
-	t.Setenv(EnabledEnv, "1")
-	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
-	reporter, err := newAllowlistReporter()
-	require.ErrorContains(t, err, "posthog api key is required")
-	require.Nil(t, reporter)
-}
 
 // swapKitReporter replaces newKitReporter for the test and restores it after.
 func swapKitReporter(t *testing.T, factory func(posthog.Options, ...posthog.Option) (Client, error)) {

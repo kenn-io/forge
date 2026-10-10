@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"os"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -40,6 +42,9 @@ func (f *fakeKitClient) Enabled() bool {
 }
 
 func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
+	if isolateProcessDisable(t) {
+		return
+	}
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -125,13 +130,29 @@ func TestReporterCloseClosesBothClients(t *testing.T) {
 }
 
 func TestDisabledReporterIsNoOp(t *testing.T) {
+	if isolateProcessDisable(t) {
+		return
+	}
 	assert := assert.New(t)
 
-	for _, reporter := range []*Reporter{nil, DisabledReporter()} {
-		assert.False(reporter.Enabled())
-		assert.NoError(reporter.Capture("app_opened", nil))
-		assert.NoError(reporter.Close())
+	reporter := DisabledReporter()
+	assert.False(reporter.Enabled())
+	assert.NoError(reporter.Capture("app_opened", nil))
+	assert.NoError(reporter.Close())
+}
+
+func isolateProcessDisable(t *testing.T) bool {
+	t.Helper()
+	if os.Getenv("FORGE_TELEMETRY_CHILD") == t.Name() {
+		return false
 	}
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.CommandContext(t.Context(), executable, "-test.run=^"+t.Name()+"$")
+	cmd.Env = append(os.Environ(), "FORGE_TELEMETRY_CHILD="+t.Name())
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+	return true
 }
 
 func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {

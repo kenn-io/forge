@@ -167,11 +167,6 @@ func (h agentHookRelay) relay(ctx context.Context, input agenthook.CommonInput) 
 			if problem.Detail != nil && strings.TrimSpace(*problem.Detail) != "" {
 				details = append(details, *problem.Detail)
 			}
-			for _, entry := range problem.Errors {
-				if entry.Message != nil && strings.TrimSpace(*entry.Message) != "" {
-					details = append(details, *entry.Message)
-				}
-			}
 		}
 		return "", fmt.Errorf("%w: %s", errAgentHookResponse, strings.Join(details, ": "))
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -68,6 +67,7 @@ type Client interface {
 type Reporter struct {
 	daemon  Client
 	backend Client
+	err     error
 }
 
 type Options struct {
@@ -181,17 +181,13 @@ func newAllowlistReporter() (*Reporter, error) {
 	return &Reporter{daemon: daemon, backend: backend}, nil
 }
 
-var disabledReporter = sync.OnceValue(func() *Reporter {
+func DisabledReporter() *Reporter {
+	posthog.DisableProcess()
 	reporter, err := newAllowlistReporter()
 	if err != nil {
-		slog.Warn("telemetry validation unavailable", "err", err)
-		return &Reporter{}
+		return &Reporter{err: err}
 	}
 	return reporter
-})
-
-func DisabledReporter() *Reporter {
-	return disabledReporter()
 }
 
 func NewReporterOrDisabled(opts Options) *Reporter {
@@ -221,8 +217,8 @@ func (r *Reporter) Capture(event string, properties map[string]any) error {
 }
 
 func (r *Reporter) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
-	if r == nil {
-		r = DisabledReporter()
+	if r.err != nil {
+		return "", r.err
 	}
 
 	event = strings.TrimSpace(event)
@@ -238,7 +234,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 		client = r.daemon
 	}
 	if client == nil {
-		return posthog.StatusDisabled, nil
+		return "", errors.New("telemetry reporter is unavailable")
 	}
 	return client.Report(ctx, event, properties)
 }

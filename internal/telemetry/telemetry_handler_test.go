@@ -71,6 +71,15 @@ func TestCaptureTelemetryEvent_ValidatesSessionDurationWithRealReporter(t *testi
 	}
 	srv := server.New(serverfake.OpenTestDB(t), nil, nil, "/", nil, options)
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	if mode == "opted out" || mode == "init failure" {
+		t.Run("unknown screen", func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"screen_viewed","properties":{"screen":"unknown"}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+			srv.ServeHTTP(rr, req)
+			assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
+		})
+	}
 	type durationCase struct {
 		name       string
 		properties string

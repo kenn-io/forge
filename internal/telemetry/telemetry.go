@@ -67,7 +67,8 @@ type Client interface {
 type Reporter struct {
 	daemon  Client
 	backend Client
-	err     error
+	// Set when fallback allowlist construction fails; Report returns it to avoid accepting unvalidated events.
+	err error
 }
 
 type Options struct {

@@ -7,6 +7,7 @@
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).
 - Only telemetry initialization failures disable process-wide delivery until restart; their fallback retains Kit validation. The Go test guard returns a local no-op reporter (`internal/telemetry/telemetry.go::reporterOrDisabled`).
+- With telemetry off, Forge still rejects any UI event whose properties Kit's allowlist rejects (`internal/telemetry/telemetry.go::newAllowlistReporter`).
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).

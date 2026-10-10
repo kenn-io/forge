@@ -409,6 +409,7 @@ func (s *Store) reports() []storedReport {
 		return slices.Clone(s.cacheReports)
 	}
 
+	// Display paths treat unreadable reports as absent; cleanup paths surface the errors.
 	loaded, _ := s.loadReports(entries)
 	reports := make([]storedReport, 0, len(loaded))
 	cleanupPending := false
@@ -569,6 +570,7 @@ func (s *Store) readReport(path string) (Report, bool, error) {
 
 // previousReport returns the newest report for one terminal, including one saved under its name from before terminals had their own.
 func (s *Store) previousReport(agent, sessionID, runtimeSessionKey string) (Report, bool) {
+	// Display paths treat unreadable reports as absent; cleanup paths surface the errors.
 	report, ok, _ := s.readReport(s.reportPath(agent, sessionID, runtimeSessionKey))
 	legacy, legacyOK, _ := s.readReport(s.legacyReportPath(agent, sessionID))
 	if legacyOK && legacy.RuntimeSessionKey == runtimeSessionKey &&

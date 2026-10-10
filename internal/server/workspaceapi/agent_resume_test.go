@@ -87,7 +87,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
+			handler := New(Deps{DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
 
 			require.NoError(handler.RestoreRuntimeSessions(ctx))
 
@@ -171,7 +171,7 @@ exec sleep 60
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			workspaces := workspace.NewManager(database, t.TempDir())
+			workspaces := newWorkspaceTestManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
 			if strings.HasPrefix(status, "identity-") {
@@ -301,7 +301,7 @@ func TestRestoreRuntimeSessionsLeavesPtyOwnerBaseTerminalToAttach(t *testing.T) 
 	client := &ptyowner.Client{Root: t.TempDir(), InProcess: true}
 	runtime := localruntime.NewManager(localruntime.Options{PtyOwnerRuntime: ptyownerruntime.New(client, nil)})
 	t.Cleanup(runtime.Shutdown)
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := newWorkspaceTestManager(t, database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 

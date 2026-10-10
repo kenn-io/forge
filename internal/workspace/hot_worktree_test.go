@@ -12,6 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gofrs/flock"
+	managed "go.kenn.io/kit/git/managed"
+	"go.kenn.io/kwt/worktree"
+
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,7 +55,7 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 	t.Setenv("KENN_FORGE_TEST_STARTED", started)
 	t.Setenv("KENN_FORGE_TEST_RELEASE", release)
 	t.Setenv("PATH", gate+string(os.PathListSeparator)+os.Getenv("PATH"))
-	manager := NewManager(nil, t.TempDir())
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
 	workspacePath := filepath.Join(t.TempDir(), "workspace")
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
@@ -78,9 +82,9 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 	runWorkspaceTestGit(t, clone, "worktree", "remove", "--force", sibling)
 	// Git registered the worktree, but Forge never configured it or recorded
 	// readiness. A restarted warmer must still finish and hand it off.
-	manager = NewManager(nil, manager.worktreeDir)
+	manager = newWorkspaceTestManager(t, nil, manager.worktreeDir)
 	require.NoError(manager.prepareHotWorktree(t.Context(), clone, workspacePath, "HEAD"))
-	claimed, err := tryHotWorktree(t.Context(), clone, workspacePath, "--detach", "HEAD")
+	claimed, err := claimTestWarm(manager, t.Context(), clone, workspacePath, managed.CreateWorktreeOptions{Mode: managed.CheckoutDetached, BaseRef: "HEAD"})
 	require.NoError(err)
 	require.True(claimed)
 	require.FileExists(filepath.Join(workspacePath, "base.txt"))
@@ -107,7 +111,7 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 			script, started, release := filepath.Join(gateDir, "filter.sh"), filepath.Join(gateDir, "started"), filepath.Join(gateDir, "release")
 			require.NoError(os.WriteFile(script, []byte("#!/bin/sh\n: > \"$1\"\nwhile [ ! -f \"$2\" ]; do sleep 0.02; done\ncat\n"), 0o700))
 			runWorkspaceTestGit(t, clone, "config", "filter.gate.smudge", shellquote.Join(script, started, release))
-			manager := NewManager(nil, t.TempDir())
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
 			workspacePath := filepath.Join(t.TempDir(), "workspace")
 			if stage == "claim" {
 				require.NoError(manager.prepareHotWorktree(ctx, clone, workspacePath, "HEAD"))
@@ -120,10 +124,7 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 				if stage == "fill" {
 					buildErr = manager.prepareHotWorktree(buildCtx, clone, workspacePath, target)
 				} else {
-					buildErr = manager.withRepoLockForGitDir(buildCtx, clone, func() error {
-						_, err := tryHotWorktree(buildCtx, clone, workspacePath, "--detach", target)
-						return err
-					})
+					_, buildErr = claimTestWarm(manager, buildCtx, clone, workspacePath, managed.CreateWorktreeOptions{Mode: managed.CheckoutDetached, BaseRef: target})
 				}
 			}()
 			t.Cleanup(func() {
@@ -134,8 +135,8 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 			if stage == "fill" {
 				lockCtx, stopLock := context.WithTimeout(ctx, 5*time.Second)
 				defer stopLock()
-				require.NoError(manager.withRepoLockForGitDir(lockCtx, clone, func() error { return nil }))
-				claimed, err := tryHotWorktree(ctx, clone, workspacePath, "main")
+				require.NoError(manager.withRepoLockForGitDir(lockCtx, clone, func(_ *worktree.Scope) error { return nil }))
+				claimed, err := claimTestWarm(manager, ctx, clone, workspacePath, managed.CreateWorktreeOptions{Mode: managed.CheckoutExistingBranch, Branch: "main"})
 				require.NoError(err)
 				assert.False(t, claimed)
 			}
@@ -145,9 +146,9 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 			require.NoError(os.WriteFile(release, nil, 0o600))
 			// A new process must recover a real canceled Git checkout, including
 			// Git's abandoned index lock, before publishing the spare as ready.
-			manager = NewManager(nil, manager.worktreeDir)
+			manager = newWorkspaceTestManager(t, nil, manager.worktreeDir)
 			require.NoError(manager.prepareHotWorktree(ctx, clone, workspacePath, target))
-			claimed, err := tryHotWorktree(ctx, clone, workspacePath, "main")
+			claimed, err := claimTestWarm(manager, ctx, clone, workspacePath, managed.CreateWorktreeOptions{Mode: managed.CheckoutExistingBranch, Branch: "main"})
 			require.NoError(err)
 			assert.True(t, claimed)
 		})
@@ -188,7 +189,7 @@ func BenchmarkHotWorktree(b *testing.B) {
 	for _, target := range []string{"baseline", "main"} {
 		for _, hot := range []bool{false, true} {
 			b.Run(fmt.Sprintf("target=%s/hot=%t", target, hot), func(b *testing.B) {
-				manager := NewManager(nil, b.TempDir())
+				manager := newWorkspaceTestManager(b, nil, b.TempDir())
 				ws := &Workspace{ID: "benchmark", WorktreePath: filepath.Join(b.TempDir(), "workspace")}
 				for b.Loop() {
 					b.StopTimer()
@@ -196,8 +197,8 @@ func BenchmarkHotWorktree(b *testing.B) {
 						require.NoError(b, manager.prepareHotWorktree(b.Context(), clone, ws.WorktreePath, "baseline"))
 					}
 					b.StartTimer()
-					err := manager.withRepoLockForGitDir(b.Context(), clone, func() error {
-						_, err := manager.runOwnedGitWorktreeAddCreatingBranch(b.Context(), clone, ws, "workspace", target)
+					err := manager.withRepoLockForGitDir(b.Context(), clone, func(scope *worktree.Scope) error {
+						_, err := createWorkspaceCheckout(b.Context(), scope, ws, managed.CreateWorktreeOptions{Branch: "workspace", BaseRef: target, Mode: managed.CheckoutNewBranch}, nil)
 						return err
 					})
 					b.StopTimer()
@@ -217,7 +218,7 @@ func TestHotWorktreeClaimAndRefill(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	clone := setupBareCloneForWorkspaceGitTest(t)
-	manager := NewManager(nil, t.TempDir())
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
 	ws := &Workspace{ID: "first", WorktreePath: filepath.Join(t.TempDir(), "first")}
 	hot := hotWorktreePath(clone, ws.WorktreePath)
 	alias := filepath.Join(t.TempDir(), "clone-alias")
@@ -228,16 +229,16 @@ func TestHotWorktreeClaimAndRefill(t *testing.T) {
 	before, err := os.Stat(filepath.Join(hot, "base.txt"))
 	require.NoError(err)
 	// A new manager can use a spare left by the previous process.
-	manager = NewManager(nil, manager.worktreeDir)
-	require.NoError(manager.withRepoLockForGitDir(ctx, clone, func() error {
-		_, err := manager.runOwnedGitWorktreeAddCreatingBranch(ctx, clone, ws, "feature/first", "HEAD")
+	manager = newWorkspaceTestManager(t, nil, manager.worktreeDir)
+	require.NoError(manager.withRepoLockForGitDir(ctx, clone, func(scope *worktree.Scope) error {
+		_, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: "feature/first", BaseRef: "HEAD", Mode: managed.CheckoutNewBranch}, nil)
 		return err
 	}))
 	after, err := os.Stat(filepath.Join(ws.WorktreePath, "base.txt"))
 	require.NoError(err)
 	assert.True(os.SameFile(before, after), "claim should move the prepared files")
 	assert.Equal("feature/first", strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "branch", "--show-current"))))
-	owned, err := workspaceRegistrationMatches(ctx, clone, ws.WorktreePath, ws.ID)
+	owned, err := manager.workspaceRegistrationMatches(ctx, clone, ws.WorktreePath, ws.ID)
 	require.NoError(err)
 	assert.True(owned)
 	assert.NoDirExists(hot)
@@ -257,7 +258,7 @@ func TestHotWorktreeClaimsLatestRevisionOnlyOnce(t *testing.T) {
 	ctx := t.Context()
 	clone := setupBareCloneForWorkspaceGitTest(t)
 	parent := t.TempDir()
-	manager := NewManager(nil, t.TempDir())
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
 	first := &Workspace{ID: "first", WorktreePath: filepath.Join(parent, "first")}
 	require.NoError(manager.prepareHotWorktree(ctx, clone, first.WorktreePath, "HEAD"))
 	before, err := os.Stat(filepath.Join(hotWorktreePath(clone, first.WorktreePath), "base.txt"))
@@ -273,8 +274,8 @@ func TestHotWorktreeClaimsLatestRevisionOnlyOnce(t *testing.T) {
 	errors := make(chan error, 2)
 	for _, ws := range []*Workspace{first, second} {
 		wg.Go(func() {
-			errors <- manager.withRepoLockForGitDir(ctx, clone, func() error {
-				_, err := manager.runOwnedGitWorktreeAddCreatingBranch(ctx, clone, ws, ws.ID, target)
+			errors <- manager.withRepoLockForGitDir(ctx, clone, func(scope *worktree.Scope) error {
+				_, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: ws.ID, BaseRef: target, Mode: managed.CheckoutNewBranch}, nil)
 				return err
 			})
 		})
@@ -305,7 +306,7 @@ func TestHotWorktreePreservesChangedSpare(t *testing.T) {
 			require := require.New(t)
 			ctx := t.Context()
 			clone := setupBareCloneForWorkspaceGitTest(t)
-			manager := NewManager(nil, t.TempDir())
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
 			ws := &Workspace{ID: "new", WorktreePath: filepath.Join(t.TempDir(), "new")}
 			hot := hotWorktreePath(clone, ws.WorktreePath)
 			require.NoError(manager.prepareHotWorktree(ctx, clone, ws.WorktreePath, "HEAD"))
@@ -325,8 +326,8 @@ func TestHotWorktreePreservesChangedSpare(t *testing.T) {
 			}
 			before, err := os.Stat(filepath.Join(hot, "base.txt"))
 			require.NoError(err)
-			require.NoError(manager.withRepoLockForGitDir(ctx, clone, func() error {
-				_, err := manager.runOwnedGitWorktreeAddCreatingBranch(ctx, clone, ws, "new", "HEAD")
+			require.NoError(manager.withRepoLockForGitDir(ctx, clone, func(scope *worktree.Scope) error {
+				_, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: "new", BaseRef: "HEAD", Mode: managed.CheckoutNewBranch}, nil)
 				return err
 			}))
 			after, err := os.Stat(filepath.Join(hot, "base.txt"))
@@ -335,4 +336,66 @@ func TestHotWorktreePreservesChangedSpare(t *testing.T) {
 			assert.FileExists(t, filepath.Join(ws.WorktreePath, "base.txt"))
 		})
 	}
+}
+
+func TestForegroundClaimCompetesWithWarmRefill(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	clone := setupBareCloneForWorkspaceGitTest(t)
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
+	path := filepath.Join(t.TempDir(), "workspace")
+	require.NoError(manager.prepareHotWorktree(t.Context(), clone, path, "HEAD"))
+	hot := hotWorktreePath(clone, path)
+	old := strings.TrimSpace(string(runWorkspaceTestGit(t, clone, "rev-parse", "HEAD")))
+	latest := strings.TrimSpace(string(runWorkspaceTestGit(t, clone, "commit-tree", old+"^{tree}", "-p", old, "-m", "advance base")))
+	runWorkspaceTestGit(t, clone, "update-ref", "refs/heads/main", latest)
+	pool := flock.New(filepath.Join(filepath.Dir(hot), ".kenn-forge-worktree.lock"))
+	require.NoError(pool.Lock())
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	started, done := make(chan struct{}), make(chan struct{})
+	var refillErr error
+	t.Cleanup(func() { require.NoError(pool.Unlock()); cancel(); <-done })
+	go func() { close(started); refillErr = manager.prepareHotWorktree(ctx, clone, path, "HEAD"); close(done) }()
+	<-started
+	repo, err := manager.openRepositoryWorktrees(ctx, clone)
+	require.NoError(err)
+	claims := make(chan worktree.CreateResult, 2)
+	failures := make(chan error, 2)
+	var workers sync.WaitGroup
+	for i := range 2 {
+		workers.Go(func() {
+			result, claimed, err := repo.ClaimWarm(ctx, worktree.WarmClaimRequest{
+				Warm:   workspaceWarmRequest(clone, path, "HEAD"),
+				Create: worktree.CreateRequest{Git: managed.CreateWorktreeOptions{Path: fmt.Sprintf("%s-%d", path, i), Mode: managed.CheckoutNewBranch, Branch: fmt.Sprintf("claim-%d", i), BaseRef: "HEAD"}, Identity: worktree.IdentityPolicy{FileName: workspaceOwnershipMarkerFile, Value: fmt.Sprintf("workspace-%d", i)}},
+			})
+			failures <- err
+			if claimed {
+				claims <- result
+			}
+		})
+	}
+	workers.Wait()
+	close(claims)
+	close(failures)
+	for err := range failures {
+		require.NoError(err)
+	}
+	require.Len(claims, 1)
+	claimed := <-claims
+	require.Equal(latest, strings.TrimSpace(string(runWorkspaceTestGit(t, claimed.Path, "rev-parse", "HEAD"))))
+	require.NoError(pool.Unlock())
+	<-done
+	require.NoError(refillErr)
+	require.FileExists(filepath.Join(hot, "base.txt"))
+	require.Equal(latest, strings.TrimSpace(string(runWorkspaceTestGit(t, hot, "rev-parse", "HEAD"))))
+}
+
+func claimTestWarm(m *Manager, ctx context.Context, clone, path string, opts managed.CreateWorktreeOptions) (bool, error) {
+	repo, err := m.openRepositoryWorktrees(ctx, clone)
+	if err != nil {
+		return false, err
+	}
+	opts.Path = path
+	_, claimed, err := repo.ClaimWarm(ctx, worktree.WarmClaimRequest{Warm: workspaceWarmRequest(clone, path, opts.BaseRef), Create: worktree.CreateRequest{Git: opts}})
+	return claimed, err
 }

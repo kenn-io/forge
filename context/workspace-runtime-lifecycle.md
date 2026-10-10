@@ -155,7 +155,7 @@ Rules:
   (`internal/workspace/manager.go::Manager.SetupWithOptions`).
 - A clone's PR source branch alone does not prove workspace recovery. Missing
   checkouts retain their Git registration and index through failed recovery,
-  preserving detached commits (`internal/workspace/restore_checkout.go::restoreMissingWorkspaceCheckout`).
+  preserving detached commits (`internal/workspace/manager.go::Manager.addWorktree`).
 - An ad-hoc branch name alone is no proof of prior setup; recovery needs the
   existing checkout or its registration to distinguish late branch collisions
   (`internal/workspace/manager.go::Manager.addWorktree`).
@@ -242,7 +242,9 @@ The base workspace `tmux` tab is the exception:
 
 Workspace deletion is intentionally conservative.
 
-- First decide whether deletion is allowed, including dirty-worktree checks.
+- Interactive DELETE checks dirtiness before durable admission; queued cleanup admits
+  first and records dirty refusal as `deletion_failed`
+  (`internal/server/workspaceapi/workspace_deletion.go::Handler.runWorkspaceDeletion`).
 - Persist deletion intent before destructive work; failures remain visible and
   retryable, while interrupted attempts become explicit failures after restart
   (`internal/server/workspaceapi/workspace_deletion.go::Handler.runWorkspaceDeletion`).
@@ -253,7 +255,9 @@ Workspace deletion is intentionally conservative.
   conditional transition. In particular, tmux pruning cannot replace an
   admitted `deleting` state with a stale `ready` to `error` write
   (`internal/db/queries.go::DB.MarkReadyWorkspaceError`).
-- Only after a clean preflight may runtime sessions and shells be stopped.
+- `BeginStopping` blocks new launches before preflight without stopping sessions;
+  existing runtimes stop only after preflight passes or force skips it
+  (`internal/server/workspaceapi/workspace_deletion.go::Handler.runWorkspaceDeletion`).
 - Only after runtime shutdown succeeds should destructive worktree and DB
   teardown continue.
 - A live worktree registration at the persisted path in the resolved repository

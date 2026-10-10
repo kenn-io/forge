@@ -69,7 +69,7 @@ embedder protocol for arbitrary host state.
   (`internal/server/workspaceapi/fleet_snapshot.go::FleetSnapshot`).
 - Managed clones keep `core.bare=true` in shared config and override it per
   linked worktree; repository tools use the shared value to identify this layout
-  (`internal/workspace/manager.go::configureBareLinkedWorktree`).
+  (`internal/workspace/manager.go::createWorkspaceCheckout`).
 - Managed clones and existing local base checkouts use the same exact
   provider-host cleartext acknowledgement when validating their canonical remote; local
   bases do not silently weaken or ignore the configured transport policy
@@ -280,25 +280,28 @@ embedder protocol for arbitrary host state.
     the authoritative lifecycle state for setup/deletion races
     (`internal/server/workspaceapi/routes_handlers.go::Handler.DeleteWorkspace`).
   - Setup rejects occupied destinations before clone/fetch and again under the
-    repo lock before mutation. Branch creation and failed-add cleanup use ref
-    compare-and-swap so changed branches survive (`internal/workspace/manager.go::createBranchAndAddWorktree`).
-  - New registrations receive their workspace-ID marker before fallible post-add
-    configuration; marker failure rolls back the exact registration and any unchanged
-    created branch under the repo lock (`internal/workspace/manager.go::Manager.runOwnedGitWorktreeAdd`).
+    repo lock before mutation. Shared creation retains acquisition evidence so failed
+    setup cannot remove replacement artifacts (`internal/workspace/manager.go::createWorkspaceCheckout`).
+  - Publish the workspace-ID marker before fallible post-add configuration; a failed
+    required marker write preserves the checkout without granting rollback authority
+    (`internal/workspace/manager.go::createWorkspaceCheckout`).
   - Existing-worktree reuse accepts only a non-symlink worktree root and revalidates
     its repository and provenance under the repo lock before refresh or ownership
     marking (`internal/workspace/manager.go::Manager.reuseExistingWorkspaceWorktree`).
-  - Destructive worktree removal, including setup rollback, requires a matching
-    persisted workspace-ID marker under the repo lock; preserve unmarked or mismatched
-    roots (`internal/workspace/manager.go::Manager.rollbackWorktree`).
-  - An unmarked live registration is ambiguous after upgrade: delete and retry return
-    conflict and retain the workspace row; only registrations without a live worktree
-    may be cleared as stale (`internal/workspace/manager.go::gitDirOwnsCleanupWorktree`).
-  - Only exact Git roots whose `.git` matches their registration are live; symlinked
-    roots may be live but are never owned, so they conflict instead of entering stale
-    cleanup (`internal/workspace/manager.go::gitDirHasLiveWorktree`).
-  - Pre-lock cleanup resolution is advisory. Revalidate marker identity and current
-    live/stale state as the first locked action (`internal/workspace/manager.go::currentWorkspaceCleanupState`).
+  - Setup rollback requires a matching persisted workspace-ID marker under the repo
+    lock; preserve unmarked or mismatched roots
+    (`internal/workspace/manager.go::Manager.rollbackWorktree`).
+  - Explicit deletion accepts a live same-repository registration at the recorded
+    path even without a matching marker; this authority does not extend to rollback
+    (`internal/workspace/manager.go::Manager.gitDirOwnsCleanupWorktree`).
+  - Only exact, non-symlink Git roots whose `.git` matches their registration qualify
+    as live; preserve unrelated paths
+    (`internal/workspace/manager.go::Manager.observeWorkspaceRegistration`).
+  - After successful preflight and runtime teardown, a recorded symlink to another
+    same-repository worktree permits row deletion while preserving the link and target
+    (`internal/workspace/manager.go::Manager.cleanupWorkspaceArtifactsForDelete`).
+  - Pre-lock cleanup resolution is advisory. Revalidate cleanup authority and current
+    live/stale state as the first locked action (`internal/workspace/manager.go::Manager.cleanupWorkspaceArtifactsForDeleteLocked`).
   - A force delete retains the workspace row when Git cannot remove a live owned
     worktree; only errors proving the worktree is already absent or corrupt may
     continue to branch and row cleanup (`internal/workspace/manager.go::Manager.cleanupWorkspaceArtifactsForDeleteLocked`).
@@ -408,9 +411,24 @@ route validation, and rollback stay under the repository lock; cache invalidatio
 follows lock release
 (`internal/workspace/repository_hooks.go::Manager.setupManagedRepositoryHooks`).
 
-Keep Git worktree and merge-request lifecycle semantics in
-`go.kenn.io/kit/git/managed`; kenn-forge supplies application policy instead of
-maintaining a local lifecycle fork (`internal/server/workspaceapi/projects_handlers.go::Handler.createWorktreeOnDisk`).
+Consolidate reusable worktree lifecycle in the public `kwt` library, reusing Kit
+underneath. Add needed customization in `kwt` while preserving existing Forge
+workspaces and behavior; Forge owns provider policy, persistence, and runtimes.
+Keep registration scans, orphan preservation, and branch deletion in the shared
+library. Forge selects recovery names and cleanup authority; advisory observations
+never authorize a later mutation (`internal/workspace/manager.go::Manager.cleanupWorkspaceArtifactsForDeleteLocked`).
+Projects and item workspaces use that library and share repository coordination.
+The coordinator must exist without the optional item manager; unconfigured Projects
+locks in the Git common directory (`internal/workspace/repository_worktrees.go::NewRepositoryCoordinator`).
+Item Git disables native hooks. Execution-worker identity and credential config
+share the repository lock and precede fork-upstream clearing
+(`internal/workspace/manager.go::Manager.SetupWithOptions`).
+Projects native Git hooks run under the repository lock; synchronous reentry into
+Forge mutation is unsupported. Explicit setup/teardown scripts run outside the lock,
+with removal revalidated afterward (`internal/server/workspaceapi/projects_handlers.go::Handler.removeProjectWorktreeOnDisk`).
+After registration failure, preserve changed checkouts and report retained artifacts;
+never discard rollback errors or imply the destination is clear for retry
+(`internal/server/workspaceapi/projects_handlers.go::rollbackProjectCreation`).
 Classify same-repository merge requests with the provider-hosted project
 identity, not the effective origin URL: the origin may be a local mirror
 (`internal/server/workspaceapi/projects_handlers.go::Handler.createProjectWorktreeFromMergeRequest`).
@@ -568,7 +586,7 @@ Workspace create endpoints may return 202 with a pre-existing workspace
   (`internal/workspace/hot_worktree.go::Manager.prepareHotWorktree`).
 - Claim only clean, owned spares at the freshly fetched requested revision; preserve
   branch and ownership rules, and leave changed or foreign spares untouched
-  (`internal/workspace/hot_worktree.go::tryHotWorktree`).
+  (`internal/workspace/manager.go::createWorkspaceCheckout`).
 
 ## Agent Activity Hooks
 
@@ -752,8 +770,8 @@ repository route identity stable. Managed clones follow rewritten upstream bases
 after preserving the old tip under `refs/kenn-forge/base-backups/<sha>`; those refs
 also retain local-only commits and can be used to create a recovery branch.
 Checked-out branches, diverged bases in configured user checkouts, and
-ref-namespace-blocked bases stay untouched and emit a warning
-(`internal/workspace/manager.go::syncLocalBaseBranch`).
+ref-namespace-blocked bases stay untouched
+(`internal/workspace/manager.go::Manager.syncWorkspaceBaseBranch`).
 
 ## Branch Upstream
 
@@ -784,7 +802,9 @@ heads stay untracked, while unknown heads fail closed before Git access. The
 pushed-head observer may repair a missing upstream only when a current
 hub candidate proves the head is in the base repository, the
 checked-out branch is the PR head or synthetic branch, and the remote-tracking
-ref exists.
+ref exists. Recheck the branch under the shared repository lock before repair;
+ordinary observer reads remain lock-free
+(`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader.SetBranchUpstream`).
 
 Test fixtures exercising a provider-backed lifecycle must seed the matching
 launch specification even when they also seed hub PR rows. A same-repo

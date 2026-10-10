@@ -137,7 +137,7 @@ func TestLaunchSpecLeaseExpiredHubUnavailableIsRetryable(t *testing.T) {
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, spec))
 
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time {
 		return spec.SourceVisibleUntil.Add(-time.Nanosecond)
 	})
@@ -175,7 +175,7 @@ func TestMissingWorkspaceLaunchSpecIsResolvedAndPersisted(t *testing.T) {
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	resolver := &staticLaunchSpecResolver{spec: spec}
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetLaunchSpecResolver(resolver)
 	manager.SetNow(func() time.Time { return spec.IssuedAt })
 
@@ -210,7 +210,7 @@ func TestProviderBackedSetupDoesNotFallBackToAnonymousGit(t *testing.T) {
 		filepath.Join(fakeGitDir, "git"), []byte("#!/bin/sh\nexit 1\n"), 0o755,
 	))
 	t.Setenv("PATH", fakeGitDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return spec.IssuedAt })
 	manager.SetClones(gitclone.New(t.TempDir(), nil))
 	manager.SetRequireProviderCredential(true)
@@ -242,7 +242,7 @@ func TestRefreshWorkspaceLaunchSpecRenewsFreshProjection(t *testing.T) {
 	refreshed.IssuedAt = current.IssuedAt.Add(time.Minute)
 	refreshed.SourceVisibleUntil = refreshed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
 	resolver := &staticLaunchSpecResolver{spec: refreshed}
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetLaunchSpecResolver(resolver)
 	manager.SetNow(func() time.Time { return refreshed.IssuedAt })
 
@@ -297,7 +297,7 @@ func TestRefreshWorkspaceLaunchSpecAdoptsVerifiedRepositoryRename(t *testing.T) 
 	)
 	require.NoError(err)
 
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: refreshed})
 	manager.SetNow(func() time.Time { return refreshed.IssuedAt })
 
@@ -372,7 +372,7 @@ func TestRequireWorkspaceLaunchSpecRefreshesVerifiedRepositoryRename(t *testing.
 			require.NoError(err)
 
 			resolver := &staticLaunchSpecResolver{spec: refreshed}
-			manager := NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			manager.SetLaunchSpecResolver(resolver)
 			manager.SetNow(func() time.Time { return now })
 
@@ -405,7 +405,7 @@ func TestCreateFromLaunchSpecDedupesRenamedRepositoryByStableIdentity(t *testing
 	require.NoError(err)
 
 	now := original.IssuedAt
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return now })
 	created, err := manager.CreateFromLaunchSpec(t.Context(), original)
 	require.NoError(err)
@@ -462,7 +462,7 @@ func TestProviderWorkspaceCreationKeepsDisplacedRouteOwner(t *testing.T) {
 			require.NoError(err)
 			require.NotNil(originalEntry)
 
-			manager := NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			manager.SetNow(func() time.Time { return original.IssuedAt })
 			var originalWorkspace *Workspace
 			if itemType == db.WorkspaceItemTypePullRequest {
@@ -542,7 +542,7 @@ func TestRequireWorkspaceLaunchSpecRefreshesCurrentRouteAfterRepositoryRename(t 
 	require.NoError(err)
 	require.NotNil(entry)
 
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return original.IssuedAt })
 	workspace, err := manager.CreateFromLaunchSpec(t.Context(), original)
 	require.NoError(err)
@@ -617,7 +617,7 @@ func TestProviderWorkspaceCreationAllowsCurrentRepositoryOnReusedRoute(t *testin
 			require.NoError(err)
 			require.NotNil(current)
 
-			manager := NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			manager.SetNow(func() time.Time { return spec.IssuedAt })
 			var workspace *Workspace
 			if itemType == db.WorkspaceItemTypePullRequest {
@@ -691,7 +691,7 @@ func TestRefreshWorkspaceLaunchSpecAcceptsVerifiedIdentityAtReusedRoute(t *testi
 		},
 	)
 	require.NoError(err)
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: refreshed})
 	manager.SetNow(func() time.Time { return refreshed.IssuedAt })
 

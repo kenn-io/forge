@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 func initFingerprintRepo(t *testing.T, dir string) {
@@ -58,7 +57,7 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) { /
 	initFingerprintRepo(t, worktree)
 
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	var clockMu sync.Mutex
 	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	clock := func() time.Time {

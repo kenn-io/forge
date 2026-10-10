@@ -15,7 +15,7 @@ func TestGetWorkspaceFilesPropagatesCanceledRequest(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:           "ws-canceled-diff",
 		Platform:     "github",

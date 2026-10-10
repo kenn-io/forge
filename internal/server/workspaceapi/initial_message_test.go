@@ -23,7 +23,6 @@ import (
 	"go.kenn.io/forge/internal/ptysize"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -162,7 +161,7 @@ func TestSubmitInitialMessageServiceReturnsDeliveredStateAndRoutesShareAttempt(t
 	}, session.Key))
 
 	handler := New(Deps{
-		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
+		DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
 		Runtime: runtime, AgentActivity: activity,
 	})
 	mux := http.NewServeMux()

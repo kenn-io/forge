@@ -3,10 +3,13 @@ package workspacetest
 import (
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gofrs/flock"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,7 +17,6 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
@@ -25,9 +27,8 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, nil)
 	ctx := t.Context()
 
-	lockManager := workspace.NewFileLockManager()
-	held, err := lockManager.Acquire(ctx, fixture.bare)
-	require.NoError(err)
+	held := flock.New(filepath.Join(fixture.bare, ".kenn-forge-worktree.lock"))
+	require.NoError(held.Lock())
 	unlocked := false
 	defer func() {
 		if !unlocked {

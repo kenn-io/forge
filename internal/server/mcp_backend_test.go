@@ -23,7 +23,6 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
@@ -72,7 +71,7 @@ func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {
 	session, err := runtime.Launch(ctx, workspaceID, worktree, "codex")
 	require.NoError(err)
 	srv := wiredServer(&Server{workspaceAPI: workspaceapi.New(workspaceapi.Deps{
-		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
+		DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
 		Runtime: runtime,
 	})})
 
@@ -149,7 +148,7 @@ func TestMCPWorkspaceReusePreservesRepositoryIdentity(t *testing.T) {
 			require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), "ws-existing", spec))
 			launchResolver := &recordingMCPLaunchResolver{Server: srv}
 			srv.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-				DB: database, Resolver: resolver, Workspaces: workspace.NewManager(database, t.TempDir()),
+				DB: database, Resolver: resolver, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
 				LaunchSpecResolver: launchResolver, EnrichmentDisabled: true,
 			})
 			t.Cleanup(func() {
@@ -189,7 +188,7 @@ func TestMCPAdHocWorkspaceRejectsRouteReplacementBeforeReuse(t *testing.T) {
 	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
 	srv := &Server{db: database, repoResolver: resolver}
 	srv.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
-		DB: database, Resolver: resolver, Workspaces: workspace.NewManager(database, t.TempDir()),
+		DB: database, Resolver: resolver, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
 		EnrichmentDisabled: true,
 		ResolveRepository: func(requestCtx context.Context, route providerplane.RepositoryRoute, repoKey platform.RepositoryKey) (*db.Repo, error) {
 			// Provider sync can reassign the route after MCP validates it.

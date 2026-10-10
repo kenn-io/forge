@@ -22,7 +22,6 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/tokenauth"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 )
@@ -33,7 +32,7 @@ func TestWorkspaceRuntimeLaunchMissingTokenReturnsBadRequestE2E(t *testing.T) {
 	require := require.New(t)
 	dir := t.TempDir()
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
+	manager := newWorkspaceTestManager(t, database, filepath.Join(dir, "worktrees"))
 	runtime := localruntime.NewManager(localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key:       "tokenfail",

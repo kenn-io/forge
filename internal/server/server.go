@@ -758,8 +758,12 @@ func newServer(
 		launchSpecResolver = s.providerSource
 		workspacePullCandidates = s.providerSource
 	}
+	repositoryWorktrees, err := workspace.NewRepositoryCoordinator(options.WorktreeDir)
+	if err != nil {
+		panic(fmt.Errorf("configure repository worktrees: %w", err))
+	}
 	if options.WorktreeDir != "" {
-		s.workspaces = workspace.NewManager(database, options.WorktreeDir)
+		s.workspaces = workspace.NewManager(database, options.WorktreeDir, repositoryWorktrees)
 		if options.ExecutionWorker {
 			executable, err := os.Executable()
 			if err != nil {
@@ -867,6 +871,7 @@ func newServer(
 		}
 	}
 	s.workspaceAPI = workspaceapi.New(workspaceapi.Deps{
+		RepositoryWorktrees: repositoryWorktrees,
 		ExecutionWorker:     executionWorker,
 		DB:                  database,
 		Resolver:            repoResolver,

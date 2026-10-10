@@ -5389,7 +5389,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 
 	database := dbtest.Open(t)
 
-	manager := workspace.NewManager(database, filepath.Join(dir, "worktrees"))
+	manager := newWorkspaceTestManager(t, database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
 	srv := wiredServer(&Server{workspaces: manager})
 	ctx := context.Background()
@@ -6012,7 +6012,7 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 	database := dbtest.Open(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
 	restoredSession := runtimeTmuxSessionNameForTest("0000000000000001", "helper")
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+
@@ -6250,7 +6250,7 @@ func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	database := dbtest.Open(t)
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
 		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+

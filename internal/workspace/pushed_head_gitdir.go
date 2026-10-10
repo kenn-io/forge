@@ -23,6 +23,8 @@ import (
 	"github.com/go-git/go-git/v6/storage/filesystem"
 	"github.com/go-git/go-git/v6/storage/filesystem/dotgit"
 	lru "github.com/hashicorp/golang-lru/v2"
+	managed "go.kenn.io/kit/git/managed"
+	"go.kenn.io/kwt/worktree"
 )
 
 // gitdirRemoteHeadReader answers the pushed-head observer's read-only
@@ -43,19 +45,20 @@ import (
 // remoteURL is the configured remote.<name>.url; url.<base>.insteadOf
 // rewriting is not applied. The observer does not consume the URL.
 type gitdirRemoteHeadReader struct {
-	handles *lru.Cache[string, *worktreeGitHandle]
+	handles     *lru.Cache[string, *worktreeGitHandle]
+	coordinator *worktree.Coordinator
 }
 
 // gitdirHandleCacheSize bounds cached worktrees; a daemon polls tens of
 // workspaces, and eviction only costs one re-open.
 const gitdirHandleCacheSize = 256
 
-func newGitdirRemoteHeadReader() gitdirRemoteHeadReader {
+func newGitdirRemoteHeadReader(coordinator *worktree.Coordinator) gitdirRemoteHeadReader {
 	handles, err := lru.New[string, *worktreeGitHandle](gitdirHandleCacheSize)
 	if err != nil {
 		panic(err) // only for a non-positive size
 	}
-	return gitdirRemoteHeadReader{handles: handles}
+	return gitdirRemoteHeadReader{handles: handles, coordinator: coordinator}
 }
 
 func (r gitdirRemoteHeadReader) BranchName(_ context.Context, dir string) (string, error) {
@@ -112,13 +115,31 @@ func (r gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote
 	}
 }
 
-// SetBranchUpstream is the observer's only git write. setBranchUpstream's
-// commands each take one procutil slot; wrapping them in an outer acquisition
-// would nest and stall until the git timeout whenever the limiter is full.
-func (gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
+// SetBranchUpstream rechecks the branch under the shared repository lock.
+// Each Git command takes one procutil slot; the enclosing scope takes none.
+func (r gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
 	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
 	defer cancel()
-	return setBranchUpstream(gitCtx, dir, branch, remote, mergeRef)
+	common, err := worktreeCommonGitDir(gitCtx, dir)
+	if err != nil {
+		return err
+	}
+	repo, err := openItemWorktreeRepository(gitCtx, r.coordinator, common)
+	if err != nil {
+		return err
+	}
+	return repo.WithLock(gitCtx, func(scope *worktree.Scope) error {
+		current, err := scope.RunGit(gitCtx, dir, "branch", "--show-current")
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(string(current)) != branch {
+			return errors.New("workspace branch changed before upstream repair")
+		}
+		return scope.SetUpstream(gitCtx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{
+			Action: managed.UpstreamTrack, Remote: remote, Ref: mergeRef, Scope: managed.UpstreamRepository,
+		}})
+	})
 }
 
 // skipUnsupportedGitdir turns an unsupported-layout error into a silent skip

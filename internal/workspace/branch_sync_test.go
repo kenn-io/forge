@@ -24,7 +24,7 @@ import (
 // separately by TestPushWorktreeBranchUsesAuthenticatedRunnerAndMutationAuth.
 func branchSyncTestManager(t *testing.T) *Manager {
 	t.Helper()
-	return NewManager(nil, t.TempDir())
+	return newWorkspaceTestManager(t, nil, t.TempDir())
 }
 
 func TestPushWorktreeBranchPushesAheadCommitsAndRunsHooks(t *testing.T) {
@@ -354,7 +354,7 @@ exec "$real" "$@"
 			},
 		},
 	)
-	mgr := NewManager(nil, t.TempDir())
+	mgr := newWorkspaceTestManager(t, nil, t.TempDir())
 	mgr.SetClones(gitclone.New(
 		t.TempDir(), gitclone.HostSources{"github.com": source},
 	))
@@ -390,7 +390,7 @@ func TestLaunchSpecBranchSyncRefreshesExpiredLeaseBeforeGit(t *testing.T) {
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, spec))
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return spec.SourceVisibleUntil })
 	manager.SetLaunchSpecResolver(unavailableLaunchSpecResolver{})
 
@@ -443,7 +443,7 @@ func TestLaunchSpecBranchSyncUsesRefreshedRepositoryRoute(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return renamed.IssuedAt })
 	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamed})
 
@@ -482,7 +482,7 @@ func TestProviderBackedBranchSyncDoesNotFallBackToAnonymousGit(t *testing.T) {
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspace.ID, spec))
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetNow(func() time.Time { return spec.IssuedAt })
 	manager.SetClones(gitclone.New(t.TempDir(), nil))
 	manager.SetRequireProviderCredential(true)

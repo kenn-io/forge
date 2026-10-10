@@ -151,7 +151,7 @@ func (r databaseLaunchSpecResolver) RefreshWorkspaceLaunchSpec(
 
 func newTestManager(tb testing.TB, database *db.DB, worktreeDir string) *Manager {
 	tb.Helper()
-	manager := NewManager(database, worktreeDir)
+	manager := newWorkspaceTestManager(tb, database, worktreeDir)
 	if database != nil {
 		manager.SetLaunchSpecResolver(databaseLaunchSpecResolver{db: database})
 	}

@@ -69,6 +69,7 @@
   }: Props = $props();
 
   let selectedKata = $state<{ daemonID: string; issueUID: string } | undefined>();
+  let kataPanelSelection = $state<{ daemonID: string; issueUID: string } | null>(null);
   function selectTarget(target: WorkspaceTarget): void {
     if (target.type === "kata" && target.kata) {
       selectedKata = { daemonID: target.kata.daemon_id, issueUID: target.kata.issue_uid };
@@ -105,7 +106,7 @@
   const currentTarget = $derived.by((): CurrentWorkspaceTarget | null => {
     if (activeTab === "pr" && displayedPR) return { type: "pr", ref: displayedPR };
     if (activeTab === "issue" && displayedIssue) return { type: "issue", ref: displayedIssue };
-    if (activeTab === "kata" && selectedKata) return { type: "kata", ...selectedKata };
+    if (activeTab === "kata" && kataPanelSelection) return { type: "kata", ...kataPanelSelection };
     return null;
   });
 
@@ -173,6 +174,7 @@
       <KataLinksPanel
         subject={{ kind: "workspace", workspaceID }}
         selection={selectedKata}
+        onselectionchange={(selection) => { kataPanelSelection = selection; }}
         active={activeTab === "kata"}
         {disabled}
       />

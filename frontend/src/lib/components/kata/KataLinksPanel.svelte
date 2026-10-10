@@ -31,9 +31,10 @@
     disabled?: boolean;
     apiClient?: GeneratedClient;
     selection?: { daemonID: string; issueUID: string } | undefined;
+    onselectionchange?: (selection: KataWorkspaceIdentity | null) => void;
   }
 
-  let { subject, active, disabled = false, apiClient = runtimeClient, selection }: Props = $props();
+  let { subject, active, disabled = false, apiClient = runtimeClient, selection, onselectionchange }: Props = $props();
 
   const navigate = getNavigate();
   const store = createKataLinksStore({
@@ -68,6 +69,10 @@
   const selectedWorkspaceIdentity = $derived<KataWorkspaceIdentity | null>(
     selected ? { daemonID: selected.daemon_id, issueUID: selected.issue_uid } : null,
   );
+  $effect(() => {
+    const identity = selectedWorkspaceIdentity;
+    untrack(() => onselectionchange?.(identity));
+  });
   const effectiveWorkspace = $derived(
     selectedWorkspaceIdentity
       ? resolveKataWorkspaceRef(selectedWorkspaceIdentity, selected?.workspace?.existing_workspace)

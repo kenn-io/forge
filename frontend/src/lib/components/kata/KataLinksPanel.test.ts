@@ -376,6 +376,28 @@ describe("KataLinksPanel", () => {
     expect(screen.getByRole("button", { name: "Open in Kata" })).toBeTruthy();
   });
 
+  it("reports default and in-panel selections to its host", async () => {
+    const links = [link(), link({ issue_uid: "issue-2", reference: "KT-2", title: "Second task" })];
+    const onselectionchange = vi.fn();
+    render(KataLinksPanel, {
+      props: {
+        subject,
+        active: true,
+        apiClient: listAndDetailClient(links).client,
+        onselectionchange,
+      },
+      context: new Map<symbol, unknown>([[NAVIGATE_KEY, vi.fn()]]),
+    });
+    await waitFor(() =>
+      expect(onselectionchange).toHaveBeenLastCalledWith({ daemonID: "daemon-a", issueUID: "issue-1" }),
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: /KT-2 Second task/ }));
+    await waitFor(() =>
+      expect(onselectionchange).toHaveBeenLastCalledWith({ daemonID: "daemon-a", issueUID: "issue-2" }),
+    );
+  });
+
   it("creates or opens the mapped workspace", async () => {
     const createLink = link({
       project_name: "Forge",

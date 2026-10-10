@@ -360,7 +360,7 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::visibleTargets`).
 - Successful target removal invalidates pending list reads and fetches current state; dismissal must not depend on forwarded workspace events
   (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::removeTarget`).
-- The target shown in the PR, Issue, or Kata tab is marked `aria-current`, matched by repository identity rather than number alone. Remove buttons appear on hover or keyboard focus and stay visible without hover; the open state stays in the accessible name
+- The target shown in the PR, Issue, or Kata tab is marked `aria-current`, matched by repository identity rather than number alone; Kata follows the panel's reported selection, not the last Targets click. Remove buttons appear on hover or keyboard focus and stay visible without hover; the open state stays in the accessible name
   (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::isCurrent`).
 - PR and Issue tabs require a linked item or a remembered choice of that type;
   search remains available without either

@@ -2519,11 +2519,6 @@
           sessions: data.sessions.length,
         });
         if (!isCurrentWorkspace(id, hostKey)) return null;
-        const quickActionKey = quickActionWorkspaceKey(id, hostKey);
-        const quickActionSession = quickActionLaunches.get(quickActionKey)?.session;
-        if (quickActionSession && data.sessions.some((session) => session.key === quickActionSession.key)) {
-          quickActionLaunches.delete(quickActionKey);
-        }
         const fingerprint = JSON.stringify(data);
         const acceptedLaunch = pendingWorkspaceLaunch(id, hostKey);
         if (
@@ -2996,6 +2991,10 @@
     const hostKey = workspaceHostKey;
     runWorkspaceQuickAction(appRuntime, id, action, hostKey, (session) => {
       if (!isCurrentWorkspace(id, hostKey)) return;
+      const workspaceKey = quickActionWorkspaceKey(id, hostKey);
+      if (quickActionLaunches.get(workspaceKey)?.session === session) {
+        quickActionLaunches.delete(workspaceKey);
+      }
       clearClosedSession(session);
       const sessions = upsertRuntimeSession(session);
       applySessionToWorkflow(session.key, sessions);
@@ -4395,9 +4394,17 @@
   });
 
   $effect(() => {
-    const session = quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, workspaceHostKey))?.session;
+    const workspaceKey = quickActionWorkspaceKey(workspaceId, workspaceHostKey);
+    const session = quickActionLaunches.get(workspaceKey)?.session;
     if (!session || !workspaceLive || workspace?.status !== "ready") return;
-    untrack(() => requestRuntime({ force: true }));
+    untrack(() => {
+      quickActionLaunches.delete(workspaceKey);
+      clearClosedSession(session);
+      const sessions = upsertRuntimeSession(session);
+      applySessionToWorkflow(session.key, sessions);
+      requestSessionFocus(sessionHostKeyFor(session));
+      requestRuntime({ force: true });
+    });
   });
 
   function reconcileQueuedWorkspaceLaunch(admissionRuntime: WorkspaceRuntimeState): void {

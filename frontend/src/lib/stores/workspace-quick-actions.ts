@@ -39,7 +39,8 @@ export function runWorkspaceQuickAction(
 ): void {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   quickActionWorkspaces.add(workspaceKey);
-  quickActionLaunches.set(workspaceKey, { targetKey: action.agent });
+  const launch = { targetKey: action.agent };
+  quickActionLaunches.set(workspaceKey, launch);
   const program = executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
     hostKey?.startsWith("devbox:")
       ? client.DevboxesService.launchDevboxHandoff(
@@ -55,7 +56,9 @@ export function runWorkspaceQuickAction(
   ).pipe(
     Effect.tap((result) =>
       Effect.sync(() => {
-        quickActionLaunches.set(workspaceKey, { targetKey: action.agent, session: result.session });
+        if (quickActionLaunches.get(workspaceKey) === launch) {
+          quickActionLaunches.set(workspaceKey, { targetKey: action.agent, session: result.session });
+        }
         onLaunched?.(result.session);
         if (result.initial_message.state !== "delivered") {
           showFlash(`"${action.label}" launched, but the prompt delivery is ${result.initial_message.state}.`, {
@@ -69,7 +72,7 @@ export function runWorkspaceQuickAction(
     operation: "run workspace quick action",
     safeContext: { workspaceId, agent: action.agent },
     onFailure: (failure) => {
-      quickActionLaunches.delete(workspaceKey);
+      if (quickActionLaunches.get(workspaceKey) === launch) quickActionLaunches.delete(workspaceKey);
       if (failure._tag !== "ApiProblemError") {
         // The request itself failed. The server keeps running an accepted
         // handoff, so this is reported as unknown rather than as a failure.

@@ -170,6 +170,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         }),
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getQuickActions: () => mocks.quickActions,
+        getACPSettings: () => ({ font_family: "", font_size: 13 }),
         getConfiguredRepos: () => [],
         getModeVisibility: () => ({
           activity: true,
@@ -4306,12 +4307,14 @@ describe("WorkspaceTerminalView", () => {
     ).toBeNull();
   });
 
-  it("uses local ready events to launch before a held detail refresh, with one fresh admission read", async () => {
+  it("shows ACP launch progress and opens chat before a held detail or runtime refresh", async () => {
     const events = installEventSourceRecorder();
     const setupPolling: Array<{ callback: () => void; delay: number | undefined }> = [];
     capturePollingIntervals(setupPolling);
     const detailRefresh = deferred<Response>();
     const admission = deferred<ReturnType<typeof runtimeWithCodexTarget>>();
+    const acpSession = { ...runningSession, kind: "acp", target_key: "codex", label: "Codex" } satisfies RuntimeSession;
+    const launchRequest = deferred<typeof acpSession>();
     let details = 0;
     vi.stubGlobal(
       "fetch",
@@ -4326,11 +4329,12 @@ describe("WorkspaceTerminalView", () => {
     );
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockReturnValueOnce(admission.promise).mockReturnValue(new Promise(() => {}));
-    mocks.launchWorkspaceSession.mockReturnValue(new Promise(() => {}));
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
     await waitFor(() => expect(setupPolling.some((timer) => timer.delay === 3000)).toBe(true));
     await waitFor(() => expect(latestWorkspaceEventListeners(events).workspace_status).toBeTypeOf("function"));
     expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Preparing worktree...")).toBeTruthy();
     latestWorkspaceEventListeners(events).workspace_status?.(
       new MessageEvent("workspace_status", { data: JSON.stringify({ id: "ws-1", status: "ready" }) }),
     );
@@ -4338,6 +4342,10 @@ describe("WorkspaceTerminalView", () => {
     admission.resolve(runtimeWithCodexTarget());
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
+    launchRequest.resolve(acpSession);
+    expect(await screen.findByRole("textbox", { name: "Message agent" })).toBeTruthy();
+    expect(screen.queryByText("Launching Codex...")).toBeNull();
   });
 
   it.each(["creating", "deleting"])("handles delayed %s details after retry reaches ready", async (status) => {
@@ -5842,9 +5850,47 @@ describe("WorkspaceTerminalView", () => {
       await screen.findByRole("dialog", { name: "Launch a session" });
     });
 
+    it("consumes a completed quick-action handoff when reopened after its session exits", async () => {
+      const runCommand = vi.spyOn(mocks.runtime, "runCommand");
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) => {
+          if (String(input instanceof Request ? input.url : input).includes("agent-handoff")) {
+            return Promise.resolve(
+              Response.json({
+                session: runningSession,
+                initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+              }),
+            );
+          }
+          return originalFetch(input, init);
+        }),
+      );
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", {
+        label: "Review",
+        agent: "helper",
+        prompt: "Review this change",
+      });
+      await runCommand.mock.results.at(-1)!.value.exit;
+      expect(quickActionLaunches.get("ws-1")?.session).toEqual(runningSession);
+
+      // The session has exited while the workspace was not mounted.
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+      await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalled());
+      await waitFor(() => expect(quickActionLaunches.has("ws-1")).toBe(false));
+      await waitFor(() => expect(screen.queryByText(/Launching Helper/)).toBeNull());
+      expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
+      expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+    });
+
     it("keeps the launcher closed after a quick action succeeds and its session exits", async () => {
       const eventSources = installEventSourceRecorder();
       const handoff = deferred<Response>();
+      const acpSession = { ...runningSession, kind: "acp", target_key: "helper" } satisfies RuntimeSession;
       const runCommand = vi.spyOn(mocks.runtime, "runCommand");
       const originalFetch = globalThis.fetch;
       vi.stubGlobal(
@@ -5857,7 +5903,11 @@ describe("WorkspaceTerminalView", () => {
         }),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", { label: "Review", agent: "codex", prompt: "Review this change" });
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", {
+        label: "Review",
+        agent: "helper",
+        prompt: "Review this change",
+      });
       const execution = runCommand.mock.results.at(-1)!.value;
       claimForPrs();
       render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
@@ -5869,18 +5919,24 @@ describe("WorkspaceTerminalView", () => {
       expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
       expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
 
+      expect(screen.getByRole("status", { name: "Launching Helper..." })).toBeTruthy();
+      const runtimeRefresh = deferred<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
+      mocks.getWorkspaceRuntime.mockReturnValue(runtimeRefresh.promise);
       handoff.resolve(
         Response.json({
-          session: runningSession,
-          initial_message: { state: "delivered", target_key: "codex", message_bytes: 18 },
+          session: acpSession,
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
         }),
       );
       // The handoff response can precede the next three-second runtime poll.
       await execution.exit;
       flushSync();
+      expect(await screen.findByRole("textbox", { name: "Message agent" })).toBeTruthy();
+      expect(screen.queryByText("Launching Helper...")).toBeNull();
       expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull();
 
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      runtimeRefresh.resolve({ ...runtimeWithLaunchTargetsOnly(), sessions: [acpSession] });
+      mocks.getWorkspaceRuntime.mockResolvedValue({ ...runtimeWithStaleSession(), sessions: [acpSession] });
       await waitFor(() =>
         expect(latestWorkspaceEventListeners(eventSources)["reconnect.stale"]).toBeTypeOf("function"),
       );

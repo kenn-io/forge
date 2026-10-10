@@ -134,6 +134,14 @@ describe("MobileWorkspaceTerminal", () => {
       created_at: workspace.created_at,
     };
     const launch = Promise.withResolvers<RuntimeSession>();
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace
+      .mockResolvedValueOnce({ ...workspace, status: "creating" })
+      .mockResolvedValue(workspace);
     mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({
       launch_targets: [{ key: "chat", label: "Chat agent", kind: "acp", available: true }],
       sessions: [],
@@ -141,6 +149,10 @@ describe("MobileWorkspaceTerminal", () => {
     mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(launch.promise);
     queueWorkspaceLaunch("ws-a", "chat", undefined);
     render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Preparing worktree…");
+    expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    notify?.({ type: "workspace_status", payload: { id: "ws-a", status: "ready" } });
     await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
     expect(screen.getByText("Starting Chat agent…")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
@@ -175,6 +187,46 @@ describe("MobileWorkspaceTerminal", () => {
     expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
   });
+
+  it.each(["pending", "rejected"])(
+    "opens an acknowledged quick-action chat when the initial runtime read is %s",
+    async (state) => {
+      const session: RuntimeSession = {
+        key: "chat-a",
+        workspace_id: "ws-a",
+        target_key: "chat",
+        label: "Chat agent",
+        kind: "acp",
+        display_region: "workflow",
+        status: "running",
+        created_at: workspace.created_at,
+      };
+      const initialRead = Promise.withResolvers<typeof runtime>();
+      const handoff = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
+      mocks.runtimeClient.getWorkspaceRuntime.mockReturnValueOnce(initialRead.promise);
+      mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
+      const appRuntime = runtimeState.appRuntime;
+      if (!appRuntime) throw new Error("Missing test runtime");
+      runWorkspaceQuickAction(appRuntime, "ws-a", { label: "Review", agent: "chat", prompt: "Review this change" });
+      render(MobileWorkspaceTerminal, { props });
+      await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
+      if (state === "rejected") {
+        initialRead.reject(
+          new GeneratedProblemResponse(
+            { type: "about:blank", title: "Runtime unavailable", status: 500 },
+            new Response(null, { status: 500 }),
+          ),
+        );
+        await screen.findByRole("button", { name: "Retry runtime sessions" });
+      }
+      const refresh = Promise.withResolvers<typeof runtime>();
+      mocks.runtimeClient.getWorkspaceRuntime.mockReturnValue(refresh.promise);
+      handoff.resolve({ session, initial_message: { state: "delivered" } });
+      expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Open terminal composer" })).toBeNull();
+      await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(2));
+    },
+  );
 
   it.each([true, false])("shows only available launch choices (available: %s)", async (available) => {
     mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({

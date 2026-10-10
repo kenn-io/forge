@@ -161,6 +161,14 @@ test.describe("embedded workspace launcher", () => {
       await headerLaunch.click();
       const launchMenu = page.getByRole("dialog", { name: "Run configurations" });
       await expect(launchMenu).toBeVisible();
+      const terminalReady = page
+        .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
+        .then((socket) =>
+          socket.waitForEvent(
+            "framereceived",
+            ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
+          ),
+        );
       await launchMenu.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launchMenu).toBeHidden();
 
@@ -174,6 +182,9 @@ test.describe("embedded workspace launcher", () => {
           return body.target_keys;
         })
         .toEqual(["plain_shell", "plain_shell", "plain_shell"]);
+      // Persistence can precede the new tab's selection and socket attachment.
+      await terminalReady;
+      await expect(page.getByRole("tab", { name: "Shell 3", exact: true })).toHaveAttribute("aria-selected", "true");
       const activeContainer = page.locator(
         ".detail-pane-workspace-slot .tabbed-panel-tab-panel.active .terminal-container",
       );

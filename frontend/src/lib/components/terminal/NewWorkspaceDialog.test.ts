@@ -7,6 +7,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../../context.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
+import type { LaunchTarget } from "../../api/types.js";
 
 import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 
@@ -26,6 +27,7 @@ const launchTargets = [
     disabled_reason: "",
   },
 ];
+let configuredLaunchTargets: LaunchTarget[] = launchTargets;
 
 vi.mock("../../api/generated/index.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../api/generated/index.js")>();
@@ -98,7 +100,7 @@ async function renderDialog(props: Record<string, unknown> = {}) {
         {
           settings: {
             getWorkspaceSettings: () => ({ default_execution_target: preferredTarget }),
-            getLaunchTargets: () => launchTargets,
+            getLaunchTargets: () => configuredLaunchTargets,
           },
         },
       ],
@@ -127,6 +129,7 @@ describe("NewWorkspaceDialog", () => {
     resetWorkspaceCreatePendingForTest();
     localStorage.clear();
     preferredTarget = "";
+    configuredLaunchTargets = launchTargets;
     mockGet.mockReset();
     mockPost.mockReset();
     mockNavigate.mockReset();
@@ -183,6 +186,26 @@ describe("NewWorkspaceDialog", () => {
     await waitFor(() => expect(mockPost).toHaveBeenCalled());
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
   });
+
+  it.each([false, true])(
+    "retains the selected ACP launch when opening a created workspace (mobile callback: %s)",
+    async (mobile) => {
+      configuredLaunchTargets = [{ key: "chat", label: "Chat agent", kind: "acp", available: true }];
+      mockPost.mockResolvedValue({ data: { id: "ws-new", status: "creating" } });
+      const onCreated = mobile ? vi.fn() : undefined;
+      await renderDialog({ onCreated });
+      await waitFor(() => expect(repoPicker().textContent).toContain("acme/widget"));
+      await fireEvent.click(screen.getByRole("button", { name: "Create workspace options" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Chat agent" }));
+      if (onCreated) {
+        await waitFor(() => expect(onCreated).toHaveBeenCalledWith("ws-new", undefined));
+        expect(mockNavigate).not.toHaveBeenCalled();
+      } else {
+        await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-new"));
+      }
+      expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("chat");
+    },
+  );
 
   it("retains an agent choice through suggested-branch retry", async () => {
     mockPost

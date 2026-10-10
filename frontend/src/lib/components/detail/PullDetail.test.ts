@@ -2,7 +2,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { Effect } from "effect";
 import { tick, type ComponentProps } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
-import type { DiffResult, Label, PullDetail } from "../../api/types.js";
+import type { DiffResult, Label, PullDetail, RuntimeSession } from "../../api/types.js";
+import { quickActionLaunches, quickActionWorkspaces } from "../../stores/workspace-quick-actions.js";
 import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
@@ -41,7 +42,11 @@ const launchTargets = [
 // The pending-create store is module-scoped so it can survive component
 // remounts; tests that leave a deferred create unresolved must not leak
 // that pending identity into later tests.
-afterEach(resetWorkspaceCreatePendingForTest);
+afterEach(() => {
+  resetWorkspaceCreatePendingForTest();
+  quickActionLaunches.clear();
+  quickActionWorkspaces.clear();
+});
 
 let detailRuntime: OwnedAppRuntime | null = null;
 
@@ -3545,20 +3550,26 @@ describe("PullDetail inline workspace handoff", () => {
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("codex");
   });
 
-  it("runs a quick action: creates the workspace, then hands the prompt to the agent", async () => {
-    const rebase = { label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" };
+  it("retains an ACP quick-action handoff for the workspace view after creation", async () => {
+    const rebase = { label: "Rebase", agent: "chat", prompt: "rebase this pull request onto main" };
+    const session: RuntimeSession = {
+      key: "runtime-1",
+      workspace_id: "ws-new",
+      target_key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      display_region: "workflow",
+      status: "running",
+      created_at: "2026-10-01T00:00:00Z",
+    };
+    const handoff = Promise.withResolvers<{ data: { session: RuntimeSession; initial_message: { state: string } } }>();
     const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
     const apiClient = {
       GET: vi.fn(async () => ({ data: {} })),
       POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
         posts.push({ path, options });
         if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
-        return {
-          data: {
-            session: { key: "runtime-1", target_key: "codex" },
-            initial_message: { state: "delivered", target_key: "codex", message_bytes: 34 },
-          },
-        };
+        return handoff.promise;
       }),
     };
     const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
@@ -3574,11 +3585,15 @@ describe("PullDetail inline workspace handoff", () => {
     expect(posts[1]!.path).toBe("/workspaces/{id}/runtime/agent-handoffs");
     expect(posts[1]!.options).toMatchObject({
       params: { path: { id: "ws-new" } },
-      body: { target_key: "codex", message: "rebase this pull request onto main" },
+      body: { target_key: "chat", message: "rebase this pull request onto main" },
     });
     await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
     // A quick action never queues a frontend launch; the server owns it.
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
+    expect(quickActionLaunches.get("ws-new")).toMatchObject({ targetKey: "chat" });
+    expect(quickActionLaunches.get("ws-new")?.session).toBeUndefined();
+    handoff.resolve({ data: { session, initial_message: { state: "delivered" } } });
+    await waitFor(() => expect(quickActionLaunches.get("ws-new")?.session).toEqual(session));
     expect(getFlashes()).toEqual([]);
   });
 

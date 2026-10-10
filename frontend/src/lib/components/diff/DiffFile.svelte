@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { DiffLineAnnotation, SelectedLineRange, Virtualizer } from "@pierre/diffs";
   import { Effect } from "effect";
-  import { mount, onMount, unmount } from "svelte";
+  import { getAllContexts, mount, onMount, unmount } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { nextMicrotask } from "../../browser/microtask.js";
@@ -73,6 +73,10 @@
     reviewThreads = [],
     virtualizer,
   }: Props = $props();
+  // Pierre annotations are mounted outside this component tree. Hand them the
+  // whole component context so rendered markdown finds the app runtime.
+  const annotationContext = getAllContexts();
+  const repoContext = $derived({ provider, platformHost, owner, name, repoPath });
 
   const collapsed = $derived(diffStore.isFileCollapsed(owner, name, number, file.path));
   const richPreview = $derived(diffStore.getRichPreview());
@@ -501,7 +505,8 @@
   }
 
   function mountAnnotationComponent(target: HTMLElement, metadata: DiffAnnotation): object {
-    const context = new Map([[STORES_KEY, stores]]);
+    const context = new Map(annotationContext);
+    context.set(STORES_KEY, stores);
     return metadata.kind === "draft"
       ? mount(DiffReviewDraftInlineComment, {
         target,
@@ -515,6 +520,7 @@
             runtime,
             thread: metadata.thread,
             canReply: metadata.canReply,
+            repo: repoContext,
             onreply: replyToThread,
           },
           context,
@@ -672,7 +678,7 @@
         {/key}
       {:else}
         {#each fileHeaderReviewThreads as thread (thread.id)}
-          <DiffReviewThreadInlineComment {runtime} {thread} placement="file" />
+          <DiffReviewThreadInlineComment {runtime} {thread} repo={repoContext} placement="file" />
         {/each}
         {#if file.is_binary}
           <div class="binary-notice">Binary file changed</div>
@@ -702,6 +708,7 @@
           <DiffReviewThreadInlineComment
             {runtime}
             {thread}
+            repo={repoContext}
             placement={reviewThreadPlacement(thread)}
           />
         {/each}

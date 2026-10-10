@@ -52,6 +52,7 @@
     diffHeadSHA,
     onreply,
   }: Props = $props();
+  const repoContext = $derived({ provider, platformHost, owner, name, repoPath });
   const { diff: diffStore } = getStores();
 
   type ReviewThreadPlacement = {
@@ -550,6 +551,7 @@
   {#if isMarkdownFile}
     {#each fileHeaderReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
+        repo={repoContext}
         {runtime}
         thread={placement.thread}
         placement={placement.placement}
@@ -581,6 +583,7 @@
                   </div>
                   {#each block.leftReviewThreads as placement (placement.thread.id)}
                     <DiffReviewThreadInlineComment
+                      repo={repoContext}
                       {runtime}
                       thread={placement.thread}
                       placement={placement.placement}
@@ -599,6 +602,7 @@
                   </div>
                   {#each block.rightReviewThreads as placement (placement.thread.id)}
                     <DiffReviewThreadInlineComment
+                      repo={repoContext}
                       {runtime}
                       thread={placement.thread}
                       placement={placement.placement}
@@ -619,6 +623,7 @@
             </div>
             {#each block.reviewThreads as placement (placement.thread.id)}
               <DiffReviewThreadInlineComment
+                repo={repoContext}
                 {runtime}
                 thread={placement.thread}
                 placement={placement.placement}
@@ -631,6 +636,7 @@
       {/if}
       {#each detachedReviewThreads as placement (placement.thread.id)}
         <DiffReviewThreadInlineComment
+          repo={repoContext}
           {runtime}
           thread={placement.thread}
           placement={placement.placement}
@@ -642,6 +648,7 @@
       <div class="preview-state">Loading preview</div>
       {#each detachedReviewThreads as placement (placement.thread.id)}
         <DiffReviewThreadInlineComment
+          repo={repoContext}
           {runtime}
           thread={placement.thread}
           placement={placement.placement}
@@ -653,6 +660,7 @@
   {:else}
     {#each fileHeaderReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
+        repo={repoContext}
         {runtime}
         thread={placement.thread}
         placement={placement.placement}
@@ -690,6 +698,7 @@
     {/if}
     {#each detachedReviewThreads as placement (placement.thread.id)}
       <DiffReviewThreadInlineComment
+        repo={repoContext}
         {runtime}
         thread={placement.thread}
         placement={placement.placement}

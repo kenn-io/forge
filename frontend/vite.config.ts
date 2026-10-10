@@ -420,6 +420,7 @@ const config = {
       "@lucide/svelte/icons/git-commit-horizontal",
       "@lucide/svelte/icons/git-merge",
       "@lucide/svelte/icons/git-pull-request",
+      "@lucide/svelte/icons/git-pull-request-closed",
       "@lucide/svelte/icons/globe",
       "@lucide/svelte/icons/history",
       "@lucide/svelte/icons/house",

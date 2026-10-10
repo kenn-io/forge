@@ -814,6 +814,9 @@ chain "correctly" falls back to the PAT.
 - Private `user-attachments` reads are the exception to app-token-first reads:
   GitHub returns 404 to installation tokens, so the repo-scoped image proxy must
   use the user's PAT/`gh` chain (`platform/github/markdown_images.go::GetMarkdownImage`).
+  Video attachments use the same chain; the attachment URL redirects to signed
+  storage on another host, and Go drops `Authorization` on that cross-host
+  redirect (`platform/github/markdown_media.go::Client.OpenMarkdownMedia`).
 - Repository-file markdown images (`blob`/`raw` web URLs, `raw.githubusercontent.com`)
   are proxied only for the route's own repository, use the normal read chain, and are
   type-sniffed because the contents raw media type hides the file type; web URLs do not

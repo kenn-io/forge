@@ -565,6 +565,51 @@ per-review comment before revision-fenced dataset replacement. Never publish a
 partial review dataset or report an incomplete explicit sync as successful
 (`internal/github/sync.go::syncProviderMRReviewThreads`).
 
+## Markdown Media
+
+Rendered markdown plays video only where the provider itself plays it:
+
+| Provider | Player source | Raw `<video>` |
+| --- | --- | --- |
+| GitHub | A paragraph whose only content is a bare attachment URL (`/user-attachments/assets/<id>`, or `/<owner>/<repo>/assets/<n>/<uuid>` for the route's own repository), after a probe confirms video. Labelled links and URLs that share a paragraph stay links. | Kept only when its `src` or a `<source>` child is an attachment URL; other sources are removed |
+| GitLab | Image syntax whose extension is mp4, m4v, mov, webm, or ogv | Removed |
+| Gitea, Forgejo | None | Kept; `attachments/<uuid>` resolves against the repository URL and `/attachments/<uuid>` against the host |
+| Bitbucket | None | Removed |
+
+Markdown without a repository keeps raw `<video>` tags. Every player gets
+`controls`, `preload="metadata"`, and no `autoplay`, and never exceeds the
+content width (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`).
+
+- GitHub and GitLab declare `read_markdown_media`; their video loads through
+  `GET .../markdown-media?source=` on default and host routes with the
+  repository credential. Gitea and Forgejo declare no media capability, so
+  their attachments load directly from the browser, like their images; a
+  private attachment plays only when the browser can reach it.
+- Adapters accept only their own attachment URL shapes (GitHub on the platform
+  host; GitLab through the image upload parser) and forward only `Range`.
+  GitHub allows upstream `video/mp4`, `video/quicktime`, and `video/webm`;
+  GitLab answers `application/octet-stream`, so its type comes from the
+  extension. Anything else is `unsupported_media_type`
+  (`platform/github/markdown_media.go::Client.OpenMarkdownMedia`,
+  `platform/gitlab/markdown_media.go::Client.OpenMarkdownMedia`).
+- Only the wait for response headers is bounded; the body streams for as long
+  as the browser plays it and closing it cancels the upstream request
+  (`platform/media_request.go::DoMediaRequest`). The route opens the media
+  before streaming so failures are normal problems, copies the body with no
+  disk cache, and skips response compression, which would buffer the stream
+  (`internal/server/providerapi/markdown_media.go::Handlers.getMarkdownMediaFor`,
+  `internal/server/compression/compression.go::shouldBypassCompression`).
+- GitHub decides player versus link from upload metadata Forge cannot see, so
+  the frontend probes each candidate with `Range: bytes=0-0`, at most four at
+  a time, and never reads the body: a host that ignores Range sends the whole
+  file. Signed storage rejects HEAD, so the probe is a GET. Only proven
+  outcomes are cached for the session (video, or `415` for not a video);
+  credential, quota, and availability failures render a link and probe again
+  next render. The rendered-HTML cache key includes each candidate's outcome
+  (`frontend/src/lib/utils/markdown-media.ts::resolveMarkdownMediaOutcomes`).
+- Source-browser previews do not play video: GitHub's blob viewer shows
+  "View raw" for video files.
+
 ## Import And Routes
 
 Repository import requests and route/query shapes should carry

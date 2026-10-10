@@ -86,13 +86,14 @@ it.each([
   });
   const onselect = vi.fn();
   render(WorkspaceTargets, { props: { workspaceID: "ws-1", workspaceHostKey, onselect } });
-  await waitFor(() => expect(screen.getByText("Targets").textContent).toContain("2"));
-  screen.getByText("Targets").closest("details")!.open = true;
+  await waitFor(() => expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("2"));
+  await fireEvent.click(screen.getByRole("button", { name: /^Targets/ }));
   expect(screen.getByText("Original issue")).toBeTruthy();
   expect(screen.getByText("Unavailable pull")).toBeTruthy();
   expect(screen.queryByText("Completed issue")).toBeNull();
   expect(screen.queryByText("Merged pull")).toBeNull();
   await fireEvent.click(screen.getByRole("checkbox", { name: "Show closed" }));
+  expect(screen.getByRole("button", { name: /^Targets/ }).getAttribute("aria-expanded")).toBe("true");
   expect(screen.getByText("Completed issue")).toBeTruthy();
   expect(screen.getByText("Merged pull")).toBeTruthy();
   await fireEvent.click(screen.getByRole("button", { name: "Remove Issue #1 from targets" }));

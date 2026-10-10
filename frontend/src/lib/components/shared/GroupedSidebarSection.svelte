@@ -8,6 +8,7 @@
     collapsed: boolean;
     onclick: () => void;
     leading?: Snippet;
+    actions?: Snippet;
     children: Snippet;
   }
 
@@ -17,11 +18,13 @@
     collapsed,
     onclick,
     leading,
+    actions,
     children,
   }: Props = $props();
 </script>
 
 <section class="sidebar-list-group">
+  <div class="sidebar-group-heading" class:sidebar-group-heading--collapsed={collapsed}>
   <button
     type="button"
     class="sidebar-group-header"
@@ -40,6 +43,8 @@
     <span class="sidebar-group-header__name">{label}</span>
     <span class="sidebar-group-header__count">{count}</span>
   </button>
+  {#if actions}<div class="sidebar-group-actions">{@render actions()}</div>{/if}
+  </div>
   {#if !collapsed}
     {@render children()}
   {/if}
@@ -50,17 +55,32 @@
     border-bottom: 1px solid var(--sidebar-list-border, var(--border-default));
   }
 
-  .sidebar-group-header {
+  .sidebar-group-heading {
     position: sticky;
     top: 0;
     z-index: 1;
+    display: flex;
+    align-items: center;
+    background: var(--sidebar-group-header-bg, var(--bg-inset));
+    border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
+  }
+
+  .sidebar-group-actions {
+    flex-shrink: 0;
+    padding-right: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .sidebar-group-header {
+    flex: 1;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: var(--space-3);
     width: 100%;
     padding: var(--sidebar-group-header-padding, 6px 12px 4px);
     border: 0;
-    border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
     background: var(--sidebar-group-header-bg, var(--bg-inset));
     color: var(--text-muted);
     cursor: pointer;
@@ -76,7 +96,7 @@
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
   }
 
-  .sidebar-group-header[aria-expanded="false"] {
+  .sidebar-group-heading--collapsed {
     border-bottom-color: transparent;
   }
 

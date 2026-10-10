@@ -237,10 +237,8 @@ describe("WorkspaceRightSidebar", () => {
       },
       context: new Map([[STORES_KEY, makeStores()]]),
     });
-    await waitFor(() => expect(screen.getByText("Targets").textContent).toContain("3"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Targets/ }).textContent).toContain("3"));
     await fireEvent.click(screen.getByText("Targets"));
-    // jsdom does not implement the native details toggle.
-    screen.getByText("Targets").closest("details")!.open = true;
     await fireEvent.click(screen.getByRole("button", { name: /^PR #42/ }));
     expect(onselect).toHaveBeenLastCalledWith(
       "pr",

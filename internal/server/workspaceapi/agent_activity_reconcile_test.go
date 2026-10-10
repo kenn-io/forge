@@ -9,7 +9,6 @@ import (
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -54,7 +53,7 @@ func TestRestoreRuntimeSessionsDropsReportsOfPrunedRuntimes(t *testing.T) {
 	runtime := localruntime.NewManager(localruntime.Options{})
 	t.Cleanup(runtime.Shutdown)
 	handler := New(Deps{
-		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()),
+		DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
 		Runtime: runtime, AgentActivity: activity,
 	})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))

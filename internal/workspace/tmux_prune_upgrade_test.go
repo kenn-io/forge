@@ -38,7 +38,7 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	ctx := t.Context()
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{

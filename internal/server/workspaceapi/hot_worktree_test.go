@@ -53,7 +53,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			}, nil, nil))
 
 			clones := gitclone.New(filepath.Join(root, "clones"), nil)
-			manager := workspace.NewManager(database, filepath.Join(root, "worktrees"))
+			manager := newWorkspaceTestManager(t, database, filepath.Join(root, "worktrees"))
 			manager.SetClones(clones)
 			manager.SetTmuxCommand([]string{os.Args[0], "-test.run=^$", "--"})
 			first, err := manager.CreateAdHoc(
@@ -80,7 +80,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			}
 			// Enrollment survives deleting the last workspace and restarting Forge,
 			// even when no warming pass ran before deletion.
-			manager = workspace.NewManager(database, filepath.Join(root, "worktrees"))
+			manager = newWorkspaceTestManager(t, database, filepath.Join(root, "worktrees"))
 			manager.SetClones(clones)
 			manager.SetTmuxCommand([]string{os.Args[0], "-test.run=^$", "--"})
 

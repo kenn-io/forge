@@ -130,7 +130,7 @@ func setupTestServer(t *testing.T) (*Handler, *db.DB) {
 func newTestHandlerWithWorkspaceManager(t *testing.T, database *db.DB) *Handler {
 	t.Helper()
 	h := newTestHandler(t, database, config.Fleet{})
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	h.workspaceSnapshot = workspaceSnapshotFromManager(manager)
 	return h
 }

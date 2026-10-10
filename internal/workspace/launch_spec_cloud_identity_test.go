@@ -19,7 +19,7 @@ func TestValidateWorkspaceLaunchSpecRejectsOtherBitbucketCloudUUID(t *testing.T)
 		Key: platform.RepositoryUUIDKey(repoUUID), Owner: "team", Name: "widgets",
 	})
 	require.NoError(err)
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	issuedAt := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
 	workspace := &Workspace{
 		ID: "ws-cloud-uuid", Platform: "bitbucket", PlatformHost: "bitbucket.org",

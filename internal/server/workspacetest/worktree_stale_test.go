@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 )
 
 // TestRemoveStaleWorktreeRoute exercises the stale-worktree removal ported from
@@ -31,9 +32,9 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
 
-	repoDir := t.TempDir()
-	require.NoError(initLocalOnlyGitRepo(t.Context(), repoDir))
+	repoDir := gitfixture.NewRepository(t, false).Dir
 	projectID := registerProjectForTest(t, ts, repoDir)
+	gitfixture.Run(t, repoDir, "branch", "feat")
 
 	// Register a worktree whose checkout never materializes, then mark it stale
 	// by reconciling an inventory that no longer lists it — the same transition
@@ -46,7 +47,7 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 
 	remove := func(scopedKey string) *http.Response {
 		return httpDo(t, ts, http.MethodPost, "/api/v1/worktrees/remove-stale",
-			mustMarshal(t, map[string]any{"scopedKey": scopedKey}))
+			mustMarshal(t, map[string]any{"scopedKey": scopedKey, "removeBranch": true}))
 	}
 
 	// Unknown scoped key -> 404.
@@ -63,6 +64,7 @@ func TestRemoveStaleWorktreeRoute(t *testing.T) {
 	require.NoError(json.NewDecoder(resp.Body).Decode(&out))
 	resp.Body.Close()
 	assert.True(out.Removed)
+	assert.Empty(string(gitfixture.Run(t, repoDir, "for-each-ref", "--format=%(refname)", "refs/heads/feat")), "stale cleanup must also remove the requested unused branch")
 
 	// The worktree is gone from the project.
 	listResp := httpDo(t, ts, http.MethodGet,

@@ -28,7 +28,7 @@ func openTestDB(t *testing.T) *db.DB {
 
 func TestHandlerWorkspaceNotFound(t *testing.T) {
 	d := openTestDB(t)
-	mgr := workspace.NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	h := &Handler{Workspaces: mgr}
 
 	req := httptest.NewRequestWithContext(t.Context(),
@@ -49,7 +49,7 @@ func TestHandlerWorkspaceNotReady(t *testing.T) {
 	d := openTestDB(t)
 	wtDir := t.TempDir()
 
-	mgr := workspace.NewManager(d, wtDir)
+	mgr := newWorkspaceTestManager(t, d, wtDir)
 	ws := &workspace.Workspace{
 		ID: "ws-creating", Platform: "github", PlatformHost: "github.com",
 		RepoOwner: "acme", RepoName: "widget",
@@ -116,7 +116,7 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	require := require.New(t)
 
 	d := openTestDB(t)
-	mgr := workspace.NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	ownerRoot := t.TempDir()
 	mgr.SetPtyOwnerClient(&ptyowner.Client{Root: ownerRoot})
 	ws := &workspace.Workspace{

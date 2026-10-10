@@ -27,7 +27,6 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
 
@@ -87,7 +86,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 	})}
 	go func() { _ = broker.Serve(listener) }()
 	t.Cleanup(func() { _ = broker.Close() })
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	var elapsed atomic.Int64
 	worker := workspaceapi.New(workspaceapi.Deps{
 		DB: database, Workspaces: manager, ExecutionWorker: config.ExecutionWorker{Enabled: true, BrokerSocket: socket, GitHubUserID: 1234}, EnrichmentDisabled: true,

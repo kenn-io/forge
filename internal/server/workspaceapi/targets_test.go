@@ -12,7 +12,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
 
@@ -44,7 +43,7 @@ func TestWorkspaceTargetsPreserveOwnerAndBranch(t *testing.T) {
 					id := "ws-" + itemType
 					ws := &db.Workspace{ID: id, RepoID: repoID, Platform: identity.Platform, PlatformHost: host, RepoOwner: "acme", RepoName: "widget", ItemType: itemType, ItemKey: id, ItemNumber: 42, WorktreePath: t.TempDir(), Status: "ready"}
 					require.NoError(database.InsertWorkspace(ctx, ws))
-					h := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), EnrichmentDisabled: true})
+					h := New(Deps{DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()), EnrichmentDisabled: true})
 					_, err := h.AddWorkspaceTargetService(ctx, id, WorkspaceTargetInput{Type: "pr", Number: 42, URL: "https://other.example.com/acme/widget/pull/42"})
 					require.Error(err)
 					rejected, err := database.GetWorkspace(ctx, id)
@@ -85,7 +84,7 @@ func TestWorkspaceTargetsKeepDistinctTypesAndRepositories(t *testing.T) {
 	t.Parallel()
 	database := dbtest.Open(t)
 	ctx := t.Context()
-	h := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), EnrichmentDisabled: true})
+	h := New(Deps{DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()), EnrichmentDisabled: true})
 	repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(t, err)
 	otherID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "other"))

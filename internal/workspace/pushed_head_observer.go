@@ -90,12 +90,12 @@ type PushedHeadObserver struct {
 }
 
 func NewPushedHeadObserver(
-	database *db.DB, monitorOptions ...PRMonitorOptions,
+	database *db.DB, manager *Manager, monitorOptions ...PRMonitorOptions,
 ) *PushedHeadObserver {
 	return &PushedHeadObserver{
 		db:       database,
 		monitor:  NewPRMonitor(database, monitorOptions...),
-		git:      newGitdirRemoteHeadReader(),
+		git:      newGitdirRemoteHeadReader(manager.repositoryWorktrees),
 		now:      time.Now,
 		observed: make(map[remoteHeadKey]remoteHeadObservation),
 		failures: make(map[string]int),

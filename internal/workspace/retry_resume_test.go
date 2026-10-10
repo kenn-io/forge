@@ -32,7 +32,7 @@ func TestRetryPreservesWorkspaceCommitsAndUntrackedFiles(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(path, "notes.txt"), []byte("unfinished work"), 0o600))
 	ws := &Workspace{ID: "saved-workspace", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7, GitHeadRef: branch, WorkspaceBranch: branch, WorktreePath: path, Status: "error"}
 	require.NoError(database.InsertWorkspace(ctx, ws))
-	require.NoError(writeWorkspaceOwnershipMarker(ctx, clone, ws))
+	require.NoError(writeTestWorkspaceIdentity(t, ctx, clone, ws))
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
 		WorkspaceID: ws.ID, SessionKey: "saved-agent", TargetKey: "codex", Kind: "agent", Scope: "session", TmuxSession: "saved-tmux",
 	}))
@@ -65,7 +65,7 @@ func TestIssueRecoveryChecksOutExistingBranchWithSavedCommits(t *testing.T) {
 	require.NoError(err)
 	runWorkspaceTestGit(t, clone, "worktree", "remove", old)
 	ws := &Workspace{ID: "recover-branch", ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 7, GitHeadRef: branch, WorkspaceBranch: branch, WorktreePath: filepath.Join(t.TempDir(), "restored")}
-	_, err = mgr.addIssueWorktree(t.Context(), workspaceGitDir{path: clone, remote: originRemoteName}, ws)
+	_, err = addTestWorktree(mgr, t.Context(), workspaceGitDir{path: clone, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
 	require.NoError(err)
 	after, _, err := gitRefSHA(t.Context(), ws.WorktreePath, "HEAD")
 	require.NoError(err)
@@ -250,9 +250,9 @@ func TestEmptyPRBranchDoesNotPreserveFreshFailedCheckout(t *testing.T) {
 			mgr.SetTmuxCommand([]string{tmux})
 			require.ErrorContains(mgr.Setup(ctx, ws), "tmux new-session")
 			assert.NoDirExists(ws.WorktreePath)
-			_, registered, err := worktreeRegistrationMetadataDir(ctx, localRepo, ws.WorktreePath)
+			state, err := mgr.observeWorkspaceRegistration(ctx, localRepo, ws.WorktreePath)
 			require.NoError(err)
-			assert.False(registered)
+			assert.Empty(state.GitDir)
 			_, exists, err := gitRefSHA(ctx, localRepo, "refs/heads/feature/thing")
 			require.NoError(err)
 			assert.Equal(adoptBranch, exists, "only the preexisting source branch should survive rollback")

@@ -18,8 +18,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
+
+	"github.com/gofrs/flock"
+	managed "go.kenn.io/kit/git/managed"
+	"go.kenn.io/kwt/worktree"
 
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -413,7 +416,7 @@ func TestRefreshWorkspaceHeadRepo(t *testing.T) {
 				ItemNumber:   42,
 				GitHeadRef:   "feature/thing",
 			}
-			mgr := NewManager(d, t.TempDir())
+			mgr := newWorkspaceTestManager(t, d, t.TempDir())
 
 			err := mgr.RefreshWorkspaceHeadRepo(t.Context(), ws)
 
@@ -448,7 +451,7 @@ func TestRefreshWorkspaceHeadRepoRejectsPersistedWorkspaceWithoutRepositoryID(t 
 		Status:       "ready",
 	}
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 
 	err := mgr.RefreshWorkspaceHeadRepo(t.Context(), ws)
 
@@ -501,7 +504,7 @@ func TestRefreshWorkspaceHeadRepoFollowsStableRepositoryAfterRename(
 	})
 	require.NoError(err)
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	require.NoError(mgr.RefreshWorkspaceHeadRepo(ctx, ws))
 
 	assert.Equal("new-group", ws.RepoOwner)
@@ -561,7 +564,7 @@ func TestRefreshWorkspaceHeadRepoRejectsReplacementAtInactiveRepositoryRoute(
 		"https://github.com/contributor/widget.git",
 	)
 
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	err = manager.RefreshWorkspaceHeadRepo(t.Context(), workspace)
 
 	require.ErrorIs(err, ErrWorkspaceRepositoryUnresolved)
@@ -587,7 +590,7 @@ func TestRefreshWorkspaceHeadRepoRejectsLegacyWorkspaceWhenRouteAppearsLater(t *
 		Status:       "ready",
 	}
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	forkURL := "https://github.com/contributor/widget.git"
 
 	require.ErrorIs(
@@ -637,7 +640,7 @@ func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRevisionChange(t *testing.T
 	}
 	require.NoError(d.InsertWorkspace(t.Context(), ws))
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	var advanced bool
 	mgr.afterHeadRepoSnapshotRead = func() {
 		if advanced {
@@ -705,7 +708,7 @@ func TestRefreshWorkspaceHeadRepoSnapshotRetriesAfterRemoval(t *testing.T) {
 	}
 	require.NoError(d.InsertWorkspace(ctx, ws))
 
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	var removed bool
 	mgr.afterHeadRepoSnapshotRead = func() {
 		if removed {
@@ -1312,7 +1315,7 @@ func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
 	spec.Repository.PlatformHost = platformHost
 	spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
 	spec.Repository.CloneURL = oldRemoteURL
-	manager := NewManager(database, worktreeRoot)
+	manager := newWorkspaceTestManager(t, database, worktreeRoot)
 	manager.SetTmuxCommand([]string{"/usr/bin/true"})
 	manager.SetNow(func() time.Time { return spec.IssuedAt })
 	workspace, err := manager.CreateFromLaunchSpec(t.Context(), spec)
@@ -1402,7 +1405,7 @@ func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
 	)
 	routeKeyed := initBare(t.Context(), "acme", "widget")
 
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetClones(clones)
 	paths, err := manager.workspaceManagedClonePaths(t.Context(), &Workspace{
 		RepoID: entry.Repository.ID, Platform: "github", PlatformHost: "github.com",
@@ -1876,7 +1879,7 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 				t, cloneDir, "worktree", "add", "-b", "sibling", siblingPath, "main",
 			)
 
-			mgr := NewManager(d, t.TempDir())
+			mgr := newWorkspaceTestManager(t, d, t.TempDir())
 			mgr.SetClones(clones)
 			tmuxScript, tmuxRecord := writeRecorderScript(t)
 			mgr.SetTmuxCommand([]string{tmuxScript})
@@ -1998,7 +2001,7 @@ func TestManagedRepositoryHookSetupSerializesRegistration(t *testing.T) {
 	)
 
 	d := openTestDB(t)
-	mgr := NewManager(d, t.TempDir())
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
 	mgr.SetClones(clones)
 	ws := &Workspace{
 		Platform:     "github",
@@ -3494,7 +3497,7 @@ func TestAddAndRefreshPRWorktreeFastForwardLocalBaseBranch(t *testing.T) {
 	runWorkspaceTestGit(t, remote, "update-ref", "refs/heads/main", secondBaseSHA)
 	runWorkspaceTestGit(t, remote, "update-server-info")
 
-	_, err = mgr.refreshExistingWorkspaceWorktree(
+	_, err = refreshTestWorktree(mgr,
 		t.Context(), localRepo, originRemoteName, ws, launchSpec, false,
 	)
 	require.NoError(err)
@@ -3551,7 +3554,7 @@ func TestAddAndRefreshPRWorktreeRecoverForcePushedBaseBranch(t *testing.T) {
 	runWorkspaceTestGit(t, remote, "update-server-info")
 	localFile := filepath.Join(ws.WorktreePath, "local.txt")
 	require.NoError(os.WriteFile(localFile, []byte("uncommitted work\n"), 0o600))
-	_, err = mgr.refreshExistingWorkspaceWorktree(t.Context(), cloneDir, originRemoteName, ws, launchSpec, true)
+	_, err = refreshTestWorktree(mgr, t.Context(), cloneDir, originRemoteName, ws, launchSpec, true)
 	require.NoError(err)
 	assert.Equal(originalSHA, strings.TrimSpace(string(runWorkspaceTestGit(t, cloneDir, "rev-parse", "main"))))
 	assert.Equal(localSHA, strings.TrimSpace(string(runWorkspaceTestGit(
@@ -3581,7 +3584,7 @@ func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
 	)
 	runWorkspaceTestGit(t, localRepo, "checkout", "--detach")
 
-	require.NoError(syncLocalBaseBranch(
+	require.NoError(syncTestBaseBranch(t,
 		t.Context(), localRepo, "origin", "ws-base-sync-safety", branch, false,
 	))
 	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
@@ -3596,7 +3599,7 @@ func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
 		t, localRepo, "update-ref", "refs/remotes/origin/main", secondRemoteSHA,
 	)
 	runWorkspaceTestGit(t, localRepo, "checkout", branch)
-	require.NoError(syncLocalBaseBranch(
+	require.NoError(syncTestBaseBranch(t,
 		t.Context(), localRepo, "origin", "ws-base-sync-safety", branch, true,
 	))
 	assert.Equal(firstRemoteSHA, strings.TrimSpace(string(runWorkspaceTestGit(
@@ -3618,7 +3621,7 @@ func TestSyncLocalBaseBranchSkipsCheckedOutAndDivergedBranches(t *testing.T) {
 	runWorkspaceTestGit(
 		t, localRepo, "update-ref", "refs/remotes/origin/main", thirdRemoteSHA,
 	)
-	require.NoError(syncLocalBaseBranch(
+	require.NoError(syncTestBaseBranch(t,
 		t.Context(), localRepo, "origin", "ws-base-sync-safety", branch, false,
 	))
 	assert.Equal(divergentSHA, strings.TrimSpace(string(runWorkspaceTestGit(
@@ -3638,7 +3641,7 @@ func TestSyncLocalBaseBranchSkipsOccupiedRefNamespace(t *testing.T) {
 	runWorkspaceTestGit(t, localRepo, "branch", "-D", "main")
 	runWorkspaceTestGit(t, localRepo, "branch", "main/topic", mainSHA)
 
-	require.NoError(syncLocalBaseBranch(
+	require.NoError(syncTestBaseBranch(t,
 		t.Context(), localRepo, "origin", "ws-base-sync-namespace", "main", true,
 	))
 	_, mainExists, err := gitRefSHA(t.Context(), localRepo, "refs/heads/main")
@@ -3803,7 +3806,7 @@ func TestCleanupFindsManagedCloneAfterRepositoryRename(t *testing.T) {
 		GitHeadRef: "feature/thing", WorkspaceBranch: branch,
 		WorktreePath: worktreePath,
 	}
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), oldClone, ws))
+	require.NoError(writeTestWorkspaceIdentity(t, t.Context(), oldClone, ws))
 
 	require.NoError(mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws))
 	require.NoDirExists(worktreePath)
@@ -3848,7 +3851,7 @@ func TestCleanupFindsMissingIdentityManagedWorktreeAfterRepositoryRename(t *test
 		GitHeadRef: "feature/thing", WorkspaceBranch: branch,
 		WorktreePath: worktreePath,
 	}
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), oldClone, ws))
+	require.NoError(writeTestWorkspaceIdentity(t, t.Context(), oldClone, ws))
 	require.NoError(os.RemoveAll(worktreePath))
 
 	identity.Name = "renamed"
@@ -4121,9 +4124,11 @@ func TestRemoveStaleWorktreeRegistrationMetadataResolvesRelativeGitdir(
 	assert.False(filepath.IsAbs(strings.TrimSpace(string(gitFile))))
 	require.NoError(os.RemoveAll(worktreePath))
 
-	require.NoError(removeStaleWorktreeRegistrationMetadata(
-		t.Context(), cloneDir, worktreePath,
-	))
+	mgr := newTestManager(t, nil, t.TempDir())
+	require.NoError(mgr.withRepoLockForGitDir(t.Context(), cloneDir, func(scope *worktree.Scope) error {
+		_, err := scope.PruneRegistration(t.Context(), worktreePath)
+		return err
+	}))
 	_, err = os.Lstat(metadataDir)
 	require.ErrorIs(err, os.ErrNotExist)
 	tracked, err := gitDirTracksWorktreePath(t.Context(), cloneDir, worktreePath)
@@ -4413,7 +4418,7 @@ func TestAddPreferredWorktreeRejectsUnsafeBranchName(t *testing.T) {
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	_, err := mgr.addPreferredWorktree(
+	_, err := addTestPreferredWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws,
 	)
 	require.Error(err)
@@ -4469,7 +4474,7 @@ func TestAddWorktreeUsesFallbackWhenLocalBasePreferredBranchCheckedOut(t *testin
 		WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 	}
 
-	gotBranch, err := mgr.addWorktreeLocked(
+	gotBranch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{},
 	)
 
@@ -4504,7 +4509,7 @@ func TestAddWorktreeTracksSelectedLocalBaseRemote(t *testing.T) {
 				WorktreePath: filepath.Join(t.TempDir(), "worktree"),
 			}
 
-			branch, err := mgr.addWorktreeLocked(t.Context(), workspaceGitDir{
+			branch, err := addTestWorktree(mgr, t.Context(), workspaceGitDir{
 				path: localRepo, remote: "upstream", localBase: true,
 			}, ws, workspaceGitFetchOptions{})
 			require.NoError(err)
@@ -4565,7 +4570,7 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 	)
 
@@ -4610,18 +4615,18 @@ func TestAddWorktreeLockedRecordsOwnershipBeforeReturning(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err := mgr.addWorktreeLocked(
+	_, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 	)
 	require.NoError(err)
-	owned, err := workspaceRegistrationMatches(
+	owned, err := mgr.workspaceRegistrationMatches(
 		t.Context(), cloneDir, ws.WorktreePath, ws.ID,
 	)
 	require.NoError(err)
 	require.True(owned, "the registration must be marked before addWorktreeLocked returns")
 }
 
-func TestOwnedWorktreeAddRollsBackWhenOwnershipMarkerFails(t *testing.T) {
+func TestWorkspaceCreationRequiresOwnershipIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	cloneDir := setupBareCloneForWorkspaceGitTest(t)
@@ -4633,9 +4638,7 @@ func TestOwnedWorktreeAddRollsBackWhenOwnershipMarkerFails(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err := mgr.runOwnedGitWorktreeAddCreatingBranch(
-		t.Context(), cloneDir, ws, branch, "main",
-	)
+	_, err := createTestWorkspace(mgr, t.Context(), cloneDir, ws, managed.CreateWorktreeOptions{Branch: branch, BaseRef: "main", Mode: managed.CheckoutNewBranch})
 	require.Error(err)
 	require.ErrorIs(err, errWorkspaceOwnershipMarker)
 	_, statErr := os.Lstat(ws.WorktreePath)
@@ -4650,6 +4653,67 @@ func TestOwnedWorktreeAddRollsBackWhenOwnershipMarkerFails(t *testing.T) {
 	)
 	require.NoError(refErr)
 	assert.False(exists)
+}
+
+func TestAddWorktreePreservesCheckoutWhenOwnershipMarkerFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX Git wrapper")
+	}
+	require := require.New(t)
+	cloneDir := setupBareCloneForWorkspaceGitTest(t)
+	const headBranch = "feature/marker-failure"
+	head := configureSameRepoPRRefs(t, cloneDir, headBranch, 46)
+	ws := &Workspace{
+		ID:              "ws-marker-failure",
+		Platform:        "github",
+		PlatformHost:    "github.com",
+		RepoOwner:       "acme",
+		RepoName:        "widget",
+		ItemType:        db.WorkspaceItemTypePullRequest,
+		ItemNumber:      46,
+		GitHeadRef:      headBranch,
+		WorkspaceBranch: workspaceBranchUnknown,
+		WorktreePath:    filepath.Join(t.TempDir(), "worktree"),
+	}
+	manager := newTestManager(t, openTestDB(t), t.TempDir())
+	realGit, err := exec.LookPath("git")
+	require.NoError(err)
+	fixture := t.TempDir()
+	attempts := filepath.Join(fixture, "attempts")
+	// Run real Git, then obstruct the required marker in the new registration.
+	// A fallback would fetch the PR head before attempting another checkout.
+	script := `#!/bin/sh
+case " $* " in
+  *" worktree add "*)
+    printf 'add\n' >> "$KENN_FORGE_TEST_ATTEMPTS"
+    "$KENN_FORGE_TEST_REAL_GIT" "$@" || exit $?
+    registration=$("$KENN_FORGE_TEST_REAL_GIT" -C "$KENN_FORGE_TEST_CHECKOUT" rev-parse --absolute-git-dir) || exit $?
+    mkdir "$registration/kenn-forge-workspace-id"
+    exit $?
+    ;;
+  *" fetch "*) printf 'fetch\n' >> "$KENN_FORGE_TEST_ATTEMPTS" ;;
+esac
+exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
+`
+	require.NoError(os.WriteFile(filepath.Join(fixture, "git"), []byte(script), 0o700))
+	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
+	t.Setenv("KENN_FORGE_TEST_CHECKOUT", ws.WorktreePath)
+	t.Setenv("KENN_FORGE_TEST_ATTEMPTS", attempts)
+	t.Setenv("PATH", fixture+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, _, err = manager.addWorktree(t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+
+	require.ErrorIs(err, errWorkspaceOwnershipMarker)
+	require.ErrorIs(err, worktree.ErrIdentityUnavailable)
+	require.FileExists(filepath.Join(ws.WorktreePath, "base.txt"))
+	require.Equal(headBranch, strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "branch", "--show-current"))))
+	require.Equal(head, strings.TrimSpace(string(runWorkspaceTestGit(t, cloneDir, "rev-parse", "refs/heads/"+headBranch))))
+	registration := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "--absolute-git-dir")))
+	require.DirExists(filepath.Join(registration, workspaceOwnershipMarkerFile))
+	require.Empty(strings.TrimSpace(string(runWorkspaceTestGit(t, cloneDir, "branch", "--list", "kenn-forge/pr-46*"))))
+	commands, err := os.ReadFile(attempts)
+	require.NoError(err)
+	require.Equal("add\n", string(commands), "marker failure must stop fallback creation")
 }
 
 // divergentCommitForWorkspaceGitTest creates a commit that is not the PR head so
@@ -4711,7 +4775,7 @@ func TestAddWorktreeUniquifiesFallbackBranchWhenSyntheticNameTaken(t *testing.T)
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 	)
 
@@ -4788,7 +4852,7 @@ func TestAddWorktreeFallsBackToDetachedWorktreeWhenBranchNamesExhausted(
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{},
 	)
 
@@ -4835,7 +4899,7 @@ func TestAddWorktreeUnknownHeadRepoDoesNotTrackMatchingOriginBranch(t *testing.T
 	)
 	require.NoError(err)
 
-	_, err = mgr.addWorktreeLocked(
+	_, err = addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "unknown", ""),
 		},
@@ -4975,7 +5039,7 @@ func TestLocalBaseExistingPRBranchIsNotDeletedOnCleanup(t *testing.T) {
 		Status:          "ready",
 	}
 
-	managedBranch, err := mgr.addWorktreeLocked(
+	managedBranch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{},
 	)
 	require.NoError(err)
@@ -5014,7 +5078,7 @@ func TestLocalBaseExistingPRBranchPreservesUpstream(t *testing.T) {
 		Status:          "ready",
 	}
 
-	managedBranch, err := mgr.addWorktreeLocked(
+	managedBranch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: localRepo, remote: originRemoteName, localBase: true}, ws, workspaceGitFetchOptions{},
 	)
 
@@ -5112,7 +5176,7 @@ func TestAddPreferredWorktreeHeadRepoRouting(t *testing.T) {
 			)
 			require.NoError(err)
 
-			branch, err := mgr.addPreferredWorktree(t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws)
+			branch, err := addTestPreferredWorktree(mgr, t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws)
 			require.NoError(err)
 			assert.Equal(tt.headBranch, branch)
 
@@ -5181,7 +5245,7 @@ func TestAddWorktreeGitLabForkMRFetchesHeadBeforePreferredBranch(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "fork", forkRemote),
 		},
@@ -5229,7 +5293,7 @@ func TestAddWorktreeMergedSameRepoPRUsesPullRefWhenHeadBranchDeleted(
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -5283,7 +5347,7 @@ func TestAddWorktreeGitLabMRUsesMergeRequestRefWhenHeadBranchDeleted(
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -5331,7 +5395,7 @@ func TestAddWorktreeGitLabMRFetchesSpecificMergeRequestRef(t *testing.T) {
 	}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	branch, err := mgr.addWorktreeLocked(
+	branch, err := addTestWorktree(mgr,
 		t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{
 			launchSpec: pullLaunchSpecForWorkspace(ws, "same_repo", ""),
 		},
@@ -5365,7 +5429,7 @@ func TestRollbackWorktreeDeletesBranchWhenContextCanceled(t *testing.T) {
 		t, cloneDir,
 		"worktree", "add", ws.WorktreePath, "-b", branch, "main",
 	)
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
+	require.NoError(writeTestWorkspaceIdentity(t, t.Context(), cloneDir, ws))
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -5396,7 +5460,7 @@ func TestRollbackWorktreePreservesReplacementWithoutOwnershipMarker(t *testing.T
 		t, cloneDir,
 		"worktree", "add", ws.WorktreePath, "-b", branch, "main",
 	)
-	require.NoError(writeWorkspaceOwnershipMarker(t.Context(), cloneDir, ws))
+	require.NoError(writeTestWorkspaceIdentity(t, t.Context(), cloneDir, ws))
 	runWorkspaceTestGit(
 		t, cloneDir, "worktree", "remove", "--force", ws.WorktreePath,
 	)
@@ -5752,7 +5816,7 @@ func TestShellFromPasswdLine(t *testing.T) {
 	}{
 		{
 			"normal zsh",
-			"wesm:x:501:20:Wes McKinney:/Users/wesm:/bin/zsh",
+			"user-a:x:501:20:Example User:/fixture/user-a:/bin/zsh",
 			"/bin/zsh",
 		},
 		{
@@ -5917,7 +5981,7 @@ func TestManagerApplyTmuxMouseUpdatesDedicatedServer(t *testing.T) {
 	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxMouse(true)
 	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
 
@@ -5941,7 +6005,7 @@ func TestManagerApplyTmuxGraphicsDisablesDedicatedServer(t *testing.T) {
 	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxGraphics(false)
 	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
 
@@ -5961,7 +6025,7 @@ func TestManagerApplyTmuxGraphicsEnablesEveryOwnedCustomPane(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "tmux")
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxCommand([]string{tmuxPath})
 	mgr.SetTmuxGraphics(true)
 	body := fmt.Sprintf("#!/bin/sh\n"+
@@ -5995,7 +6059,7 @@ func TestManagerApplyTmuxGraphicsAttemptsEveryPaneAfterFailure(t *testing.T) {
 	require.NoError(os.WriteFile(tmuxPath, []byte(body), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxGraphics(true)
 	require.Error(mgr.ApplyTmuxGraphics(t.Context()))
 
@@ -6008,7 +6072,7 @@ func TestManagerApplyTmuxGraphicsAttemptsEveryPaneAfterFailure(t *testing.T) {
 func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {
 	require := require.New(t)
 	script, record := writeRecorderScript(t)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxGraphics(false)
 
@@ -6019,7 +6083,7 @@ func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {
 func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
 	require := require.New(t)
 	script, record := writeRecorderScript(t)
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxMouse(true)
 
@@ -7790,142 +7854,9 @@ func TestIsGitWorktreeAbsentClassifiesCorruptGitfile(t *testing.T) {
 	}
 	for _, tc := range cases {
 		assert.Equalf(
-			tc.want, isGitWorktreeAbsent(tc.err), "case %s", tc.name,
+			tc.want, worktree.IsCheckoutAbsent(tc.err), "case %s", tc.name,
 		)
 	}
-}
-
-func TestFileLockManagerAcquireRelease(t *testing.T) {
-	require := require.New(t)
-	mgr := NewFileLockManager()
-	ctx := t.Context()
-	repo := t.TempDir()
-
-	first, err := mgr.Acquire(ctx, repo)
-	require.NoError(err)
-	require.NoError(first.Unlock())
-
-	second, err := mgr.Acquire(ctx, repo)
-	require.NoError(err)
-	require.NoError(second.Unlock())
-}
-
-func TestFileLockManagerSerializesGoroutines(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		require := require.New(t)
-		mgr := NewFileLockManager()
-		ctx := t.Context()
-		repo := t.TempDir()
-
-		const goroutines = 6
-		var inCritical atomic.Int32
-		var maxObserved atomic.Int32
-		var overlap atomic.Int32
-
-		var wg sync.WaitGroup
-		for range goroutines {
-			wg.Go(func() {
-				lock, err := mgr.Acquire(ctx, repo)
-				if err != nil {
-					return
-				}
-				defer func() { _ = lock.Unlock() }()
-				current := inCritical.Add(1)
-				defer inCritical.Add(-1)
-				if current > 1 {
-					overlap.Add(1)
-				}
-				for {
-					prev := maxObserved.Load()
-					if current <= prev || maxObserved.CompareAndSwap(prev, current) {
-						break
-					}
-				}
-				time.Sleep(15 * time.Millisecond)
-			})
-		}
-		wg.Wait()
-
-		require.Equal(int32(1), maxObserved.Load(),
-			"only one goroutine should hold the lock at a time")
-		require.Equal(int32(0), overlap.Load(),
-			"no goroutine should observe another holder in its critical section")
-		require.Equal(int32(0), inCritical.Load())
-	})
-}
-
-func TestFileLockManagerCtxCancelWhileWaiting(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		require := require.New(t)
-		mgr := NewFileLockManager()
-		repo := t.TempDir()
-
-		held, err := mgr.Acquire(t.Context(), repo)
-		require.NoError(err)
-		defer func() { _ = held.Unlock() }()
-
-		ctx, cancel := context.WithCancel(t.Context())
-		gotErr := make(chan error, 1)
-		started := make(chan struct{})
-		go func() {
-			close(started)
-			_, err := mgr.Acquire(ctx, repo)
-			gotErr <- err
-		}()
-		<-started
-		synctest.Wait()
-		cancel()
-
-		select {
-		case err := <-gotErr:
-			require.ErrorIs(err, context.Canceled)
-		case <-time.After(2 * time.Second):
-			require.FailNow("Acquire did not return after ctx cancel")
-		}
-	})
-}
-
-func TestFileLockManagerDoubleUnlock(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	mgr := NewFileLockManager()
-	lock, err := mgr.Acquire(t.Context(), t.TempDir())
-	require.NoError(err)
-	require.NoError(lock.Unlock())
-	assert.Error(lock.Unlock())
-}
-
-func TestManagerWithRepoLockReleaseOnSuccess(t *testing.T) {
-	require := require.New(t)
-	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-	repo := t.TempDir()
-
-	calls := 0
-	require.NoError(mgr.withRepoLock(t.Context(), repo, func() error {
-		calls++
-		return nil
-	}))
-	require.Equal(1, calls)
-
-	again, err := mgr.locks.Acquire(t.Context(), repo)
-	require.NoError(err)
-	require.NoError(again.Unlock())
-}
-
-func TestManagerWithRepoLockReleaseOnError(t *testing.T) {
-	require := require.New(t)
-	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-	repo := t.TempDir()
-
-	sentinel := errors.New("inner failed")
-	err := mgr.withRepoLock(t.Context(), repo, func() error {
-		return sentinel
-	})
-	require.ErrorIs(err, sentinel)
-
-	again, err := mgr.locks.Acquire(t.Context(), repo)
-	require.NoError(err)
-	require.NoError(again.Unlock())
 }
 
 func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
@@ -7935,8 +7866,8 @@ func TestManagerAddWorktreeAcquiresRepoLock(t *testing.T) {
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
 	// Hold the per-repo lock from outside addWorktree; it must wait.
-	held, err := mgr.locks.Acquire(t.Context(), cloneDir)
-	require.NoError(err)
+	held := flock.New(filepath.Join(cloneDir, ".kenn-forge-worktree.lock"))
+	require.NoError(held.Lock())
 
 	ws := &Workspace{
 		ID:           "ws-add-worktree-lock",
@@ -7986,8 +7917,8 @@ func TestManagerAddWorktreeRechecksOccupiedPathAfterWaitingForLock(t *testing.T)
 		WorktreePath: filepath.Join(t.TempDir(), "wt"),
 	}
 
-	held, err := mgr.locks.Acquire(t.Context(), cloneDir)
-	require.NoError(err)
+	held := flock.New(filepath.Join(cloneDir, ".kenn-forge-worktree.lock"))
+	require.NoError(held.Lock())
 	done := make(chan error, 1)
 	go func() {
 		_, _, err := mgr.addWorktree(
@@ -8050,7 +7981,7 @@ func TestAddPreferredWorktreeRemovesBranchCreatedByFailedAdd(t *testing.T) {
 	))
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err := mgr.addPreferredWorktree(t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws)
+	_, err := addTestPreferredWorktree(mgr, t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws)
 
 	require.Error(err)
 	contents, err := os.ReadFile(filepath.Join(ws.WorktreePath, "keep.txt"))
@@ -8091,9 +8022,8 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 	t.Setenv("KENN_FORGE_TEST_BRANCH_SHA", divergentSHA)
 	t.Setenv("PATH", fakeDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	err = runGitWorktreeAddCreatingBranch(
-		t.Context(), cloneDir, filepath.Join(t.TempDir(), "worktree"), branch, "main",
-	)
+	mgr := newTestManager(t, openTestDB(t), t.TempDir())
+	_, err = createTestWorkspace(mgr, t.Context(), cloneDir, &Workspace{ID: "workspace-a", WorktreePath: filepath.Join(t.TempDir(), "worktree")}, managed.CreateWorktreeOptions{Branch: branch, BaseRef: "main", Mode: managed.CheckoutNewBranch})
 	require.Error(err)
 	branchSHA, exists, err := gitRefSHA(
 		t.Context(), cloneDir, "refs/heads/"+branch,
@@ -8139,8 +8069,8 @@ func TestManagerCleanupForDeleteAcquiresRepoLock(t *testing.T) {
 		WorktreePath: worktreePath,
 	}
 
-	held, err := mgr.locks.Acquire(t.Context(), cloneDir)
-	require.NoError(err)
+	held := flock.New(filepath.Join(cloneDir, ".kenn-forge-worktree.lock"))
+	require.NoError(held.Lock())
 	done := make(chan error, 1)
 	go func() { done <- mgr.cleanupWorkspaceArtifactsForDelete(t.Context(), ws) }()
 

@@ -53,7 +53,7 @@ func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 				ws.AssociatedPRNumber = new(42)
 			}
 			require.NoError(database.InsertWorkspace(t.Context(), ws))
-			manager := workspace.NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			handler := New(Deps{
 				DB: database, Workspaces: manager, EnrichmentDisabled: true,
 			})
@@ -89,7 +89,7 @@ func TestCreateAdHocWorkspaceResolvesMissingRepositoryBeforeLocalCreate(t *testi
 	assert := assert.New(t)
 	require := require.New(t)
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	resolved := false
 	handler := New(Deps{
 		DB: database,
@@ -166,7 +166,7 @@ func TestLaunchSpecCreatePersistsBeforeSetupStarts(t *testing.T) {
 	})
 	require.NoError(err)
 	resolver := stubLaunchSpecResolver{}
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	manager.SetLaunchSpecResolver(resolver)
 	type setupObservation struct {
 		workspaceID string
@@ -253,7 +253,7 @@ func TestCreatePullWorkspacePreservesDisplacedRouteOwner(t *testing.T) {
 	require.NoError(err)
 
 	resolver := stubLaunchSpecResolver{}
-	manager := workspace.NewManager(database, base)
+	manager := newWorkspaceTestManager(t, database, base)
 	manager.SetLaunchSpecResolver(resolver)
 	handler := New(Deps{
 		DB: database, Workspaces: manager,
@@ -315,7 +315,7 @@ func TestCreatePullWorkspaceServiceSuppressesAutoAssign(t *testing.T) {
 	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
 	t.Cleanup(syncer.Stop)
 	launchSpecs := stubLaunchSpecResolver{}
-	workspaceManager := workspace.NewManager(database, t.TempDir())
+	workspaceManager := newWorkspaceTestManager(t, database, t.TempDir())
 	workspaceManager.SetLaunchSpecResolver(launchSpecs)
 	handler := New(Deps{
 		DB:       database,
@@ -382,7 +382,7 @@ func TestWorkspaceCreationDoesNotWaitForHubAutoAssignment(t *testing.T) {
 			})
 			require.NoError(err)
 			resolver := stubLaunchSpecResolver{}
-			manager := workspace.NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			manager.SetLaunchSpecResolver(resolver)
 			release := make(chan struct{})
 			defer close(release)
@@ -452,7 +452,7 @@ func TestLaunchWorkspaceRuntimeServiceReturnsSession(t *testing.T) {
 		PtyOwnerRuntime: owner,
 	})
 	t.Cleanup(runtime.Shutdown)
-	workspaceManager := workspace.NewManager(database, t.TempDir())
+	workspaceManager := newWorkspaceTestManager(t, database, t.TempDir())
 	handler := New(Deps{
 		DB: database, Workspaces: workspaceManager,
 		Runtime: runtime, EnrichmentDisabled: true,

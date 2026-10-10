@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kwt/worktree"
 )
 
 // Event is the workspace domain's event-hub-neutral broadcast payload.
@@ -79,6 +80,7 @@ type workspaceDiffEventData struct {
 // the root server package while preserving the shared shutdown and event
 // ordering owned by the composition root.
 type Deps struct {
+	RepositoryWorktrees *worktree.Coordinator
 	ExecutionWorker     config.ExecutionWorker
 	DB                  *db.DB
 	Resolver            *httpapi.RepositoryResolver
@@ -117,23 +119,24 @@ type Deps struct {
 // Handler implements both the workspace and local-project services so their
 // Git-heavy tests and process limits remain in one package and test binary.
 type Handler struct {
-	executionWorker config.ExecutionWorker
-	workerBroker    *devbox.BrokerClient
-	db              *db.DB
-	resolver        *httpapi.RepositoryResolver
-	syncer          *ghclient.Syncer
-	configMu        sync.RWMutex
-	config          ConfigSnapshot
-	workspaces      *workspace.Manager
-	runtime         *localruntime.Manager
-	clipboard       systemclipboard.Writer
-	pasteImages     *terminalpaste.Store
-	agentActivity   *agentactivity.Store
-	tmuxCmd         []string
-	now             func() time.Time
-	broadcast       func(Event) uint64
-	subscribe       func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
-	generation      func() uint64
+	repositoryWorktrees *worktree.Coordinator
+	executionWorker     config.ExecutionWorker
+	workerBroker        *devbox.BrokerClient
+	db                  *db.DB
+	resolver            *httpapi.RepositoryResolver
+	syncer              *ghclient.Syncer
+	configMu            sync.RWMutex
+	config              ConfigSnapshot
+	workspaces          *workspace.Manager
+	runtime             *localruntime.Manager
+	clipboard           systemclipboard.Writer
+	pasteImages         *terminalpaste.Store
+	agentActivity       *agentactivity.Store
+	tmuxCmd             []string
+	now                 func() time.Time
+	broadcast           func(Event) uint64
+	subscribe           func(context.Context, bool) (<-chan RecordedEvent, <-chan struct{})
+	generation          func() uint64
 
 	recomputeWorktreeLinks         func(context.Context)
 	refreshWorktreeStats           func(context.Context, string, string) error
@@ -206,6 +209,7 @@ func New(deps Deps) *Handler {
 	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	h := &Handler{
+		repositoryWorktrees:            deps.RepositoryWorktrees,
 		executionWorker:                deps.ExecutionWorker,
 		db:                             deps.DB,
 		resolver:                       deps.Resolver,
@@ -263,7 +267,7 @@ func New(deps Deps) *Handler {
 		}
 		h.workspacePRMonitor = workspace.NewPRMonitor(deps.DB, monitorOptions)
 		h.workspacePushedHeadObserver = workspace.NewPushedHeadObserver(
-			deps.DB, monitorOptions,
+			deps.DB, deps.Workspaces, monitorOptions,
 		)
 	}
 	h.workspaceDiffCache = newWorkspaceDiffCache(lifecycleCtx, workspaceDiffCacheDeps{

@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
 
@@ -164,9 +165,6 @@ func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) { //noli
 		Script: "/bin/true", Dir: t.TempDir(), Env: os.Environ(),
 	})
 	require.ErrorIs(err, procutil.ErrProcessLimitReached)
-
-	_, err = managedWorktreeIsDirty(context.Background(), t.TempDir())
-	require.ErrorIs(err, procutil.ErrProcessLimitReached)
 }
 
 func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
@@ -212,7 +210,10 @@ func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
 		HeadRepoCloneURL: origin, ExpectedHeadSHA: headSHA,
 	}
 	resolver := stubLaunchSpecResolver{mergeRequestFacts: &facts}
+	coordinator, err := workspace.NewRepositoryCoordinator("")
+	require.NoError(err)
 	handler := New(Deps{
+		RepositoryWorktrees:        coordinator,
 		DB:                         database,
 		Resolver:                   httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
 		MergeRequestWorktreeSource: resolver,

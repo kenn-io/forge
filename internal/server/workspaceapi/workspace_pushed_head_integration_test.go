@@ -91,7 +91,7 @@ func newPushedHeadIntegrationFixture(
 	)
 	t.Cleanup(syncer.Stop)
 	fixture := &pushedHeadIntegrationFixture{database: database}
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	fixture.handler = New(Deps{
 		DB: database, Workspaces: manager, Syncer: syncer,
 		Broadcast: func(event Event) uint64 {

@@ -59,9 +59,6 @@ type updateWorkspaceTargetInput struct {
 }
 
 func (s *Handler) updateWorkspaceTarget(ctx context.Context, in *updateWorkspaceTargetInput) (*struct{}, error) {
-	if !in.Body.Repository.Valid() {
-		return nil, httpapi.Validation("body.repository", "verified repository identity is required")
-	}
 	ws, err := s.db.GetWorkspace(ctx, in.ID)
 	if err != nil {
 		return nil, httpapi.Internal("get workspace failed")
@@ -69,33 +66,50 @@ func (s *Handler) updateWorkspaceTarget(ctx context.Context, in *updateWorkspace
 	if ws == nil {
 		return nil, httpapi.NotFound(httpapi.CodeWorkspaceNotFound, "workspace not found", nil)
 	}
-	repo, err := s.db.GetRepositoryByProviderID(ctx, in.Body.Repository)
+	repo, metadata, err := s.ResolveWorkspaceTargetService(ctx, in.Body)
 	if err != nil {
-		return nil, httpapi.Internal("get target repository failed")
+		return nil, err
+	}
+	return nil, s.saveWorkspaceTarget(ctx, in.ID, repo.ID, in.Body, metadata.URL)
+}
+
+// ResolveWorkspaceTargetService reads provider-owned identity and display metadata.
+// Controllers use it before sending a target to a worker with no provider replicas.
+func (s *Handler) ResolveWorkspaceTargetService(ctx context.Context, selection WorkspaceTargetSelection) (db.Repo, WorkspaceTargetMetadata, error) {
+	if !selection.Repository.Valid() {
+		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Validation("body.repository", "verified repository identity is required")
+	}
+	repo, err := s.db.GetRepositoryByProviderID(ctx, selection.Repository)
+	if err != nil {
+		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.Internal("get target repository failed")
 	}
 	if repo == nil {
-		return nil, httpapi.NotFound(httpapi.CodeRepoNotFound, "target repository not found", nil)
-	}
-	kind := db.WorkspaceItemTypeIssue
-	if in.Body.Type == "pr" {
-		kind = db.WorkspaceItemTypePullRequest
+		return db.Repo{}, WorkspaceTargetMetadata{}, httpapi.NotFound(httpapi.CodeRepoNotFound, "target repository not found", nil)
 	}
 	var metadata WorkspaceTargetMetadata
-	if !in.Body.Hidden {
-		metadata, err = s.readWorkspaceTarget(ctx, repo.Repository, kind, in.Body.Number, false)
-		if err != nil {
-			return nil, err
+	if !selection.Hidden {
+		kind := db.WorkspaceItemTypeIssue
+		if selection.Type == "pr" {
+			kind = db.WorkspaceItemTypePullRequest
 		}
+		metadata, err = s.readWorkspaceTarget(ctx, repo.Repository, kind, selection.Number, false)
 	}
-	_, err = s.db.AddWorkspaceTarget(ctx, db.WorkspaceTarget{
-		WorkspaceID: in.ID, RepoID: repo.Repository.ID, ItemType: kind, ItemNumber: in.Body.Number,
-		URL: metadata.URL, Hidden: in.Body.Hidden,
+	return repo.Repository, metadata, err
+}
+
+func (s *Handler) saveWorkspaceTarget(ctx context.Context, id string, repoID int64, selection WorkspaceTargetSelection, targetURL string) error {
+	kind := db.WorkspaceItemTypeIssue
+	if selection.Type == "pr" {
+		kind = db.WorkspaceItemTypePullRequest
+	}
+	_, err := s.db.AddWorkspaceTarget(ctx, db.WorkspaceTarget{
+		WorkspaceID: id, RepoID: repoID, ItemType: kind, ItemNumber: selection.Number, URL: targetURL, Hidden: selection.Hidden,
 	})
 	if err != nil {
-		return nil, httpapi.Internal("save workspace target failed")
+		return httpapi.Internal("save workspace target failed")
 	}
-	s.broadcastWorkspaceStatus(in.ID)
-	return nil, nil
+	s.broadcastWorkspaceStatus(id)
+	return nil
 }
 
 func (s *Handler) AddWorkspaceTargetService(ctx context.Context, id string, in WorkspaceTargetInput) (WorkspaceTarget, error) {

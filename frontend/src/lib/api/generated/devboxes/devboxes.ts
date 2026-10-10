@@ -55,10 +55,12 @@ import type {
   TerminalPasteImageOutputBody,
   UpdateDevboxWorkspaceTargetPathParameters,
   UpdateDevboxWorkspaceViewStatePathParameters,
+  UpdateWorkerWorkspaceTargetPathParameters,
   WatchDevboxDiffParams,
   WatchDevboxDiffPathParameters,
   WorkerCreateRequest,
   WorkerIdentity,
+  WorkerWorkspaceTargetRequest,
   WorkspaceAgentHandoffResponse,
   WorkspaceDiffWatchResponse,
   WorkspaceLaunchSpec,
@@ -709,7 +711,7 @@ export const getListDevboxWorkspaceTargetsUrl = ({ connectionId, id }: ListDevbo
 };
 
 /**
- * @summary Forward an execution operation to its owning devbox
+ * @summary Read worker targets with controller metadata
  */
 export const listDevboxWorkspaceTargets = async (
   { connectionId, id }: ListDevboxWorkspaceTargetsPathParameters,
@@ -726,7 +728,7 @@ export const getUpdateDevboxWorkspaceTargetUrl = ({ connectionId, id }: UpdateDe
 };
 
 /**
- * @summary Forward an execution operation to its owning devbox
+ * @summary Update a target on its owning devbox
  */
 export const updateDevboxWorkspaceTarget = async (
   { connectionId, id }: UpdateDevboxWorkspaceTargetPathParameters,
@@ -869,5 +871,31 @@ export const refreshWorkerContext = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(workspaceLaunchSpec),
+  });
+};
+
+export const getUpdateWorkerWorkspaceTargetUrl = ({ id }: UpdateWorkerWorkspaceTargetPathParameters) => {
+  return `/worker/workspaces/${encodeURIComponent(String(id))}/targets`;
+};
+
+/**
+ * @summary Save a workspace target verified by the controller
+ */
+export const updateWorkerWorkspaceTarget = async (
+  { id }: UpdateWorkerWorkspaceTargetPathParameters,
+  workerWorkspaceTargetRequest: NonReadonly<WorkerWorkspaceTargetRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<void>(getUpdateWorkerWorkspaceTargetUrl({ id }), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(workerWorkspaceTargetRequest),
   });
 };

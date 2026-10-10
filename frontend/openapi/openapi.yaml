@@ -10602,6 +10602,39 @@ components:
         - role
         - protocol
       type: object
+    WorkerWorkspaceTargetRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorkerWorkspaceTargetRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        hidden:
+          type: boolean
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        repository:
+          $ref: "#/components/schemas/RepoRefResponse"
+        type:
+          enum:
+            - pr
+            - issue
+          type: string
+        url:
+          description: Canonical target URL verified by the controller
+          type: string
+      required:
+        - repository
+        - type
+        - number
+        - hidden
+        - url
+      type: object
     WorkflowApprovalResponse:
       additionalProperties: false
       properties:
@@ -13662,12 +13695,12 @@ paths:
       operationId: list-devbox-workspace-targets
       parameters:
         - in: path
-          name: id
+          name: connection_id
           required: true
           schema:
             type: string
         - in: path
-          name: connection_id
+          name: id
           required: true
           schema:
             type: string
@@ -13684,19 +13717,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Forward an execution operation to its owning devbox
+      summary: Read worker targets with controller metadata
       tags:
         - Devboxes
     put:
       operationId: update-devbox-workspace-target
       parameters:
         - in: path
-          name: id
+          name: connection_id
           required: true
           schema:
             type: string
         - in: path
-          name: connection_id
+          name: id
           required: true
           schema:
             type: string
@@ -13715,7 +13748,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
-      summary: Forward an execution operation to its owning devbox
+      summary: Update a target on its owning devbox
       tags:
         - Devboxes
   /devboxes/{connection_id}/workspaces/{id}/view-state:
@@ -16723,6 +16756,8 @@ paths:
         description: JSON payload forwarded to the owning host.
         required: true
       responses:
+        "204":
+          description: No Content
         default:
           content:
             application/json:
@@ -26866,6 +26901,33 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh controller-supplied workspace context
+      tags:
+        - Devboxes
+  /worker/workspaces/{id}/targets:
+    put:
+      operationId: update-worker-workspace-target
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkerWorkspaceTargetRequest"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Save a workspace target verified by the controller
       tags:
         - Devboxes
   /workspaces:

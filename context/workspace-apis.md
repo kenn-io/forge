@@ -309,6 +309,8 @@ embedder protocol for arbitrary host state.
   (`internal/server/workspaceapi/targets.go::Handler.AddWorkspaceTargetService`).
 - Target lists combine explicit links with implicit owner/branch links; UI removal dismisses either until a deliberate revisit, without removing ownership or branch associations. Unavailable metadata retains undismissed links
   (`internal/server/workspaceapi/targets.go::Handler.ListWorkspaceTargetsService`).
+- Devbox target links and dismissals belong to the worker; provider identity and display metadata come from the controller. Tracking needs no Git admission or worker provider replicas
+  (`internal/server/devbox_targets.go::Server.updateDevboxWorkspaceTarget`).
 
 
 - `item_type`: whether the workspace belongs to a `pull_request`, provider

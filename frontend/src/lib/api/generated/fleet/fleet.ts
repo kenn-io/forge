@@ -169,7 +169,6 @@ import type {
   StreamFederationProviderEventsHeaders,
   StreamFederationProviderEventsParams,
   UpdateFleetWorkspaceTargetBody,
-  UpdateFleetWorkspaceTargetDefaultOne,
   UpdateFleetWorkspaceTargetPathParameters,
   UpdateFleetWorkspaceViewStateBody,
   UpdateFleetWorkspaceViewStatePathParameters,
@@ -2015,14 +2014,14 @@ export const updateFleetWorkspaceTarget = async (
   { hostKey, id }: UpdateFleetWorkspaceTargetPathParameters,
   updateFleetWorkspaceTargetBody: UpdateFleetWorkspaceTargetBody,
   options?: Parameters<typeof orvalFetch>[1],
-): Promise<UpdateFleetWorkspaceTargetDefaultOne> => {
+): Promise<void> => {
   const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
     if (!h) return {};
     if (h instanceof Headers) return Object.fromEntries(h.entries());
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-  return orvalFetch<UpdateFleetWorkspaceTargetDefaultOne>(getUpdateFleetWorkspaceTargetUrl({ hostKey, id }), {
+  return orvalFetch<void>(getUpdateFleetWorkspaceTargetUrl({ hostKey, id }), {
     ...options,
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },

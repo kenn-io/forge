@@ -12,19 +12,31 @@ import (
 
 func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 	t.Parallel()
-	for _, status := range []int{http.StatusInternalServerError, http.StatusUnauthorized} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"server failure", http.StatusInternalServerError, `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`},
+		{"unauthorized", http.StatusUnauthorized, `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`},
+		{"unparseable body", http.StatusInternalServerError, "invalid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 			server, configPath, _ := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(status)
-				_, err := io.WriteString(w, `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`)
+				w.WriteHeader(tc.status)
+				_, err := io.WriteString(w, tc.body)
 				assert.NoError(t, err)
 			}))
 			for _, event := range []string{"SessionEnd", "SessionStart", "Stop"} {
 				err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"`+event+`","source":"startup","reason":"prompt_input_exit"}`), io.Discard)
-				if event == "SessionEnd" && status >= http.StatusInternalServerError {
+				if event == "SessionEnd" && tc.status >= http.StatusInternalServerError {
 					require.ErrorContains(err, "500")
-					require.ErrorContains(err, `remove D:\activity\report.json: access denied`)
+					if tc.body == "invalid" {
+						require.EqualError(err, "handle SessionEnd agent hook: daemon rejected agent hook: 500 Internal Server Error")
+					} else {
+						require.ErrorContains(err, `remove D:\activity\report.json: access denied`)
+					}
 				} else {
 					require.NoError(err)
 				}
@@ -33,15 +45,4 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 			require.NoError(receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard))
 		})
 	}
-}
-
-func TestAgentHookSessionEndBoundsDaemonDetail(t *testing.T) {
-	t.Parallel()
-	_, configPath, _ := agentHookDaemonFixture(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, err := io.WriteString(w, "invalid")
-		assert.NoError(t, err)
-	}))
-	err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard)
-	require.EqualError(t, err, "handle SessionEnd agent hook: daemon rejected agent hook: 500 Internal Server Error")
 }

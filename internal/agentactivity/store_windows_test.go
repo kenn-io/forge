@@ -21,11 +21,15 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 			store := NewStore(t.TempDir())
 			workspace := t.TempDir()
 			legacy := store.legacyReportPath("claude", "chat")
-			data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: "runtime", CWD: workspace, State: StateWorking, UpdatedAt: time.Now().UTC()})
+			legacyRuntime := "runtime"
+			if current == "legacy-open" {
+				legacyRuntime = "other"
+			}
+			data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: legacyRuntime, CWD: workspace, State: StateWorking, UpdatedAt: time.Now().UTC()})
 			require.NoError(err)
 			require.NoError(os.WriteFile(legacy, data, 0o600))
 			path := store.reportPath("claude", "chat", "runtime")
-			if current != "missing" && current != "legacy-open" {
+			if current != "missing" {
 				require.NoError(store.Record("claude", "chat", "runtime", workspace, StateDone))
 			}
 			require.NotEmpty(store.LiveReportsForWorkspace(workspace, []string{"runtime"}))
@@ -42,6 +46,9 @@ func TestStoreRemoveReturnsLockedReportErrors(t *testing.T) {
 			err = store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime")
 			require.Error(err)
 			assert.Contains(err.Error(), legacy)
+			if current == "legacy-open" {
+				assert.Contains(err.Error(), "read activity report "+legacy+":")
+			}
 			assert.FileExists(legacy)
 			if current == "locked" {
 				assert.Contains(err.Error(), path)
@@ -74,7 +81,7 @@ func TestStoreRuntimeCleanupSucceedsOnLaterPass(t *testing.T) {
 			}
 
 			assert.Len(t, store.LiveReportsForWorkspace(workspace, []string{"runtime"}), 1)
-			require.ErrorContains(t, cleanup(), path)
+			require.ErrorContains(t, cleanup(), "read activity report "+path+":")
 			require.ErrorContains(t, cleanup(), path)
 			assert.FileExists(t, path)
 			unlock()
@@ -82,33 +89,6 @@ func TestStoreRuntimeCleanupSucceedsOnLaterPass(t *testing.T) {
 			assert.NoFileExists(t, path)
 		})
 	}
-}
-
-func TestStoreRemoveRuntimeSessionLabelsUnreadableOtherReport(t *testing.T) {
-	t.Parallel()
-	store := NewStore(t.TempDir())
-	workspace := t.TempDir()
-	require.NoError(t, store.Record("claude", "chat", "other", workspace, StateWorking))
-	path := store.reportPath("claude", "chat", "other")
-	lockReportForTest(t, path, 0)
-	require.ErrorContains(t, store.RemoveRuntimeSession("runtime"), "read activity report "+path+":")
-}
-
-func TestStoreSessionEndRemovesOwnReportWithUnreadableOtherLegacyReport(t *testing.T) {
-	t.Parallel()
-	store := NewStore(t.TempDir())
-	workspace := t.TempDir()
-	legacy := store.legacyReportPath("claude", "chat")
-	data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: "other", CWD: workspace, State: StateWorking, UpdatedAt: time.Now().UTC()})
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(legacy, data, 0o600))
-	require.NoError(t, store.Record("claude", "chat", "runtime", workspace, StateWorking))
-	lockReportForTest(t, legacy, 0)
-
-	err = store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime")
-	require.ErrorContains(t, err, "read activity report "+legacy+":")
-	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
-	assert.FileExists(t, legacy)
 }
 
 func lockReportForTest(t *testing.T, path string, share uint32) func() {

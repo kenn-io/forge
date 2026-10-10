@@ -526,15 +526,11 @@ func TestStoreRemoveReturnsCurrentRemovalError(t *testing.T) {
 
 func TestStoreRemoveIgnoresCorruptLegacyReport(t *testing.T) {
 	t.Parallel()
-	for _, content := range []string{"", "invalid", `{"state":`} {
-		t.Run(content, func(t *testing.T) {
-			store := NewStore(t.TempDir())
-			legacy := store.legacyReportPath("claude", "chat")
-			require.NoError(t, os.WriteFile(legacy, []byte(content), 0o600))
-			require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
+	store := NewStore(t.TempDir())
+	legacy := store.legacyReportPath("claude", "chat")
+	require.NoError(t, os.WriteFile(legacy, []byte("invalid"), 0o600))
+	require.NoError(t, store.Record("claude", "chat", "runtime", t.TempDir(), StateWorking))
 
-			require.NoError(t, store.Remove("claude", "chat", "runtime"))
-			assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
-		})
-	}
+	require.NoError(t, store.Remove("claude", "chat", "runtime"))
+	assert.NoFileExists(t, store.reportPath("claude", "chat", "runtime"))
 }

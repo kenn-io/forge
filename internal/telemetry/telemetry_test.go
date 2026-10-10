@@ -130,18 +130,15 @@ func TestDisabledReporterIsNoOp(t *testing.T) {
 	assert := assert.New(t)
 	wasDisabled := posthog.ProcessDisabled()
 
-	reporter := DisabledReporter()
-	assert.False(reporter.Enabled())
-	assert.NoError(reporter.Capture("app_opened", nil))
-	assert.NoError(reporter.Close())
-	assert.Equal(wasDisabled, posthog.ProcessDisabled())
-}
-
-func TestNilReporterReportIsDisabled(t *testing.T) {
-	var reporter *Reporter
-	status, err := reporter.Report(t.Context(), "session_ended", nil)
-	require.NoError(t, err)
-	assert.Equal(t, posthog.StatusDisabled, status)
+	for _, reporter := range []*Reporter{nil, DisabledReporter()} {
+		assert.False(reporter.Enabled())
+		require.NoError(t, reporter.Capture("app_opened", nil))
+		status, err := reporter.Report(t.Context(), "session_ended", nil)
+		require.NoError(t, err)
+		assert.Equal(posthog.StatusDisabled, status)
+		require.NoError(t, reporter.Close())
+		assert.Equal(wasDisabled, posthog.ProcessDisabled())
+	}
 }
 
 func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {

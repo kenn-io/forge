@@ -478,6 +478,29 @@ describe("MobileWorkspaceTerminal", () => {
     expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(true);
   });
 
+  it("opens an acknowledged chat after switching workspaces while the runtime read is held", async () => {
+    const view = render(MobileWorkspaceTerminal, { props });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Terminal options" }).hasAttribute("disabled")).toBe(false),
+    );
+    const held = Promise.withResolvers<typeof runtime>();
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, id: "ws-b" });
+    mocks.runtimeClient.getWorkspaceRuntime.mockReturnValue(held.promise);
+    const session: RuntimeSession = {
+      key: "chat-b",
+      workspace_id: "ws-b",
+      target_key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    };
+    quickActionLaunches.set("ws-b", { targetKey: "chat", session });
+    await view.rerender({ ...props, workspaceId: "ws-b" });
+    expect(await screen.findByRole("button", { name: "Chat options" })).toBeTruthy();
+  });
+
   it("rechecks runtime for queued intent after returning to the same workspace", async () => {
     const view = render(MobileWorkspaceTerminal, { props });
     await waitFor(() =>

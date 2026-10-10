@@ -728,7 +728,9 @@
   $effect(() => {
     const session = quickActionLaunch?.session;
     const current = runtime ?? { launch_targets: [], sessions: [] };
-    if (!session || workspace?.status !== "ready") return;
+    if (
+      !session || workspace?.id !== workspaceId || workspace.fleet_host_key !== hostKey || workspace.status !== "ready"
+    ) return;
     untrack(() => {
       selectedSessionKey = session.key;
       provisionalBaseSelection = false;

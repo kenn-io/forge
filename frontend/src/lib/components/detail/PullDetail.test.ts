@@ -3575,9 +3575,11 @@ describe("PullDetail inline workspace handoff", () => {
     const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
       hideWorkspaceAction: false,
     });
+    settings.setLaunchTargets([{ key: "chat", label: "Chat agent", kind: "acp", available: true }]);
     settings.setQuickActions([rebase]);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    expect(screen.getByRole("menuitem", { name: /Rebase/ }).hasAttribute("disabled")).toBe(false);
     await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
 
     await waitFor(() => expect(posts).toHaveLength(2));

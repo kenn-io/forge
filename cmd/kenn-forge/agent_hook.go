@@ -25,7 +25,7 @@ const (
 	agentHookMarker = "--source " + agentHookSource
 )
 
-var errAgentHookResponse = errors.New("daemon rejected agent hook")
+var errAgentHookResponse = errors.New("daemon failed to record agent hook")
 
 func runAgentHookCLI(args []string, stdin io.Reader, stdout io.Writer) error {
 	cmd := newAgentHookCommand(stdin, stdout)

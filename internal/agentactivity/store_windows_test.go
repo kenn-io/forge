@@ -12,16 +12,20 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const shareReadWrite = windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE
+
 func TestStoreRemoveWithOpenReports(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		share   uint32
-		invalid bool
+		name           string
+		share          uint32
+		invalidContent bool
+		otherLive      bool
+		wantCleared    bool
 	}{
-		{"writable", windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, false},
-		{"write only", windows.FILE_SHARE_WRITE, false},
-		{"invalid", windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, true},
-		{"unwritable", 0, false},
+		{name: "writable", share: shareReadWrite, otherLive: true, wantCleared: true},
+		{name: "write only", share: windows.FILE_SHARE_WRITE, wantCleared: true},
+		{name: "invalid", share: shareReadWrite, invalidContent: true, wantCleared: true},
+		{name: "unwritable", share: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -29,126 +33,168 @@ func TestStoreRemoveWithOpenReports(t *testing.T) {
 			require := require.New(t)
 			store := NewStore(t.TempDir())
 			cwd := t.TempDir()
+			live := []string{"runtime"}
 			require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
-			require.Len(store.LiveReportsForWorkspace(cwd, []string{"runtime"}), 1)
+			require.Len(store.LiveReportsForWorkspace(cwd, live), 1)
 			survivors := []Report{}
-			if tc.name == "writable" {
+			if tc.otherLive {
 				require.NoError(store.Record("claude", "live", "runtime", cwd, StateWorking))
-				reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+				reports := store.LiveReportsForWorkspace(cwd, live)
 				require.Len(reports, 2)
 				survivors = reports[:1]
 				require.Equal("live", survivors[0].SessionID)
 			}
 			path := store.reportPath("claude", "chat", "runtime")
-			if tc.invalid {
+			if tc.invalidContent {
 				require.NoError(os.WriteFile(path, []byte("invalid"), 0o600))
 			}
 			release := lockReportForTest(t, path, tc.share)
-			writable := tc.share&windows.FILE_SHARE_WRITE != 0
+
 			err := store.Remove("claude", "chat", "runtime")
-			if writable {
-				require.NoError(err)
-				assert.Equal(survivors, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-				store = NewStore(store.root)
-				assert.Equal(survivors, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-			} else {
-				require.ErrorContains(err, path)
-				assert.Len(store.LiveReportsForWorkspace(cwd, []string{"runtime"}), 1)
-			}
+
 			assert.FileExists(path)
-			release()
-			reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
-			if writable {
-				assert.Equal(survivors, reports)
-				assert.NoFileExists(path)
-			} else {
+			if !tc.wantCleared {
+				require.ErrorContains(err, path)
+				assert.Len(store.LiveReportsForWorkspace(cwd, live), 1)
+				release()
+				reports := store.LiveReportsForWorkspace(cwd, live)
 				require.Len(reports, 1)
 				assert.Equal(StateDone, reports[0].State)
+				return
 			}
+			require.NoError(err)
+			assert.Equal(survivors, store.LiveReportsForWorkspace(cwd, live))
+			restarted := NewStore(store.root)
+			assert.Equal(survivors, restarted.LiveReportsForWorkspace(cwd, live))
+			release()
+			assert.Equal(survivors, restarted.LiveReportsForWorkspace(cwd, live))
+			assert.NoFileExists(path)
 		})
 	}
 }
 
 func TestStoreRemoveWithLockedLegacyReports(t *testing.T) {
+	const (
+		currentMissing   = "missing"
+		currentRemovable = "removable"
+		currentLocked    = "locked"
+	)
 	for _, tc := range []struct {
-		name  string
-		share uint32
+		name                   string
+		share                  uint32
+		current                string
+		wantLegacyErr          bool
+		wantCurrentErr         bool
+		wantVisible            State
+		wantVisibleAfterUnlock State
+		wantLegacyAfterUnlock  bool
 	}{
-		{"writable", windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE},
-		{"unwritable", windows.FILE_SHARE_READ},
-		{"unreadable", windows.FILE_SHARE_WRITE},
+		{name: "writable/missing", share: shareReadWrite, current: currentMissing},
+		{name: "writable/removable", share: shareReadWrite, current: currentRemovable},
+		{
+			name: "unwritable/missing", share: windows.FILE_SHARE_READ, current: currentMissing,
+			wantLegacyErr: true, wantVisible: StateWorking, wantVisibleAfterUnlock: StateWorking,
+			wantLegacyAfterUnlock: true,
+		},
+		{
+			name: "unwritable/removable", share: windows.FILE_SHARE_READ, current: currentRemovable,
+			wantLegacyErr: true, wantVisible: StateWorking, wantVisibleAfterUnlock: StateWorking,
+			wantLegacyAfterUnlock: true,
+		},
+		{
+			name: "unwritable/locked", share: windows.FILE_SHARE_READ, current: currentLocked,
+			wantLegacyErr: true, wantCurrentErr: true, wantVisible: StateDone,
+			wantVisibleAfterUnlock: StateDone, wantLegacyAfterUnlock: true,
+		},
+		{
+			name: "unreadable/missing", share: windows.FILE_SHARE_WRITE, current: currentMissing,
+			wantLegacyErr: true, wantVisibleAfterUnlock: StateWorking, wantLegacyAfterUnlock: true,
+		},
+		{
+			name: "unreadable/removable", share: windows.FILE_SHARE_WRITE, current: currentRemovable,
+			wantLegacyErr: true, wantVisibleAfterUnlock: StateWorking, wantLegacyAfterUnlock: true,
+		},
 	} {
-		currents := []string{"missing", "removable"}
-		switch tc.name {
-		case "writable":
-			currents = append(currents, "repeated", "runtime-b", "relocked")
-		case "unwritable":
-			currents = append(currents, "locked")
-		}
-		for _, current := range currents {
-			t.Run(tc.name+"/"+current, func(t *testing.T) {
-				t.Parallel()
-				assert := assert.New(t)
-				require := require.New(t)
-				store := NewStore(t.TempDir())
-				cwd := t.TempDir()
-				legacy := store.legacyReportPath("claude", "chat")
-				data, err := json.Marshal(Report{Agent: "claude", SessionID: "chat", RuntimeSessionKey: "runtime", CWD: cwd, State: StateWorking, UpdatedAt: time.Now().UTC()})
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			store := NewStore(t.TempDir())
+			cwd := t.TempDir()
+			legacy := writeLegacyReportForTest(t, store, cwd)
+			path := store.reportPath("claude", "chat", "runtime")
+			if tc.current != currentMissing {
+				require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
+			}
+			require.NotEmpty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+			releaseLegacy := lockReportForTest(t, legacy, tc.share)
+			releaseCurrent := func() {}
+			if tc.current == currentLocked {
+				releaseCurrent = lockReportForTest(t, path, tc.share)
+			}
+
+			err := endChatSessionForTest(store, "runtime")
+
+			if tc.wantLegacyErr {
+				require.ErrorContains(err, legacy)
+			} else {
 				require.NoError(err)
-				require.NoError(os.WriteFile(legacy, data, 0o600))
-				path := store.reportPath("claude", "chat", "runtime")
-				if current == "removable" || current == "locked" {
-					require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
-				}
-				require.NotEmpty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-				releaseLegacy := lockReportForTest(t, legacy, tc.share)
-				releaseCurrent := func() {}
-				if current == "locked" {
-					releaseCurrent = lockReportForTest(t, path, tc.share)
-				}
-				err = store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime")
-				if tc.name == "writable" {
-					require.NoError(err)
-				} else {
-					require.ErrorContains(err, legacy)
-					if current == "locked" && tc.name == "unwritable" {
-						require.ErrorContains(err, path)
-					}
-				}
-				if current == "removable" {
-					assert.Nil(store.cacheFiles)
-					assert.Nil(store.cacheReports)
-				}
+			}
+			if tc.wantCurrentErr {
+				require.ErrorContains(err, path)
+			} else if err != nil {
+				assert.NotContains(err.Error(), path)
+			}
+			assert.FileExists(legacy)
+			if tc.current == currentLocked {
+				assert.FileExists(path)
+			} else {
+				assert.NoFileExists(path)
+			}
+			// While a lock blocks reads, visibility depends on whether the scan cache still holds the report.
+			if tc.share&windows.FILE_SHARE_READ != 0 {
+				assert.Equal(tc.wantVisible, visibleStateForTest(t, store, cwd))
+			}
+			releaseCurrent()
+			releaseLegacy()
+			assert.Equal(tc.wantVisibleAfterUnlock, visibleStateForTest(t, store, cwd))
+			if tc.wantLegacyAfterUnlock {
 				assert.FileExists(legacy)
-				if current != "locked" {
-					assert.NoFileExists(path)
-				}
-				if tc.name == "writable" {
-					assert.Empty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-					switch current {
-					case "repeated":
-						require.NoError(store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime"))
-					case "runtime-b":
-						require.NoError(store.Record("claude", "chat", "runtime-b", cwd, StateDone))
-						require.NoError(store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime-b"))
-						assert.Empty(store.LiveReportsForWorkspace(cwd, []string{"runtime", "runtime-b"}))
-					case "relocked":
-						releaseLegacy()
-						releaseLegacy = lockReportForTest(t, legacy, windows.FILE_SHARE_READ)
-						require.NoError(store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime"))
-					}
-				}
-				releaseCurrent()
-				releaseLegacy()
-				if tc.name == "writable" {
-					assert.Empty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-					assert.NoFileExists(legacy)
-				} else {
-					assert.NotEmpty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
-				}
-			})
-		}
+			} else {
+				assert.NoFileExists(legacy)
+			}
+		})
 	}
+}
+
+func TestStoreSessionEndAfterLegacyReportEmptied(t *testing.T) {
+	t.Run("repeated", func(t *testing.T) {
+		t.Parallel()
+		store, cwd, legacy, release := emptyLockedLegacyReportForTest(t)
+		require.NoError(t, endChatSessionForTest(store, "runtime"))
+		release()
+		assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+		assert.NoFileExists(t, legacy)
+	})
+	t.Run("other runtime", func(t *testing.T) {
+		t.Parallel()
+		store, cwd, legacy, release := emptyLockedLegacyReportForTest(t)
+		require.NoError(t, store.Record("claude", "chat", "runtime-b", cwd, StateDone))
+		require.NoError(t, endChatSessionForTest(store, "runtime-b"))
+		assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime", "runtime-b"}))
+		release()
+		assert.NoFileExists(t, legacy)
+	})
+	t.Run("relocked without write sharing", func(t *testing.T) {
+		t.Parallel()
+		store, cwd, legacy, release := emptyLockedLegacyReportForTest(t)
+		release()
+		release = lockReportForTest(t, legacy, windows.FILE_SHARE_READ)
+		require.NoError(t, endChatSessionForTest(store, "runtime"))
+		release()
+		assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+		assert.NoFileExists(t, legacy)
+	})
 }
 
 func TestReportLockError(t *testing.T) {
@@ -167,6 +213,51 @@ func TestReportLockError(t *testing.T) {
 			assert.Equal(t, tc.lock, isReportLockError(fmt.Errorf("remove report: %w", tc.err)))
 		})
 	}
+}
+
+// emptyLockedLegacyReportForTest ends a session whose legacy report is held open without
+// delete sharing, leaving the report emptied but present and still locked.
+func emptyLockedLegacyReportForTest(t *testing.T) (*Store, string, string, func()) {
+	t.Helper()
+	store := NewStore(t.TempDir())
+	cwd := t.TempDir()
+	legacy := writeLegacyReportForTest(t, store, cwd)
+	require.NotEmpty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	release := lockReportForTest(t, legacy, shareReadWrite)
+	require.NoError(t, endChatSessionForTest(store, "runtime"))
+	require.FileExists(t, legacy)
+	require.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	return store, cwd, legacy, release
+}
+
+// writeLegacyReportForTest saves a working report under the pre-terminal filename, dated
+// before any report the test records so newer reports win deterministically.
+func writeLegacyReportForTest(t *testing.T, store *Store, cwd string) string {
+	t.Helper()
+	legacy := store.legacyReportPath("claude", "chat")
+	data, err := json.Marshal(Report{
+		Agent: "claude", SessionID: "chat", RuntimeSessionKey: "runtime", CWD: cwd,
+		State: StateWorking, UpdatedAt: time.Now().UTC().Add(-time.Minute),
+	})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(legacy, data, 0o600))
+	return legacy
+}
+
+func endChatSessionForTest(store *Store, runtimeSessionKey string) error {
+	return store.HandleEvent(
+		"claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, runtimeSessionKey,
+	)
+}
+
+func visibleStateForTest(t *testing.T, store *Store, cwd string) State {
+	t.Helper()
+	reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+	require.LessOrEqual(t, len(reports), 1)
+	if len(reports) == 0 {
+		return ""
+	}
+	return reports[0].State
 }
 
 func lockReportForTest(t *testing.T, path string, share uint32) func() {

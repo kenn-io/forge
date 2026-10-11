@@ -275,7 +275,7 @@ func TestStoreRemovesZeroLengthReportsDuringScan(t *testing.T) {
 	require.NoError(os.WriteFile(path, nil, 0o600))
 	assert.Equal(reports, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
 	assert.NoFileExists(path)
-	assert.Same(cached, &store.cacheReports[0])
+	assert.Same(cached, &store.cacheReports[0], "an empty report must not invalidate the cached live reports")
 	require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
 	require.Len(store.LiveReportsForWorkspace(cwd, []string{"runtime"}), 2)
 	require.NoError(os.Truncate(path, 0))

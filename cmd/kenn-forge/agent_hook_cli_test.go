@@ -242,35 +242,57 @@ func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	configPath := archiveCLITestConfig(t, server.URL, "", "test-token")
+	receive := func(event string) error {
+		input := `{"session_id":"chat","hook_event_name":"` + event +
+			`","source":"startup","reason":"prompt_input_exit"}`
+		return receiveAgentHook(
+			t.Context(), "claude", configPath, agentHookSource, strings.NewReader(input), io.Discard,
+		)
+	}
 	for _, tc := range []struct {
-		name   string
-		status int
-		body   string
-		events []string
+		name    string
+		status  int
+		body    string
+		wantErr []string
 	}{
-		{"server failure", http.StatusInternalServerError, `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`, []string{"SessionEnd", "SessionStart"}},
-		{"unavailable", http.StatusServiceUnavailable, `{"detail":"daemon restarting"}`, []string{"SessionEnd"}},
-		{"unparseable body", http.StatusInternalServerError, "invalid", []string{"SessionEnd"}},
+		{
+			name:   "server failure",
+			status: http.StatusInternalServerError,
+			body:   `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`,
+			wantErr: []string{
+				"500 Internal Server Error",
+				`remove D:\activity\report.json: access denied`,
+			},
+		},
+		{
+			name:   "unavailable",
+			status: http.StatusServiceUnavailable,
+			body:   `{"detail":"daemon restarting"}`,
+		},
+		{
+			name:    "unparseable body",
+			status:  http.StatusInternalServerError,
+			body:    "invalid",
+			wantErr: []string{"500 Internal Server Error"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 			mu.Lock()
 			status, body = tc.status, tc.body
 			mu.Unlock()
-			for _, event := range tc.events {
-				err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"`+event+`","source":"startup","reason":"prompt_input_exit"}`), io.Discard)
-				if event == "SessionEnd" && tc.status == http.StatusInternalServerError {
-					require.ErrorIs(err, errAgentHookResponse)
-					require.ErrorContains(err, "500")
-					if tc.body != "invalid" {
-						require.ErrorContains(err, `remove D:\activity\report.json: access denied`)
-					}
-				} else {
-					require.NoError(err)
+			err := receive("SessionEnd")
+			if tc.wantErr == nil {
+				require.NoError(err)
+			} else {
+				require.ErrorIs(err, errAgentHookResponse)
+				for _, want := range tc.wantErr {
+					require.ErrorContains(err, want)
 				}
 			}
+			require.NoError(receive("SessionStart"), "only SessionEnd reports daemon failures")
 		})
 	}
 	server.Close()
-	require.NoError(t, receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard))
+	require.NoError(t, receive("SessionEnd"), "an unreachable daemon must not fail the hook")
 }

@@ -29,7 +29,10 @@ const (
 
 const RuntimeSessionKeyEnv = "KENN_FORGE_RUNTIME_SESSION_KEY"
 
-var errInvalidReport = errors.New("invalid report")
+var (
+	errInvalidReport = errors.New("invalid report")
+	errEmptyReport   = errors.New("empty report")
+)
 
 type Report struct {
 	Agent             string    `json:"agent"`
@@ -189,10 +192,14 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	legacy := s.legacyReportPath(agent, sessionID)
 	paths := []string{s.reportPath(agent, sessionID, runtimeSessionKey)}
 	var errs []error
-	if report, err := s.readReport(legacy); errors.Is(err, io.EOF) || err == nil && report.RuntimeSessionKey == runtimeSessionKey {
+	legacyReport, legacyErr := s.readReport(legacy)
+	ownsLegacy := legacyErr == nil && legacyReport.RuntimeSessionKey == runtimeSessionKey
+	// An empty legacy report holds no activity, so any session may finish deleting it.
+	if ownsLegacy || errors.Is(legacyErr, errEmptyReport) {
 		paths = append(paths, legacy)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, errInvalidReport) {
-		errs = append(errs, err)
+	} else if legacyErr != nil && !errors.Is(legacyErr, os.ErrNotExist) &&
+		!errors.Is(legacyErr, errInvalidReport) {
+		errs = append(errs, legacyErr)
 	}
 	removed := false
 	for _, path := range paths {
@@ -540,6 +547,7 @@ func (s *Store) writeReport(report Report) error {
 }
 
 func (s *Store) readReport(path string) (Report, error) {
+	// Windows opens through os.Root with delete sharing, so this read does not block report cleanup.
 	file, err := os.OpenInRoot(s.root, filepath.Base(path))
 	if err != nil {
 		return Report{}, fmt.Errorf("read report %s: %w", path, err)
@@ -550,7 +558,7 @@ func (s *Store) readReport(path string) (Report, error) {
 		return Report{}, fmt.Errorf("read report %s: %w", path, err)
 	}
 	if len(data) == 0 {
-		return Report{}, io.EOF
+		return Report{}, fmt.Errorf("%w %s", errEmptyReport, path)
 	}
 	var report Report
 	if err := json.Unmarshal(data, &report); err != nil {

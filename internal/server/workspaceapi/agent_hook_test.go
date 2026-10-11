@@ -112,7 +112,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		"source":          "startup",
 	})
 	require.Equal(http.StatusOK, started.Code, started.Body.String())
-	var response struct {
+	type hookResponse struct {
 		HookOutput *struct {
 			HookSpecificOutput struct {
 				HookEventName     string `json:"hookEventName"`
@@ -120,6 +120,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 			} `json:"hookSpecificOutput"`
 		} `json:"hook_output"`
 	}
+	var response hookResponse
 	require.NoError(json.NewDecoder(started.Body).Decode(&response))
 	require.NotNil(response.HookOutput)
 	assert.Equal("SessionStart", response.HookOutput.HookSpecificOutput.HookEventName)
@@ -148,8 +149,12 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 			assert.Contains(*problem.Detail, ".json")
 		} else {
 			require.Equal(http.StatusOK, rec.Code, rec.Body.String())
-			require.NoError(json.Unmarshal(rec.Body.Bytes(), &response))
-			require.NotNil(response.HookOutput)
+			var failureResponse hookResponse
+			require.NoError(json.Unmarshal(rec.Body.Bytes(), &failureResponse))
+			require.NotNil(failureResponse.HookOutput)
+			assert.Equal("SessionStart", failureResponse.HookOutput.HookSpecificOutput.HookEventName)
+			assert.Contains(failureResponse.HookOutput.HookSpecificOutput.AdditionalContext, "Workspace ID: ws-agent-hook")
+			assert.Contains(failureResponse.HookOutput.HookSpecificOutput.AdditionalContext, "Issue: #42")
 		}
 	}
 }

@@ -117,8 +117,17 @@ func TestACPStdioHelper(t *testing.T) {
 				CWD        string `json:"cwd"`
 				MCPServers []any  `json:"mcpServers"`
 			}
-			cwd, _ := os.Getwd()
 			if json.Unmarshal(message.Params, &params) != nil || params.MCPServers == nil {
+				os.Exit(4)
+			}
+			// Windows keeps 8.3 short names such as RUNNER~1 in the working
+			// directory, while EvalSymlinks expands them, so resolve both sides.
+			cwd, err := os.Getwd()
+			if err != nil {
+				os.Exit(4)
+			}
+			cwd, err = filepath.EvalSymlinks(cwd)
+			if err != nil {
 				os.Exit(4)
 			}
 			resolved, err := filepath.EvalSymlinks(params.CWD)

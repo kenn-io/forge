@@ -517,6 +517,11 @@ Windows CI runs only the packages and tests named in its job; a new
 `*_windows_test.go` never runs in CI until a step there selects it
 (`.github/workflows/ci.yml::pty-windows`).
 
+GitHub-hosted Windows runners put `t.TempDir()` under an 8.3 short path such
+as `RUNNER~1`. `os.Getwd` keeps the short name, while `filepath.EvalSymlinks`
+expands it, so resolve both sides before comparing paths
+(`internal/workspace/localruntime/acp_test.go::TestACPStdioHelper`).
+
 Keep splitting new high-volume tests into the existing black-box packages when
 they do not need unexported internals:
 

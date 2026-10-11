@@ -33,11 +33,15 @@ import (
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/testtmux"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
 
 func TestMain(m *testing.M) {
+	if code, ok := testtmux.CommandWrapperExitCode(); ok {
+		os.Exit(code)
+	}
 	if os.Getenv("TELEMETRY_ENABLED") == "" {
 		if err := os.Setenv("TELEMETRY_ENABLED", "0"); err != nil {
 			panic(err)

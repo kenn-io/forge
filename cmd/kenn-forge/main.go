@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -355,6 +356,10 @@ func logRuntimeConfig(logger *slog.Logger, cfg *config.Config) {
 		"trust_reverse_proxy", cfg.TrustReverseProxy, "trust_reverse_proxy_source", sources["trust_reverse_proxy"],
 		"roborev_endpoint", endpointValue, "roborev_endpoint_source", sources["roborev.endpoint"],
 	)
+}
+
+func detachRuntimeSessionsForRestart(executionWorker bool) bool {
+	return executionWorker || cmp.Or(os.Getenv("KENN_FORGE_DEV_RESTART"), "1") == "1"
 }
 
 func run(opts serve.Options) error {
@@ -871,7 +876,7 @@ func run(opts serve.Options) error {
 			Telemetry:                       telemetryReporter,
 			TokenSources:                    tokenSources,
 			Archive:                         archiveService,
-			DetachRuntimeSessionsForRestart: cfg.ExecutionWorker.Enabled || os.Getenv("KENN_FORGE_DEV_RESTART") == "1",
+			DetachRuntimeSessionsForRestart: detachRuntimeSessionsForRestart(cfg.ExecutionWorker.Enabled),
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)

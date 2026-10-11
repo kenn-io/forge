@@ -360,15 +360,17 @@ create a local process, PTY, or durable transport session
 - During kenn-forge shutdown, detach/restart behavior is different: do not treat
   normal server shutdown as a natural user exit that should erase recoverable
   base runtime state.
-- Development launchers and Forge-managed systemd services opt into
-  restart-detach classification via `KENN_FORGE_DEV_RESTART`; managed systemd
-  units also use `KillMode=process` so the supervisor does not kill durable
-  tmux or ptyowner processes with the daemon. Terminal bridges close without an
-  `exited` frame so the browser reconnects after restart. Genuine process exits
-  and non-supervised shutdown behavior remain unchanged (`Makefile::dev`,
-  `scripts/dev-stack-backend.sh`, `docker/backend-dev-entrypoint.sh`,
-  `internal/fleetsetup/service.go`,
-  `internal/workspace/localruntime/manager.go::Manager.Shutdown`).
+- Daemon shutdown keeps terminal tabs available for reconnection, including an
+  intentional stop followed by a later start
+  (`internal/workspace/localruntime/manager.go::Manager.Shutdown`).
+- `KENN_FORGE_DEV_RESTART` remains an opt-out: unset, empty, or `1` enables
+  restart-detach; other values disable it, except on execution workers
+  (`cmd/kenn-forge/main.go::detachRuntimeSessionsForRestart`).
+- Genuine exits and explicit session stops still close their tabs
+  (`internal/server/workspaceapi/workspace_runtime_terminal.go::bridgeRuntimeAttachment`).
+- Supervisors must leave durable tmux and ptyowner processes alive for
+  reconnection; Forge-managed systemd units use `KillMode=process`
+  (`internal/fleetsetup/service.go::renderSystemdUserService`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
 - Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux

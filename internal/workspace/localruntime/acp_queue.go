@@ -26,7 +26,8 @@ type acpTurnResult struct {
 }
 
 // submit never rejects input because a turn is running: a busy chat queues
-// the prompt, or steers it into the turn when asked and supported.
+// the prompt, or steers it into the turn when a person asks and the agent
+// supports it. Coordinators' prompts queue like people's.
 func (a *ACP) submit(command ACPCommand) error {
 	text := command.Text
 	if strings.TrimSpace(text) == "" && len(command.Images) == 0 {
@@ -40,9 +41,20 @@ func (a *ACP) submit(command ACPCommand) error {
 	default:
 		return errors.New("prompt mode must be send, queue, or steer")
 	}
+	if command.AllowanceMillis < 0 {
+		return errACPNegativeAllowance
+	}
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
+	sender, err := a.promptSenderLocked(command)
+	if err == nil && command.AllowanceMillis > 0 && command.Generation == 0 {
+		err = errACPUnsupervisedAllowance
+	}
+	if err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	if submitted, err := a.submittedLocked(command.ID, text, command.Images); submitted || err != nil {
 		a.mu.Unlock()
 		return err
@@ -50,6 +62,10 @@ func (a *ACP) submit(command ACPCommand) error {
 	if !a.state.Connected {
 		a.mu.Unlock()
 		return ErrACPAgentUnavailable
+	}
+	prompt := ACPQueuedPrompt{
+		ID: command.ID, Text: text, Images: command.Images, Sender: sender,
+		Generation: command.Generation, Allowance: command.AllowanceMillis,
 	}
 	running := a.state.Busy || a.state.Steering
 	if !running && len(a.state.Queue) == 0 {
@@ -59,28 +75,19 @@ func (a *ACP) submit(command ACPCommand) error {
 	}
 	if command.Mode == "steer" && running && a.state.SteeringSupported {
 		a.mu.Unlock()
-		return a.steerLocked(text, command.ID, command.Images)
+		return a.steerLocked(prompt)
 	}
 	if command.Mode == "queue" || running || a.state.Configuring {
-		err := a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
+		a.enqueueLocked(prompt, false)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	}
 	a.mu.Unlock()
-	err := a.startPromptLocked(text, command.ID, command.Images)
-	if errors.Is(err, errACPNotIdle) {
-		// A settings change began after the check above.
-		a.mu.Lock()
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: command.ID, Text: text, Images: command.Images}, false)
-		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
+	if a.beforePromptStart != nil {
+		a.beforePromptStart()
 	}
-	return err
+	return a.startPromptLocked(prompt, false)
 }
 
 // submittedLocked makes retried submissions idempotent across the transcript
@@ -88,6 +95,9 @@ func (a *ACP) submit(command ACPCommand) error {
 func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error) {
 	if id == "" {
 		return false, nil
+	}
+	if err := a.withdrawnOrUncertainLocked(id); err != nil {
+		return true, err
 	}
 	for _, message := range a.state.Messages {
 		if message.SubmissionID == id {
@@ -108,7 +118,9 @@ func (a *ACP) submittedLocked(id, text string, images []ACPContent) (bool, error
 	return false, nil
 }
 
-func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
+// enqueueLocked queues prompt. A queued prompt drains even if saving the
+// queue fails, so the save cannot refuse it.
+func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	if prompt.ID == "" {
 		prompt.ID = "queued-" + rand.Text()
 	}
@@ -117,28 +129,89 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) error {
 	} else {
 		a.state.Queue = append(a.state.Queue, prompt)
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("queueing a prompt")
 	a.changedLocked()
-	return err
 }
 
-func (a *ACP) unqueue(id string) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// errACPQueuedPromptSending refuses to withdraw or move a queued prompt that
+// is already being sent.
+var errACPQueuedPromptSending = errors.New("message is already being sent")
+
+// queuedIndexLocked returns the queue index of the prompt id. A coordinator
+// may act only on a prompt it submitted under the generation it holds. A
+// prompt being sent stays at the head of the queue until its write returns,
+// but the agent may already have it, so it can no longer be removed or moved.
+func (a *ACP) queuedIndexLocked(id string, generation uint64) (int, error) {
+	if err := a.supervisionGateLocked(generation); err != nil {
+		return -1, err
+	}
 	index := slices.IndexFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
 	if index < 0 {
-		return errors.New("message is no longer queued")
+		return -1, errors.New("message is no longer queued")
+	}
+	if generation != 0 && a.state.Queue[index].Generation != generation {
+		return -1, ErrACPNotOwned
+	}
+	if a.sendingLocked(id) {
+		return -1, errACPQueuedPromptSending
+	}
+	return index, nil
+}
+
+// sendingLocked reports whether the prompt id is being written to the agent.
+func (a *ACP) sendingLocked(id string) bool {
+	return a.state.Sending != nil && a.state.Sending.ID == id
+}
+
+func (a *ACP) unqueue(id string, generation uint64) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	index, err := a.queuedIndexLocked(id, generation)
+	if err != nil {
+		return err
 	}
 	a.state.Queue = slices.Delete(a.state.Queue, index, index+1)
+	// A retry of a withdrawn submission must not run the work after all.
+	a.state.Withdrawn = append(a.state.Withdrawn, id)
 	if len(a.state.Queue) == 0 {
 		a.state.QueuePaused = false
 	}
-	err := a.persistLocked()
+	a.saveTakenEffectLocked("unqueueing a prompt")
 	a.changedLocked()
-	return err
+	return nil
 }
 
-func (a *ACP) resumeQueue() error {
+// move puts a queued prompt at position index, clamped to the queue. Only
+// people order the queue, so they can put their own work ahead of a
+// coordinator's. Nothing moves ahead of a prompt being sent.
+func (a *ACP) move(id string, index int, generation uint64) error {
+	if err := personGate(generation); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	from, err := a.queuedIndexLocked(id, 0)
+	if err != nil {
+		return err
+	}
+	prompt := a.state.Queue[from]
+	a.state.Queue = slices.Delete(a.state.Queue, from, from+1)
+	first := 0
+	if len(a.state.Queue) > 0 && a.sendingLocked(a.state.Queue[0].ID) {
+		first = 1
+	}
+	a.state.Queue = slices.Insert(a.state.Queue, max(first, min(index, len(a.state.Queue))), prompt)
+	a.saveTakenEffectLocked("reordering the queue")
+	a.changedLocked()
+	return nil
+}
+
+// resumeQueue runs a paused queue again. Queued work pauses after a stop or
+// a failed turn, so only a person decides that it runs.
+func (a *ACP) resumeQueue(generation uint64) error {
+	if err := personGate(generation); err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.state.QueuePaused = false
 	a.changedLocked()
@@ -148,24 +221,33 @@ func (a *ACP) resumeQueue() error {
 }
 
 // drain sends the head of the queue when the chat is idle. It sends one
-// prompt; the end of that turn drains the next.
+// prompt; the end of that turn drains the next. A head withdrawn or moved
+// back while drain was reading it is skipped for the new head.
 func (a *ACP) drain() {
 	a.turnMu.Lock()
 	defer a.turnMu.Unlock()
-	a.mu.Lock()
-	if !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
-		a.state.QueuePaused || len(a.state.Queue) == 0 {
-		a.mu.Unlock()
-		return
-	}
-	next := a.state.Queue[0]
-	a.mu.Unlock()
-	if err := a.startPromptLocked(next.Text, next.ID, next.Images); err != nil && !errors.Is(err, errACPNotIdle) {
+	for {
 		a.mu.Lock()
-		a.setErrorLocked(err)
-		a.state.QueuePaused = true
-		a.changedLocked()
+		a.dropUnrunnableQueueHeadLocked()
+		if !a.state.Connected || a.state.Busy || a.state.Configuring || a.state.Steering ||
+			a.state.QueuePaused || len(a.state.Queue) == 0 {
+			a.mu.Unlock()
+			return
+		}
+		next := a.state.Queue[0]
 		a.mu.Unlock()
+		err := a.startPromptLocked(next, true)
+		if errors.Is(err, errACPQueueChanged) {
+			continue
+		}
+		if err != nil && !errors.Is(err, errACPNotIdle) {
+			a.mu.Lock()
+			a.setErrorLocked(err)
+			a.state.QueuePaused = true
+			a.changedLocked()
+			a.mu.Unlock()
+		}
+		return
 	}
 }
 
@@ -195,14 +277,15 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.mu.Unlock()
 		return
 	}
-	a.endTurnLocked()
+	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
 	a.drain()
 }
 
-// endTurnLocked settles what a finished turn leaves behind: open questions
-// are cancelled and held text becomes visible.
-func (a *ACP) endTurnLocked() {
+// endTurnLocked settles what a finished turn leaves behind: its record ends,
+// open questions are cancelled, and held text becomes visible.
+func (a *ACP) endTurnLocked(stopReason string, err error) {
+	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.turnCompleted = true
@@ -224,6 +307,7 @@ func (a *ACP) clearPendingLocked() {
 		delete(a.elicitations, id)
 	}
 	a.state.Elicitations = nil
+	a.refreshBlockedLocked()
 }
 
 // setErrorLocked records err for the chat and keeps JSON-RPC error details.
@@ -243,10 +327,23 @@ func (a *ACP) setErrorLocked(err error) {
 	}
 }
 
-// steerLocked adds text to the running turn. The caller holds turnMu, so at
-// most one steering request is in flight.
-func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error {
+// steerLocked adds a person's prompt to the running turn. The caller holds
+// turnMu, so at most one steering request is in flight. A steer with a
+// submission ID is saved as sending before the agent sees it, as a prompt is:
+// an owner that stops before the outcome is recorded leaves it uncertain, so
+// a retry cannot run it twice. A steer whose request fails may also have
+// reached the agent, so its submission becomes uncertain too.
+func (a *ACP) steerLocked(prompt ACPQueuedPrompt) error {
 	a.mu.Lock()
+	if prompt.ID != "" {
+		sending := prompt
+		a.state.Sending = &sending
+		if err := a.persistLocked(); err != nil {
+			a.state.Sending = nil
+			a.mu.Unlock()
+			return err
+		}
+	}
 	a.state.Steering = true
 	// Output that arrives while the agent takes the text follows it.
 	a.releaseHeldTextLocked()
@@ -256,14 +353,20 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 	a.threadStatus = ""
 	a.changedLocked()
 	a.mu.Unlock()
+	if a.beforePromptWrite != nil {
+		a.beforePromptWrite()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), acpSteeringTimeout)
 	defer cancel()
 	raw, err := a.client.CallExtension(ctx, acpSteeringMethod, map[string]any{
 		"sessionId": a.sessionID,
-		"prompt":    acpPromptContent(text, images),
+		"prompt":    acpPromptContent(prompt.Text, prompt.Images),
 		// An agent whose turn already ended asks for an ordinary prompt
 		// instead of silently starting one Forge cannot track.
-		"_meta": map[string]any{"steering": map[string]any{"idleBehavior": "promptRequired"}},
+		"_meta": map[string]any{
+			"steering":   map[string]any{"idleBehavior": "promptRequired"},
+			acpForgeMeta: acpPromptMeta(prompt),
+		},
 	})
 	var result struct {
 		Outcome string `json:"outcome"`
@@ -273,18 +376,23 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 	}
 	a.mu.Lock()
 	a.state.Steering = false
+	a.state.Sending = nil
 	index := min(*a.promptIndex, len(a.state.Messages))
 	a.promptIndex = nil
 	if err != nil {
 		// A failed steer must not let queued work run behind the user's back.
 		a.state.QueuePaused = true
+		if prompt.ID != "" && !slices.Contains(a.state.Uncertain, prompt.ID) {
+			a.state.Uncertain = append(a.state.Uncertain, prompt.ID)
+		}
+		a.saveTakenEffectLocked("a failed steer")
 		a.changedLocked()
 		a.mu.Unlock()
 		return fmt.Errorf("steer ACP turn: %w", err)
 	}
 	switch result.Outcome {
 	case "injected", "startedNewTurn":
-		a.state.Messages = slices.Insert(a.state.Messages, index, ACPMessage{Role: "user", Text: text, Images: images, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.state.Messages = slices.Insert(a.state.Messages, index, promptMessage(prompt))
 		if result.Outcome == "startedNewTurn" {
 			// The agent owns this turn; it ends when the thread goes idle,
 			// whether or not the original prompt has completed yet. Until a
@@ -294,6 +402,10 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 			if a.reportsThreadStatus && a.threadStatus != "idle" {
 				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
 				a.state.Busy = true
+				if a.runningTurnRecordLocked() == nil {
+					// The prompt's turn ended before the agent answered.
+					a.beginTurnRecordLocked(prompt, index)
+				}
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true
 			}
@@ -304,23 +416,47 @@ func (a *ACP) steerLocked(text, submissionID string, images []ACPContent) error 
 				}()
 			}
 		}
-		err = a.persistLocked()
+		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
 		a.mu.Unlock()
-		return err
+		return nil
 	case "promptRequired":
 		// The turn ended before the text arrived; it runs next.
-		err = a.enqueueLocked(ACPQueuedPrompt{ID: submissionID, Text: text, Images: images}, true)
+		a.enqueueLocked(prompt, true)
 		a.mu.Unlock()
-		if err == nil {
-			go a.drain()
-		}
-		return err
+		go a.drain()
+		return nil
 	default:
 		a.state.QueuePaused = true
+		a.saveTakenEffectLocked("a refused steer")
 		a.changedLocked()
 		a.mu.Unlock()
 		return fmt.Errorf("the agent did not accept the steering message (%q)", result.Outcome)
+	}
+}
+
+// acpForgeMeta is the _meta key under which Forge describes a prompt to the
+// agent. ACP has no notion of several senders, so it names who sent it.
+const acpForgeMeta = "forge"
+
+// acpPromptMeta describes prompt under acpForgeMeta.
+func acpPromptMeta(prompt ACPQueuedPrompt) map[string]any {
+	meta := map[string]any{"sender": prompt.Sender.Kind}
+	if prompt.Sender.Name != "" {
+		meta["senderName"] = prompt.Sender.Name
+	}
+	if prompt.ID != "" {
+		meta["submissionId"] = prompt.ID
+	}
+	return meta
+}
+
+// promptMessage is the transcript entry of a prompt the agent received.
+func promptMessage(prompt ACPQueuedPrompt) ACPMessage {
+	sender := prompt.Sender
+	return ACPMessage{
+		Role: "user", Text: prompt.Text, Images: prompt.Images, SubmissionID: prompt.ID,
+		Sender: &sender, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 }
 

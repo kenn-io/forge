@@ -12,6 +12,12 @@ actions:
   - target: $.components.schemas.WorkflowDispatchBody.properties.inputs
     update:
       additionalProperties: true
+  - target: $.components.schemas.WorkspaceChatCommand.properties.content
+    update:
+      additionalProperties: true
+  - target: $.components.schemas.ACPElicitationSchema.properties.properties
+    update:
+      additionalProperties: true
   - target: $.components.schemas.ErrorDetail.properties.value
     update:
       x-go-type: any

@@ -177,6 +177,9 @@ func (a *ACP) publishedStateLocked() ACPState {
 	state.MessageCount = len(messages)
 	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
 	state.Messages = messages[state.MessageOffset:]
+	// Only the owner checks retried answers. A digest of a small form domain
+	// can be reversed, so the ledger never leaves the owner.
+	state.Answered = nil
 	return state
 }
 
@@ -228,4 +231,23 @@ func (a *ACP) History(before, limit int) ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.historyLocked(before, limit)
+}
+
+// Page returns the published state with Messages holding transcript messages
+// [after, after+limit) instead of the recent window. MessageOffset is the
+// clamped cursor, so each message's transcript index is MessageOffset plus its
+// position. A limit of 0 or less selects the default history page size.
+func (a *ACP) Page(after, limit int) ([]byte, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state := a.publishedStateLocked()
+	messages := a.publishedMessagesLocked()
+	if limit <= 0 {
+		limit = acpHistoryPage
+	}
+	start := min(max(after, 0), len(messages))
+	end := start + min(limit, len(messages)-start)
+	state.MessageOffset = start
+	state.Messages = messages[start:end]
+	return json.Marshal(state, json.Deterministic(true))
 }

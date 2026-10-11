@@ -426,6 +426,39 @@ func TestBuildLocalRawReconcilesLiveTmuxInventory(t *testing.T) {
 	require.Empty(personal.Windows)
 }
 
+// A supervised chat whose agent exited keeps its stored record so its
+// coordinator can restore it, but nothing runs: the inventory must not list
+// it as a running session.
+func TestBuildLocalRawOmitsExitedRuntimeSessions(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	createdAt := time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-1", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "o", RepoName: "app",
+		ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 7,
+		GitHeadRef: "feature", WorktreePath: filepath.Join(t.TempDir(), "ws"),
+		Status: "ready", CreatedAt: createdAt,
+	}))
+	for _, key := range []string{"ws-1_chat", "ws-1_codex"} {
+		require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+			WorkspaceID: "ws-1", SessionKey: key, TargetKey: "agent", Label: key,
+			Kind: "acp", Scope: "session", TmuxSession: "kenn-forge-" + key, CreatedAt: createdAt,
+		}))
+	}
+
+	srv := newTestHandlerWithWorkspaceManager(t, database)
+	srv.runtimeExited = func(key string) bool { return key == "ws-1_chat" }
+	raw, err := srv.buildLocalRaw(ctx)
+	require.NoError(err)
+
+	require.Equal("running", requireRawSession(t, raw.Sessions, "session:ws-1_codex").Status)
+	for _, session := range raw.Sessions {
+		require.NotEqual("session:ws-1_chat", session.ScopedKey, "an exited chat was listed")
+	}
+}
+
 func TestBuildLocalRawIncludesProjectWorktreeRuntimeTmuxSession(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

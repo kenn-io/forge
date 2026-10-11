@@ -2422,10 +2422,10 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 		return s.inputModes.observed[2004]
 	}, 5*time.Second, 10*time.Millisecond)
 
-	require.ErrorIs(mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this"), ErrBracketedPasteInactive)
+	require.ErrorIs(mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this", ACPSender{Kind: ACPSenderUser}), ErrBracketedPasteInactive)
 	require.NoError(os.WriteFile(gate, nil, 0o600))
 	require.Eventually(func() bool {
-		err := mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this")
+		err := mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this", ACPSender{Kind: ACPSenderUser})
 		return err == nil
 	}, 5*time.Second, 20*time.Millisecond)
 	require.Eventually(func() bool {
@@ -2451,7 +2451,7 @@ func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 
-	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this")
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this", ACPSender{Kind: ACPSenderUser})
 	require.ErrorIs(err, ErrBracketedPasteInactive)
 	assert.Empty(pty.written())
 
@@ -2461,7 +2461,7 @@ func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
-		require.NoError(mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", message))
+		require.NoError(mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", message, ACPSender{Kind: ACPSenderUser}))
 		pty.mu.Lock()
 		writeCalls := slices.Clone(pty.writeCalls)
 		pty.mu.Unlock()
@@ -2478,7 +2478,7 @@ func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *
 func TestManagerSubmitInitialMessageClassifiesMissingSessionAsNotWritten(t *testing.T) {
 	mgr := NewManager(Options{})
 
-	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "missing-agent", "review this")
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "missing-agent", "review this", ACPSender{Kind: ACPSenderUser})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrInitialMessageNotWritten)
@@ -2509,7 +2509,7 @@ func TestManagerSubmitInitialMessageStillSendsEnterWhenCallerStopsWaiting(t *tes
 		defer cancel()
 		result := make(chan error, 1)
 		go func() {
-			result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this")
+			result <- mgr.SubmitInitialMessage(ctx, "ws-1", "agent-1", "review this", ACPSender{Kind: ACPSenderUser})
 		}()
 		<-writeStarted
 		require.True(s.mu.TryLock(), "session lock remained held during terminal write")
@@ -2562,7 +2562,7 @@ func TestManagerSubmitInitialMessageSerializesAttachmentInputUntilEnter(t *testi
 	defer attachment.Close()
 
 	go func() {
-		_ = mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this")
+		_ = mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "review this", ACPSender{Kind: ACPSenderUser})
 	}()
 	observe := func() []byte {
 		select {
@@ -2595,7 +2595,7 @@ func TestManagerSubmitInitialMessageRejectsMultilineWithoutBracketedPaste(t *tes
 	mgr := NewManager(Options{})
 	mgr.sessions[s.info.Key] = s
 
-	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond")
+	err := mgr.SubmitInitialMessage(t.Context(), "ws-1", "agent-1", "first\nsecond", ACPSender{Kind: ACPSenderUser})
 	require.ErrorIs(err, ErrBracketedPasteInactive)
 	assert.Empty(t, pty.written())
 }

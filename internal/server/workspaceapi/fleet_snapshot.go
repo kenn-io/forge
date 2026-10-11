@@ -118,6 +118,14 @@ func fleetWorkspaceSessionBackend(backend string) string {
 	}
 }
 
+// RuntimeExited reports whether the session's process is known to be gone:
+// the runtime saw it exit on its own, or its chat agent refused to reload, as
+// when its owner died while the daemon was away. A supervised chat's stored
+// record outlives either, so a coordinator can still restore it.
+func (h *Handler) RuntimeExited(sessionKey string) bool {
+	return h != nil && h.runtime != nil && (h.runtime.Exited(sessionKey) || h.chatCannotReload(sessionKey))
+}
+
 // RuntimeSnapshot returns a detached view of runtime sessions for a workspace
 // or project-worktree scope.
 func (h *Handler) RuntimeSnapshot(scope string) RuntimeSnapshot {

@@ -57,6 +57,10 @@
   const uid = $props.id();
   const commandMenuId = `${uid}-commands`;
   const elicitations = $derived(chatState?.elicitations ?? []);
+  const supervision = $derived(chatState?.supervision ?? null);
+  // People chat in a supervised chat as in any other; their prompts queue
+  // with the coordinator's, and ending supervision only stops the coordinator.
+  const supervised = $derived(!!supervision && !supervision.takenOver);
   const notices = $derived(chatState?.notices ?? []);
   const commands = $derived(chatState?.commands ?? []);
   const slash = $derived(slashToken(draft, caret));
@@ -375,7 +379,18 @@
         suppressed={commandMatches.length > 0}
         onresume={() => connection?.send({ type: "resume" })}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
+        onmove={(id, index) => connection?.send({ type: "move", id, index })}
       />
+    {/if}
+    {#if supervision}
+      <div class="supervision" role="status">
+        {#if supervised}
+          <span>Supervised by {supervision.supervisor}</span>
+          <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "takeover" })}>End supervision</Button>
+        {:else}
+          <span>Supervision by {supervision.supervisor} ended</span>
+        {/if}
+      </div>
     {/if}
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(running ? busyMode : "send"); }}>
       {#if commandMatches.length}
@@ -512,6 +527,8 @@
     gap: var(--space-4);
     padding-block: var(--space-2) var(--space-5);
   }
+  .supervision { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding-block: var(--space-2); font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .supervision > span { min-width: 0; overflow-wrap: anywhere; }
   .composer {
     position: relative;
     container-type: inline-size;

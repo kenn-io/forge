@@ -109,6 +109,9 @@ type InitialMessageRequest struct {
 	RuntimeSessionKey string
 	TargetKey         string
 	Message           string
+	// FromAgent marks a message an agent sends through a Forge tool rather
+	// than a person.
+	FromAgent bool
 }
 
 type InitialMessageResult struct {

@@ -6,15 +6,17 @@
   import CircleDot from "@lucide/svelte/icons/circle-dot";
   import ListPlus from "@lucide/svelte/icons/list-plus";
   import ListTodo from "@lucide/svelte/icons/list-todo";
+  import ArrowDown from "@lucide/svelte/icons/arrow-down";
+  import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import X from "@lucide/svelte/icons/x";
-  import type { ChatState } from "./chat-types.js";
+  import { senderLabel, type ChatState } from "./chat-types.js";
   import type { RunningSubagent } from "./chat-subagents.js";
 
   type PlanEntry = NonNullable<ChatState["plan"]>[number];
   type QueuedPrompt = NonNullable<ChatState["queue"]>[number];
   type Panel = "plan" | "subagents" | "queue";
 
-  let { plan, subagents, queue, queuePaused, disabled, suppressed = false, onresume, onunqueue }: {
+  let { plan, subagents, queue, queuePaused, disabled, suppressed = false, onresume, onunqueue, onmove }: {
     plan: readonly PlanEntry[];
     subagents: readonly RunningSubagent[];
     queue: readonly QueuedPrompt[];
@@ -24,6 +26,8 @@
     suppressed?: boolean;
     onresume: () => void;
     onunqueue: (id: string) => void;
+    /** Puts a queued message at a new position, so people can run their work ahead of a coordinator's. */
+    onmove: (id: string, index: number) => void;
   } = $props();
 
   const id = $props.id();
@@ -73,10 +77,13 @@
   {:else if shown === "queue"}
     <div class="panel" id={`${id}-queue`}>
       <ol aria-label="Queued messages">
-        {#each queue as queued (queued.id)}
+        {#each queue as queued, index (queued.id)}
           <li class="row">
+            {#if queued.sender?.kind === "coordinator"}<span class="row-sender" title={senderLabel(queued.sender)}>Coordinator{#if queued.sender.name}<span class="row-sender-name">{` ${queued.sender.name}`}</span>{/if}</span>{/if}
             <span class="row-text" title={queued.text}>{queued.text}{#if queued.images?.length}{" "}({queued.images.length} {queued.images.length === 1 ? "image" : "images"}){/if}</span>
-            <button type="button" class="remove" aria-label="Remove queued message" title="Remove" {disabled} onclick={() => onunqueue(queued.id)}><X size={13} /></button>
+            <button type="button" class="row-action" aria-label="Move queued message up" title="Move up" disabled={disabled || index === 0} onclick={() => onmove(queued.id, index - 1)}><ArrowUp size={13} /></button>
+            <button type="button" class="row-action" aria-label="Move queued message down" title="Move down" disabled={disabled || index === queue.length - 1} onclick={() => onmove(queued.id, index + 1)}><ArrowDown size={13} /></button>
+            <button type="button" class="row-action" aria-label="Remove queued message" title="Remove" {disabled} onclick={() => onunqueue(queued.id)}><X size={13} /></button>
           </li>
         {/each}
       </ol>
@@ -201,12 +208,30 @@
     white-space: nowrap;
     color: var(--text-primary);
   }
+  /* The sender may shrink to an ellipsis but never past 40% of the row, so a
+     long coordinator name leaves room for the message and its buttons. */
+  .row-sender {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+  }
+  /* A narrow pane, such as a phone, says only "Coordinator" so a long name
+     never squeezes out the message or its buttons. */
+  @container acp-pane (max-width: 40rem) {
+    .row-sender-name {
+      display: none;
+    }
+  }
   .row-meta {
     flex: none;
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
   }
-  .remove {
+  .row-action {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -220,15 +245,15 @@
     color: var(--text-muted);
     cursor: pointer;
   }
-  .remove:hover:not(:disabled) {
+  .row-action:hover:not(:disabled) {
     background: var(--bg-surface-hover);
     color: var(--text-primary);
   }
-  .remove:focus-visible {
+  .row-action:focus-visible {
     outline: var(--focus-ring);
     outline-offset: 1px;
   }
-  .remove:disabled {
+  .row-action:disabled {
     opacity: var(--opacity-disabled);
     cursor: default;
   }
@@ -236,12 +261,12 @@
     .rail {
       font-size: var(--font-size-sm);
     }
-    .remove,
+    .row-action,
     .plan-entry,
     .row {
       min-height: var(--mobile-chrome-hit-target);
     }
-    .remove {
+    .row-action {
       width: var(--mobile-chrome-hit-target);
     }
   }

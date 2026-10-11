@@ -56,8 +56,22 @@ Rules:
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed, even before its
   stored record is forgotten; only an owner that died while no daemon was attached is reloaded
-  (`internal/workspace/localruntime/manager.go::Manager.Exited`).
-- The ACP owner keeps the whole transcript and never deletes messages. State
+  (`internal/workspace/localruntime/manager.go::Manager.Exited`). Supervised chats are the
+  exception: their coordinator may restore one after its agent exits, from the daemon's stored
+  record so the backend check targets the launched backend; a running owner is attached, never
+  duplicated (`internal/workspace/localruntime/acp_owner.go::Manager.RestoreSupervisedACP`).
+- When a supervised chat's agent exits, the daemon keeps its stored record and marks it
+  recovery pending, so neither the exit hook nor the missing-backend prune forgets it; the chat
+  route reports it as exited until restored or stopped, and the fleet inventory omits it. A
+  taken-over chat keeps its supervision record but is a person's chat: it is forgotten like
+  any unsupervised chat, and restore refuses it. The exited mark is in memory:
+  after a daemon restart, opening the workspace reloads a kept chat like any chat whose owner
+  died while no daemon was attached. Unsupervised chats are forgotten as before
+  (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
+- The ACP owner keeps the whole transcript and never deletes messages. A prompt start or a
+  steer inserts its user message where sending began, before output that arrived during the
+  send, so later transcript indexes can shift by one; appending would put the reply before
+  the message it answers (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`). State
   updates carry only the latest message window with its absolute offset and total
   count; clients page earlier messages in with `history` requests answered to the
   asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
@@ -67,9 +81,64 @@ Rules:
 - Pasted images stay attached through ACP queueing, steering, retries, and saved history;
   image-only prompts are valid, and composer attachments clear only on acceptance
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte::settlePending`).
-- A running ACP turn never rejects input: sends queue, and steering is used only when
-  initialize advertises it. The queue drains one prompt per `end_turn` and pauses on any
-  other stop, error, exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.submit`).
+- A running ACP turn never rejects input: sends queue, and people steer only when initialize
+  advertises it. The queue drains one prompt per `end_turn` and pauses on any other stop,
+  error, exit, or reload. Drain sends only the current head of an unpaused queue, reserving it
+  as sending under the lock that checks it, so a removed or moved head or a Stop leaves the
+  rest of the queue as it is; it stays queued until its write returns, but cannot be removed or moved
+  (`sending`), and nothing moves ahead of it. A remove or move before the reservation always
+  wins (`internal/workspace/localruntime/acp_queue.go::ACP.drain`).
+- Every prompt records its sender, `user` or `coordinator` with the coordinator's name when
+  known, on its queue entry, transcript message, and turn record (entries saved before senders
+  existed restore as a person's), and names it to the agent
+  under `_meta.forge` on `session/prompt` and steering requests, since ACP has no notion of
+  several senders. Input carrying a supervision generation, and MCP agent messages and spawns,
+  are a coordinator's; everything else is a person's. `ACPCommand.FromAgent` is never decoded
+  from JSON, so clients cannot claim to be an agent. The daemon log records each prompt's
+  sender as it passes the owner attachment
+  (`internal/workspace/localruntime/acp_owner_rpc.go::acpAttachment.Command`). The chat never
+  shows a coordinator's prompt as the person's; a prompt without a sender predates senders
+  and reads as the person's (`frontend/src/lib/components/acp/chat-types.ts::senderLabel`). A
+  narrow pane labels a queued coordinator prompt only "Coordinator", without its name.
+- Every ACP owner start gets a new runtime generation, and permission and elicitation IDs
+  carry it, so an answer for an earlier process cannot reach a restarted agent. Answers are
+  idempotent: the same answer to an answered request succeeds, a different one fails, and
+  each turn keeps a short record of its submission ID and outcome. The answered ledger stays
+  in the owner and its saved session; published state never carries it
+  (`internal/workspace/localruntime/acp_requests.go`, `acp_submissions.go`).
+- A submission ID that was sending when its owner stopped, or was unqueued, never runs
+  again; keep both ID lists uncapped for the session's life, since evicting one would let a
+  retry repeat or revive work (`internal/workspace/localruntime/acp_submissions.go`).
+- Supervision limits only the coordinator; people chat, steer, configure, answer requests,
+  reorder and remove anything queued, and stop any turn without a takeover. A coordinator's
+  input names the generation it holds; it may send or queue, remove only its own queued
+  prompts, and stop or answer requests only in a turn its own prompt started. Steering,
+  reordering, and resuming a paused queue are people's (`person_only`), and an agent without
+  the generation cannot add to a supervised chat. A claim may come at any time, since earlier
+  input keeps its sender. A takeover only ends supervision; a person's always applies, and a
+  coordinator releasing its claim must name the generation it holds. Every claim or takeover
+  advances the generation and leaves every earlier generation stale, including the one a
+  takeover produced. Queued prompts are not tied to supervision: a coordinator's prompt
+  accepted into the queue stays queued through any claim or takeover and runs in its turn,
+  bounded by its allowance only if its sender still holds the chat (maintainer decision). Each command checks the generation
+  under the lock that guards its change; a prompt checks again when it starts. A
+  stale-generation reply does not prove a prompt never ran: the gate precedes the retry check,
+  so callers settle outcomes from the transcript and turn records
+  (`internal/workspace/localruntime/acp_supervision.go`).
+- Only a supervisor's prompt may carry an active-time allowance. It travels with the queued
+  prompt, is armed only if its sender still holds the chat once the prompt is written, and a
+  takeover disarms it for the running turn. A turn is blocked while a permission or elicitation is pending and
+  none of its tool calls runs; a tool call a pending permission asks to run, and the subagent
+  tool calls it runs under, are waiting, not running. Elicitations name no tool call. Blocked
+  time is not active time. An exhausted allowance cancels a turn nobody has stopped once,
+  and the turn ends normally. ACP cancels whatever turn runs, so the allowance's cancel, like
+  a coordinator's, checks that its turn still runs and sends under `turnMu`, which every new
+  turn starts under; a person's stop never waits. A turn a late agent status starts without
+  `turnMu` can still meet such a cancel within microseconds; that visible, recoverable race is
+  accepted (maintainer decision). A steer never changes who owns the running turn, even when
+  the agent answers it with a new turn: the agent cannot tell senders apart (maintainer
+  decision)
+  (`internal/workspace/localruntime/acp_allowance.go`).
 - A turn the agent starts after a steer keeps the chat busy from its first active thread
   status until the thread goes idle, even when that status arrives after the prompt completed.
   Once the original prompt has completed, any idle ends that turn, active or not: the SDK
@@ -86,7 +155,10 @@ Rules:
   before tool activity, when the agent goes quiet, and at turn end; never per token
   (`internal/workspace/localruntime/acp_delivery.go::ACP.deliverTextLocked`).
 - The saved ACP transcript is the conversation of record: drop `session/load` replay, and
-  continue in a new session when the agent lacks `loadSession`
+  continue in a new session when the agent lacks `loadSession`. A chat a coordinator holds
+  never falls back to a new native session: the start fails with `ErrACPCannotReload`, which
+  the owner records for the waiting daemon, and the saved session stays. A taken-over chat
+  falls back like any person's chat
   (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
   and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).

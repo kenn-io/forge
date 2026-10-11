@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,14 +60,46 @@ func (a *ACP) persistLocked() error {
 	return err
 }
 
+// saveTakenEffectLocked saves a change that has already taken effect, such
+// as a prompt the agent received or an answer it was sent. A failed save
+// cannot undo the change, so the command still succeeds and the chat reports
+// the error; a refusal would tell the sender that the change never happened.
+func (a *ACP) saveTakenEffectLocked(change string) {
+	if err := a.persistLocked(); err != nil {
+		a.setErrorLocked(fmt.Errorf("save chat after %s: %w", change, err))
+	}
+}
+
+// restoreSendersLocked gives queued prompts and turn records saved before
+// senders were recorded the person sender. Their real sender is unknown;
+// untagged transcript messages read as a person's too, and clients accept
+// no empty sender.
+func (a *ACP) restoreSendersLocked() {
+	person := ACPSender{Kind: ACPSenderUser}
+	for i := range a.state.Queue {
+		if a.state.Queue[i].Sender.Kind == "" {
+			a.state.Queue[i].Sender = person
+		}
+	}
+	for i := range a.state.Turns {
+		if a.state.Turns[i].Sender.Kind == "" {
+			a.state.Turns[i].Sender = person
+		}
+	}
+}
+
 // restoreTranscriptLocked makes the saved transcript the conversation of
 // record after a reload. A reloaded conversation never starts queued work on
 // its own.
 func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	a.state.Messages = saved.Messages
 	a.state.Queue = saved.Queue
+	a.restoreSubmissionsLocked(saved)
+	a.restoreSendersLocked()
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.state.Plan = saved.Plan
+	a.state.Answered = saved.Answered
+	a.state.Supervision = saved.Supervision
 	// Commands the agent advertised while reloading are current; otherwise
 	// keep the last set until it sends a new one.
 	if a.state.Commands == nil {
@@ -94,6 +127,10 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	if err := atomicfile.WriteFile(configPath, data, atomicfile.WithPerm(0o600)); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return launchCommand{}, err
 	}
+	// A start failure recorded by an earlier owner must not fail this one.
+	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return launchCommand{}, err
+	}
 	command := slices.Clone(m.acpOwnerCommand)
 	if len(command) == 0 {
 		executable, err := os.Executable()
@@ -105,6 +142,11 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	command = append(command, configPath)
 	return m.shellLaunchCommand(ctx, command, workspaceID, key, cwd)
 }
+
+// acpStartErrorFile holds the owner RPC code of a start failure the daemon
+// branches on, such as ErrACPCannotReload. No owner listens after such a
+// failure, so the daemon waiting to attach reads it instead.
+const acpStartErrorFile = "start-error"
 
 func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
 	var backend *session
@@ -189,6 +231,103 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	return m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
 }
 
+// RestoreSupervisedACP restores a supervised chat from the daemon's stored
+// record, even after this daemon saw its agent exit on its own; ordinary
+// restoration skips such sessions. Like workspace reopen it attaches a running
+// owner and relaunches only once the owner's backend is gone, loading the saved
+// native session. It refuses chats no coordinator holds, including taken-over
+// chats, running or not (ErrSessionUnavailable), and agents that cannot reload
+// the session (ErrACPCannotReload); the saved session stays.
+func (m *Manager) RestoreSupervisedACP(ctx context.Context, restored RestoredRuntimeSession) error {
+	restored.WorkspaceID = strings.TrimSpace(restored.WorkspaceID)
+	restored.SessionKey = strings.TrimSpace(restored.SessionKey)
+	restored.TargetKey = strings.TrimSpace(restored.TargetKey)
+	restored.TmuxSession = strings.TrimSpace(restored.TmuxSession)
+	restored.Kind = LaunchTargetACP
+	if m.acpSessionsDir == "" || restored.WorkspaceID == "" || restored.SessionKey == "" {
+		return ErrSessionNotFound
+	}
+	if restored.TargetKey == "" {
+		return errors.New("restore supervised ACP: target key is required")
+	}
+	key := restored.SessionKey
+	if err := m.requireACPWorkspace(restored.WorkspaceID, key); err != nil {
+		return err
+	}
+	startMu := m.startLock(key)
+	startMu.Lock()
+	defer startMu.Unlock()
+	if err := m.ensureOpen(); err != nil {
+		return err
+	}
+	saved, err := m.readSavedACP(key)
+	if err != nil {
+		return fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
+	}
+	if !saved.State.Supervision.held() {
+		return fmt.Errorf("%w: %q is not supervised", ErrSessionUnavailable, key)
+	}
+	if m.runningSession(m.sessions, key) != nil {
+		return nil
+	}
+	return m.startRestoredSession(ctx, restored)
+}
+
+// SupervisedACP reports whether a coordinator holds the saved chat key,
+// running or not. A chat with no saved session, or one people took over, is
+// not supervised. It returns ErrSessionNotFound when workspaceID has no such
+// chat.
+func (m *Manager) SupervisedACP(workspaceID, key string) (bool, error) {
+	if m.acpSessionsDir == "" || workspaceID == "" || key == "" {
+		return false, ErrSessionNotFound
+	}
+	if err := m.requireACPWorkspace(workspaceID, key); err != nil {
+		return false, err
+	}
+	saved, err := m.readSavedACP(key)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return saved.State.Supervision.held(), nil
+}
+
+// requireACPWorkspace returns ErrSessionNotFound unless key names a chat
+// owner configured for workspaceID.
+func (m *Manager) requireACPWorkspace(workspaceID, key string) error {
+	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, key)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(paths.Dir, "config.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrSessionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var cfg acpOwnerConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return err
+	}
+	if cfg.Info.WorkspaceID != workspaceID {
+		return ErrSessionNotFound
+	}
+	return nil
+}
+
+func (m *Manager) readSavedACP(key string) (acpSavedSession, error) {
+	var saved acpSavedSession
+	data, err := os.ReadFile(m.acpSessionPath(key))
+	if err != nil {
+		return saved, err
+	}
+	err = json.Unmarshal(data, &saved)
+	return saved, err
+}
+
 func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
@@ -203,6 +342,11 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 		if err == nil {
 			return m.acpAttachment(ctx, info, conn)
 		}
+		if code, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
+			if sentinel := acpCodeError(string(code)); sentinel != nil {
+				return nil, fmt.Errorf("start ACP owner: %w", sentinel)
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
@@ -213,7 +357,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 
 func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
 	client := rpc.NewClient(conn)
-	remote := &acpAttachment{address: conn.RemoteAddr().String(), client: client, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{})}
+	remote := &acpAttachment{address: conn.RemoteAddr().String(), client: client, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), workspaceID: info.WorkspaceID, key: info.Key}
 	var reply struct{}
 	if err := remote.call(ctx, "ACP.Bind", ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}, &reply); err != nil {
 		_ = client.Close()
@@ -268,7 +412,13 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	}
 	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved)
 	if err != nil {
+		if code := ACPErrorCode(err); code != "" {
+			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))
+		}
 		return err
+	}
+	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.Join(err, agent.Stop(context.Background()))
 	}
 	reported := make(chan struct{})
 	go func() {

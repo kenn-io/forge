@@ -46,11 +46,13 @@
   import Brain from "@lucide/svelte/icons/brain"
   import ChevronDown from "@lucide/svelte/icons/chevron-down"
   import ChatContentBlock from "./ChatContentBlock.svelte"
-  import type { ChatMessage } from "./chat-types.js"
+  import { senderLabel, type ChatMessage } from "./chat-types.js"
 
   let { message, streaming = false }: { message: ChatMessage; streaming?: boolean } =
     $props()
   const user = $derived(message.role === "user")
+  // A coordinator's prompt reads as the coordinator's, not the person's.
+  const coordinator = $derived(user && message.sender?.kind === "coordinator")
   const thought = $derived(message.role === "thought")
   const id = $props.id()
   let thoughtOpen = $state(false)
@@ -98,11 +100,12 @@
 
 <article
   class:user
-  aria-label={user ? "You" : thought ? "Assistant thinking" : "Assistant"}
+  aria-label={user ? senderLabel(message.sender) : thought ? "Assistant thinking" : "Assistant"}
 >
   <div class="cell">
     {#if user}
-      {#if message.text}<p class="message-body bubble" data-kit-tone="info">{message.text}</p>{/if}
+      {#if coordinator}<span class="sender">{senderLabel(message.sender)}</span>{/if}
+      {#if message.text}<p class="message-body bubble" class:coordinator data-kit-tone="info">{message.text}</p>{/if}
       {#each message.images ?? [] as image}
         <ChatContentBlock content={image} />
       {/each}
@@ -181,6 +184,20 @@
     line-height: 1.55;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+  /* A coordinator's prompt sits on a neutral surface so it never reads as
+     something the person typed. */
+  .bubble.coordinator {
+    background: var(--bg-inset);
+    border-color: var(--border-default);
+    color: var(--text-primary);
+  }
+  .sender {
+    display: block;
+    margin-block-end: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    text-align: end;
   }
   .message-body:not(.bubble) {
     min-width: 0;

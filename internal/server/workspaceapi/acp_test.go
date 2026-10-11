@@ -12,7 +12,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -102,12 +104,16 @@ func TestACPReattachesOnWorkspaceOpenNotStartup(t *testing.T) {
 	assert.Equal(int32(1), peer.bindings.Load(), "reopening must reuse the attachment")
 }
 
-// acpPromptPeer rejects prompts the way an owner with a disconnected agent
-// does over the RPC.
+// acpPromptPeer rejects prompts the way an owner with a disconnected agent,
+// or a supervised chat refusing an agent's input, does over the RPC. It
+// records the sender of each prompt it accepts.
 type acpPromptPeer struct {
 	acpReconnectPeer
 	disconnected atomic.Bool
+	supervised   atomic.Bool
 	prompts      atomic.Int32
+	mu           sync.Mutex
+	senders      []string
 }
 
 func (p *acpPromptPeer) Command(command localruntime.ACPCommand, reply *localruntime.ACPCommandReply) error {
@@ -118,8 +124,21 @@ func (p *acpPromptPeer) Command(command localruntime.ACPCommand, reply *localrun
 		reply.Unavailable = true
 		return nil
 	}
+	if p.supervised.Load() && command.FromAgent {
+		reply.Code = "supervised"
+		return nil
+	}
 	p.prompts.Add(1)
+	p.mu.Lock()
+	p.senders = append(p.senders, command.SenderKind())
+	p.mu.Unlock()
 	return nil
+}
+
+func (p *acpPromptPeer) acceptedSenders() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.senders)
 }
 
 func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
@@ -183,6 +202,25 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	assert.Equal(http.StatusConflict, problem.Status)
 	assert.Zero(peer.prompts.Load())
 	peer.disconnected.Store(false)
+
+	// A supervised chat refuses an agent's message. The caller learns why,
+	// and the initial message can be sent again later.
+	peer.supervised.Store(true)
+	fromAgent := request
+	fromAgent.FromAgent = true
+	_, err = handler.SubmitInitialMessageService(ctx, fromAgent)
+	problem, ok = errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "a supervised chat must be a proven no-write conflict, got %v", err)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.Contains(problem.Detail, localruntime.ErrACPSupervised.Error())
+	_, err = handler.SubmitAgentMessageService(ctx, "workspace", "chat-runtime", "follow up")
+	problem, ok = errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "a supervised chat must be a conflict, got %v", err)
+	assert.Equal(http.StatusConflict, problem.Status)
+	assert.Contains(problem.Detail, localruntime.ErrACPSupervised.Error())
+	assert.Zero(peer.prompts.Load())
+	peer.supervised.Store(false)
+
 	status, err := handler.SubmitInitialMessageService(ctx, request)
 	require.NoError(err)
 	assert.Equal(initialMessageDelivered, status.State)
@@ -195,6 +233,8 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(len(large), result.MessageBytes)
 	assert.Equal(int32(2), peer.prompts.Load())
+	assert.Equal([]string{localruntime.ACPSenderUser, localruntime.ACPSenderCoordinator}, peer.acceptedSenders(),
+		"the owner learns which messages came from an agent")
 }
 
 // stallingChat is an ACP chat whose prompts wait on the agent until released.
@@ -267,6 +307,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 
 func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }
 func (c *stallingChat) History(int, int) ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Page(int, int) ([]byte, error)    { return []byte(`{}`), nil }
 func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
 	return make(chan struct{}), func() {}
 }
@@ -280,11 +321,11 @@ func (c *stallingChat) Command(command localruntime.ACPCommand) error {
 	}
 	return nil
 }
-func (c *stallingChat) Prompt(string) error        { return nil }
-func (c *stallingChat) Stop(context.Context) error { return nil }
-func (c *stallingChat) Detach()                    {}
-func (c *stallingChat) Done() <-chan struct{}      { return c.done }
-func (c *stallingChat) ExitCode() int              { return 0 }
+func (c *stallingChat) Prompt(string, localruntime.ACPSender) error { return nil }
+func (c *stallingChat) Stop(context.Context) error                  { return nil }
+func (c *stallingChat) Detach()                                     {}
+func (c *stallingChat) Done() <-chan struct{}                       { return c.done }
+func (c *stallingChat) ExitCode() int                               { return 0 }
 
 // A prompt waiting on the agent must not keep the chat from reading a stop.
 func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {

@@ -515,3 +515,44 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     expect(Math.abs(anchor.getBoundingClientRect().top - before)).toBeLessThan(2);
   });
 });
+
+describe("ACPWorkspace queued coordinator prompts (browser)", () => {
+  async function openQueue(width: number) {
+    const { host } = await renderChat(width);
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [],
+        messageOffset: 0,
+        messageCount: 0,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: true,
+        connected: true,
+        error: "",
+        queue: [{ id: "c1", text: "Refactor the parser", sender: { kind: "coordinator", name: "release-planner-with-a-long-name" } }],
+      }),
+    );
+    await nextFrame();
+    await userEvent.click(page.getByRole("button", { name: /1 queued/ }));
+    await nextFrame();
+    const row = host.querySelector<HTMLElement>('ol[aria-label="Queued messages"] li')!;
+    return { row, name: row.querySelector<HTMLElement>(".row-sender-name")! };
+  }
+
+  it("names the coordinator in a wide pane", async () => {
+    const { row, name } = await openQueue(900);
+    expect(getComputedStyle(name).display).not.toBe("none");
+    expect(row.textContent).toContain("Coordinator release-planner-with-a-long-name");
+  });
+
+  it("says only Coordinator in a phone-width pane, keeping the message and buttons visible", async () => {
+    const { row, name } = await openQueue(360);
+    expect(getComputedStyle(name).display).toBe("none");
+    const rowBox = row.getBoundingClientRect();
+    expect(row.querySelector<HTMLElement>(".row-text")!.getBoundingClientRect().width).toBeGreaterThan(80);
+    for (const button of row.querySelectorAll<HTMLElement>("button")) {
+      expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right + 0.5);
+    }
+  });
+});

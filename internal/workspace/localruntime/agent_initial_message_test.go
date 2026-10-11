@@ -56,7 +56,7 @@ func TestClaudeInitialMessageWaitsForTrustWithRealCLI(t *testing.T) {
 	require.NoError(err)
 	if !info.InitialMessageProvided {
 		require.Eventually(func() bool {
-			return mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "/help") == nil
+			return mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "/help", ACPSender{Kind: ACPSenderUser}) == nil
 		}, 10*time.Second, 100*time.Millisecond)
 	}
 	capture := append(slices.Clone(tmuxCommand[1:]), "capture-pane", "-p", "-S", "-80", "-t", info.TmuxSession)

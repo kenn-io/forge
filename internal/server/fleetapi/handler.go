@@ -52,6 +52,7 @@ type Deps struct {
 	WorkspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
 	QueueWorkspaceDeletion      func(string) error
 	RuntimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
+	RuntimeExited               func(sessionKey string) bool
 	RevalidateDiffs             func()
 	NodeID                      string
 	FederationActive            bool
@@ -84,6 +85,7 @@ type Handler struct {
 	workspaceProviderState      func(context.Context, []fleet.RawWorkspace) ([]fleet.RawWorkspace, error)
 	queueWorkspaceDeletion      func(string) error
 	runtimeSnapshot             func(string) workspaceapi.RuntimeSnapshot
+	runtimeExited               func(string) bool
 	revalidateDiffs             func()
 	nodeID                      string
 	federationActive            bool
@@ -143,6 +145,7 @@ func New(deps Deps) *Handler {
 		workspaceProviderState:      deps.WorkspaceProviderState,
 		queueWorkspaceDeletion:      deps.QueueWorkspaceDeletion,
 		runtimeSnapshot:             deps.RuntimeSnapshot,
+		runtimeExited:               deps.RuntimeExited,
 		revalidateDiffs:             deps.RevalidateDiffs,
 		nodeID:                      deps.NodeID,
 		federationActive:            deps.FederationActive,

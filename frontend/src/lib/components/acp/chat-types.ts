@@ -27,8 +27,21 @@ export const ToolContentSchema = Schema.Struct({
   exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
 });
 export type ToolContent = typeof ToolContentSchema.Type;
+// Who submitted a prompt: a person in Forge, or a coordinator agent.
+// Absent from transcripts saved before senders were recorded.
+const ChatSenderSchema = Schema.Struct({
+  kind: Schema.Literals(["user", "coordinator"]),
+  name: optionalText,
+});
+export type ChatSender = typeof ChatSenderSchema.Type;
+/** Names a prompt's sender; people see their own prompts as "You". */
+export function senderLabel(sender: ChatSender | null | undefined): string {
+  if (sender?.kind !== "coordinator") return "You";
+  return sender.name ? `Coordinator ${sender.name}` : "Coordinator";
+}
 export const ChatMessageSchema = Schema.Struct({
   role: Schema.Literals(["user", "assistant", "thought", "tool"]),
+  sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
   text: Schema.String,
   images: Schema.optional(Schema.Array(ChatContentSchema)),
   createdAt: Schema.optional(Schema.String),
@@ -117,6 +130,7 @@ export const ChatStateSchema = Schema.Struct({
           id: Schema.String,
           text: Schema.String,
           images: Schema.optional(Schema.Array(ChatContentSchema)),
+          sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
         }),
       ),
     ),
@@ -129,6 +143,11 @@ export const ChatStateSchema = Schema.Struct({
     Schema.NullOr(
       Schema.Array(Schema.Struct({ content: Schema.String, priority: Schema.String, status: Schema.String })),
     ),
+  ),
+  // Present while a coordinator supervises the chat, or after a person ended
+  // its supervision.
+  supervision: Schema.optional(
+    Schema.NullOr(Schema.Struct({ supervisor: Schema.String, generation: Schema.Number, takenOver: Schema.Boolean })),
   ),
   busy: Schema.Boolean,
   connected: Schema.Boolean,
@@ -144,10 +163,12 @@ export type PromptMode = "send" | "queue" | "steer";
 export type ChatCommand =
   | { type: "prompt"; mode: PromptMode; text: string; id: string; images?: readonly ChatContent[] }
   | { type: "unqueue"; id: string }
+  | { type: "move"; id: string; index: number }
   | { type: "resume" }
   | { type: "dismiss_error" }
   | { type: "history"; before: number; limit: number }
   | { type: "cancel" }
+  | { type: "takeover" }
   | { type: "config"; id: string; value: string }
   | { type: "permission"; id: string; optionId: string }
   | { type: "elicitation"; id: string; action: "accept"; content: Record<string, unknown> }

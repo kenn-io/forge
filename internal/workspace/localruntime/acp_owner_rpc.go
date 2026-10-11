@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"sync"
@@ -71,9 +73,52 @@ func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
 	}
 }
 
-// ACPCommandReply types the one command failure callers branch on. net/rpc
-// reduces returned errors to text, so it travels as a successful reply.
-type ACPCommandReply struct{ Unavailable bool }
+// ACPCommandReply types the command failures callers branch on. net/rpc
+// reduces returned errors to text, so they travel as successful replies.
+// Code names a sentinel error; see ACPErrorCode.
+type ACPCommandReply struct {
+	Unavailable bool
+	Code        string
+}
+
+// acpErrorCodes maps the sentinel errors that cross the owner RPC to codes. An
+// owner that fails to start records its code instead; see acpStartErrorFile.
+var acpErrorCodes = []struct {
+	code string
+	err  error
+}{
+	{"stale_request", ErrACPStaleRequest},
+	{"uncertain", ErrACPSubmissionUncertain},
+	{"supervised", ErrACPSupervised},
+	{"stale_generation", ErrACPStaleGeneration},
+	{"not_owned", ErrACPNotOwned},
+	{"person_only", ErrACPPersonOnly},
+	{"cannot_reload", ErrACPCannotReload},
+	{"withdrawn", errACPSubmissionWithdrawn},
+	{"sending", errACPQueuedPromptSending},
+	{"already_answered", errACPAlreadyAnswered},
+	{"not_pending", errACPNotPending},
+}
+
+// ACPErrorCode returns the code for a sentinel error, or "" for any other.
+func ACPErrorCode(err error) string {
+	for _, entry := range acpErrorCodes {
+		if errors.Is(err, entry.err) {
+			return entry.code
+		}
+	}
+	return ""
+}
+
+// acpCodeError restores the sentinel error for a code, or nil for an unknown one.
+func acpCodeError(code string) error {
+	for _, entry := range acpErrorCodes {
+		if entry.code == code {
+			return entry.err
+		}
+	}
+	return nil
+}
 
 // ACPHistoryRequest selects transcript messages [Before-Limit, Before).
 type ACPHistoryRequest struct{ Before, Limit int }
@@ -84,10 +129,23 @@ func (o *acpOwnerRPC) History(request ACPHistoryRequest, reply *[]byte) error {
 	return err
 }
 
+// ACPPageRequest selects transcript messages [After, After+Limit).
+type ACPPageRequest struct{ After, Limit int }
+
+func (o *acpOwnerRPC) Page(request ACPPageRequest, reply *[]byte) error {
+	data, err := o.agent.Page(request.After, request.Limit)
+	*reply = data
+	return err
+}
+
 func (o *acpOwnerRPC) Command(command ACPCommand, reply *ACPCommandReply) error {
 	err := o.agent.Command(command)
 	if errors.Is(err, ErrACPAgentUnavailable) {
 		reply.Unavailable = true
+		return nil
+	}
+	if code := ACPErrorCode(err); code != "" {
+		reply.Code = code
 		return nil
 	}
 	return err
@@ -104,7 +162,10 @@ func (o *acpOwnerRPC) Stop(_ struct{}, _ *struct{}) error {
 }
 
 type acpAttachment struct {
-	address     string
+	address string
+	// workspaceID and key name the chat in the daemon log.
+	workspaceID string
+	key         string
 	client      *rpc.Client
 	done        chan struct{}
 	mu          sync.Mutex
@@ -136,6 +197,19 @@ func (a *acpAttachment) Command(command ACPCommand) error {
 	if reply.Unavailable {
 		return ErrACPAgentUnavailable
 	}
+	if reply.Code != "" {
+		if err := acpCodeError(reply.Code); err != nil {
+			return err
+		}
+		return fmt.Errorf("owner returned unknown error code %q", reply.Code)
+	}
+	if command.Type == "prompt" {
+		// Every prompt reaches its chat through an attachment, so the
+		// daemon log records who sent each one.
+		slog.Info("ACP prompt submitted",
+			"workspace_id", a.workspaceID, "session_key", a.key, "submission_id", command.ID,
+			"mode", command.Mode, "sender", command.SenderKind(), "generation", command.Generation)
+	}
 	return nil
 }
 
@@ -145,8 +219,14 @@ func (a *acpAttachment) History(before, limit int) ([]byte, error) {
 	return reply, err
 }
 
-func (a *acpAttachment) Prompt(text string) error {
-	return a.Command(ACPCommand{Type: "prompt", Text: text})
+func (a *acpAttachment) Page(after, limit int) ([]byte, error) {
+	var reply []byte
+	err := a.client.Call("ACP.Page", ACPPageRequest{After: after, Limit: limit}, &reply)
+	return reply, err
+}
+
+func (a *acpAttachment) Prompt(text string, sender ACPSender) error {
+	return a.Command(ACPCommand{Type: "prompt", Text: text, FromAgent: sender.coordinator()})
 }
 func (a *acpAttachment) Done() <-chan struct{} { return a.done }
 func (a *acpAttachment) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }

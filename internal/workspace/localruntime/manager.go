@@ -652,6 +652,23 @@ func (m *Manager) restoreRuntimeSession(
 	if m.Exited(key) {
 		return fmt.Errorf("%w: %q already exited", ErrSessionUnavailable, key)
 	}
+	restored.WorkspaceID = workspaceID
+	restored.TargetKey = targetKey
+	restored.TmuxSession = tmuxSession
+	restored.SessionKey = key
+	return m.startRestoredSession(ctx, restored)
+}
+
+// startRestoredSession attaches or relaunches a stored session. The caller
+// holds the key's start lock and has found no running session for it.
+func (m *Manager) startRestoredSession(
+	ctx context.Context,
+	restored RestoredRuntimeSession,
+) error {
+	workspaceID := restored.WorkspaceID
+	targetKey := restored.TargetKey
+	tmuxSession := restored.TmuxSession
+	key := restored.SessionKey
 	if restored.Kind != LaunchTargetACP && tmuxSession != "" {
 		if err := m.requireTmuxSession(ctx, tmuxSession); err != nil {
 			return err
@@ -1535,13 +1552,16 @@ func (m *Manager) SubmitInitialMessage(
 	workspaceID string,
 	sessionKey string,
 	message string,
+	sender ACPSender,
 ) error {
-	return m.SubmitAgentMessage(ctx, workspaceID, sessionKey, message)
+	return m.SubmitAgentMessage(ctx, workspaceID, sessionKey, message, sender)
 }
 
 // SubmitAgentMessage writes one bounded, already-normalized prompt through a
-// live agent runtime. ACP runtimes receive it as a chat prompt, queued behind
-// any running turn, and reject it unwritten only while disconnected. Terminal
+// live agent runtime. ACP runtimes receive it as a chat prompt from sender,
+// queued behind any running turn. They reject it unwritten while
+// disconnected, and a coordinator's with ErrACPSupervised while another
+// coordinator supervises the chat. Terminal
 // runtimes require observed bracketed-paste mode and receive the complete
 // paste frame and Enter in one serialized terminal operation.
 func (m *Manager) SubmitAgentMessage(
@@ -1549,12 +1569,13 @@ func (m *Manager) SubmitAgentMessage(
 	workspaceID string,
 	sessionKey string,
 	message string,
+	sender ACPSender,
 ) error {
 	if err := context.Cause(ctx); err != nil {
 		return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 	}
 	if acp, err := m.ACP(workspaceID, sessionKey); err == nil {
-		err := acp.Prompt(message)
+		err := acp.Prompt(message, sender)
 		if errors.Is(err, ErrACPAgentUnavailable) {
 			return fmt.Errorf("%w: %w", ErrInitialMessageNotWritten, err)
 		}

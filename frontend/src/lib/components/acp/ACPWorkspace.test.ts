@@ -589,6 +589,28 @@ describe("ACPWorkspace busy composer", () => {
     expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
   });
 
+  it("names a coordinator's queued prompts and lets a person move theirs ahead", async () => {
+    await openChat({
+      busy: true,
+      queue: [
+        { id: "c1", text: "Refactor the parser", sender: { kind: "coordinator", name: "planner" } },
+        { id: "u1", text: "Fix the typo first", sender: { kind: "user" } },
+      ],
+    });
+    await fireEvent.click(screen.getByRole("button", { name: /2 queued/ }));
+    const list = screen.getByRole("list", { name: "Queued messages" });
+    const [coordinatorRow, personRow] = within(list).getAllByRole("listitem");
+    expect(coordinatorRow!.textContent).toContain("Coordinator planner");
+    expect(personRow!.textContent).not.toContain("Coordinator");
+
+    const up = within(list).getAllByRole("button", { name: "Move queued message up" });
+    const down = within(list).getAllByRole("button", { name: "Move queued message down" });
+    expect((up[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((down[1] as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(up[1]!);
+    expect(sentCommands()).toEqual([{ type: "move", id: "u1", index: 0 }]);
+  });
+
   it("shows a paused queue with Resume, and hides the section when the queue is empty", async () => {
     await openChat({ queuePaused: true, queue: [{ id: "q1", text: "Run the full suite" }] });
 
@@ -1368,5 +1390,78 @@ describe("ACPWorkspace pasted images", () => {
     Object.defineProperty(event, "clipboardData", { value: { files: [] } });
     screen.getByRole("textbox", { name: "Message agent" }).dispatchEvent(event);
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("ACPWorkspace supervision", () => {
+  const supervised = { supervision: { supervisor: "coordinator", generation: 2, takenOver: false } };
+
+  function composer(): HTMLTextAreaElement {
+    return screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+  }
+
+  it("lets a person chat and answer requests while the chat is supervised", async () => {
+    await openChat({
+      ...supervised,
+      permissions: [
+        { id: "g-p1", title: "Run tests", options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }] },
+      ],
+    });
+
+    expect(screen.getByText("Supervised by coordinator")).toBeTruthy();
+    expect(composer().disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Allow" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps Stop available to a person while a supervised turn runs", async () => {
+    await openChat({ ...supervised, busy: true });
+
+    const stop = screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    await fireEvent.click(stop);
+    expect(sentCommands()).toContainEqual({ type: "cancel" });
+  });
+
+  it("ends supervision from the End supervision button", async () => {
+    await openChat(supervised);
+
+    await fireEvent.click(screen.getByRole("button", { name: "End supervision" }));
+
+    expect(sentCommands()).toContainEqual({ type: "takeover" });
+  });
+
+  it("says supervision ended once the snapshot shows it", async () => {
+    await openChat(supervised);
+    await push({ supervision: { supervisor: "coordinator", generation: 3, takenOver: true } });
+
+    expect(screen.getByText("Supervision by coordinator ended")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "End supervision" })).toBeNull();
+  });
+
+  it("shows a coordinator's prompt as the coordinator's, not the person's", async () => {
+    await openChat({
+      ...supervised,
+      messages: [
+        { role: "user", text: "Refactor the parser", sender: { kind: "coordinator", name: "planner" } },
+        { role: "user", text: "Fix the typo", sender: { kind: "user" } },
+        { role: "user", text: "Saved before senders" },
+      ],
+    });
+
+    const coordinatorMessage = screen.getByRole("article", { name: "Coordinator planner" });
+    expect(coordinatorMessage.textContent).toContain("Coordinator planner");
+    expect(coordinatorMessage.textContent).toContain("Refactor the parser");
+    const people = screen.getAllByRole("article", { name: "You" });
+    expect(people.map((article) => article.textContent)).toEqual([
+      expect.stringContaining("Fix the typo"),
+      expect.stringContaining("Saved before senders"),
+    ]);
+  });
+
+  it("shows nothing about supervision for an unsupervised chat", async () => {
+    await openChat({});
+
+    expect(screen.queryByText(/Supervised by/)).toBeNull();
+    expect(composer().disabled).toBe(false);
   });
 });

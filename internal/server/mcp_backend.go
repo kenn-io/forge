@@ -637,7 +637,7 @@ func (b mcpBackend) SubmitInitialMessage(
 ) (mcpserver.InitialMessageStatus, error) {
 	result, err := b.server.workspaceAPI.SubmitInitialMessageService(ctx, workspaceapi.InitialMessageRequest{
 		WorkspaceID: req.WorkspaceID, RuntimeSessionKey: req.RuntimeSessionKey,
-		TargetKey: req.TargetKey, Message: req.Message,
+		TargetKey: req.TargetKey, Message: req.Message, FromAgent: true,
 	})
 	status := *mcpapi.McpInitialMessage(result)
 	if errors.Is(err, workspaceapi.ErrInitialMessageInputModeNotReady) {

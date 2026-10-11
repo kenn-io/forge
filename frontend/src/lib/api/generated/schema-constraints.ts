@@ -7,8 +7,17 @@ export const schemaConstraints = {
   ACP: {
     font_size: { minimum: 8, maximum: 32 },
   },
+  ACPQueuedPrompt: {
+    generation: { minimum: 0 },
+  },
   ACPSettingsUpdate: {
     font_size: { minimum: 8, maximum: 32 },
+  },
+  ACPSupervision: {
+    generation: { minimum: 0 },
+  },
+  ACPTurnRecord: {
+    generation: { minimum: 0 },
   },
   Assignment: {
     uid: { minimum: 0 },
@@ -60,6 +69,9 @@ export const schemaConstraints = {
   },
   WorkerWorkspaceTargetRequest: {
     number: { minimum: 1 },
+  },
+  WorkspaceChatCommand: {
+    generation: { minimum: 0 },
   },
   WorkspaceLaunchPull: {
     snapshot_revision: { minimum: 1 },

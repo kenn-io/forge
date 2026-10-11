@@ -189,7 +189,7 @@ func (s *Handler) SubmitInitialMessageService(
 	if !reserved {
 		return existingInitialMessageAttemptResult(attempt, proposed)
 	}
-	if err := s.runtime.SubmitInitialMessage(ctx, req.WorkspaceID, req.RuntimeSessionKey, message); err != nil {
+	if err := s.runtime.SubmitInitialMessage(ctx, req.WorkspaceID, req.RuntimeSessionKey, message, messageSender(req.FromAgent)); err != nil {
 		return s.handleInitialMessageSubmitError(
 			req.WorkspaceID, req.RuntimeSessionKey, proposed, err,
 		)
@@ -200,6 +200,17 @@ func (s *Handler) SubmitInitialMessageService(
 	return initialMessageAttemptResult(delivered), nil
 }
 
+// messageSender names who sends a message through these services. An agent's
+// is a coordinator's; ACP chats tag the prompt with it.
+func messageSender(fromAgent bool) localruntime.ACPSender {
+	if fromAgent {
+		return localruntime.ACPSender{Kind: localruntime.ACPSenderCoordinator}
+	}
+	return localruntime.ACPSender{Kind: localruntime.ACPSenderUser}
+}
+
+// SubmitAgentMessageService delivers a follow-up message an agent sends
+// through a Forge tool.
 func (s *Handler) SubmitAgentMessageService(
 	ctx context.Context, workspaceID, runtimeSessionKey, message string,
 ) (AgentMessageResult, error) {
@@ -234,11 +245,12 @@ func (s *Handler) SubmitAgentMessageService(
 			httpapi.CodeConflict, "agent runtime session is not live", nil,
 		)
 	}
-	if err := s.runtime.SubmitAgentMessage(ctx, workspaceID, runtimeSessionKey, message); err != nil {
+	if err := s.runtime.SubmitAgentMessage(ctx, workspaceID, runtimeSessionKey, message, messageSender(true)); err != nil {
 		if errors.Is(err, localruntime.ErrBracketedPasteInactive) {
 			return AgentMessageResult{}, ErrInitialMessageInputModeNotReady
 		}
-		if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
+		if errors.Is(err, localruntime.ErrInitialMessageNotWritten) ||
+			errors.Is(err, localruntime.ErrACPSupervised) {
 			return AgentMessageResult{}, httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 		}
 		return AgentMessageResult{}, httpapi.Internal("submit agent message failed")
@@ -258,7 +270,9 @@ func (s *Handler) handleInitialMessageSubmitError(
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
 		return InitialMessageResult{}, ErrInitialMessageInputModeNotReady
 	}
-	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) {
+	// A supervised chat refuses the message before anything is written.
+	if errors.Is(err, localruntime.ErrInitialMessageNotWritten) ||
+		errors.Is(err, localruntime.ErrACPSupervised) {
 		s.releaseInitialMessageAttempt(workspaceID, runtimeSessionKey, proposed)
 		return InitialMessageResult{}, httpapi.Conflict(
 			httpapi.CodeConflict, err.Error(), nil,

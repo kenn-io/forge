@@ -2,6 +2,7 @@ package localruntime
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
@@ -25,9 +26,12 @@ type ACPChat interface {
 	// History returns earlier transcript messages [before-limit, before) as
 	// a {"history": ...} client frame.
 	History(before, limit int) ([]byte, error)
+	// Page returns the published state with transcript messages
+	// [after, after+limit) in place of the recent window.
+	Page(after, limit int) ([]byte, error)
 	Subscribe() (<-chan struct{}, func())
 	Command(ACPCommand) error
-	Prompt(string) error
+	Prompt(string, ACPSender) error
 	Stop(context.Context) error
 	Detach()
 	Done() <-chan struct{}
@@ -45,7 +49,7 @@ type ACP struct {
 	done            chan struct{}
 	client          *acpsdk.ClientSideConnection
 	promptWritten   chan error
-	nextPermission  int
+	nextRequest     int
 	permissions     map[string]chan acpsdk.RequestPermissionOutcome
 	elicitations    map[string]chan acpsdk.UnstableCreateElicitationResponse
 	subscribers     map[chan struct{}]struct{}
@@ -80,6 +84,23 @@ type ACP struct {
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
+	// beforePromptWrite lets tests stop the owner between saving a prompt or
+	// a steer as sending and writing it. It is nil in production.
+	beforePromptWrite func()
+	// beforePromptStart lets tests run between a submission finding the chat
+	// idle and starting its prompt. It is nil in production.
+	beforePromptStart func()
+	// beforeAllowanceCancel lets tests run between a turn using up its
+	// allowance and the cancel that ends it.
+	beforeAllowanceCancel func()
+	// The running turn's clock: stopClock stops its ticker, activeSince is
+	// when it last started counting (zero while blocked), clockSaved is when
+	// it last saved the session, and turnStart indexes the turn's first
+	// message.
+	stopClock   chan struct{}
+	activeSince time.Time
+	clockSaved  time.Time
+	turnStart   int
 }
 
 // acpExternalTurn is a turn the agent started after a steer. Until it reports
@@ -96,18 +117,26 @@ type acpExternalTurn struct {
 // restore the sentinel. A running turn is never a reason to reject input.
 var ErrACPAgentUnavailable = errors.New("ACP agent is disconnected")
 
+// ErrACPCannotReload refuses to start a chat a coordinator holds when its
+// agent cannot load the saved session. Such a chat never continues in a new
+// native session, so its coordinator's records stay true to the conversation.
+var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
+
 // errACPNotIdle stops a turn from starting over another turn, a steering
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
 type ACPMessage struct {
-	SubmissionID string       `json:"submissionId,omitempty"`
-	Role         string       `json:"role"`
-	Text         string       `json:"text"`
-	Images       []ACPContent `json:"images,omitempty"`
-	CreatedAt    string       `json:"createdAt"`
-	ToolCallID   string       `json:"toolCallId,omitempty"`
-	Status       string       `json:"status,omitempty"`
+	SubmissionID string `json:"submissionId,omitempty"`
+	// Sender names who submitted a user message. Transcripts saved before
+	// senders were recorded leave it nil.
+	Sender     *ACPSender   `json:"sender,omitempty"`
+	Role       string       `json:"role"`
+	Text       string       `json:"text"`
+	Images     []ACPContent `json:"images,omitempty"`
+	CreatedAt  string       `json:"createdAt"`
+	ToolCallID string       `json:"toolCallId,omitempty"`
+	Status     string       `json:"status,omitempty"`
 	// Subagent marks a tool call that runs a delegated agent. ParentToolCallID
 	// links a tool call made inside such a subagent back to it.
 	Subagent         bool   `json:"subagent,omitempty"`
@@ -132,6 +161,8 @@ type ACPPermission struct {
 	ID      string                `json:"id"`
 	Title   string                `json:"title"`
 	Options []ACPPermissionOption `json:"options"`
+	// toolCallID is the tool call the agent asks to run.
+	toolCallID string
 }
 
 // ACPElicitation is a pending form-mode elicitation. Its schema is the
@@ -202,12 +233,69 @@ type ACPState struct {
 	// true while a steering request is in flight.
 	SteeringSupported bool `json:"steeringSupported"`
 	Steering          bool `json:"steering"`
+	// RuntimeGeneration names this owner process. Request IDs carry it, so an
+	// answer meant for an earlier agent process is recognized as stale.
+	RuntimeGeneration string `json:"runtimeGeneration"`
+	// Answered holds the newest answered permission and elicitation requests,
+	// so a retried answer gets the same result. Only the owner and its saved
+	// session hold it; published state leaves it out.
+	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
+	// Sending is the identified prompt being written to the agent. It is
+	// saved before the write, so an owner that stops before recording the
+	// message leaves it behind for the replacement to report as uncertain.
+	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
+	// Uncertain and Withdrawn hold submission IDs that must never run: one
+	// may have reached an agent before its owner stopped, and the other was
+	// removed from the queue. Both last for the life of the session.
+	Uncertain []string `json:"uncertain,omitempty"`
+	Withdrawn []string `json:"withdrawn,omitempty"`
+	// Turns records the newest prompt turns; see ACPTurnRecord.
+	Turns []ACPTurnRecord `json:"turns,omitempty"`
+	// Supervision names the coordinator supervising this chat; see
+	// acp_supervision.go. It is nil for a chat no coordinator has claimed.
+	Supervision *ACPSupervision `json:"supervision,omitempty"`
+	// Blocked is true while the running turn waits only for a person to
+	// answer a permission or elicitation; see acp_allowance.go.
+	Blocked bool `json:"blocked"`
 }
 type ACPQueuedPrompt struct {
 	ID     string       `json:"id"`
 	Text   string       `json:"text"`
 	Images []ACPContent `json:"images,omitempty"`
+	Sender ACPSender    `json:"sender"`
+	// Generation is the supervision generation a coordinator's prompt was
+	// submitted under, and Allowance bounds the turn it starts; see
+	// acp_allowance.go. Both are zero for people's prompts.
+	Generation uint64 `json:"generation,omitempty"`
+	Allowance  int64  `json:"allowanceMillis,omitempty"`
 }
+
+// Sender kinds. People use Forge's own clients; coordinators are agents that
+// submit through Forge, whether or not they supervise the chat.
+const (
+	ACPSenderUser        = "user"
+	ACPSenderCoordinator = "coordinator"
+)
+
+// ACPSender identifies who submitted a prompt. Name is the coordinator's,
+// when Forge knows it.
+type ACPSender struct {
+	Kind string `json:"kind" enum:"user,coordinator"`
+	Name string `json:"name,omitempty"`
+}
+
+func (s ACPSender) coordinator() bool { return s.Kind == ACPSenderCoordinator }
+
+// SenderKind is the kind of sender command comes from: a coordinator's when
+// it names a supervision generation or comes from an agent's tool, and a
+// person's otherwise.
+func (c ACPCommand) SenderKind() string {
+	if c.Generation != 0 || c.FromAgent {
+		return ACPSenderCoordinator
+	}
+	return ACPSenderUser
+}
+
 type ACPCommand struct {
 	Type string `json:"type"`
 	// Mode chooses how a prompt is submitted: send (the default), queue, or
@@ -225,6 +313,20 @@ type ACPCommand struct {
 	// values as a JSON object; it stays raw so the owner RPC can carry it.
 	Action  string         `json:"action,omitempty"`
 	Content jsontext.Value `json:"content,omitempty"`
+	// Generation is the supervision generation the sender holds. Supervised
+	// sessions reject input whose generation differs.
+	Generation uint64 `json:"generation,omitempty"`
+	// Supervisor names the coordinator claiming supervision.
+	Supervisor string `json:"supervisor,omitempty"`
+	// AllowanceMillis bounds the active time of a supervised prompt's turn;
+	// see acp_allowance.go. Only the supervisor's prompts may set it.
+	AllowanceMillis int64 `json:"allowanceMillis,omitempty"`
+	// Index is the queue position a move command puts a prompt at.
+	Index int `json:"index,omitempty"`
+	// FromAgent marks input an agent submits through a Forge tool without
+	// supervising the chat. Clients cannot set it: input that carries neither
+	// a generation nor FromAgent is a person's.
+	FromAgent bool `json:"-"`
 }
 
 func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
@@ -248,6 +350,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	// Diagnostics are not protocol messages and must never enter the chat stream.
 	cmd.Stderr = os.Stderr
 	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a.state.RuntimeGeneration = rand.Text()[:12]
 	if err := cmd.Start(); err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
@@ -280,9 +383,12 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
-		// An agent that cannot load sessions continues the saved conversation in
-		// a new session rather than failing to start.
-		if saved == nil || !initialized.AgentCapabilities.LoadSession {
+		// An agent that cannot load sessions continues a saved conversation
+		// no coordinator holds in a new session rather than failing to start.
+		// A taken-over chat is a person's chat, so it continues too.
+		if saved != nil && saved.State.Supervision.held() && !initialized.AgentCapabilities.LoadSession {
+			err = ErrACPCannotReload
+		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
@@ -411,10 +517,14 @@ func (a *ACP) wait() {
 	a.mu.Lock()
 	a.exitCode = exitCode
 	a.state.Connected = false
+	// A failed in-flight prompt may end the record first; a turn the agent
+	// started itself has no prompt response to end it.
+	a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
 	a.state.Busy = false
 	a.state.Stopping = false
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
+	a.refreshBlockedLocked()
 	a.state.Steering = false
 	a.external = nil
 	a.takeoverPending = false
@@ -451,15 +561,24 @@ func (a *ACP) Subscribe() (<-chan struct{}, func()) {
 }
 
 func (a *ACP) Command(command ACPCommand) error {
+	// Input commands apply the supervision gate under the lock that guards
+	// their change, so authority cannot change between check and effect.
+	// A person's cancel always passes; a coordinator's names its generation.
 	switch command.Type {
+	case "supervise":
+		return a.supervise(command)
+	case "takeover":
+		return a.takeover(command.Generation)
 	case "config":
-		return a.configure(command.ID, command.Value)
+		return a.configure(command.ID, command.Value, command.Generation)
 	case "prompt":
 		return a.submit(command)
 	case "unqueue":
-		return a.unqueue(command.ID)
+		return a.unqueue(command.ID, command.Generation)
+	case "move":
+		return a.move(command.ID, command.Index, command.Generation)
 	case "resume":
-		return a.resumeQueue()
+		return a.resumeQueue(command.Generation)
 	case "dismiss_error":
 		a.mu.Lock()
 		defer a.mu.Unlock()
@@ -468,39 +587,9 @@ func (a *ACP) Command(command ACPCommand) error {
 		a.changedLocked()
 		return err
 	case "cancel":
-		// Stop never waits for a prompt write, steering request, or settings
-		// change; a prompt written concurrently is cancelled after its write.
-		a.mu.Lock()
-		a.cancelling = true
-		a.state.QueuePaused = true
-		a.state.Stopping = a.state.Busy || a.state.Steering
-		a.clearPendingLocked()
-		a.changedLocked()
-		a.mu.Unlock()
-		return a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
+		return a.cancel(command.Generation)
 	case "permission":
-		a.mu.Lock()
-		index := -1
-		for i, permission := range a.state.Permissions {
-			if permission.ID == command.ID {
-				for _, option := range permission.Options {
-					if option.OptionID == command.OptionID {
-						index = i
-					}
-				}
-			}
-		}
-		if index < 0 {
-			a.mu.Unlock()
-			return errors.New("permission option is no longer pending")
-		}
-		response := a.permissions[command.ID]
-		delete(a.permissions, command.ID)
-		a.state.Permissions = slices.Delete(a.state.Permissions, index, index+1)
-		response <- acpsdk.NewRequestPermissionOutcomeSelected(acpsdk.PermissionOptionId(command.OptionID))
-		a.changedLocked()
-		a.mu.Unlock()
-		return nil
+		return a.answerPermission(command)
 	case "elicitation":
 		return a.answerElicitation(command)
 	default:
@@ -509,24 +598,69 @@ func (a *ACP) Command(command ACPCommand) error {
 }
 
 // Prompt submits text as a send: it starts a turn when idle and queues behind
-// a running one.
-func (a *ACP) Prompt(text string) error { return a.submit(ACPCommand{Type: "prompt", Text: text}) }
+// a running one. sender names who sent it: a person, or an agent using a
+// Forge tool, which cannot add to a chat a coordinator supervises.
+func (a *ACP) Prompt(text string, sender ACPSender) error {
+	return a.submit(ACPCommand{Type: "prompt", Text: text, FromAgent: sender.coordinator()})
+}
 
-// startPromptLocked starts a turn. The caller holds turnMu. A queued prompt
-// leaves the queue in the same persisted update that records it as sent.
-func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) error {
+// errACPQueueChanged reports that a queued prompt was withdrawn or is no
+// longer at the head of the queue when drain came to send it, or that the
+// queue was paused; drain looks at the queue again.
+var errACPQueueChanged = errors.New("the queue changed")
+
+// startPromptLocked starts a turn for prompt, whose active time is bounded by
+// its allowance, or unbounded when it is 0. The caller holds turnMu. A queued
+// prompt leaves the queue in the same persisted update that records it as
+// sent. A prompt sent at once checks its sender's generation again here,
+// because a takeover needs only a.mu. Any prompt's allowance is armed only if
+// its sender still holds the chat once the prompt is written. A queued prompt is sent only if it is
+// still the head of the queue: recording it as sending reserves it under the
+// same lock, so a withdrawal or a move either lands first or is refused. A
+// prompt sent at once that finds the chat busy queues instead.
+func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
+	text, submissionID, images, generation := prompt.Text, prompt.ID, prompt.Images, prompt.Generation
 	a.mu.Lock()
+	// A queued prompt was checked when it was queued and runs whoever holds
+	// the chat now; it only needs to still be the head of a queue nobody
+	// stopped. A prompt sent at once checks its sender's generation again.
+	if queued && (a.state.QueuePaused || len(a.state.Queue) == 0 || a.state.Queue[0].ID != submissionID ||
+		slices.Contains(a.state.Withdrawn, submissionID)) {
+		a.mu.Unlock()
+		return errACPQueueChanged
+	}
+	if err := a.supervisionGateLocked(generation); !queued && err != nil {
+		a.mu.Unlock()
+		return err
+	}
 	if !a.state.Connected {
 		a.mu.Unlock()
 		return ErrACPAgentUnavailable
 	}
 	if a.state.Busy || a.state.Configuring || a.state.Steering {
+		if !queued {
+			// The agent started a turn of its own since the submission found the chat idle.
+			// The prompt queues under the lock its sender's generation was checked under, so
+			// a takeover cannot slip in between and leave a former coordinator's work queued.
+			a.enqueueLocked(prompt, false)
+			a.mu.Unlock()
+			go a.drain()
+			return nil
+		}
 		a.mu.Unlock()
 		return errACPNotIdle
 	}
 	if len(images) > 0 && !a.imagesSupported {
 		a.mu.Unlock()
 		return errors.New("this agent does not accept image prompts")
+	}
+	if submissionID != "" {
+		a.state.Sending = &prompt
+		if err := a.persistLocked(); err != nil {
+			a.state.Sending = nil
+			a.mu.Unlock()
+			return err
+		}
 	}
 	a.state.Busy = true
 	a.cancelling = false
@@ -537,10 +671,14 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 	written := make(chan error, 1)
 	a.promptWritten = written
 	a.mu.Unlock()
+	if a.beforePromptWrite != nil {
+		a.beforePromptWrite()
+	}
 	completed := make(chan acpTurnResult, 1)
 	go func() {
 		response, err := a.client.Prompt(context.Background(), acpsdk.PromptRequest{
 			SessionId: acpsdk.SessionId(a.sessionID), Prompt: acpPromptContent(text, images),
+			Meta: map[string]any{acpForgeMeta: acpPromptMeta(prompt)},
 		})
 		completed <- acpTurnResult{stopReason: response.StopReason, err: err}
 	}()
@@ -563,9 +701,14 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 		a.promptIndex = nil
 		a.promptWritten = nil
 		a.setErrorLocked(err)
+		var persistErr error
+		if a.state.Sending != nil {
+			a.state.Sending = nil
+			persistErr = a.persistLocked()
+		}
 		a.changedLocked()
 		a.mu.Unlock()
-		return err
+		return errors.Join(err, persistErr)
 	}
 	a.mu.Lock()
 	if a.cancelling {
@@ -575,20 +718,29 @@ func (a *ACP) startPromptLocked(text, submissionID string, images []ACPContent) 
 			_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 		}()
 	}
-	message := ACPMessage{Role: "user", Text: text, Images: images, SubmissionID: submissionID, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	message := promptMessage(prompt)
 	messageIndex := *a.promptIndex
 	a.promptIndex = nil
+	// The agent's reply can arrive before the write returns. The prompt goes
+	// before it, so the indexes of those messages shift up by one.
 	a.state.Messages = append(a.state.Messages, ACPMessage{})
 	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
 	a.state.Messages[messageIndex] = message
 	if submissionID != "" {
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}
-	persistErr := a.persistLocked()
+	a.state.Sending = nil
+	if !a.heldAtLocked(generation) {
+		// Supervision ended or changed hands while the prompt was being
+		// written, so the coordinator's allowance no longer bounds the turn.
+		prompt.Allowance = 0
+	}
+	a.beginTurnRecordLocked(prompt, messageIndex)
+	a.saveTakenEffectLocked("sending a prompt")
 	a.changedLocked()
 	a.mu.Unlock()
 	go a.finishTurn(completed)
-	return persistErr
+	return nil
 }
 
 func (m *Manager) ACP(workspaceID, key string) (ACPChat, error) {

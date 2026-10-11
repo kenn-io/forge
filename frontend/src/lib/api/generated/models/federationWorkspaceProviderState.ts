@@ -4,6 +4,7 @@
 
 export interface FederationWorkspaceProviderState {
   id: string;
+  item_author?: string;
   item_last_activity_at?: string;
   mr_additions?: number;
   mr_ci_status?: string;

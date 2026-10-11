@@ -3345,6 +3345,8 @@ components:
       properties:
         id:
           type: string
+        item_author:
+          type: string
         item_last_activity_at:
           type: string
         mr_additions:
@@ -7462,6 +7464,8 @@ components:
           type: string
         id:
           type: string
+        itemAuthor:
+          type: string
         itemKey:
           type: string
         itemLastActivityAt:
@@ -11460,6 +11464,9 @@ components:
           type: string
         id:
           type: string
+        item_author:
+          description: Author of the linked PR or issue.
+          type: string
         item_key:
           type: string
         item_last_activity_at:
@@ -11616,6 +11623,8 @@ components:
         git_head_ref:
           type: string
         id:
+          type: string
+        item_author:
           type: string
         item_key:
           type: string

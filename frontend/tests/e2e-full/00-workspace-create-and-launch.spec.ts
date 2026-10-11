@@ -493,12 +493,12 @@ test.describe("workspace create-and-launch full stack", () => {
       );
 
       await phonePage.goto(`${server.info.base_url}/m/workspaces`);
-      await phonePage.getByRole("button", { name: "View workspace options" }).tap();
-      const viewSheet = phonePage.getByRole("dialog", { name: "View workspace options" });
+      await phonePage.getByRole("button", { name: "Workspace filters" }).tap();
+      const viewSheet = phonePage.getByRole("dialog", { name: "Workspace filters" });
       await expect(viewSheet).toBeVisible();
       await phonePage.keyboard.press("Meta+K");
       await expect(phonePage.getByRole("dialog", { name: "Command palette" })).toHaveCount(0);
-      await viewSheet.getByRole("button", { name: "Close View options" }).tap();
+      await viewSheet.getByRole("button", { name: "Close filters" }).tap();
       await phonePage.getByRole("button", { name: "New workspace" }).tap();
       const dialog = phonePage.getByRole("dialog", { name: "New workspace" });
       await expect(dialog).toBeVisible();

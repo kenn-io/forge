@@ -253,6 +253,11 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(err)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 7, Number: 7, Title: "Repair widget", Author: "bob",
+		State: "open", CreatedAt: now, UpdatedAt: now,
+	})
+	require.NoError(err)
 	aggregate := NeutralSnapshot{
 		ProtocolVersion: 3,
 		Projects: []RawProject{{
@@ -264,15 +269,26 @@ func TestHubEnrichesWorkspaceByStableProviderIdentity(t *testing.T) {
 		}},
 		Workspaces: []RawWorkspace{{
 			HostKey: "spoke-a", ID: "ws-7", Repository: repository,
-			ItemType: "pull_request", ItemNumber: 7,
+			ItemType: "pull_request", ItemNumber: 7, ItemAuthor: new("stale"),
+		}, {
+			HostKey: "spoke-a", ID: "ws-issue", Repository: repository,
+			ItemType: "issue", ItemNumber: 7,
+		}, {
+			HostKey: "spoke-a", ID: "ws-unsynced", Repository: repository,
+			ItemType: "pull_request", ItemNumber: 99, ItemAuthor: new("stale"),
 		}},
 	}
 
 	enriched, err := EnrichProviderState(t.Context(), database, aggregate)
 	require.NoError(err)
-	require.Len(enriched.Workspaces, 1)
+	require.Len(enriched.Workspaces, 3)
 	require.NotNil(enriched.Workspaces[0].MRTitle)
 	assert.Equal("Fix race", *enriched.Workspaces[0].MRTitle)
+	projected := buildWorkspaceSummaries(enriched.Workspaces, nil, "")
+	require.Len(projected, 3)
+	assert.Equal(new("dev"), projected[0].ItemAuthor)
+	assert.Equal(new("bob"), projected[1].ItemAuthor)
+	assert.Nil(projected[2].ItemAuthor)
 	require.Len(enriched.Worktrees, 1)
 	require.NotNil(enriched.Worktrees[0].PRTitle)
 	assert.Equal("Fix race", *enriched.Worktrees[0].PRTitle)
@@ -313,6 +329,7 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 	assert.Equal("merged", *enriched.Workspaces[0].MRState)
 	require.NotNil(enriched.Workspaces[0].MRTitle)
 	assert.Equal("Add search", *enriched.Workspaces[0].MRTitle)
+	assert.Equal(new("dev"), enriched.Workspaces[0].ItemAuthor)
 }
 
 func TestBuildWorkspaceSummariesPreservesSourceVisibility(t *testing.T) {

@@ -54,6 +54,7 @@ type workspaceResponse struct {
 	Status                string                    `json:"status"`
 	ErrorMessage          *string                   `json:"error_message,omitempty"`
 	CreatedAt             string                    `json:"created_at"`
+	ItemAuthor            *string                   `json:"item_author,omitempty" doc:"Author of the linked PR or issue."`
 	ItemLastActivityAt    *string                   `json:"item_last_activity_at,omitempty"`
 	MRTitle               *string                   `json:"mr_title,omitempty"`
 	MRState               *string                   `json:"mr_state,omitempty"`

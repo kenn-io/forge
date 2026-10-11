@@ -14,13 +14,16 @@
   } from "@kenn-io/kit-ui";
   import { tick, untrack } from "svelte";
 
-  import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 
-  interface ActivityFilterSection extends FilterDropdownSection {
+  interface ItemFilterSection extends FilterDropdownSection {
     selectionMode?: "single" | "multiple";
   }
 
   interface Props {
+    panelLabel: string;
+    title: string;
+    align?: "start" | "end";
     author: string;
     authorOptions: TypeaheadOption[];
     authorLoading?: boolean;
@@ -28,12 +31,15 @@
     detail?: string;
     compact?: boolean;
     badgeCount?: number;
-    sections: ActivityFilterSection[];
+    sections: ItemFilterSection[];
     onAuthorSelect: (author: string) => void;
     onReset?: () => void;
   }
 
   let {
+    panelLabel,
+    title,
+    align = "start",
     author,
     authorOptions,
     authorLoading = false,
@@ -46,6 +52,7 @@
     onReset,
   }: Props = $props();
 
+  const modalId = $props.id();
   let isOpen = $state(false);
   let buttonRef = $state<HTMLButtonElement>();
   let panelRef = $state<HTMLDivElement>();
@@ -60,7 +67,7 @@
   $effect(() => {
     if (!isOpen) return;
     const cleanups = [
-      untrack(() => pushModalFrame("activity-filters", [])),
+      untrack(() => pushModalFrame(modalId, [])),
       dismissable({
         owners: () => [panelRef, buttonRef],
         dismiss: close,
@@ -79,7 +86,7 @@
       viewportHeight: window.innerHeight,
       popoverWidth: panelRef.offsetWidth,
       popoverHeight: panelRef.offsetHeight,
-      align: "start",
+      align,
     });
   }
 
@@ -152,7 +159,7 @@
     position();
   }
 
-  function radioTabIndex(section: ActivityFilterSection, item: FilterDropdownItem): number | undefined {
+  function radioTabIndex(section: ItemFilterSection, item: FilterDropdownItem): number | undefined {
     if (section.selectionMode !== "single") return undefined;
     if (item.disabled) return -1;
     const selected = section.items.find((candidate) => candidate.active && !candidate.disabled);
@@ -162,7 +169,7 @@
 
   async function handleRadioKeydown(
     event: KeyboardEvent,
-    section: ActivityFilterSection,
+    section: ItemFilterSection,
     item: FilterDropdownItem,
   ): Promise<void> {
     if (section.selectionMode !== "single") return;
@@ -215,7 +222,7 @@
       type="button"
       aria-label={triggerLabel}
       aria-expanded={isOpen}
-      title="View and filter activity"
+      {title}
       onclick={toggle}
     >
       <FunnelIcon size={12} strokeWidth={2} aria-hidden="true" />
@@ -236,7 +243,7 @@
       bind:this={panelRef}
       class="activity-filters__panel kit-popover-card"
       style={panelStyle}
-      aria-label="Activity filters"
+      aria-label={panelLabel}
       tabindex="-1"
       {@attach portalToBody}
       {@attach trapFocus}
@@ -246,7 +253,7 @@
         <Typeahead
           options={authorOptions}
           value={author}
-          fallbackLabel="Anyone"
+          fallbackLabel={author || "Anyone"}
           placeholder="Filter authors"
           title="Filter by PR or issue author"
           allowClear

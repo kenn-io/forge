@@ -5481,6 +5481,10 @@ const workspaceSummaryColumns = `
 	CASE
 	    WHEN w.item_type = 'issue' THEN i.last_activity_at
 	    ELSE m.last_activity_at
+	END,
+	CASE
+	    WHEN w.item_type = 'issue' THEN i.author
+	    ELSE m.author
 	END`
 
 // workspaceSummaryJoins is the FROM/JOIN clause shared by
@@ -5540,7 +5544,7 @@ func scanWorkspaceSummary(
 		&s.MRReviewDecision, &s.MRAdditions, &s.MRDeletions,
 		&s.MRCommentCount, &s.MRMergeableState,
 		&s.MRHeadBranch,
-		&itemLastActivityAt,
+		&itemLastActivityAt, &s.ItemAuthor,
 	)
 	if err != nil {
 		return nil, err

@@ -58156,6 +58156,7 @@ type FederationWorkflowUpdate struct {
 
 type FederationWorkspaceProviderState struct {
 	ID                 string  `json:"id"`
+	ItemAuthor         *string `json:"item_author,omitempty"`
 	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
 	MrAdditions        *int64  `json:"mr_additions,omitempty"`
 	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
@@ -59772,6 +59773,7 @@ type RawWorkspace struct {
 	GitHeadRef            string             `json:"gitHeadRef"`
 	HostKey               *string            `json:"hostKey,omitempty"`
 	ID                    string             `json:"id"`
+	ItemAuthor            *string            `json:"itemAuthor,omitempty"`
 	ItemKey               *string            `json:"itemKey,omitempty"`
 	ItemLastActivityAt    *string            `json:"itemLastActivityAt,omitempty"`
 	ItemNumber            int64              `json:"itemNumber"`
@@ -61250,18 +61252,21 @@ type WorkspaceResponse struct {
 	EnrichmentRefreshedAt *string `json:"enrichment_refreshed_at,omitempty"`
 
 	// EnrichmentStatus Aggregate git-state and tmux-activity reconciliation status. Failed responses retain last-known-good component fields when available.
-	EnrichmentStatus   WorkspaceResponseEnrichmentStatus `json:"enrichment_status"`
-	ErrorMessage       *string                           `json:"error_message,omitempty"`
-	GitHeadRef         string                            `json:"git_head_ref"`
-	ID                 string                            `json:"id"`
-	ItemKey            string                            `json:"item_key"`
-	ItemLastActivityAt *string                           `json:"item_last_activity_at,omitempty"`
-	ItemNumber         int64                             `json:"item_number"`
-	ItemType           string                            `json:"item_type"`
-	Kata               *WorkspaceKataMetadata            `json:"kata,omitempty"`
-	MrAdditions        *int64                            `json:"mr_additions,omitempty"`
-	MrCiStatus         *string                           `json:"mr_ci_status,omitempty"`
-	MrDeletions        *int64                            `json:"mr_deletions,omitempty"`
+	EnrichmentStatus WorkspaceResponseEnrichmentStatus `json:"enrichment_status"`
+	ErrorMessage     *string                           `json:"error_message,omitempty"`
+	GitHeadRef       string                            `json:"git_head_ref"`
+	ID               string                            `json:"id"`
+
+	// ItemAuthor Author of the linked PR or issue.
+	ItemAuthor         *string                `json:"item_author,omitempty"`
+	ItemKey            string                 `json:"item_key"`
+	ItemLastActivityAt *string                `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64                  `json:"item_number"`
+	ItemType           string                 `json:"item_type"`
+	Kata               *WorkspaceKataMetadata `json:"kata,omitempty"`
+	MrAdditions        *int64                 `json:"mr_additions,omitempty"`
+	MrCiStatus         *string                `json:"mr_ci_status,omitempty"`
+	MrDeletions        *int64                 `json:"mr_deletions,omitempty"`
 
 	// MrHeadRepoKind Set only for pull_request workspaces: same_repo when the PR head is confirmed to be in the base repo, fork when it is a confirmed fork clone, unknown when repository identity could not be resolved.
 	MrHeadRepoKind     *WorkspaceResponseMrHeadRepoKind `json:"mr_head_repo_kind,omitempty"`
@@ -61317,6 +61322,7 @@ type WorkspaceSummary struct {
 	FleetHostName         *string                    `json:"fleet_host_name,omitempty"`
 	GitHeadRef            string                     `json:"git_head_ref"`
 	ID                    string                     `json:"id"`
+	ItemAuthor            *string                    `json:"item_author,omitempty"`
 	ItemKey               *string                    `json:"item_key,omitempty"`
 	ItemLastActivityAt    *string                    `json:"item_last_activity_at,omitempty"`
 	ItemNumber            int64                      `json:"item_number"`

@@ -105,6 +105,37 @@ describe("MobileWorkspaceList", () => {
     expect(onOpen).toHaveBeenCalledWith("ws-1", undefined);
   });
 
+  it("filters workspace rows by author and clears the selection", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        hosts: [],
+        workspaces: [
+          { ...fixture, item_author: "alice" },
+          { ...fixture, id: "ws-2", item_number: 43, item_author: "bob", mr_title: "Repair widget" },
+        ],
+      },
+    });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Repair widget");
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "alice" }));
+    expect(screen.queryByText("Repair widget")).toBeNull();
+    expect(screen.getByText("Build mobile workspaces")).toBeTruthy();
+    mockGet.mockResolvedValue({
+      data: {
+        hosts: [],
+        workspaces: [{ ...fixture, id: "ws-2", item_number: 43, item_author: "bob", mr_title: "Repair widget" }],
+      },
+    });
+    await waitFor(() => expect(workspaceEventListener).not.toBeNull());
+    workspaceEventListener?.(new MessageEvent("workspace_status"));
+    await screen.findByText("No matching workspaces");
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: alice" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "Anyone" }));
+    expect(screen.getByText("Repair widget")).toBeTruthy();
+  });
+
   it("shows a pending merge only on workspaces linked to the verified repository", async () => {
     const merge = Promise.withResolvers<{ data: { merged: boolean } }>();
     const ref = {
@@ -382,8 +413,8 @@ describe("MobileWorkspaceList", () => {
     render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
     await screen.findByText("Build mobile workspaces");
 
-    await fireEvent.click(screen.getByRole("button", { name: "View workspace options" }));
-    expect(screen.getByRole("dialog", { name: "View workspace options" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Workspace filters" }));
+    expect(screen.getByRole("dialog", { name: "Workspace filters" })).toBeTruthy();
     expect(getTopFrame()?.frameId).toBe("mobile-workspace-view-options");
     expect(screen.getByRole("radio", { name: /^Terminal activity/ })).toBeTruthy();
 

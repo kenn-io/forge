@@ -425,14 +425,20 @@ Persisted controls must state their scope clearly.
 - Activity's Author filter follows GitHub `author:` semantics: it matches the parent PR
   or issue author, never a child event actor; its URL/API key remains `author`
   (`internal/db/queries_activity.go::ListActivity`).
+- Workspaces matches PR/issue authors case-insensitively, including an ad-hoc workspace's
+  linked PR; unlinked workspaces match only Anyone
+  (`frontend/src/lib/components/terminal/workspace-author-filter.ts::workspaceMatchesAuthor`).
+- Workspace author choices follow repository scope, independently of text search and author;
+  keep the selected label when its author leaves the candidate set
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::authorOptions`).
 - Activity compact mode means a detail is active, not that its resizable feed pane is
   narrow; controls stay content-sized until their own container is narrow (`frontend/src/lib/components/ActivityFeed.svelte`).
-- Activity's viewport-positioned filter panel leaves the feed's containment chain and
-  owns focus while open; retain inline-size containment for compact control sizing
-  (`frontend/src/lib/components/ActivityFilters.svelte::portalToBody`).
+- Activity and Workspaces share a viewport-positioned filter panel that leaves containment
+  and owns focus while open; retain inline-size containment for compact control sizing
+  (`frontend/src/lib/components/shared/ItemFilters.svelte::portalToBody`).
 - Arrow/Home/End radio navigation selects and refocuses within that panel without
   honoring the pointer-only close-on-select behavior
-  (`frontend/src/lib/components/ActivityFilters.svelte::handleRadioKeydown`).
+  (`frontend/src/lib/components/shared/ItemFilters.svelte::handleRadioKeydown`).
 - Activity author candidates follow only the current tracked-repository and time-range
   scope. Search text, activity type, and the selected author must not shrink the picker
   (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).

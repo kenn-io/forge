@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import "@kenn-io/kit-ui/theme.css";
 
-import ActivityFilters from "./lib/components/ActivityFilters.svelte";
+import ItemFilters from "./lib/components/shared/ItemFilters.svelte";
 
 describe("Activity Filters popover", () => {
   let host: HTMLElement | null = null;
@@ -30,9 +30,11 @@ describe("Activity Filters popover", () => {
     ].join(";");
     document.body.append(host);
 
-    app = mount(ActivityFilters, {
+    app = mount(ItemFilters, {
       target: host,
       props: {
+        panelLabel: "Activity filters",
+        title: "View and filter activity",
         author: "",
         authorOptions: [{ name: "alice", label: "Alice" }],
         sections: [],
@@ -61,9 +63,11 @@ describe("Activity Filters popover", () => {
     host = document.createElement("div");
     document.body.append(host);
 
-    app = mount(ActivityFilters, {
+    app = mount(ItemFilters, {
       target: host,
       props: {
+        panelLabel: "Activity filters",
+        title: "View and filter activity",
         author: "",
         authorOptions: [{ name: "alice", label: "Alice" }],
         badgeCount: 1,
@@ -108,9 +112,11 @@ describe("Activity Filters popover", () => {
     const onThreaded = vi.fn();
     const onTimeline = vi.fn();
 
-    app = mount(ActivityFilters, {
+    app = mount(ItemFilters, {
       target: host,
       props: {
+        panelLabel: "Activity filters",
+        title: "View and filter activity",
         author: "",
         authorOptions: [],
         sections: [

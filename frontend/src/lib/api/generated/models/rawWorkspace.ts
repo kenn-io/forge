@@ -20,6 +20,7 @@ export interface RawWorkspace {
   gitHeadRef: string;
   hostKey?: string;
   id: string;
+  itemAuthor?: string;
   itemKey?: string;
   itemLastActivityAt?: string;
   itemNumber: number;

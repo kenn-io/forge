@@ -1487,6 +1487,59 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  it("filters by item author alongside search and resets the filter", async () => {
+    const base = workspaceFixture({
+      id: "ws-alice",
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      number: 1,
+      title: "First change",
+    });
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          { ...base, item_author: "alice" },
+          {
+            ...base,
+            id: "ws-alice-issue",
+            item_number: 4,
+            item_type: "issue",
+            item_author: "ALICE",
+            mr_title: "Follow up",
+          },
+          { ...base, id: "ws-bob", item_number: 2, item_author: "bob", mr_title: "Second change" },
+          { ...base, id: "ws-unlinked", item_number: 0, item_type: "adhoc", mr_title: null },
+        ],
+      },
+    });
+    const { container, rerender } = render(WorkspaceListSidebar, { props: { selectedId: "ws-alice" } });
+    await screen.findByText("First change");
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "alice" }));
+    expect(rowTitles(container)).toEqual(["First change", "Follow up"]);
+    expect(screen.getByLabelText("1 active filters")).toBeTruthy();
+
+    await rerender({ selectedRepos: "github|github.com/acme/other" });
+    expect(screen.getByText("No workspaces match.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filter authors: alice" })).toBeTruthy();
+    await rerender({ selectedRepos: undefined });
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "Second" },
+    });
+    expect(screen.getByText("No workspaces match.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: alice" }));
+    expect(screen.getByRole("option", { name: "alice" })).toBeTruthy();
+    await fireEvent.mouseDown(screen.getByRole("option", { name: "bob" }));
+    expect(rowTitles(container)).toEqual(["Second change"]);
+    await fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(container.querySelectorAll(".ws-row")).toHaveLength(4);
+    expect((screen.getByRole("searchbox", { name: "Filter workspaces" }) as HTMLInputElement).value).toBe("");
+  });
+
   it("sorts flat by creation time and drops group headers", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },
@@ -1501,8 +1554,8 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByText("kenn-io/kenn-forge")).toBeTruthy();
     expect(container.querySelectorAll(".repo-context")).toHaveLength(0);
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
 
     expect(rowTitles(container)).toEqual(["Newest created", "Most recently active", "Oldest without activity"]);
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
@@ -1658,8 +1711,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("GitHub workspace");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
 
     // Provider icons survive the loss of group headers.
     expect(container.querySelectorAll(".repo-context")).toHaveLength(3);
@@ -1684,8 +1737,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Activity" }));
 
     // ws-old has no tmux output, so it sorts by its creation time.
     expect(rowTitles(container)).toEqual(["Most recently active", "Newest created", "Oldest without activity"]);
@@ -1737,8 +1790,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created fallback");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    const itemActivitySort = screen.getByRole("button", { name: "Item activity" });
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    const itemActivitySort = screen.getByRole("radio", { name: "Item activity" });
     expect(itemActivitySort.getAttribute("title")).toBe(
       "Sort by latest linked PR or issue activity, falling back to workspace creation.",
     );
@@ -1787,8 +1840,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("approval");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    const agentStatusSort = screen.getByRole("button", { name: "Agent status" });
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    const agentStatusSort = screen.getByRole("radio", { name: "Agent status" });
     expect(agentStatusSort.getAttribute("title")).toBe(
       "Group by agent status, with workspaces needing attention first.",
     );
@@ -1829,8 +1882,8 @@ describe("WorkspaceListSidebar", () => {
       "unreported",
     ]);
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
     expect(doneRow?.querySelector(".agent-state")?.textContent).toContain("Done");
   });
 
@@ -1869,8 +1922,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newer creation");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Agent status" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Agent status" }));
 
     expect(rowTitles(container)).toEqual(["Newer item activity", "Newer creation"]);
     expect(
@@ -1916,8 +1969,8 @@ describe("WorkspaceListSidebar", () => {
       ["Item activity", "2026-05-12T12:00:00Z"],
       ["Agent status", "2026-05-13T12:00:00Z"],
     ]) {
-      await fireEvent.click(screen.getByTitle("View workspace options"));
-      await fireEvent.click(screen.getByRole("button", { name: sort }));
+      await fireEvent.click(screen.getByTitle("Filter workspaces"));
+      await fireEvent.click(screen.getByRole("radio", { name: sort }));
       expect(
         container.querySelector(".ws-row-aside > .item-bubble + .workspace-sort-time")?.getAttribute("datetime"),
       ).toBe(timestamp);
@@ -1934,8 +1987,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created");
 
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Activity" }));
     first.unmount();
 
     const { container } = render(WorkspaceListSidebar, {
@@ -1947,7 +2000,7 @@ describe("WorkspaceListSidebar", () => {
     expect(container.querySelectorAll(".sidebar-group-header")).toHaveLength(0);
   });
 
-  it("folds sort choices into the workspace view menu", async () => {
+  it("shares author, sort, and display choices in the workspace filters", async () => {
     mockGet.mockResolvedValue({
       data: { workspaces: sortFixtures() },
     });
@@ -1957,13 +2010,13 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Newest created");
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
 
     expect(screen.getByText("Sorting")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Org / repo" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Created" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Activity" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Agent status" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Org / repo" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Created" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Agent status" })).toBeTruthy();
     expect(screen.getByText("Visibility")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Hide org name" }).classList.contains("active")).toBe(false);
     expect(screen.getByRole("button", { name: "Show PR diff stats" })).toBeTruthy();
@@ -1979,7 +2032,7 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("kenn-io/kenn-forge");
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const hideOrgName = screen.getByRole("button", { name: "Hide org name" });
     await fireEvent.click(hideOrgName);
     expect(hideOrgName.classList.contains("active")).toBe(true);
@@ -1987,7 +2040,7 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.queryByText("kenn-io/kenn-forge")).toBeNull();
     expect(screen.getByText("kenn-forge")).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
 
     expect(container.querySelectorAll(".repo-context-name")[0]?.textContent?.trim()).toBe("kenn-forge");
     expect(container.querySelectorAll(".repo-context-name")[1]?.textContent?.trim()).toBe("agentsview");
@@ -2036,14 +2089,14 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("GitHub acme widgets");
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     await fireEvent.click(screen.getByRole("button", { name: "Hide org name" }));
 
     expect(
       Array.from(container.querySelectorAll(".sidebar-group-header__name")).map((el) => el.textContent?.trim()),
     ).toEqual(["github.com/acme/widgets", "ghe.example.com/acme/widgets", "platform/widgets"]);
 
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
 
     expect(Array.from(container.querySelectorAll(".repo-context-name")).map((el) => el.textContent?.trim())).toEqual([
       "github.com/acme/widgets",
@@ -2117,7 +2170,7 @@ describe("WorkspaceListSidebar", () => {
 
     expect(container.querySelector(".workspace-diff-stats")).toBeTruthy();
 
-    await fireEvent.click(screen.getByRole("button", { name: "View" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     await fireEvent.click(screen.getByRole("button", { name: "Show PR diff stats" }));
 
     expect(container.querySelector(".workspace-diff-stats")).toBeNull();
@@ -2168,8 +2221,8 @@ describe("WorkspaceListSidebar", () => {
     // With a sort timestamp visible the pencil stays on the meta line. In
     // the aside column it would stack as a third line under the bubble and
     // time and make the dirty row taller than its clean neighbours.
-    await fireEvent.click(screen.getByTitle("View workspace options"));
-    await fireEvent.click(screen.getByRole("button", { name: "Created" }));
+    await fireEvent.click(screen.getByTitle("Filter workspaces"));
+    await fireEvent.click(screen.getByRole("radio", { name: "Created" }));
     const dirtyRow = screen.getByText("Dirty workspace").closest<HTMLElement>(".ws-row");
     const firstClass = (el: Element) => el.className.split(" ")[0];
     expect(Array.from(dirtyRow?.querySelector(".ws-row-aside")?.children ?? [], firstClass)).toEqual([

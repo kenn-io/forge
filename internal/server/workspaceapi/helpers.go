@@ -189,6 +189,7 @@ func toWorkspaceResponse(summary *db.WorkspaceSummary) workspaceResponse {
 		ErrorMessage:       summary.ErrorMessage,
 		CreatedAt:          summary.CreatedAt.UTC().Format(time.RFC3339),
 		ItemLastActivityAt: itemLastActivityAt,
+		ItemAuthor:         summary.ItemAuthor,
 		MRTitle:            summary.MRTitle,
 		MRState:            summary.MRState,
 		MRIsDraft:          summary.MRIsDraft,

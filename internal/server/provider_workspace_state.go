@@ -34,6 +34,7 @@ type federationWorkspaceProviderStateResponse struct {
 
 type federationWorkspaceProviderState struct {
 	ID                 string  `json:"id"`
+	ItemAuthor         *string `json:"item_author,omitempty"`
 	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
 	MRTitle            *string `json:"mr_title,omitempty"`
 	MRState            *string `json:"mr_state,omitempty"`
@@ -90,6 +91,7 @@ func (s *Server) federationQueryWorkspaceProviderState(
 		states = append(states, federationWorkspaceProviderState{
 			ID:                 workspace.ID,
 			ItemLastActivityAt: workspace.ItemLastActivityAt,
+			ItemAuthor:         workspace.ItemAuthor,
 			MRTitle:            workspace.MRTitle, MRState: workspace.MRState,
 			MRIsDraft: workspace.MRIsDraft, MRCIStatus: workspace.MRCIStatus,
 			MRReviewDecision: workspace.MRReviewDecision,

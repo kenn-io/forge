@@ -26,6 +26,57 @@ type recordingWorkspaceAutomation struct {
 	release  <-chan struct{}
 }
 
+func TestWorkspaceResponsesIncludeItemAuthor(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		itemType   string
+		number     int
+		associated *int
+		want       *string
+	}{
+		{"pull", db.WorkspaceItemTypePullRequest, 42, nil, new("alice")},
+		{"issue", db.WorkspaceItemTypeIssue, 42, new(42), new("bob")},
+		{"linked ad hoc", db.WorkspaceItemTypeAdHoc, 0, new(42), new("alice")},
+		{"unlinked ad hoc", db.WorkspaceItemTypeAdHoc, 0, nil, nil},
+		{"unsynced pull", db.WorkspaceItemTypePullRequest, 99, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			database := dbtest.Open(t)
+			repoID, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(err)
+			now := time.Now().UTC()
+			_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+				RepoID: repoID, PlatformID: 42, Number: 42, Title: "Improve widget", Author: "alice",
+				State: db.MergeRequestStateOpen, CreatedAt: now, UpdatedAt: now,
+			})
+			require.NoError(err)
+			_, err = database.UpsertIssue(t.Context(), &db.Issue{
+				RepoID: repoID, PlatformID: 42, Number: 42, Title: "Repair widget", Author: "bob",
+				State: "open", CreatedAt: now, UpdatedAt: now,
+			})
+			require.NoError(err)
+			require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+				ID: "ws-author", Platform: "github", PlatformHost: "github.com", RepoID: repoID,
+				RepoOwner: "acme", RepoName: "widget", ItemType: tc.itemType, ItemNumber: tc.number,
+				ItemKey: "author-test", AssociatedPRNumber: tc.associated, GitHeadRef: "feature/widget",
+				WorktreePath: t.TempDir(), Status: "creating",
+			}))
+			handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), EnrichmentDisabled: true})
+			t.Cleanup(func() { require.NoError(handler.Shutdown(context.WithoutCancel(t.Context()))) })
+			result, err := handler.GetWorkspaceService(t.Context(), "ws-author")
+			require.NoError(err)
+			assert.Equal(t, tc.want, result.Workspace.ItemAuthor)
+			list, err := handler.listWorkspaces(t.Context(), &struct{}{})
+			require.NoError(err)
+			require.Len(list.Body.Workspaces, 1)
+			assert.Equal(t, tc.want, list.Body.Workspaces[0].ItemAuthor)
+		})
+	}
+}
+
 func TestWorkspaceResponsesRetainRepositoryIdentity(t *testing.T) {
 	t.Parallel()
 	for _, itemType := range []string{

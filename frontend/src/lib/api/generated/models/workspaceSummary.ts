@@ -21,6 +21,7 @@ export interface WorkspaceSummary {
   fleet_host_name?: string;
   git_head_ref: string;
   id: string;
+  item_author?: string;
   item_key?: string;
   item_last_activity_at?: string;
   item_number: number;

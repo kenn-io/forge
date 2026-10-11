@@ -1572,6 +1572,7 @@ type WorkspaceSummary struct {
 	// creation-time GitHeadRef snapshot for push-target context.
 	MRHeadBranch       *string
 	ItemLastActivityAt *time.Time
+	ItemAuthor         *string
 }
 
 type WorkspaceSetupEvent struct {

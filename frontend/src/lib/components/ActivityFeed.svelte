@@ -21,7 +21,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
-  import ActivityFilters from "./ActivityFilters.svelte";
+  import ItemFilters from "./shared/ItemFilters.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
@@ -687,7 +687,9 @@
     </div>
 
     <div class="filters-wrap">
-      <ActivityFilters
+      <ItemFilters
+        panelLabel="Activity filters"
+        title="View and filter activity"
         author={activity.getActivityAuthor() ?? ""}
         {authorOptions}
         authorLoading={activity.isActivityAuthorsLoading()}

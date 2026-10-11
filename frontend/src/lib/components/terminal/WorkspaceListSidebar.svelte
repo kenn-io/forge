@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ItemFilters from "../shared/ItemFilters.svelte";
+  import { workspaceAuthorOptions, workspaceMatchesAuthor } from "./workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import { buildCanonicalProviderItemURL } from "../../utils/item-reference.js";
   import {
@@ -32,7 +34,7 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
-  import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
+  import { DiffStats, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
   import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
@@ -171,6 +173,7 @@
   let fleetPeerErrors = $state.raw<Record<string, string>>({});
   let collapsedGroups = $state<string[]>([]);
   let searchQuery = $state("");
+  let author = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let pinnedWorkspaceKeys = $state.raw(loadPinnedWorkspaces());
   let pinsCollapsed = $state(false);
@@ -229,9 +232,9 @@
       workspaceActionMatches(deleteConfirmWorkspace, "delete"),
   );
 
-  const visibleWorkspaces = $derived.by(() => {
+  const scopedWorkspaces = $derived.by(() => {
     const repoIdentities = workspaces.map(workspaceRepoFilterIdentity);
-    const scoped = selectedRepoValues.size === 0
+    return selectedRepoValues.size === 0
       ? workspaces
       : workspaces.filter((workspace) => {
           const value = canonicalRepoFilterValue(
@@ -240,9 +243,12 @@
           );
           return value !== null && selectedRepoValues.has(value);
         });
-    if (!hasSearchQuery) return scoped;
-    return scoped.filter((ws) => workspaceMatchesSearch(ws, parsedSearchQuery));
   });
+  const authorOptions = $derived(workspaceAuthorOptions(scopedWorkspaces));
+  const visibleWorkspaces = $derived(scopedWorkspaces.filter((ws) =>
+    workspaceMatchesAuthor(ws, author) &&
+    (!hasSearchQuery || workspaceMatchesSearch(ws, parsedSearchQuery)),
+  ));
 
   const pinnedWorkspaces = $derived(
     pinnedWorkspaceKeys.flatMap((key) =>
@@ -252,7 +258,7 @@
   const unpinnedWorkspaces = $derived(visibleWorkspaces.filter((ws) => !isPinned(ws)));
 
   const sidebarCountLabel = $derived(
-    hasSearchQuery || selectedRepoValues.size > 0
+    hasSearchQuery || author || selectedRepoValues.size > 0
       ? `${visibleWorkspaces.length}/${workspaces.length}`
       : `${workspaces.length}`,
   );
@@ -278,6 +284,7 @@
   );
 
   const viewBadgeCount = $derived(
+    Number(Boolean(author)) + Number(hasSearchQuery) +
     Number(sortMode !== defaultWorkspaceListSort) +
       Number(
         displayOptions.showOrgNames !==
@@ -292,6 +299,7 @@
   const viewSections = $derived.by(() => [
     {
       title: "Sorting",
+      selectionMode: "single" as const,
       items: workspaceListSortOptions.map((option) => ({
         id: option.value,
         label: option.label,
@@ -366,6 +374,14 @@
       (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
     );
   });
+
+  function resetFilters(): void {
+    author = "";
+    searchQuery = "";
+    setSort(defaultWorkspaceListSort);
+    displayOptions = { ...defaultWorkspaceListDisplayOptions };
+    saveWorkspaceListDisplayOptions(displayOptions);
+  }
 
   function setSort(sort: WorkspaceListSort): void {
     sortMode = sort;
@@ -1299,15 +1315,19 @@
       <PlusIcon size="13" strokeWidth="2.2" aria-hidden="true" />
     </IconButton>
     <div class="workspace-sort">
-      <FilterDropdown
-        label="View"
+      <ItemFilters
+        panelLabel="Workspace filters"
+        title="Filter workspaces"
+        align="end"
+        {author}
+        {authorOptions}
+        authorLoading={workspaceListStatus !== "loaded" && workspaces.length === 0}
+        compact
         detail={sortLabel}
-        active={viewBadgeCount > 0}
         badgeCount={viewBadgeCount}
         sections={viewSections}
-        title="View workspace options"
-        minWidth="220px"
-        align="end"
+        onAuthorSelect={(value) => { author = value; }}
+        onReset={resetFilters}
       />
     </div>
     {#if isSidebarToggleEnabled && onCollapseSidebar}
@@ -1614,7 +1634,7 @@
       <p class="filter-empty">Loading workspaces...</p>
     {:else if workspaceListStatus === "retrying" && workspaces.length === 0}
       <p class="filter-empty">Still loading workspaces. Retrying...</p>
-    {:else if visibleWorkspaces.length === 0 && hasSearchQuery}
+    {:else if visibleWorkspaces.length === 0 && (hasSearchQuery || author || selectedRepoValues.size > 0)}
       <p class="filter-empty">No workspaces match.</p>
     {:else if visibleWorkspaces.length === 0}
       <p class="filter-empty">No workspaces yet.</p>
@@ -1875,20 +1895,7 @@
     /* Claims the header's free space so the sort trigger (and the
      * collapse toggle after it) sit flush right. */
     margin-left: auto;
-    flex-shrink: 0;
-  }
-
-  .workspace-sort :global(.kit-filter-dropdown__btn) {
-    /* Borderless inside the 28px header rail; the dropdown trigger
-     * reads as header chrome rather than a standalone button. */
-    min-height: 22px;
-    padding: 2px 6px;
-    border-color: transparent;
-    background: transparent;
-  }
-
-  .workspace-sort :global(.kit-filter-dropdown__btn:hover:not(:disabled)) {
-    border-color: var(--border-muted);
+    min-width: 0;
   }
 
   .fleet-status {
@@ -2428,11 +2435,4 @@
     }
   }
 
-  /* The sort trigger collapses to its icon before the filter input
-   * is squeezed into uselessness. */
-  @container workspace-rail (max-width: 240px) {
-    .workspace-sort :global(.kit-filter-dropdown__trigger-label) {
-      display: none;
-    }
-  }
 </style>

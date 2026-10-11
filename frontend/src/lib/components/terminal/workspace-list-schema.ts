@@ -36,6 +36,7 @@ export type WorkspaceListItem = Pick<
     readonly commits_behind?: number | null;
     readonly commits_vs_pr_head?: boolean;
     readonly error_message?: GeneratedWorkspace["error_message"] | null;
+    readonly item_author?: string | null;
     readonly item_last_activity_at?: string | null;
     readonly mr_additions?: number | null;
     readonly mr_deletions?: number | null;
@@ -87,6 +88,7 @@ const Workspace = Schema.Struct({
   git_head_ref: Schema.String,
   id: Schema.String,
   item_key: Schema.optionalKey(Schema.String),
+  item_author: Schema.optionalKey(Schema.NullOr(Schema.String)),
   item_last_activity_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
   item_number: Schema.Number,
   item_type: Schema.String,

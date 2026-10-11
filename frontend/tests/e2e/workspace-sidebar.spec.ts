@@ -1076,10 +1076,10 @@ test("phone workspace list keeps its selected terminal alive through linked PR n
 
   await expect(page.locator(".mobile-workspace-list").getByRole("button", { name: "Menu" })).toBeVisible();
   await expect(page.getByRole("searchbox", { name: "Filter workspaces" })).toBeVisible();
-  await page.getByRole("button", { name: "View workspace options" }).click();
-  await expect(page.getByRole("dialog", { name: "View workspace options" })).toBeVisible();
+  await page.getByRole("button", { name: "Workspace filters" }).click();
+  await expect(page.getByRole("dialog", { name: "Workspace filters" })).toBeVisible();
   await expect(page.getByRole("radio", { name: /Org \/ repo/ })).toBeChecked();
-  await page.getByRole("button", { name: "Close View options" }).click();
+  await page.getByRole("button", { name: "Close filters" }).click();
 
   await page.getByRole("searchbox", { name: "Filter workspaces" }).fill("feature/auth");
   await expect(page.getByRole("button", { name: "Open workspace Add auth middleware" })).toBeVisible();
@@ -5309,6 +5309,7 @@ test.describe("workspace list sorting", () => {
     id: "ws-new",
     item_number: 3,
     mr_title: "Newest created",
+    item_author: "alice",
     created_at: "2026-05-12T12:00:00Z",
     tmux_last_output_at: "2026-05-12T13:00:00Z",
   };
@@ -5320,6 +5321,7 @@ test.describe("workspace list sorting", () => {
     repo: workspaceRepoRef("kenn-io", "agentsview"),
     item_number: 2,
     mr_title: "Most recently active",
+    item_author: "bob",
     created_at: "2026-05-11T12:00:00Z",
     tmux_last_output_at: "2026-05-14T09:00:00Z",
   };
@@ -5353,6 +5355,24 @@ test.describe("workspace list sorting", () => {
     });
   });
 
+  test("filters workspaces by author and clears back to anyone", async ({ page }) => {
+    await page.goto("/workspaces");
+    const names = page.locator(".workspace-list-sidebar .ws-name");
+    await expect(names).toHaveCount(3);
+    await page.getByTitle("Filter workspaces", { exact: true }).click();
+    await page.getByRole("button", { name: "Filter authors: Anyone" }).click();
+    await page.getByRole("option", { name: "alice", exact: true }).click();
+    await expect(names).toHaveText(["Newest created"]);
+    await expect(page.getByRole("button", { name: "Filters · alice" })).toBeVisible();
+    await page.getByRole("button", { name: "Filters · alice" }).click();
+    await page.getByRole("button", { name: "Filter authors: alice" }).click();
+    await page.getByRole("option", { name: "bob", exact: true }).click();
+    await expect(names).toHaveText(["Most recently active"]);
+    await page.getByRole("button", { name: "Filters · bob" }).click();
+    await page.getByRole("button", { name: "Reset filters" }).click();
+    await expect(names).toHaveCount(3);
+  });
+
   test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {
     await page.goto("/workspaces");
 
@@ -5361,9 +5381,9 @@ test.describe("workspace list sorting", () => {
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
     await expect(headers).toHaveCount(2);
 
-    const sortTrigger = page.getByTitle("View workspace options");
+    const sortTrigger = page.getByTitle("Filter workspaces");
     await sortTrigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Created" }).click();
+    await page.getByLabel("Workspace filters", { exact: true }).getByRole("radio", { name: "Created" }).click();
 
     await expect(names).toHaveText(["Newest created", "Most recently active", "Oldest without activity"]);
     await expect(headers).toHaveCount(0);
@@ -5371,7 +5391,10 @@ test.describe("workspace list sorting", () => {
     await expect(page.locator(".workspace-list-sidebar .repo-context").first()).toContainText("acme/widgets");
 
     await sortTrigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Activity", exact: true }).click();
+    await page
+      .getByLabel("Workspace filters", { exact: true })
+      .getByRole("radio", { name: "Activity", exact: true })
+      .click();
 
     // ws-old has no tmux output and falls back to creation time.
     await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
@@ -5382,7 +5405,7 @@ test.describe("workspace list sorting", () => {
     await expect(headers).toHaveCount(0);
 
     await sortTrigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Org / repo" }).click();
+    await page.getByLabel("Workspace filters", { exact: true }).getByRole("radio", { name: "Org / repo" }).click();
 
     await expect(headers).toHaveCount(2);
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
@@ -5484,9 +5507,9 @@ test.describe("workspace list sorting", () => {
     ]);
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(3);
 
-    const viewTrigger = page.getByTitle("View workspace options");
+    const viewTrigger = page.getByTitle("Filter workspaces");
     await viewTrigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Hide org name" }).click();
+    await page.getByLabel("Workspace filters", { exact: true }).getByRole("button", { name: "Hide org name" }).click();
 
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
@@ -5494,7 +5517,10 @@ test.describe("workspace list sorting", () => {
       "kenn-forge",
     ]);
 
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Show PR diff stats" }).click();
+    await page
+      .getByLabel("Workspace filters", { exact: true })
+      .getByRole("button", { name: "Show PR diff stats" })
+      .click();
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(0);
 
     await page.reload();
@@ -5507,10 +5533,10 @@ test.describe("workspace list sorting", () => {
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(0);
   });
 
-  test("view trigger hugs the collapse toggle and the dropdown opens end-aligned", async ({ page }) => {
+  test("filter trigger hugs the collapse toggle and the dropdown opens end-aligned", async ({ page }) => {
     await page.goto("/workspaces");
 
-    const trigger = page.getByTitle("View workspace options");
+    const trigger = page.getByTitle("Filter workspaces");
     const toggle = page.getByRole("button", { name: "Collapse Workspaces sidebar" });
     await expect(trigger).toBeVisible();
     await expect(toggle).toBeVisible();
@@ -5529,12 +5555,12 @@ test.describe("workspace list sorting", () => {
     expect(gap).toBeLessThanOrEqual(12);
 
     await trigger.click();
-    const dropdown = page.locator(".kit-filter-dropdown__panel");
+    const dropdown = page.getByLabel("Workspace filters", { exact: true });
     await expect(dropdown).toBeVisible();
     const dropdownBox = await dropdown.boundingBox();
     expect(dropdownBox).not.toBeNull();
 
-    // The wider View menu is end-aligned so it stays inside the
+    // The filter menu is end-aligned so it stays inside the
     // rail while the trigger remains beside the collapse toggle.
     expect(Math.abs(dropdownBox!.x + dropdownBox!.width - (triggerBox!.x + triggerBox!.width))).toBeLessThanOrEqual(
       1.5,

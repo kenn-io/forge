@@ -43,10 +43,12 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	t.Cleanup(hubServer.Close)
 	serverfake.SeedPR(t, database, "acme", "widget", 1, func(pull *db.MergeRequest) {
 		pull.Title = "Merged change"
+		pull.Author = "alice"
 		pull.State = db.MergeRequestStateMerged
 	})
 	serverfake.SeedPR(t, database, "acme", "widget", 2, func(pull *db.MergeRequest) {
 		pull.Title = "Linked change"
+		pull.Author = "bob"
 	})
 	source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, request *http.Request,
@@ -75,9 +77,11 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	assert.Equal("merged", *got[0].MRState)
 	require.NotNil(got[0].MRTitle)
 	assert.Equal("Merged change", *got[0].MRTitle)
+	assert.Equal(new("alice"), got[0].ItemAuthor)
 	require.NotNil(got[1].MRState)
 	assert.Equal("open", *got[1].MRState)
 	require.NotNil(got[1].MRTitle)
 	assert.Equal("Linked change", *got[1].MRTitle)
+	assert.Equal(new("bob"), got[1].ItemAuthor)
 	assert.Nil(got[2].MRState, "a workspace without a stable repository identity is not resolved")
 }

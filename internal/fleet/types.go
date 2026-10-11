@@ -224,6 +224,7 @@ type RawWorkspace struct {
 	EnrichmentError       *string            `json:"enrichmentError,omitempty"`
 	AssociatedPRNumber    *int               `json:"associatedPRNumber,omitempty"`
 	Kata                  *RawWorkspaceKata  `json:"kata,omitempty"`
+	ItemAuthor            *string            `json:"itemAuthor,omitempty"`
 	ItemLastActivityAt    *string            `json:"itemLastActivityAt,omitempty"`
 	MRTitle               *string            `json:"mrTitle,omitempty"`
 	MRState               *string            `json:"mrState,omitempty"`
@@ -507,6 +508,7 @@ type WorkspaceSummary struct {
 	Status                string                     `json:"status"`
 	ErrorMessage          *string                    `json:"error_message,omitempty"`
 	CreatedAt             string                     `json:"created_at"`
+	ItemAuthor            *string                    `json:"item_author,omitempty"`
 	ItemLastActivityAt    *string                    `json:"item_last_activity_at,omitempty"`
 	MRTitle               *string                    `json:"mr_title,omitempty"`
 	MRState               *string                    `json:"mr_state,omitempty"`

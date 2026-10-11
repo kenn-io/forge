@@ -672,6 +672,7 @@ type workspaceProviderStateResponse struct {
 
 type workspaceProviderState struct {
 	ID                 string  `json:"id"`
+	ItemAuthor         *string `json:"item_author,omitempty"`
 	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
 	MRTitle            *string `json:"mr_title,omitempty"`
 	MRState            *string `json:"mr_state,omitempty"`
@@ -731,6 +732,7 @@ func (s *HubProviderSource) WorkspaceProviderState(
 			continue
 		}
 		workspace := &out[index]
+		workspace.ItemAuthor = state.ItemAuthor
 		workspace.ItemLastActivityAt = state.ItemLastActivityAt
 		workspace.MRTitle, workspace.MRState = state.MRTitle, state.MRState
 		workspace.MRIsDraft, workspace.MRCIStatus = state.MRIsDraft, state.MRCIStatus

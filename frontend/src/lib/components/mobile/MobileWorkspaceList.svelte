@@ -1,7 +1,8 @@
 <script lang="ts">
+  import { workspaceAuthorOptions, workspaceMatchesAuthor } from "../terminal/workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import MobileNavMenu from "./MobileNavMenu.svelte";
-  import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, Spinner, StatusDot, Toggle, type StatusDotStatus } from "@kenn-io/kit-ui";
+  import { copyToClipboard, DiffStats, formatRelativeTime, formatTimestamp, Modal, Spinner, StatusDot, Toggle, Typeahead, type StatusDotStatus } from "@kenn-io/kit-ui";
   import { buildCanonicalProviderItemURL } from "../../utils/item-reference.js";
   import MoreHorizontalIcon from "@lucide/svelte/icons/ellipsis";
   import PlusIcon from "@lucide/svelte/icons/plus";
@@ -79,6 +80,7 @@
   let fleetError = $state<string | null>(null);
   let listStatus = $state<"loading" | "retrying" | "loaded">("loading");
   let searchQuery = $state("");
+  let author = $state("");
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let displayOptions = $state<WorkspaceListDisplayOptions>(loadWorkspaceListDisplayOptions());
   let viewOpen = $state(false);
@@ -87,14 +89,16 @@
   let deleteForce = $state(false);
   let actionBusy = $state<string | null>(null);
 
+  const authorOptions = $derived(workspaceAuthorOptions(workspaces));
   const filtered = $derived(
-    workspaces.filter((workspace) => workspaceMatchesMobileSearch(workspace, searchQuery)),
+    workspaces.filter((workspace) => workspaceMatchesAuthor(workspace, author) && workspaceMatchesMobileSearch(workspace, searchQuery)),
   );
   const groups = $derived(groupMobileWorkspaces(filtered, displayOptions.showOrgNames));
   const flat = $derived(
     sortMode === "repo" ? [] : sortMobileWorkspaces(filtered, sortMode),
   );
   const viewBadgeCount = $derived(
+    Number(Boolean(author)) + Number(Boolean(searchQuery.trim())) +
     Number(sortMode !== defaultWorkspaceListSort) +
       Number(displayOptions.showOrgNames !== defaultWorkspaceListDisplayOptions.showOrgNames) +
       Number(displayOptions.showDiffStats !== defaultWorkspaceListDisplayOptions.showDiffStats),
@@ -502,10 +506,10 @@
       <button
         class="mobile-workspace-list__view"
         type="button"
-        aria-label="View workspace options"
+        aria-label="Workspace filters"
         onclick={() => (viewOpen = true)}
       >
-        View
+        Filters
         {#if viewBadgeCount > 0}<span>{viewBadgeCount}</span>{/if}
       </button>
       <button
@@ -547,8 +551,7 @@
       </div>
     {:else if filtered.length === 0}
       <div class="mobile-workspace-list__state">
-        <strong>{searchQuery.trim() ? "No matching workspaces" : "No workspaces yet"}</strong>
-        <span>{searchQuery.trim() ? "Try a repository, branch, title, or item number." : "Create one to start a terminal session."}</span>
+        <strong>{searchQuery.trim() || author ? "No matching workspaces" : "No workspaces yet"}</strong>
       </div>
     {:else if sortMode === "repo"}
       {#each groups as group (group.key)}
@@ -640,14 +643,27 @@
 
 {#if viewOpen}
   <Modal
-    title="View workspaces"
-    ariaLabel="View workspace options"
-    closeLabel="Close View options"
+    title="Workspace filters"
+    ariaLabel="Workspace filters"
+    closeLabel="Close filters"
     width="min(100%, 38rem)"
     maxWidth="100%"
     onclose={() => (viewOpen = false)}
   >
     <div class="mobile-sheet-content">
+      <fieldset>
+        <legend>Author</legend>
+        <Typeahead
+          options={authorOptions}
+          value={author}
+          fallbackLabel={author || "Anyone"}
+          placeholder="Filter authors"
+          title="Filter by PR or issue author"
+          allowClear
+          clearLabel="Anyone"
+          onselect={(value) => { author = value; }}
+        />
+      </fieldset>
       <fieldset>
         <legend>Sort and group</legend>
         {#each workspaceListSortOptions as option (option.value)}
@@ -665,6 +681,15 @@
           <span><strong>Show PR diff stats</strong><small>Show additions and deletions on linked pull requests.</small></span>
         </Toggle>
       </div>
+      {#if viewBadgeCount > 0}
+        <button type="button" onclick={() => {
+          author = "";
+          searchQuery = "";
+          setSort(defaultWorkspaceListSort);
+          displayOptions = { ...defaultWorkspaceListDisplayOptions };
+          saveWorkspaceListDisplayOptions(displayOptions);
+        }}>Reset filters</button>
+      {/if}
     </div>
   </Modal>
 {/if}

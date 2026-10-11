@@ -188,6 +188,7 @@ func replaceObserverWorkspaces(
 }
 
 func copyProviderWorkspaceFields(target *RawWorkspace, source RawWorkspace) {
+	target.ItemAuthor = source.ItemAuthor
 	target.ItemLastActivityAt = source.ItemLastActivityAt
 	target.MRTitle = source.MRTitle
 	target.MRState = source.MRState
@@ -447,6 +448,7 @@ func buildWorkspaceSummaries(
 			Status:              workspace.Status, ErrorMessage: workspace.ErrorMessage,
 			CreatedAt:          workspace.CreatedAt,
 			ItemLastActivityAt: workspace.ItemLastActivityAt,
+			ItemAuthor:         workspace.ItemAuthor,
 			MRTitle:            workspace.MRTitle, MRState: lowerPtr(workspace.MRState),
 			MRIsDraft: workspace.MRIsDraft, MRCIStatus: lowerPtr(workspace.MRCIStatus),
 			MRReviewDecision: lowerPtr(workspace.MRReviewDecision),

@@ -261,6 +261,32 @@ func TestStoreLiveReportsExcludeWrongWorkspaceDeadAndNestedSessions(t *testing.T
 	assert.Equal(StateDone, reports[0].State)
 }
 
+func TestStoreRemovesZeroLengthReportsDuringScan(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	store := NewStore(t.TempDir())
+	cwd := t.TempDir()
+	require.NoError(store.Record("claude", "live", "runtime", cwd, StateWorking))
+	reports := store.LiveReportsForWorkspace(cwd, []string{"runtime"})
+	require.Len(reports, 1)
+	cached := &store.cacheReports[0]
+	path := store.reportPath("claude", "chat", "runtime")
+	require.NoError(os.WriteFile(path, nil, 0o600))
+	assert.Equal(reports, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	assert.NoFileExists(path)
+	assert.Same(cached, &store.cacheReports[0])
+	require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
+	require.Len(store.LiveReportsForWorkspace(cwd, []string{"runtime"}), 2)
+	require.NoError(os.Truncate(path, 0))
+	assert.Equal(reports, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	assert.NoFileExists(path)
+	store = NewStore(store.root)
+	require.NoError(os.WriteFile(path, nil, 0o600))
+	assert.Equal(reports, store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+	assert.NoFileExists(path)
+}
+
 func TestStoreRemovesLegacyAgentlessReportsDuringScan(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -330,6 +356,30 @@ func TestStoreReadsReportsSavedBeforePerTerminalNames(t *testing.T) {
 	entries, err := os.ReadDir(root)
 	require.NoError(err)
 	assert.Empty(entries)
+}
+
+func TestStoreSessionEndWithInvalidLegacyReport(t *testing.T) {
+	for _, content := range []string{"", "corrupt", "{}", `{"state":"unknown"}`} {
+		t.Run(content, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			store := NewStore(t.TempDir())
+			cwd := t.TempDir()
+			legacy := store.legacyReportPath("claude", "chat")
+			require.NoError(t, os.WriteFile(legacy, []byte(content), 0o600))
+			require.NoError(t, store.Record("claude", "chat", "runtime", cwd, StateDone))
+			assert.NoError(store.HandleEvent("claude", HookEvent{SessionID: "chat", HookEventName: "SessionEnd"}, "runtime"))
+			assert.NoFileExists(store.reportPath("claude", "chat", "runtime"))
+			if content == "" {
+				assert.NoFileExists(legacy)
+			} else {
+				data, err := os.ReadFile(legacy)
+				require.NoError(t, err)
+				assert.Equal(content, string(data))
+			}
+			assert.Empty(store.LiveReportsForWorkspace(cwd, []string{"runtime"}))
+		})
+	}
 }
 
 func reportHook(t *testing.T, store *Store, runtimeKey string, input map[string]any) {

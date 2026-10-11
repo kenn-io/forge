@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -225,4 +226,51 @@ func TestAgentHookRunFailsOpenForMalformedPayload(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, stdout.String())
+}
+
+func TestAgentHookSessionEndReportsDaemonFailure(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var status int
+	var body string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.WriteHeader(status)
+		_, err := io.WriteString(w, body)
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+	configPath := archiveCLITestConfig(t, server.URL, "", "test-token")
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		events []string
+	}{
+		{"server failure", http.StatusInternalServerError, `{"detail":"record agent hook activity: remove D:\\activity\\report.json: access denied"}`, []string{"SessionEnd", "SessionStart"}},
+		{"unavailable", http.StatusServiceUnavailable, `{"detail":"daemon restarting"}`, []string{"SessionEnd"}},
+		{"unparseable body", http.StatusInternalServerError, "invalid", []string{"SessionEnd"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			mu.Lock()
+			status, body = tc.status, tc.body
+			mu.Unlock()
+			for _, event := range tc.events {
+				err := receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"`+event+`","source":"startup","reason":"prompt_input_exit"}`), io.Discard)
+				if event == "SessionEnd" && tc.status == http.StatusInternalServerError {
+					require.ErrorIs(err, errAgentHookResponse)
+					require.ErrorContains(err, "500")
+					if tc.body != "invalid" {
+						require.ErrorContains(err, `remove D:\activity\report.json: access denied`)
+					}
+				} else {
+					require.NoError(err)
+				}
+			}
+		})
+	}
+	server.Close()
+	require.NoError(t, receiveAgentHook(t.Context(), "claude", configPath, agentHookSource, strings.NewReader(`{"session_id":"chat","hook_event_name":"SessionEnd","reason":"prompt_input_exit"}`), io.Discard))
 }

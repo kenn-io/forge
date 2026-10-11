@@ -95,6 +95,8 @@ Use `--agent NAME` to install one agent's hook. The sidebar can then show when
 an agent is working, waiting for approval, waiting for input, or done. Without
 fresh hook reports, Forge falls back to tmux activity.
 
+After `/clear` or exit, ended activity clears from workspace badges and live session results if Windows rejects report deletion with a sharing violation or access-denied error and truncation succeeds. Other live reports can keep a workspace badge visible. Forge retries deletion on later scans and accepts repeated cleanup of empty legacy reports. It skips corrupt or invalid legacy content. If opening or reading a legacy report fails with an I/O error other than absence, truncation of a nonempty report fails, or deletion fails for another reason, the SessionEnd hook exits with the file and cause.
+
 ## Attach outside the browser
 
 Workspace and session controls expose tmux attach commands. This is useful for

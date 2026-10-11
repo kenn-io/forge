@@ -130,6 +130,7 @@ Rules:
   (`internal/agentactivity/store.go::Store.reportPath`).
 - SessionEnd and Remove clear only the calling terminal's report
   (`internal/agentactivity/store.go::Store.Remove`).
+- Only Windows sharing violations and access-denied delete errors permit truncation; zero-length reports stay hidden and retry deletion across restarts without disabling the remaining reports' cache. SessionEnd retries empty legacy markers and skips invalid content; legacy open/read I/O errors other than absence, failed truncation of nonempty reports, and other delete errors return HTTP 500 and a CLI error (`internal/agentactivity/store.go::Store.Remove`, `internal/server/workspaceapi/agent_hook.go::Handler.receiveAgentHook`).
 - Agents started before an upgrade can keep writing the old report filename;
   retain read and cleanup support until those sessions end
   (`internal/agentactivity/store.go::Store.legacyReportPath`).

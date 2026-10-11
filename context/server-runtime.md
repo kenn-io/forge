@@ -65,6 +65,8 @@ and the root event stream.
 - The Linux GitHub broker follows App installation access, without a separate repository list,
   and checks each enrolled developer's current permission before returning a single-repository
   token. (`internal/devbox/broker.go::Broker.Credential`)
+- Repository names can be reused; stale broker token scope gets one refresh with full admission
+  checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)
 - The broker authenticates Unix peer UIDs and keeps personal GitHub credentials off workers.
   Human commit identity and the App push actor are distinct; GitHub rulesets enforce
   protected-branch restrictions. (`internal/devbox/broker.go`)

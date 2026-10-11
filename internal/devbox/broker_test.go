@@ -36,6 +36,11 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	repositoryScope.Store("")
 	var repositoryID atomic.Int64
 	repositoryID.Store(42)
+	var tokenRepositoryID atomic.Int64
+	tokenRepositoryID.Store(42)
+	var staleLookupStatus atomic.Int64
+	var rejectRefreshedLookup atomic.Bool
+	var revokeRefreshedMembership atomic.Bool
 	var minted atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -59,7 +64,10 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 			token := "fixture-installation-token"
 			switch request.Repositories[0] {
 			case "project":
-				repo = githubapp.Repository{ID: 42, Name: "project"}
+				repo = githubapp.Repository{ID: tokenRepositoryID.Load(), Name: "project"}
+				if repo.ID == 44 {
+					token = "fixture-replacement-token"
+				}
 			case "project-b":
 				repo = githubapp.Repository{ID: 43, Name: "project-b"}
 				token = "fixture-project-b-token"
@@ -96,12 +104,17 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		case "/user/1234":
 			_, _ = fmt.Fprint(w, `{"id":1234,"login":"developer-a"}`)
 		case "/orgs/example-org/members/developer-a":
-			if member.Load() {
+			if member.Load() && (!revokeRefreshedMembership.Load() || r.Header.Get("Authorization") != "Bearer fixture-replacement-token") {
 				w.WriteHeader(http.StatusNoContent)
 			} else {
 				w.WriteHeader(http.StatusNotFound)
 			}
 		case "/repos/example-org/project":
+			if status := int(staleLookupStatus.Load()); status != 0 &&
+				(r.Header.Get("Authorization") == "Bearer fixture-installation-token" || rejectRefreshedLookup.Load()) {
+				w.WriteHeader(status)
+				return
+			}
 			_, _ = fmt.Fprintf(w, `{"id":%d,"name":"project","owner":{"id":99},"default_branch":"main"}`, repositoryID.Load())
 		case "/repos/example-org/project/collaborators/developer-a/permission":
 			_, _ = fmt.Fprintf(w, `{"permission":%q,"user":{"id":1234}}`, permission.Load())
@@ -157,8 +170,10 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.Equal("fixture-installation-token", credential.Token)
 	assert.Equal(int32(4), minted.Load(), "another repository must not replace the cached credential")
 	repositoryID.Store(44)
+	beforeMismatch := minted.Load()
 	_, err = broker.Credential(t.Context(), uid, request)
 	require.ErrorContains(err, "repository identity")
+	assert.Equal(beforeMismatch+1, minted.Load(), "a fresh identity mismatch stops after one refresh")
 	repositoryID.Store(42)
 	member.Store(false)
 	_, err = broker.Credential(t.Context(), uid, request)
@@ -194,9 +209,62 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	}
 	repositoryScope.Store("")
 	require.NoError(broker.Erase(uid, "EXAMPLE-ORG/PROJECT"))
+	beforeUnrelated := minted.Load()
 	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
 	require.NoError(err)
 	assert.Equal("fixture-project-b-token", credential.Token)
+	assert.Equal(beforeUnrelated, minted.Load(), "erasing one repository preserves unrelated cached credentials")
+
+	for _, test := range []struct {
+		name             string
+		status           int
+		rejectRefreshed  bool
+		revokeMembership bool
+		wantError        string
+		wantMints        int32
+	}{
+		{name: "reused private name", status: http.StatusNotFound, wantMints: 2},
+		{name: "changed repository identity", wantMints: 2},
+		{name: "still unavailable", status: http.StatusNotFound, rejectRefreshed: true, wantError: "repository unavailable", wantMints: 1},
+		{name: "upstream failure", status: http.StatusServiceUnavailable, wantError: "repository unavailable"},
+		{name: "membership revoked during refresh", status: http.StatusNotFound, revokeMembership: true, wantError: "not a member", wantMints: 1},
+	} {
+		require.NoError(broker.Erase(uid, request.Repository))
+		repositoryID.Store(42)
+		tokenRepositoryID.Store(42)
+		staleLookupStatus.Store(0)
+		rejectRefreshedLookup.Store(false)
+		revokeRefreshedMembership.Store(false)
+		credential, err := broker.Credential(t.Context(), uid, request)
+		require.NoError(err)
+		assert.Equal(int64(42), credential.RepositoryID)
+
+		repositoryID.Store(44)
+		tokenRepositoryID.Store(44)
+		staleLookupStatus.Store(int64(test.status))
+		rejectRefreshedLookup.Store(test.rejectRefreshed)
+		revokeRefreshedMembership.Store(test.revokeMembership)
+		before := minted.Load()
+		credential, err = broker.Credential(t.Context(), uid, request)
+		assert.Equal(before+test.wantMints, minted.Load(), test.name)
+		if test.wantError != "" {
+			require.ErrorContains(err, test.wantError, test.name)
+			assert.Nil(credential)
+			continue
+		}
+		require.NoError(err, test.name)
+		assert.Equal(int64(44), credential.RepositoryID)
+		assert.Equal("fixture-replacement-token", credential.Token)
+		credential, err = broker.Credential(t.Context(), uid, request)
+		require.NoError(err)
+		assert.Equal(int64(44), credential.RepositoryID)
+		assert.Equal(before+2, minted.Load(), "the refreshed credentials are cached")
+	}
+	require.NoError(broker.Erase(uid, request.Repository))
+	repositoryID.Store(42)
+	tokenRepositoryID.Store(42)
+	staleLookupStatus.Store(0)
+	revokeRefreshedMembership.Store(false)
 
 	if runtime.GOOS != "linux" || os.Getuid() == 0 {
 		return // The deployed socket admission uses Linux non-root peer credentials.

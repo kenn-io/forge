@@ -126,6 +126,10 @@ func (b *Broker) api(token string) (*gh.Client, error) {
 }
 
 func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialRequest) (*Credential, error) {
+	return b.credential(ctx, uid, request, true)
+}
+
+func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialRequest, allowRefresh bool) (*Credential, error) {
 	index := slices.IndexFunc(b.config.Accounts, func(account Account) bool { return account.UID == uid })
 	if index < 0 {
 		return nil, errors.New("account is not enrolled for devbox GitHub access")
@@ -181,12 +185,29 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 	if !member {
 		return nil, errors.New("developer is not a member of the admitted GitHub organization")
 	}
-	repo, _, err := api.Repositories.Get(ctx, owner, name)
-	if err != nil {
-		return nil, fmt.Errorf("GitHub repository unavailable: %w", err)
+	// A reused name can leave every cached profile scoped to the previous repository.
+	refresh := func(failure error) (*Credential, error) {
+		if err := b.Erase(uid, request.Repository); err != nil {
+			return nil, err
+		}
+		if !allowRefresh {
+			return nil, failure
+		}
+		return b.credential(ctx, uid, request, false)
 	}
-	if repo.GetID() != repoID || repo.GetOwner().GetID() != b.config.OrganizationID {
+	repo, response, err := api.Repositories.Get(ctx, owner, name)
+	if err != nil {
+		failure := fmt.Errorf("GitHub repository unavailable: %w", err)
+		if response != nil && response.StatusCode == http.StatusNotFound {
+			return refresh(failure)
+		}
+		return nil, failure
+	}
+	if repo.GetOwner().GetID() != b.config.OrganizationID {
 		return nil, errors.New("GitHub repository identity differs from the installation token")
+	}
+	if repo.GetID() != repoID {
+		return refresh(errors.New("GitHub repository identity differs from the installation token"))
 	}
 	permission, _, err := api.Repositories.GetPermissionLevel(ctx, owner, name, user.GetLogin())
 	if err != nil {
@@ -215,7 +236,7 @@ func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialR
 		return nil, err
 	}
 	if token.Repositories[0].ID != repoID {
-		return nil, errors.New("GitHub credential repository differs from the authorized repository")
+		return refresh(errors.New("GitHub credential repository differs from the authorized repository"))
 	}
 	return &Credential{
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,

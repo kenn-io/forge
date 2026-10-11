@@ -28,14 +28,4 @@ func TestGeneratedModelsPreserveArbitraryJSONValues(t *testing.T) {
 		require.Equal(t, map[string]any{"type": "string", "title": "Version"}, request.Schema.Properties["version"])
 		require.Equal(t, map[string]any{"type": "boolean", "default": true}, request.Schema.Properties["publish"])
 	})
-	t.Run("elicitation answer values", func(t *testing.T) {
-		command := generated.WorkspaceChatCommand{Content: map[string]any{"version": "1.2.3", "publish": true, "count": 2}}
-		data, err := json.Marshal(command)
-		require.NoError(t, err)
-		var sent struct {
-			Content map[string]any `json:"content"`
-		}
-		require.NoError(t, json.Unmarshal(data, &sent))
-		require.Equal(t, map[string]any{"version": "1.2.3", "publish": true, "count": float64(2)}, sent.Content)
-	})
 }

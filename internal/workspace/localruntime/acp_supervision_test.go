@@ -577,3 +577,21 @@ func TestACPCoordinatorPromptIsRefusedAfterATakeoverBeforeItStarts(t *testing.T)
 	require.ErrorIs(t, err, ErrACPStaleGeneration)
 	assert.Empty(t, publishedACPState(t, agent).Queue, "a former coordinator's prompt never queues")
 }
+
+// An agent's prompt through a Forge tool is checked against supervision when
+// it is submitted. A coordinator claiming the chat before the prompt starts
+// still keeps it out.
+func TestACPAgentPromptIsRefusedWhenACoordinatorClaimsTheChatFirst(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.beforePromptStart = func() {
+		require.NoError(t, agent.Command(ACPCommand{Type: "supervise", Supervisor: "coordinator"}))
+	}
+
+	err := agent.Prompt("from another agent", ACPSender{Kind: ACPSenderCoordinator})
+
+	require.ErrorIs(t, err, ErrACPSupervised)
+	state := publishedACPState(t, agent)
+	assert.False(t, state.Busy, "the agent's prompt never started")
+	assert.Empty(t, state.Queue)
+	assert.Empty(t, state.Messages)
+}

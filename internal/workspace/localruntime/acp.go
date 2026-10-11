@@ -633,6 +633,12 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.mu.Unlock()
 		return err
 	}
+	if !queued && generation == 0 && prompt.Sender.coordinator() && a.supervisedLocked() {
+		// An agent using a Forge tool was admitted while nobody supervised the chat; a
+		// claim needs only a.mu, so a coordinator may hold it now.
+		a.mu.Unlock()
+		return ErrACPSupervised
+	}
 	if !a.state.Connected {
 		a.mu.Unlock()
 		return ErrACPAgentUnavailable

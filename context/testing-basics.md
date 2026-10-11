@@ -95,6 +95,10 @@ fixtures, or changing shell-script coverage.
 - Fixed historical timestamps must use an explicit query window or controlled
   clock; rolling defaults otherwise make fixtures expire with wall time
   (`internal/server/e2etest/notifications_test.go::TestNotificationSyncReconcilesReusedRouteE2E`).
+- Config path assertions must expect physical directory identity; macOS temporary
+  parents can be symlink aliases (`internal/config/runtime_overrides_test.go::TestRuntimeEnvironmentOverlayAndSave`).
+- Base terminal tests inherit the user's login shell; run POSIX expansions through
+  an explicit `/bin/sh -c` (`internal/server/workspacetest/tmux_server_env_test.go::TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E`).
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.

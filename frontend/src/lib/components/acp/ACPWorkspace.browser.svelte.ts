@@ -530,7 +530,13 @@ describe("ACPWorkspace queued coordinator prompts (browser)", () => {
         busy: true,
         connected: true,
         error: "",
-        queue: [{ id: "c1", text: "Refactor the parser", sender: { kind: "coordinator", name: "release-planner-with-a-long-name" } }],
+        queue: [
+          {
+            id: "c1",
+            text: "Refactor the parser",
+            sender: { kind: "coordinator", name: "release-planner-with-a-long-name" },
+          },
+        ],
       }),
     );
     await nextFrame();

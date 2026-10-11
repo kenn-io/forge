@@ -23,6 +23,7 @@ export const quickActionLaunches = new SvelteMap<
     targetKey: string;
     session?: RuntimeSession;
     leaf?: WorkspaceRuntimeLaunchLeaf;
+    explicitlyMovedSessionKeys?: Set<string>;
   }
 >();
 
@@ -47,6 +48,7 @@ export function runWorkspaceQuickAction(
   leaf?: WorkspaceRuntimeLaunchLeaf,
 ): void {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
+  if (quickActionLaunches.has(workspaceKey)) return;
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
   quickActionLaunches.set(workspaceKey, launch);

@@ -154,7 +154,7 @@ describe("WorkspaceLauncher", () => {
   it("runs configured quick actions and disables ones whose agent cannot launch", async () => {
     const onQuickAction = vi.fn();
     const review = { label: "Review", agent: "codex", prompt: "Review this change" };
-    render(WorkspaceLauncher, {
+    const { rerender } = render(WorkspaceLauncher, {
       props: {
         launchTargets: [
           { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
@@ -189,6 +189,11 @@ describe("WorkspaceLauncher", () => {
 
     await fireEvent.click(reviewButton);
     expect(onQuickAction).toHaveBeenCalledWith(review);
+    await rerender({ quickActionBusy: true });
+    expect(reviewButton.disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Codex", exact: true }).hasAttribute("disabled")).toBe(false);
+    await rerender({ quickActionBusy: false });
+    expect(reviewButton.disabled).toBe(false);
   });
 
   it("lists quick actions by title, ignoring case", () => {

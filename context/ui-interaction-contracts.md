@@ -155,7 +155,9 @@ Interactive surfaces must agree on which item is selected.
 - Quick actions keep the automatic session picker closed for that workspace, local or devbox, during the
   browser session, regardless of launch outcome or session exit. Opening it remains an explicit user action
   (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
-- Mounted workspace views activate completed handoffs in existing placements or the requested pane.
+- Admit one quick action per workspace and host until its handoff is presented or fails
+  (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
+- Mounted workspace views activate completed handoffs in the requested pane unless the user moved the session.
   Preserve saved layout entries until authoritative runtime discovery can prune them
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
 - Every quick-action list is ordered by action title, ignoring case, not by settings order

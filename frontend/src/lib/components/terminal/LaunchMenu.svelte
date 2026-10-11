@@ -17,6 +17,7 @@
     hostVisible?: boolean;
     onLaunch?: (targetKey: string) => void;
     quickActions?: QuickAction[];
+    quickActionBusy?: boolean;
     onQuickAction?: (action: QuickAction) => void;
   }
 
@@ -27,6 +28,7 @@
     hostVisible = true,
     onLaunch,
     quickActions = [],
+    quickActionBusy = false,
     onQuickAction,
   }: LaunchMenuProps = $props();
 
@@ -110,7 +112,7 @@
       aria-label="Quick actions"
       aria-haspopup="dialog"
       aria-expanded={open === "quick"}
-      {disabled}
+      disabled={disabled || quickActionBusy}
       onclick={() => { open = open === "quick" ? null : "quick"; }}
     >
       <ZapIcon size="13" strokeWidth="2.2" aria-hidden="true" />
@@ -134,7 +136,7 @@
           {@const target = launchTargets.find((candidate) => candidate.key === action.agent && (candidate.kind === "agent" || candidate.kind === "acp"))}
           <button
             class="launch-option"
-            disabled={disabled || !target?.available || launchingKey === action.agent}
+            disabled={disabled || quickActionBusy || !target?.available || launchingKey === action.agent}
             title={!target ? `Agent "${action.agent}" is not configured` : !target.available ? target.disabled_reason || `Agent "${action.agent}" is not available` : action.prompt}
             onclick={() => { open = null; onQuickAction?.(action); }}
           >

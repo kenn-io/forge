@@ -19,6 +19,7 @@
     readonly?: boolean;
     /** Configured quick actions; the section renders only when non-empty and onQuickAction is set. */
     quickActions?: QuickAction[];
+    quickActionBusy?: boolean;
     onLaunch?: (targetKey: string) => void;
     onQuickAction?: ((action: QuickAction) => void) | undefined;
     onOpenSession?: (sessionKey: string) => void;
@@ -31,6 +32,7 @@
     launchingKey = null,
     readonly = false,
     quickActions = [],
+    quickActionBusy = false,
     onLaunch,
     onQuickAction,
     onOpenSession,
@@ -142,7 +144,7 @@
           {@const disabledReason = quickActionDisabledReason(action)}
           <button
             class="launch-card quick-card"
-            disabled={readonly || disabledReason !== ""}
+            disabled={readonly || quickActionBusy || disabledReason !== ""}
             title={disabledReason || action.prompt}
             aria-label={action.label}
             onclick={() => onQuickAction?.(action)}

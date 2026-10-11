@@ -15,6 +15,7 @@
     launchingKey?: string | null;
     readonly?: boolean;
     quickActions?: QuickAction[];
+    quickActionBusy?: boolean;
     onClose: () => void;
     onLaunch: (targetKey: string) => void;
     onQuickAction?: (action: QuickAction) => void;
@@ -29,6 +30,7 @@
     launchingKey = null,
     readonly = false,
     quickActions = [],
+    quickActionBusy = false,
     onClose,
     onLaunch,
     onQuickAction,
@@ -86,6 +88,7 @@
           {launchingKey}
           {readonly}
           {quickActions}
+          {quickActionBusy}
           onLaunch={onLaunch}
           {onQuickAction}
           onOpenSession={onOpenSession}

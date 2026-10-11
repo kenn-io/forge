@@ -117,12 +117,12 @@ func TestACPStdioHelper(t *testing.T) {
 				CWD        string `json:"cwd"`
 				MCPServers []any  `json:"mcpServers"`
 			}
-			cwd, _ := os.Getwd()
 			if json.Unmarshal(message.Params, &params) != nil || params.MCPServers == nil {
 				os.Exit(4)
 			}
-			resolved, err := filepath.EvalSymlinks(params.CWD)
-			if err != nil || resolved != cwd {
+			cwd, cwdErr := os.Stat(".")
+			requested, err := os.Stat(params.CWD)
+			if cwdErr != nil || err != nil || !os.SameFile(cwd, requested) {
 				os.Exit(4)
 			}
 			if fixtureDir != "" {

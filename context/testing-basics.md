@@ -114,6 +114,8 @@ fixtures, or changing shell-script coverage.
   once (`internal/server/workspacetest/default_tmux_socket_test.go::TestWorkspaceUnconfiguredTmuxUsesForgeSocketE2E`).
 - ACP fixtures must explicitly select private tmux or disable tmux discovery;
   a nil command discovers the live default server (`internal/workspace/localruntime/acp_test.go::newACPTestManager`).
+- Compare fixture working directories by file identity; Windows runners can use short-name paths
+  (`internal/workspace/localruntime/acp_test.go::TestACPStdioHelper`).
 - ACP owner processes can outlive manager stop; await their exit before deleting fixture state
   (`internal/workspace/localruntime/acp_owner_test.go::TestACPReattachesAfterDaemonProcessExits`).
 - Private tmux tests retain markers on gate, read, validation, or identity errors;

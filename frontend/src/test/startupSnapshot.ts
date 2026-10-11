@@ -15,6 +15,7 @@ export function makeStartupSnapshot(overrides: Partial<StartupSnapshot> = {}): S
       time_range: "7d",
       hide_closed: false,
       hide_bots: false,
+      hide_drafts: false,
       collapse_threads: false,
       item_types: ["pr", "issue"],
       event_types: ["comment", "review", "commit", "force_push"],

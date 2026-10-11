@@ -788,6 +788,7 @@ type Activity struct {
 	TimeRange                      string   `toml:"time_range" json:"time_range" enum:"24h,7d,30d,90d"`
 	HideClosed                     bool     `toml:"hide_closed" json:"hide_closed"`
 	HideBots                       bool     `toml:"hide_bots" json:"hide_bots"`
+	HideDrafts                     bool     `toml:"hide_drafts" json:"hide_drafts"`
 	CollapseThreads                bool     `toml:"collapse_threads" json:"collapse_threads"`
 	ItemTypes                      []string `toml:"item_types" json:"item_types"`
 	EventTypes                     []string `toml:"event_types" json:"event_types"`

@@ -298,6 +298,7 @@ export const mockSettings = {
     time_range: "7d",
     hide_closed: false,
     hide_bots: false,
+    hide_drafts: false,
   },
   detail: {
     initial_timeline_entry_limit: 50,

@@ -19,7 +19,7 @@ func TestActivityFilterSettingsPersistAndRejectInvalidSelections(t *testing.T) {
 	srv, _, cfgPath := setupTestServerWithConfig(t)
 	client := servertest.SetupTestClientWithBaseURL(t, srv, "http://127.0.0.1:8091")
 	activity := generated.Activity{
-		ViewMode: "flat", TimeRange: "30d", HideClosed: true,
+		ViewMode: "flat", TimeRange: "30d", HideClosed: true, HideDrafts: true,
 		ItemTypes: []string{"issue"}, EventTypes: []string{},
 		HideNotifications: true, HideDefaultBranch: true, RollUpCommits: true,
 	}
@@ -31,6 +31,7 @@ func TestActivityFilterSettingsPersistAndRejectInvalidSelections(t *testing.T) {
 	require.NotNil(response.JSON200)
 	assert.Equal([]string{"issue"}, response.JSON200.Activity.ItemTypes)
 	assert.Empty(response.JSON200.Activity.EventTypes)
+	assert.True(response.JSON200.Activity.HideDrafts)
 
 	persisted, err := config.Load(cfgPath)
 	require.NoError(err)
@@ -38,6 +39,7 @@ func TestActivityFilterSettingsPersistAndRejectInvalidSelections(t *testing.T) {
 	assert.Equal([]string{}, persisted.Activity.EventTypes)
 	assert.Equal("30d", persisted.Activity.TimeRange)
 	assert.True(persisted.Activity.HideClosed)
+	assert.True(persisted.Activity.HideDrafts)
 	assert.True(persisted.Activity.HideNotifications)
 	assert.True(persisted.Activity.HideDefaultBranch)
 	assert.True(persisted.Activity.RollUpCommits)

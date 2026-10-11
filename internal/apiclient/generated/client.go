@@ -56925,6 +56925,7 @@ type Activity struct {
 	HideBots                       bool              `json:"hide_bots"`
 	HideClosed                     bool              `json:"hide_closed"`
 	HideDefaultBranch              bool              `json:"hide_default_branch"`
+	HideDrafts                     bool              `json:"hide_drafts"`
 	HideNotifications              bool              `json:"hide_notifications"`
 	ItemTypes                      []string          `json:"item_types"`
 	RollUpCommits                  bool              `json:"roll_up_commits"`

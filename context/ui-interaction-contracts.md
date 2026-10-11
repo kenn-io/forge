@@ -1239,11 +1239,13 @@ Not every visibility control means "remove this entity entirely."
   collapsed Activity keeps a visible event direct when this hides its parent summary
   (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
 - "Hide drafts" drops every row whose parent is a draft pull request, including
-  notifications and workspace subjects; it is a session filter with no Settings default
+  notifications and workspace subjects
   (`internal/db/queries_activity.go::listActivityWithQueryer`,
   `internal/server/itemapi/huma_routes.go::Handlers.WorkspaceActivityResponse`). A spoke
   may lack the pull request row, so it takes workspace-subject draft state from the hub
   (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
+- Activity's "Hide drafts" default is saved in Settings; a session choice wins over
+  later settings hydration (`frontend/src/lib/stores/activity.svelte.ts::hydrateDefaults`).
 - Visibility controls backed by server filtering, including "Hide closed/merged",
   "Hide bots", and "Hide drafts", reload Activity so turning a filter off can restore rows omitted from
   the bounded server window (`frontend/src/lib/components/ActivityFeed.svelte`).

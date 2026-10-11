@@ -273,6 +273,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
   let hideDrafts = $state(false);
+  let hideDraftsOverride: boolean | undefined;
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -456,6 +457,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function setHideDrafts(v: boolean): void {
     hideDrafts = v;
+    hideDraftsOverride = v;
     invalidatePagedActivityRequests();
   }
   function setHideDefaultBranchActivity(v: boolean): void {
@@ -508,6 +510,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     timeRange = activity.time_range;
     hideClosedMerged = activity.hide_closed;
     hideBots = activity.hide_bots;
+    hideDrafts = hideDraftsOverride ?? activity.hide_drafts;
     useWorkspaceActivityForRecency = activity.use_workspace_activity_for_recency;
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;

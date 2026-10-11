@@ -32,6 +32,7 @@ const initial: ActivitySettingsType = {
   time_range: "7d",
   hide_closed: false,
   hide_bots: false,
+  hide_drafts: false,
   collapse_threads: false,
   item_types: ["pr", "issue"],
   event_types: ["comment", "review", "commit", "force_push"],
@@ -58,13 +59,16 @@ describe("ActivitySettings", () => {
     expect(screen.getByText("Activity policy is managed by the fleet hub.")).toBeTruthy();
   });
 
-  it("persists and hydrates updated activity defaults", async () => {
-    const updated = { ...initial, hide_bots: true };
+  it.each([
+    ["hide_bots", "Toggle hide bots"],
+    ["hide_drafts", "Hide drafts"],
+  ])("persists and hydrates the %s activity default", async (key, label) => {
+    const updated = { ...initial, [key]: true };
     const onUpdate = vi.fn();
     mockPersistSettings.mockReturnValue(Effect.succeed({ activity: updated }));
     render(ActivitySettingsTestHarness, { props: { activity: initial, onUpdate } });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Toggle hide bots" }));
+    await fireEvent.click(screen.getByRole("button", { name: label }));
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ activity: updated });

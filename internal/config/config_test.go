@@ -969,6 +969,7 @@ name = "b"
 	assert.Equal("7d", cfg.Activity.TimeRange)
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
+	assert.False(cfg.Activity.HideDrafts)
 	assert.True(cfg.Activity.CollapseThreads)
 	assert.False(cfg.Activity.UseWorkspaceActivityForRecency)
 	assert.Equal([]string{"pr", "issue"}, cfg.Activity.ItemTypes)
@@ -993,12 +994,14 @@ func TestActivityFilterDefaultsRoundTrip(t *testing.T) {
 item_types = %s
 event_types = %s
 hide_notifications = true
+hide_drafts = true
 hide_default_branch = true
 roll_up_commits = true
 `, selection.items, selection.events))
 			assert.Equal(selection.wantItems, reloaded.Activity.ItemTypes)
 			assert.Equal(selection.wantEvents, reloaded.Activity.EventTypes)
 			assert.True(reloaded.Activity.HideNotifications)
+			assert.True(reloaded.Activity.HideDrafts)
 			assert.True(reloaded.Activity.HideDefaultBranch)
 			assert.True(reloaded.Activity.RollUpCommits)
 		})

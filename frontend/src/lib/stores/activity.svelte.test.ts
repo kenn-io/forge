@@ -42,6 +42,7 @@ function settings(collapse: boolean, useWorkspaceActivityForRecency = false): Ac
     time_range: "7d",
     hide_closed: false,
     hide_bots: false,
+    hide_drafts: false,
     collapse_threads: collapse,
     item_types: ["pr", "issue"],
     event_types: ["comment", "review", "commit", "force_push"],
@@ -66,6 +67,7 @@ describe("configured Activity filters", () => {
     hide_notifications: true,
     hide_default_branch: true,
     roll_up_commits: true,
+    hide_drafts: true,
   });
 
   it.each([false, true])("uses configured filters on opening Activity (late settings: %s)", (late) => {
@@ -79,6 +81,7 @@ describe("configured Activity filters", () => {
     expect(store.getShowNotifications()).toBe(false);
     expect(store.getHideDefaultBranchActivity()).toBe(true);
     expect(store.getRollUpCommits()).toBe(true);
+    expect(store.getHideDrafts()).toBe(true);
     store.syncToURL();
     expect(window.location.search).toBe("");
   });
@@ -110,6 +113,7 @@ describe("configured Activity filters", () => {
     store.setShowNotifications(true);
     store.setHideDefaultBranchActivity(false);
     store.setRollUpCommits(false);
+    store.setHideDrafts(false);
     store.syncToURL();
     store.hydrateDefaults(defaults());
     expect([...store.getEnabledItemTypes()]).toEqual(["pr", "issue"]);
@@ -117,6 +121,16 @@ describe("configured Activity filters", () => {
     expect(store.getShowNotifications()).toBe(true);
     expect(store.getHideDefaultBranchActivity()).toBe(false);
     expect(store.getRollUpCommits()).toBe(false);
+    expect(store.getHideDrafts()).toBe(false);
+  });
+
+  it("preserves the session draft choice when settings reload", () => {
+    const store = makeStore();
+    store.hydrateDefaults(defaults());
+    store.initializeFromMount();
+    store.setHideDrafts(false);
+    store.hydrateDefaults(defaults());
+    expect(store.getHideDrafts()).toBe(false);
   });
 
   it("keeps a legacy all-items bookmark while settings are loading", () => {

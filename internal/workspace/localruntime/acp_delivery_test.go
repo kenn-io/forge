@@ -87,6 +87,21 @@ func publishedTexts(t *testing.T, agent *ACP) []string {
 	return texts
 }
 
+func TestACPDismissErrorPreservesPausedConversation(t *testing.T) {
+	agent := newDetachedACP(t)
+	acpText(t, agent, "Earlier reply.\n\n")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", ID: "next", Text: "Queued work"}))
+	completed := make(chan acpTurnResult, 1)
+	completed <- acpTurnResult{err: &acpsdk.RequestError{Code: -32603, Message: "Tool call interrupted", Data: "details"}}
+	agent.finishTurn(completed)
+	before := publishedACPState(t, agent)
+	require.Equal(t, "Tool call interrupted", before.Error)
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "dismiss_error"}))
+	before.Error, before.ErrorCode, before.ErrorData = "", nil, ""
+	assert.Equal(t, before, publishedACPState(t, agent))
+}
+
 // Streamed text is published in finished markdown blocks, not token by token.
 func TestACPPublishesStreamedTextInBlocks(t *testing.T) {
 	agent := newDetachedACP(t)

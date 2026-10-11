@@ -694,6 +694,16 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Agent is replying…");
   });
 
+  it("asks the host to dismiss an error without sending a prompt", async () => {
+    await openChat({ error: "Tool call interrupted", errorCode: -32603, errorData: "Details" });
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(sentCommands()).toEqual([{ type: "dismiss_error" }]);
+    await push({});
+    expect(screen.queryByRole("alert")).toBeNull();
+    await push({ error: "Another tool call failed" });
+    expect(screen.getByRole("alert").textContent).toContain("Another tool call failed");
+  });
+
   it("shows JSON-RPC error codes and data", async () => {
     await openChat({ error: "Internal error", errorCode: -32603, errorData: '{\n  "detail": "boom"\n}' });
 
@@ -702,7 +712,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(alert.querySelector("pre")?.textContent).toBe('{\n  "detail": "boom"\n}');
 
     await push({ error: "Agent exited" });
-    expect(screen.getByRole("alert").textContent?.trim()).toBe("Agent exited");
+    expect(screen.getByRole("alert").querySelector("p")?.textContent).toBe("Agent exited");
     expect(screen.getByRole("alert").querySelector("pre")).toBeNull();
   });
 

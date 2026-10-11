@@ -360,6 +360,7 @@
     <div class="error" role="alert">
       <p>{chatState.error}{#if chatState.errorCode != null}{" "}<span class="error-code">ACP {chatState.errorCode}</span>{/if}</p>
       {#if chatState.errorData}<pre>{chatState.errorData}</pre>{/if}
+      <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
     </div>
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}

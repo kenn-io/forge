@@ -131,6 +131,17 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await page.getByRole("tab", { name: /Workspace Chat/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("Interrupt tool call");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(chat.getByRole("alert")).toContainText("Tool call interrupted");
+    await expect(chat.getByRole("alert")).toContainText("No result returned");
+    await page.screenshot({ path: testInfo.outputPath("acp-dismiss-error.png") });
+    await chat.getByRole("button", { name: "Dismiss error" }).click();
+    await expect(chat.getByRole("alert")).toHaveCount(0);
+    await page.reload();
+    await expect(chat.getByRole("textbox", { name: "Message agent" })).toBeVisible();
+    await expect(chat.getByRole("alert")).toHaveCount(0);
+    await expect(chat.getByRole("log").getByText("Interrupt tool call", { exact: true })).toBeVisible();
     await chat.getByRole("button", { name: "Model: Fast" }).click();
     await page.getByRole("menuitemradio", { name: "Deep" }).click();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();

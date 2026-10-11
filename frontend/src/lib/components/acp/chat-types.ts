@@ -145,6 +145,7 @@ export type ChatCommand =
   | { type: "prompt"; mode: PromptMode; text: string; id: string; images?: readonly ChatContent[] }
   | { type: "unqueue"; id: string }
   | { type: "resume" }
+  | { type: "dismiss_error" }
   | { type: "history"; before: number; limit: number }
   | { type: "cancel" }
   | { type: "config"; id: string; value: string }

@@ -93,6 +93,20 @@ for await (const line of createInterface({ input: process.stdin })) {
     }
     case "session/prompt":
       prompt = request.id;
+      if (request.params.prompt[0]?.text === "Interrupt tool call") {
+        update({
+          sessionUpdate: "tool_call",
+          toolCallId: "interrupted-tool",
+          title: "Interrupted tool",
+          status: "failed",
+        });
+        write({
+          id: prompt,
+          error: { code: -32603, message: "Tool call interrupted", data: { detail: "No result returned" } },
+        });
+        prompt = undefined;
+        break;
+      }
       if (request.params.prompt[0]?.text === "Show screenshot") {
         screenshotDirectory ??= mkdtempSync(join(tmpdir(), "acp-screenshot-"));
         const path = join(screenshotDirectory, "panel screenshot.svg");

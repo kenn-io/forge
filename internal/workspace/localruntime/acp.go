@@ -460,6 +460,13 @@ func (a *ACP) Command(command ACPCommand) error {
 		return a.unqueue(command.ID)
 	case "resume":
 		return a.resumeQueue()
+	case "dismiss_error":
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.setErrorLocked(nil)
+		err := a.persistLocked()
+		a.changedLocked()
+		return err
 	case "cancel":
 		// Stop never waits for a prompt write, steering request, or settings
 		// change; a prompt written concurrently is cancelled after its write.

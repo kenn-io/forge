@@ -183,6 +183,7 @@ func TestStoreSessionEndAfterLegacyReportEmptied(t *testing.T) {
 		require.NoError(t, endChatSessionForTest(store, "runtime-b"))
 		assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime", "runtime-b"}))
 		release()
+		assert.Empty(t, store.LiveReportsForWorkspace(cwd, []string{"runtime", "runtime-b"}))
 		assert.NoFileExists(t, legacy)
 	})
 	t.Run("relocked without write sharing", func(t *testing.T) {

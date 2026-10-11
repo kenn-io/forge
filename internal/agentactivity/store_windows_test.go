@@ -20,7 +20,7 @@ func TestStoreRemoveWithOpenReports(t *testing.T) {
 	}{
 		{"writable", windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, false},
 		{"write only", windows.FILE_SHARE_WRITE, false},
-		{"invalid", windows.FILE_SHARE_WRITE, true},
+		{"invalid", windows.FILE_SHARE_READ | windows.FILE_SHARE_WRITE, true},
 		{"unwritable", 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

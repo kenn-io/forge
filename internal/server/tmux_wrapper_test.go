@@ -374,8 +374,8 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 
 	waitForWorkspaceReady(t, ctx, client, wsID)
 
-	// Failed activity samples remain cached for four seconds. Allow a fresh
-	// probe before declaring the fixture baseline unavailable.
+	// Failed activity enrichment waits for the next five-second refresh.
+	// Allow that retry before declaring the fixture baseline unavailable.
 	got := waitForWorkspaceActivity(t, client, ctx, wsID, func(activity workspaceActivityResponse) bool {
 		return activity.TmuxPaneTitle != nil && activity.TmuxWorking
 	})

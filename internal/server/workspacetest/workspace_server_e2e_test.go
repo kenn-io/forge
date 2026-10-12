@@ -133,6 +133,9 @@ exit 0
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: "helper",
 	}})
+	if err != nil && launchResp != nil {
+		t.Logf("runtime launch response: %s", launchResp.Body)
+	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode)
 	require.NotNil(launchResp.JSON200)

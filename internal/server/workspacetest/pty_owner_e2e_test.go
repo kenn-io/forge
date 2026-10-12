@@ -851,6 +851,9 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: string(localruntime.LaunchTargetPlainShell),
 	}})
+	if err != nil && launchResp != nil {
+		t.Logf("runtime launch response: %s", launchResp.Body)
+	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)

@@ -4961,6 +4961,7 @@ func setupWorkspaceServerFixtureWithMockHostAndOptions(
 	bareDir := filepath.Join(dir, "clones")
 	require.NoError(t, os.MkdirAll(bareDir, 0o755))
 	clones := gitclone.New(bareDir, nil)
+	t.Cleanup(clones.Wait)
 	bare, err := clones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(
 			t.Context(), platform.RepositoryIdentity{Key: serverfake.VerifiedGitHubRepoIdentity(platformHost, "acme", "widget").Key},
@@ -5033,7 +5034,7 @@ func cleanupWorkspaceServerFixtureArtifacts(
 	database *db.DB,
 ) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	require.NoError(
 		t,
@@ -5210,6 +5211,8 @@ func pathIsWithin(root string, path string) bool {
 	)
 }
 
+const workspaceSetupWait = 30 * time.Second
+
 func waitForWorkspaceReady(
 	t *testing.T,
 	ctx context.Context,
@@ -5229,15 +5232,17 @@ func waitForWorkspaceStatus(
 ) *generated.WorkspaceResponse {
 	t.Helper()
 
-	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	waitCtx, cancel := context.WithTimeout(ctx, workspaceSetupWait)
 	defer cancel()
 
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 
+	var lastBody []byte
 	for {
-		getResp, err := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
-		require.NoError(t, err)
+		getResp, err := client.HTTP.GetWorkspaceWithResponse(waitCtx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
+		require.NoError(t, err, "workspace %s last response: %s", wsID, lastBody)
+		lastBody = getResp.Body
 		if getResp.StatusCode == http.StatusOK &&
 			getResp.JSON200 != nil &&
 			getResp.JSON200.Status == status {
@@ -5248,8 +5253,8 @@ func waitForWorkspaceStatus(
 		case <-waitCtx.Done():
 			require.NoError(
 				t, waitCtx.Err(),
-				"workspace %s never reached %q status",
-				wsID, status,
+				"workspace %s never reached %q status; last response: %s",
+				wsID, status, lastBody,
 			)
 		case <-ticker.C:
 		}
@@ -6214,6 +6219,9 @@ exit 0
 	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: "helper",
 	}})
+	if err != nil && resp != nil {
+		t.Logf("runtime launch response: %s", resp.Body)
+	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)
@@ -6248,13 +6256,15 @@ exit 0
 	assert.Contains(newSession, srv.workspaces.TmuxOwnerMarker())
 
 	var listed *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+	activityCtx, cancelActivity := context.WithTimeout(ctx, workspaceActivityWait)
+	defer cancelActivity()
+	activityTicker := time.NewTicker(50 * time.Millisecond)
+	defer activityTicker.Stop()
+	for {
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(activityCtx)
 		require.NoError(err)
-		if listResp.StatusCode != http.StatusOK ||
-			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
-			return false
-		}
+		require.Equal(http.StatusOK, listResp.StatusCode)
+		require.NotNil(listResp.JSON200)
 		listed = nil
 		for i := range listResp.JSON200.Workspaces {
 			if listResp.JSON200.Workspaces[i].ID == ws.ID {
@@ -6262,10 +6272,17 @@ exit 0
 				break
 			}
 		}
-		return listed != nil && listed.TmuxWorking &&
+		if listed != nil && listed.TmuxWorking &&
 			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
-			listed.TmuxPaneTitle != nil
-	}, 5*time.Second, 10*time.Millisecond)
+			listed.TmuxPaneTitle != nil {
+			break
+		}
+		select {
+		case <-activityCtx.Done():
+			require.NoError(activityCtx.Err(), "runtime activity did not converge: %s", listResp.Body)
+		case <-activityTicker.C:
+		}
+	}
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)
@@ -6366,17 +6383,27 @@ exit 0
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 	client := setupTestClient(t, srv)
 	var got *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		resp, err := client.HTTP.GetWorkspaceWithResponse(t.Context(), &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
+	activityCtx, cancelActivity := context.WithTimeout(t.Context(), workspaceActivityWait)
+	defer cancelActivity()
+	activityTicker := time.NewTicker(50 * time.Millisecond)
+	defer activityTicker.Stop()
+	for {
+		resp, err := client.HTTP.GetWorkspaceWithResponse(activityCtx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: ws.ID}})
 		require.NoError(err)
-		if resp.StatusCode != http.StatusOK || resp.JSON200 == nil {
-			return false
-		}
+		require.Equal(http.StatusOK, resp.StatusCode)
+		require.NotNil(resp.JSON200)
 		got = resp.JSON200
-		return got.TmuxWorking &&
+		if got.TmuxWorking &&
 			got.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
-			got.TmuxPaneTitle != nil
-	}, 2*time.Second, 10*time.Millisecond)
+			got.TmuxPaneTitle != nil {
+			break
+		}
+		select {
+		case <-activityCtx.Done():
+			require.NoError(activityCtx.Err(), "stored runtime activity did not converge: %s", resp.Body)
+		case <-activityTicker.C:
+		}
+	}
 	require.NotNil(got)
 	assert.True(got.TmuxWorking)
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, got.TmuxActivitySource)

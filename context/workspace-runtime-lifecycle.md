@@ -428,8 +428,8 @@ create a local process, PTY, or durable transport session
   the client's exit code, keep the agent when its pane wrapper's exit record shows it
   was killed: the wrapper died with it, or it died from HUP, KILL, or TERM, as when a
   shutdown signals agents before tmux and Forge. Each new wrapper clears the record a
-  previous run under the same tmux name left; only a clean session end spends a
-  record. Startup recovery forgets, not resumes, a kept agent whose session is gone
+  previous run under the same tmux name left; only a recorded exit spends a record,
+  since a detached client also exits 0 while the agent runs on. Startup recovery forgets, not resumes, a kept agent whose session is gone
   with a recorded normal exit, then prunes records of gone sessions. Sessions
   launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits

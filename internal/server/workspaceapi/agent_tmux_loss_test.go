@@ -31,7 +31,9 @@ import (
 // exits with it.
 func TestRuntimeExitKeepsAgentAfterTmuxServerLoss(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"server killed", "client killed first", "client killed then finished", "agent exits"} {
+	for _, name := range []string{
+		"server killed", "client killed first", "client killed then finished", "client detached", "agent exits",
+	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
@@ -133,6 +135,17 @@ rm -f quit args
 				handler.runtimeRecoveryMu.Lock()
 				defer handler.runtimeRecoveryMu.Unlock()
 				return handler.runtimeRecoveryPending[session.Key]
+			}
+			if name == "client detached" {
+				// A detached client exits 0 while the agent keeps running.
+				require.Eventually(func() bool {
+					return procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+						"detach-client", "-s", stored()[0].TmuxSession)...).Run() == nil
+				}, 5*time.Second, 10*time.Millisecond)
+				require.Eventually(pending, 5*time.Second, 10*time.Millisecond)
+				require.Len(stored(), 1, "a detached client must not forget the agent")
+				_, recorded := runtime.AgentExit(stored()[0].TmuxSession)
+				require.True(recorded, "the still-running agent keeps its exit record")
 			}
 			if name == "client killed first" || name == "client killed then finished" {
 				// Launch returns before Forge's client attaches, so wait for it.

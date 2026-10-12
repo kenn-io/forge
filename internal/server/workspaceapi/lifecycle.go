@@ -461,10 +461,13 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 		return decision.keep
 	}
 	keep, err := h.classifyAgentExit(info)
-	// A clean exit means the session ended and its record is spent. Otherwise
-	// the agent may still run, so its record stays; startup prunes the rest.
-	if h.runtime != nil && *info.ExitCode == 0 {
-		h.runtime.ForgetAgentExit(info.TmuxSession)
+	// A recorded exit proves the wrapper and its session ended, so the record
+	// is spent. A clean client exit alone does not: a detached client exits 0
+	// while the agent runs on, and keeps its record. Startup prunes the rest.
+	if h.runtime != nil {
+		if exit, ok := h.runtime.AgentExit(info.TmuxSession); ok && exit.Recorded {
+			h.runtime.ForgetAgentExit(info.TmuxSession)
+		}
 	}
 	if h.exitDecisions == nil {
 		h.exitDecisions = make(map[string]exitDecision)

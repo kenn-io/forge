@@ -80,6 +80,7 @@ back to TOML.
   workflow HTTP access remains available (`internal/config/config.go::ModeVisibility`).
 - Disabling Actions releases demand and removes both its top-level mode and PR
   workflow menu (`frontend/src/App.svelte::syncWorkflowActionsAvailability`).
+- `workspaces.idle_runtime_stop_hours` is a TOML-only, hot-reloaded node-local setting bounded 0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
 - `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy. It persists through the partial `roborev` settings object and the committed workspace API snapshot; only the effective Roborev endpoint remains in the startup-bound restart snapshot (`internal/config/config.go::Roborev`, `internal/server/configreload/config_reload.go::StartupConfigSnapshot`, `internal/server/workspaceapi/config.go::ConfigSnapshot`).
 - `quick_actions` is a whole-list local settings section like `agents`: each entry
   needs a unique label (case-insensitive), a lowercase agent launch target key, and a

@@ -150,6 +150,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 
 // Reconnect only this workspace. Failed restoration leaves its stored identity
 // available for another attempt instead of silently creating a fresh chat.
+// Chats idle stop stopped wait for a page view to resume them.
 func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd string) {
 	err := s.openWorkspaceACP(ctx, workspaceID, cwd, "", nil)
 	if err != nil && !errors.Is(err, errWorkspaceACPNotAdmitted) {
@@ -163,8 +164,9 @@ var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in p
 // openWorkspaceACP reconnects the workspace's stored chats, then calls then,
 // when it is not nil, with the stored records under the same restore lock and
 // setup admission. A chat this daemon saw exit stays down, and so does a chat
-// whose agent could not reload it, until an explicit restore or a stop. The
-// chat named skip is left to then, which restores it explicitly.
+// whose agent could not reload it, until an explicit restore or a stop, and a
+// chat idle stop stopped waits for a page view. The chat named skip is left to
+// then, which restores it explicitly.
 func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip string, then func([]db.WorkspaceRuntimeSession) error) error {
 	s.runtimeRestoreMu.Lock()
 	defer s.runtimeRestoreMu.Unlock()
@@ -177,17 +179,13 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 	if err != nil {
 		return fmt.Errorf("list ACP sessions: %w", err)
 	}
+	idle := s.idle.Load()
 	for _, item := range stored {
 		if item.Kind != string(localruntime.LaunchTargetACP) || item.SessionKey == skip ||
-			s.runtime.Exited(item.SessionKey) || s.chatCannotReload(item.SessionKey) {
+			s.runtime.Exited(item.SessionKey) || s.chatCannotReload(item.SessionKey) || idle.Stopped(ctx, item) {
 			continue
 		}
-		err := s.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{{WorkspaceID: workspaceID, SessionKey: item.SessionKey, TargetKey: item.TargetKey, Label: item.Label, Kind: localruntime.LaunchTargetACP, TmuxSession: item.TmuxSession, CWD: cwd, CreatedAt: item.CreatedAt}})
-		if errors.Is(err, localruntime.ErrACPCannotReload) {
-			// Each attempt starts an agent process that fails the same way.
-			s.setChatCannotReload(item.SessionKey, true)
-		}
-		if err != nil {
+		if err := s.reloadACP(ctx, cwd, item); err != nil {
 			slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "session_key", item.SessionKey, "err", err)
 			continue
 		}
@@ -202,6 +200,30 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		return nil
 	}
 	return then(stored)
+}
+
+// reloadACP reconnects or reloads one stored chat. A chat its agent refuses
+// to reload is remembered, since each attempt starts an agent process that
+// fails the same way.
+func (s *Handler) reloadACP(ctx context.Context, cwd string, item db.WorkspaceRuntimeSession) error {
+	err := s.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restoredRuntime(item, cwd)})
+	if errors.Is(err, localruntime.ErrACPCannotReload) {
+		s.setChatCannotReload(item.SessionKey, true)
+	}
+	return err
+}
+
+// restoreACPRow restores one stored chat like a workspace reopen does and
+// records a replacement backend.
+func (s *Handler) restoreACPRow(ctx context.Context, cwd string, item db.WorkspaceRuntimeSession) error {
+	if err := s.reloadACP(ctx, cwd, item); err != nil {
+		return err
+	}
+	if err := s.recordResumedACP(ctx, item); err != nil {
+		return fmt.Errorf("record resumed ACP backend %q: %w", item.SessionKey, err)
+	}
+	s.finishChatRestore(item)
+	return nil
 }
 
 // recordResumedACP records the backend of a resumed chat when it differs

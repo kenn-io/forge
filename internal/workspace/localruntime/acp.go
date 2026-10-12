@@ -55,6 +55,7 @@ type ACP struct {
 	subscribers     map[chan struct{}]struct{}
 	state           ACPState
 	imagesSupported bool
+	loadSession     bool
 	saveConfig      func(map[string]string) error
 	kill            func(*os.Process) error // nil uses killSessionProcess
 	sessionID       string
@@ -383,6 +384,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
+		a.loadSession = initialized.AgentCapabilities.LoadSession
 		// An agent that cannot load sessions continues a saved conversation
 		// no coordinator holds in a new session rather than failing to start.
 		// A taken-over chat is a person's chat, so it continues too.
@@ -756,5 +758,24 @@ func (m *Manager) ACP(workspaceID, key string) (ACPChat, error) {
 	if s == nil || s.info.WorkspaceID != workspaceID || s.acp == nil {
 		return nil, ErrSessionNotFound
 	}
-	return s.acp, nil
+	return observedACP{ACPChat: s.acp, typed: func() { m.noteInput(workspaceID) }}, nil
+}
+
+// observedACP reports a chat's prompts and replies as input.
+type observedACP struct {
+	ACPChat
+	typed func()
+}
+
+func (a observedACP) Command(command ACPCommand) error {
+	switch command.Type {
+	case "prompt", "permission", "elicitation":
+		a.typed()
+	}
+	return a.ACPChat.Command(command)
+}
+
+func (a observedACP) Prompt(text string, sender ACPSender) error {
+	a.typed()
+	return a.ACPChat.Prompt(text, sender)
 }

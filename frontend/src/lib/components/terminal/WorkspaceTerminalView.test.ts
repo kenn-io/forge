@@ -35,6 +35,7 @@ import { STORES_KEY } from "../../context.js";
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
   listWorkspaceTargets: vi.fn(),
+  workspaceRuntimeParams: vi.fn(),
   launchWorkspaceSession: vi.fn(),
   mockDispose: vi.fn(),
   mockFit: vi.fn(),
@@ -220,7 +221,10 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
   const client = makeGeneratedClient({
     WorkspacesService: {
       listWorkspaceTargets: mocks.listWorkspaceTargets,
-      getWorkspaceRuntime: ({ id }: { id: string }) => getRuntime(id),
+      getWorkspaceRuntime: ({ id }: { id: string }, params?: { viewing?: boolean }) => {
+        mocks.workspaceRuntimeParams(params);
+        return getRuntime(id);
+      },
       launchWorkspaceRuntimeSession: (
         { id }: { id: string },
         body: { target_key: string; display_region?: "workflow" | "terminal" },
@@ -739,6 +743,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.workspaceItemSearch = createWorkspaceItemSearchStore(mocks.runtime);
     mocks.workspaceSidebarPreference = "diff";
     mocks.getWorkspaceRuntime.mockReset();
+    mocks.workspaceRuntimeParams.mockReset();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
     mocks.listWorkspaceTargets.mockReset();
     mocks.listWorkspaceTargets.mockResolvedValue({ targets: [], kata_available: false });
@@ -1658,6 +1663,11 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ })).toBeTruthy());
     expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(2);
+    // The showing view's open read and polls tell the host someone is viewing.
+    expect(mocks.workspaceRuntimeParams.mock.calls.map(([params]) => params)).toEqual([
+      { viewing: true },
+      { viewing: true },
+    ]);
     setIntervalSpy.mockRestore();
   });
 

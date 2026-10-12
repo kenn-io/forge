@@ -968,22 +968,26 @@ test.describe("workspace create-and-launch full stack", () => {
       const runtimeGate = new Promise<void>((resolve) => {
         releaseRuntime = resolve;
       });
-      await phonePage.route("**/api/v1/workspaces/*/runtime", async (route) => {
-        if (route.request().method() !== "GET") {
-          await route.continue();
-          return;
-        }
-        await runtimeGate;
-        await route.fulfill({
-          status: 503,
-          contentType: "application/problem+json",
-          body: JSON.stringify({
+      // Match the path alone: the showing page adds ?viewing=true.
+      await phonePage.route(
+        (url) => /^\/api\/v1\/workspaces\/[^/]+\/runtime$/.test(url.pathname),
+        async (route) => {
+          if (route.request().method() !== "GET") {
+            await route.continue();
+            return;
+          }
+          await runtimeGate;
+          await route.fulfill({
             status: 503,
-            code: "serviceUnavailable",
-            detail: "runtime discovery unavailable",
-          }),
-        });
-      });
+            contentType: "application/problem+json",
+            body: JSON.stringify({
+              status: 503,
+              code: "serviceUnavailable",
+              detail: "runtime discovery unavailable",
+            }),
+          });
+        },
+      );
 
       const createResponsePromise = phonePage.waitForResponse(
         (response) =>

@@ -35,12 +35,17 @@ var (
 )
 
 type Report struct {
-	Agent             string    `json:"agent"`
-	SessionID         string    `json:"session_id"`
-	RuntimeSessionKey string    `json:"runtime_session_key"`
-	CWD               string    `json:"cwd"`
-	State             State     `json:"state"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	Agent             string `json:"agent"`
+	SessionID         string `json:"session_id"`
+	RuntimeSessionKey string `json:"runtime_session_key"`
+	CWD               string `json:"cwd"`
+	State             State  `json:"state"`
+	// Continued marks an idle session that resumed or forked an earlier
+	// conversation, rather than one that started fresh. A compaction is not one:
+	// it can fire mid-turn.
+	Continued   bool      `json:"continued,omitempty"`
+	PendingWork bool      `json:"pending_work,omitempty"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Snapshot struct {
@@ -54,20 +59,29 @@ type storedReport struct {
 }
 
 // HookEvent is the agent-neutral lifecycle payload shared by hook integrations.
-// Agent-specific payload fields are ignored unless they affect activity state.
+// Agent-specific payload fields are ignored unless they affect activity or idle stop.
 type HookEvent struct {
-	SessionID        string   `json:"session_id"`
-	CWD              string   `json:"cwd"`
-	HookEventName    string   `json:"hook_event_name"`
-	ToolName         string   `json:"tool_name,omitempty"`
-	NotificationType string   `json:"notification_type,omitempty"`
-	AgentID          string   `json:"agent_id,omitempty"`
-	_                struct{} `json:"-" additionalProperties:"true"`
+	SessionID        string `json:"session_id"`
+	CWD              string `json:"cwd"`
+	HookEventName    string `json:"hook_event_name"`
+	ToolName         string `json:"tool_name,omitempty"`
+	NotificationType string `json:"notification_type,omitempty"`
+	AgentID          string `json:"agent_id,omitempty"`
+	// Source is how a SessionStart session began: startup, resume, clear, compact or fork.
+	Source          string   `json:"source,omitempty"`
+	BackgroundTasks any      `json:"background_tasks,omitempty"`
+	SessionCrons    any      `json:"session_crons,omitempty"`
+	_               struct{} `json:"-" additionalProperties:"true"`
 }
 
 type Store struct {
 	root string
 	now  func() time.Time
+
+	// reportLock is a one-token lock serializing each report's read, merge
+	// and write, so one event's merge can't overwrite another's concurrent
+	// update.
+	reportLock chan struct{}
 
 	cacheMu      sync.Mutex
 	cacheFiles   map[string]os.FileInfo
@@ -75,7 +89,7 @@ type Store struct {
 }
 
 func NewStore(root string) *Store {
-	return &Store{root: root, now: time.Now}
+	return &Store{root: root, now: time.Now, reportLock: make(chan struct{}, 1)}
 }
 
 func (s *Store) HandleHook(agent string, input io.Reader, runtimeSessionKey string) error {
@@ -109,36 +123,44 @@ func (s *Store) HandleEvent(agent string, hook HookEvent, runtimeSessionKey stri
 	if !ok {
 		return nil
 	}
+	s.reportLock <- struct{}{}
+	defer func() { <-s.reportLock }()
 	if remove {
-		return s.Remove(agent, hook.SessionID, runtimeSessionKey)
+		return s.remove(agent, hook.SessionID, runtimeSessionKey)
 	}
 
 	cwd, err := canonicalWorkspacePath(hook.CWD)
 	if err == nil {
+		backgroundTasks, _ := hook.BackgroundTasks.([]any)
+		sessionCrons, _ := hook.SessionCrons.([]any)
 		report := Report{
 			Agent:             agent,
 			SessionID:         hook.SessionID,
 			RuntimeSessionKey: runtimeSessionKey,
 			CWD:               cwd,
 			State:             state,
-			UpdatedAt:         s.now().UTC(),
+			Continued:         state == StateIdle && (hook.Source == "resume" || hook.Source == "fork"),
+			PendingWork:       hook.HookEventName == "Stop" && (len(backgroundTasks) > 0 || len(sessionCrons) > 0),
 		}
-		if state == StateDone {
-			previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
-			if ok {
-				switch {
-				case isIdlePrompt(hook) && (previous.State == StateInput ||
-					previous.State == StateApproval):
-					// Claude Code raises idle_prompt after a minute of waiting for
-					// input whatever it is waiting for; an unanswered question or
-					// permission prompt is still pending, not finished.
-					return nil
-				case previous.State == StateDone:
-					// A completion that is already recorded keeps its original
-					// timestamp: idle_prompt follows Stop, and a fresh timestamp
-					// would make an acknowledged "done" reappear as new.
-					report.UpdatedAt = previous.UpdatedAt
-				}
+		previous, ok := s.previousReport(agent, hook.SessionID, runtimeSessionKey)
+		if isIdlePrompt(hook) && (!ok || previous.State != StateWorking && previous.State != StateDone) {
+			// Claude Code raises idle_prompt after a minute of waiting for
+			// input whatever it is waiting for. Only a recorded turn makes
+			// it a completion: an unanswered question or permission prompt
+			// is still pending, and a session never prompted has no
+			// conversation to finish or resume.
+			return nil
+		}
+		report.UpdatedAt = s.now().UTC()
+		if ok {
+			if hook.HookEventName != "Stop" {
+				report.PendingWork = previous.PendingWork
+			}
+			if state == StateDone && previous.State == StateDone {
+				// A completion that is already recorded keeps its original
+				// timestamp: idle_prompt follows Stop, and a fresh timestamp
+				// would make an acknowledged "done" reappear as new.
+				report.UpdatedAt = previous.UpdatedAt
 			}
 		}
 		return s.writeReport(report)
@@ -166,6 +188,8 @@ func (s *Store) Record(agent, sessionID, runtimeSessionKey, cwd string, state St
 	if err != nil {
 		return err
 	}
+	s.reportLock <- struct{}{}
+	defer func() { <-s.reportLock }()
 	report := Report{
 		Agent: agent, SessionID: sessionID, RuntimeSessionKey: runtimeSessionKey,
 		CWD: canonicalCWD, State: state, UpdatedAt: s.now().UTC(),
@@ -189,6 +213,12 @@ func (s *Store) Remove(agent, sessionID, runtimeSessionKey string) error {
 	if agent == "" || sessionID == "" {
 		return nil
 	}
+	s.reportLock <- struct{}{}
+	defer func() { <-s.reportLock }()
+	return s.remove(agent, sessionID, runtimeSessionKey)
+}
+
+func (s *Store) remove(agent, sessionID, runtimeSessionKey string) error {
 	legacy := s.legacyReportPath(agent, sessionID)
 	paths := []string{s.reportPath(agent, sessionID, runtimeSessionKey)}
 	var errs []error

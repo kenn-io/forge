@@ -24,6 +24,7 @@ import type {
   GetWorkspaceFilesParams,
   GetWorkspaceFilesPathParameters,
   GetWorkspacePathParameters,
+  GetWorkspaceRuntimeParams,
   GetWorkspaceRuntimePathParameters,
   GetWorkspaceRuntimeSessionAttachSpecPathParameters,
   GetWorkspaceRuntimeSessionInitialMessagePathParameters,
@@ -474,8 +475,23 @@ export const revealWorkspace = async (
   });
 };
 
-export const getGetWorkspaceRuntimeUrl = ({ id }: GetWorkspaceRuntimePathParameters) => {
-  return `/workspaces/${encodeURIComponent(String(id))}/runtime`;
+export const getGetWorkspaceRuntimeUrl = (
+  { id }: GetWorkspaceRuntimePathParameters,
+  params?: GetWorkspaceRuntimeParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/workspaces/${encodeURIComponent(String(id))}/runtime?${stringifiedParams}`
+    : `/workspaces/${encodeURIComponent(String(id))}/runtime`;
 };
 
 /**
@@ -483,9 +499,10 @@ export const getGetWorkspaceRuntimeUrl = ({ id }: GetWorkspaceRuntimePathParamet
  */
 export const getWorkspaceRuntime = async (
   { id }: GetWorkspaceRuntimePathParameters,
+  params?: GetWorkspaceRuntimeParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<WorkspaceRuntimeResponse> => {
-  return orvalFetch<WorkspaceRuntimeResponse>(getGetWorkspaceRuntimeUrl({ id }), {
+  return orvalFetch<WorkspaceRuntimeResponse>(getGetWorkspaceRuntimeUrl({ id }, params), {
     ...options,
     method: "GET",
   });

@@ -505,6 +505,39 @@ Sessions started by versions that used the default tmux server keep
 running there after an upgrade, but Forge no longer sees them.
 Reattach or clean them up with plain `tmux ls` and `tmux kill-session`.
 
+### Stopping idle workspaces
+
+Without tmux (on Windows, for example), each workspace's agents and shells keep
+running until you delete it, holding their consoles. Set an idle timeout to
+stop them in workspaces nobody has looked at for that many hours:
+
+```toml
+[workspaces]
+idle_runtime_stop_hours = 12
+```
+
+A workspace counts as in use while its page shows in a visible browser tab, and
+whenever someone types into one of its terminals or chats, from any client.
+An agent stops once it has finished its turn or is waiting on an approval or an
+answer, as long as it can resume its conversation and has no pending background
+work or scheduled wakeups. A pending approval or question is lost; ask again after
+it resumes. A working agent, a terminal agent
+that was never prompted, and chat agents started before you upgraded Forge keep
+running, as do command sessions and terminals in project worktrees. Shell tabs
+stop too, along with anything running in them. The workspace terminal stops
+unless a terminal is connected to it, and starts a fresh shell when opened.
+Forge knows a terminal agent finished its turn, or resumed a conversation, from
+the agent's activity hooks, so an agent without them keeps running.
+
+Opening the workspace page resumes each stopped agent's conversation and starts
+fresh shells. A runtime used only from a client other than the browser waits
+for the page to show before it resumes. Forge's tools list a stopped runtime as
+`parked`. Idle time carries across Forge restarts, and a restart relaunches
+nothing that stopped. Turning the setting on starts every workspace's clock at
+that moment. Turning it off hands stopped agents and chats back to normal
+recovery, and stopped shell tabs show as errored, as after a reboot. The
+default, `0`, never stops them.
+
 ## Docs folders
 
 Register local Markdown folders from the CLI:

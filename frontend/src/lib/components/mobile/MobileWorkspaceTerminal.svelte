@@ -331,7 +331,12 @@
     if (session) requestSessionFocus(pooledHostKey(session), { soft: true });
   }
 
-  function readRuntime(force = false) {
+  // The page stays mounted behind other routes, so only a shown page views.
+  function viewingNow(): boolean {
+    return visible && document.visibilityState === "visible";
+  }
+
+  function readRuntime(force = false, viewing = false) {
     const id = workspaceId;
     const activeHostKey = hostKey;
     const admission =
@@ -341,7 +346,7 @@
     return Effect.gen(function* () {
       if (admission !== undefined) queuedLaunchRead = admission;
       const workflow = yield* WorkspaceRuntimeWorkflow;
-      const result = yield* workflow.read(runtimeOwner, id, activeHostKey, { force });
+      const result = yield* workflow.read(runtimeOwner, id, activeHostKey, { force, viewing });
       if (Option.isSome(result) && workspaceId === id && hostKey === activeHostKey) {
         yield* Effect.sync(() => {
           applyRuntime(result.value);
@@ -398,7 +403,7 @@
       loadWorkspace(),
       // A queued launch needs its runtime read after setup is ready. That same
       // response supplies admission and the workflow's lost-response baseline.
-      pendingWorkspaceLaunch(workspaceId, hostKey)?.phase === "queued" ? Effect.void : readRuntime(),
+      pendingWorkspaceLaunch(workspaceId, hostKey)?.phase === "queued" ? Effect.void : readRuntime(false, viewingNow()),
     ], { concurrency: "unbounded", discard: true });
   }
 
@@ -482,7 +487,7 @@
   function refreshWorkspaceState() {
     return Effect.gen(function* () {
       if (workspace?.status !== "ready") yield* loadWorkspace();
-      if (workspace?.status === "ready") yield* readRuntime();
+      if (workspace?.status === "ready") yield* readRuntime(false, viewingNow());
     });
   }
 

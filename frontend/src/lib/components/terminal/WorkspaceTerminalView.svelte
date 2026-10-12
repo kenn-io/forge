@@ -2506,6 +2506,7 @@
 
   interface FetchRuntimeOptions {
     force?: boolean;
+    viewing?: boolean;
   }
 
   function fetchRuntimeProgram(
@@ -3775,6 +3776,12 @@
     workspacePolling = null;
   }
 
+  // Opening a showing workspace starts resuming idle-stopped agents at once rather
+  // than on the first poll.
+  function viewingNow(): boolean {
+    return interactionVisible && document.visibilityState === "visible";
+  }
+
   function startRuntimePolling(): void {
     if (!workspaceId || !interactionVisible) return;
     const key = JSON.stringify([workspaceHostKey ?? null, workspaceId]);
@@ -3786,7 +3793,7 @@
       pollWhileVisible(
         Effect.suspend(() =>
           isCurrentWorkspace(id, hostKey)
-            ? fetchRuntimeProgram().pipe(Effect.asVoid)
+            ? fetchRuntimeProgram({ viewing: true }).pipe(Effect.asVoid)
             : Effect.void,
         ),
         "3 seconds",
@@ -4281,7 +4288,7 @@
                   diffRefreshToken += 1;
                 }).pipe(
                   Effect.andThen(
-                    Effect.all([fetchWorkspaceProgram(id, hostKey), fetchRuntimeProgram()], {
+                    Effect.all([fetchWorkspaceProgram(id, hostKey), fetchRuntimeProgram({ viewing: viewingNow() })], {
                       concurrency: "unbounded",
                       discard: true,
                     }),
@@ -4317,7 +4324,7 @@
         const eventFiber = yield* Effect.forkChild(events, { startImmediately: true });
         yield* Effect.forkChild(loadWorkspaceTabProgram(id, hostKey), { startImmediately: true });
         if (untrack(() => pendingWorkspaceLaunch(id, hostKey)?.phase) !== "queued") {
-          yield* Effect.forkChild(untrack(() => fetchRuntimeProgram()), { startImmediately: true });
+          yield* Effect.forkChild(untrack(() => fetchRuntimeProgram({ viewing: viewingNow() })), { startImmediately: true });
         }
         const loaded = yield* fetchWorkspaceProgram(id, hostKey);
         yield* Deferred.succeed(initialWorkspace, loaded);

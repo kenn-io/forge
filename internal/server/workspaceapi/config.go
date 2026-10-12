@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"slices"
+	"time"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/projects"
@@ -17,6 +18,7 @@ type ConfigSnapshot struct {
 	AutoAssignOnCreate       bool
 	RoborevInitManagedClones bool
 	IssueBranchSlug          bool
+	IdleRuntimeStopAfter     time.Duration
 }
 
 func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
@@ -27,6 +29,7 @@ func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
 		AutoAssignOnCreate:       snapshot.AutoAssignOnCreate,
 		RoborevInitManagedClones: snapshot.RoborevInitManagedClones,
 		IssueBranchSlug:          snapshot.IssueBranchSlug,
+		IdleRuntimeStopAfter:     snapshot.IdleRuntimeStopAfter,
 	}
 	for i := range snapshot.Agents {
 		out.Agents[i] = snapshot.Agents[i]
@@ -47,6 +50,11 @@ func (h *Handler) ApplyConfig(snapshot ConfigSnapshot) {
 	h.configMu.Lock()
 	h.config = cloneConfigSnapshot(snapshot)
 	h.configMu.Unlock()
+	// The idle loop switches idle stop on or off.
+	select {
+	case h.idleWake <- struct{}{}:
+	default:
+	}
 }
 
 func (h *Handler) configSnapshot() ConfigSnapshot {

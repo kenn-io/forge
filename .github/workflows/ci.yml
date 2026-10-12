@@ -427,6 +427,9 @@ jobs:
       - name: Run localruntime PTY owner smoke test
         run: go test ./internal/workspace/localruntime -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
 
+      - name: Run idle runtime lifecycle tests
+        run: go test ./internal/server/workspaceapi -run '^TestIdleRuntime' -shuffle=on
+
       - name: Run agent context replacement test
         run: go test ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
 

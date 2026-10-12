@@ -64,6 +64,16 @@ func TestWorkspaceDefaultSidebarView(t *testing.T) {
 	})
 }
 
+func TestWorkspaceIdleRuntimeStopHours(t *testing.T) {
+	cfg, saved := roundTripConfigString(t, "[workspaces]\nidle_runtime_stop_hours = 12\n")
+	assert.Equal(t, 12, cfg.Workspaces.IdleRuntimeStopHours)
+	assert.Equal(t, 12, saved.Workspaces.IdleRuntimeStopHours)
+	for _, hours := range []string{"-1", "721"} {
+		_, err := Load(writeConfig(t, "[workspaces]\nidle_runtime_stop_hours = "+hours+"\n"))
+		require.ErrorContains(t, err, "workspaces.idle_runtime_stop_hours")
+	}
+}
+
 func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	t.Helper()
 	cfg, err := Load(writeConfig(t, content))

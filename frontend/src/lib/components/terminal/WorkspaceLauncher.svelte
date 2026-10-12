@@ -64,6 +64,7 @@
     if (status === "running") return "Running";
     if (status === "starting") return "Starting";
     if (status === "exited") return "Exited";
+    if (status === "parked") return "Stopped while idle";
     return status;
   }
 
@@ -420,7 +421,8 @@
     animation: pulse 1.4s ease-in-out infinite;
   }
 
-  .session-dot.exited {
+  .session-dot.exited,
+  .session-dot.parked {
     background: var(--text-muted);
     box-shadow: none;
   }

@@ -55,6 +55,7 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 	})
 	if h.workspaces != nil && !disableMonitors {
 		h.runBackground(h.runWorkspaceWarmLoop)
+		h.runBackground(h.runIdle)
 		if !h.executionWorker.Enabled {
 			h.runBackground(h.runWorkspacePRMonitorLoop)
 			h.runBackground(h.runWorkspacePushedHeadObserverLoop)
@@ -148,6 +149,11 @@ func (h *Handler) Shutdown(ctx context.Context) error {
 // RestoreRuntimeSessions restores persisted workspace runtime sessions after
 // the runtime manager has been constructed.
 func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
+	// Idle stop turns on or off before recovery reads its marks; off at
+	// startup, it hands what it stopped to recovery and removes its state.
+	if h.syncIdle(ctx) == nil {
+		h.releaseIdle(ctx)
+	}
 	return h.restoreRuntimeSessions(ctx, false)
 }
 
@@ -198,6 +204,15 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		}
 		defer h.finishWorkspaceSetup(stored[0].WorkspaceID, done)
 	}
+	if !pendingOnly {
+		if workspaces, err := h.db.ListWorkspaces(ctx); err == nil {
+			h.idle.Load().Retain(stored, workspaces)
+		}
+	}
+	// A runtime idle stop stopped resumes when its workspace shows, not at
+	// startup, so its workspace is not retained for recovery.
+	idle := h.idle.Load()
+	stored = slices.DeleteFunc(stored, func(session db.WorkspaceRuntimeSession) bool { return idle.Stopped(ctx, session) })
 	retainedWorkspaces := make(map[string]bool)
 	for _, session := range stored {
 		if session.Kind == string(localruntime.LaunchTargetAgent) {
@@ -220,16 +235,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		if summary == nil || (pendingOnly && !workspaceStatusAllowsRecovery(summary.Status)) {
 			continue
 		}
-		restored := localruntime.RestoredRuntimeSession{
-			WorkspaceID: session.WorkspaceID,
-			SessionKey:  session.SessionKey,
-			TargetKey:   session.TargetKey,
-			Label:       session.Label,
-			Kind:        localruntime.LaunchTargetKind(session.Kind),
-			TmuxSession: session.TmuxSession,
-			CWD:         summary.WorktreePath,
-			CreatedAt:   session.CreatedAt,
-		}
+		restored := restoredRuntime(session, summary.WorktreePath)
 		err = h.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restored})
 		if err == nil {
 			h.setRuntimeRecoveryPending(session.SessionKey, false)

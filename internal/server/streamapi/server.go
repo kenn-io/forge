@@ -269,6 +269,7 @@ func WorkspaceConfigSnapshot(
 	snapshot.Agents = spokeapi.CloneConfigAgents(cfg.Agents)
 	snapshot.AutoAssignOnCreate = cfg.Workspaces.AutoAssignOnCreate
 	snapshot.RoborevInitManagedClones = cfg.Roborev.InitManagedClones
+	snapshot.IdleRuntimeStopAfter = time.Duration(cfg.Workspaces.IdleRuntimeStopHours) * time.Hour
 	snapshot.IssueBranchSlug = cfg.IssueWorkspaceBranchSlugEnabled()
 	snapshot.KnownPlatformHosts = make(
 		[]projects.KnownPlatformHost, 0, len(cfg.Platforms)+len(cfg.Repos)+1,

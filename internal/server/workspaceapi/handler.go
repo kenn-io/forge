@@ -205,6 +205,8 @@ type Handler struct {
 	// baseRestoreListPending marks a workspace list that could not be read
 	// after a loss; it holds the prune like outstanding workspaces.
 	baseRestoreListPending bool
+	// baseRestoreCursor is the last workspace a restore pass reached.
+	baseRestoreCursor string
 	// cannotReloadChats holds chats whose agent refused to reload them; see
 	// setChatCannotReload. runtimeRecoveryMu guards it.
 	cannotReloadChats map[string]bool

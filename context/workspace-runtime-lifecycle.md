@@ -444,10 +444,10 @@ create a local process, PTY, or durable transport session
   finds such a kept agent restores every base terminal first, as startup does, taking
   setup admission per workspace so a deletion is never undone. Workspaces a pass could
   not finish (busy, failed, or out of budget), or all of them while their list cannot
-  be read, stay outstanding across passes, even after the kept agents are stopped; later passes work only on those, and the
-  missing-tmux prune waits until none remain. Recovery changes must also pass the
-  `agents-killed` order of `make test-reboot-sim`. Recovery changes must
-  pass both shutdown orders of `make test-reboot-sim`
+  be read, stay outstanding across passes, even after the kept agents are stopped.
+  Later passes work only on those, each starting after the workspace the last pass
+  reached, and the missing-tmux prune waits until none remain. Recovery changes must
+  pass every shutdown order of `make test-reboot-sim`
   (`internal/server/workspaceapi/lifecycle.go::Handler.keepAgentAfterTmuxServerLoss`,
   `internal/server/workspaceapi/routes_handlers.go::Handler.forgetRecordedRuntimeSessionIfExited`,
   `internal/workspace/manager.go::Manager.PruneMissingTmuxSessions`).

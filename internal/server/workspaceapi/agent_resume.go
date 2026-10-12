@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"sort"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -95,10 +96,24 @@ func (h *Handler) restoreTerminalsAfterServerLoss(
 	ctx context.Context, retainedWorkspaces, remaining map[string]bool,
 ) map[string]bool {
 	left := maps.Clone(remaining)
-	for _, id := range slices.Sorted(maps.Keys(left)) {
+	// Start after the workspace the previous pass reached, so one that keeps
+	// exhausting the budget cannot starve the rest.
+	ids := slices.Sorted(maps.Keys(left))
+	h.runtimeRecoveryMu.Lock()
+	cursor := h.baseRestoreCursor
+	h.runtimeRecoveryMu.Unlock()
+	first := sort.SearchStrings(ids, cursor)
+	if first < len(ids) && ids[first] == cursor {
+		first++
+	}
+	ids = append(ids[first:], ids[:first]...)
+	for _, id := range ids {
 		if ctx.Err() != nil {
 			return left
 		}
+		h.runtimeRecoveryMu.Lock()
+		h.baseRestoreCursor = id
+		h.runtimeRecoveryMu.Unlock()
 		done, start := h.beginWorkspaceSetup(id)
 		if !start {
 			continue

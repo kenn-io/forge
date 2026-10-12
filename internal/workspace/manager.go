@@ -4945,9 +4945,11 @@ func (m *Manager) TmuxServerID(ctx context.Context) (string, error) {
 
 // TmuxServerIDWithSession identifies the running tmux server only if it holds
 // session, reading both in one tmux call so a replacement server cannot be
-// mistaken for the one the session runs on. It returns "" otherwise.
+// mistaken for the one the session runs on. It returns "" otherwise. Fields
+// are separated by a colon, which session names cannot contain, because some
+// tmux builds replace tabs in format output.
 func (m *Manager) TmuxServerIDWithSession(ctx context.Context, session string) (string, error) {
-	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}\t"+tmuxServerIDFormat)
+	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}:"+tmuxServerIDFormat)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -4958,7 +4960,7 @@ func (m *Manager) TmuxServerIDWithSession(ctx context.Context, session string) (
 		return "", fmt.Errorf("tmux list-sessions: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	for line := range strings.SplitSeq(stdout.String(), "\n") {
-		name, server, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		name, server, ok := strings.Cut(strings.TrimSpace(line), ":")
 		if ok && name == session {
 			return strings.TrimSpace(server), nil
 		}

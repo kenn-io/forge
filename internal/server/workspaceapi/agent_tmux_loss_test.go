@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
@@ -668,4 +669,53 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 	handler.restoreBaseTerminalsAfterLoss(ctx, nil, nil)
 	assert.False(restoring(), "a later pass reads the list and finishes")
 	assert.True(baseExists("0000000000000b01"), "the retried pass restores every terminal")
+}
+
+// A workspace whose terminal start keeps exhausting the budget must not
+// starve the others: each pass starts after the one the previous pass reached.
+func TestRestoreTerminalsAfterServerLossRotatesPastAStuckWorkspace(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	// Creating the first workspace's terminal hangs; it marks when it starts.
+	stuck := filepath.Join(t.TempDir(), "stuck")
+	wrapper := filepath.Join(t.TempDir(), "tmux")
+	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = forge-0000000000000c01 ] && [ \"$1\" != has-session ]; then : > "+shellquote.Join(stuck)+"; exec sleep 60; fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+	database := dbtest.Open(t)
+	for _, id := range []string{"0000000000000c01", "0000000000000c02"} {
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID: id, Platform: "github", PlatformHost: "github.com",
+			RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+			ItemKey: db.AdHocWorkspaceItemKey("work/" + id), GitHeadRef: "work/" + id,
+			WorkspaceBranch: "work/" + id, WorktreePath: t.TempDir(),
+			Status: "ready", TmuxSession: "forge-" + id,
+		}))
+	}
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand([]string{wrapper})
+	handler := New(Deps{DB: database, Workspaces: workspaces})
+	// A pass runs out of budget once it reaches the stuck workspace.
+	pass := func(left map[string]bool) map[string]bool {
+		passCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		result := make(chan map[string]bool, 1)
+		go func() { result <- handler.restoreTerminalsAfterServerLoss(passCtx, nil, left) }()
+		require.Eventually(func() bool { _, err := os.Stat(stuck); return err == nil }, 5*time.Second, 10*time.Millisecond)
+		require.NoError(os.Remove(stuck))
+		cancel()
+		return <-result
+	}
+
+	left := pass(map[string]bool{"0000000000000c01": true, "0000000000000c02": true})
+	require.Len(left, 2, "the first pass spends its budget on the stuck workspace")
+	left = pass(left)
+	require.Equal(map[string]bool{"0000000000000c01": true}, left, "the next pass reaches the other workspace")
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"has-session", "-t", "forge-0000000000000c02")...).Run())
 }

@@ -49,6 +49,7 @@ func (s *Handler) receiveAgentHook(
 			return nil, httpapi.Internal("record agent hook activity: " + err.Error())
 		}
 	}
+	s.recordAgentConversation(ctx, string(integration), input.Body, input.RuntimeSessionKey)
 
 	output := &receiveAgentHookOutput{}
 	if integration != agenthook.AgentClaude ||
@@ -70,4 +71,34 @@ func (s *Handler) receiveAgentHook(
 		},
 	}
 	return output, nil
+}
+
+// recordAgentConversation saves the conversation a launched agent reports on
+// its runtime row. SessionEnd deletes the activity report, including when a
+// host shutdown kills the agent, so recovery reads the conversation from the
+// row instead.
+func (s *Handler) recordAgentConversation(
+	ctx context.Context, agent string, hook agentactivity.HookEvent, runtimeSessionKey string,
+) {
+	sessionID := strings.TrimSpace(hook.SessionID)
+	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
+	if s.db == nil || sessionID == "" || runtimeSessionKey == "" || hook.AgentID != "" ||
+		hook.HookEventName == "SessionEnd" {
+		return
+	}
+	// An agent started inside a launched terminal inherits its runtime key but
+	// may work in another worktree; only the terminal's own workspace counts.
+	worktree, ok, err := s.db.RuntimeSessionWorktreePath(ctx, runtimeSessionKey)
+	if err != nil {
+		slog.Warn("read agent runtime workspace", "session_key", runtimeSessionKey, "err", err)
+		return
+	}
+	if !ok || !agentactivity.SameWorkspace(hook.CWD, worktree) {
+		return
+	}
+	if _, err := s.db.RecordWorkspaceRuntimeConversation(
+		ctx, runtimeSessionKey, strings.ToLower(agent), sessionID,
+	); err != nil {
+		slog.Warn("record agent conversation", "session_key", runtimeSessionKey, "err", err)
+	}
 }

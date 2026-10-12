@@ -2612,10 +2612,14 @@ func (s *Handler) workspaceRuntimeSessions(
 	if err != nil {
 		return nil, err
 	}
-	// A session that exited is gone even before its record is forgotten.
+	// A session that exited is gone even before its record is forgotten,
+	// unless it was kept for recovery: it then shows as unavailable, and Stop
+	// forgets it.
+	s.runtimeRecoveryMu.Lock()
 	stored = slices.DeleteFunc(stored, func(session db.WorkspaceRuntimeSession) bool {
-		return s.runtime.Exited(session.SessionKey)
+		return s.runtime.Exited(session.SessionKey) && !s.runtimeRecoveryPending[session.SessionKey]
 	})
+	s.runtimeRecoveryMu.Unlock()
 	merged := mergeStoredRuntimeSessions(sessions, stored)
 	idle := s.idle.Load()
 	for i := range merged {
@@ -2842,6 +2846,18 @@ func (s *Handler) forgetRecordedRuntimeSessionIfExited(
 			return
 		}
 	}
+	// The exit can land before this record does. Keep a lost agent as the exit
+	// handler would, whether or not that handler has run yet.
+	s.runtimeRecoveryMu.Lock()
+	pending := s.runtimeRecoveryPending[session.Key]
+	s.runtimeRecoveryMu.Unlock()
+	if pending {
+		return
+	}
+	if exited, ok := s.runtime.ExitedSession(session.Key); ok && s.keepAgentAfterTmuxServerLoss(exited) {
+		s.invalidateWorkspaceEnrichment(session.WorkspaceID)
+		return
+	}
 	cleanupCtx, cancel := context.WithTimeout(
 		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
 	)
@@ -2888,6 +2904,9 @@ func (s *Handler) recordRuntimeSession(
 		},
 	); err != nil {
 		return httpapi.Internal("record runtime session: " + err.Error())
+	}
+	if session.Kind == localruntime.LaunchTargetAgent {
+		s.noteTmuxServer(ctx, session.Key, session.TmuxSession)
 	}
 	return nil
 }

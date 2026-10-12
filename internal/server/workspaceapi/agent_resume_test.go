@@ -42,7 +42,9 @@ func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess e
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_RESUME_AGENT_HELPER
 	t.Setenv("KENN_FORGE_RESUME_AGENT_HELPER", "1")
-	for _, name := range []string{"no owner state", "stale owner state", "no saved conversation"} {
+	// "saved before upgrade" has only the activity report an agent wrote
+	// before runtime rows saved conversations, and no later hook.
+	for _, name := range []string{"no owner state", "stale owner state", "no saved conversation", "saved before upgrade"} {
 		t.Run(name, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
@@ -64,6 +66,10 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
 					SessionID: "saved-conversation", CWD: cwd, HookEventName: "Stop",
 				}, "saved-runtime"))
+			}
+			if name != "no saved conversation" && name != "saved before upgrade" {
+				_, err := database.RecordWorkspaceRuntimeConversation(ctx, "saved-runtime", "claude", "saved-conversation")
+				require.NoError(err)
 			}
 			ownerRoot := t.TempDir()
 			if name == "stale owner state" {
@@ -103,6 +109,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 			require.NoError(err)
 			assert.Equal("--resume\nsaved-conversation", string(args))
 			require.Len(stored, 1)
+			assert.Equal("saved-conversation", stored[0].ConversationID, "the row holds the conversation")
 			sessions := runtime.ListSessions("workspace")
 			require.Len(sessions, 1)
 			assert.Equal("saved-runtime", sessions[0].Key)
@@ -139,6 +146,8 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
 				SessionID: "saved-conversation", CWD: cwd, HookEventName: "Stop",
 			}, "saved-runtime"))
+			_, err := database.RecordWorkspaceRuntimeConversation(ctx, "saved-runtime", "claude", "saved-conversation")
+			require.NoError(err)
 			dir := t.TempDir()
 			if privateTmuxOwner == nil {
 				t.Skip("private tmux tests unsupported")

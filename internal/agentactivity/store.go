@@ -337,6 +337,14 @@ func (s *Store) LiveReportsForWorkspace(cwd string, liveSessionKeys []string) []
 	return reports
 }
 
+// SameWorkspace reports whether two paths name the same workspace directory
+// once made absolute and resolved through symlinks.
+func SameWorkspace(a, b string) bool {
+	canonicalA, errA := canonicalWorkspacePath(a)
+	canonicalB, errB := canonicalWorkspacePath(b)
+	return errA == nil && errB == nil && canonicalA == canonicalB
+}
+
 func canonicalWorkspacePath(path string) (string, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {

@@ -188,6 +188,18 @@ type Handler struct {
 	runtimeRestoreMu           sync.Mutex
 	runtimeRecoveryMu          sync.Mutex
 	runtimeRecoveryPending     map[string]bool
+	// tmuxServerAtLaunch names the tmux server each agent runtime ran on, so
+	// its exit can tell a replaced server from its own session ending.
+	// runtimeRecoveryMu guards it.
+	tmuxServerAtLaunch map[string]string
+	// exitDecisionMu serializes tmux exit classification; exitDecisions caches
+	// each generation's answer so every caller sees the same one.
+	exitDecisionMu sync.Mutex
+	exitDecisions  map[string]exitDecision
+	// baseRestoreIncomplete holds the missing-tmux prune while base terminals
+	// lost with their tmux server are still being restored, so the prune does
+	// not error workspaces recovery has not reached. runtimeRecoveryMu guards it.
+	baseRestoreIncomplete bool
 	// cannotReloadChats holds chats whose agent refused to reload them; see
 	// setChatCannotReload. runtimeRecoveryMu guards it.
 	cannotReloadChats map[string]bool

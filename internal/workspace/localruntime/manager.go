@@ -180,7 +180,7 @@ type Manager struct {
 	// exited holds the keys of sessions this manager saw exit on their own.
 	// Their stored records are forgotten in the background, and a restore in
 	// the meantime must not relaunch an agent that already finished.
-	exited            map[string]struct{}
+	exited            map[string]SessionInfo
 	labelReservations map[string]map[string]int
 	shellCommand      []string
 	tmuxCommand       []string
@@ -334,7 +334,7 @@ func NewManager(options Options) *Manager {
 		targets:           targets,
 		targetsList:       targetsList,
 		sessions:          make(map[string]*session),
-		exited:            make(map[string]struct{}),
+		exited:            make(map[string]SessionInfo),
 		labelReservations: make(map[string]map[string]int),
 		shellCommand:      slices.Clone(options.ShellCommand),
 		tmuxCommand:       slices.Clone(options.TmuxCommand),
@@ -2167,10 +2167,17 @@ func (m *Manager) watchSession(
 // Exited reports whether this manager saw the session exit on its own. Such a
 // session is finished even while its stored record is still being forgotten.
 func (m *Manager) Exited(key string) bool {
+	_, exited := m.ExitedSession(key)
+	return exited
+}
+
+// ExitedSession returns how a session this manager saw exit on its own ended,
+// including its exit code.
+func (m *Manager) ExitedSession(key string) (SessionInfo, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, exited := m.exited[key]
-	return exited
+	info, exited := m.exited[key]
+	return info, exited
 }
 
 func (m *Manager) removeExitedSession(
@@ -2185,7 +2192,7 @@ func (m *Manager) removeExitedSession(
 		return false
 	}
 	delete(m.sessions, info.Key)
-	m.exited[info.Key] = struct{}{}
+	m.exited[info.Key] = info
 	return true
 }
 

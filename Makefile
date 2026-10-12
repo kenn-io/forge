@@ -60,7 +60,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
 .PHONY: ensure-embed-dir ensure-tmp-dir check-air air-install build build-release install \
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
-        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
+        dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-reboot-sim test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
         frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
@@ -376,6 +376,10 @@ test-e2e-roborev:
 	ROBOREV_SRC="$(ROBOREV_SRC)" ROBOREV_REF="$(ROBOREV_REF)" \
 		./scripts/run-roborev-e2e.sh
 
+# Simulate host reboots in Docker and check that agent sessions resume.
+test-reboot-sim: ensure-embed-dir
+	scripts/reboot-sim.sh $(ARGS)
+
 # Run opt-in fleet federation container tests.
 test-fleet-container: ensure-embed-dir ensure-tmp-dir
 	@if [ "$${KENN_FORGE_FLEET_CONTAINER_E2E:-}" != "1" ]; then \
@@ -539,6 +543,7 @@ help:
 	@echo "  test-short     - Run fast tests only"
 	@echo "  test-e2e       - Run full-stack E2E Playwright tests"
 	@echo "  test-e2e-roborev - Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF)"
+	@echo "  test-reboot-sim - Simulate host reboots in Docker and check that agent sessions resume (ARGS=daemon-first|agents-first)"
 	@echo "  test-fleet-container - Run opt-in fleet container e2e tests"
 	@echo "  test-fleet-drive-container - Run opt-in fleet drive container e2e tests"
 	@echo "  test-gitlab-container - Run opt-in GitLab CE container e2e tests"

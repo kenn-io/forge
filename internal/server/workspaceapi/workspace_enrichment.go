@@ -699,13 +699,18 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 		slog.Debug("retry workspace runtime recovery", "err", err)
 	}
 	cancelRecovery()
+	s.runtimeRecoveryMu.Lock()
+	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
+	restoring := s.baseRestoreIncomplete
+	s.runtimeRecoveryMu.Unlock()
+	if restoring {
+		slog.Debug("skip missing tmux prune while base terminals are restored")
+		return
+	}
 	pruneCtx, cancel := context.WithTimeout(
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	s.runtimeRecoveryMu.Lock()
-	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
-	s.runtimeRecoveryMu.Unlock()
 	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx, pendingRecovery)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)

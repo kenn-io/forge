@@ -1,0 +1,2 @@
+ALTER TABLE forge_workspace_runtime_sessions DROP COLUMN conversation_id;
+ALTER TABLE forge_workspace_runtime_sessions DROP COLUMN conversation_agent;

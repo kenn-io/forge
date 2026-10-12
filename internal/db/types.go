@@ -1594,6 +1594,10 @@ type WorkspaceRuntimeSession struct {
 	Scope         string
 	TmuxSession   string
 	CreatedAt     time.Time
+	// ConversationAgent and ConversationID name the conversation the agent
+	// last reported through its hooks; recovery resumes it.
+	ConversationAgent string
+	ConversationID    string
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

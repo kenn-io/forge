@@ -5232,7 +5232,7 @@ func (d *DB) ListWorkspaceRuntimeSessions(
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
-		       tmux_session, created_at
+		       tmux_session, created_at, conversation_agent, conversation_id
 		FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ?
 		ORDER BY created_at, session_key`, workspaceID,
@@ -5252,7 +5252,7 @@ func (d *DB) ListAllWorkspaceRuntimeSessions(
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
-		       tmux_session, created_at
+		       tmux_session, created_at, conversation_agent, conversation_id
 		FROM forge_workspace_runtime_sessions
 		ORDER BY workspace_id, created_at, session_key`,
 	)
@@ -5272,7 +5272,7 @@ func (d *DB) ListWorkspaceRuntimeTmuxSessions(
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
-		       tmux_session, created_at
+		       tmux_session, created_at, conversation_agent, conversation_id
 		FROM forge_workspace_runtime_sessions
 		WHERE workspace_id = ? AND tmux_session != ''
 		ORDER BY created_at, session_key`, workspaceID,
@@ -5292,7 +5292,7 @@ func (d *DB) ListAllWorkspaceRuntimeTmuxSessions(
 ) ([]WorkspaceRuntimeSession, error) {
 	rows, err := d.roQueryContext(ctx, `
 		SELECT workspace_id, session_key, target_key, label, kind, display_region, scope,
-		       tmux_session, created_at
+		       tmux_session, created_at, conversation_agent, conversation_id
 		FROM forge_workspace_runtime_sessions
 		WHERE tmux_session != ''
 		ORDER BY workspace_id, created_at, session_key`,
@@ -5329,6 +5329,51 @@ func (d *DB) UpdateWorkspaceRuntimeSessionLabel(
 	return rows > 0, nil
 }
 
+// RuntimeSessionWorktreePath returns the worktree of the workspace that owns
+// a runtime session, and whether that session is recorded.
+func (d *DB) RuntimeSessionWorktreePath(ctx context.Context, sessionKey string) (string, bool, error) {
+	var path string
+	err := d.roQueryRowContext(ctx, `
+		SELECT w.worktree_path
+		FROM forge_workspace_runtime_sessions r
+		JOIN forge_workspaces w ON w.id = r.workspace_id
+		WHERE r.session_key = ?`, sessionKey,
+	).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("read runtime session worktree: %w", err)
+	}
+	return path, true, nil
+}
+
+// RecordWorkspaceRuntimeConversation saves the conversation an agent runtime
+// last reported, so recovery can resume it after its activity report is
+// gone. It writes only when the conversation changed and reports whether a
+// row was updated.
+func (d *DB) RecordWorkspaceRuntimeConversation(
+	ctx context.Context,
+	sessionKey string,
+	agent string,
+	conversationID string,
+) (bool, error) {
+	res, err := d.execContext(ctx, `
+		UPDATE forge_workspace_runtime_sessions
+		SET conversation_agent = ?, conversation_id = ?
+		WHERE session_key = ? AND (conversation_agent != ? OR conversation_id != ?)`,
+		agent, conversationID, sessionKey, agent, conversationID,
+	)
+	if err != nil {
+		return false, fmt.Errorf("record workspace runtime conversation: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("record workspace runtime conversation rows: %w", err)
+	}
+	return rows > 0, nil
+}
+
 func scanWorkspaceRuntimeSessions(
 	rows *sql.Rows,
 ) ([]WorkspaceRuntimeSession, error) {
@@ -5339,7 +5384,7 @@ func scanWorkspaceRuntimeSessions(
 			&session.WorkspaceID, &session.SessionKey,
 			&session.TargetKey, &session.Label, &session.Kind,
 			&session.DisplayRegion, &session.Scope, &session.TmuxSession,
-			&session.CreatedAt,
+			&session.CreatedAt, &session.ConversationAgent, &session.ConversationID,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace runtime session: %w", err)
 		}

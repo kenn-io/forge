@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +16,8 @@ import (
 // the bulk-gone case: after a machine reboot or the dedicated-socket
 // upgrade, no session lives, base sessions recreate lazily on attach,
 // and ready workspaces must stay ready rather than flip to an error
-// whose retry force-removes worktrees.
+// whose retry force-removes worktrees. Runtime rows stay too: they hold
+// the agents that recovery resumes.
 func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 	t *testing.T,
 ) {
@@ -53,6 +55,10 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 		TmuxSession:  "kenn-forge-0000000000000009",
 		Status:       "ready",
 	}))
+	recordRuntimeTmuxSessionForTest(
+		t, d, "0000000000000009", "0000000000000009_claude",
+		"claude", "forge-0000000000000009-c857d09db23e6822", time.Time{},
+	)
 
 	changed, err := mgr.PruneMissingTmuxSessions(ctx, nil)
 	require.NoError(err)
@@ -63,4 +69,7 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 	require.NotNil(ws)
 	assert.Equal("ready", ws.Status,
 		"an empty server must not error ready workspaces")
+	stored, err := d.ListWorkspaceRuntimeTmuxSessions(ctx, "0000000000000009")
+	require.NoError(err)
+	assert.Len(stored, 1, "an empty server must not forget runtime sessions")
 }

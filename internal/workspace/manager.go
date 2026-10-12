@@ -4700,6 +4700,17 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery 
 	if err != nil {
 		return false, err
 	}
+	// A server with zero live sessions is the bulk-gone case: machine
+	// reboot, a killed tmux server, or first boot after the
+	// dedicated-socket upgrade while old sessions remain on the previous
+	// server. Runtime rows hold the agents that recovery resumes, and
+	// base sessions are recreated lazily on terminal attach, so ready
+	// workspaces stay ready and self-heal; marking them all errored would
+	// invite retry, whose cleanup force-removes worktrees. Individual
+	// missing sessions on a live server remain real anomalies.
+	if len(sessions) == 0 {
+		return false, nil
+	}
 	live := make(map[string]bool, len(sessions))
 	for _, session := range sessions {
 		live[session] = true
@@ -4731,17 +4742,6 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery 
 		changed = changed || deleted
 	}
 
-	// A server with zero live sessions is the bulk-gone case: machine
-	// reboot, or first boot after the dedicated-socket upgrade while
-	// old sessions remain on the previous server. Base sessions are
-	// recreated lazily on terminal attach, so ready workspaces stay
-	// ready and self-heal; marking them all errored would invite retry,
-	// whose cleanup force-removes worktrees. Individual missing
-	// sessions on a live server remain real anomalies and are errored
-	// below.
-	if len(live) == 0 {
-		return changed, nil
-	}
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return changed, fmt.Errorf("list workspaces: %w", err)
@@ -4920,6 +4920,45 @@ func (m *Manager) listTmuxSessionInfos(
 		})
 	}
 	return sessions, nil
+}
+
+// tmuxServerIDFormat names one tmux server process: a replacement server has
+// a new pid and start time even on the same socket.
+const tmuxServerIDFormat = "#{pid}:#{start_time}"
+
+// TmuxServerID identifies the running tmux server, or returns "" when none
+// runs. tmux exits once its last session ends, so an empty server is gone.
+func (m *Manager) TmuxServerID(ctx context.Context) (string, error) {
+	cmd := m.tmuxExec(ctx, "list-sessions", "-F", tmuxServerIDFormat)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := procutil.Run(ctx, cmd, "tmux subprocess capacity"); err != nil {
+		if isTmuxSessionAbsent(stderr.Bytes(), err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("tmux list-sessions: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	first, _, _ := strings.Cut(strings.TrimSpace(stdout.String()), "\n")
+	return strings.TrimSpace(first), nil
+}
+
+// TmuxSessionEnded reports whether session ended on its own: it is gone while
+// the tmux server it ran on still runs. A session that still exists, or whose
+// server is gone, replaced, or unknown (empty launchServer), did not.
+func (m *Manager) TmuxSessionEnded(ctx context.Context, session, launchServer string) (bool, error) {
+	if launchServer == "" {
+		return false, nil
+	}
+	exists, err := m.tmuxSessionExists(ctx, session)
+	if err != nil || exists {
+		return false, err
+	}
+	current, err := m.TmuxServerID(ctx)
+	if err != nil || current == "" {
+		return false, err
+	}
+	return current == launchServer, nil
 }
 
 func (m *Manager) listTmuxSessions(

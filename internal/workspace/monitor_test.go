@@ -265,7 +265,7 @@ func TestLaunchSpecMonitorUsesHubCandidatesWithoutProviderItemRows(t *testing.T)
 			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
 		},
 	))
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
 		Number: 42, State: db.MergeRequestStateOpen,
 		HeadBranch:       "feature/issue-7",

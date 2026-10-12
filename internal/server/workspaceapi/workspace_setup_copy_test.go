@@ -11,7 +11,6 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 func TestWorkspaceSetupLeavesCallerWorkspaceUntouched(t *testing.T) {
@@ -24,7 +23,7 @@ func TestWorkspaceSetupLeavesCallerWorkspaceUntouched(t *testing.T) {
 	require.NoError(database.UpdateRepoProviderObservation(t.Context(), repoID, db.RepoProviderMetadata{
 		CloneURL: filepath.Join(root, "missing", "widget.git"), DefaultBranch: "main",
 	}, nil, nil))
-	manager := workspace.NewManager(database, filepath.Join(root, "worktrees"))
+	manager := newWorkspaceTestManager(t, database, filepath.Join(root, "worktrees"))
 	manager.SetClones(gitclone.New(filepath.Join(root, "clones"), nil))
 	parent, cancelParent := context.WithCancel(t.Context())
 	handler := New(Deps{DB: database, Workspaces: manager, EnrichmentDisabled: true})

@@ -11,6 +11,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/procutil"
+	managed "go.kenn.io/kit/git/managed"
+	"go.kenn.io/kwt/worktree"
 )
 
 var ErrExecutionIdentity = errors.New("execution worker commit identity is not configured correctly")
@@ -43,35 +45,41 @@ func (m *Manager) configureExecutionWorktree(ctx context.Context, dir string) er
 	if !m.executionWorker.Enabled {
 		return nil
 	}
-	for _, args := range [][]string{
-		{"config", "--local", "user.useConfigOnly", "true"},
-		{"config", "--local", "user.name", m.executionWorker.CommitName},
-		{"config", "--local", "user.email", m.executionWorker.CommitEmail},
-		{"config", "--local", "credential.useHttpPath", "true"},
-		{"config", "--local", "--replace-all", "credential.helper", ""},
-		{"config", "--local", "--add", "credential.helper", m.credentialHelper},
-	} {
-		if _, err := procutil.Output(ctx, workspaceGitCommand(ctx, dir, args...), "git subprocess capacity"); err != nil {
-			return fmt.Errorf("configure execution worktree: %w", err)
-		}
-	}
-	if err := m.ValidateExecutionIdentity(ctx, dir); err != nil {
-		return err
-	}
-	branch, err := gitOutput(ctx, dir, "branch", "--show-current")
+	commonDir, err := worktreeCommonGitDir(ctx, dir)
 	if err != nil {
 		return err
 	}
-	branch = strings.TrimSpace(branch)
-	if branch != "" {
-		remote, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
-		if strings.TrimSpace(remote) == "" {
-			// A newly created development branch can be pushed from Forge before
-			// it exists remotely. Existing tracking choices remain intact.
-			return setBranchUpstream(ctx, dir, branch, "origin", "refs/heads/"+branch)
+	return m.withRepoLockForGitDir(ctx, commonDir, func(scope *worktree.Scope) error {
+		for _, args := range [][]string{
+			{"config", "--local", "user.useConfigOnly", "true"},
+			{"config", "--local", "user.name", m.executionWorker.CommitName},
+			{"config", "--local", "user.email", m.executionWorker.CommitEmail},
+			{"config", "--local", "credential.useHttpPath", "true"},
+			{"config", "--local", "--replace-all", "credential.helper", ""},
+			{"config", "--local", "--add", "credential.helper", m.credentialHelper},
+		} {
+			if _, err := scope.RunGit(ctx, dir, args...); err != nil {
+				return fmt.Errorf("configure execution worktree: %w", err)
+			}
 		}
-	}
-	return nil
+		if err := m.ValidateExecutionIdentity(ctx, dir); err != nil {
+			return err
+		}
+		branch, err := gitOutput(ctx, dir, "branch", "--show-current")
+		if err != nil {
+			return err
+		}
+		branch = strings.TrimSpace(branch)
+		if branch != "" {
+			remote, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
+			if strings.TrimSpace(remote) == "" {
+				// A newly created development branch can be pushed from Forge before
+				// it exists remotely. Existing tracking choices remain intact.
+				return scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{Action: managed.UpstreamTrack, Scope: managed.UpstreamRepository, Remote: "origin", Ref: "refs/heads/" + branch}})
+			}
+		}
+		return nil
+	})
 }
 
 func (m *Manager) ValidateExecutionIdentity(ctx context.Context, dir string) error {

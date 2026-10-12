@@ -15,7 +15,7 @@ import (
 func TestExecutionWorkerSeparatesNewWorktreesFromRuntimeData(t *testing.T) {
 	assert := assert.New(t)
 	database := openTestDB(t)
-	manager := NewManager(database, t.TempDir())
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
 	spec := launchSpecForTest()
 	seedLaunchSpecRepository(t, database, spec)
 	manager.SetNow(func() time.Time { return spec.IssuedAt })
@@ -36,7 +36,7 @@ func TestExecutionWorkerSeparatesNewWorktreesFromRuntimeData(t *testing.T) {
 func TestExecutionWorkerConfiguresRealCommitIdentity(t *testing.T) {
 	assert := assert.New(t)
 	work := gitfixture.DivergenceWorktree(t)
-	m := NewManager(nil, t.TempDir())
+	m := newWorkspaceTestManager(t, nil, t.TempDir())
 	m.SetExecutionWorker(config.ExecutionWorker{
 		Enabled: true, UID: 1001, GitHubUserID: 42, BrokerSocket: "/run/example/broker.sock",
 		CommitName: "Developer A", CommitEmail: "42+developer-a@users.noreply.github.com",

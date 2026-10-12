@@ -9,6 +9,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	managed "go.kenn.io/kit/git/managed"
+	kwtworktree "go.kenn.io/kwt/worktree"
 )
 
 // worktreeScopedKeyPrefix is the fleet scoped-key prefix for worktrees. The
@@ -81,9 +83,16 @@ func (s *Handler) removeStaleWorktree(
 
 	if input.Body.RemoveBranch && strings.TrimSpace(worktree.Branch) != "" {
 		if project, perr := s.db.GetProjectByID(ctx, worktree.ProjectID); perr == nil {
-			_, _ = gitcmd.New().Output(
-				ctx, project.LocalPath, "branch", "-D", "--", worktree.Branch,
-			)
+			// Stale cleanup keeps its existing isolated Git configuration.
+			repo, err := s.repositoryWorktrees.Open(ctx, kwtworktree.RepositoryOptions{
+				Path: project.LocalPath, Runner: gitcmd.New(), RunGit: runManagedWorktreeGit,
+			})
+			if err == nil {
+				_ = repo.WithLock(ctx, func(scope *kwtworktree.Scope) error {
+					_, err := scope.RemoveBranch(ctx, managed.BranchRemoval{Name: worktree.Branch, Force: true})
+					return err
+				})
+			}
 		}
 	}
 

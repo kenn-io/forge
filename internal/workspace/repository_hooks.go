@@ -17,6 +17,8 @@ import (
 	"time"
 	"unicode"
 
+	"go.kenn.io/kwt/worktree"
+
 	"go.kenn.io/forge/internal/apiclient/roborev"
 
 	"github.com/BurntSushi/toml"
@@ -875,7 +877,7 @@ func confirmRoborevRegistration(
 func (m *Manager) setupManagedRepositoryHooks(
 	ctx context.Context, commonDir string, ws *Workspace,
 ) error {
-	err := m.withRepoLockForGitDir(ctx, commonDir, func() error {
+	err := m.withRepoLockForGitDir(ctx, commonDir, func(_ *worktree.Scope) error {
 		checkpoint, err := m.setupManagedRepositoryHooksLocked(ctx, commonDir, ws)
 		if err != nil {
 			return err

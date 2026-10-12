@@ -37,7 +37,7 @@ func TestTmuxEnrichmentTreatsDormantPtyOwnerAsIdle(t *testing.T) {
 				require.NoError(os.MkdirAll(paths.Dir, 0o700))
 				require.NoError(os.WriteFile(paths.StatePath, []byte("{}"), 0o600))
 			}
-			manager := workspace.NewManager(database, t.TempDir())
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
 			manager.SetPtyOwnerClient(&ptyowner.Client{Root: root, InProcess: true})
 			handler := New(Deps{DB: database, Workspaces: manager})
 			summary, err := database.GetWorkspaceSummary(ctx, "ws-dormant")

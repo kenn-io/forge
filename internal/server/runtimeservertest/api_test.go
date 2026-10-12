@@ -103,7 +103,7 @@ func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := workspace.NewManager(database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 TMUX_RECORD=%s
 TMUX_TEST_OWNER_MARKER=%s

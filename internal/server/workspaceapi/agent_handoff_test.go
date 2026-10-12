@@ -19,7 +19,6 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -50,7 +49,7 @@ func newAgentHandoffFixture(t *testing.T, status string) agentHandoffFixture {
 	})
 	t.Cleanup(runtime.Shutdown)
 	handler := New(Deps{
-		DB: database, Workspaces: workspace.NewManager(database, filepath.Join(dir, "worktrees")),
+		DB: database, Workspaces: newWorkspaceTestManager(t, database, filepath.Join(dir, "worktrees")),
 		Runtime: runtime,
 	})
 	handler.agentHandoffPollInterval = 10 * time.Millisecond

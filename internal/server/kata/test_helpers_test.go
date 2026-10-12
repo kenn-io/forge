@@ -146,7 +146,7 @@ func newKataTestServer(
 	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
 	var workspaces *workspace.Manager
 	if options.WorktreeDir != "" {
-		workspaces = workspace.NewManager(database, options.WorktreeDir)
+		workspaces = newWorkspaceTestManager(t, database, options.WorktreeDir)
 		workspaces.SetTmuxCommand(kataAPITestTmuxCommand)
 	}
 	workspaceHandler := workspaceapi.New(workspaceapi.Deps{

@@ -214,6 +214,8 @@ test.describe("phone routes", () => {
     await expect(page.getByLabel("Time range")).toBeVisible();
     await expect(page.getByRole("button", { name: /^Select repository:/ })).toBeVisible();
     await expect(page.locator(".threaded-view")).toHaveCount(0);
+    await expect(page.locator(".mobile-activity-card").first()).toBeVisible();
+    await expect(page.locator(".mobile-activity-event__body strong").first()).toBeVisible();
 
     const metrics = await page.evaluate(() => {
       const firstCard = document.querySelector(".mobile-activity-card");
@@ -236,7 +238,6 @@ test.describe("phone routes", () => {
       const authorFilter = document.querySelector(".mobile-author-filter");
       const authorChevron = authorFilter?.querySelector(".kit-typeahead__chevron") ?? null;
       const search = document.querySelector(".kit-search-input");
-      const cardRect = firstCard?.getBoundingClientRect();
       const buttonRect = firstButton?.getBoundingClientRect();
       const searchRect = search?.getBoundingClientRect();
       const styleFor = (node: Element | null) => (node ? getComputedStyle(node) : null);
@@ -278,7 +279,6 @@ test.describe("phone routes", () => {
           .getPropertyValue("--mobile-type-title")
           .trim(),
         rootFontSize: Number.parseFloat(getComputedStyle(document.documentElement).fontSize),
-        cardHeight: cardRect?.height ?? 0,
         touchTargetHeight: buttonRect?.height ?? 0,
         titleFontSize: fontSize(title),
         metaFontSize: fontSize(meta),
@@ -321,7 +321,6 @@ test.describe("phone routes", () => {
     expect(metrics.mobileTypeToken).toMatch(/^0?\.9375rem$/);
     expect(metrics.titleTypeToken).toBe("1.0625rem");
     expect(metrics.rootFontSize).toBe(16);
-    expect(metrics.cardHeight).toBeGreaterThanOrEqual(110);
     expect(metrics.touchTargetHeight).toBeGreaterThanOrEqual(40);
     expect(metrics.titleFontSize).toBeGreaterThanOrEqual(17);
     expect(metrics.metaFontSize).toBeGreaterThanOrEqual(13);

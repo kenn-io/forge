@@ -20,7 +20,6 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/workspace"
 )
 
 func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) {
@@ -69,7 +68,7 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 	activity := agentactivity.NewStore(root)
 	handler := New(Deps{
 		DB:            database,
-		Workspaces:    workspace.NewManager(database, t.TempDir()),
+		Workspaces:    newWorkspaceTestManager(t, database, t.TempDir()),
 		AgentActivity: activity,
 	})
 	mux := http.NewServeMux()

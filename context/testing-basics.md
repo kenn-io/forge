@@ -61,6 +61,9 @@ fixtures, or changing shell-script coverage.
 - Eventual-poll callbacks can outlive their test; return errors to the test goroutine
   or use `CollectT` assertions so late failures cannot panic the whole package
   (`internal/server/tmux_wrapper_test.go::TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI`).
+- Real CLI confirmation prompts may render before their input guard settles; wait
+  for a stable selection before submitting the test's explicit decision
+  (`internal/workspace/localruntime/agent_initial_message_test.go::TestClaudeInitialMessageWaitsForTrustWithRealCLI`).
 - Filesystem writes are not a deterministic event burst under load. Test debounce timing
   with controlled event channels and `synctest`; keep real filesystem tests for delivery
   (`internal/configwatch/watcher_test.go::TestWatcher_DebouncesBurst`).

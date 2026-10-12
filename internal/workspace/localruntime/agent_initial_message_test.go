@@ -67,12 +67,30 @@ func TestClaudeInitialMessageWaitsForTrustWithRealCLI(t *testing.T) {
 	attachment, err := mgr.AttachSession("ws-1", info.Key)
 	require.NoError(err)
 	defer attachment.Close()
+	// Claude's trust input guard remounts the choices after startup and can
+	// reject early Enter. Observe a stable selection beyond its 150 ms guard.
+	var selectedSince time.Time
+	var selectionRequestedAt time.Time
 	require.Eventually(func() bool {
 		out, err := exec.CommandContext(t.Context(), tmuxCommand[0], capture...).CombinedOutput()
-		if err == nil && strings.Contains(string(out), "❯ Yes, I trust this folder") {
-			return true
+		if err != nil {
+			return false
 		}
-		_ = attachment.Write([]byte("\x1b[B"))
+		if strings.Contains(string(out), "❯ Yes, I trust this folder") {
+			if selectedSince.IsZero() {
+				selectedSince = time.Now()
+			}
+			return time.Since(selectedSince) >= 300*time.Millisecond
+		}
+		if !selectedSince.IsZero() {
+			selectedSince = time.Time{}
+		}
+		if time.Since(selectionRequestedAt) >= 300*time.Millisecond &&
+			strings.Contains(string(out), "❯ No, exit") {
+			if attachment.Write([]byte("\x1b[B")) == nil {
+				selectionRequestedAt = time.Now()
+			}
+		}
 		return false
 	}, 10*time.Second, 100*time.Millisecond)
 	require.NoError(attachment.Write([]byte("\r")))

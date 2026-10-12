@@ -203,3 +203,36 @@ func TestProjectRemovalRechecksCheckoutAfterTeardown(t *testing.T) {
 		})
 	}
 }
+
+// A forced removal deleted locked worktrees before kwt, as git worktree remove
+// --force --force does. Without force, the lock still protects the checkout.
+func TestProjectForceRemovalRemovesLockedWorktree(t *testing.T) {
+	t.Parallel()
+	for _, force := range []bool{true, false} {
+		t.Run(fmt.Sprintf("force=%t", force), func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			h, project, repo := projectLifecycleFixture(t, "")
+			input := &registerWorktreeInput{ProjectID: project.ID}
+			input.Body.Branch, input.Body.CreateOnDisk = "topic", true
+			input.Body.Path = filepath.Join(t.TempDir(), "checkout")
+			created, err := h.RegisterWorktree(t.Context(), input)
+			require.NoError(err)
+			gitfixture.Run(t, repo.Dir, "worktree", "lock", "--reason", "removable media", created.Body.Path)
+			remove := &removeWorktreeInput{ProjectID: project.ID, WorktreeID: created.Body.ID}
+			remove.Body.RemoveFromDisk, remove.Body.Force = true, force
+
+			_, err = h.removeProjectWorktree(t.Context(), remove)
+
+			if !force {
+				require.Error(err)
+				require.DirExists(created.Body.Path)
+				return
+			}
+			require.NoError(err)
+			require.NoDirExists(created.Body.Path)
+			_, err = h.db.GetProjectWorktreeByID(t.Context(), created.Body.ID)
+			require.Error(err)
+		})
+	}
+}

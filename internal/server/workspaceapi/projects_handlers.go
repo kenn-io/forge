@@ -977,7 +977,11 @@ func (s *Handler) removeProjectWorktreeOnDisk(ctx context.Context, project *db.P
 		ForceObservedBranch: true, Conditions: &worktree.RemovalConditions{Branch: row.Branch},
 	}
 	check, err := repo.InspectRemoval(ctx, req)
-	if err != nil {
+	// A forced removal deletes locked worktrees, as git worktree remove
+	// --force --force did before kwt; the unlock happens under the lock below.
+	var condition *worktree.ConditionError
+	locked := input.Body.Force && errors.As(err, &condition) && condition.Reason == worktree.ReasonLocked
+	if err != nil && !locked {
 		return err
 	}
 	if check.Disposition == worktree.PreserveSymlinkTarget {
@@ -1000,8 +1004,17 @@ func (s *Handler) removeProjectWorktreeOnDisk(ctx context.Context, project *db.P
 		}
 		req.Conditions.ExpectedGitDir = check.Entry.GitDir
 	}
-	_, err = repo.Remove(ctx, req)
-	return err
+	if !locked {
+		_, err = repo.Remove(ctx, req)
+		return err
+	}
+	return repo.WithLock(ctx, func(scope *worktree.Scope) error {
+		if _, err := scope.RunGit(ctx, "", "worktree", "unlock", "--", row.Path); err != nil {
+			return fmt.Errorf("unlock worktree for forced removal: %w", err)
+		}
+		_, err := scope.Remove(ctx, req)
+		return err
+	})
 }
 
 // worktreeLifecycleProblem maps the lifecycle engine's sentinel errors onto

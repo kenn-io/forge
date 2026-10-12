@@ -1,6 +1,7 @@
 package workspacetest
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -133,8 +134,9 @@ exit 0
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: "helper",
 	}})
-	if err != nil && launchResp != nil {
-		t.Logf("runtime launch response: %s", launchResp.Body)
+	if launchResp != nil && (err != nil || launchResp.StatusCode != http.StatusOK) {
+		t.Logf("runtime launch status=%d context=%v error=%v response=%s",
+			launchResp.StatusCode, ctx.Err(), err, launchResp.Body)
 	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode)
@@ -167,8 +169,16 @@ func TestWorkspaceResponseUsesStoredRuntimeTmuxSessionsAfterRestartE2E(
 	dir := t.TempDir()
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	liveSessionsFile := filepath.Join(dir, "live-sessions")
+	probeTraceFile := filepath.Join(dir, "probe-trace")
+	t.Cleanup(func() {
+		if t.Failed() {
+			trace, err := os.ReadFile(probeTraceFile)
+			t.Logf("passive probe trace (read error=%v):\n%s", err, trace)
+		}
+	})
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		"TMUX_LIVE_SESSIONS_FILE="+shellquote.Join(liveSessionsFile)+"\n"+
+		"TMUX_PROBE_TRACE_FILE="+shellquote.Join(probeTraceFile)+"\n"+
 		`target=""
 mode=""
 prev=""
@@ -182,15 +192,20 @@ for a in "$@"; do
   fi
   prev="$a"
 done
+if [ "$mode" = "display-message" ] || [ "$mode" = "capture-pane" ]; then
+  printf 'start %s %s\n' "$target" "$mode" >> "$TMUX_PROBE_TRACE_FILE"
+fi
 if [ "$mode" = "display-message" ]; then
   case "$target" in
     *-claude) printf '⠴ claude-activity\n' ;;
     *) printf 'idle\n' ;;
   esac
+  printf 'done %s %s\n' "$target" "$mode" >> "$TMUX_PROBE_TRACE_FILE"
   exit 0
 fi
 if [ "$mode" = "capture-pane" ]; then
   printf 'stable\n'
+  printf 'done %s %s\n' "$target" "$mode" >> "$TMUX_PROBE_TRACE_FILE"
   exit 0
 fi
 exit 0
@@ -224,14 +239,22 @@ exit 0
 		))
 	}
 
+	pollCtx, cancelPoll := context.WithTimeout(ctx, 6*time.Second)
+	defer cancelPoll()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 	var listed *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		listResp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-		require.NoError(err)
-		if listResp.StatusCode != http.StatusOK ||
-			listResp.JSON200 == nil || listResp.JSON200.Workspaces == nil {
-			return false
+	lastResponse := ""
+	for {
+		started := time.Now()
+		listResp, err := client.HTTP.ListWorkspacesWithResponse(pollCtx)
+		if listResp != nil {
+			lastResponse = string(listResp.Body)
 		}
+		require.NoError(err, "request elapsed=%s context=%v response=%s",
+			time.Since(started), pollCtx.Err(), lastResponse)
+		require.Equal(http.StatusOK, listResp.StatusCode, lastResponse)
+		require.NotNil(listResp.JSON200, lastResponse)
 		listed = nil
 		for i := range listResp.JSON200.Workspaces {
 			if listResp.JSON200.Workspaces[i].ID == ws.ID {
@@ -239,10 +262,17 @@ exit 0
 				break
 			}
 		}
-		return listed != nil && listed.TmuxWorking &&
+		if listed != nil && listed.TmuxWorking &&
 			listed.TmuxActivitySource == workspaceapi.TmuxActivitySourceTitle &&
-			listed.TmuxPaneTitle != nil
-	}, 6*time.Second, 10*time.Millisecond)
+			listed.TmuxPaneTitle != nil {
+			break
+		}
+		select {
+		case <-pollCtx.Done():
+			require.NoError(pollCtx.Err(), "stored runtime activity did not converge: %s", lastResponse)
+		case <-ticker.C:
+		}
+	}
 	require.NotNil(listed)
 	assert.True(listed.TmuxWorking)
 	assert.Equal(workspaceapi.TmuxActivitySourceTitle, listed.TmuxActivitySource)

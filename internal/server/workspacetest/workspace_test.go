@@ -229,8 +229,9 @@ func TestWorkspaceRuntimeLaunchPlainShellCreatesRuntimeSessionE2E(t *testing.T) 
 	resp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: "plain_shell",
 	}})
-	if err != nil && resp != nil {
-		t.Logf("runtime launch response: %s", resp.Body)
+	if resp != nil && (err != nil || resp.StatusCode != http.StatusOK) {
+		t.Logf("runtime launch status=%d context=%v error=%v response=%s",
+			resp.StatusCode, ctx.Err(), err, resp.Body)
 	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)

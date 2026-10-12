@@ -194,10 +194,16 @@ func waitForWorkspaceEnrichment(
 	defer ticker.Stop()
 	lastEnrichmentError := ""
 	loggedEnrichmentError := ""
+	lastResponse := ""
 	for {
+		started := time.Now()
 		resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
-		require.NoError(err, "last enrichment error: %s", lastEnrichmentError)
-		require.NotNil(resp.JSON200)
+		if resp != nil {
+			lastResponse = string(resp.Body)
+		}
+		require.NoError(err, "request elapsed=%s context=%v last enrichment error=%q response=%s",
+			time.Since(started), ctx.Err(), lastEnrichmentError, lastResponse)
+		require.NotNil(resp.JSON200, "context=%v response=%s", ctx.Err(), lastResponse)
 		for i := range resp.JSON200.Workspaces {
 			candidate := &resp.JSON200.Workspaces[i]
 			if candidate.ID != workspaceID {

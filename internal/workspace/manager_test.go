@@ -4003,9 +4003,7 @@ func TestQuarantineOrphanedWorkspacePathPreservesBareRepository(t *testing.T) {
 	recoveryPaths, err := filepath.Glob(worktreePath + ".orphaned-*")
 	require.NoError(err)
 	require.Len(recoveryPaths, 1)
-	bare, err := gitIsBareRepository(t.Context(), recoveryPaths[0])
-	require.NoError(err)
-	assert.True(bare)
+	assert.Equal("true", strings.TrimSpace(string(runWorkspaceTestGit(t, recoveryPaths[0], "rev-parse", "--is-bare-repository"))))
 }
 
 func TestCleanupQuarantinesPlainWorkspaceNestedInRepository(t *testing.T) {

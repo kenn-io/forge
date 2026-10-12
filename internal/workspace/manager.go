@@ -198,7 +198,6 @@ var (
 	ErrWorkspaceDuplicate            = errors.New("workspace already exists")
 	ErrWorkspaceRepositoryUnresolved = errors.New("workspace repository identity is unresolved")
 	ErrWorkspaceInvalidState         = errors.New("workspace invalid state")
-	ErrWorkspaceOwnershipUnproven    = errors.New("workspace worktree ownership cannot be verified")
 	errWorkspaceOwnershipMarker      = errors.New("workspace ownership marker failed")
 	// ErrInvalidBranchName lets HTTP handlers map a rejected branch to a
 	// validation response with errors.Is instead of matching on the git
@@ -5732,16 +5731,6 @@ func canonicalWorktreeListPath(path string) (string, error) {
 		suffix = append([]string{filepath.Base(current)}, suffix...)
 		current = parent
 	}
-}
-
-func gitIsBareRepository(ctx context.Context, dir string) (bool, error) {
-	out, err := gitCombinedOutput(
-		ctx, dir, "rev-parse", "--is-bare-repository",
-	)
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "true", nil
 }
 
 func localBranchExists(

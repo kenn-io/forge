@@ -392,7 +392,8 @@ create a local process, PTY, or durable transport session
 - The runtime row, not the activity report, holds the conversation to resume:
   every non-SessionEnd hook whose canonical CWD is the row's workspace saves its
   agent and conversation ID on the row, so a nested agent in another worktree cannot
-  replace it, and re-recording the row keeps them. SessionEnd may delete the report, including
+  replace it, and re-recording the row keeps them. Recording an agent's row also saves
+  a conversation its hooks reported before the row existed. SessionEnd may delete the report, including
   when a host shutdown kills the agent
   (`internal/server/workspaceapi/agent_hook.go::Handler.recordAgentConversation`,
   `internal/db/queries.go::DB.RecordWorkspaceRuntimeConversation`).
@@ -423,21 +424,27 @@ create a local process, PTY, or durable transport session
   Pty-owner base terminals are never started by recovery; attach reuses a live
   owner or starts one (`internal/terminal/handler.go::Handler.ServeHTTP`).
   Activity enrichment reads an absent owner as idle without starting it; real owner errors still fail enrichment (`internal/server/workspaceapi/routes_handlers.go::Handler.probeOneTmuxSession`).
-- A tmux client exits 0 whenever its session ends, even the server's last. An agent
-  whose client exits non-zero lost its client or server, as on a host shutdown, unless
-  tmux reports its session gone while the server it ran on still runs (a failed
-  launch). Identify servers by pid and start time, so a replacement started before the
-  exit is handled does not count as the session ending, and keep an agent whose server
-  was never identified: keep its
+- A tmux client exits 0 whenever its session ends, even the server's last. A clean
+  exit still keeps the agent when its pane wrapper's exit record shows it was killed:
+  the wrapper died with it, or it died from HUP, KILL, or TERM, as when a shutdown
+  signals agents before tmux and Forge. Sessions launched without a record keep the
+  old meaning, and startup prunes records whose tmux session is gone
+  (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits
+  non-zero lost its client or server unless tmux reports its session gone while the
+  server it ran on still runs (a failed launch). Identify servers by pid and start time,
+  read in the same tmux call that finds the session, so a replacement never counts as
+  the session ending, and keep an agent whose server was never identified: keep its
   row and conversation pending for the next start, since a runtime never restores a key
   it saw exit. Post-launch cleanup applies the same rule when the exit lands before the
   record, and both callers share one cached decision per runtime generation. Kept agents
   list as unavailable until Stop forgets them or the next start resumes them. Pruning
   deletes nothing while the server has no sessions, and a periodic recovery pass that
   finds such a kept agent restores every base terminal first, as startup does, taking
-  setup admission per workspace so a deletion is never undone. The missing-tmux prune
-  waits until such a pass reaches every workspace, so a busy workspace or an exhausted
-  budget is retried instead of errored. Recovery changes must
+  setup admission per workspace so a deletion is never undone. Workspaces a pass could
+  not finish (busy, failed, or out of budget) stay outstanding across passes, even
+  after the kept agents are stopped; later passes work only on those, and the
+  missing-tmux prune waits until none remain. Recovery changes must also pass the
+  `agents-killed` order of `make test-reboot-sim`. Recovery changes must
   pass both shutdown orders of `make test-reboot-sim`
   (`internal/server/workspaceapi/lifecycle.go::Handler.keepAgentAfterTmuxServerLoss`,
   `internal/server/workspaceapi/routes_handlers.go::Handler.forgetRecordedRuntimeSessionIfExited`,

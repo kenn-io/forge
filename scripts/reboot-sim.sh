@@ -4,7 +4,7 @@
 # daemon, tmux, and agents in a different order, then cold-boots the container
 # with only the data volume surviving.
 #
-# Usage: scripts/reboot-sim.sh [daemon-first|agents-first|all]...
+# Usage: scripts/reboot-sim.sh [daemon-first|agents-first|agents-killed|all]...
 # Env:   WORKSPACES (default 4), KEEP=1 keeps containers for inspection.
 set -euo pipefail
 
@@ -13,7 +13,7 @@ workspaces="${WORKSPACES:-4}"
 image="kenn-forge-rebootsim"
 scenarios=("$@")
 if [ "${#scenarios[@]}" -eq 0 ] || [ "${scenarios[0]}" = "all" ]; then
-  scenarios=(daemon-first agents-first)
+  scenarios=(daemon-first agents-first agents-killed)
 fi
 
 build_image() {
@@ -92,6 +92,15 @@ shutdown_host() {
         echo "tmux server survived kill-server" >&2
         return 1
       fi
+      sleep 3
+      in_box pkill -TERM -x kenn-forge || true
+      ;;
+    agents-killed)
+      # A shutdown that signals the agents and their pane wrappers before tmux
+      # and the daemon: each session ends cleanly while the daemon still runs.
+      # Anchor on the shells: the tmux server's own command line names the
+      # first pane's wrapper too.
+      in_box pkill -TERM -f '^/bin/sh .*(kenn-forge-tmux-pane|fake-agent)' || true
       sleep 3
       in_box pkill -TERM -x kenn-forge || true
       ;;

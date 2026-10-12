@@ -543,7 +543,7 @@ help:
 	@echo "  test-short     - Run fast tests only"
 	@echo "  test-e2e       - Run full-stack E2E Playwright tests"
 	@echo "  test-e2e-roborev - Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF)"
-	@echo "  test-reboot-sim - Simulate host reboots in Docker and check that agent sessions resume (ARGS=daemon-first|agents-first)"
+	@echo "  test-reboot-sim - Simulate host reboots in Docker and check that agent sessions resume (ARGS=daemon-first|agents-first|agents-killed)"
 	@echo "  test-fleet-container - Run opt-in fleet container e2e tests"
 	@echo "  test-fleet-drive-container - Run opt-in fleet drive container e2e tests"
 	@echo "  test-gitlab-container - Run opt-in GitLab CE container e2e tests"

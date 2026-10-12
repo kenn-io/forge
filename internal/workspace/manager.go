@@ -4943,6 +4943,29 @@ func (m *Manager) TmuxServerID(ctx context.Context) (string, error) {
 	return strings.TrimSpace(first), nil
 }
 
+// TmuxServerIDWithSession identifies the running tmux server only if it holds
+// session, reading both in one tmux call so a replacement server cannot be
+// mistaken for the one the session runs on. It returns "" otherwise.
+func (m *Manager) TmuxServerIDWithSession(ctx context.Context, session string) (string, error) {
+	cmd := m.tmuxExec(ctx, "list-sessions", "-F", "#{session_name}\t"+tmuxServerIDFormat)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := procutil.Run(ctx, cmd, "tmux subprocess capacity"); err != nil {
+		if isTmuxSessionAbsent(stderr.Bytes(), err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("tmux list-sessions: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		name, server, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if ok && name == session {
+			return strings.TrimSpace(server), nil
+		}
+	}
+	return "", nil
+}
+
 // TmuxSessionEnded reports whether session ended on its own: it is gone while
 // the tmux server it ran on still runs. A session that still exists, or whose
 // server is gone, replaced, or unknown (empty launchServer), did not.

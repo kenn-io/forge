@@ -196,10 +196,12 @@ type Handler struct {
 	// each generation's answer so every caller sees the same one.
 	exitDecisionMu sync.Mutex
 	exitDecisions  map[string]exitDecision
-	// baseRestoreIncomplete holds the missing-tmux prune while base terminals
-	// lost with their tmux server are still being restored, so the prune does
-	// not error workspaces recovery has not reached. runtimeRecoveryMu guards it.
-	baseRestoreIncomplete bool
+	// baseRestoreRemaining lists workspaces whose base terminal, lost with its
+	// tmux server, is not restored yet; the missing-tmux prune waits until it
+	// is empty. baseRestoreCovered lists the kept agents whose loss already
+	// started that work. runtimeRecoveryMu guards both.
+	baseRestoreRemaining map[string]bool
+	baseRestoreCovered   map[string]bool
 	// cannotReloadChats holds chats whose agent refused to reload them; see
 	// setChatCannotReload. runtimeRecoveryMu guards it.
 	cannotReloadChats map[string]bool

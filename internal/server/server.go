@@ -845,6 +845,7 @@ func newServer(
 		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
 			AgentActivityDir:   agentActivityDir(options.WorktreeDir),
+			AgentExitDir:       filepath.Join(filepath.Dir(options.WorktreeDir), "agent-exits"),
 			AgentMCPURL:        options.AgentMCPURL,
 			AgentMCPToken:      options.DaemonAccess.Token,
 			ACPPreferencesPath: acpPreferencesPath,

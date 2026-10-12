@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -84,53 +86,56 @@ func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspa
 	}
 }
 
-// restoreTerminalsAfterServerLoss restores every base terminal while Forge
-// keeps running. Each workspace takes setup admission and is read again under
-// it, so a deletion either finishes first and is skipped, or waits. It reports
-// whether every workspace was reached; a busy workspace or an exhausted budget
-// leaves the rest for the next pass.
-func (h *Handler) restoreTerminalsAfterServerLoss(ctx context.Context, retainedWorkspaces map[string]bool) bool {
-	workspaces, err := h.db.ListWorkspaces(ctx)
-	if err != nil {
-		slog.Warn("list workspace terminals for recovery", "err", err)
-		return false
-	}
-	complete := true
-	for _, listed := range workspaces {
+// restoreTerminalsAfterServerLoss restores the base terminals of the remaining
+// workspaces while Forge keeps running and returns those it could not finish:
+// a busy workspace, a failed read or terminal start, or an exhausted budget.
+// Each workspace takes setup admission and is read again under it, so a
+// deletion either finishes first and is skipped, or waits.
+func (h *Handler) restoreTerminalsAfterServerLoss(
+	ctx context.Context, retainedWorkspaces, remaining map[string]bool,
+) map[string]bool {
+	left := maps.Clone(remaining)
+	for _, id := range slices.Sorted(maps.Keys(left)) {
 		if ctx.Err() != nil {
-			return false
+			return left
 		}
-		done, start := h.beginWorkspaceSetup(listed.ID)
+		done, start := h.beginWorkspaceSetup(id)
 		if !start {
-			complete = false
 			continue
 		}
-		ws, err := h.db.GetWorkspace(ctx, listed.ID)
-		if err != nil {
-			slog.Warn("read workspace terminal for recovery", "workspace_id", listed.ID, "err", err)
-		} else if ws != nil {
-			h.restoreWorkspaceTerminal(ctx, ws, retainedWorkspaces)
+		ws, err := h.db.GetWorkspace(ctx, id)
+		switch {
+		case err != nil:
+			slog.Warn("read workspace terminal for recovery", "workspace_id", id, "err", err)
+		case ws == nil:
+			delete(left, id)
+		case h.restoreWorkspaceTerminal(ctx, ws, retainedWorkspaces):
+			delete(left, id)
 		}
-		h.finishWorkspaceSetup(listed.ID, done)
+		h.finishWorkspaceSetup(id, done)
 	}
-	return complete
+	return left
 }
 
-func (h *Handler) restoreWorkspaceTerminal(ctx context.Context, ws *db.Workspace, retainedWorkspaces map[string]bool) {
+// restoreWorkspaceTerminal ensures a workspace's base terminal and reports
+// whether the workspace is finished: restored, or not one recovery restores.
+func (h *Handler) restoreWorkspaceTerminal(ctx context.Context, ws *db.Workspace, retainedWorkspaces map[string]bool) bool {
 	if h.workspaces.UsesPtyOwnerForWorkspace(ws) {
-		return
+		return true
 	}
 	if !workspaceStatusAllowsRecovery(ws.Status) || ws.TmuxSession == "" ||
 		(ws.Status != "ready" && !retainedWorkspaces[ws.ID]) {
-		return
+		return true
 	}
 	info, err := os.Stat(ws.WorktreePath)
 	if err != nil || !info.IsDir() {
-		return
+		return true
 	}
 	if err := h.workspaces.EnsureTerminal(ctx, ws); err != nil {
 		slog.Warn("restore workspace terminal", "workspace_id", ws.ID, "err", err)
+		return false
 	}
+	return true
 }
 
 func workspaceStatusAllowsRecovery(status string) bool {

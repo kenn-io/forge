@@ -120,6 +120,10 @@ type Options struct {
 	ACPSessionsDir     string
 	// ParkedDir holds a marker per runtime session idle stop parked.
 	ParkedDir string
+	// AgentExitDir holds how each tmux-backed agent exited, so a clean tmux
+	// exit caused by a killed agent can be told apart from the agent
+	// finishing. Empty disables the record.
+	AgentExitDir string
 	// AgentActivityDir is where ACP owners report turn state for the
 	// workspace activity views, alongside hook-reported agents.
 	AgentActivityDir string
@@ -170,6 +174,7 @@ type Manager struct {
 	parkedDir          string
 	inputObserver      atomic.Pointer[func(workspaceID string)]
 	agentActivityDir   string
+	agentExitDir       string
 	acpOwnerCommand    []string
 	acpPreferences     map[string]map[string]string
 
@@ -328,6 +333,7 @@ func NewManager(options Options) *Manager {
 		acpSessionsDir:     options.ACPSessionsDir,
 		parkedDir:          options.ParkedDir,
 		agentActivityDir:   options.AgentActivityDir,
+		agentExitDir:       options.AgentExitDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpPreferences:     make(map[string]map[string]string),
 
@@ -2023,6 +2029,12 @@ func (m *Manager) launchCommand(
 			agentactivity.RuntimeSessionKeyEnv: sessionKey,
 		},
 	)
+	if m.agentExitDir != "" {
+		if err := os.MkdirAll(m.agentExitDir, 0o700); err != nil {
+			return launchCommand{}, fmt.Errorf("create agent exit directory: %w", err)
+		}
+		paneEnv.paneCommand = recordAgentExitPaneCommand(paneEnv.paneCommand, m.agentExitPaths(tmuxSession))
+	}
 	prepared, err := tmuxLauncher{
 		TmuxCommand:     tmuxCommand,
 		Session:         tmuxSession,

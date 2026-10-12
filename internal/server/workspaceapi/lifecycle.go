@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"slices"
 	"time"
 
@@ -154,7 +155,14 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	if h.syncIdle(ctx) == nil {
 		h.releaseIdle(ctx)
 	}
-	return h.restoreRuntimeSessions(ctx, false)
+	if err := h.restoreRuntimeSessions(ctx, false); err != nil {
+		return err
+	}
+	// Records of agents a reboot killed name tmux sessions that are gone.
+	if h.runtime != nil {
+		h.runtime.PruneAgentExits(ctx)
+	}
+	return nil
 }
 
 func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) error {
@@ -171,6 +179,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		h.runtimeRecoveryMu.Lock()
 		pending := stored[:0]
 		keptAfterLoss := make(map[string]bool)
+		var newlyKept []string
 		for _, session := range stored {
 			if !h.runtimeRecoveryPending[session.SessionKey] || session.Kind == string(localruntime.LaunchTargetACP) {
 				continue
@@ -179,18 +188,19 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			// kept after a tmux server loss waits for the next start.
 			if h.runtime.Exited(session.SessionKey) {
 				keptAfterLoss[session.WorkspaceID] = true
+				if !h.baseRestoreCovered[session.SessionKey] {
+					if h.baseRestoreCovered == nil {
+						h.baseRestoreCovered = make(map[string]bool)
+					}
+					h.baseRestoreCovered[session.SessionKey] = true
+					newlyKept = append(newlyKept, session.SessionKey)
+				}
 				continue
 			}
 			pending = append(pending, session)
 		}
 		h.runtimeRecoveryMu.Unlock()
-		// The lost server took every base terminal with it. Restore them all,
-		// as startup would, before the prune that follows mistakes the
-		// missing bases for individual exits and errors their workspaces.
-		restored := len(keptAfterLoss) == 0 || h.restoreTerminalsAfterServerLoss(ctx, keptAfterLoss)
-		h.runtimeRecoveryMu.Lock()
-		h.baseRestoreIncomplete = !restored
-		h.runtimeRecoveryMu.Unlock()
+		h.restoreBaseTerminalsAfterLoss(ctx, keptAfterLoss, newlyKept)
 		stored = pending
 		if len(stored) == 0 {
 			return nil
@@ -415,9 +425,13 @@ func (h *Handler) keepsExitedChat(info localruntime.SessionInfo) bool {
 //
 // The exit handler and post-launch cleanup can both ask about one exit, so
 // the first answer for a session generation is cached and reused.
+//
+// A clean client exit means the session ended. The pane wrapper's record says
+// whether the agent finished or was killed with its wrapper, or by HUP, KILL,
+// or TERM, as when a shutdown signals every process before tmux and Forge.
 func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bool {
 	if h.workspaces == nil || info.Kind != localruntime.LaunchTargetAgent ||
-		info.TmuxSession == "" || info.ExitCode == nil || *info.ExitCode == 0 {
+		info.TmuxSession == "" || info.ExitCode == nil {
 		return false
 	}
 	h.exitDecisionMu.Lock()
@@ -425,13 +439,10 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 	if decision, ok := h.exitDecisions[info.Key]; ok && decision.createdAt.Equal(info.CreatedAt) {
 		return decision.keep
 	}
-	h.runtimeRecoveryMu.Lock()
-	launchServer := h.tmuxServerAtLaunch[info.Key]
-	h.runtimeRecoveryMu.Unlock()
-	ctx, cancel := context.WithTimeout(h.lifecycleCtx, 2*time.Second)
-	defer cancel()
-	ended, err := h.workspaces.TmuxSessionEnded(ctx, info.TmuxSession, launchServer)
-	keep := err != nil || !ended
+	keep, err := h.classifyAgentExit(info)
+	if h.runtime != nil {
+		h.runtime.ForgetAgentExit(info.TmuxSession)
+	}
 	if h.exitDecisions == nil {
 		h.exitDecisions = make(map[string]exitDecision)
 	}
@@ -449,13 +460,32 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 	return true
 }
 
-// noteTmuxServer records the tmux server an agent runtime runs on. A failed
-// check leaves it unknown, and its exit then accepts any running server.
+func (h *Handler) classifyAgentExit(info localruntime.SessionInfo) (bool, error) {
+	if *info.ExitCode == 0 {
+		if h.runtime == nil {
+			return false, nil
+		}
+		exit, recorded := h.runtime.AgentExit(info.TmuxSession)
+		return recorded && exit.Killed(), nil
+	}
+	h.runtimeRecoveryMu.Lock()
+	launchServer := h.tmuxServerAtLaunch[info.Key]
+	h.runtimeRecoveryMu.Unlock()
+	ctx, cancel := context.WithTimeout(h.lifecycleCtx, 2*time.Second)
+	defer cancel()
+	ended, err := h.workspaces.TmuxSessionEnded(ctx, info.TmuxSession, launchServer)
+	return err != nil || !ended, err
+}
+
+// noteTmuxServer records the tmux server an agent runtime runs on, read in the
+// same tmux call that finds its session, so a replacement server that lacks
+// the session is never recorded. Otherwise the server stays unknown, and an
+// unknown server keeps the agent on an unclean exit.
 func (h *Handler) noteTmuxServer(ctx context.Context, sessionKey, tmuxSession string) {
 	if h.workspaces == nil || sessionKey == "" || tmuxSession == "" {
 		return
 	}
-	server, err := h.workspaces.TmuxServerID(ctx)
+	server, err := h.workspaces.TmuxServerIDWithSession(ctx, tmuxSession)
 	if err != nil || server == "" {
 		return
 	}
@@ -465,6 +495,45 @@ func (h *Handler) noteTmuxServer(ctx context.Context, sessionKey, tmuxSession st
 		h.tmuxServerAtLaunch = make(map[string]string)
 	}
 	h.tmuxServerAtLaunch[sessionKey] = server
+}
+
+// restoreBaseTerminalsAfterLoss restores the base terminals a lost tmux server
+// took with it, as startup would, before the prune that follows mistakes the
+// missing bases for individual exits and errors their workspaces. A newly
+// kept agent starts the work for every workspace. Workspaces a pass could not
+// finish stay outstanding, so later passes continue from them even after the
+// kept agents are stopped, and the prune waits until none remain.
+func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLoss map[string]bool, newlyKept []string) {
+	h.runtimeRecoveryMu.Lock()
+	remaining := maps.Clone(h.baseRestoreRemaining)
+	h.runtimeRecoveryMu.Unlock()
+	if len(newlyKept) > 0 {
+		workspaces, err := h.db.ListWorkspaces(ctx)
+		if err != nil {
+			// Let the next pass notice these agents again.
+			slog.Warn("list workspace terminals for recovery", "err", err)
+			h.runtimeRecoveryMu.Lock()
+			for _, key := range newlyKept {
+				delete(h.baseRestoreCovered, key)
+			}
+			h.runtimeRecoveryMu.Unlock()
+		}
+		if remaining == nil {
+			remaining = make(map[string]bool)
+		}
+		for _, ws := range workspaces {
+			remaining[ws.ID] = true
+		}
+	}
+	if len(remaining) > 0 {
+		remaining = h.restoreTerminalsAfterServerLoss(ctx, keptAfterLoss, remaining)
+	}
+	h.runtimeRecoveryMu.Lock()
+	h.baseRestoreRemaining = remaining
+	if len(remaining) == 0 {
+		h.baseRestoreRemaining = nil
+	}
+	h.runtimeRecoveryMu.Unlock()
 }
 
 // exitDecision caches whether one runtime generation, identified by its key

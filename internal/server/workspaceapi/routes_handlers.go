@@ -2907,8 +2907,31 @@ func (s *Handler) recordRuntimeSession(
 	}
 	if session.Kind == localruntime.LaunchTargetAgent {
 		s.noteTmuxServer(ctx, session.Key, session.TmuxSession)
+		s.importEarlyConversation(ctx, workspaceID, session.Key)
 	}
 	return nil
+}
+
+// importEarlyConversation saves a conversation the agent reported before its
+// row existed: its first hook can beat the record, and SessionEnd may delete
+// the report before another hook arrives.
+func (s *Handler) importEarlyConversation(ctx context.Context, workspaceID, sessionKey string) {
+	if s.db == nil || s.agentActivity == nil {
+		return
+	}
+	ws, err := s.db.GetWorkspace(ctx, workspaceID)
+	if err != nil || ws == nil {
+		return
+	}
+	reports := s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{sessionKey})
+	if len(reports) == 0 {
+		return
+	}
+	if _, err := s.db.RecordWorkspaceRuntimeConversation(
+		ctx, sessionKey, reports[0].Agent, reports[0].SessionID,
+	); err != nil {
+		slog.Warn("import early agent conversation", "session_key", sessionKey, "err", err)
+	}
 }
 
 func normalizeRuntimeDisplayRegion(

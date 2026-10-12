@@ -155,12 +155,15 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	if h.syncIdle(ctx) == nil {
 		h.releaseIdle(ctx)
 	}
-	// Records of agents a reboot killed name tmux sessions that are gone.
-	// Prune them before recovery resumes agents under the same names.
+	if err := h.restoreRuntimeSessions(ctx, false); err != nil {
+		return err
+	}
+	// Recovery has read the records it needs; those of gone sessions are
+	// spent. A resumed agent's new wrapper already cleared its old record.
 	if h.runtime != nil {
 		h.runtime.PruneAgentExits(ctx)
 	}
-	return h.restoreRuntimeSessions(ctx, false)
+	return nil
 }
 
 func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) error {
@@ -177,7 +180,6 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		h.runtimeRecoveryMu.Lock()
 		pending := stored[:0]
 		keptAfterLoss := make(map[string]bool)
-		var newlyKept []string
 		for _, session := range stored {
 			if !h.runtimeRecoveryPending[session.SessionKey] || session.Kind == string(localruntime.LaunchTargetACP) {
 				continue
@@ -186,19 +188,12 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			// kept after a tmux server loss waits for the next start.
 			if h.runtime.Exited(session.SessionKey) {
 				keptAfterLoss[session.WorkspaceID] = true
-				if !h.baseRestoreCovered[session.SessionKey] {
-					if h.baseRestoreCovered == nil {
-						h.baseRestoreCovered = make(map[string]bool)
-					}
-					h.baseRestoreCovered[session.SessionKey] = true
-					newlyKept = append(newlyKept, session.SessionKey)
-				}
 				continue
 			}
 			pending = append(pending, session)
 		}
 		h.runtimeRecoveryMu.Unlock()
-		h.restoreBaseTerminalsAfterLoss(ctx, keptAfterLoss, newlyKept)
+		h.restoreBaseTerminalsAfterLoss(ctx, keptAfterLoss)
 		stored = pending
 		if len(stored) == 0 {
 			return nil
@@ -243,7 +238,22 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			h.setRuntimeRecoveryPending(session.SessionKey, true)
 		}
 	}
-	h.restoreWorkspaceTerminals(ctx, retainedWorkspaces, pendingOnly)
+	unfinished, listed := h.restoreWorkspaceTerminals(ctx, retainedWorkspaces, pendingOnly)
+	if !pendingOnly {
+		// Terminals startup could not restore wait for the periodic restore,
+		// and the prune waits for them.
+		h.runtimeRecoveryMu.Lock()
+		for id := range unfinished {
+			if h.baseRestoreRemaining == nil {
+				h.baseRestoreRemaining = make(map[string]bool)
+			}
+			h.baseRestoreRemaining[id] = true
+		}
+		if !listed {
+			h.baseRestoreListPending = true
+		}
+		h.runtimeRecoveryMu.Unlock()
+	}
 	for _, session := range stored {
 		// ACP owners keep running without daemon attachments. Restore only when
 		// this workspace is opened, and retain its row until then.
@@ -273,6 +283,19 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		// Resume a missing tmux agent or a gone pty-owner agent from its saved
 		// conversation.
 		gone := errors.Is(err, localruntime.ErrSessionNotFound) || errors.Is(err, ptyowner.ErrOwnerGone)
+		if gone && session.Kind == string(localruntime.LaunchTargetAgent) && h.agentFinishedUnwatched(session) {
+			slog.Info("forget workspace agent that finished while unwatched",
+				"workspace_id", session.WorkspaceID, "session_key", session.SessionKey)
+			if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
+				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
+			); forgetErr != nil {
+				return forgetErr
+			}
+			h.removeAgentActivityRuntimeSession(session.SessionKey)
+			h.runtime.ForgetAgentExit(session.TmuxSession)
+			h.setRuntimeRecoveryPending(session.SessionKey, false)
+			continue
+		}
 		if gone && workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
 			session.ConversationID != "" {
 			if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr != nil {
@@ -451,6 +474,11 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 		return false
 	}
 	h.setRuntimeRecoveryPending(info.Key, true)
+	// A lost agent may have lost the whole server and every base terminal;
+	// the next pass restores them, even if this agent is stopped first.
+	h.runtimeRecoveryMu.Lock()
+	h.baseRestoreListPending = true
+	h.runtimeRecoveryMu.Unlock()
 	slog.Info("keep workspace agent for recovery after tmux loss",
 		"workspace_id", info.WorkspaceID,
 		"session_key", info.Key,
@@ -458,6 +486,14 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 		"exit_code", *info.ExitCode,
 		"check_err", err)
 	return true
+}
+
+// agentFinishedUnwatched reports whether a kept agent's wrapper recorded a
+// normal exit after Forge stopped watching it, as when only Forge's tmux
+// client died and the agent later finished. Such a conversation is over.
+func (h *Handler) agentFinishedUnwatched(session db.WorkspaceRuntimeSession) bool {
+	exit, recorded := h.runtime.AgentExit(session.TmuxSession)
+	return recorded && exit.Recorded && !exit.Killed()
 }
 
 func (h *Handler) classifyAgentExit(info localruntime.SessionInfo) (bool, error) {
@@ -506,12 +542,10 @@ func (h *Handler) noteTmuxServer(ctx context.Context, sessionKey, tmuxSession st
 // kept agent starts the work for every workspace. Workspaces a pass could not
 // finish stay outstanding, so later passes continue from them even after the
 // kept agents are stopped, and the prune waits until none remain.
-func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLoss map[string]bool, newlyKept []string) {
+func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLoss map[string]bool) {
 	h.runtimeRecoveryMu.Lock()
 	remaining := maps.Clone(h.baseRestoreRemaining)
-	h.runtimeRecoveryMu.Unlock()
-	h.runtimeRecoveryMu.Lock()
-	needList := len(newlyKept) > 0 || h.baseRestoreListPending
+	needList := h.baseRestoreListPending
 	h.runtimeRecoveryMu.Unlock()
 	if needList {
 		workspaces, err := h.db.ListWorkspaces(ctx)

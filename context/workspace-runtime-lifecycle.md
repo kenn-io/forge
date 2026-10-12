@@ -429,7 +429,8 @@ create a local process, PTY, or durable transport session
   was killed: the wrapper died with it, or it died from HUP, KILL, or TERM, as when a
   shutdown signals agents before tmux and Forge. Each new wrapper clears the record a
   previous run under the same tmux name left; only a clean session end spends a
-  record, and startup prunes records of gone sessions before recovery. Sessions
+  record. Startup recovery forgets, not resumes, a kept agent whose session is gone
+  with a recorded normal exit, then prunes records of gone sessions. Sessions
   launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits
   non-zero lost its client or server unless tmux reports its session gone while the
@@ -441,10 +442,12 @@ create a local process, PTY, or durable transport session
   record, and both callers share one cached decision per runtime generation. Kept agents
   list as unavailable until Stop forgets them or the next start resumes them. Pruning
   deletes nothing while the server has no sessions, and a periodic recovery pass that
-  finds such a kept agent restores every base terminal first, as startup does, taking
+  follows keeping such an agent restores every base terminal first, as startup does,
+  even if the agent was stopped meanwhile, taking
   setup admission per workspace so a deletion is never undone. Workspaces a pass could
-  not finish (busy, failed, or out of budget), or all of them while their list cannot
-  be read, stay outstanding across passes, even after the kept agents are stopped.
+  not finish (busy, failed, or out of budget), including those startup recovery could
+  not restore, or all of them while their list cannot be read, stay outstanding across
+  passes, even after the kept agents are stopped.
   Later passes work only on those, each starting after the workspace the last pass
   reached, and the missing-tmux prune waits until none remain. Recovery changes must
   pass every shutdown order of `make test-reboot-sim`

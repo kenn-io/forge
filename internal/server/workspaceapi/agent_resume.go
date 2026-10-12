@@ -70,21 +70,27 @@ func restoredRuntime(stored db.WorkspaceRuntimeSession, cwd string) localruntime
 // Restore tmux base terminals before agents create new tmux sessions. Otherwise
 // the periodic prune would mistake the remaining missing bases for individual
 // exits. Pty-owner bases are left to the attach path, which reuses a live owner.
-func (h *Handler) restoreWorkspaceTerminals(ctx context.Context, retainedWorkspaces map[string]bool, pendingOnly bool) {
+// restoreWorkspaceTerminals returns the workspaces it could not finish, a
+// failed terminal start or an exhausted budget, and whether the workspace list
+// could be read at all.
+func (h *Handler) restoreWorkspaceTerminals(
+	ctx context.Context, retainedWorkspaces map[string]bool, pendingOnly bool,
+) (map[string]bool, bool) {
 	workspaces, err := h.db.ListWorkspaces(ctx)
 	if err != nil {
 		slog.Warn("list workspace terminals for recovery", "err", err)
-		return
+		return nil, false
 	}
+	unfinished := make(map[string]bool)
 	for _, ws := range workspaces {
-		if ctx.Err() != nil {
-			return
-		}
 		if pendingOnly && !retainedWorkspaces[ws.ID] {
 			continue
 		}
-		h.restoreWorkspaceTerminal(ctx, &ws, retainedWorkspaces)
+		if ctx.Err() != nil || !h.restoreWorkspaceTerminal(ctx, &ws, retainedWorkspaces) {
+			unfinished[ws.ID] = true
+		}
 	}
+	return unfinished, true
 }
 
 // restoreTerminalsAfterServerLoss restores the base terminals of the remaining

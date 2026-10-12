@@ -150,17 +150,16 @@ func TestACPSteerSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
 // it, so a later restore does not mistake it for one in flight.
 func TestACPSteerTheAgentTookIsNoLongerSending(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	c := newInProcessChat(t)
-	agent := c.start(nil)
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.True(t, publishedACPState(t, agent).SteeringSupported)
+	c := launchRequestChat(t)
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.True(t, c.state().SteeringSupported)
 
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	require.True(t, slices.ContainsFunc(publishedACPState(t, agent).Messages, func(message ACPMessage) bool {
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+	require.True(t, slices.ContainsFunc(c.state().Messages, func(message ACPMessage) bool {
 		return message.SubmissionID == "steer"
 	}), "the agent took the steer")
 
-	saved := readSavedSession(t, c.recordPath())
+	saved := readSavedSession(t, c.manager.acpSessionPath(c.info.Key))
 	assert.Nil(t, saved.State.Sending)
 	assert.NotContains(t, saved.State.Uncertain, "steer")
 }

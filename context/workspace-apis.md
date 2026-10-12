@@ -69,7 +69,7 @@ embedder protocol for arbitrary host state.
   (`internal/server/workspaceapi/fleet_snapshot.go::FleetSnapshot`).
 - Managed clones keep `core.bare=true` in shared config and override it per
   linked worktree; repository tools use the shared value to identify this layout
-  (`internal/workspace/manager.go::createWorkspaceCheckout`).
+  (`internal/workspace/repository_hooks.go::ensureManagedCloneExclude`).
 - Managed clones and existing local base checkouts use the same exact
   provider-host cleartext acknowledgement when validating their canonical remote; local
   bases do not silently weaken or ignore the configured transport policy
@@ -821,13 +821,15 @@ offer the push that verifies or creates its remote branch. Every path that creat
 PR-owned branch should configure its upstream when repository identity is known.
 Configured local bases may use a remote other than `origin`; new preferred and synthetic
 PR branches must track the same identity-selected remote used for checkout
-(`internal/workspace/manager.go::configureFallbackBranchUpstream`).
+(`internal/workspace/manager.go::Manager.addFallbackCandidate`). Any fallback
+failure other than an ownership-marker error moves on to the numbered name, then
+to a detached checkout (`internal/workspace/manager.go::Manager.addFallbackWorktree`).
 Passive workspace enrichment never contacts remotes, so the UI offers Push only for a
 missing local tracking ref or commits ahead. A zero-ahead branch deleted remotely remains
 in-sync until local Git state changes (`internal/server/workspaceapi/routes_handlers.go::applyWorktreeDivergence`).
 Issue, Kata, and ad-hoc workspaces create new untracked branches; a
 same-named remote ref is not authority to adopt an upstream
-(`internal/workspace/manager.go::configureFallbackBranchUpstream`). PR upstream
+(`internal/workspace/manager.go::createWorkspaceCheckout`). PR upstream
 wiring requires a non-empty head-repository identity whose
 provider, host, and full repository path match the base repository; matching
 commit SHAs are not identity evidence because forks preserve commit IDs. Fork

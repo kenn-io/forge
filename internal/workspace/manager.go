@@ -3068,36 +3068,76 @@ func (m *Manager) addWorktreeLocked(
 }
 
 // addFallbackWorktree keeps Forge's branch names while kwt owns collision
-// selection, checkout creation, identity, and rollback.
+// selection, checkout creation, identity, and rollback. As before kwt, any
+// failure other than an ownership-marker error moves on to the numbered name
+// and then to a detached checkout, so one bad ref cannot end setup.
 func (m *Manager) addFallbackWorktree(
 	ctx context.Context, scope *worktree.Scope, gitDir workspaceGitDir,
 	ws *Workspace, fallbackBranch, startRef string,
 ) (string, error) {
-	result, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{BaseRef: startRef}, []worktree.CheckoutCandidate{
+	var failures []error
+	for _, candidate := range []worktree.CheckoutCandidate{
 		{Branch: fallbackBranch, Mode: managed.CheckoutNewBranch},
 		{Branch: fallbackBranch, Mode: managed.CheckoutNewBranch, Numbered: true},
 		{Mode: managed.CheckoutDetached},
-	})
+	} {
+		branch, err := m.addFallbackCandidate(ctx, scope, gitDir, ws, startRef, candidate)
+		if err == nil {
+			if candidate.Mode == managed.CheckoutDetached {
+				slog.Warn("workspace worktree checked out detached",
+					"workspace_id", ws.ID, "path", ws.WorktreePath,
+					"branch", fallbackBranch, "err", errors.Join(failures...))
+			}
+			return branch, nil
+		}
+		failures = append(failures, err)
+		var retained *fallbackRetainedError
+		if errors.Is(err, errWorkspaceOwnershipMarker) || errors.As(err, &retained) || ctx.Err() != nil {
+			break
+		}
+	}
+	return "", errors.Join(failures...)
+}
+
+// fallbackRetainedError reports a failed attempt whose rollback left files at
+// the workspace path, so no further candidate can be created there.
+type fallbackRetainedError struct{ err error }
+
+func (e *fallbackRetainedError) Error() string { return e.err.Error() }
+func (e *fallbackRetainedError) Unwrap() error { return e.err }
+
+func (m *Manager) addFallbackCandidate(
+	ctx context.Context, scope *worktree.Scope, gitDir workspaceGitDir,
+	ws *Workspace, startRef string, candidate worktree.CheckoutCandidate,
+) (string, error) {
+	result, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{BaseRef: startRef}, []worktree.CheckoutCandidate{candidate})
 	if err != nil {
+		if _, statErr := os.Lstat(ws.WorktreePath); statErr == nil {
+			return "", &fallbackRetainedError{err: err}
+		}
 		return "", err
 	}
-	if result.Branch != "" && ws.MRHeadRepo == nil {
-		// A failed probe is not an absent ref; never skip tracking on an error.
-		_, tracked, err := gitRefSHA(ctx, gitDir.path, remoteTrackingRef(gitDir.remote, ws.GitHeadRef))
-		if err != nil {
-			return "", rollbackWorkspaceCheckout(ctx, scope, result, fmt.Errorf("inspect fallback tracking ref: %w", err))
-		}
-		if tracked {
-			err = scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: ws.WorktreePath, Policy: managed.UpstreamPolicy{
-				Action: managed.UpstreamTrack, Condition: managed.TrackingIfHeadMatches, Scope: managed.UpstreamRepository,
-				Remote: gitDir.remote, Ref: "refs/heads/" + ws.GitHeadRef,
-			}})
-			if err != nil {
-				return "", rollbackWorkspaceCheckout(ctx, scope, result, err)
-			}
-		}
+	if result.Branch == "" || ws.MRHeadRepo != nil {
+		return result.OwnedBranch, nil
 	}
-	return result.OwnedBranch, nil
+	// A failed probe is not an absent ref; never skip tracking on an error.
+	_, tracked, err := gitRefSHA(ctx, gitDir.path, remoteTrackingRef(gitDir.remote, ws.GitHeadRef))
+	if err == nil && tracked {
+		err = scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: ws.WorktreePath, Policy: managed.UpstreamPolicy{
+			Action: managed.UpstreamTrack, Condition: managed.TrackingIfHeadMatches, Scope: managed.UpstreamRepository,
+			Remote: gitDir.remote, Ref: "refs/heads/" + ws.GitHeadRef,
+		}})
+	} else if err != nil {
+		err = fmt.Errorf("inspect fallback tracking ref: %w", err)
+	}
+	if err == nil {
+		return result.OwnedBranch, nil
+	}
+	err = rollbackWorkspaceCheckout(ctx, scope, result, fmt.Errorf("configure branch upstream: %w", err))
+	if _, statErr := os.Lstat(ws.WorktreePath); statErr == nil {
+		return "", &fallbackRetainedError{err: err}
+	}
+	return "", err
 }
 
 func workspaceIdentity(ws *Workspace) worktree.IdentityPolicy {

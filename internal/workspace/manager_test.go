@@ -4466,8 +4466,8 @@ func TestAddWorktreeFallbackBranchTracksPRHeadBranch(t *testing.T) {
 }
 
 // A failed probe for the PR head's tracking ref is not proof that the ref is
-// absent. Fallback creation must fail and remove its fresh checkout instead of
-// reporting a workspace whose upstream was silently skipped.
+// absent. The attempt must not report a workspace whose upstream was silently
+// skipped: it rolls back its checkout and branch, and the next name succeeds.
 func TestAddWorktreeFallbackRollsBackWhenTrackingProbeFails(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses a POSIX Git wrapper")
@@ -4521,14 +4521,69 @@ exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
 	t.Setenv("PATH", fixture+string(os.PathListSeparator)+os.Getenv("PATH"))
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
 
-	_, err = addTestWorktree(mgr, t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+	branch, err := addTestWorktree(mgr, t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
 
-	require.Error(err)
+	require.NoError(err)
 	require.FileExists(filepath.Join(fixture, "failed"), "the tracking probe must run after fallback creation")
-	require.NoDirExists(ws.WorktreePath)
+	require.Equal(syntheticPRWorktreeBranch(prNumber)+"-2", branch)
+	merge, err := gitConfigValue(t.Context(), ws.WorktreePath, "branch."+branch+".merge")
+	require.NoError(err, "the successful attempt must still track the PR head")
+	require.Equal("refs/heads/"+headBranch, merge)
 	_, exists, err := gitRefSHA(t.Context(), cloneDir, "refs/heads/"+syntheticPRWorktreeBranch(prNumber))
 	require.NoError(err)
 	require.False(exists, "the fresh fallback branch must be rolled back")
+}
+
+// Main moved past any fallback failure that was not an ownership-marker
+// error: a stale ref lock or a failed upstream write must not end setup while
+// a numbered name or a detached checkout could still succeed.
+func TestAddWorktreeFallbackContinuesPastNonCollisionFailures(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX Git wrapper")
+	}
+	for _, failure := range []string{"stale ref lock", "upstream write"} {
+		t.Run(failure, func(t *testing.T) {
+			require := require.New(t)
+			cloneDir := setupBareCloneForWorkspaceGitTest(t)
+			runWorkspaceTestGit(t, cloneDir, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+			const prNumber = 48
+			const headBranch = "feature/fallback-continues"
+			headSHA := configureSameRepoPRRefs(t, cloneDir, headBranch, prNumber)
+			runWorkspaceTestGit(t, cloneDir, "update-ref", "refs/heads/"+headBranch, divergentCommitForWorkspaceGitTest(t, cloneDir, headSHA))
+			synthetic := syntheticPRWorktreeBranch(prNumber)
+			switch failure {
+			case "stale ref lock":
+				lock := filepath.Join(cloneDir, "refs", "heads", synthetic+".lock")
+				require.NoError(os.MkdirAll(filepath.Dir(lock), 0o755))
+				require.NoError(os.WriteFile(lock, nil, 0o644))
+			case "upstream write":
+				realGit, err := exec.LookPath("git")
+				require.NoError(err)
+				fixture := t.TempDir()
+				script := "#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = \"branch." + synthetic + ".merge\" ]; then echo 'fatal: injected upstream failure' >&2; exit 1; fi\ndone\nexec \"" + realGit + "\" \"$@\"\n"
+				require.NoError(os.WriteFile(filepath.Join(fixture, "git"), []byte(script), 0o700))
+				t.Setenv("PATH", fixture+string(os.PathListSeparator)+os.Getenv("PATH"))
+			}
+			ws := &Workspace{
+				ID: "ws-fallback-continues", Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypePullRequest,
+				ItemNumber: prNumber, GitHeadRef: headBranch, WorkspaceBranch: workspaceBranchUnknown,
+				WorktreePath: filepath.Join(t.TempDir(), "worktree"), Status: "creating",
+			}
+			mgr := newTestManager(t, openTestDB(t), t.TempDir())
+
+			branch, err := addTestWorktree(mgr, t.Context(), workspaceGitDir{path: cloneDir, remote: originRemoteName}, ws, workspaceGitFetchOptions{})
+
+			require.NoError(err)
+			require.Equal(synthetic+"-2", branch)
+			require.Equal(branch, strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "branch", "--show-current"))))
+			if failure == "upstream write" {
+				_, exists, err := gitRefSHA(t.Context(), cloneDir, "refs/heads/"+synthetic)
+				require.NoError(err)
+				require.False(exists, "the failed attempt's branch must be rolled back")
+			}
+		})
+	}
 }
 
 func TestAddWorktreeLockedRecordsOwnershipBeforeReturning(t *testing.T) {

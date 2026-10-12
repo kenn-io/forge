@@ -33,6 +33,6 @@ request metadata, comments, or review threads.
 - Keep pull request descriptions concise. A bulleted summary of user-visible
   changes is sufficient; omit test plans, implementation details, checklists,
   and marketing language.
-- For visible UI changes, use the `capture-playwright` skill before opening the
-  pull request and attach the screenshot or short video with `gh image` so the
-  description can include the resulting artifact links.
+- For visible UI changes, use the `capture-playwright` skill and attach the
+  screenshot or short video with `--attach`: on `gh pr create` when opening the
+  pull request, or on `gh pr edit` or `gh pr comment` for an existing one.

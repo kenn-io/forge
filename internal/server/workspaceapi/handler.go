@@ -202,6 +202,9 @@ type Handler struct {
 	// started that work. runtimeRecoveryMu guards both.
 	baseRestoreRemaining map[string]bool
 	baseRestoreCovered   map[string]bool
+	// baseRestoreListPending marks a workspace list that could not be read
+	// after a loss; it holds the prune like outstanding workspaces.
+	baseRestoreListPending bool
 	// cannotReloadChats holds chats whose agent refused to reload them; see
 	// setChatCannotReload. runtimeRecoveryMu guards it.
 	cannotReloadChats map[string]bool

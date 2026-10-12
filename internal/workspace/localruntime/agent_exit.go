@@ -43,15 +43,17 @@ func (m *Manager) agentExitPaths(tmuxSession string) agentExitPaths {
 }
 
 // recordAgentExitPaneCommand runs the agent under a shell that outlives it and
-// records its exit status. The shell catches INT and QUIT so an interrupt
-// cannot end the pane while the agent keeps running; the agent still gets
-// default handling. HUP and TERM keep their default, so a killed wrapper leaves
-// no status behind.
+// records its exit status. A resumed agent reuses its tmux name, so the shell
+// first clears any record a previous run left. The shell catches INT and QUIT
+// so an interrupt cannot end the pane while the agent keeps running; the agent
+// still gets default handling. HUP and TERM keep their default, so a killed
+// wrapper leaves no status behind.
 func recordAgentExitPaneCommand(paneCommand string, paths agentExitPaths) string {
 	command := strings.TrimPrefix(paneCommand, "exec ")
 	exitTmp := paths.exited + ".tmp"
 	return strings.Join([]string{
 		"trap : INT QUIT",
+		"/bin/rm -f " + shellCommand([]string{paths.exited, exitTmp}),
 		": > " + shellCommand([]string{paths.started}),
 		command,
 		"__kenn_forge_status=$?",

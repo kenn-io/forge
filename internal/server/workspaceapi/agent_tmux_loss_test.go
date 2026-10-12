@@ -151,6 +151,8 @@ rm -f quit args
 				require.Eventually(pending, 5*time.Second, 10*time.Millisecond)
 				require.Len(stored(), 1, "a lost tmux client must not forget the agent")
 				require.Equal("conversation", stored()[0].ConversationID)
+				_, recorded := runtime.AgentExit(stored()[0].TmuxSession)
+				require.True(recorded, "the still-running agent keeps its exit record")
 			}
 			// kill-server can exit non-zero when its own client loses the
 			// server mid-command, so check the outcome rather than the status.
@@ -653,4 +655,17 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 	brokenHandler := New(Deps{DB: database, Workspaces: broken})
 	one := map[string]bool{"0000000000000b01": true}
 	assert.Equal(one, brokenHandler.restoreTerminalsAfterServerLoss(ctx, nil, one))
+
+	// A workspace list that cannot be read holds the prune until a later pass
+	// reads it, even with no kept agent left to start the work again.
+	restoring := func() bool {
+		handler.runtimeRecoveryMu.Lock()
+		defer handler.runtimeRecoveryMu.Unlock()
+		return handler.baseRestoreListPending || len(handler.baseRestoreRemaining) > 0
+	}
+	handler.restoreBaseTerminalsAfterLoss(cancelled, nil, []string{"kept-agent"})
+	assert.True(restoring(), "an unread list holds the prune")
+	handler.restoreBaseTerminalsAfterLoss(ctx, nil, nil)
+	assert.False(restoring(), "a later pass reads the list and finishes")
+	assert.True(baseExists("0000000000000b01"), "the retried pass restores every terminal")
 }

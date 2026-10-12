@@ -155,14 +155,12 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	if h.syncIdle(ctx) == nil {
 		h.releaseIdle(ctx)
 	}
-	if err := h.restoreRuntimeSessions(ctx, false); err != nil {
-		return err
-	}
 	// Records of agents a reboot killed name tmux sessions that are gone.
+	// Prune them before recovery resumes agents under the same names.
 	if h.runtime != nil {
 		h.runtime.PruneAgentExits(ctx)
 	}
-	return nil
+	return h.restoreRuntimeSessions(ctx, false)
 }
 
 func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) error {
@@ -440,7 +438,9 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 		return decision.keep
 	}
 	keep, err := h.classifyAgentExit(info)
-	if h.runtime != nil {
+	// A clean exit means the session ended and its record is spent. Otherwise
+	// the agent may still run, so its record stays; startup prunes the rest.
+	if h.runtime != nil && *info.ExitCode == 0 {
 		h.runtime.ForgetAgentExit(info.TmuxSession)
 	}
 	if h.exitDecisions == nil {
@@ -461,12 +461,15 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 }
 
 func (h *Handler) classifyAgentExit(info localruntime.SessionInfo) (bool, error) {
-	if *info.ExitCode == 0 {
-		if h.runtime == nil {
-			return false, nil
+	// The wrapper's record of a killed agent wins whatever the client's exit
+	// code: a shutdown can kill the client and the agent together.
+	if h.runtime != nil {
+		if exit, recorded := h.runtime.AgentExit(info.TmuxSession); recorded && exit.Killed() {
+			return true, nil
 		}
-		exit, recorded := h.runtime.AgentExit(info.TmuxSession)
-		return recorded && exit.Killed(), nil
+	}
+	if *info.ExitCode == 0 {
+		return false, nil
 	}
 	h.runtimeRecoveryMu.Lock()
 	launchServer := h.tmuxServerAtLaunch[info.Key]
@@ -507,17 +510,19 @@ func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLo
 	h.runtimeRecoveryMu.Lock()
 	remaining := maps.Clone(h.baseRestoreRemaining)
 	h.runtimeRecoveryMu.Unlock()
-	if len(newlyKept) > 0 {
+	h.runtimeRecoveryMu.Lock()
+	needList := len(newlyKept) > 0 || h.baseRestoreListPending
+	h.runtimeRecoveryMu.Unlock()
+	if needList {
 		workspaces, err := h.db.ListWorkspaces(ctx)
 		if err != nil {
-			// Let the next pass notice these agents again.
 			slog.Warn("list workspace terminals for recovery", "err", err)
-			h.runtimeRecoveryMu.Lock()
-			for _, key := range newlyKept {
-				delete(h.baseRestoreCovered, key)
-			}
-			h.runtimeRecoveryMu.Unlock()
 		}
+		// Until the list is read, every workspace is outstanding: the prune
+		// waits, and later passes retry even if the kept agents are stopped.
+		h.runtimeRecoveryMu.Lock()
+		h.baseRestoreListPending = err != nil
+		h.runtimeRecoveryMu.Unlock()
 		if remaining == nil {
 			remaining = make(map[string]bool)
 		}

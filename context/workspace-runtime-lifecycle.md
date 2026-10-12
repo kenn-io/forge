@@ -424,11 +424,13 @@ create a local process, PTY, or durable transport session
   Pty-owner base terminals are never started by recovery; attach reuses a live
   owner or starts one (`internal/terminal/handler.go::Handler.ServeHTTP`).
   Activity enrichment reads an absent owner as idle without starting it; real owner errors still fail enrichment (`internal/server/workspaceapi/routes_handlers.go::Handler.probeOneTmuxSession`).
-- A tmux client exits 0 whenever its session ends, even the server's last. A clean
-  exit still keeps the agent when its pane wrapper's exit record shows it was killed:
-  the wrapper died with it, or it died from HUP, KILL, or TERM, as when a shutdown
-  signals agents before tmux and Forge. Sessions launched without a record keep the
-  old meaning, and startup prunes records whose tmux session is gone
+- A tmux client exits 0 whenever its session ends, even the server's last. Whatever
+  the client's exit code, keep the agent when its pane wrapper's exit record shows it
+  was killed: the wrapper died with it, or it died from HUP, KILL, or TERM, as when a
+  shutdown signals agents before tmux and Forge. Each new wrapper clears the record a
+  previous run under the same tmux name left; only a clean session end spends a
+  record, and startup prunes records of gone sessions before recovery. Sessions
+  launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits
   non-zero lost its client or server unless tmux reports its session gone while the
   server it ran on still runs (a failed launch). Identify servers by pid and start time,
@@ -441,8 +443,8 @@ create a local process, PTY, or durable transport session
   deletes nothing while the server has no sessions, and a periodic recovery pass that
   finds such a kept agent restores every base terminal first, as startup does, taking
   setup admission per workspace so a deletion is never undone. Workspaces a pass could
-  not finish (busy, failed, or out of budget) stay outstanding across passes, even
-  after the kept agents are stopped; later passes work only on those, and the
+  not finish (busy, failed, or out of budget), or all of them while their list cannot
+  be read, stay outstanding across passes, even after the kept agents are stopped; later passes work only on those, and the
   missing-tmux prune waits until none remain. Recovery changes must also pass the
   `agents-killed` order of `make test-reboot-sim`. Recovery changes must
   pass both shutdown orders of `make test-reboot-sim`

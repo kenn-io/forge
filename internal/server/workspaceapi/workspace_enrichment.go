@@ -701,7 +701,7 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	cancelRecovery()
 	s.runtimeRecoveryMu.Lock()
 	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
-	restoring := len(s.baseRestoreRemaining) > 0
+	restoring := len(s.baseRestoreRemaining) > 0 || s.baseRestoreListPending
 	s.runtimeRecoveryMu.Unlock()
 	if restoring {
 		slog.Debug("skip missing tmux prune while base terminals are restored")

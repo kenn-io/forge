@@ -17,7 +17,9 @@ func TestManagerUsesInjectedRepositoryCoordinator(t *testing.T) {
 	require := require.New(t)
 	root := t.TempDir()
 	fixture := gitfixture.NewRepository(t, false)
-	coordinator, err := NewRepositoryCoordinator(root)
+	// A lock root distinct from the manager's own makes injection observable:
+	// a coordinator the manager built itself would lock elsewhere and not wait.
+	coordinator, err := NewRepositoryCoordinator(t.TempDir())
 	require.NoError(err)
 	manager := NewManager(nil, root, coordinator)
 	repo, err := coordinator.Open(t.Context(), worktree.RepositoryOptions{Path: fixture.Dir, Runner: gitsafe.Runner()})

@@ -89,7 +89,9 @@ func TestExistingWorkspaceBranchStatesSurviveDeletion(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "issue-7")
 			runWorkspaceTestGit(t, root, "worktree", "add", path, "-b", "kenn-forge/issue-7", "HEAD")
 			registration := strings.TrimSpace(string(runWorkspaceTestGit(t, path, "rev-parse", "--absolute-git-dir")))
-			// The existing on-disk format, independent of the new library's writer.
+			// Upgraded installations carry this marker. Deletion takes its authority
+			// from the live registration, so it does not read the marker; rollback
+			// does (TestRollbackReadsPreKwtOwnershipMarker).
 			require.NoError(os.WriteFile(filepath.Join(registration, "kenn-forge-workspace-id"), []byte("legacy-workspace\n"), 0o600))
 			database := openTestDB(t)
 			ws := &Workspace{
@@ -114,6 +116,43 @@ func TestExistingWorkspaceBranchStatesSurviveDeletion(t *testing.T) {
 			}
 			branches := string(runWorkspaceTestGit(t, root, "branch", "--list", "kenn-forge/issue-7"))
 			require.Equal(tt.keepBranch, strings.TrimSpace(branches) != "")
+		})
+	}
+}
+
+// Setup rollback removes a checkout only when its ownership marker names the
+// workspace. Markers written by Forge before kwt must keep that authority, and
+// a marker naming another workspace must keep its checkout and branch.
+func TestRollbackReadsPreKwtOwnershipMarker(t *testing.T) {
+	for _, tt := range []struct {
+		marker  string
+		removed bool
+	}{
+		{marker: "ws-pre-kwt\n", removed: true},
+		{marker: "another-workspace\n"},
+	} {
+		t.Run(strings.TrimSpace(tt.marker), func(t *testing.T) {
+			require := require.New(t)
+			cloneDir := setupBareCloneForWorkspaceGitTest(t)
+			branch := syntheticPRWorktreeBranch(49)
+			ws := &Workspace{ID: "ws-pre-kwt", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 49, WorktreePath: filepath.Join(t.TempDir(), "worktree")}
+			runWorkspaceTestGit(t, cloneDir, "worktree", "add", ws.WorktreePath, "-b", branch, "main")
+			registration := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "--absolute-git-dir")))
+			// The bytes pre-kwt Forge wrote, not the new library's writer.
+			require.NoError(os.WriteFile(filepath.Join(registration, "kenn-forge-workspace-id"), []byte(tt.marker), 0o600))
+			mgr := newTestManager(t, openTestDB(t), t.TempDir())
+
+			mgr.rollbackWorktree(t.Context(), cloneDir, ws, branch)
+
+			_, exists, err := gitRefSHA(t.Context(), cloneDir, "refs/heads/"+branch)
+			require.NoError(err)
+			if tt.removed {
+				require.NoDirExists(ws.WorktreePath)
+				require.False(exists)
+				return
+			}
+			require.DirExists(ws.WorktreePath)
+			require.True(exists)
 		})
 	}
 }

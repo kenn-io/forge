@@ -979,8 +979,8 @@ func (s *Handler) removeProjectWorktreeOnDisk(ctx context.Context, project *db.P
 	check, err := repo.InspectRemoval(ctx, req)
 	// A forced removal deletes locked worktrees, as git worktree remove
 	// --force --force did before kwt; the unlock happens under the lock below.
-	var condition *worktree.ConditionError
-	locked := input.Body.Force && errors.As(err, &condition) && condition.Reason == worktree.ReasonLocked
+	condition, isCondition := errors.AsType[*worktree.ConditionError](err)
+	locked := input.Body.Force && isCondition && condition.Reason == worktree.ReasonLocked
 	if err != nil && !locked {
 		return err
 	}

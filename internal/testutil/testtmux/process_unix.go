@@ -84,8 +84,8 @@ func parseTmuxProcesses(
 }
 
 func filepathBase(path string) string {
-	if index := strings.LastIndexByte(path, '/'); index >= 0 {
-		return path[index+1:]
+	if _, base, found := strings.CutLast(path, "/"); found {
+		return base
 	}
 	return path
 }

@@ -24,11 +24,11 @@ func processStart(pid int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	closingName := bytes.LastIndexByte(content, ')')
-	if closingName < 0 {
+	_, afterName, found := bytes.CutLast(content, []byte(")"))
+	if !found {
 		return "", errors.New("process stat has no command terminator")
 	}
-	fields := strings.Fields(string(content[closingName+1:]))
+	fields := strings.Fields(string(afterName))
 	if len(fields) <= 19 {
 		return "", errors.New("process stat has no start time")
 	}

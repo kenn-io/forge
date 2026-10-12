@@ -3090,8 +3090,8 @@ func (m *Manager) addFallbackWorktree(
 			return branch, nil
 		}
 		failures = append(failures, err)
-		var retained *fallbackRetainedError
-		if errors.Is(err, errWorkspaceOwnershipMarker) || errors.As(err, &retained) || ctx.Err() != nil {
+		_, retained := errors.AsType[*fallbackRetainedError](err)
+		if errors.Is(err, errWorkspaceOwnershipMarker) || retained || ctx.Err() != nil {
 			break
 		}
 	}

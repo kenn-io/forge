@@ -275,6 +275,9 @@ embedder protocol for arbitrary host state.
 - Each workspace admits one background enrichment flight at a time; a full
   refresh upgrade waits behind active tmux work, and only the matching unique
   flight may release ownership (`internal/server/workspaceapi/workspace_enrichment.go::nextWorkspaceEnrichmentJob`).
+- Do not rely on cached earlier tmux sessions to rescue later probes under load;
+  samples expire before the next enrichment refresh, so each pass needs sibling progress
+  (`internal/server/workspaceapi/routes_handlers.go::probeWorkspaceTmuxActivity`).
 - Overlapping tmux probes wait for the active sample within the caller budget;
   fallback carries an error only when waiting or sample production fails
   (`internal/server/workspaceapi/routes_handlers.go::probeOneTmuxSession`).

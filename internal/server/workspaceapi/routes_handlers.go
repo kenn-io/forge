@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -2311,25 +2312,36 @@ func (s *Handler) probeWorkspaceTmuxActivity(
 	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
 	defer cancelProbe()
 
-	results := make([]tmuxActivityResult, 0, len(sessions))
-	var probeErrs []error
-	for _, session := range sessions {
-		if s.tmuxActivity != nil {
-			if result, ok := tracker.Cached(session); ok {
-				results = append(results, result)
-				continue
+	// One slow session must not spend the shared budget before healthy
+	// siblings can start. The tracker still bounds probes across workspaces.
+	results := make([]tmuxActivityResult, len(sessions))
+	probeErrs := make([]error, len(sessions))
+	workers := min(len(sessions), tmuxProbeMaxConcurrency)
+	var probes sync.WaitGroup
+	for worker := range workers {
+		probes.Go(func() {
+			for i := worker; i < len(sessions); i += workers {
+				session := sessions[i]
+				if s.tmuxActivity != nil {
+					if result, ok := tracker.Cached(session); ok {
+						results[i] = result
+						continue
+					}
+				}
+				result, ok, err := s.probeOneTmuxSession(
+					probeCtx, tracker, summary, session,
+				)
+				if ok {
+					results[i] = result
+				}
+				if err != nil {
+					probeErrs[i] = fmt.Errorf("tmux session %q: %w", session, err)
+				}
 			}
-		}
-		result, ok, err := s.probeOneTmuxSession(
-			probeCtx, tracker, summary, session,
-		)
-		if ok {
-			results = append(results, result)
-		}
-		if err != nil {
-			probeErrs = append(probeErrs, err)
-		}
+		})
 	}
+	probes.Wait()
+	// Preserve session order for ties regardless of probe completion order.
 	result, ok := mergeTmuxActivityResults(results)
 	return result, ok, errors.Join(probeErrs...)
 }

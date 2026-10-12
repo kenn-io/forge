@@ -1006,10 +1006,14 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 	wsID := createResp.JSON202.ID
 
 	var failed *generated.WorkspaceResponse
+	var pollErr error
 	require.Eventually(
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
-			require.NoError(getErr)
+			if getErr != nil {
+				pollErr = getErr
+				return true
+			}
 			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
@@ -1023,6 +1027,7 @@ func TestWorkspaceSetupFailureRollbackCleansWorktreeViaAPI(t *testing.T) {
 		50*time.Millisecond,
 	)
 
+	require.NoError(pollErr)
 	require.NotNil(failed)
 	assert.Equal(featureSHA, gitfixture.SHA(t, clonePath, "refs/heads/feature"))
 	assert.Eventually(
@@ -1081,7 +1086,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	client, _, database := setupWrapperServerWithScriptAndDB(
 		t, script,
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -1125,10 +1130,14 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 	require.NoError(os.WriteFile(release, []byte("go\n"), 0o644))
 
 	var ready *generated.WorkspaceResponse
+	var pollErr error
 	require.Eventually(
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
-			require.NoError(getErr)
+			if getErr != nil {
+				pollErr = getErr
+				return true
+			}
 			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
@@ -1141,6 +1150,7 @@ func TestWorkspaceRetryWhileCreatingQueuesAndRunsAfterFailureViaAPI(t *testing.T
 		15*time.Second,
 		50*time.Millisecond,
 	)
+	require.NoError(pollErr)
 	require.NotNil(ready)
 	assert.Nil(ready.ErrorMessage)
 
@@ -1425,7 +1435,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -1440,10 +1450,14 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 	wsID := createResp.JSON202.ID
 
 	var failed *generated.WorkspaceResponse
+	var pollErr error
 	require.Eventually(
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: wsID}})
-			require.NoError(getErr)
+			if getErr != nil {
+				pollErr = getErr
+				return true
+			}
 			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
@@ -1455,6 +1469,7 @@ func TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI(t *testing.T) {
 		},
 		5*time.Second, 50*time.Millisecond,
 	)
+	require.NoError(pollErr)
 	require.NotNil(failed)
 	require.NotNil(failed.ErrorMessage)
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")
@@ -1531,7 +1546,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	t.Cleanup(restoreLimiter)
 
 	client, _, _ := setupWrapperServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	releaseHeld, err := procutil.TryAcquire(
 		context.Background(), "test-held subprocess capacity",
@@ -1551,10 +1566,14 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	require.NotNil(createResp.JSON202)
 
 	var failed *generated.WorkspaceResponse
+	var pollErr error
 	require.Eventually(
 		func() bool {
 			getResp, getErr := client.HTTP.GetWorkspaceWithResponse(ctx, &generated.GetWorkspaceRequestOptions{PathParams: &generated.GetWorkspacePath{ID: createResp.JSON202.ID}})
-			require.NoError(getErr)
+			if getErr != nil {
+				pollErr = getErr
+				return true
+			}
 			if getResp.StatusCode != http.StatusOK || getResp.JSON200 == nil {
 				return false
 			}
@@ -1566,6 +1585,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 		},
 		5*time.Second, 25*time.Millisecond,
 	)
+	require.NoError(pollErr)
 	require.NotNil(failed)
 	require.NotNil(failed.ErrorMessage)
 	assert.Contains(*failed.ErrorMessage, "host process limit reached")

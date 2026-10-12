@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,84 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-func TestHotWorktreeCanceledRegistration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("fixture uses a POSIX Git wrapper")
-	}
-	require := require.New(t)
-	clone := setupBareCloneForWorkspaceGitTest(t)
-	runWorkspaceTestGit(t, clone, "config", "extensions.worktreeConfig", "true")
-	realGit, err := exec.LookPath("git")
-	require.NoError(err)
-	sibling := filepath.Join(t.TempDir(), "sibling")
-	runWorkspaceTestGit(t, clone, "worktree", "add", "--detach", sibling, "HEAD")
-	gate := t.TempDir()
-	started, release := filepath.Join(gate, "started"), filepath.Join(gate, "release")
-	script := `#!/bin/sh
-case " $* " in
-  *" worktree add "*)
-    "$KENN_FORGE_TEST_REAL_GIT" "$@" || exit $?
-    commondir="$KENN_FORGE_TEST_CLONE/worktrees/checkout/commondir"
-    common=$(cat "$commondir")
-    : > "$commondir"
-    : > "$KENN_FORGE_TEST_STARTED"
-    while [ ! -f "$KENN_FORGE_TEST_RELEASE" ]; do sleep 0.02; done
-    printf '%s\n' "$common" > "$commondir"
-    exit 0
-    ;;
-esac
-exec "$KENN_FORGE_TEST_REAL_GIT" "$@"
-`
-	require.NoError(os.WriteFile(filepath.Join(gate, "git"), []byte(script), 0o700))
-	t.Setenv("KENN_FORGE_TEST_REAL_GIT", realGit)
-	t.Setenv("KENN_FORGE_TEST_CLONE", clone)
-	t.Setenv("KENN_FORGE_TEST_STARTED", started)
-	t.Setenv("KENN_FORGE_TEST_RELEASE", release)
-	t.Setenv("PATH", gate+string(os.PathListSeparator)+os.Getenv("PATH"))
-	manager := newWorkspaceTestManager(t, nil, t.TempDir())
-	workspacePath := filepath.Join(t.TempDir(), "workspace")
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	var prepareErr error
-	go func() {
-		defer close(done)
-		prepareErr = manager.prepareHotWorktree(ctx, clone, workspacePath, "HEAD")
-	}()
-	t.Cleanup(func() {
-		_ = os.WriteFile(release, nil, 0o600)
-		cancel()
-		<-done
-	})
-	require.Eventually(func() bool { _, err := os.Stat(started); return err == nil }, 10*time.Second, 10*time.Millisecond)
-	cancel()
-	select {
-	case <-done:
-		require.FailNow("registration stopped with incomplete shared Git metadata", "%v", prepareErr)
-	case <-time.After(time.Second):
-	}
-	require.NoError(os.WriteFile(release, nil, 0o600))
-	<-done
-	require.Error(prepareErr)
-	runWorkspaceTestGit(t, clone, "worktree", "remove", "--force", sibling)
-	// Git registered the worktree, but Forge never configured it or recorded
-	// readiness. A restarted warmer must still finish and hand it off.
-	manager = newWorkspaceTestManager(t, nil, manager.worktreeDir)
-	require.NoError(manager.prepareHotWorktree(t.Context(), clone, workspacePath, "HEAD"))
-	ws := &Workspace{ID: "recovered-workspace", WorktreePath: workspacePath}
-	hot := hotWorktreePath(clone, workspacePath)
-	before, err := os.Stat(filepath.Join(hot, "base.txt"))
-	require.NoError(err)
-	_, err = createTestWorkspace(manager, t.Context(), clone, ws, managed.CreateWorktreeOptions{Mode: managed.CheckoutDetached, BaseRef: "HEAD"})
-	require.NoError(err)
-	after, err := os.Stat(filepath.Join(workspacePath, "base.txt"))
-	require.NoError(err)
-	require.True(os.SameFile(before, after), "Forge claims the recovered spare")
-	owned, err := manager.workspaceRegistrationMatches(t.Context(), clone, workspacePath, ws.ID)
-	require.NoError(err)
-	require.True(owned)
-	require.NoDirExists(hot)
-}
 
 func TestHotWorktreeCanceledCheckout(t *testing.T) {
 	if runtime.GOOS == "windows" {

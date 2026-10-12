@@ -425,12 +425,15 @@ create a local process, PTY, or durable transport session
   owner or starts one (`internal/terminal/handler.go::Handler.ServeHTTP`).
   Activity enrichment reads an absent owner as idle without starting it; real owner errors still fail enrichment (`internal/server/workspaceapi/routes_handlers.go::Handler.probeOneTmuxSession`).
 - A tmux client exits 0 whenever its session ends, even the server's last. Whatever
-  the client's exit code, keep the agent when its pane wrapper's exit record shows it
-  was killed: the wrapper died with it, or it died from HUP, KILL, or TERM, as when a
-  shutdown signals agents before tmux and Forge. Each new wrapper clears the record a
-  previous run under the same tmux name left; only a recorded exit spends a record,
-  since a detached client also exits 0 while the agent runs on. Startup recovery forgets, not resumes, a kept agent whose session is gone
-  with a recorded normal exit, then prunes records of gone sessions. Sessions
+  the client's exit code, the pane wrapper's exit record decides: keep the agent when
+  it shows a kill (the wrapper died with it, or it died from HUP, KILL, or TERM, as when
+  a shutdown signals agents before tmux and Forge), and forget it after a recorded
+  normal exit, which can follow a killed client. Read the record once per decision.
+  Each new wrapper clears the record a previous run under the same tmux name left;
+  only forgetting the agent spends a record, since a detached client also exits 0
+  while the agent runs on. Startup recovery forgets, not resumes, a kept agent whose
+  session is gone with a recorded normal exit, then prunes records of gone sessions
+  that no stored row names, so an exit still being handled keeps its record. Sessions
   launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits
   non-zero lost its client or server unless tmux reports its session gone while the
@@ -445,7 +448,8 @@ create a local process, PTY, or durable transport session
   follows keeping such an agent restores every base terminal first, as startup does,
   even if the agent was stopped meanwhile, taking
   setup admission per workspace so a deletion is never undone. Workspaces a pass could
-  not finish (busy, failed, or out of budget), including those startup recovery could
+  not finish (busy, failed, or out of budget; terminals get only a share of each pass
+  so a hung one cannot starve pending agents), including those startup recovery could
   not restore, or all of them while their list cannot be read, stay outstanding across
   passes, even after the kept agents are stopped.
   Later passes work only on those, each starting after the workspace the last pass

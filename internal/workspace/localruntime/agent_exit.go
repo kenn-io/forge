@@ -97,8 +97,8 @@ func (m *Manager) ForgetAgentExit(tmuxSession string) {
 }
 
 // PruneAgentExits removes records whose tmux session no longer exists, such as
-// those left by agents a reboot killed.
-func (m *Manager) PruneAgentExits(ctx context.Context) {
+// those left by agents a reboot killed, except for sessions in keep.
+func (m *Manager) PruneAgentExits(ctx context.Context, keep map[string]bool) {
 	if m.agentExitDir == "" {
 		return
 	}
@@ -109,7 +109,7 @@ func (m *Manager) PruneAgentExits(ctx context.Context) {
 	seen := make(map[string]bool)
 	for _, entry := range entries {
 		session, _, _ := strings.Cut(entry.Name(), ".")
-		if session == "" || seen[session] {
+		if session == "" || seen[session] || keep[session] {
 			continue
 		}
 		seen[session] = true

@@ -206,6 +206,9 @@ type Handler struct {
 	baseRestoreListPending bool
 	// baseRestoreCursor is the last workspace a restore pass reached.
 	baseRestoreCursor string
+	// baseRestoreBudget bounds base-terminal restoration within a recovery
+	// pass, leaving the rest of the pass for pending agents.
+	baseRestoreBudget time.Duration
 	// cannotReloadChats holds chats whose agent refused to reload them; see
 	// setChatCannotReload. runtimeRecoveryMu guards it.
 	cannotReloadChats map[string]bool
@@ -270,6 +273,7 @@ func New(deps Deps) *Handler {
 		workspaceEnrichmentDisabled:    deps.EnrichmentDisabled,
 		workspaceSetupDone:             make(map[string]chan struct{}),
 		workspaceWarmWake:              make(chan struct{}, 1),
+		baseRestoreBudget:              10 * time.Second,
 		workspaceDeleting:              make(map[string]*workspaceDeletion),
 		initialMessages:                make(map[initialMessageKey]initialMessageAttempt),
 		tmuxActivity:                   newTmuxActivityTracker(now),

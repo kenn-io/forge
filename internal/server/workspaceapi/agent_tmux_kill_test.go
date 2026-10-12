@@ -207,3 +207,152 @@ rm -f quit started
 	require.True(recorded)
 	require.False(exit.Recorded, "the new run starts without the old status")
 }
+
+// An agent can finish after its tmux client was killed but before Forge
+// handles that client's exit. Its recorded normal exit means the conversation
+// is over, even when tmux exited with it as its last session.
+func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/finished"), GitHeadRef: "work/finished",
+		WorkspaceBranch: "work/finished", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nwhile [ ! -e quit ]; do sleep 0.05; done\n"), 0o755))
+	var handler *Handler
+	release := make(chan struct{})
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             tmux,
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-finished",
+		AgentExitDir:            t.TempDir(),
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+		OnSessionExit: func(info localruntime.SessionInfo) {
+			<-release
+			handler.HandleRuntimeSessionExit(info)
+		},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "workspace")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand(tmux)
+	handler = New(Deps{
+		DB: database, Workspaces: workspaces, Runtime: runtime,
+		AgentActivity: agentactivity.NewStore(t.TempDir()),
+	})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
+	require.NoError(err)
+
+	var clientPID int
+	require.Eventually(func() bool {
+		out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+			"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
+		if err != nil {
+			return false
+		}
+		clientPID, err = strconv.Atoi(strings.TrimSpace(string(out)))
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	require.NoError(syscall.Kill(clientPID, syscall.SIGKILL))
+	// The agent finishes; as tmux's only session, tmux exits with it.
+	require.NoError(os.WriteFile(filepath.Join(cwd, "quit"), nil, 0o600))
+	require.Eventually(func() bool {
+		exit, recorded := runtime.AgentExit(session.TmuxSession)
+		return recorded && exit.Recorded
+	}, 5*time.Second, 10*time.Millisecond)
+	close(release)
+
+	require.Eventually(func() bool {
+		rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+		return err == nil && len(rows) == 0
+	}, 5*time.Second, 10*time.Millisecond, "a finished agent is forgotten")
+	handler.runtimeRecoveryMu.Lock()
+	defer handler.runtimeRecoveryMu.Unlock()
+	require.False(handler.runtimeRecoveryPending[session.Key])
+}
+
+// Startup pruning must not delete the exit record of a gone session that a
+// stored runtime still names: that runtime's exit may still be handled.
+func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/prune"), GitHeadRef: "work/prune",
+		WorkspaceBranch: "work/prune", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             tmux,
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-prune",
+		AgentExitDir:            t.TempDir(),
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+		// The exit is still being handled when startup prunes.
+		OnSessionExit: func(localruntime.SessionInfo) {},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "workspace")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand(tmux)
+	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"list-panes", "-t", session.TmuxSession, "-F", "#{pane_pid}")...).Output()
+	require.NoError(err)
+	panePID, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	require.NoError(err)
+	require.NoError(syscall.Kill(-panePID, syscall.SIGTERM))
+	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
+
+	handler.pruneAgentExits(ctx)
+
+	_, recorded := runtime.AgentExit(session.TmuxSession)
+	require.True(recorded, "a stored runtime keeps its exit record")
+}

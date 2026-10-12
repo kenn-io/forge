@@ -32,7 +32,8 @@ import (
 func TestRuntimeExitKeepsAgentAfterTmuxServerLoss(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{
-		"server killed", "client killed first", "client killed then finished", "client detached", "agent exits",
+		"server killed", "client killed first", "client killed then finished",
+		"client detached", "client detached then finished", "agent exits",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -136,7 +137,7 @@ rm -f quit args
 				defer handler.runtimeRecoveryMu.Unlock()
 				return handler.runtimeRecoveryPending[session.Key]
 			}
-			if name == "client detached" {
+			if name == "client detached" || name == "client detached then finished" {
 				// A detached client exits 0 while the agent keeps running.
 				require.Eventually(func() bool {
 					return procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
@@ -168,7 +169,7 @@ rm -f quit args
 				_, recorded := runtime.AgentExit(stored()[0].TmuxSession)
 				require.True(recorded, "the still-running agent keeps its exit record")
 			}
-			if name == "client killed then finished" {
+			if name == "client killed then finished" || name == "client detached then finished" {
 				// The agent finishes while Forge no longer watches it; the
 				// next start must not resume a conversation that is over.
 				tmuxSession := stored()[0].TmuxSession
@@ -886,4 +887,69 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		assert.Equal("ready", ws.Status, "workspace %s", id)
 		assert.True(baseExists(id), "base terminal %s restored", id)
 	}
+}
+
+// A base terminal whose start keeps hanging gets only its share of a recovery
+// pass, so a pending agent in a healthy workspace still resumes.
+func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	wrapper := filepath.Join(t.TempDir(), "tmux")
+	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = forge-0000000000000f01 ] && [ \"$1\" != has-session ]; then exec sleep 60; fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+	database := dbtest.Open(t)
+	cwd := gitfixture.NewRepository(t, false).Dir
+	for id, worktree := range map[string]string{"0000000000000f01": t.TempDir(), "0000000000000f02": cwd} {
+		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+			ID: id, Platform: "github", PlatformHost: "github.com",
+			RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+			ItemKey: db.AdHocWorkspaceItemKey("work/" + id), GitHeadRef: "work/" + id,
+			WorkspaceBranch: "work/" + id, WorktreePath: worktree,
+			Status: "ready", TmuxSession: "forge-" + id,
+		}))
+	}
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+		WorkspaceID: "0000000000000f02", SessionKey: "saved-runtime", TargetKey: "custom-worker",
+		Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "gone",
+	}))
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, "saved-runtime", "claude", "conversation")
+	require.NoError(err)
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > args.tmp && mv args.tmp args\nexec sleep 600\n"), 0o755))
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             []string{wrapper},
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-stuck",
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "0000000000000f02")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand([]string{wrapper})
+	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	handler.baseRestoreBudget = 200 * time.Millisecond
+	handler.setRuntimeRecoveryPending("saved-runtime", true)
+	handler.runtimeRecoveryMu.Lock()
+	handler.baseRestoreRemaining = map[string]bool{"0000000000000f01": true}
+	handler.runtimeRecoveryMu.Unlock()
+
+	go func() { _ = handler.restoreRuntimeSessions(ctx, true) }()
+
+	require.Eventually(func() bool {
+		args, err := os.ReadFile(filepath.Join(cwd, "args"))
+		return err == nil && strings.Contains(string(args), "conversation")
+	}, 5*time.Second, 10*time.Millisecond, "the pending agent resumes despite the stuck terminal")
 }

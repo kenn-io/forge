@@ -158,12 +158,28 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	if err := h.restoreRuntimeSessions(ctx, false); err != nil {
 		return err
 	}
-	// Recovery has read the records it needs; those of gone sessions are
-	// spent. A resumed agent's new wrapper already cleared its old record.
-	if h.runtime != nil {
-		h.runtime.PruneAgentExits(ctx)
-	}
+	h.pruneAgentExits(ctx)
 	return nil
+}
+
+// pruneAgentExits removes exit records of gone tmux sessions that no stored
+// runtime still names. A stored runtime's record is consumed by its exit
+// handling, its next wrapper, or forgetting its row; pruning it here could
+// race an exit still being handled.
+func (h *Handler) pruneAgentExits(ctx context.Context) {
+	if h.runtime == nil || h.db == nil {
+		return
+	}
+	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
+	if err != nil {
+		slog.Warn("list runtime sessions for exit record pruning", "err", err)
+		return
+	}
+	keep := make(map[string]bool, len(stored))
+	for _, session := range stored {
+		keep[session.TmuxSession] = true
+	}
+	h.runtime.PruneAgentExits(ctx, keep)
 }
 
 func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) error {
@@ -460,14 +476,18 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 	if decision, ok := h.exitDecisions[info.Key]; ok && decision.createdAt.Equal(info.CreatedAt) {
 		return decision.keep
 	}
-	keep, err := h.classifyAgentExit(info)
-	// A recorded exit proves the wrapper and its session ended, so the record
-	// is spent. A clean client exit alone does not: a detached client exits 0
-	// while the agent runs on, and keeps its record. Startup prunes the rest.
+	// One read of the record serves the decision and its cleanup, so a status
+	// written in between is never lost. A kept agent's record stays until its
+	// next wrapper replaces it or startup prunes it after its row is gone; a
+	// forgotten agent's record is spent.
+	var exit localruntime.AgentExit
+	recorded := false
 	if h.runtime != nil {
-		if exit, ok := h.runtime.AgentExit(info.TmuxSession); ok && exit.Recorded {
-			h.runtime.ForgetAgentExit(info.TmuxSession)
-		}
+		exit, recorded = h.runtime.AgentExit(info.TmuxSession)
+	}
+	keep, err := h.classifyAgentExit(info, exit, recorded)
+	if !keep && h.runtime != nil {
+		h.runtime.ForgetAgentExit(info.TmuxSession)
 	}
 	if h.exitDecisions == nil {
 		h.exitDecisions = make(map[string]exitDecision)
@@ -499,13 +519,17 @@ func (h *Handler) agentFinishedUnwatched(session db.WorkspaceRuntimeSession) boo
 	return recorded && exit.Recorded && !exit.Killed()
 }
 
-func (h *Handler) classifyAgentExit(info localruntime.SessionInfo) (bool, error) {
-	// The wrapper's record of a killed agent wins whatever the client's exit
-	// code: a shutdown can kill the client and the agent together.
-	if h.runtime != nil {
-		if exit, recorded := h.runtime.AgentExit(info.TmuxSession); recorded && exit.Killed() {
-			return true, nil
-		}
+func (h *Handler) classifyAgentExit(
+	info localruntime.SessionInfo, exit localruntime.AgentExit, recorded bool,
+) (bool, error) {
+	// The wrapper's record wins whatever the client's exit code: a shutdown
+	// can kill the client and the agent together, and an agent can finish
+	// after its client was killed.
+	if recorded && exit.Killed() {
+		return true, nil
+	}
+	if recorded && exit.Recorded {
+		return false, nil
 	}
 	if *info.ExitCode == 0 {
 		return false, nil
@@ -568,7 +592,11 @@ func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLo
 		}
 	}
 	if len(remaining) > 0 {
-		remaining = h.restoreTerminalsAfterServerLoss(ctx, keptAfterLoss, remaining)
+		// Terminals get their own share of the pass, so one that keeps
+		// hanging cannot use up the time pending agents need.
+		restoreCtx, cancel := context.WithTimeout(ctx, h.baseRestoreBudget)
+		remaining = h.restoreTerminalsAfterServerLoss(restoreCtx, keptAfterLoss, remaining)
+		cancel()
 	}
 	h.runtimeRecoveryMu.Lock()
 	h.baseRestoreRemaining = remaining

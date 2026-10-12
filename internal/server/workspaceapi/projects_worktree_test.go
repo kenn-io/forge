@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/workspace"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/kwt/worktree"
@@ -283,7 +284,7 @@ func TestProjectForceRemovalRestoresLockAfterCancellation(t *testing.T) {
 	coordinator, err := workspace.NewRepositoryCoordinator("")
 	require.NoError(err)
 	repository, err := coordinator.Open(ctx, worktree.RepositoryOptions{
-		Path: repo.Dir, Runner: gitcmd.Runner{StripEnv: true},
+		Path: repo.Dir, Runner: gitsafe.Runner(),
 		RunGit: func(ctx context.Context, runner gitcmd.Runner, dir string, args ...string) ([]byte, error) {
 			out, err := runManagedWorktreeGit(ctx, runner, dir, args...)
 			if len(args) > 1 && args[0] == "worktree" && args[1] == "unlock" {

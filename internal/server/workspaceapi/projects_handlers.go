@@ -1009,12 +1009,37 @@ func (s *Handler) removeProjectWorktreeOnDisk(ctx context.Context, project *db.P
 		return err
 	}
 	return repo.WithLock(ctx, func(scope *worktree.Scope) error {
-		if _, err := scope.RunGit(ctx, "", "worktree", "unlock", "--", row.Path); err != nil {
-			return fmt.Errorf("unlock worktree for forced removal: %w", err)
-		}
-		_, err := scope.Remove(ctx, req)
-		return err
+		return removeLockedProjectWorktree(ctx, scope, req)
 	})
+}
+
+// removeLockedProjectWorktree unlocks a checkout for forced removal and puts
+// its lock back when removal is refused and the registration remains.
+func removeLockedProjectWorktree(ctx context.Context, scope *worktree.Scope, req worktree.RemovalRequest) error {
+	current, err := scope.InspectRemoval(ctx, req)
+	condition, isCondition := errors.AsType[*worktree.ConditionError](err)
+	if !isCondition || condition.Reason != worktree.ReasonLocked {
+		if err != nil {
+			return err
+		}
+		_, err = scope.Remove(ctx, req)
+		return err
+	}
+	if _, err := scope.RunGit(ctx, "", "worktree", "unlock", "--", req.Path); err != nil {
+		return fmt.Errorf("unlock worktree for forced removal: %w", err)
+	}
+	result, err := scope.Remove(ctx, req)
+	if err == nil || result.RegistrationRemoved {
+		return err
+	}
+	lock := []string{"worktree", "lock"}
+	if reason := current.Entry.LockedReason; reason != "" {
+		lock = append(lock, "--reason", reason)
+	}
+	if _, lockErr := scope.RunGit(ctx, "", append(lock, "--", req.Path)...); lockErr != nil {
+		return errors.Join(err, fmt.Errorf("restore worktree lock after refused removal: %w", lockErr))
+	}
+	return err
 }
 
 // worktreeLifecycleProblem maps the lifecycle engine's sentinel errors onto

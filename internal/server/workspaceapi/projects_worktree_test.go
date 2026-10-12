@@ -236,3 +236,33 @@ func TestProjectForceRemovalRemovesLockedWorktree(t *testing.T) {
 		})
 	}
 }
+
+// A forced removal unlocks the checkout first; when removal is then refused,
+// the checkout keeps its original lock.
+func TestProjectForceRemovalRestoresLockWhenRemovalIsRefused(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Projects uses native executable scripts")
+	}
+	require := require.New(t)
+	h, project, repo := projectLifecycleFixture(t, "")
+	input := &registerWorktreeInput{ProjectID: project.ID}
+	input.Body.Branch, input.Body.CreateOnDisk = "topic", true
+	input.Body.Path = filepath.Join(t.TempDir(), "checkout")
+	created, err := h.RegisterWorktree(t.Context(), input)
+	require.NoError(err)
+	gitfixture.Run(t, repo.Dir, "worktree", "lock", "--reason", "removable media", created.Body.Path)
+	script := filepath.Join(repo.Dir, "teardown")
+	require.NoError(os.WriteFile(script, []byte("#!/bin/sh\nset -e\ngit switch -c changed\n"), 0o700))
+	remove := &removeWorktreeInput{ProjectID: project.ID, WorktreeID: created.Body.ID}
+	remove.Body.RemoveFromDisk, remove.Body.Force, remove.Body.TeardownScript = true, true, script
+
+	_, err = h.removeProjectWorktree(t.Context(), remove)
+
+	require.ErrorContains(err, "branch_changed")
+	require.DirExists(created.Body.Path)
+	list := string(gitfixture.Run(t, repo.Dir, "worktree", "list", "--porcelain"))
+	require.Contains(list, "locked removable media\n")
+	_, err = h.db.GetProjectWorktreeByID(t.Context(), created.Body.ID)
+	require.NoError(err)
+}

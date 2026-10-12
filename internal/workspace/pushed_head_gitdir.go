@@ -115,7 +115,7 @@ func (r gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote
 	}
 }
 
-// SetBranchUpstream rechecks the branch under the shared repository lock.
+// SetBranchUpstream repairs only a still-untracked branch under the repository lock.
 // Each Git command takes one procutil slot; the enclosing scope takes none.
 func (r gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {
 	gitCtx, cancel := context.WithTimeout(ctx, pushedHeadGitTimeout)
@@ -135,6 +135,13 @@ func (r gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, bran
 		}
 		if strings.TrimSpace(string(current)) != branch {
 			return errors.New("workspace branch changed before upstream repair")
+		}
+		_, cfg, err := r.open(dir)
+		if err != nil {
+			return err
+		}
+		if tracked := cfg.Branches[branch]; tracked != nil && tracked.Remote != "" && tracked.Merge != "" {
+			return errors.New("workspace upstream changed before repair")
 		}
 		return scope.SetUpstream(gitCtx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{
 			Action: managed.UpstreamTrack, Remote: remote, Ref: mergeRef, Scope: managed.UpstreamRepository,

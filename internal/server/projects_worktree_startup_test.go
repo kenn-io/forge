@@ -14,6 +14,7 @@ import (
 
 func TestProjectsCoordinatorStartup(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
+	acquireRootWorkspaceGitSlot(t)
 	for _, configured := range []bool{false, true} {
 		name := "no item workspaces"
 		if configured {

@@ -835,7 +835,8 @@ heads stay untracked, while unknown heads fail closed before Git access. The
 pushed-head observer may repair a missing upstream only when a current
 hub candidate proves the head is in the base repository, the
 checked-out branch is the PR head or synthetic branch, and the remote-tracking
-ref exists. Recheck the branch under the shared repository lock before repair;
+ref exists. Recheck the branch and absence of upstream configuration under the
+shared repository lock before repair;
 ordinary observer reads remain lock-free
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader.SetBranchUpstream`).
 

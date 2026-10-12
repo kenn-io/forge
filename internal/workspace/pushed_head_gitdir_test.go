@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -395,18 +396,22 @@ func TestGitdirReaderSeesConfigChangesAfterCaching(t *testing.T) {
 func TestPushedHeadRepairWaitsForRepositoryLock(t *testing.T) {
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
+	runWorkspaceTestGit(t, fixture.clone, "branch", "--unset-upstream")
 	manager := newWorkspaceTestManager(t, nil, t.TempDir())
+	reader := newGitdirRemoteHeadReader(manager.repositoryWorktrees)
 	repo, err := manager.openRepositoryWorktrees(t.Context(), filepath.Join(fixture.clone, ".git"))
 	require.NoError(err)
 	require.NoError(repo.WithLock(t.Context(), func(_ *worktree.Scope) error {
 		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
-		err := newGitdirRemoteHeadReader(manager.repositoryWorktrees).SetBranchUpstream(ctx, fixture.clone, "feature", "origin", "refs/heads/main")
+		err := reader.SetBranchUpstream(ctx, fixture.clone, "feature", "origin", "refs/heads/main")
 		require.ErrorIs(err, context.DeadlineExceeded)
-		require.Equal("refs/heads/feature", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.feature.merge"))))
+		upstream, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
+		require.NoError(err)
+		require.False(upstream.hasTracking)
 		return nil
 	}))
-	require.NoError(newGitdirRemoteHeadReader(manager.repositoryWorktrees).SetBranchUpstream(t.Context(), fixture.clone, "feature", "origin", "refs/heads/main"))
+	require.NoError(reader.SetBranchUpstream(t.Context(), fixture.clone, "feature", "origin", "refs/heads/main"))
 	require.Equal("refs/heads/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.feature.merge"))))
 }
 
@@ -432,4 +437,39 @@ func TestPushedHeadRepairRejectsBranchSwitchedWhileWaiting(t *testing.T) {
 	require.ErrorContains(err, "workspace branch changed before upstream repair")
 	require.Equal("refs/heads/feature", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.feature.merge"))))
 	require.Equal("refs/heads/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.main.merge"))))
+}
+
+func TestPushedHeadRepairPreservesUpstreamConfiguredAfterObservation(t *testing.T) {
+	for _, configScope := range []string{"--local", "--worktree"} {
+		t.Run(configScope, func(t *testing.T) {
+			require := require.New(t)
+			fixture := newPushedHeadFixture(t)
+			runWorkspaceTestGit(t, fixture.clone, "branch", "--unset-upstream")
+			runWorkspaceTestGit(t, fixture.clone, "config", "extensions.worktreeConfig", "true")
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
+			reader := newGitdirRemoteHeadReader(manager.repositoryWorktrees)
+			before, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
+			require.NoError(err)
+			require.False(before.hasTracking)
+			repo, err := manager.openRepositoryWorktrees(t.Context(), filepath.Join(fixture.clone, ".git"))
+			require.NoError(err)
+			repairCtx, cancel := context.WithCancel(t.Context())
+			var workers sync.WaitGroup
+			t.Cleanup(func() { cancel(); workers.Wait() })
+			repaired := make(chan error, 1)
+			require.NoError(repo.WithLock(t.Context(), func(_ *worktree.Scope) error {
+				workers.Go(func() {
+					repaired <- reader.SetBranchUpstream(repairCtx, fixture.clone, "feature", "origin", "refs/heads/feature")
+				})
+				// Another repository operation supplies tracking after the observer's
+				// missing-upstream probe and before repair can acquire the lock.
+				runWorkspaceTestGit(t, fixture.clone, "config", configScope, "branch.feature.remote", "origin")
+				runWorkspaceTestGit(t, fixture.clone, "config", configScope, "branch.feature.merge", "refs/heads/main")
+				return nil
+			}))
+			err = <-repaired
+			require.Equal("origin/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "rev-parse", "--abbrev-ref", "@{upstream}"))))
+			require.ErrorContains(err, "workspace upstream changed before repair")
+		})
+	}
 }

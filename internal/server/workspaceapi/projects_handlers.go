@@ -1036,7 +1036,10 @@ func removeLockedProjectWorktree(ctx context.Context, scope *worktree.Scope, req
 	if reason := current.Entry.LockedReason; reason != "" {
 		lock = append(lock, "--reason", reason)
 	}
-	if _, lockErr := scope.RunGit(ctx, "", append(lock, "--", req.Path)...); lockErr != nil {
+	// A canceled request must still put back the lock on the checkout it kept.
+	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if _, lockErr := scope.RunGit(restoreCtx, "", append(lock, "--", req.Path)...); lockErr != nil {
 		return errors.Join(err, fmt.Errorf("restore worktree lock after refused removal: %w", lockErr))
 	}
 	return err

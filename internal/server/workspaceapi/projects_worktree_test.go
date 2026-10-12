@@ -17,6 +17,8 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/workspace"
+	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/kwt/worktree"
 )
 
 func projectLifecycleFixture(t *testing.T, worktreeRoot string) (*Handler, *db.Project, *gitfixture.Repository) {
@@ -265,4 +267,43 @@ func TestProjectForceRemovalRestoresLockWhenRemovalIsRefused(t *testing.T) {
 	require.Contains(list, "locked removable media\n")
 	_, err = h.db.GetProjectWorktreeByID(t.Context(), created.Body.ID)
 	require.NoError(err)
+}
+
+// A request canceled after the unlock still puts the lock back on the
+// checkout it kept.
+func TestProjectForceRemovalRestoresLockAfterCancellation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	repo := gitfixture.NewRepository(t, false)
+	path := filepath.Join(t.TempDir(), "checkout")
+	gitfixture.Run(t, repo.Dir, "worktree", "add", "-b", "topic", path)
+	gitfixture.Run(t, repo.Dir, "worktree", "lock", "--reason", "removable media", path)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	coordinator, err := workspace.NewRepositoryCoordinator("")
+	require.NoError(err)
+	repository, err := coordinator.Open(ctx, worktree.RepositoryOptions{
+		Path: repo.Dir, Runner: gitcmd.Runner{StripEnv: true},
+		RunGit: func(ctx context.Context, runner gitcmd.Runner, dir string, args ...string) ([]byte, error) {
+			out, err := runManagedWorktreeGit(ctx, runner, dir, args...)
+			if len(args) > 1 && args[0] == "worktree" && args[1] == "unlock" {
+				cancel()
+			}
+			return out, err
+		},
+	})
+	require.NoError(err)
+	req := worktree.RemovalRequest{
+		Path: path, Force: true, ForceObservedBranch: true,
+		Conditions: &worktree.RemovalConditions{Branch: "topic"},
+	}
+
+	err = repository.WithLock(t.Context(), func(scope *worktree.Scope) error {
+		return removeLockedProjectWorktree(ctx, scope, req)
+	})
+
+	require.ErrorIs(err, context.Canceled)
+	require.DirExists(path)
+	list := string(gitfixture.Run(t, repo.Dir, "worktree", "list", "--porcelain"))
+	require.Contains(list, "locked removable media\n")
 }

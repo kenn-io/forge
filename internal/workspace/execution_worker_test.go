@@ -92,10 +92,10 @@ func TestExecutionPushStateAcceptsTheWorkspaceRemote(t *testing.T) {
 			runWorkspaceTestGit(t, work, "branch", "--set-upstream-to=upstream/feature/topic")
 			m := newWorkspaceTestManager(t, nil, t.TempDir())
 			m.SetExecutionWorker(config.ExecutionWorker{Enabled: true}, "/opt/example/bin/forge")
-			summary := &WorkspaceSummary{Workspace: Workspace{
+			summary := &WorkspaceSummary{
 				Status: "ready", WorktreePath: work, Platform: "github", PlatformHost: "github.com",
 				RepoOwner: "acme", RepoName: "widget",
-			}}
+			}
 
 			state := m.ExecutionPushState(t.Context(), summary)
 

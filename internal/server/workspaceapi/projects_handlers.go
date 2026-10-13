@@ -703,17 +703,14 @@ func (s *Handler) registerMaterializedWorktree(
 	})
 	if err != nil {
 		err = rollbackProjectCreation(ctx, created, err, managedworktree.RollbackUnchanged)
-		if errors.Is(err, managedworktree.ErrWorktreeCleanupIncomplete) {
-			return nil, worktreeLifecycleProblem(err, "body.setup_script")
-		}
 		if errors.Is(err, db.ErrWorktreePathTaken) {
-			return nil, httpapi.Conflict(
+			return nil, withRetainedArtifacts(httpapi.Conflict(
 				httpapi.CodeDestinationExists,
 				"a worktree is already registered at "+created.Path,
 				nil,
-			)
+			), err)
 		}
-		return nil, httpapi.Internal("register worktree: " + err.Error())
+		return nil, withRetainedArtifacts(httpapi.Internal("register worktree: "+err.Error()), err)
 	}
 	s.recomputeWorktreeLinksNow(ctx)
 	return &registerWorktreeOutput{Body: worktreeResponseFromDB(
@@ -1071,9 +1068,29 @@ func removeLockedProjectWorktree(ctx context.Context, scope *worktree.Scope, req
 // "body.teardown_script") so a confinement violation is reported against
 // the field the caller actually sent.
 func worktreeLifecycleProblem(err error, hookField string) error {
-	if errors.Is(err, managedworktree.ErrWorktreeCleanupIncomplete) {
+	return withRetainedArtifacts(worktreeCauseProblem(err, hookField), err)
+}
+
+// withRetainedArtifacts keeps the cause's status and code when rollback left
+// files behind, so clients can still branch on why the request failed. The
+// detail names the leftovers and cleanupIncomplete flags them.
+func withRetainedArtifacts(problem, err error) error {
+	if !errors.Is(err, managedworktree.ErrWorktreeCleanupIncomplete) {
+		return problem
+	}
+	p, ok := errors.AsType[*httpapi.ProblemError](problem)
+	if !ok {
 		return httpapi.Internal("worktree lifecycle: " + err.Error())
 	}
+	p.Detail = "worktree lifecycle: " + err.Error()
+	if p.Details == nil {
+		p.Details = map[string]any{}
+	}
+	p.Details["cleanupIncomplete"] = true
+	return p
+}
+
+func worktreeCauseProblem(err error, hookField string) error {
 	if condition, ok := errors.AsType[*worktree.ConditionError](err); ok && condition.Reason == worktree.ReasonDirty {
 		return httpapi.Conflict(httpapi.CodeWorktreeDirty, "worktree has uncommitted changes; retry with force", nil)
 	}

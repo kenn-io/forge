@@ -458,7 +458,9 @@ Forge mutation is unsupported. Explicit setup/teardown scripts run outside the l
 with removal revalidated afterward (`internal/server/workspaceapi/projects_handlers.go::Handler.removeProjectWorktreeOnDisk`).
 After registration failure, preserve changed checkouts and report retained artifacts;
 never discard rollback errors or imply the destination is clear for retry
-(`internal/server/workspaceapi/projects_handlers.go::rollbackProjectCreation`).
+(`internal/server/workspaceapi/projects_handlers.go::rollbackProjectCreation`). The
+problem keeps the cause's status and code and sets `details.cleanupIncomplete`
+(`internal/server/workspaceapi/projects_handlers.go::withRetainedArtifacts`).
 Classify same-repository merge requests with the provider-hosted project
 identity, not the effective origin URL: the origin may be a local mirror
 (`internal/server/workspaceapi/projects_handlers.go::Handler.createProjectWorktreeFromMergeRequest`).

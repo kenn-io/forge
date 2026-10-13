@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -248,4 +249,33 @@ func TestCreateProjectWorktreeFromMergeRequestUsesHubFacts(t *testing.T) {
 	localMR, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
 	require.NoError(err)
 	assert.Nil(localMR)
+}
+
+// A rollback that leaves files behind must not hide why creation failed:
+// the response keeps the cause's status and code and flags the leftovers.
+func TestWorktreeLifecycleProblemKeepsCauseWhenCleanupIsIncomplete(t *testing.T) {
+	t.Parallel()
+	cleanup := fmt.Errorf("%w: path %q", managedworktree.ErrWorktreeCleanupIncomplete, "/work/checkout")
+	for _, tt := range []struct {
+		name   string
+		cause  error
+		status int
+		code   httpapi.ProblemCode
+	}{
+		{"hook failure", &managedworktree.HookError{Script: "setup.sh", ExitCode: 3, Stderr: "boom"}, http.StatusUnprocessableEntity, httpapi.CodeHookFailed},
+		{"branch conflict", managedworktree.ErrBranchAlreadyExists, http.StatusConflict, httpapi.CodeBranchConflict},
+		{"unclassified", errors.New("disk full"), http.StatusInternalServerError, httpapi.CodeInternalError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := worktreeLifecycleProblem(errors.Join(tt.cause, cleanup), "body.setup_script")
+
+			problem, ok := errors.AsType[*httpapi.ProblemError](err)
+			require.True(t, ok, "want *ProblemError, got %T", err)
+			assert.Equal(t, tt.status, problem.Status)
+			assert.Equal(t, tt.code, problem.Code)
+			assert.Equal(t, true, problem.Details["cleanupIncomplete"])
+			assert.Contains(t, problem.Detail, "/work/checkout")
+		})
+	}
 }

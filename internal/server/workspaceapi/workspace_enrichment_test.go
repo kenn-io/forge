@@ -19,7 +19,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -51,7 +51,7 @@ func TestApplyWorktreeDivergenceReportsMissingConfiguredUpstream(t *testing.T) {
 func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 	t.Helper()
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	if tmuxScript != "" {
 		manager.SetTmuxCommand([]string{tmuxScript})
 	}
@@ -205,7 +205,7 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 	require.NotNil(summary)
 
 	clockNow := now
-	manager := workspace.NewManager(database, filepath.Join(dir, "managed-worktrees"))
+	manager := workspacetest.NewManager(t, database, filepath.Join(dir, "managed-worktrees"))
 	handler := New(Deps{
 		DB:         database,
 		Workspaces: manager,

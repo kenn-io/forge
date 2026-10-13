@@ -118,6 +118,9 @@ fixtures, or changing shell-script coverage.
   (`internal/workspace/localruntime/acp_test.go::TestACPStdioHelper`).
 - ACP owner processes can outlive manager stop; await their exit before deleting fixture state
   (`internal/workspace/localruntime/acp_owner_test.go::TestACPReattachesAfterDaemonProcessExits`).
+- Use the owner-process fixture for saved-chat integration checks unless testing owner
+  internals, so cleanup waits for all writers to exit
+  (`internal/workspace/localruntime/acp_requests_test.go::launchRequestChat`).
 - Private tmux tests retain markers on gate, read, validation, or identity errors;
   one deadline covers gate closure and startup draining, and cleanup never addresses
   the default server. (`internal/testutil/testtmux/owner.go::Owner`)

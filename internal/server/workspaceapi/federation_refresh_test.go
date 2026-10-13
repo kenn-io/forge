@@ -14,7 +14,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/platform"
 )
 
@@ -157,7 +157,7 @@ func TestRefreshWorkspaceUsesHubProjectionWithoutLocalSyncer(t *testing.T) {
 		current.SourceVisibleUntil = current.IssuedAt.Add(db.WorkspaceLaunchSpecVisibilityLease)
 		return current, nil
 	}}
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	handler := New(Deps{
 		DB: database, Workspaces: manager, LaunchSpecResolver: resolver,
 		Now: func() time.Time { return issuedAt.Add(time.Minute) },

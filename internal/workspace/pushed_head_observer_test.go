@@ -117,7 +117,7 @@ func newPushedHeadObserverForTest(
 	reader *fakeRemoteHeadReader,
 ) *PushedHeadObserver {
 	t.Helper()
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
@@ -226,8 +226,8 @@ func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 		trackingRef: "refs/remotes/origin/" + workspaceRow.GitHeadRef,
 		trackingOK:  true,
 	}
-	manager := NewManager(database, t.TempDir())
-	observer := NewPushedHeadObserver(database, PRMonitorOptions{
+	manager := newWorkspaceTestManager(t, database, t.TempDir())
+	observer := NewPushedHeadObserver(database, manager, PRMonitorOptions{
 		LaunchSpecs: manager, PullCandidates: source,
 	})
 	observer.setGitReaderForTest(reader)
@@ -293,7 +293,7 @@ func TestPushedHeadObserverRetriesObservedSHAUntilProviderHeadMatches(t *testing
 		trackingOK:  true,
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
@@ -357,7 +357,7 @@ func TestPushedHeadObserverStopsRetryingAfterSuccessfulRefreshStillDiffers(t *te
 		trackingOK:  true,
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
@@ -404,7 +404,7 @@ func TestPushedHeadObserverRetriesNewSHAWhenEnqueueWasDropped(t *testing.T) {
 		trackingOK:  true,
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
@@ -448,7 +448,7 @@ func TestPushedHeadObserverLateSuccessForOldSHADoesNotDisturbNewCycle(t *testing
 		trackingOK:  true,
 	}
 	now := time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setGitReaderForTest(reader)
 	observer.setNowForTest(func() time.Time { return now })
 
@@ -524,7 +524,7 @@ func TestPushedHeadObserverAssociatesIssueWorkspaceAndObservesHead(t *testing.T)
 	runWorkspaceTestGit(t, worktreePath, "remote", "set-url", "origin", "git@github.com:acme/widget.git")
 	insertMonitorWorkspace(t, d, worktreePath, nil)
 
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	})
@@ -586,7 +586,7 @@ func TestPushedHeadObserverRunOnceHealsAssociatedKataWorkspace(t *testing.T) {
 	require.NoError(err)
 	assert.False(before.hasTracking)
 
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	result, err := observer.RunOnce(ctx)
 	require.NoError(err)
 	assert.Empty(result.Associations)

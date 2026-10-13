@@ -150,17 +150,16 @@ func TestACPSteerSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
 // it, so a later restore does not mistake it for one in flight.
 func TestACPSteerTheAgentTookIsNoLongerSending(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	c := newInProcessChat(t)
-	agent := c.start(nil)
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.True(t, publishedACPState(t, agent).SteeringSupported)
+	c := launchRequestChat(t)
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.True(t, c.state().SteeringSupported)
 
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	require.True(t, slices.ContainsFunc(publishedACPState(t, agent).Messages, func(message ACPMessage) bool {
+	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+	require.True(t, slices.ContainsFunc(c.state().Messages, func(message ACPMessage) bool {
 		return message.SubmissionID == "steer"
 	}), "the agent took the steer")
 
-	saved := readSavedSession(t, c.recordPath())
+	saved := readSavedSession(t, c.manager.acpSessionPath(c.info.Key))
 	assert.Nil(t, saved.State.Sending)
 	assert.NotContains(t, saved.State.Uncertain, "steer")
 }
@@ -229,10 +228,22 @@ func TestACPTurnRecordsFollowEachTurn(t *testing.T) {
 
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "second"}))
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	turns = c.state().Turns
+	state := c.state()
+	turns = state.Turns
 	require.Len(t, turns, 2, "an injected steer joins the running turn")
 	assert.Equal(t, "second", turns[1].SubmissionID)
 	assert.Empty(t, turns[1].EndedAt)
+	starts := map[string]int{}
+	for i, message := range state.Messages {
+		if message.Role == "user" {
+			starts[message.SubmissionID] = state.MessageOffset + i
+		}
+	}
+	require.NotNil(t, turns[0].FirstMessage)
+	require.NotNil(t, turns[1].FirstMessage)
+	assert.Equal(t, starts["first"], *turns[0].FirstMessage, "a turn begins at the prompt that started it")
+	assert.Equal(t, starts["second"], *turns[1].FirstMessage)
+	assert.Greater(t, starts["steer"], *turns[1].FirstMessage, "steering falls inside the running turn")
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "cancel"}))
 	turns = c.awaitState(func(s ACPState) bool { return !s.Busy }).Turns
 	require.Len(t, turns, 2)

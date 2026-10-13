@@ -19,7 +19,7 @@ func TestTmuxExecUsesAllowlistedClientEnvironment(t *testing.T) {
 	t.Setenv("KATA_AUTH_TOKEN", "kata-secret")
 	t.Setenv("WKSP_UNDECLARED_SECRET", "undeclared-secret")
 
-	m := NewManager(nil, t.TempDir())
+	m := newWorkspaceTestManager(t, nil, t.TempDir())
 	cmd := m.tmuxExec(t.Context(), "has-session", "-t", "forge-test")
 	require.NotNil(t, cmd)
 	env := strings.Join(cmd.Env, "\n")

@@ -96,11 +96,10 @@ func validateCanonicalRepoHost(host string) error {
 func validateCanonicalRepoPort(host string) error {
 	port := ""
 	if strings.HasPrefix(host, "[") {
-		closing := strings.LastIndex(host, "]")
-		if closing < 0 {
+		_, suffix, found := strings.CutLast(host, "]")
+		if !found {
 			return fmt.Errorf("platform host %q is not a canonical host authority", host)
 		}
-		suffix := host[closing+1:]
 		if suffix == "" {
 			return nil
 		}

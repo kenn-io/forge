@@ -57510,6 +57510,7 @@ type ACPTurnRecord struct {
 	AllowanceMillis    *int64    `json:"allowanceMillis,omitempty"`
 	EndedAt            *string   `json:"endedAt,omitempty"`
 	ErrorData          *string   `json:"error,omitempty"`
+	FirstMessage       *int64    `json:"firstMessage,omitempty"`
 	Generation         *int64    `json:"generation,omitempty"`
 	Sender             ACPSender `json:"sender"`
 	StartedAt          string    `json:"startedAt"`

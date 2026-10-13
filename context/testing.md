@@ -80,6 +80,10 @@ modal-frame and layer stacking, and that the flow opens and closes
 The same applies to Go kit: telemetry tests cover only the install identity
 and event routing Forge hands kit, not kit's property stamping, filtering,
 install-age tagging, or env opt-out (`internal/telemetry/telemetry_kit_test.go`).
+For kwt, drive Forge entry points such as checkout creation, refresh, and
+cleanup; do not call kwt scope or repository methods with hand-built requests
+to re-test its locking, claiming, base-sync, or error classification
+(`internal/workspace/manager.go::createWorkspaceCheckout`).
 
 ## Provider work
 
@@ -569,6 +573,10 @@ need a fresh migrated schema:
 
 The template fixture migrates once, checkpoints WAL, copies the database file
 into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
+
+Outside `internal/workspace`, build workspace managers with
+`internal/testutil/workspacetest.NewManager`, which wires a repository coordinator
+as the daemon does; do not copy a local helper.
 That preserves per-test isolation without paying migration setup for every
 fixture.
 

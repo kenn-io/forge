@@ -16,7 +16,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -79,7 +79,7 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	})
 	handler := workspaceapi.New(workspaceapi.Deps{
 		DB:         d,
-		Workspaces: workspace.NewManager(d, t.TempDir()),
+		Workspaces: workspacetest.NewManager(t, d, t.TempDir()),
 		Runtime:    runtime,
 	})
 	input := &workspaceapi.LaunchWorkspaceRuntimeSessionInput{ID: ws.ID}

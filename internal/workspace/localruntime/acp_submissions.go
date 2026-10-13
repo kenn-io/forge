@@ -35,18 +35,24 @@ type ACPTurnRecord struct {
 	ActiveMillis int64  `json:"activeMillis"`
 	Allowance    int64  `json:"allowanceMillis,omitempty"`
 	Exhausted    bool   `json:"allowanceExhausted,omitempty"`
+	// FirstMessage is the transcript index of the turn's first message. The turn's messages run
+	// up to the next turn's first message, so a coordinator can tell a person's steering, which
+	// joins the running turn, from a new turn. Records saved before Forge kept it leave it nil.
+	FirstMessage *int `json:"firstMessage,omitempty"`
 }
 
 // beginTurnRecordLocked records a turn prompt starts now, dropping the oldest
 // records beyond the limit, and starts its clock. firstMessage is the
 // transcript index of the turn's first message.
 func (a *ACP) beginTurnRecordLocked(prompt ACPQueuedPrompt, firstMessage int) {
+	first := firstMessage
 	a.state.Turns = append(a.state.Turns, ACPTurnRecord{
 		SubmissionID: prompt.ID,
 		Sender:       prompt.Sender,
 		Generation:   prompt.Generation,
 		StartedAt:    time.Now().UTC().Format(time.RFC3339),
 		Allowance:    prompt.Allowance,
+		FirstMessage: &first,
 	})
 	if excess := len(a.state.Turns) - acpTurnRecordLimit; excess > 0 {
 		a.state.Turns = slices.Delete(a.state.Turns, 0, excess)

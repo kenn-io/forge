@@ -1246,8 +1246,8 @@ func (m *Manager) RunGitForRemote(
 	if !ok || strings.TrimSpace(owner) == "" || strings.TrimSpace(name) == "" {
 		return nil, errors.New("remote repository owner and name are required")
 	}
-	if index := strings.LastIndex(repoPath, "/"); index >= 0 {
-		owner, name = repoPath[:index], repoPath[index+1:]
+	if before, after, found := strings.CutLast(repoPath, "/"); found {
+		owner, name = before, after
 	}
 	return m.gitNetworked(
 		ctx, m.sourceForRepo(platform, host, owner, name), platform, host, dir, nil, args...,

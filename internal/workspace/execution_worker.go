@@ -11,6 +11,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/devbox"
 	"go.kenn.io/forge/internal/procutil"
+	managed "go.kenn.io/kit/git/managed"
+	"go.kenn.io/kwt/worktree"
 )
 
 var ErrExecutionIdentity = errors.New("execution worker commit identity is not configured correctly")
@@ -39,39 +41,47 @@ func (m *Manager) applyExecutionSource(ctx context.Context, summary *WorkspaceSu
 	return nil
 }
 
-func (m *Manager) configureExecutionWorktree(ctx context.Context, dir string) error {
+func (m *Manager) configureExecutionWorktree(ctx context.Context, dir, remote string) error {
 	if !m.executionWorker.Enabled {
 		return nil
 	}
-	for _, args := range [][]string{
-		{"config", "--local", "user.useConfigOnly", "true"},
-		{"config", "--local", "user.name", m.executionWorker.CommitName},
-		{"config", "--local", "user.email", m.executionWorker.CommitEmail},
-		{"config", "--local", "credential.useHttpPath", "true"},
-		{"config", "--local", "--replace-all", "credential.helper", ""},
-		{"config", "--local", "--add", "credential.helper", m.credentialHelper},
-	} {
-		if _, err := procutil.Output(ctx, workspaceGitCommand(ctx, dir, args...), "git subprocess capacity"); err != nil {
-			return fmt.Errorf("configure execution worktree: %w", err)
-		}
-	}
-	if err := m.ValidateExecutionIdentity(ctx, dir); err != nil {
-		return err
-	}
-	branch, err := gitOutput(ctx, dir, "branch", "--show-current")
+	commonDir, err := worktreeCommonGitDir(ctx, dir)
 	if err != nil {
 		return err
 	}
-	branch = strings.TrimSpace(branch)
-	if branch != "" {
-		remote, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
-		if strings.TrimSpace(remote) == "" {
-			// A newly created development branch can be pushed from Forge before
-			// it exists remotely. Existing tracking choices remain intact.
-			return setBranchUpstream(ctx, dir, branch, "origin", "refs/heads/"+branch)
+	return m.withRepoLockForGitDir(ctx, commonDir, func(scope *worktree.Scope) error {
+		for _, args := range [][]string{
+			{"config", "--local", "user.useConfigOnly", "true"},
+			{"config", "--local", "user.name", m.executionWorker.CommitName},
+			{"config", "--local", "user.email", m.executionWorker.CommitEmail},
+			{"config", "--local", "credential.useHttpPath", "true"},
+			{"config", "--local", "--replace-all", "credential.helper", ""},
+			{"config", "--local", "--add", "credential.helper", m.credentialHelper},
+		} {
+			if _, err := scope.RunGit(ctx, dir, args...); err != nil {
+				return fmt.Errorf("configure execution worktree: %w", err)
+			}
 		}
-	}
-	return nil
+		if err := m.ValidateExecutionIdentity(ctx, dir); err != nil {
+			return err
+		}
+		branch, err := gitOutput(ctx, dir, "branch", "--show-current")
+		if err != nil {
+			return err
+		}
+		branch = strings.TrimSpace(branch)
+		if branch != "" {
+			tracked, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
+			if strings.TrimSpace(tracked) == "" {
+				// A newly created development branch can be pushed from Forge before
+				// it exists remotely. It tracks the workspace's own remote, which a
+				// local worktree base may name something other than origin.
+				// Existing tracking choices remain intact.
+				return scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{Action: managed.UpstreamTrack, Scope: managed.UpstreamRepository, Remote: remote, Ref: "refs/heads/" + branch}})
+			}
+		}
+		return nil
+	})
 }
 
 func (m *Manager) ValidateExecutionIdentity(ctx context.Context, dir string) error {
@@ -97,7 +107,7 @@ func (m *Manager) ExecutionPushState(ctx context.Context, summary *WorkspaceSumm
 		return nil
 	}
 	upstream, err := currentBranchUpstream(ctx, summary.WorktreePath)
-	if err != nil || upstream.remote != "origin" {
+	if err != nil || !m.executionPushRemote(ctx, summary, upstream.remote) {
 		return nil
 	}
 	out, err := gitOutput(ctx, summary.WorktreePath, "rev-parse", "HEAD", "@{upstream}")
@@ -109,4 +119,31 @@ func (m *Manager) ExecutionPushState(ctx context.Context, summary *WorkspaceSumm
 		return nil
 	}
 	return &devbox.PushState{Repository: summary.RepoOwner + "/" + summary.RepoName, Branch: upstream.branch, OID: refs[0], Pushed: refs[0] == refs[1]}
+}
+
+// executionPushRemote reports whether pushes to remote go to the workspace's
+// repository: every fetch and push URL must match the repository identity,
+// since Git pushes to remote.<name>.pushurl when set. The remote's name proves
+// nothing; a local worktree base's origin can be a fork.
+func (m *Manager) executionPushRemote(ctx context.Context, summary *WorkspaceSummary, remote string) bool {
+	insecure := m.allowsInsecureHTTP(summary.Platform, summary.PlatformHost)
+	if validateBaseRemoteURLs(
+		ctx, summary.WorktreePath, remote, summary.Platform, summary.PlatformHost,
+		summary.RepoOwner, summary.RepoName, insecure,
+	) != nil {
+		return false
+	}
+	pushURLs, err := gitConfigValues(ctx, summary.WorktreePath, "remote."+remote+".pushurl")
+	if err != nil {
+		return false
+	}
+	for _, pushURL := range pushURLs {
+		if validateBaseRemoteURL(
+			pushURL, remote, summary.Platform, summary.PlatformHost,
+			summary.RepoOwner, summary.RepoName, insecure,
+		) != nil {
+			return false
+		}
+	}
+	return true
 }

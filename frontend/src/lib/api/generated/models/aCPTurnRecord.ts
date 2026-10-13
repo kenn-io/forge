@@ -9,6 +9,7 @@ export interface ACPTurnRecord {
   allowanceMillis?: number;
   endedAt?: string;
   error?: string;
+  firstMessage?: number;
   /** @minimum 0 */
   generation?: number;
   sender: ACPSender;

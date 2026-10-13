@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -146,7 +147,7 @@ func newKataTestServer(
 	resolver := httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database})
 	var workspaces *workspace.Manager
 	if options.WorktreeDir != "" {
-		workspaces = workspace.NewManager(database, options.WorktreeDir)
+		workspaces = workspacetest.NewManager(t, database, options.WorktreeDir)
 		workspaces.SetTmuxCommand(kataAPITestTmuxCommand)
 	}
 	workspaceHandler := workspaceapi.New(workspaceapi.Deps{

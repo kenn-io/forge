@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -130,7 +131,7 @@ func setupTestServer(t *testing.T) (*Handler, *db.DB) {
 func newTestHandlerWithWorkspaceManager(t *testing.T, database *db.DB) *Handler {
 	t.Helper()
 	h := newTestHandler(t, database, config.Fleet{})
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	h.workspaceSnapshot = workspaceSnapshotFromManager(manager)
 	return h
 }

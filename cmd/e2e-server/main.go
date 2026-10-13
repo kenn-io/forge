@@ -4112,7 +4112,12 @@ func cleanupE2EWorkspaces(
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	manager := workspace.NewManager(database, worktreeDir)
+	coordinator, err := workspace.NewRepositoryCoordinator(worktreeDir)
+	if err != nil {
+		slog.Warn("e2e workspace cleanup coordination failed", "err", err)
+		return
+	}
+	manager := workspace.NewManager(database, worktreeDir, coordinator)
 	manager.SetTmuxCommand(tmuxCmd)
 	if preferPtyOwner {
 		manager.SetPtyOwnerClient(&ptyowner.Client{

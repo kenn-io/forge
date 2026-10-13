@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -19,7 +20,7 @@ func TestRevealWorkspaceOpensWorkspacePath(t *testing.T) { //nolint:paralleltest
 	require := require.New(t)
 	assert := assert.New(t)
 	database := dbtest.Open(t)
-	manager := workspace.NewManager(database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	path := t.TempDir()
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID: "ws-reveal", Platform: "github", PlatformHost: "github.com",

@@ -27,7 +27,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -85,7 +85,7 @@ func TestACPReattachesOnWorkspaceOpenNotStartup(t *testing.T) {
 	defer func() { _ = listener.Close(); <-accepted }()
 	runtime := localruntime.NewManager(localruntime.Options{ACPSessionsDir: root})
 	defer runtime.Shutdown()
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
 	require.NoError(handler.restoreRuntimeSessions(ctx, true))
@@ -180,7 +180,7 @@ func TestACPRuntimeReportsSessionsAndReleasesUnwrittenPrompt(t *testing.T) {
 	runtime := localruntime.NewManager(localruntime.Options{ACPSessionsDir: root})
 	defer runtime.Shutdown()
 	activity := agentactivity.NewStore(t.TempDir())
-	handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
+	handler := New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
 	_, err = handler.GetWorkspaceRuntimeService(ctx, "workspace", false)
 	require.NoError(err)
 	require.NoError(activity.Record(localruntime.ACPActivityAgent, "acp-session", "chat-runtime", cwd, agentactivity.StateWorking))

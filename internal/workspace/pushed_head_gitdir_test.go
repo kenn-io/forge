@@ -1,13 +1,17 @@
 package workspace
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	"go.kenn.io/kwt/worktree"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -66,7 +70,7 @@ func TestGitdirReaderSymbolicHeadWithUpstream(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	branch, err := reader.BranchName(ctx, fixture.clone)
@@ -92,7 +96,7 @@ func TestGitdirReaderSymbolicHeadWithUpstream(t *testing.T) {
 func TestGitdirReaderDetachedHead(t *testing.T) {
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "--detach")
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 
 	branch, err := reader.BranchName(t.Context(), fixture.clone)
 	require.NoError(t, err)
@@ -104,7 +108,7 @@ func TestGitdirReaderBranchWithoutUpstream(t *testing.T) {
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	upstream, err := reader.UpstreamState(ctx, fixture.clone, "scratch")
@@ -122,7 +126,7 @@ func TestGitdirReaderPackedAndLooseRefs(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 	gitDir := filepath.Join(fixture.clone, ".git")
 	looseRef := filepath.Join(gitDir, "refs", "remotes", "origin", "feature")
@@ -155,7 +159,7 @@ func TestGitdirReaderLinkedWorktree(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
 	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
 	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	branch, err := reader.BranchName(ctx, worktree)
@@ -185,7 +189,7 @@ func TestGitdirReaderSkipsConfigIncludes(t *testing.T) {
 	included := filepath.Join(filepath.Dir(fixture.clone), "included.gitconfig")
 	require.NoError(os.WriteFile(included, []byte("[branch \"feature\"]\n\tremote = origin\n\tmerge = refs/heads/feature\n"), 0o600))
 	runWorkspaceTestGit(t, fixture.clone, "config", "include.path", included)
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	// go-git does not expand includes, so the effective config is unknowable
@@ -229,7 +233,7 @@ func TestPushedHeadObserverPassSpawnsNoGitWhenUnchanged(t *testing.T) {
 		TmuxSession:     "kenn-forge-ws-pr",
 		Status:          "ready",
 	}))
-	observer := NewPushedHeadObserver(d)
+	observer := NewPushedHeadObserver(d, newWorkspaceTestManager(t, d, t.TempDir()))
 	observer.setNowForTest(func() time.Time {
 		return time.Date(2026, 5, 20, 14, 15, 0, 0, time.UTC)
 	})
@@ -288,7 +292,7 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
 	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
 	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
-	reader := newGitdirRemoteHeadReader()
+	coordinator := newTestRepositoryCoordinator(t)
 	ctx := t.Context()
 
 	openDescriptors := func() int {
@@ -296,7 +300,10 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 		require.NoError(err)
 		return len(entries)
 	}
+	// Each read uses a fresh reader so it builds a new handle; a cached handle
+	// would skip the construction this test guards.
 	read := func() {
+		reader := newGitdirRemoteHeadReader(coordinator)
 		_, err := reader.BranchName(ctx, worktree)
 		require.NoError(err)
 		_, err = reader.UpstreamState(ctx, worktree, "topic")
@@ -326,7 +333,7 @@ func TestGitdirReaderOverlaysWorktreeConfig(t *testing.T) {
 	runWorkspaceTestGit(t, fixture.clone, "config", "branch.topic.merge", "refs/heads/topic")
 	runWorkspaceTestGit(t, fixture.clone, "config", "extensions.worktreeConfig", "2")
 	runWorkspaceTestGit(t, worktree, "config", "--worktree", "branch.topic.merge", "refs/heads/feature")
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	upstream, err := reader.UpstreamState(ctx, worktree, "topic")
@@ -356,7 +363,7 @@ func TestGitdirReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
 	)
 	defer restore()
 
-	err := newGitdirRemoteHeadReader().SetBranchUpstream(
+	err := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t)).SetBranchUpstream(
 		t.Context(), fixture.clone, "scratch", "origin", "refs/heads/feature",
 	)
 	require.NoError(err)
@@ -369,7 +376,7 @@ func TestGitdirReaderSeesConfigChangesAfterCaching(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	fixture := newPushedHeadFixture(t)
-	reader := newGitdirRemoteHeadReader()
+	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
 	ctx := t.Context()
 
 	first, err := reader.UpstreamState(ctx, fixture.clone, "feature")
@@ -387,4 +394,85 @@ func TestGitdirReaderSeesConfigChangesAfterCaching(t *testing.T) {
 	require.NoError(os.RemoveAll(fixture.clone))
 	_, err = reader.BranchName(ctx, fixture.clone)
 	assert.Error(err)
+}
+
+func TestPushedHeadRepairWaitsForRepositoryLock(t *testing.T) {
+	require := require.New(t)
+	fixture := newPushedHeadFixture(t)
+	runWorkspaceTestGit(t, fixture.clone, "branch", "--unset-upstream")
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
+	reader := newGitdirRemoteHeadReader(manager.repositoryWorktrees)
+	repo, err := manager.openRepositoryWorktrees(t.Context(), filepath.Join(fixture.clone, ".git"))
+	require.NoError(err)
+	require.NoError(repo.WithLock(t.Context(), func(_ *worktree.Scope) error {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		err := reader.SetBranchUpstream(ctx, fixture.clone, "feature", "origin", "refs/heads/main")
+		require.ErrorIs(err, context.DeadlineExceeded)
+		upstream, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
+		require.NoError(err)
+		require.False(upstream.hasTracking)
+		return nil
+	}))
+	require.NoError(reader.SetBranchUpstream(t.Context(), fixture.clone, "feature", "origin", "refs/heads/main"))
+	require.Equal("refs/heads/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.feature.merge"))))
+}
+
+// Repair waits for the repository lock. A branch switch during that wait must
+// stop the repair instead of retargeting whichever branch is now checked out.
+func TestPushedHeadRepairRejectsBranchSwitchedWhileWaiting(t *testing.T) {
+	require := require.New(t)
+	fixture := newPushedHeadFixture(t)
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
+	repo, err := manager.openRepositoryWorktrees(t.Context(), filepath.Join(fixture.clone, ".git"))
+	require.NoError(err)
+	repaired := make(chan error, 1)
+	require.NoError(repo.WithLock(t.Context(), func(_ *worktree.Scope) error {
+		go func() {
+			repaired <- newGitdirRemoteHeadReader(manager.repositoryWorktrees).SetBranchUpstream(t.Context(), fixture.clone, "feature", "origin", "refs/heads/feature")
+		}()
+		runWorkspaceTestGit(t, fixture.clone, "checkout", "main")
+		return nil
+	}))
+
+	err = <-repaired
+
+	require.ErrorContains(err, "workspace branch changed before upstream repair")
+	require.Equal("refs/heads/feature", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.feature.merge"))))
+	require.Equal("refs/heads/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "config", "--get", "branch.main.merge"))))
+}
+
+func TestPushedHeadRepairPreservesUpstreamConfiguredAfterObservation(t *testing.T) {
+	for _, configScope := range []string{"--local", "--worktree"} {
+		t.Run(configScope, func(t *testing.T) {
+			require := require.New(t)
+			fixture := newPushedHeadFixture(t)
+			runWorkspaceTestGit(t, fixture.clone, "branch", "--unset-upstream")
+			runWorkspaceTestGit(t, fixture.clone, "config", "extensions.worktreeConfig", "true")
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
+			reader := newGitdirRemoteHeadReader(manager.repositoryWorktrees)
+			before, err := reader.UpstreamState(t.Context(), fixture.clone, "feature")
+			require.NoError(err)
+			require.False(before.hasTracking)
+			repo, err := manager.openRepositoryWorktrees(t.Context(), filepath.Join(fixture.clone, ".git"))
+			require.NoError(err)
+			repairCtx, cancel := context.WithCancel(t.Context())
+			var workers sync.WaitGroup
+			t.Cleanup(func() { cancel(); workers.Wait() })
+			repaired := make(chan error, 1)
+			require.NoError(repo.WithLock(t.Context(), func(_ *worktree.Scope) error {
+				workers.Go(func() {
+					repaired <- reader.SetBranchUpstream(repairCtx, fixture.clone, "feature", "origin", "refs/heads/feature")
+				})
+				// Another repository operation supplies tracking after the observer's
+				// missing-upstream probe and before repair can acquire the lock.
+				runWorkspaceTestGit(t, fixture.clone, "config", configScope, "branch.feature.remote", "origin")
+				runWorkspaceTestGit(t, fixture.clone, "config", configScope, "branch.feature.merge", "refs/heads/main")
+				return nil
+			}))
+			err = <-repaired
+			require.Equal("origin/main", strings.TrimSpace(string(runWorkspaceTestGit(t, fixture.clone, "rev-parse", "--abbrev-ref", "@{upstream}"))))
+			require.ErrorContains(err, "workspace upstream changed before repair")
+		})
+	}
 }

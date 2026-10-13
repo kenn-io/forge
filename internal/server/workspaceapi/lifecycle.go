@@ -281,7 +281,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			if h.baseRestoreRemaining == nil {
 				h.baseRestoreRemaining = make(map[string]bool)
 			}
-			h.baseRestoreRemaining[id] = true
+			h.baseRestoreRemaining[id] = retainedWorkspaces[id]
 		}
 		if !listed {
 			h.baseRestoreListPending = true
@@ -606,7 +606,9 @@ func (h *Handler) restoreBaseTerminalsAfterLoss(ctx context.Context, keptAfterLo
 			remaining = make(map[string]bool)
 		}
 		for _, ws := range workspaces {
-			remaining[ws.ID] = true
+			if _, outstanding := remaining[ws.ID]; !outstanding {
+				remaining[ws.ID] = false
+			}
 		}
 	}
 	if len(remaining) > 0 {

@@ -469,6 +469,26 @@ func TestWorkspaceChatRestoreHandlesAnExitTheHookSkipped(t *testing.T) {
 	assert.Len(t, f.storedChats(), 1)
 }
 
+// The missing-tmux prune can judge a supervised chat after its runtime saw the
+// agent exit but before the exit hook kept the chat. It keeps the chat, as
+// that hook would.
+func TestTmuxPruneKeepsAnExitedSupervisedChat(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(true)
+	owner := newChatOwner("generation-1")
+	f.serve(owner)
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	f.stop(owner)
+	require.Eventually(t, f.recoveryPending, 5*time.Second, 10*time.Millisecond)
+	stored := f.storedChats()
+	require.Len(t, stored, 1)
+
+	// As if the exit hook had not run yet.
+	f.handler.setRuntimeRecoveryPending(chatKey, false)
+	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the supervised chat")
+}
+
 // After a daemon restart, ordinary reopening reattaches a pending chat whose
 // agent exits during reattachment. The exit hook skips a chat pending
 // recovery, so reopening must handle the exit itself, or the kept record loses

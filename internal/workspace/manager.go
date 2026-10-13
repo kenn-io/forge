@@ -4692,14 +4692,11 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 // the host tmux server. Runtime-session rows whose tmux session was killed
 // outside kenn-forge are removed. Ready workspaces whose primary tmux session is
 // missing are marked errored so list responses stop probing dead session names
-// and the UI can offer retry/delete. retain, when set, is asked about each
-// missing runtime row just before it would be deleted, after tmux was listed,
-// so a row whose agent is lost during the pass can still be kept. It reports
-// whether anything was pruned so callers only notify clients about passes
-// that changed state.
-func (m *Manager) PruneMissingTmuxSessions(
-	ctx context.Context, retain func(db.WorkspaceRuntimeSession) bool,
-) (bool, error) {
+// and the UI can offer retry/delete. The hooks are asked after tmux was
+// listed, so a loss during the pass can still keep a row or a workspace
+// status. It reports whether anything was pruned so callers only notify
+// clients about passes that changed state.
+func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, hooks TmuxPruneHooks) (bool, error) {
 	changed := false
 	sessions, err := m.listTmuxSessions(ctx)
 	if err != nil {
@@ -4729,7 +4726,7 @@ func (m *Manager) PruneMissingTmuxSessions(
 		if stored.TmuxSession == "" || live[stored.TmuxSession] {
 			continue
 		}
-		if retain != nil && retain(stored) {
+		if hooks.RetainRuntime != nil && hooks.RetainRuntime(stored) {
 			continue
 		}
 		slog.Debug(
@@ -4747,6 +4744,11 @@ func (m *Manager) PruneMissingTmuxSessions(
 		changed = changed || deleted
 	}
 
+	// Judging the rows can reveal a lost server, whose bases are restored
+	// rather than errored.
+	if hooks.HoldWorkspaceStatus != nil && hooks.HoldWorkspaceStatus() {
+		return changed, nil
+	}
 	workspaces, err := m.db.ListWorkspaces(ctx)
 	if err != nil {
 		return changed, fmt.Errorf("list workspaces: %w", err)
@@ -4773,6 +4775,16 @@ func (m *Manager) PruneMissingTmuxSessions(
 		changed = changed || updated
 	}
 	return changed, nil
+}
+
+// TmuxPruneHooks carry evidence a missing-tmux prune reads after listing tmux.
+type TmuxPruneHooks struct {
+	// RetainRuntime reports whether to keep a runtime row whose tmux session
+	// is missing.
+	RetainRuntime func(db.WorkspaceRuntimeSession) bool
+	// HoldWorkspaceStatus reports, once the runtime rows are judged, whether
+	// base terminals are being restored, which leaves ready workspaces ready.
+	HoldWorkspaceStatus func() bool
 }
 
 func isWorkspaceTmuxSessionName(session string) bool {
@@ -5635,7 +5647,10 @@ func (m *Manager) setTmuxStatus(
 func (m *Manager) tmuxSessionExists(
 	ctx context.Context, session string,
 ) (bool, error) {
-	cmd := m.tmuxExec(ctx, "has-session", "-t", session)
+	// "=" asks for this exact name: tmux otherwise also accepts a session
+	// whose name merely starts with it, such as a workspace agent's session
+	// for a missing base terminal.
+	cmd := m.tmuxExec(ctx, "has-session", "-t", "="+session)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

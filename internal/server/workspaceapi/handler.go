@@ -198,7 +198,10 @@ type Handler struct {
 	exitDecisions  map[string]exitDecision
 	// baseRestoreRemaining lists workspaces whose base terminal, lost with its
 	// tmux server or not restored at startup, is not restored yet; the
-	// missing-tmux prune waits until it is empty. runtimeRecoveryMu guards it.
+	// missing-tmux prune waits until it is empty. A true value marks a
+	// workspace startup restored for its retained agents, which later passes
+	// restore whatever its status, as startup would. runtimeRecoveryMu guards
+	// it.
 	baseRestoreRemaining map[string]bool
 	// baseRestoreListPending asks the next pass to restore every workspace's
 	// base terminal, after a loss or a list that could not be read; it holds

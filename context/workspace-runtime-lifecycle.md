@@ -448,8 +448,10 @@ create a local process, PTY, or durable transport session
   list as unavailable until Stop forgets them or the next start resumes them. Pruning
   deletes nothing while the server has no sessions, and judges each missing row only
   after listing tmux, never from an earlier snapshot: it keeps a pending runtime,
-  leaves one whose exit this process has not seen to its exit handler, and gives a
-  seen exit the exit handler's cached decision
+  leaves one whose exit this process has not seen to its exit handler (and, since that
+  can mean a lost server, queues every base terminal for restore), and gives a seen
+  exit the exit handler's decision, including a supervised chat's. It errors no
+  workspace while base terminals are outstanding, rechecked after the rows are judged
   (`internal/server/workspaceapi/workspace_enrichment.go::Handler.retainMissingRuntime`).
   A periodic recovery pass that
   follows keeping such an agent restores every base terminal first, as startup does,
@@ -458,7 +460,8 @@ create a local process, PTY, or durable transport session
   not finish (busy, failed, or out of budget; terminals get only a share of each pass
   so a hung one cannot starve pending agents), including those startup recovery could
   not restore, or all of them while their list cannot be read, stay outstanding across
-  passes, even after the kept agents are stopped.
+  passes, even after the kept agents are stopped; one startup restored only for its
+  retained agents stays eligible after they resume.
   Later passes work only on those, each starting after the workspace the last pass
   reached, and the missing-tmux prune waits until none remain. Recovery changes must
   pass every shutdown order of `make test-reboot-sim`
@@ -557,6 +560,9 @@ create a local process, PTY, or durable transport session
   (`internal/fleetsetup/service.go::renderSystemdUserService`).
 - New tmux sessions use the `forge-` prefix; persisted `middleman-` session
   names remain valid and must not be rewritten (`internal/workspace/`).
+- Check a tmux session's existence with an exact `=name` target: a runtime session's
+  name extends its workspace's base name, and tmux otherwise accepts that prefix match
+  for a missing base (`internal/workspace/manager.go::Manager.tmuxSessionExists`).
 - Only `DefaultTmuxCommand` selects Forge's dedicated tmux server. Custom tmux
   commands may address a shared user server, so Forge never changes their global
   options or applies graphics-off mutations (`internal/config/config.go::IsDefaultTmuxCommand`).

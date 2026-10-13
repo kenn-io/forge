@@ -970,3 +970,147 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 		return err == nil && strings.Contains(string(args), "conversation")
 	}, 5*time.Second, 10*time.Millisecond, "the pending agent resumes despite the stuck terminal")
 }
+
+// A tmux server can die, and a replacement start, between the prune's check
+// for outstanding terminal restores and its tmux listing. Judging the lost
+// agent then reveals the loss, so the prune leaves the workspaces whose base
+// terminals went with the old server ready for recovery to restore.
+func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "0000000000000e01", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/replaced"), GitHeadRef: "work/replaced",
+		WorkspaceBranch: "work/replaced", WorktreePath: cwd, Status: "ready",
+		TmuxSession: "forge-0000000000000e01",
+	}))
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"new-session", "-d", "-s", "forge-0000000000000e01", "sleep 600")...).Run())
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
+	var handler *Handler
+	release := make(chan struct{})
+	exitHandled := make(chan struct{})
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             tmux,
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-replaced",
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+		OnSessionExit: func(info localruntime.SessionInfo) {
+			<-release
+			handler.HandleRuntimeSessionExit(info)
+			close(exitHandled)
+		},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "0000000000000e01")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand(tmux)
+	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+
+	// The server dies and another terminal starts a replacement before the
+	// exit handler has run.
+	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
+	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
+	handler.runWorkspaceTmuxPrune(ctx)
+	close(release)
+	<-exitHandled
+
+	ws, err := database.GetWorkspace(ctx, "0000000000000e01")
+	require.NoError(err)
+	require.Equal("ready", ws.Status, "the replaced server's base terminal is restored, not errored")
+	rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Len(rows, 1, "the lost agent is kept for recovery")
+}
+
+// Startup restores the base terminal of a workspace that is not ready only
+// for its retained agents. When that restore fails but the agents resume,
+// later passes still restore the terminal rather than dropping it.
+func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	// The base terminal cannot start while the fail file exists.
+	fail := filepath.Join(t.TempDir(), "fail")
+	require.NoError(os.WriteFile(fail, nil, 0o600))
+	wrapper := filepath.Join(t.TempDir(), "tmux")
+	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n"+
+		"  if [ \"$a\" = forge-0000000000000d01 ] && [ \"$1\" = new-session ] && [ -e "+
+		shellquote.Join(fail)+" ]; then exit 1; fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "0000000000000d01", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/retained"), GitHeadRef: "work/retained",
+		WorkspaceBranch: "work/retained", WorktreePath: cwd, Status: "error",
+		TmuxSession: "forge-0000000000000d01",
+	}))
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+		WorkspaceID: "0000000000000d01", SessionKey: "saved-runtime", TargetKey: "custom-worker",
+		Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "gone",
+	}))
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, "saved-runtime", "claude", "conversation")
+	require.NoError(err)
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             []string{wrapper},
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-retained",
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "0000000000000d01")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand([]string{wrapper})
+	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	require.NoError(handler.RestoreRuntimeSessions(ctx))
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond, "the agent resumes")
+	require.True(handler.restoringBaseTerminals(), "the failed terminal stays outstanding")
+
+	require.NoError(os.Remove(fail))
+	require.NoError(handler.restoreRuntimeSessions(ctx, true))
+
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"has-session", "-t", "=forge-0000000000000d01")...).Run(), "the base terminal is restored")
+	require.False(handler.restoringBaseTerminals())
+}

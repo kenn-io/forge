@@ -2094,7 +2094,7 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	assert.Equal(existingBranch, headBranch)
 	argvs := readRecorderArgv(t, tmuxRecord)
 	require.NotEmpty(argvs)
-	assert.Contains(argvs, []string{"has-session", "-t", ws.TmuxSession})
+	assert.Contains(argvs, []string{"has-session", "-t", "=" + ws.TmuxSession})
 	runWorkspaceTestGit(t, ws.WorktreePath, "commit", "--allow-empty", "-m", "saved progress")
 	before, _, err := gitRefSHA(t.Context(), ws.WorktreePath, "HEAD")
 	require.NoError(err)
@@ -5891,7 +5891,7 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 	argvs := readRecorderArgv(t, record)
 	require.Len(t, argvs, 2)
 	assert.Equal(
-		[]string{"wrap", "has-session", "-t", "sess-A"},
+		[]string{"wrap", "has-session", "-t", "=sess-A"},
 		argvs[0],
 	)
 	assert.Equal(
@@ -6706,7 +6706,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 		time.Time{},
 	)
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, TmuxPruneHooks{})
 	require.NoError(pruneErr)
 	assert.True(pruned)
 
@@ -6792,7 +6792,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		Status:       "ready",
 	}))
 
-	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, nil)
+	pruned, pruneErr := mgr.PruneMissingTmuxSessions(ctx, TmuxPruneHooks{})
 	require.NoError(pruneErr)
 	assert.False(pruned, "no-op prune must report no change so callers stay silent")
 	live, err := d.GetWorkspace(ctx, "0000000000000001")
@@ -7196,7 +7196,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 	assert.Empty(stored)
 
 	argvs := readRecorderArgv(t, record)
-	assert.Contains(argvs, []string{"has-session", "-t", tmuxSession})
+	assert.Contains(argvs, []string{"has-session", "-t", "=" + tmuxSession})
 }
 
 func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
@@ -7464,7 +7464,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 5)
 	assert.Equal(
-		[]string{"has-session", "-t", "sess-B"},
+		[]string{"has-session", "-t", "=sess-B"},
 		argvs[0],
 	)
 	// new-session argv: "new-session -d -s sess-B -c /tmp/cwd <handoff>"
@@ -7528,7 +7528,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	argvs := readRecorderArgv(t, record)
 	require.Len(argvs, 4)
 	assert.Equal(
-		[]string{"has-session", "-t", "sess-macos"},
+		[]string{"has-session", "-t", "=sess-macos"},
 		argvs[0],
 	)
 	assert.Equal("new-session", argvs[1][0])

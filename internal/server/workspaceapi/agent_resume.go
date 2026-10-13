@@ -102,6 +102,15 @@ func (h *Handler) restoreTerminalsAfterServerLoss(
 	ctx context.Context, retainedWorkspaces, remaining map[string]bool,
 ) map[string]bool {
 	left := maps.Clone(remaining)
+	// A workspace startup restored for its agents stays eligible after they
+	// resume, whatever its status.
+	eligible := maps.Clone(retainedWorkspaces)
+	if eligible == nil {
+		eligible = make(map[string]bool)
+	}
+	for id, retained := range remaining {
+		eligible[id] = eligible[id] || retained
+	}
 	// Start after the workspace the previous pass reached, so one that keeps
 	// exhausting the budget cannot starve the rest.
 	ids := slices.Sorted(maps.Keys(left))
@@ -130,7 +139,7 @@ func (h *Handler) restoreTerminalsAfterServerLoss(
 			slog.Warn("read workspace terminal for recovery", "workspace_id", id, "err", err)
 		case ws == nil:
 			delete(left, id)
-		case h.restoreWorkspaceTerminal(ctx, ws, retainedWorkspaces):
+		case h.restoreWorkspaceTerminal(ctx, ws, eligible):
 			delete(left, id)
 		}
 		h.finishWorkspaceSetup(id, done)

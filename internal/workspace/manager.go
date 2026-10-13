@@ -1438,7 +1438,7 @@ func (m *Manager) SetupWithOptions(
 		remote = gitSetupDir.remote
 	}
 	nextStage("finalize")
-	if err := m.configureExecutionWorktree(ctx, ws.WorktreePath); err != nil {
+	if err := m.configureExecutionWorktree(ctx, ws.WorktreePath, remote); err != nil {
 		return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
 	}
 	if ws.ItemType == db.WorkspaceItemTypePullRequest && ws.MRHeadRepo != nil {

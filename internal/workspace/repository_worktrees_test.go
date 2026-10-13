@@ -55,11 +55,11 @@ func TestExecutionWorkerConfigurationSharesRepositoryLock(t *testing.T) {
 	require.NoError(repo.WithLock(t.Context(), func(*worktree.Scope) error {
 		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 		defer cancel()
-		err := manager.configureExecutionWorktree(ctx, path)
+		err := manager.configureExecutionWorktree(ctx, path, originRemoteName)
 		require.ErrorIs(err, context.DeadlineExceeded)
 		require.Equal("Original Name\n", string(runWorkspaceTestGit(t, path, "config", "user.name")))
 		return nil
 	}))
-	require.NoError(manager.configureExecutionWorktree(t.Context(), path))
+	require.NoError(manager.configureExecutionWorktree(t.Context(), path, originRemoteName))
 	require.Equal("Developer A\n", string(runWorkspaceTestGit(t, path, "config", "user.name")))
 }

@@ -41,7 +41,7 @@ func (m *Manager) applyExecutionSource(ctx context.Context, summary *WorkspaceSu
 	return nil
 }
 
-func (m *Manager) configureExecutionWorktree(ctx context.Context, dir string) error {
+func (m *Manager) configureExecutionWorktree(ctx context.Context, dir, remote string) error {
 	if !m.executionWorker.Enabled {
 		return nil
 	}
@@ -71,11 +71,13 @@ func (m *Manager) configureExecutionWorktree(ctx context.Context, dir string) er
 		}
 		branch = strings.TrimSpace(branch)
 		if branch != "" {
-			remote, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
-			if strings.TrimSpace(remote) == "" {
+			tracked, _ := gitConfigValue(ctx, dir, "branch."+branch+".remote")
+			if strings.TrimSpace(tracked) == "" {
 				// A newly created development branch can be pushed from Forge before
-				// it exists remotely. Existing tracking choices remain intact.
-				return scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{Action: managed.UpstreamTrack, Scope: managed.UpstreamRepository, Remote: "origin", Ref: "refs/heads/" + branch}})
+				// it exists remotely. It tracks the workspace's own remote, which a
+				// local worktree base may name something other than origin.
+				// Existing tracking choices remain intact.
+				return scope.SetUpstream(ctx, managed.WorktreeUpstreamOptions{Path: dir, Policy: managed.UpstreamPolicy{Action: managed.UpstreamTrack, Scope: managed.UpstreamRepository, Remote: remote, Ref: "refs/heads/" + branch}})
 			}
 		}
 		return nil

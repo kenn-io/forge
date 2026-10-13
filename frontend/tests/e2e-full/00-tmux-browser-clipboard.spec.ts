@@ -15,10 +15,6 @@ import {
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
-test.beforeEach(({ page }) => {
-  trackTerminalReadiness(page);
-});
-
 type WorkspaceStatusResponse = {
   id: string;
   status: string;
@@ -810,6 +806,10 @@ async function dragTerminalPastTop(page: Page, container: Locator, dimensions: T
 }
 
 test.describe.configure({ mode: "serial", timeout: 120_000 });
+
+test.beforeEach(({ page }) => {
+  trackTerminalReadiness(page);
+});
 
 test("detected terminal URLs disclose destinations and require a modified click", async ({ page }) => {
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");

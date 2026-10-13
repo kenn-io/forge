@@ -63,3 +63,34 @@ func TestExecutionWorkerConfigurationSharesRepositoryLock(t *testing.T) {
 	require.NoError(manager.configureExecutionWorktree(t.Context(), path, originRemoteName))
 	require.Equal("Developer A\n", string(runWorkspaceTestGit(t, path, "config", "user.name")))
 }
+
+// A new-workspace request picks its branch name while handling the request.
+// Another workspace's setup can hold the repository lock across a fetch, and
+// choosing a name must not wait for it.
+func TestBranchNameSelectionDoesNotWaitForRepositoryLock(t *testing.T) {
+	require := require.New(t)
+	root := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/topic")
+	manager := newWorkspaceTestManager(t, nil, t.TempDir())
+	held, release := make(chan struct{}), make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- manager.withRepoLockForGitDir(t.Context(), root, func(*worktree.Scope) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+	defer func() {
+		close(release)
+		require.NoError(<-done)
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	branch, err := manager.workspaceBranchForExistingLocalBranch(ctx, root, "kenn-forge/new-work", false, true)
+	require.NoError(err)
+	require.Equal("kenn-forge/new-work", branch)
+	_, _, err = manager.nextAvailableAdHocBranchName(ctx, root, "feature/topic", "ws-new", 0)
+	require.NoError(err)
+}

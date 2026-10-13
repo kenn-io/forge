@@ -1181,12 +1181,9 @@ func (m *Manager) workspaceBranchForExistingLocalBranch(
 		return "", fmt.Errorf("inspect local branch: %w", err)
 	}
 	if !exists {
-		var available bool
-		err := m.withRepoLockForGitDir(ctx, dir, func(scope *worktree.Scope) error {
-			var err error
-			available, err = scope.BranchNameAvailable(ctx, branch)
-			return err
-		})
+		// Choosing a name only reads refs; creation re-checks it under the
+		// repository lock, so this request does not wait for another setup.
+		available, err := m.branchNameAvailable(ctx, dir, branch)
 		if err != nil {
 			return "", fmt.Errorf("inspect local branch namespace: %w", err)
 		}
@@ -1208,6 +1205,18 @@ func (m *Manager) workspaceBranchForExistingLocalBranch(
 		}
 	}
 	return "", m.workspaceBranchConflict(ctx, dir, branch)
+}
+
+func (m *Manager) branchNameAvailable(ctx context.Context, dir, branch string) (bool, error) {
+	common, err := worktreeCommonGitDir(ctx, dir)
+	if err != nil {
+		return false, err
+	}
+	repo, err := m.openRepositoryWorktrees(ctx, common)
+	if err != nil {
+		return false, err
+	}
+	return repo.BranchNameAvailable(ctx, branch)
 }
 
 func (m *Manager) workspaceBranchConflict(

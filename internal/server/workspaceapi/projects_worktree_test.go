@@ -331,3 +331,73 @@ func TestProjectCreationRejectsInvalidBranchName(t *testing.T) {
 	require.Equal(http.StatusBadRequest, problem.Status)
 	require.NoDirExists(repo.Dir + "-worktrees")
 }
+
+// Discovery stores a detached checkout under a "detached/<sha>" label, not a
+// branch. Removing it must not treat that label as a required branch, and a
+// detached checkout has no branch to delete.
+func TestProjectRemovalDeletesDiscoveredDetachedWorktree(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	h, project, repo := projectLifecycleFixture(t, "")
+	path := filepath.Join(t.TempDir(), "detached")
+	gitfixture.Run(t, repo.Dir, "worktree", "add", "--detach", path, "HEAD")
+	head := strings.TrimSpace(string(gitfixture.Run(t, path, "rev-parse", "--short", "HEAD")))
+	row, err := h.db.CreateProjectWorktree(t.Context(), db.CreateProjectWorktreeInput{
+		ProjectID: project.ID, Branch: "detached/" + head, Path: path,
+	})
+	require.NoError(err)
+	branches := string(gitfixture.Run(t, repo.Dir, "branch", "--list"))
+	remove := &removeWorktreeInput{ProjectID: project.ID, WorktreeID: row.ID}
+	remove.Body.RemoveFromDisk, remove.Body.RemoveBranch = true, true
+
+	_, err = h.removeProjectWorktree(t.Context(), remove)
+
+	require.NoError(err)
+	require.NoDirExists(path)
+	require.NotContains(string(gitfixture.Run(t, repo.Dir, "worktree", "list", "--porcelain")), path)
+	require.Equal(branches, string(gitfixture.Run(t, repo.Dir, "branch", "--list")))
+	_, err = h.db.GetProjectWorktreeByID(t.Context(), row.ID)
+	require.Error(err)
+}
+
+// A detached row removes only a checkout that is still detached at the
+// commit seen before its teardown script ran.
+func TestProjectRemovalRefusesChangedDetachedWorktree(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("Projects uses native executable scripts")
+	}
+	for _, tt := range []struct{ name, before, teardown string }{
+		{name: "branch checked out since discovery", before: "switch -c moved"},
+		{name: "teardown commits", teardown: "git -c user.name=E -c user.email=e@example.com commit --allow-empty -m teardown\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			h, project, repo := projectLifecycleFixture(t, "")
+			path := filepath.Join(t.TempDir(), "detached")
+			gitfixture.Run(t, repo.Dir, "worktree", "add", "--detach", path, "HEAD")
+			row, err := h.db.CreateProjectWorktree(t.Context(), db.CreateProjectWorktreeInput{
+				ProjectID: project.ID, Branch: "detached/" + strings.TrimSpace(string(gitfixture.Run(t, path, "rev-parse", "--short", "HEAD"))), Path: path,
+			})
+			require.NoError(err)
+			if tt.before != "" {
+				gitfixture.Run(t, path, strings.Fields(tt.before)...)
+			}
+			remove := &removeWorktreeInput{ProjectID: project.ID, WorktreeID: row.ID}
+			remove.Body.RemoveFromDisk, remove.Body.Force = true, true
+			if tt.teardown != "" {
+				script := filepath.Join(repo.Dir, "teardown")
+				require.NoError(os.WriteFile(script, []byte("#!/bin/sh\nset -e\n"+tt.teardown), 0o700))
+				remove.Body.TeardownScript = script
+			}
+
+			_, err = h.removeProjectWorktree(t.Context(), remove)
+
+			require.Error(err)
+			require.DirExists(path)
+			_, err = h.db.GetProjectWorktreeByID(t.Context(), row.ID)
+			require.NoError(err)
+		})
+	}
+}

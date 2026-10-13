@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
+import { workspaceSessionWebSocketPath } from "../../../src/lib/api/workspace-runtime";
 
 type TerminalSocketState = { ready: boolean; closed: boolean };
 const terminalSockets = new WeakMap<Page, Map<string, TerminalSocketState>>();
@@ -36,12 +37,7 @@ export async function waitForTerminalInputReady(container: Locator): Promise<voi
   if (!identity) throw new Error("Terminal has no data-session-host identity");
   const [workspaceId, hostKey, sessionKey] = identity.split("/").map(decodeURIComponent);
   if (!workspaceId || !sessionKey) throw new Error(`Invalid terminal session identity: ${identity}`);
-  const hostPrefix = hostKey?.startsWith("devbox:")
-    ? `/devboxes/${encodeURIComponent(hostKey.slice(7))}`
-    : hostKey
-      ? `/fleet/hosts/${encodeURIComponent(hostKey)}`
-      : "";
-  const runtimePath = `/ws/v1${hostPrefix}/workspaces/${encodeURIComponent(workspaceId)}/runtime/sessions/${encodeURIComponent(sessionKey)}/terminal`;
+  const runtimePath = workspaceSessionWebSocketPath(workspaceId, sessionKey, hostKey || undefined);
   await expect
     .poll(
       () => {

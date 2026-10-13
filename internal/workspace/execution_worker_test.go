@@ -76,16 +76,20 @@ func TestExecutionWorkerTracksTheWorkspaceRemote(t *testing.T) {
 // remote is the workspace's own repository.
 func TestExecutionPushStateAcceptsTheWorkspaceRemote(t *testing.T) {
 	for _, tt := range []struct {
-		name, url string
-		reported  bool
+		name, url, pushURL string
+		reported           bool
 	}{
 		{name: "workspace repository", url: "https://github.com/acme/widget.git", reported: true},
 		{name: "other repository", url: "https://github.com/someone-else/widget.git"},
+		{name: "pushes to a fork", url: "https://github.com/acme/widget.git", pushURL: "https://github.com/someone-else/widget.git"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
 			repo := gitfixture.NewRepository(t, false)
 			runWorkspaceTestGit(t, repo.Dir, "remote", "add", "upstream", tt.url)
+			if tt.pushURL != "" {
+				runWorkspaceTestGit(t, repo.Dir, "remote", "set-url", "--push", "upstream", tt.pushURL)
+			}
 			work := filepath.Join(t.TempDir(), "work")
 			runWorkspaceTestGit(t, repo.Dir, "worktree", "add", "-b", "feature/topic", work)
 			runWorkspaceTestGit(t, work, "update-ref", "refs/remotes/upstream/feature/topic", "HEAD")

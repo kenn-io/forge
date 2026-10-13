@@ -123,14 +123,30 @@ func (m *Manager) ExecutionPushState(ctx context.Context, summary *WorkspaceSumm
 
 // executionPushRemote reports whether pushes to remote go to the workspace's
 // repository. A local worktree base can name that remote something other than
-// origin; it then counts only when its URLs match the repository identity.
+// origin; it then counts only when its fetch and push URLs all match the
+// repository identity, since Git pushes to remote.<name>.pushurl when set.
 func (m *Manager) executionPushRemote(ctx context.Context, summary *WorkspaceSummary, remote string) bool {
 	if remote == originRemoteName {
 		return true
 	}
-	return validateBaseRemoteURLs(
+	insecure := m.allowsInsecureHTTP(summary.Platform, summary.PlatformHost)
+	if validateBaseRemoteURLs(
 		ctx, summary.WorktreePath, remote, summary.Platform, summary.PlatformHost,
-		summary.RepoOwner, summary.RepoName,
-		m.allowsInsecureHTTP(summary.Platform, summary.PlatformHost),
-	) == nil
+		summary.RepoOwner, summary.RepoName, insecure,
+	) != nil {
+		return false
+	}
+	pushURLs, err := gitConfigValues(ctx, summary.WorktreePath, "remote."+remote+".pushurl")
+	if err != nil {
+		return false
+	}
+	for _, pushURL := range pushURLs {
+		if validateBaseRemoteURL(
+			pushURL, remote, summary.Platform, summary.PlatformHost,
+			summary.RepoOwner, summary.RepoName, insecure,
+		) != nil {
+			return false
+		}
+	}
+	return true
 }

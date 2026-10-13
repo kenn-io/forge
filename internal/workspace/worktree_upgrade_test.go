@@ -236,3 +236,38 @@ func worktreeGitDir(ctx context.Context, path string) (string, error) {
 	out, err := gitCombinedOutput(ctx, path, "rev-parse", "--path-format=absolute", "--git-dir")
 	return strings.TrimSpace(out), err
 }
+
+// Git can record worktree registrations with relative paths. Deleting a
+// workspace whose checkout is already gone must still prune that
+// registration and its branch.
+func TestDeleteMissingCheckoutPrunesRelativeRegistration(t *testing.T) {
+	require := require.New(t)
+	root := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/topic")
+	runWorkspaceTestGit(t, root, "config", "worktree.useRelativePaths", "true")
+	path := filepath.Join(t.TempDir(), "issue-7")
+	runWorkspaceTestGit(t, root, "worktree", "add", path, "-b", "kenn-forge/issue-7", "HEAD")
+	registration := strings.TrimSpace(string(runWorkspaceTestGit(t, path, "rev-parse", "--absolute-git-dir")))
+	backlink, err := os.ReadFile(filepath.Join(registration, "gitdir"))
+	require.NoError(err)
+	if filepath.IsAbs(strings.TrimSpace(string(backlink))) {
+		t.Skip("installed Git does not write relative worktree paths")
+	}
+	require.NoError(os.RemoveAll(path))
+	database := openTestDB(t)
+	ws := &Workspace{
+		ID: "ws-relative", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+		ItemNumber: 7, GitHeadRef: "kenn-forge/issue-7", WorkspaceBranch: "kenn-forge/issue-7",
+		WorktreePath: path, Status: "ready",
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), ws))
+	manager := newTestManager(t, database, t.TempDir())
+	manager.SetWorktreeBasePathResolver(staticBaseResolver(root))
+
+	_, err = manager.Delete(t.Context(), ws.ID, true, nil)
+
+	require.NoError(err)
+	require.NoDirExists(registration)
+	require.NotContains(string(runWorkspaceTestGit(t, root, "worktree", "list", "--porcelain")), path)
+	require.Empty(strings.TrimSpace(string(runWorkspaceTestGit(t, root, "branch", "--list", "kenn-forge/issue-7"))))
+}

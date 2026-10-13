@@ -72,28 +72,32 @@ func TestExecutionWorkerTracksTheWorkspaceRemote(t *testing.T) {
 	require.Equal("refs/heads/feature/topic", strings.TrimSpace(string(runWorkspaceTestGit(t, work, "config", "branch.feature/topic.merge"))))
 }
 
-// Push state reports a branch that tracks a non-origin remote only when that
-// remote is the workspace's own repository.
+// Push state reports a branch only when every fetch and push URL of the
+// remote it tracks is the workspace's own repository, whatever the remote's
+// name. Otherwise a push to another repository would be attributed to it.
 func TestExecutionPushStateAcceptsTheWorkspaceRemote(t *testing.T) {
 	for _, tt := range []struct {
-		name, url, pushURL string
-		reported           bool
+		name, remote, url, pushURL string
+		reported                   bool
 	}{
-		{name: "workspace repository", url: "https://github.com/acme/widget.git", reported: true},
-		{name: "other repository", url: "https://github.com/someone-else/widget.git"},
-		{name: "pushes to a fork", url: "https://github.com/acme/widget.git", pushURL: "https://github.com/someone-else/widget.git"},
+		{name: "workspace repository", remote: "upstream", url: "https://github.com/acme/widget.git", reported: true},
+		{name: "other repository", remote: "upstream", url: "https://github.com/someone-else/widget.git"},
+		{name: "pushes to a fork", remote: "upstream", url: "https://github.com/acme/widget.git", pushURL: "https://github.com/someone-else/widget.git"},
+		{name: "origin is the workspace repository", remote: "origin", url: "https://github.com/acme/widget.git", reported: true},
+		{name: "origin is another repository", remote: "origin", url: "https://github.com/someone-else/widget.git"},
+		{name: "origin pushes to a fork", remote: "origin", url: "https://github.com/acme/widget.git", pushURL: "https://github.com/someone-else/widget.git"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
 			repo := gitfixture.NewRepository(t, false)
-			runWorkspaceTestGit(t, repo.Dir, "remote", "add", "upstream", tt.url)
+			runWorkspaceTestGit(t, repo.Dir, "remote", "add", tt.remote, tt.url)
 			if tt.pushURL != "" {
-				runWorkspaceTestGit(t, repo.Dir, "remote", "set-url", "--push", "upstream", tt.pushURL)
+				runWorkspaceTestGit(t, repo.Dir, "remote", "set-url", "--push", tt.remote, tt.pushURL)
 			}
 			work := filepath.Join(t.TempDir(), "work")
 			runWorkspaceTestGit(t, repo.Dir, "worktree", "add", "-b", "feature/topic", work)
-			runWorkspaceTestGit(t, work, "update-ref", "refs/remotes/upstream/feature/topic", "HEAD")
-			runWorkspaceTestGit(t, work, "branch", "--set-upstream-to=upstream/feature/topic")
+			runWorkspaceTestGit(t, work, "update-ref", "refs/remotes/"+tt.remote+"/feature/topic", "HEAD")
+			runWorkspaceTestGit(t, work, "branch", "--set-upstream-to="+tt.remote+"/feature/topic")
 			m := newWorkspaceTestManager(t, nil, t.TempDir())
 			m.SetExecutionWorker(config.ExecutionWorker{Enabled: true}, "/opt/example/bin/forge")
 			summary := &WorkspaceSummary{

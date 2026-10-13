@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -2019,6 +2020,41 @@ func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 		assert.NotNil(got.ExitCode)
 		assert.Equal(0, *got.ExitCode)
 		assert.Empty(mgr.ListSessions("ws-1"))
+	})
+}
+
+// Exit handling that began before shutdown can be forgetting a finished
+// session's record. Shutdown waits for it, so the process does not exit or
+// close its database first.
+func TestManagerShutdownWaitsForExitHandling(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		owner := newFakeRuntimePtyOwner()
+		mgr := NewManager(Options{Targets: []LaunchTarget{
+			helperTarget("helper", "sleep"),
+		}, OnSessionExit: func(SessionInfo) {
+			close(entered)
+			<-release
+		}, PtyOwnerRuntime: owner})
+
+		_, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+		require.NoError(t, err)
+		owner.startedPTY.Close()
+		<-entered
+
+		var returned atomic.Bool
+		go func() {
+			mgr.Shutdown()
+			returned.Store(true)
+		}()
+		synctest.Wait()
+		assert.False(t, returned.Load(), "shutdown returned while exit handling ran")
+
+		close(release)
+		synctest.Wait()
+		assert.True(t, returned.Load())
 	})
 }
 

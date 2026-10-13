@@ -436,7 +436,9 @@ create a local process, PTY, or durable transport session
   session is gone with a recorded normal exit, then prunes records of gone sessions
   that no stored row names, so an exit still being handled keeps its record. A runtime
   without tmux has no record, so its exit handler deletes the row at once rather than
-  in background cleanup a shutdown can skip; such an agent that finishes while Forge is
+  in background cleanup a shutdown can skip, and runtime shutdown waits (bounded) for
+  exit handling already under way
+  (`internal/workspace/localruntime/manager.go::Manager.Shutdown`); such an agent that finishes while Forge is
   down is still resumed, since its gone owner looks like a killed one. Sessions
   launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits

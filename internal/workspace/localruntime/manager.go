@@ -178,6 +178,11 @@ type Manager struct {
 	acpOwnerCommand    []string
 	acpPreferences     map[string]map[string]string
 
+	// exitCallbacks counts running OnSessionExit calls. A session gains one
+	// when it leaves sessions, under mu, so every call Shutdown must wait for
+	// is counted before Shutdown clears sessions.
+	exitCallbacks sync.WaitGroup
+
 	mu          sync.Mutex
 	targets     map[string]LaunchTarget
 	targetsList []LaunchTarget
@@ -1866,6 +1871,9 @@ func (m *Manager) shellLaunchCommand(
 	return result, nil
 }
 
+// exitCallbackShutdownWait bounds how long Shutdown waits for exit handling.
+const exitCallbackShutdownWait = 5 * time.Second
+
 func (m *Manager) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -1890,12 +1898,36 @@ func (m *Manager) Shutdown() {
 		}
 		s.detach()
 	}
+	m.waitSessionsDone(ctx, sessions)
+	m.waitExitCallbacks()
+}
+
+func (m *Manager) waitSessionsDone(ctx context.Context, sessions []*session) {
 	for _, s := range sessions {
 		select {
 		case <-s.done:
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// waitExitCallbacks lets exit handling that began before shutdown finish, such
+// as forgetting a finished agent's record, so the process does not exit or
+// close its database first. The wait is bounded so a stuck callback cannot
+// hold shutdown forever.
+func (m *Manager) waitExitCallbacks() {
+	done := make(chan struct{})
+	go func() {
+		m.exitCallbacks.Wait()
+		close(done)
+	}()
+	timer := time.NewTimer(exitCallbackShutdownWait)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-timer.C:
+		slog.Warn("shutdown stopped waiting for runtime exit handling")
 	}
 }
 
@@ -2172,6 +2204,7 @@ func (m *Manager) watchSession(
 		return
 	}
 	if m.removeExitedSession(info, s) && m.onSessionExit != nil {
+		defer m.exitCallbacks.Done()
 		m.onSessionExit(info)
 	}
 }
@@ -2205,6 +2238,9 @@ func (m *Manager) removeExitedSession(
 	}
 	delete(m.sessions, info.Key)
 	m.exited[info.Key] = info
+	if m.onSessionExit != nil {
+		m.exitCallbacks.Add(1)
+	}
 	return true
 }
 

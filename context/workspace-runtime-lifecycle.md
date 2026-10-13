@@ -392,9 +392,14 @@ create a local process, PTY, or durable transport session
 - The runtime row, not the activity report, holds the conversation to resume:
   every non-SessionEnd hook whose canonical CWD is the row's workspace saves its
   agent and conversation ID on the row, so a nested agent in another worktree cannot
-  replace it, and re-recording the row keeps them. Recording an agent's row also saves
-  a conversation its hooks reported before the row existed. SessionEnd may delete the report, including
-  when a host shutdown kills the agent
+  replace it, and re-recording the row keeps them. A nested agent in the same worktree
+  inherits the runtime key, so another conversation replaces the saved one only once
+  the saved one has no report from the row's current runtime: SessionEnd, which /clear
+  and /resume send first, removes it. Agents without SessionEnd hooks (Droid) save their
+  newest conversation. Recording an agent's row also saves a conversation its hooks
+  reported before the row existed. SessionEnd may delete the report, including when a
+  host shutdown kills the agent, and saves its reason on the row while that conversation
+  is the saved one
   (`internal/server/workspaceapi/agent_hook.go::Handler.recordAgentConversation`,
   `internal/db/queries.go::DB.RecordWorkspaceRuntimeConversation`).
   Recovery and idle resume first copy the newest activity report into an agent row
@@ -428,7 +433,8 @@ create a local process, PTY, or durable transport session
   the client's exit code, the pane wrapper's exit record decides: keep the agent when
   it shows a kill (the wrapper died with it, or it died from HUP, KILL, or TERM, as when
   a shutdown signals agents before tmux and Forge), and forget it after a recorded
-  normal exit, which can follow a killed client. Read the record once per decision.
+  normal exit, which can follow a killed client, unless the saved conversation's
+  SessionEnd gave reason "other": an agent can catch a termination signal and exit 0. Read the record once per decision.
   Each new wrapper clears the record a previous run under the same tmux name left;
   only deleting the agent's row spends a record, so an interrupted cleanup still
   shows the next start that the agent finished, and a detached client, which also

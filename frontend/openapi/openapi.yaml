@@ -4100,6 +4100,8 @@ components:
           type: string
         notification_type:
           type: string
+        reason:
+          type: string
         session_crons: {}
         session_id:
           type: string

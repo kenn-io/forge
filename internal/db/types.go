@@ -1598,6 +1598,20 @@ type WorkspaceRuntimeSession struct {
 	// last reported through its hooks; recovery resumes it.
 	ConversationAgent string
 	ConversationID    string
+	// ConversationEndReason is the reason that conversation's SessionEnd hook
+	// gave, empty while it runs or when its agent gives none.
+	ConversationEndReason string
+}
+
+// RuntimeConversation is the conversation saved on a runtime row, with the
+// worktree of the workspace that owns the row.
+type RuntimeConversation struct {
+	WorktreePath string
+	// CreatedAt is when the row's current runtime started.
+	CreatedAt time.Time
+	Agent     string
+	ID        string
+	EndReason string
 }
 
 // ListActivityOpts holds filters and pagination for the activity feed.

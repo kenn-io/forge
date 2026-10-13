@@ -158,3 +158,74 @@ func TestReceiveAgentHookRecordsActivityAndGeneratesClaudeContext(t *testing.T) 
 		}
 	}
 }
+
+// An agent the terminal's agent runs in the same worktree inherits the
+// terminal's runtime key. Its hooks must not replace the terminal's own saved
+// conversation, which recovery resumes; /clear, which ends that conversation
+// first, still does. An agent without SessionEnd hooks never shows an end,
+// so its newest conversation is saved.
+func TestAgentHooksKeepTheTerminalsOwnConversation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	worktree := t.TempDir()
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/nested"), GitHeadRef: "work/nested",
+		WorkspaceBranch: "work/nested", WorktreePath: worktree, Status: "ready",
+	}))
+	for _, key := range []string{"terminal", "droid-terminal"} {
+		require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+			WorkspaceID: "workspace", SessionKey: key, TargetKey: "worker",
+			Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "forge-" + key,
+		}))
+	}
+	handler := New(Deps{DB: database, AgentActivity: agentactivity.NewStore(t.TempDir())})
+	send := func(agent, key string, hook agentactivity.HookEvent) {
+		t.Helper()
+		hook.CWD = worktree
+		_, err := handler.receiveAgentHook(ctx, &receiveAgentHookInput{
+			Agent: agent, RuntimeSessionKey: key, Body: hook,
+		})
+		require.NoError(err)
+	}
+	saved := func(key string) db.RuntimeConversation {
+		t.Helper()
+		conversation, ok, err := database.RuntimeSessionConversation(ctx, key)
+		require.NoError(err)
+		require.True(ok)
+		return db.RuntimeConversation{Agent: conversation.Agent, ID: conversation.ID, EndReason: conversation.EndReason}
+	}
+
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "parent", HookEventName: "SessionStart", Source: "startup"})
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "child", HookEventName: "SessionStart", Source: "startup"})
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "child", HookEventName: "Stop"})
+	send("codex", "terminal", agentactivity.HookEvent{SessionID: "codex-child", HookEventName: "Stop"})
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "child", HookEventName: "SessionEnd", Reason: "other"})
+	assert.Equal(db.RuntimeConversation{Agent: "claude", ID: "parent"}, saved("terminal"),
+		"a nested agent leaves the terminal's conversation and its end in place")
+
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "parent", HookEventName: "SessionEnd", Reason: "clear"})
+	assert.Equal("clear", saved("terminal").EndReason)
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "cleared", HookEventName: "SessionStart", Source: "clear"})
+	assert.Equal(db.RuntimeConversation{Agent: "claude", ID: "cleared"}, saved("terminal"),
+		"/clear replaces the conversation and clears its end")
+
+	// A restart left the saved conversation's report behind. The resumed
+	// runtime starts later, so that report does not hold the place of the
+	// conversation the resumed agent reports.
+	require.NoError(database.RecordWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+		WorkspaceID: "workspace", SessionKey: "terminal", TargetKey: "worker",
+		Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "forge-resumed",
+		CreatedAt: time.Now().UTC().Add(time.Hour),
+	}))
+	send("claude", "terminal", agentactivity.HookEvent{SessionID: "resumed", HookEventName: "SessionStart", Source: "resume"})
+	assert.Equal("resumed", saved("terminal").ID)
+
+	send("droid", "droid-terminal", agentactivity.HookEvent{SessionID: "first", HookEventName: "Stop"})
+	send("droid", "droid-terminal", agentactivity.HookEvent{SessionID: "second", HookEventName: "Stop"})
+	assert.Equal("second", saved("droid-terminal").ID)
+}

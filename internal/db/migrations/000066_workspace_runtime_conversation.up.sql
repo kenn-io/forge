@@ -2,3 +2,6 @@
 -- resume it after the agent's activity report is gone.
 ALTER TABLE forge_workspace_runtime_sessions ADD COLUMN conversation_agent TEXT NOT NULL DEFAULT '';
 ALTER TABLE forge_workspace_runtime_sessions ADD COLUMN conversation_id TEXT NOT NULL DEFAULT '';
+-- Why that conversation's SessionEnd hook said it ended, so a clean exit after
+-- a termination signal is not mistaken for the user finishing it.
+ALTER TABLE forge_workspace_runtime_sessions ADD COLUMN conversation_end_reason TEXT NOT NULL DEFAULT '';

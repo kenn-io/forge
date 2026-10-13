@@ -542,7 +542,31 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 // client died and the agent later finished. Such a conversation is over.
 func (h *Handler) agentFinishedUnwatched(session db.WorkspaceRuntimeSession) bool {
 	exit, recorded := h.runtime.AgentExit(session.TmuxSession)
-	return recorded && exit.Recorded && !exit.Killed()
+	return recorded && exit.Recorded && !exit.Killed() &&
+		!conversationTerminated(session.ConversationEndReason)
+}
+
+// conversationTerminated reports whether a saved conversation's SessionEnd
+// gave the reason agents report for a termination signal. An agent can catch
+// that signal and exit cleanly, so its clean exit does not mean it finished.
+func conversationTerminated(endReason string) bool {
+	return endReason == "other"
+}
+
+// agentTerminated reports whether the conversation saved on a runtime ended
+// from a termination signal. A row that cannot be read reports false, which
+// leaves the decision to the exit record.
+func (h *Handler) agentTerminated(sessionKey string) bool {
+	if h.db == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(h.lifecycleCtx), 2*time.Second)
+	defer cancel()
+	saved, ok, err := h.db.RuntimeSessionConversation(ctx, sessionKey)
+	if err != nil {
+		slog.Warn("read agent conversation end", "session_key", sessionKey, "err", err)
+	}
+	return ok && conversationTerminated(saved.EndReason)
 }
 
 func (h *Handler) classifyAgentExit(
@@ -550,12 +574,13 @@ func (h *Handler) classifyAgentExit(
 ) (bool, error) {
 	// The wrapper's record wins whatever the client's exit code: a shutdown
 	// can kill the client and the agent together, and an agent can finish
-	// after its client was killed.
+	// after its client was killed. A clean status after the agent's own
+	// SessionEnd reported a termination signal is a kill the agent handled.
 	if recorded && exit.Killed() {
 		return true, nil
 	}
 	if recorded && exit.Recorded {
-		return false, nil
+		return h.agentTerminated(info.Key), nil
 	}
 	if *info.ExitCode == 0 {
 		return false, nil

@@ -55,6 +55,21 @@ func TestRecordWorkspaceRuntimeConversation(t *testing.T) {
 	assert.True(updated)
 	assert.Equal("second", stored().ConversationID)
 
+	// SessionEnd saves why the saved conversation ended; another
+	// conversation's end changes nothing.
+	updated, err = d.RecordWorkspaceRuntimeConversationEnd(ctx, "runtime-a", "claude", "nested", "other")
+	require.NoError(err)
+	assert.False(updated)
+	updated, err = d.RecordWorkspaceRuntimeConversationEnd(ctx, "runtime-a", "claude", "second", "other")
+	require.NoError(err)
+	assert.True(updated)
+	assert.Equal("other", stored().ConversationEndReason)
+	// A resumed conversation reports again, so it no longer has ended.
+	updated, err = d.RecordWorkspaceRuntimeConversation(ctx, "runtime-a", "claude", "second")
+	require.NoError(err)
+	assert.True(updated)
+	assert.Empty(stored().ConversationEndReason)
+
 	updated, err = d.RecordWorkspaceRuntimeConversation(ctx, "runtime-missing", "claude", "first")
 	require.NoError(err)
 	assert.False(updated, "a hook from an unrecorded runtime changes nothing")

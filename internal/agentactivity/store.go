@@ -68,7 +68,11 @@ type HookEvent struct {
 	NotificationType string `json:"notification_type,omitempty"`
 	AgentID          string `json:"agent_id,omitempty"`
 	// Source is how a SessionStart session began: startup, resume, clear, compact or fork.
-	Source          string   `json:"source,omitempty"`
+	Source string `json:"source,omitempty"`
+	// Reason is why a SessionEnd session ended, as the agent names it. Claude
+	// and the agents that share its reasons report "other" for a termination
+	// signal.
+	Reason          string   `json:"reason,omitempty"`
 	BackgroundTasks any      `json:"background_tasks,omitempty"`
 	SessionCrons    any      `json:"session_crons,omitempty"`
 	_               struct{} `json:"-" additionalProperties:"true"`
@@ -612,6 +616,14 @@ func (s *Store) readReport(path string) (Report, error) {
 	}
 	report.CWD = cwd
 	return report, nil
+}
+
+// ReportUpdatedAt returns when one terminal last reported a conversation, and
+// whether it still has a report. SessionEnd removes the report, so one that
+// remains means the conversation had not ended when it last reported.
+func (s *Store) ReportUpdatedAt(agent, sessionID, runtimeSessionKey string) (time.Time, bool) {
+	report, ok := s.previousReport(agent, sessionID, runtimeSessionKey)
+	return report.UpdatedAt, ok
 }
 
 // previousReport returns the newest report for one terminal, including one saved under its name from before terminals had their own.

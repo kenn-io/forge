@@ -325,6 +325,9 @@ during CI. Build small fixture-only helpers from the repository and reuse an
 already-required toolchain base image instead (`tests/integration/roborev/Dockerfile`).
 The Docker reboot simulation needs real tmux, so it installs Debian packages and stays
 an opt-in local target outside CI (`scripts/reboot-sim.sh`, `tools/rebootsim/Dockerfile`).
+Its fake agent must send hook payloads the pinned decoder accepts (SessionStart
+`source`, SessionEnd `reason`); a rejected hook silently skips the path under test
+(`tools/rebootsim/fake-agent.sh`).
 
 Playwright waits must observe the state consumed by the next assertion. Direct API reads after an optimistic
 mutation wait for its response; rendered assertions wait for rendered state, since route refinement can pair new

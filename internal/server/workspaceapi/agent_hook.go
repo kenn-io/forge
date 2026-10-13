@@ -3,10 +3,12 @@ package workspaceapi
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/agentactivity"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/kit/agenthook"
 )
@@ -76,29 +78,68 @@ func (s *Handler) receiveAgentHook(
 // recordAgentConversation saves the conversation a launched agent reports on
 // its runtime row. SessionEnd deletes the activity report, including when a
 // host shutdown kills the agent, so recovery reads the conversation from the
-// row instead.
+// row instead. SessionEnd itself saves only why the conversation ended.
 func (s *Handler) recordAgentConversation(
 	ctx context.Context, agent string, hook agentactivity.HookEvent, runtimeSessionKey string,
 ) {
 	sessionID := strings.TrimSpace(hook.SessionID)
 	runtimeSessionKey = strings.TrimSpace(runtimeSessionKey)
-	if s.db == nil || sessionID == "" || runtimeSessionKey == "" || hook.AgentID != "" ||
-		hook.HookEventName == "SessionEnd" {
+	agent = strings.ToLower(agent)
+	if s.db == nil || sessionID == "" || runtimeSessionKey == "" || hook.AgentID != "" {
 		return
 	}
 	// An agent started inside a launched terminal inherits its runtime key but
 	// may work in another worktree; only the terminal's own workspace counts.
-	worktree, ok, err := s.db.RuntimeSessionWorktreePath(ctx, runtimeSessionKey)
+	saved, ok, err := s.db.RuntimeSessionConversation(ctx, runtimeSessionKey)
 	if err != nil {
-		slog.Warn("read agent runtime workspace", "session_key", runtimeSessionKey, "err", err)
+		slog.Warn("read agent runtime conversation", "session_key", runtimeSessionKey, "err", err)
 		return
 	}
-	if !ok || !agentactivity.SameWorkspace(hook.CWD, worktree) {
+	if !ok || !agentactivity.SameWorkspace(hook.CWD, saved.WorktreePath) {
+		return
+	}
+	if hook.HookEventName == "SessionEnd" {
+		if _, err := s.db.RecordWorkspaceRuntimeConversationEnd(
+			ctx, runtimeSessionKey, agent, sessionID, strings.TrimSpace(hook.Reason),
+		); err != nil {
+			slog.Warn("record agent conversation end", "session_key", runtimeSessionKey, "err", err)
+		}
+		return
+	}
+	if s.savedConversationRuns(saved, agent, sessionID, runtimeSessionKey) {
 		return
 	}
 	if _, err := s.db.RecordWorkspaceRuntimeConversation(
-		ctx, runtimeSessionKey, strings.ToLower(agent), sessionID,
+		ctx, runtimeSessionKey, agent, sessionID,
 	); err != nil {
 		slog.Warn("record agent conversation", "session_key", runtimeSessionKey, "err", err)
 	}
+}
+
+// savedConversationRuns reports whether a different conversation than the
+// reporting one is saved on the row and still runs, as when the terminal's
+// agent runs another hooked agent in the same worktree. That agent inherits
+// the runtime key, but the terminal's own conversation keeps its place until
+// its SessionEnd, which /clear and /resume also send first. Only a report
+// from the row's current runtime counts: one a run before a restart left
+// does not. An agent without SessionEnd hooks never shows an end, so its
+// newest conversation wins.
+func (s *Handler) savedConversationRuns(
+	saved db.RuntimeConversation, agent, sessionID, runtimeSessionKey string,
+) bool {
+	if saved.ID == "" || (saved.Agent == agent && saved.ID == sessionID) ||
+		s.agentActivity == nil || !reportsSessionEnd(saved.Agent) {
+		return false
+	}
+	updatedAt, ok := s.agentActivity.ReportUpdatedAt(saved.Agent, saved.ID, runtimeSessionKey)
+	return ok && !updatedAt.Before(saved.CreatedAt)
+}
+
+func reportsSessionEnd(agent string) bool {
+	integration, err := agenthook.ParseAgent(agent)
+	if err != nil {
+		return false
+	}
+	profile, ok := agenthook.LookupProfile(integration)
+	return ok && slices.Contains(profile.SupportedEvents, agenthook.EventSessionEnd)
 }

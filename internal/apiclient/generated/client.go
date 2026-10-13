@@ -58961,6 +58961,7 @@ type HookEvent struct {
 	Cwd                  string         `json:"cwd"`
 	HookEventName        string         `json:"hook_event_name"`
 	NotificationType     *string        `json:"notification_type,omitempty"`
+	Reason               *string        `json:"reason,omitempty"`
 	SessionCrons         *any           `json:"session_crons,omitempty"`
 	SessionID            string         `json:"session_id"`
 	Source               *string        `json:"source,omitempty"`
@@ -59027,6 +59028,12 @@ func (h *HookEvent) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("error reading 'notification_type': %w", err)
 		}
 		delete(object, "notification_type")
+	}
+	if raw, found := object["reason"]; found {
+		if err := json.Unmarshal(raw, &h.Reason); err != nil {
+			return fmt.Errorf("error reading 'reason': %w", err)
+		}
+		delete(object, "reason")
 	}
 	if raw, found := object["session_crons"]; found {
 		if err := json.Unmarshal(raw, &h.SessionCrons); err != nil {
@@ -59103,6 +59110,12 @@ func (h HookEvent) MarshalJSON() ([]byte, error) {
 		object["notification_type"], err = json.Marshal(h.NotificationType)
 		if err != nil {
 			return nil, fmt.Errorf("error marshaling 'notification_type': %w", err)
+		}
+	}
+	if h.Reason != nil {
+		object["reason"], err = json.Marshal(h.Reason)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'reason': %w", err)
 		}
 	}
 	if h.SessionCrons != nil {

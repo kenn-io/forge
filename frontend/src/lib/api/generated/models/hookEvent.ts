@@ -10,6 +10,7 @@ export interface HookEvent {
   cwd: string;
   hook_event_name: string;
   notification_type?: string;
+  reason?: string;
   session_crons?: unknown;
   session_id: string;
   source?: string;

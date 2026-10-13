@@ -4,7 +4,7 @@
 # daemon, tmux, and agents in a different order, then cold-boots the container
 # with only the data volume surviving.
 #
-# Usage: scripts/reboot-sim.sh [daemon-first|agents-first|agents-killed|all]...
+# Usage: scripts/reboot-sim.sh [daemon-first|agents-first|agents-killed|agent-only|all]...
 # Env:   WORKSPACES (default 4), KEEP=1 keeps containers for inspection.
 set -euo pipefail
 
@@ -13,7 +13,7 @@ workspaces="${WORKSPACES:-4}"
 image="kenn-forge-rebootsim"
 scenarios=("$@")
 if [ "${#scenarios[@]}" -eq 0 ] || [ "${scenarios[0]}" = "all" ]; then
-  scenarios=(daemon-first agents-first agents-killed)
+  scenarios=(daemon-first agents-first agents-killed agent-only)
 fi
 
 build_image() {
@@ -104,6 +104,14 @@ shutdown_host() {
       sleep 3
       in_box pkill -TERM -x kenn-forge || true
       ;;
+    agent-only)
+      # Only the agents are signaled. Each handles SIGTERM, reports
+      # SessionEnd, and exits 0, so its surviving pane wrapper records a
+      # clean exit while the daemon still runs.
+      in_box pkill -TERM -f '^/bin/sh /usr/local/bin/fake-agent' || true
+      sleep 3
+      in_box pkill -TERM -x kenn-forge || true
+      ;;
     *)
       echo "unknown scenario: $1" >&2
       return 1
@@ -170,7 +178,14 @@ run_scenario() {
   in_box grep -E 'resumed workspace agent|could not resume|runtime session unavailable|restore' \
     /data/daemon.log | sed 's/^/    /' | head -20 || true
 
-  [ "$same_conversation" -eq "$workspaces" ]
+  [ "$same_conversation" -eq "$workspaces" ] || return 1
+  [ "$boot_rows" -eq "$before_rows" ] || return 1
+  # Where the daemon outlives the agents, their SessionEnd hooks must reach it
+  # and remove every activity report, so recovery relies on the saved rows.
+  if [ "$scenario" != "daemon-first" ] && [ "$boot_reports" -ne 0 ]; then
+    echo "$scenario: SessionEnd left $boot_reports activity reports" >&2
+    return 1
+  fi
 }
 
 # Each scenario runs in its own process so `set -e` stops a broken setup

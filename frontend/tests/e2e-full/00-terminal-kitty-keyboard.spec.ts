@@ -8,6 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -58,22 +59,14 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
 
 function observeTerminalOutput(page: Page): {
   cursorResult(): string | undefined;
-  replayReady(): boolean;
   tail(): string;
 } {
-  const streams: Array<{ output: string; replayReady: boolean }> = [];
+  const streams: Array<{ output: string }> = [];
   page.on("websocket", (socket) => {
-    const stream = { output: "", replayReady: false };
+    const stream = { output: "" };
     streams.push(stream);
     const decoder = new TextDecoder();
     socket.on("framereceived", ({ payload }) => {
-      if (typeof payload === "string") {
-        try {
-          if ((JSON.parse(payload) as { type?: string }).type === "replay_ready") stream.replayReady = true;
-        } catch {
-          // Terminal output can also arrive as text from non-runtime sockets.
-        }
-      }
       const chunk = typeof payload === "string" ? payload : decoder.decode(payload, { stream: true });
       stream.output = (stream.output + chunk).slice(-64 * 1024);
     });
@@ -84,7 +77,6 @@ function observeTerminalOutput(page: Page): {
         .map((stream) => stream.output)
         .join("\n")
         .slice(-2_000),
-    replayReady: () => streams.some((stream) => stream.replayReady),
     cursorResult: () =>
       streams
         .map((stream) => stream.output.match(/KITTY_CURSOR_KEYS_(?:HANDLED|UNEXPECTED_[0-9a-f_]+)/)?.[0])
@@ -115,6 +107,7 @@ print("KITTY_CURSOR_KEYS_HANDLED" if q==b"\x1b[?3u" and R==E else "KITTY_CURSOR_
 }
 
 test("Kitty cursor keys reach and are handled by the PTY application", async ({ page }) => {
+  trackTerminalReadiness(page);
   test.setTimeout(workspaceTestTimeoutMs);
   test.skip(
     !hasCommand("git") || !hasCommand("python3", ["--version"]),
@@ -131,7 +124,7 @@ test("Kitty cursor keys reach and are handled by the PTY application", async ({ 
 
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
-    await expect.poll(() => output.replayReady(), { timeout: terminalOutputTimeoutMs }).toBe(true);
+    await waitForTerminalInputReady(terminal);
     await terminal.click({ position: { x: 10, y: 10 } });
     await page.keyboard.insertText(kittyCursorProbeCommand());
     await page.keyboard.press("Enter");

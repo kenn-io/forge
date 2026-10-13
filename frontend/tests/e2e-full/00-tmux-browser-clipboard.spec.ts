@@ -13,6 +13,11 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
+
+test.beforeEach(({ page }) => {
+  trackTerminalReadiness(page);
+});
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -257,6 +262,7 @@ async function openTerminalPanel(page: Page): Promise<Locator> {
   const container = page.locator(".terminal-panel.open .terminal-container");
   await expect(container).toBeVisible();
   await expect(container.locator("canvas, .xterm-screen").first()).toBeVisible();
+  await waitForTerminalInputReady(container);
   return container;
 }
 

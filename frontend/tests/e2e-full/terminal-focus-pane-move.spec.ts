@@ -8,6 +8,7 @@ import {
   type Page,
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 // Regression for the pane-move focus loss shipped with the rearrangeable
 // detail panes: moving a pooled session terminal reparents its DOM subtree
@@ -179,6 +180,7 @@ async function runTmuxCommand(page: Page, command: string): Promise<void> {
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 test("terminal keeps keyboard focus across a pane move without a click", async ({ page }) => {
+  trackTerminalReadiness(page);
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
   await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -199,6 +201,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     const inlineTerminal = page.locator(".workspace-stage .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
+    await waitForTerminalInputReady(inlineTerminal);
 
     // Start promotion with xterm holding DOM focus. The command palette restores
     // that saved focus before the handler reparents the terminal through parking,

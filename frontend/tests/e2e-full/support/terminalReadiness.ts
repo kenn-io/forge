@@ -30,13 +30,14 @@ export function trackTerminalReadiness(page: Page): void {
 export async function waitForTerminalInputReady(container: Locator): Promise<void> {
   const sockets = terminalSockets.get(container.page());
   if (!sockets) throw new Error("Install trackTerminalReadiness before opening a terminal");
-  const identity = await container.evaluate((element) =>
-    element.closest("[data-session-host]")?.getAttribute("data-session-host"),
-  );
+  const { identity, basePath } = await container.evaluate((element) => ({
+    identity: element.closest("[data-session-host]")?.getAttribute("data-session-host"),
+    basePath: (window.__BASE_PATH__ ?? "/").replace(/\/$/, ""),
+  }));
   if (!identity) throw new Error("Terminal has no data-session-host identity");
   const [workspaceId, hostKey, sessionKey] = identity.split("/").map(decodeURIComponent);
   if (!workspaceId || !sessionKey) throw new Error(`Invalid terminal session identity: ${identity}`);
-  const runtimePath = workspaceSessionWebSocketPath(workspaceId, sessionKey, hostKey || undefined);
+  const runtimePath = basePath + workspaceSessionWebSocketPath(workspaceId, sessionKey, hostKey || undefined);
   await expect
     .poll(
       () => {

@@ -106,7 +106,7 @@ func (s *Handler) recordAgentConversation(
 		}
 		return
 	}
-	if s.savedConversationRuns(saved, agent, sessionID, runtimeSessionKey) {
+	if s.savedConversationHoldsRow(saved, agent, sessionID, runtimeSessionKey) {
 		return
 	}
 	if _, err := s.db.RecordWorkspaceRuntimeConversation(
@@ -116,23 +116,30 @@ func (s *Handler) recordAgentConversation(
 	}
 }
 
-// savedConversationRuns reports whether a different conversation than the
-// reporting one is saved on the row and still runs, as when the terminal's
+// savedConversationHoldsRow reports whether a different conversation than
+// the reporting one is saved on the row and keeps it, as when the terminal's
 // agent runs another hooked agent in the same worktree. That agent inherits
 // the runtime key, but the terminal's own conversation keeps its place until
-// its SessionEnd, which /clear and /resume also send first. Only a report
-// from the row's current runtime counts: one a run before a restart left
-// does not. An agent without SessionEnd hooks never shows an end, so its
-// newest conversation wins.
-func (s *Handler) savedConversationRuns(
+// its SessionEnd, which /clear and /resume also send first. A conversation
+// terminated by a signal keeps it until it reports again, so a nested agent
+// that outlives it cannot take its place. Only a report newer than both the
+// row's runtime and this daemon counts: a run before a restart, or hooks lost
+// while no daemon listened, leave older ones. An agent without SessionEnd
+// hooks never shows an end, so its newest conversation wins.
+func (s *Handler) savedConversationHoldsRow(
 	saved db.RuntimeConversation, agent, sessionID, runtimeSessionKey string,
 ) bool {
-	if saved.ID == "" || (saved.Agent == agent && saved.ID == sessionID) ||
-		s.agentActivity == nil || !reportsSessionEnd(saved.Agent) {
+	if saved.ID == "" || (saved.Agent == agent && saved.ID == sessionID) {
+		return false
+	}
+	if conversationTerminated(saved.EndReason) {
+		return true
+	}
+	if s.agentActivity == nil || !reportsSessionEnd(saved.Agent) {
 		return false
 	}
 	updatedAt, ok := s.agentActivity.ReportUpdatedAt(saved.Agent, saved.ID, runtimeSessionKey)
-	return ok && !updatedAt.Before(saved.CreatedAt)
+	return ok && !updatedAt.Before(saved.CreatedAt) && !updatedAt.Before(s.startedAt)
 }
 
 func reportsSessionEnd(agent string) bool {

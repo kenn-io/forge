@@ -220,6 +220,9 @@ type Handler struct {
 	cannotReloadChats map[string]bool
 	lifecycleMu       sync.Mutex
 	lifecycleCtx      context.Context
+	// startedAt is when this daemon's handler was built. A hook report older
+	// than it may predate hooks lost while no daemon was listening.
+	startedAt         time.Time
 	lifecycleCancel   context.CancelFunc
 	lifecycleWG       sync.WaitGroup
 	lifecycleStarted  bool
@@ -241,6 +244,7 @@ func New(deps Deps) *Handler {
 	}
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	h := &Handler{
+		startedAt:                      time.Now().UTC(),
 		repositoryWorktrees:            deps.RepositoryWorktrees,
 		executionWorker:                deps.ExecutionWorker,
 		db:                             deps.DB,

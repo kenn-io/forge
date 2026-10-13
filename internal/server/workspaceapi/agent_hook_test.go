@@ -229,3 +229,101 @@ func TestAgentHooksKeepTheTerminalsOwnConversation(t *testing.T) {
 	send("droid", "droid-terminal", agentactivity.HookEvent{SessionID: "second", HookEventName: "Stop"})
 	assert.Equal("second", saved("droid-terminal").ID)
 }
+
+// Hooks can be lost while no daemon listens, as when the user runs /clear
+// during a Forge restart and the agent keeps running in tmux. Reattachment
+// keeps the runtime's start, so only a report newer than this daemon holds
+// the row; a conversation terminated by a signal holds it until it reports
+// again, so a nested agent that outlives it cannot take its place.
+func TestAgentHooksJudgeSavedConversationsOnFreshEvidence(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	worktree := t.TempDir()
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/fresh"), GitHeadRef: "work/fresh",
+		WorkspaceBranch: "work/fresh", WorktreePath: worktree, Status: "ready",
+	}))
+	for _, key := range []string{"reattached", "terminated"} {
+		require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+			WorkspaceID: "workspace", SessionKey: key, TargetKey: "worker",
+			Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "forge-" + key,
+		}))
+	}
+	activity := agentactivity.NewStore(t.TempDir())
+	send := func(handler *Handler, key, sessionID string, hook agentactivity.HookEvent) {
+		t.Helper()
+		hook.SessionID = sessionID
+		hook.CWD = worktree
+		_, err := handler.receiveAgentHook(ctx, &receiveAgentHookInput{
+			Agent: "claude", RuntimeSessionKey: key, Body: hook,
+		})
+		require.NoError(err)
+	}
+	saved := func(key string) db.RuntimeConversation {
+		t.Helper()
+		conversation, ok, err := database.RuntimeSessionConversation(ctx, key)
+		require.NoError(err)
+		require.True(ok)
+		return db.RuntimeConversation{Agent: conversation.Agent, ID: conversation.ID, EndReason: conversation.EndReason}
+	}
+
+	first := New(Deps{DB: database, AgentActivity: activity})
+	send(first, "reattached", "before-restart", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "startup"})
+	// Forge restarts; /clear's hooks went nowhere, and the runtime reattaches.
+	restarted := New(Deps{DB: database, AgentActivity: activity})
+	send(restarted, "reattached", "after-clear", agentactivity.HookEvent{HookEventName: "Stop"})
+	assert.Equal("after-clear", saved("reattached").ID, "a report from before the restart does not hold the row")
+	send(restarted, "reattached", "nested", agentactivity.HookEvent{HookEventName: "Stop"})
+	assert.Equal("after-clear", saved("reattached").ID, "a fresh report still holds it")
+
+	send(restarted, "terminated", "parent", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "startup"})
+	send(restarted, "terminated", "parent", agentactivity.HookEvent{HookEventName: "SessionEnd", Reason: "other"})
+	send(restarted, "terminated", "nested", agentactivity.HookEvent{HookEventName: "Stop"})
+	assert.Equal(db.RuntimeConversation{Agent: "claude", ID: "parent", EndReason: "other"}, saved("terminated"),
+		"a nested agent cannot replace a terminated parent")
+	send(restarted, "terminated", "parent", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "resume"})
+	assert.Equal(db.RuntimeConversation{Agent: "claude", ID: "parent"}, saved("terminated"),
+		"the resumed parent reports again")
+}
+
+// Recording a runtime imports a conversation its hooks reported before the
+// row existed, but never over one the row already saves: after a reboot the
+// newest leftover report can be a nested agent's.
+func TestRecordingARuntimeKeepsItsSavedConversation(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	worktree := t.TempDir()
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/import"), GitHeadRef: "work/import",
+		WorkspaceBranch: "work/import", WorktreePath: worktree, Status: "ready",
+	}))
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+		WorkspaceID: "workspace", SessionKey: "terminal", TargetKey: "worker",
+		Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "forge-terminal",
+	}))
+	_, err := database.RecordWorkspaceRuntimeConversation(ctx, "terminal", "claude", "parent")
+	require.NoError(err)
+	activity := agentactivity.NewStore(t.TempDir())
+	for _, sessionID := range []string{"parent", "nested"} {
+		require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+			SessionID: sessionID, CWD: worktree, HookEventName: "Stop",
+		}, "terminal"))
+	}
+	handler := New(Deps{DB: database, AgentActivity: activity})
+
+	handler.importEarlyConversation(ctx, "workspace", "terminal")
+
+	saved, ok, err := database.RuntimeSessionConversation(ctx, "terminal")
+	require.NoError(err)
+	require.True(ok)
+	require.Equal("parent", saved.ID)
+}

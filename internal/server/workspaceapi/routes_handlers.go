@@ -2928,7 +2928,9 @@ func (s *Handler) importEarlyConversation(ctx context.Context, workspaceID, sess
 	if len(reports) == 0 {
 		return
 	}
-	if _, err := s.db.RecordWorkspaceRuntimeConversation(
+	// A row that already saves a conversation, as a resumed agent's does,
+	// keeps it: the newest report may be a nested agent's.
+	if _, err := s.db.ImportWorkspaceRuntimeConversation(
 		ctx, sessionKey, reports[0].Agent, reports[0].SessionID,
 	); err != nil {
 		slog.Warn("import early agent conversation", "session_key", sessionKey, "err", err)

@@ -398,10 +398,13 @@ create a local process, PTY, or durable transport session
   agent and conversation ID on the row, so a nested agent in another worktree cannot
   replace it, and re-recording the row keeps them. A nested agent in the same worktree
   inherits the runtime key, so another conversation replaces the saved one only once
-  the saved one has no report from the row's current runtime: SessionEnd, which /clear
-  and /resume send first, removes it. Agents without SessionEnd hooks (Droid) save their
-  newest conversation. Recording an agent's row also saves a conversation its hooks
-  reported before the row existed. SessionEnd may delete the report, including when a
+  the saved one has no report newer than both the row's runtime and this daemon, since
+  hooks sent while no daemon listened are lost: SessionEnd, which /clear and /resume
+  send first, removes it. A conversation that ended with reason "other" keeps the row
+  until it reports again. Agents without SessionEnd hooks (Droid) save their newest
+  conversation. A runtime's start is taken before its pane starts. Recording an agent's
+  row also saves a conversation its hooks reported before the row existed, only into a
+  row that saves none. SessionEnd may delete the report, including when a
   host shutdown kills the agent, and saves its reason on the row while that conversation
   is the saved one
   (`internal/server/workspaceapi/agent_hook.go::Handler.recordAgentConversation`,

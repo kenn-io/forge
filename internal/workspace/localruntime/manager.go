@@ -511,6 +511,9 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		}
 	}
 
+	// The runtime starts before its pane does, so even the agent's first hook
+	// is never older than the runtime it reports for.
+	createdAt := time.Now().UTC()
 	launch, err := m.launchCommand(ctx, target, workspaceID, key, cwd)
 	if err != nil {
 		slog.Debug(
@@ -539,7 +542,7 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		Label:                  label,
 		Kind:                   target.Kind,
 		Status:                 SessionStatusStarting,
-		CreatedAt:              time.Now().UTC(),
+		CreatedAt:              createdAt,
 		TmuxSession:            launch.TmuxSession,
 		tmuxLaunchID:           launch.TmuxLaunchID,
 		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,

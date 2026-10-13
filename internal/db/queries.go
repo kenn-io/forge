@@ -5386,6 +5386,31 @@ func (d *DB) RecordWorkspaceRuntimeConversation(
 	return rows > 0, nil
 }
 
+// ImportWorkspaceRuntimeConversation saves a conversation on a runtime row
+// that has none yet, and reports whether it did. A row that already saves one
+// keeps it.
+func (d *DB) ImportWorkspaceRuntimeConversation(
+	ctx context.Context,
+	sessionKey string,
+	agent string,
+	conversationID string,
+) (bool, error) {
+	res, err := d.execContext(ctx, `
+		UPDATE forge_workspace_runtime_sessions
+		SET conversation_agent = ?, conversation_id = ?, conversation_end_reason = ''
+		WHERE session_key = ? AND conversation_id = ''`,
+		agent, conversationID, sessionKey,
+	)
+	if err != nil {
+		return false, fmt.Errorf("import workspace runtime conversation: %w", err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("import workspace runtime conversation rows: %w", err)
+	}
+	return rows > 0, nil
+}
+
 // RecordWorkspaceRuntimeConversationEnd saves why the conversation saved on a
 // runtime ended, as its SessionEnd hook reported. A hook from any other
 // conversation changes nothing. It reports whether a row was updated.

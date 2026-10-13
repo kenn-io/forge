@@ -835,3 +835,66 @@ func TestAgentFinishedUnwatchedHonorsTermination(t *testing.T) {
 	session.ConversationEndReason = "other"
 	require.False(t, handler.agentFinishedUnwatched(session), "a handled termination is not a finish")
 }
+
+// A runtime's start is taken before its tmux pane starts, so an agent's first
+// hook is never older than the runtime it reports for, even when tmux returns
+// slowly after starting the pane.
+func TestRuntimeStartPrecedesItsAgent(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	// new-session returns only after the pane's agent has started.
+	wrapper := filepath.Join(t.TempDir(), "tmux")
+	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n"+
+		"  if [ \"$a\" = new-session ]; then "+shellquote.Join(tmux...)+" \"$@\"; s=$?; sleep 0.3; exit $s; fi\n"+
+		"done\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/start"), GitHeadRef: "work/start",
+		WorkspaceBranch: "work/start", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\ndate +%s%N > started.tmp && mv started.tmp started\nexec sleep 600\n"), 0o755))
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             []string{wrapper},
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-start",
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "workspace")
+		runtime.Shutdown()
+	})
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
+	workspaces.SetTmuxCommand([]string{wrapper})
+	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+
+	var started int64
+	require.Eventually(func() bool {
+		data, err := os.ReadFile(filepath.Join(cwd, "started"))
+		if err != nil {
+			return false
+		}
+		started, err = strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond)
+	require.False(time.Unix(0, started).Before(session.CreatedAt),
+		"the agent started at %s, before its runtime's start %s", time.Unix(0, started).UTC(), session.CreatedAt)
+}

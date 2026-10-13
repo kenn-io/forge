@@ -203,6 +203,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     const inlineTerminal = page.locator(".workspace-stage .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
+
     // Start promotion with xterm holding DOM focus. The command palette restores
     // that saved focus before the handler reparents the terminal through parking,
     // so the workspace and pool recovery paths overlap exactly as they do in use.

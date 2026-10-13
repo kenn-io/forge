@@ -78,12 +78,18 @@ async function typeMarkerCommand(page: Page, container: Locator, worktreePath: s
   await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
 }
 
-async function waitForTerminalReady(page: Page): Promise<void> {
-  const socket = await page.waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"));
-  await socket.waitForEvent(
-    "framereceived",
-    ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
-  );
+function waitForTerminalReady(page: Page): Promise<void> {
+  const ready = page
+    .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
+    .then(async (socket) => {
+      await socket.waitForEvent(
+        "framereceived",
+        ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
+      );
+    });
+  // A failed launch can end the test before it awaits readiness.
+  void ready.catch(() => {});
+  return ready;
 }
 
 test.describe("embedded workspace launcher", () => {
@@ -151,8 +157,10 @@ test.describe("embedded workspace launcher", () => {
       // Reopening over xterm must keep launch buttons above its canvas layers.
       await runPaletteCommand(page, "Launch a workspace session");
       await expect(launcher).toBeVisible();
+      const reopenedTerminalReady = waitForTerminalReady(page);
       await launcher.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launcher).toBeHidden();
+      await reopenedTerminalReady;
 
       await page.getByRole("button", { name: "Workspace info", exact: true }).click();
       const info = page.getByRole("dialog", { name: "Workspace info", exact: true });
@@ -222,14 +230,7 @@ test.describe("embedded workspace launcher", () => {
 
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
         // xterm can take focus before its socket attaches; typing then drops input.
-        const terminalReady = page
-          .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
-          .then((socket) =>
-            socket.waitForEvent(
-              "framereceived",
-              ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
-            ),
-          );
+        const terminalReady = waitForTerminalReady(page);
         await page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Shell" }).click();
         await terminalReady;
 

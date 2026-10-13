@@ -23,6 +23,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -87,7 +88,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			handler := New(Deps{DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
+			handler := New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime, AgentActivity: activity})
 
 			require.NoError(handler.RestoreRuntimeSessions(ctx))
 
@@ -171,7 +172,7 @@ exec sleep 60
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			workspaces := newWorkspaceTestManager(t, database, t.TempDir())
+			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
 			if strings.HasPrefix(status, "identity-") {
@@ -301,7 +302,7 @@ func TestRestoreRuntimeSessionsLeavesPtyOwnerBaseTerminalToAttach(t *testing.T) 
 	client := &ptyowner.Client{Root: t.TempDir(), InProcess: true}
 	runtime := localruntime.NewManager(localruntime.Options{PtyOwnerRuntime: ptyownerruntime.New(client, nil)})
 	t.Cleanup(runtime.Shutdown)
-	workspaces := newWorkspaceTestManager(t, database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 

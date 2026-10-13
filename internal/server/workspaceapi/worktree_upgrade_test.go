@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -57,7 +58,7 @@ func TestDeletionOrderingSurvivesLifecycleMigration(t *testing.T) {
 				WorkspaceBranch: "kenn-forge/pr-42", WorktreePath: path, Status: "ready",
 			}
 			require.NoError(database.InsertWorkspace(t.Context(), ws))
-			manager := newWorkspaceTestManager(t, database, t.TempDir())
+			manager := workspacetest.NewManager(t, database, t.TempDir())
 			manager.SetWorktreeBasePathResolver(func(context.Context, workspace.WorktreeBaseRepository) (string, bool, error) {
 				return repo.Dir, true, nil
 			})

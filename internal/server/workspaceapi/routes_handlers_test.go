@@ -8,6 +8,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -15,7 +16,7 @@ func TestGetWorkspaceFilesPropagatesCanceledRequest(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	database := dbtest.Open(t)
-	manager := newWorkspaceTestManager(t, database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
 		ID:           "ws-canceled-diff",
 		Platform:     "github",

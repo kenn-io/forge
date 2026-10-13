@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -131,7 +132,7 @@ func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	options.OnSessionExit = func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) }
 	runtime := localruntime.NewManager(options)
 	t.Cleanup(runtime.Shutdown)
-	handler = New(Deps{DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()), Runtime: runtime})
+	handler = New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

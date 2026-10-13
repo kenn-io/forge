@@ -568,6 +568,10 @@ need a fresh migrated schema:
 
 The template fixture migrates once, checkpoints WAL, copies the database file
 into each test's `t.TempDir`, and opens the copy with `OpenPreparedForTest`.
+
+Outside `internal/workspace`, build workspace managers with
+`internal/testutil/workspacetest.NewManager`, which wires a repository coordinator
+as the daemon does; do not copy a local helper.
 That preserves per-test isolation without paying migration setup for every
 fixture.
 

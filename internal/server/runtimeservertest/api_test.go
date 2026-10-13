@@ -17,6 +17,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
@@ -103,7 +104,7 @@ func TestServerStartupReapsUnrecordedRuntimeTmuxSessionE2E(t *testing.T) {
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := workspacetest.NewManager(t, database, worktreeDir).TmuxOwnerMarker()
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 TMUX_RECORD=%s
 TMUX_TEST_OWNER_MARKER=%s

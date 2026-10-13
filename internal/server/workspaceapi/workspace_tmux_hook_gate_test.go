@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -50,7 +51,7 @@ func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) { //nol
 	require.NoError(os.WriteFile(tmuxScript, []byte(
 		"#!/bin/sh\necho \"$@\" >> \""+logPath+"\"\nexit 1\n",
 	), 0o755))
-	manager := newWorkspaceTestManager(t, database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	manager.SetTmuxCommand([]string{tmuxScript})
 
 	helperCommand := []string{

@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
 )
@@ -91,7 +92,7 @@ func newPushedHeadIntegrationFixture(
 	)
 	t.Cleanup(syncer.Stop)
 	fixture := &pushedHeadIntegrationFixture{database: database}
-	manager := newWorkspaceTestManager(t, database, t.TempDir())
+	manager := workspacetest.NewManager(t, database, t.TempDir())
 	fixture.handler = New(Deps{
 		DB: database, Workspaces: manager, Syncer: syncer,
 		Broadcast: func(event Event) uint64 {

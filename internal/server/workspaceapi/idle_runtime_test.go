@@ -25,6 +25,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -70,7 +71,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 		defer cancel()
 		_ = client.Stop(cleanupCtx, ws.TmuxSession)
 	})
-	workspaces := newWorkspaceTestManager(t, database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
 	require.NoError(workspaces.EnsureTerminal(ctx, ws))
 	activity := agentactivity.NewStore(t.TempDir())
@@ -390,7 +391,7 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	require.NoError(database.InsertWorkspace(ctx, ws))
 	shellCommand := []string{os.Args[0], "-test.run=^TestWorkspaceAgentSessionHelper$", "--", "sleep"}
 	client := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true, Command: shellCommand}
-	workspaces := newWorkspaceTestManager(t, database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
 	stateDir := t.TempDir()
 	parkedDir := filepath.Join(stateDir, "parked-runtimes")
@@ -565,7 +566,7 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	var now atomic.Int64
 	now.Store(time.Now().UnixNano())
 	clock := func() time.Time { return time.Unix(0, now.Load()).UTC() }
-	workspaces := newWorkspaceTestManager(t, database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetPtyOwnerClient(client)
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity, Now: clock, Config: ConfigSnapshot{IdleRuntimeStopAfter: time.Hour}})
 	handler.syncIdle(ctx)

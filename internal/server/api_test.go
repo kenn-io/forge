@@ -40,6 +40,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"golang.org/x/sync/semaphore"
 
 	"go.kenn.io/forge/internal/apiclient"
@@ -5436,7 +5437,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 
 	database := dbtest.Open(t)
 
-	manager := newWorkspaceTestManager(t, database, filepath.Join(dir, "worktrees"))
+	manager := workspacetest.NewManager(t, database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
 	srv := wiredServer(&Server{workspaces: manager})
 	ctx := context.Background()
@@ -6059,7 +6060,7 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 	database := dbtest.Open(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 1)
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := workspacetest.NewManager(t, database, worktreeDir).TmuxOwnerMarker()
 	restoredSession := runtimeTmuxSessionNameForTest("0000000000000001", "helper")
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+
@@ -6297,7 +6298,7 @@ func TestWorkspaceResponseProbesStoredRuntimeTmuxSessionWithoutBaseE2E(
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	database := dbtest.Open(t)
 	worktreeDir := filepath.Join(dir, "worktrees")
-	ownerMarker := newWorkspaceTestManager(t, database, worktreeDir).TmuxOwnerMarker()
+	ownerMarker := workspacetest.NewManager(t, database, worktreeDir).TmuxOwnerMarker()
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		"TMUX_RECORD="+shellquote.Join(record)+"\n"+
 		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+

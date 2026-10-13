@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -55,7 +56,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			}, nil, nil))
 
 			clones := gitclone.New(filepath.Join(root, "clones"), nil)
-			manager := newWorkspaceTestManager(t, database, filepath.Join(root, "worktrees"))
+			manager := workspacetest.NewManager(t, database, filepath.Join(root, "worktrees"))
 			manager.SetClones(clones)
 			manager.SetTmuxCommand([]string{os.Args[0], "-test.run=^$", "--"})
 			first, err := manager.CreateAdHoc(
@@ -106,7 +107,7 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			}
 			// Enrollment survives deleting the last workspace and restarting Forge,
 			// even when no warming pass ran before deletion.
-			manager = newWorkspaceTestManager(t, database, filepath.Join(root, "worktrees"))
+			manager = workspacetest.NewManager(t, database, filepath.Join(root, "worktrees"))
 			manager.SetClones(clones)
 			manager.SetTmuxCommand([]string{os.Args[0], "-test.run=^$", "--"})
 

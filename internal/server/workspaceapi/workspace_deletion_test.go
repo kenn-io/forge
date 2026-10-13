@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/platform"
 )
 
@@ -29,7 +30,7 @@ func TestDeleteWorkspaceRejectsConcurrentSetup(t *testing.T) {
 	)
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 	})
 
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{
@@ -58,7 +59,7 @@ func TestDeleteWorkspaceReportsDeletionAlreadyInProgress(t *testing.T) {
 	)
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 	})
 
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{
@@ -109,7 +110,7 @@ func TestQueueWorkspaceDeletionPersistsFailure(t *testing.T) {
 	var events []Event
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 		Broadcast: func(event Event) uint64 {
 			mu.Lock()
 			events = append(events, event)
@@ -146,7 +147,7 @@ func TestQueueWorkspaceDeletionIsIdempotentAfterRemoval(t *testing.T) {
 	database := dbtest.Open(t)
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
+		Workspaces: workspacetest.NewManager(t, database, t.TempDir()),
 	})
 
 	require.NoError(t, handler.QueueWorkspaceDeletion("already-removed"))
@@ -167,7 +168,7 @@ func TestQueueWorkspaceForceDeletionRemovesDirtyWorkspaceRecord(t *testing.T) {
 	insertDeletionTestWorkspace(t, database, "ws-dirty-force", worktreePath, "ready")
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 	})
 	handler.Start(t.Context(), true)
 	t.Cleanup(func() {
@@ -223,7 +224,7 @@ func TestPRMonitorPreservesDirtyUnresolvedWorkspace(t *testing.T) {
 	var eventsMu sync.Mutex
 	var events []Event
 	handler := New(Deps{
-		DB: database, Workspaces: newWorkspaceTestManager(t, database, base),
+		DB: database, Workspaces: workspacetest.NewManager(t, database, base),
 		Broadcast: func(event Event) uint64 {
 			eventsMu.Lock()
 			defer eventsMu.Unlock()
@@ -282,7 +283,7 @@ func TestDeleteWorkspaceDirtyPreservesReadyStatus(t *testing.T) {
 
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 	})
 	_, err := handler.DeleteWorkspace(t.Context(), &DeleteWorkspaceInput{ID: "ws-dirty"})
 	problem, ok := errors.AsType[*httpapi.ProblemError](err)
@@ -312,7 +313,7 @@ func TestDeleteWorkspacePersistsFailureAfterAdmission(t *testing.T) {
 	insertDeletionTestWorkspace(
 		t, database, "ws-failure", filepath.Join(base, "missing"), "ready",
 	)
-	manager := newWorkspaceTestManager(t, database, base)
+	manager := workspacetest.NewManager(t, database, base)
 	manager.SetTmuxCommand([]string{script})
 	var events []Event
 	handler := New(Deps{
@@ -353,7 +354,7 @@ func TestDeleteWorkspacePublishesConfirmedIdentity(t *testing.T) {
 	var events []Event
 	handler := New(Deps{
 		DB:         database,
-		Workspaces: newWorkspaceTestManager(t, database, base),
+		Workspaces: workspacetest.NewManager(t, database, base),
 		Broadcast: func(event Event) uint64 {
 			events = append(events, event)
 			return 1

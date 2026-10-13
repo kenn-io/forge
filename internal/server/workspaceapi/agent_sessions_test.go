@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -104,7 +105,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 		CreatedAt: agentRuntime.CreatedAt,
 	}))
 	handler := New(Deps{
-		DB: database, Workspaces: newWorkspaceTestManager(t, database, t.TempDir()),
+		DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()),
 		Runtime: runtime, AgentActivity: activity,
 	})
 	_, reserved := handler.reserveInitialMessageAttempt(

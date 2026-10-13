@@ -401,3 +401,24 @@ func TestProjectRemovalRefusesChangedDetachedWorktree(t *testing.T) {
 		})
 	}
 }
+
+// "detached" and "detached/<name>" are also valid branch names. A worktree on
+// such a branch is removed like any other, and its branch can be deleted.
+func TestProjectRemovalTreatsDetachedNamedBranchAsBranch(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	h, project, repo := projectLifecycleFixture(t, "")
+	input := &registerWorktreeInput{ProjectID: project.ID}
+	input.Body.Branch, input.Body.CreateOnDisk = "detached/topic", true
+	input.Body.Path = filepath.Join(t.TempDir(), "named")
+	created, err := h.RegisterWorktree(t.Context(), input)
+	require.NoError(err)
+	remove := &removeWorktreeInput{ProjectID: project.ID, WorktreeID: created.Body.ID}
+	remove.Body.RemoveFromDisk, remove.Body.RemoveBranch = true, true
+
+	_, err = h.removeProjectWorktree(t.Context(), remove)
+
+	require.NoError(err)
+	require.NoDirExists(created.Body.Path)
+	require.Empty(strings.TrimSpace(string(gitfixture.Run(t, repo.Dir, "branch", "--list", "detached/topic"))))
+}

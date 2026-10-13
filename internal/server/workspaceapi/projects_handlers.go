@@ -988,21 +988,25 @@ func (s *Handler) removeProjectWorktreeOnDisk(ctx context.Context, project *db.P
 	if err != nil {
 		return err
 	}
-	// Discovery records a detached checkout under a "detached/<sha>" label,
-	// which is not a branch: require a detached checkout instead, and there is
-	// no branch to delete.
+	// Discovery records a detached checkout under a "detached/<sha>" label, but
+	// "detached/<name>" is also a valid branch name. The live checkout decides:
+	// on that branch it is removed like any branch; detached, there is no branch
+	// to require or delete; on any other branch, removal refuses.
 	detached := isDetachedWorktreeBranch(row.Branch)
-	conditions := &worktree.RemovalConditions{Branch: row.Branch}
-	if detached {
-		conditions = &worktree.RemovalConditions{}
-	}
 	req := worktree.RemovalRequest{
-		Path: row.Path, Force: input.Body.Force, DeleteObservedBranch: input.Body.RemoveBranch && !detached,
-		ForceObservedBranch: true, Conditions: conditions,
+		Path: row.Path, Force: input.Body.Force, DeleteObservedBranch: input.Body.RemoveBranch,
+		ForceObservedBranch: true, Conditions: &worktree.RemovalConditions{Branch: row.Branch},
+	}
+	if detached {
+		req.Conditions.Branch, req.DeleteObservedBranch = "", false
 	}
 	check, err := repo.InspectRemoval(ctx, req)
 	if detached && check.Entry.Exists && !check.Entry.Detached {
-		return &worktree.ConditionError{Reason: worktree.ReasonBranchChanged, Path: row.Path}
+		if check.Entry.Branch != row.Branch {
+			return &worktree.ConditionError{Reason: worktree.ReasonBranchChanged, Path: row.Path}
+		}
+		detached = false
+		req.Conditions.Branch, req.DeleteObservedBranch = row.Branch, input.Body.RemoveBranch
 	}
 	// A forced removal deletes locked worktrees, as git worktree remove
 	// --force --force did before kwt; the unlock happens under the lock below.

@@ -3109,7 +3109,17 @@ func (m *Manager) addFallbackCandidate(
 	ctx context.Context, scope *worktree.Scope, gitDir workspaceGitDir,
 	ws *Workspace, startRef string, candidate worktree.CheckoutCandidate,
 ) (string, error) {
-	result, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{BaseRef: startRef}, []worktree.CheckoutCandidate{candidate})
+	// Each attempt names its branch outright, as kwt claims warm spares only
+	// for a single explicit checkout.
+	opts := managed.CreateWorktreeOptions{Branch: candidate.Branch, Mode: candidate.Mode, BaseRef: startRef}
+	if candidate.Numbered {
+		selected, err := scope.SelectBranchName(ctx, worktree.BranchNameRequest{Branch: candidate.Branch, Suffixes: numberedBranchSuffixes()})
+		if err != nil {
+			return "", err
+		}
+		opts.Branch = selected.Branch
+	}
+	result, err := createWorkspaceCheckout(ctx, scope, ws, opts, nil)
 	if err != nil {
 		if _, statErr := os.Lstat(ws.WorktreePath); statErr == nil {
 			return "", &fallbackRetainedError{err: err}
@@ -5784,12 +5794,18 @@ func workspaceGitCommand(
 }
 
 func (m *Manager) nextAvailableBranchName(ctx context.Context, dir, branch string) (string, error) {
+	result, err := m.selectWorkspaceBranch(ctx, dir, worktree.BranchNameRequest{Branch: branch, Suffixes: numberedBranchSuffixes()})
+	return result.Branch, err
+}
+
+// numberedBranchSuffixes are the -2 through -999 suffixes Forge tries when a
+// branch name is taken.
+func numberedBranchSuffixes() []string {
 	suffixes := make([]string, 998)
 	for i := range suffixes {
 		suffixes[i] = strconv.Itoa(i + 2)
 	}
-	result, err := m.selectWorkspaceBranch(ctx, dir, worktree.BranchNameRequest{Branch: branch, Suffixes: suffixes})
-	return result.Branch, err
+	return suffixes
 }
 
 func (m *Manager) nextAvailableAdHocBranchName(ctx context.Context, dir, branch, workspaceID string, startAttempt int) (string, int, error) {

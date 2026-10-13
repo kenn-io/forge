@@ -17,6 +17,7 @@ import (
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 )
 
 func TestHotWorktreeCanceledCheckout(t *testing.T) {
@@ -289,6 +290,47 @@ func TestHotWorktreePreservesChangedSpare(t *testing.T) {
 			require.NoError(err)
 			assert.True(t, os.SameFile(before, after))
 			assert.FileExists(t, filepath.Join(ws.WorktreePath, "base.txt"))
+		})
+	}
+}
+
+// A PR whose preferred branch is unavailable falls back to Forge's synthetic
+// names; those checkouts must still claim a prepared spare.
+func TestHotWorktreeClaimedByFallbackCheckout(t *testing.T) {
+	for _, tt := range []struct {
+		name, existing, want string
+	}{
+		{name: "synthetic", want: "kenn-forge/pr-48"},
+		{name: "numbered", existing: "kenn-forge/pr-48", want: "kenn-forge/pr-48-2"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			ctx := t.Context()
+			clone := setupBareCloneForWorkspaceGitTest(t)
+			if tt.existing != "" {
+				runWorkspaceTestGit(t, clone, "branch", tt.existing, "HEAD")
+			}
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
+			ws := &Workspace{
+				ID: "ws-fallback", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 48,
+				GitHeadRef: "main", WorktreePath: filepath.Join(t.TempDir(), "pr-48"),
+			}
+			require.NoError(manager.prepareHotWorktree(ctx, clone, ws.WorktreePath, "HEAD"))
+			spare, err := os.Stat(filepath.Join(hotWorktreePath(clone, ws.WorktreePath), "base.txt"))
+			require.NoError(err)
+
+			var branch string
+			require.NoError(manager.withRepoLockForGitDir(ctx, clone, func(scope *worktree.Scope) error {
+				branch, err = manager.addFallbackWorktree(ctx, scope, workspaceGitDir{path: clone, remote: originRemoteName}, ws, syntheticPRWorktreeBranch(48), "HEAD")
+				return err
+			}))
+
+			require.Equal(tt.want, branch)
+			require.Equal(tt.want, strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "branch", "--show-current"))))
+			claimed, err := os.Stat(filepath.Join(ws.WorktreePath, "base.txt"))
+			require.NoError(err)
+			require.True(os.SameFile(spare, claimed), "fallback checkout should claim the prepared spare")
 		})
 	}
 }

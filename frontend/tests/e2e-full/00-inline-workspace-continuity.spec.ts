@@ -740,7 +740,6 @@ test.describe("inline workspace pane continuity", () => {
     );
     await page.setViewportSize({ width: 1280, height: 800 });
     const phonePage = await page.context().newPage();
-    trackTerminalReadiness(phonePage);
     await phonePage.setViewportSize({ width: 390, height: 844 });
 
     let isolatedServer: IsolatedE2EServer | null = null;

@@ -10,10 +10,9 @@ export function trackTerminalReadiness(page: Page): void {
   terminalSockets.set(page, sockets);
   page.on("websocket", (socket) => {
     const pathname = new URL(socket.url()).pathname;
-    const runtimePath = pathname.match(/\/ws\/v1\/.*\/runtime\/sessions\/[^/]+\/terminal$/)?.[0];
-    if (!runtimePath) return;
+    if (!pathname.includes("/runtime/sessions/") || !pathname.endsWith("/terminal")) return;
     const state = { ready: false, closed: false };
-    sockets.set(runtimePath, state);
+    sockets.set(pathname, state);
     socket.on("framereceived", ({ payload }) => {
       if (typeof payload !== "string") return;
       try {

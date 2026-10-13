@@ -78,6 +78,14 @@ async function typeMarkerCommand(page: Page, container: Locator, worktreePath: s
   await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
 }
 
+async function waitForTerminalReady(page: Page): Promise<void> {
+  const socket = await page.waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"));
+  await socket.waitForEvent(
+    "framereceived",
+    ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
+  );
+}
+
 test.describe("embedded workspace launcher", () => {
   test.describe.configure({ mode: "serial", timeout: lockedWorkspaceTestTimeoutMs });
 
@@ -128,6 +136,7 @@ test.describe("embedded workspace launcher", () => {
       await expect(page.getByRole("dialog", { name: "Workspace info", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(launcher).toBeVisible();
+      const initialTerminalReady = waitForTerminalReady(page);
       await launcher.getByRole("button", { name: "Shell", exact: true }).click();
 
       // The successful launch response records and publishes the session, so the
@@ -136,6 +145,7 @@ test.describe("embedded workspace launcher", () => {
       await expect(launcher).toBeHidden();
       const container = page.locator(".detail-pane-workspace-slot .terminal-container");
       await expect(container).toBeVisible();
+      await initialTerminalReady;
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
       // Reopening over xterm must keep launch buttons above its canvas layers.
@@ -161,14 +171,7 @@ test.describe("embedded workspace launcher", () => {
       await headerLaunch.click();
       const launchMenu = page.getByRole("dialog", { name: "Run configurations" });
       await expect(launchMenu).toBeVisible();
-      const terminalReady = page
-        .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
-        .then((socket) =>
-          socket.waitForEvent(
-            "framereceived",
-            ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
-          ),
-        );
+      const terminalReady = waitForTerminalReady(page);
       await launchMenu.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launchMenu).toBeHidden();
 

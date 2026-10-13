@@ -292,7 +292,7 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 	worktree := filepath.Join(filepath.Dir(fixture.clone), "linked")
 	runWorkspaceTestGit(t, fixture.clone, "worktree", "add", "-b", "topic", worktree, "main")
 	runWorkspaceTestGit(t, worktree, "push", "-u", "origin", "topic")
-	reader := newGitdirRemoteHeadReader(newTestRepositoryCoordinator(t))
+	coordinator := newTestRepositoryCoordinator(t)
 	ctx := t.Context()
 
 	openDescriptors := func() int {
@@ -300,7 +300,10 @@ func TestGitdirReaderDoesNotLeakDescriptorsOnLinkedWorktree(t *testing.T) {
 		require.NoError(err)
 		return len(entries)
 	}
+	// Each read uses a fresh reader so it builds a new handle; a cached handle
+	// would skip the construction this test guards.
 	read := func() {
+		reader := newGitdirRemoteHeadReader(coordinator)
 		_, err := reader.BranchName(ctx, worktree)
 		require.NoError(err)
 		_, err = reader.UpstreamState(ctx, worktree, "topic")

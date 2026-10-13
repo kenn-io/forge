@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kballard/go-shellquote"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
@@ -3618,7 +3619,8 @@ func (m *Manager) cleanupWorkspaceArtifactsForDeleteLocked(
 			Branches: workspaceRemovalBranches(ws, ws.WorkspaceBranch),
 		})
 		if condition, ok := errors.AsType[*worktree.ConditionError](err); ok && condition.Reason == worktree.ReasonLocked {
-			return fmt.Errorf("git has locked the worktree at %s; run `git worktree unlock %s` and delete again: %w", ws.WorktreePath, ws.WorktreePath, err)
+			unlock := shellquote.Join("git", "worktree", "unlock", ws.WorktreePath)
+			return fmt.Errorf("git has locked the worktree at %s; run `%s` and delete again: %w", ws.WorktreePath, unlock, err)
 		}
 		if err != nil && (!result.CheckoutRemoved || !result.RegistrationRemoved) {
 			return err

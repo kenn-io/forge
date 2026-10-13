@@ -277,7 +277,7 @@ func TestDeleteMissingCheckoutPrunesRelativeRegistration(t *testing.T) {
 func TestDeleteLockedWorkspaceExplainsTheLock(t *testing.T) {
 	require := require.New(t)
 	root := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/topic")
-	path := filepath.Join(t.TempDir(), "issue-7")
+	path := filepath.Join(t.TempDir(), "Work Trees", "issue-7")
 	runWorkspaceTestGit(t, root, "worktree", "add", path, "-b", "kenn-forge/issue-7", "HEAD")
 	runWorkspaceTestGit(t, root, "worktree", "lock", "--reason", "removable media", path)
 	database := openTestDB(t)
@@ -293,6 +293,7 @@ func TestDeleteLockedWorkspaceExplainsTheLock(t *testing.T) {
 
 	_, err := manager.Delete(t.Context(), ws.ID, true, nil)
 
-	require.ErrorContains(err, "git worktree unlock")
+	// The suggested command must work when pasted into a shell.
+	require.ErrorContains(err, "git worktree unlock '"+path+"'")
 	require.DirExists(path)
 }

@@ -170,8 +170,8 @@ owner:
 - Real-tmux Playwright tests observe user-visible state through the per-instance socket;
   never replace global key bindings, which can leak into developer sessions and prove only event receipt
   (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).
-- Browser terminal input tests must await `replay_ready` before typing; visibility and
-  focus can precede socket attachment and drop keystrokes
+- Browser terminal input tests must wait for the active session's `claim_resize` before
+  typing; focus and visibility can come before the app completes socket setup and drop keystrokes
   (`frontend/tests/e2e-full/support/terminalReadiness.ts::waitForTerminalInputReady`).
 - Real-tmux websocket tests retry asynchronous resize probes on a bounded timer, never per repaint; repaint-coupled
   input creates a feedback loop that can overflow subscriber buffers

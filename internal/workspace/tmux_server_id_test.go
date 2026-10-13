@@ -26,7 +26,7 @@ for name in forge-aaaaaaaaaaaaaaaa forge-bbbbbbbbbbbbbbbb; do
   printf '%s\n' "$fmt" | sed -e "s|#{session_name}|$name|" -e 's|#{pid}|123|' -e 's|#{start_time}|456|' | tr '\t' '_'
 done
 `), 0o755))
-	mgr := NewManager(openTestDB(t), t.TempDir())
+	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
 	mgr.SetTmuxCommand([]string{script})
 
 	server, err := mgr.TmuxServerIDWithSession(t.Context(), "forge-bbbbbbbbbbbbbbbb")

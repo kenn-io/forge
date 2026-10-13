@@ -22,7 +22,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
-	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -82,7 +82,7 @@ func TestRuntimeExitKeepsAgentKilledBeforeTmux(t *testing.T) {
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			workspaces := workspace.NewManager(database, t.TempDir())
+			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler = New(Deps{
 				DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -254,7 +254,7 @@ func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T
 		runtime.StopWorkspace(cleanupCtx, "workspace")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
 		DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -337,7 +337,7 @@ func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "workspace")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
@@ -407,7 +407,7 @@ func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
 			runtime.StopWorkspace(cleanupCtx, "workspace")
 			runtime.Shutdown()
 		})
-		workspaces := workspace.NewManager(database, t.TempDir())
+		workspaces := workspacetest.NewManager(t, database, t.TempDir())
 		workspaces.SetTmuxCommand(tmux)
 		handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 		return handler, runtime
@@ -492,7 +492,7 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "workspace")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
@@ -594,7 +594,7 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 		runtime.StopWorkspace(cleanupCtx, "workspace")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
@@ -683,7 +683,7 @@ func TestFinishedPtyOwnerAgentIsForgottenDuringShutdown(t *testing.T) {
 			runtime.StopWorkspace(cleanupCtx, "workspace")
 			runtime.Shutdown()
 		})
-		handler = New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime})
+		handler = New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime})
 		return handler, runtime
 	}
 	handler, runtime := startForge(func(handler *Handler, info localruntime.SessionInfo) {
@@ -763,7 +763,7 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			workspaces := workspace.NewManager(database, t.TempDir())
+			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler = New(Deps{
 				DB: database, Workspaces: workspaces, Runtime: runtime,

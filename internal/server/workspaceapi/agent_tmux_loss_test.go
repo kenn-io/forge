@@ -20,6 +20,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -84,7 +85,7 @@ rm -f quit args
 					runtime.StopWorkspace(cleanupCtx, "workspace")
 					runtime.Shutdown()
 				})
-				workspaces := workspace.NewManager(database, t.TempDir())
+				workspaces := workspacetest.NewManager(t, database, t.TempDir())
 				workspaces.SetTmuxCommand(tmux)
 				handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
 				return handler, runtime, workspaces
@@ -256,7 +257,7 @@ func TestRuntimeExitForgetsAgentWhoseSessionEndedOnLiveServer(t *testing.T) {
 			require.NoError(err)
 			require.Len(rows, 1)
 			activity := agentactivity.NewStore(t.TempDir())
-			workspaces := workspace.NewManager(database, t.TempDir())
+			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, AgentActivity: activity})
 			// A server that does not hold the agent's session, such as a
@@ -346,7 +347,7 @@ rm -f quit started
 				runtime.StopWorkspace(cleanupCtx, "workspace")
 				runtime.Shutdown()
 			})
-			workspaces := workspace.NewManager(database, t.TempDir())
+			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{
 				DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -431,7 +432,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "0000000000000a01")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
 		DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -548,7 +549,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "workspace")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
 		DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -605,7 +606,7 @@ func TestRecordedAgentKeepsConversationReportedBeforeItsRow(t *testing.T) {
 	}))
 	activity := agentactivity.NewStore(t.TempDir())
 	handler := New(Deps{
-		DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), AgentActivity: activity,
+		DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), AgentActivity: activity,
 	})
 	hook := func(event string) {
 		_, err := handler.receiveAgentHook(ctx, &receiveAgentHookInput{
@@ -653,7 +654,7 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 			Status: "ready", TmuxSession: "forge-" + id,
 		}))
 	}
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler := New(Deps{DB: database, Workspaces: workspaces})
 	baseExists := func(id string) bool {
@@ -682,7 +683,7 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 	// A terminal that fails to start stays outstanding.
 	failing := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(failing, []byte("#!/bin/sh\necho \"can't find session: x\" >&2\nexit 1\n"), 0o755))
-	broken := workspace.NewManager(database, t.TempDir())
+	broken := workspacetest.NewManager(t, database, t.TempDir())
 	broken.SetTmuxCommand([]string{failing})
 	brokenHandler := New(Deps{DB: database, Workspaces: broken})
 	one := map[string]bool{"0000000000000b01": true}
@@ -732,7 +733,7 @@ func TestRestoreTerminalsAfterServerLossRotatesPastAStuckWorkspace(t *testing.T)
 			Status: "ready", TmuxSession: "forge-" + id,
 		}))
 	}
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces})
 	// A pass runs out of budget once it reaches the stuck workspace.
@@ -788,7 +789,7 @@ func TestStartupKeepsUnrestoredTerminalsOutstanding(t *testing.T) {
 		PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 	})
 	t.Cleanup(runtime.Shutdown)
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	baseExists := func(id string) bool {
@@ -853,7 +854,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "0000000000000e01")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
 		DB: database, Workspaces: workspaces, Runtime: runtime,
@@ -954,7 +955,7 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 		runtime.StopWorkspace(cleanupCtx, agentWorkspace)
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	handler.baseRestoreBudget = 200 * time.Millisecond
@@ -1021,7 +1022,7 @@ func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
 		runtime.StopWorkspace(cleanupCtx, "0000000000000e01")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "")
@@ -1099,7 +1100,7 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 		runtime.StopWorkspace(cleanupCtx, "0000000000000d01")
 		runtime.Shutdown()
 	})
-	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
@@ -1131,7 +1132,7 @@ func TestDeletedWorkspaceEndsItsOutstandingTerminalRestore(t *testing.T) {
 	}))
 	runtime := localruntime.NewManager(localruntime.Options{})
 	t.Cleanup(runtime.Shutdown)
-	handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime})
+	handler := New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime})
 	handler.runtimeRecoveryMu.Lock()
 	handler.baseRestoreRemaining = map[string]bool{"0000000000000b01": true}
 	handler.runtimeRecoveryMu.Unlock()

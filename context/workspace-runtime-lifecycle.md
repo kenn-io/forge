@@ -430,8 +430,9 @@ create a local process, PTY, or durable transport session
   a shutdown signals agents before tmux and Forge), and forget it after a recorded
   normal exit, which can follow a killed client. Read the record once per decision.
   Each new wrapper clears the record a previous run under the same tmux name left;
-  only forgetting the agent spends a record, since a detached client also exits 0
-  while the agent runs on. Startup recovery forgets, not resumes, a kept agent whose
+  only deleting the agent's row spends a record, so an interrupted cleanup still
+  shows the next start that the agent finished, and a detached client, which also
+  exits 0 while the agent runs on, spends nothing. Startup recovery forgets, not resumes, a kept agent whose
   session is gone with a recorded normal exit, then prunes records of gone sessions
   that no stored row names, so an exit still being handled keeps its record. Sessions
   launched without a record keep the old meaning
@@ -441,8 +442,9 @@ create a local process, PTY, or durable transport session
   read in the same tmux call that finds the session, so a replacement never counts as
   the session ending, and keep an agent whose server was never identified: keep its
   row and conversation pending for the next start, since a runtime never restores a key
-  it saw exit. Post-launch cleanup applies the same rule when the exit lands before the
-  record, and both callers share one cached decision per runtime generation. Kept agents
+  it saw exit. Post-launch cleanup and a finished reattachment apply the same rule to
+  an exit that landed first (the exit handler skips a runtime while its recovery is
+  pending), and all callers share one cached decision per runtime generation. Kept agents
   list as unavailable until Stop forgets them or the next start resumes them. Pruning
   deletes nothing while the server has no sessions, and a periodic recovery pass that
   follows keeping such an agent restores every base terminal first, as startup does,

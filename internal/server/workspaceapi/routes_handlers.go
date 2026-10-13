@@ -2862,13 +2862,14 @@ func (s *Handler) forgetRecordedRuntimeSessionIfExited(
 		context.WithoutCancel(ctx), runtimeSessionCleanupTimeout,
 	)
 	defer cancel()
-	if _, err := s.workspaces.ForgetRuntimeSessionAfterExit(
+	forgotten, err := s.workspaces.ForgetRuntimeSessionAfterExit(
 		cleanupCtx,
 		session.WorkspaceID,
 		session.Key,
 		session.CreatedAt,
 		session.TmuxSession,
-	); err != nil {
+	)
+	if err != nil {
 		slog.Warn(
 			"forget runtime session that exited before record completed",
 			"workspace_id", session.WorkspaceID,
@@ -2876,6 +2877,9 @@ func (s *Handler) forgetRecordedRuntimeSessionIfExited(
 			"err", err,
 		)
 		return
+	}
+	if forgotten {
+		s.runtime.ForgetAgentExit(session.TmuxSession)
 	}
 	s.invalidateWorkspaceEnrichment(session.WorkspaceID)
 }

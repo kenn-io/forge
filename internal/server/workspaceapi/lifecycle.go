@@ -162,6 +162,20 @@ func (h *Handler) RestoreRuntimeSessions(ctx context.Context) error {
 	return nil
 }
 
+// finishReattachedRuntime ends recovery for a runtime that reattached to its
+// session. The runtime may have exited while recovery was pending, when the
+// exit handler leaves it alone, so that exit is reconciled here.
+func (h *Handler) finishReattachedRuntime(ctx context.Context, session db.WorkspaceRuntimeSession) {
+	h.setRuntimeRecoveryPending(session.SessionKey, false)
+	if session.Kind == string(localruntime.LaunchTargetAgent) {
+		h.noteTmuxServer(ctx, session.SessionKey, session.TmuxSession)
+	}
+	h.forgetRecordedRuntimeSessionIfExited(ctx, localruntime.SessionInfo{
+		Key: session.SessionKey, WorkspaceID: session.WorkspaceID,
+		CreatedAt: session.CreatedAt, TmuxSession: session.TmuxSession,
+	})
+}
+
 // pruneAgentExits removes exit records of gone tmux sessions that no stored
 // runtime still names. A stored runtime's record is consumed by its exit
 // handling, its next wrapper, or forgetting its row; pruning it here could
@@ -254,7 +268,11 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 			h.setRuntimeRecoveryPending(session.SessionKey, true)
 		}
 	}
-	unfinished, listed := h.restoreWorkspaceTerminals(ctx, retainedWorkspaces, pendingOnly)
+	// Terminals get their own share of the pass, so one that keeps hanging
+	// cannot use up the time the agents after it need.
+	terminalCtx, cancelTerminals := context.WithTimeout(ctx, h.baseRestoreBudget)
+	unfinished, listed := h.restoreWorkspaceTerminals(terminalCtx, retainedWorkspaces, pendingOnly)
+	cancelTerminals()
 	if !pendingOnly {
 		// Terminals startup could not restore wait for the periodic restore,
 		// and the prune waits for them.
@@ -290,10 +308,7 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		restored := restoredRuntime(session, summary.WorktreePath)
 		err = h.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restored})
 		if err == nil {
-			h.setRuntimeRecoveryPending(session.SessionKey, false)
-			if session.Kind == string(localruntime.LaunchTargetAgent) {
-				h.noteTmuxServer(ctx, session.SessionKey, session.TmuxSession)
-			}
+			h.finishReattachedRuntime(ctx, session)
 			continue
 		}
 		// Resume a missing tmux agent or a gone pty-owner agent from its saved
@@ -420,13 +435,18 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 	h.runBackground(func(ctx context.Context) {
 		cleanupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		if _, err := h.workspaces.ForgetRuntimeSessionAfterExit(
+		forgotten, err := h.workspaces.ForgetRuntimeSessionAfterExit(
 			cleanupCtx, info.WorkspaceID, info.Key, info.CreatedAt, info.TmuxSession,
-		); err != nil {
+		)
+		if err != nil {
 			slog.Warn("forget exited runtime session",
 				"workspace_id", info.WorkspaceID,
 				"session_key", info.Key,
 				"err", err)
+			return
+		}
+		if forgotten && h.runtime != nil {
+			h.runtime.ForgetAgentExit(info.TmuxSession)
 		}
 	})
 }
@@ -477,18 +497,16 @@ func (h *Handler) keepAgentAfterTmuxServerLoss(info localruntime.SessionInfo) bo
 		return decision.keep
 	}
 	// One read of the record serves the decision and its cleanup, so a status
-	// written in between is never lost. A kept agent's record stays until its
-	// next wrapper replaces it or startup prunes it after its row is gone; a
-	// forgotten agent's record is spent.
+	// written in between is never lost. The record stays until the agent's row
+	// is deleted, its next wrapper replaces it, or startup prunes it after its
+	// row is gone, so a failed cleanup still shows the next start that the
+	// agent finished.
 	var exit localruntime.AgentExit
 	recorded := false
 	if h.runtime != nil {
 		exit, recorded = h.runtime.AgentExit(info.TmuxSession)
 	}
 	keep, err := h.classifyAgentExit(info, exit, recorded)
-	if !keep && h.runtime != nil {
-		h.runtime.ForgetAgentExit(info.TmuxSession)
-	}
 	if h.exitDecisions == nil {
 		h.exitDecisions = make(map[string]exitDecision)
 	}

@@ -356,3 +356,171 @@ func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
 	_, recorded := runtime.AgentExit(session.TmuxSession)
 	require.True(recorded, "a stored runtime keeps its exit record")
 }
+
+// A finished agent's exit record outlives a cleanup that never deletes its
+// row, as when Forge shuts down first, so the next start forgets the agent
+// rather than resuming its finished conversation.
+func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/interrupted"), GitHeadRef: "work/interrupted",
+		WorkspaceBranch: "work/interrupted", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte(
+		"#!/bin/sh\necho run >> runs\nwhile [ ! -e quit ]; do sleep 0.05; done\n"), 0o755))
+	exitDir := t.TempDir()
+	exitHandled := make(chan struct{})
+	startForge := func(onExit func(*Handler, localruntime.SessionInfo)) (*Handler, *localruntime.Manager) {
+		var handler *Handler
+		runtime := localruntime.NewManager(localruntime.Options{
+			TmuxCommand:             tmux,
+			WrapAgentSessionsInTmux: true,
+			PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+			TmuxOwnerMarker:         "kenn-forge:test-interrupted",
+			AgentExitDir:            exitDir,
+			Targets: []localruntime.LaunchTarget{{
+				Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+			OnSessionExit: func(info localruntime.SessionInfo) {
+				if onExit != nil {
+					onExit(handler, info)
+				}
+			},
+		})
+		t.Cleanup(func() {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+			defer cancel()
+			runtime.StopWorkspace(cleanupCtx, "workspace")
+			runtime.Shutdown()
+		})
+		workspaces := workspace.NewManager(database, t.TempDir())
+		workspaces.SetTmuxCommand(tmux)
+		handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+		return handler, runtime
+	}
+	handler, runtime := startForge(func(handler *Handler, info localruntime.SessionInfo) {
+		// Forge is shutting down, so the row cleanup never runs.
+		handler.stopBackground()
+		handler.HandleRuntimeSessionExit(info)
+		close(exitHandled)
+	})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "runs")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(cwd, "quit"), nil, 0o600))
+	<-exitHandled
+	rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Len(rows, 1, "the interrupted cleanup leaves the row")
+	runtime.Shutdown()
+
+	restarted, restartedRuntime := startForge(nil)
+	require.NoError(restarted.RestoreRuntimeSessions(ctx))
+
+	rows, err = database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Empty(rows, "the finished agent is forgotten")
+	require.Empty(restartedRuntime.ListSessions("workspace"))
+	runs, err := os.ReadFile(filepath.Join(cwd, "runs"))
+	require.NoError(err)
+	require.Equal("run\n", string(runs), "the finished conversation is not resumed")
+}
+
+// Startup reattaches to a surviving agent while recovery is still pending, and
+// the exit handler leaves a pending runtime alone. An agent killed during
+// that window must still be kept once its reattachment finishes, or the
+// missing-tmux prune forgets it.
+func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	// Another session keeps the server running, as base terminals would.
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/reattach"), GitHeadRef: "work/reattach",
+		WorkspaceBranch: "work/reattach", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
+	var handler *Handler
+	exitHandled := make(chan struct{})
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             tmux,
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-reattach",
+		AgentExitDir:            t.TempDir(),
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+		OnSessionExit: func(info localruntime.SessionInfo) {
+			handler.HandleRuntimeSessionExit(info)
+			close(exitHandled)
+		},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "workspace")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand(tmux)
+	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
+	require.NoError(err)
+	rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Len(rows, 1)
+
+	// The agent is killed while startup still has its recovery pending.
+	handler.setRuntimeRecoveryPending(session.Key, true)
+	out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"list-panes", "-t", session.TmuxSession, "-F", "#{pane_pid}")...).Output()
+	require.NoError(err)
+	panePID, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	require.NoError(err)
+	require.NoError(syscall.Kill(-panePID, syscall.SIGTERM))
+	<-exitHandled
+
+	handler.finishReattachedRuntime(ctx, rows[0])
+	handler.runWorkspaceTmuxPrune(ctx)
+
+	rows, err = database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Len(rows, 1, "the killed agent is kept for recovery")
+	handler.runtimeRecoveryMu.Lock()
+	defer handler.runtimeRecoveryMu.Unlock()
+	require.True(handler.runtimeRecoveryPending[session.Key])
+}

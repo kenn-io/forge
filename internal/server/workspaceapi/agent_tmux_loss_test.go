@@ -890,14 +890,27 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 }
 
 // A base terminal whose start keeps hanging gets only its share of a recovery
-// pass, so a pending agent in a healthy workspace still resumes.
+// pass, so a pending agent still resumes, whether it runs in a healthy
+// workspace or in the stuck terminal's own.
 func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	ctx := t.Context()
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux tests unsupported")
 	}
+	for name, agentWorkspace := range map[string]string{
+		"other workspace": "0000000000000f02",
+		"same workspace":  "0000000000000f01",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testStuckTerminalRestoreLeavesTimeForAgents(t, agentWorkspace)
+		})
+	}
+}
+
+func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace string) {
+	require := require.New(t)
+	ctx := t.Context()
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	tmux := privateTmuxOwner.Command(t, tmuxPath)
@@ -905,7 +918,11 @@ func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
 	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = forge-0000000000000f01 ] && [ \"$1\" != has-session ]; then exec sleep 60; fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
 	database := dbtest.Open(t)
 	cwd := gitfixture.NewRepository(t, false).Dir
-	for id, worktree := range map[string]string{"0000000000000f01": t.TempDir(), "0000000000000f02": cwd} {
+	for _, id := range []string{"0000000000000f01", "0000000000000f02"} {
+		worktree := t.TempDir()
+		if id == agentWorkspace {
+			worktree = cwd
+		}
 		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 			ID: id, Platform: "github", PlatformHost: "github.com",
 			RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
@@ -915,7 +932,7 @@ func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
 		}))
 	}
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
-		WorkspaceID: "0000000000000f02", SessionKey: "saved-runtime", TargetKey: "custom-worker",
+		WorkspaceID: agentWorkspace, SessionKey: "saved-runtime", TargetKey: "custom-worker",
 		Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "gone",
 	}))
 	_, err = database.RecordWorkspaceRuntimeConversation(ctx, "saved-runtime", "claude", "conversation")
@@ -934,7 +951,7 @@ func TestStuckTerminalRestoreLeavesTimeForAgents(t *testing.T) {
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "0000000000000f02")
+		runtime.StopWorkspace(cleanupCtx, agentWorkspace)
 		runtime.Shutdown()
 	})
 	workspaces := workspace.NewManager(database, t.TempDir())

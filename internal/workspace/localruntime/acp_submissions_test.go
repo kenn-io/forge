@@ -228,10 +228,22 @@ func TestACPTurnRecordsFollowEachTurn(t *testing.T) {
 
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "second"}))
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	turns = c.state().Turns
+	state := c.state()
+	turns = state.Turns
 	require.Len(t, turns, 2, "an injected steer joins the running turn")
 	assert.Equal(t, "second", turns[1].SubmissionID)
 	assert.Empty(t, turns[1].EndedAt)
+	starts := map[string]int{}
+	for i, message := range state.Messages {
+		if message.Role == "user" {
+			starts[message.SubmissionID] = state.MessageOffset + i
+		}
+	}
+	require.NotNil(t, turns[0].FirstMessage)
+	require.NotNil(t, turns[1].FirstMessage)
+	assert.Equal(t, starts["first"], *turns[0].FirstMessage, "a turn begins at the prompt that started it")
+	assert.Equal(t, starts["second"], *turns[1].FirstMessage)
+	assert.Greater(t, starts["steer"], *turns[1].FirstMessage, "steering falls inside the running turn")
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "cancel"}))
 	turns = c.awaitState(func(s ACPState) bool { return !s.Busy }).Turns
 	require.Len(t, turns, 2)

@@ -286,6 +286,9 @@ components:
           type: string
         error:
           type: string
+        firstMessage:
+          format: int64
+          type: integer
         generation:
           format: int64
           minimum: 0

@@ -432,7 +432,7 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 		h.setRuntimeRecoveryPending(info.Key, true)
 		return
 	}
-	h.runBackground(func(ctx context.Context) {
+	forget := func(ctx context.Context) {
 		cleanupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		forgotten, err := h.workspaces.ForgetRuntimeSessionAfterExit(
@@ -448,7 +448,15 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 		if forgotten && h.runtime != nil {
 			h.runtime.ForgetAgentExit(info.TmuxSession)
 		}
-	})
+	}
+	if info.TmuxSession == "" {
+		// A runtime without tmux leaves no exit record, so its deleted row is
+		// the only sign it finished. Deleting it needs no tmux check, so it
+		// runs now rather than in the background, which shutdown can skip.
+		forget(context.WithoutCancel(h.lifecycleCtx))
+		return
+	}
+	h.runBackground(forget)
 }
 
 // keepsExitedChat reports whether an exited session is a chat a coordinator

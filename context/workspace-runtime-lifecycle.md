@@ -434,7 +434,10 @@ create a local process, PTY, or durable transport session
   shows the next start that the agent finished, and a detached client, which also
   exits 0 while the agent runs on, spends nothing. Startup recovery forgets, not resumes, a kept agent whose
   session is gone with a recorded normal exit, then prunes records of gone sessions
-  that no stored row names, so an exit still being handled keeps its record. Sessions
+  that no stored row names, so an exit still being handled keeps its record. A runtime
+  without tmux has no record, so its exit handler deletes the row at once rather than
+  in background cleanup a shutdown can skip; such an agent that finishes while Forge is
+  down is still resumed, since its gone owner looks like a killed one. Sessions
   launched without a record keep the old meaning
   (`internal/workspace/localruntime/agent_exit.go`). An agent whose client exits
   non-zero lost its client or server unless tmux reports its session gone while the
@@ -461,7 +464,7 @@ create a local process, PTY, or durable transport session
   so a hung one cannot starve pending agents), including those startup recovery could
   not restore, or all of them while their list cannot be read, stay outstanding across
   passes, even after the kept agents are stopped; one startup restored only for its
-  retained agents stays eligible after they resume.
+  retained agents stays eligible after they resume, and a deleted one leaves the set.
   Later passes work only on those, each starting after the workspace the last pass
   reached, and the missing-tmux prune waits until none remain. Recovery changes must
   pass every shutdown order of `make test-reboot-sim`

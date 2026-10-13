@@ -1114,3 +1114,31 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 		"has-session", "-t", "=forge-0000000000000d01")...).Run(), "the base terminal is restored")
 	require.False(handler.restoringBaseTerminals())
 }
+
+// A deleted workspace never admits recovery again, so an outstanding terminal
+// restore for it must end rather than hold the missing-tmux prune forever.
+func TestDeletedWorkspaceEndsItsOutstandingTerminalRestore(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "0000000000000b01", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/deleted"), GitHeadRef: "work/deleted",
+		WorkspaceBranch: "work/deleted", WorktreePath: t.TempDir(), Status: "ready",
+		TmuxSession: "forge-0000000000000b01",
+	}))
+	runtime := localruntime.NewManager(localruntime.Options{})
+	t.Cleanup(runtime.Shutdown)
+	handler := New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime})
+	handler.runtimeRecoveryMu.Lock()
+	handler.baseRestoreRemaining = map[string]bool{"0000000000000b01": true}
+	handler.runtimeRecoveryMu.Unlock()
+	handler.markWorkspaceDeleting("0000000000000b01")
+	handler.finishWorkspaceDeleting("0000000000000b01", true)
+
+	require.NoError(handler.restoreRuntimeSessions(ctx, true))
+
+	require.False(handler.restoringBaseTerminals(), "the deleted workspace's terminal is no longer outstanding")
+}

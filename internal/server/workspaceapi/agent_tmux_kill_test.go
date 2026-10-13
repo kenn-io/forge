@@ -643,3 +643,73 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 	defer handler.runtimeRecoveryMu.Unlock()
 	require.True(handler.runtimeRecoveryPending[session.Key])
 }
+
+// An agent without tmux leaves no exit record, so its row must be gone once
+// its exit is handled, even when Forge is shutting down. Otherwise the next
+// start finds its saved conversation and resumes a finished agent.
+func TestFinishedPtyOwnerAgentIsForgottenDuringShutdown(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/pty-finished"), GitHeadRef: "work/pty-finished",
+		WorkspaceBranch: "work/pty-finished", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte(
+		"#!/bin/sh\necho run >> runs\nwhile [ ! -e quit ]; do sleep 0.05; done\n"), 0o755))
+	ownerRoot := t.TempDir()
+	exitHandled := make(chan struct{})
+	startForge := func(onExit func(*Handler, localruntime.SessionInfo)) (*Handler, *localruntime.Manager) {
+		var handler *Handler
+		runtime := localruntime.NewManager(localruntime.Options{
+			PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: ownerRoot, InProcess: true}, nil),
+			Targets: []localruntime.LaunchTarget{{
+				Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			}},
+			OnSessionExit: func(info localruntime.SessionInfo) {
+				if onExit != nil {
+					onExit(handler, info)
+				}
+			},
+		})
+		t.Cleanup(func() {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+			defer cancel()
+			runtime.StopWorkspace(cleanupCtx, "workspace")
+			runtime.Shutdown()
+		})
+		handler = New(Deps{DB: database, Workspaces: workspace.NewManager(database, t.TempDir()), Runtime: runtime})
+		return handler, runtime
+	}
+	handler, runtime := startForge(func(handler *Handler, info localruntime.SessionInfo) {
+		handler.stopBackground()
+		handler.HandleRuntimeSessionExit(info)
+		close(exitHandled)
+	})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Empty(session.TmuxSession, "the agent runs without tmux")
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "runs")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
+	require.NoError(err)
+	require.NoError(os.WriteFile(filepath.Join(cwd, "quit"), nil, 0o600))
+	<-exitHandled
+	rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Empty(rows, "the finished agent's row is deleted while Forge shuts down")
+	runtime.Shutdown()
+
+	restarted, restartedRuntime := startForge(nil)
+	require.NoError(restarted.RestoreRuntimeSessions(ctx))
+
+	require.Empty(restartedRuntime.ListSessions("workspace"))
+	runs, err := os.ReadFile(filepath.Join(cwd, "runs"))
+	require.NoError(err)
+	require.Equal("run\n", string(runs), "the finished conversation is not resumed")
+}

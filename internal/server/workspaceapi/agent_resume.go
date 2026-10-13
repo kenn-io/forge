@@ -131,6 +131,11 @@ func (h *Handler) restoreTerminalsAfterServerLoss(
 		h.runtimeRecoveryMu.Unlock()
 		done, start := h.beginWorkspaceSetup(id)
 		if !start {
+			// Admission without a wait channel means the workspace was
+			// deleted, so its terminal is no longer outstanding.
+			if done == nil {
+				delete(left, id)
+			}
 			continue
 		}
 		ws, err := h.db.GetWorkspace(ctx, id)

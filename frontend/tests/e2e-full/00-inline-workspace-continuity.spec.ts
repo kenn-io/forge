@@ -32,6 +32,7 @@ import {
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { runPaletteCommand } from "./support/paletteCommands";
 import { openSettingsPanel } from "./support/settingsPanel";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -312,6 +313,7 @@ async function collapseTerminal(page: Page): Promise<void> {
 }
 
 async function typeIntoTerminal(page: Page, container: Locator, command: string): Promise<void> {
+  await waitForTerminalInputReady(container);
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(command);
   await page.keyboard.press("Enter");
@@ -416,6 +418,7 @@ function exitTmuxCopyMode(server: IsolatedE2EServer, tmuxSession: string): void 
 }
 
 async function dispatchTerminalPaste(container: Locator, text: string): Promise<void> {
+  await waitForTerminalInputReady(container);
   await container.locator(".xterm-helper-textarea").evaluate((textarea, pastedText) => {
     const paste = new Event("paste", { bubbles: true, cancelable: true });
     Object.defineProperty(paste, "clipboardData", {
@@ -587,6 +590,7 @@ test.describe("inline workspace pane continuity", () => {
   // test that closes or maximizes the workspace pane would hand that arrangement
   // to the next one. Reset it on every document load.
   test.beforeEach(async ({ page }) => {
+    trackTerminalReadiness(page);
     await page.addInitScript(() => {
       for (const surface of ["prs", "issues", "activity"]) {
         localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
@@ -736,6 +740,7 @@ test.describe("inline workspace pane continuity", () => {
     );
     await page.setViewportSize({ width: 1280, height: 800 });
     const phonePage = await page.context().newPage();
+    trackTerminalReadiness(phonePage);
     await phonePage.setViewportSize({ width: 390, height: 844 });
 
     let isolatedServer: IsolatedE2EServer | null = null;

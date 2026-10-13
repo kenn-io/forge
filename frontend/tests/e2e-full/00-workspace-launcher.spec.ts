@@ -23,6 +23,7 @@ import {
 } from "@playwright/test";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
 import { runPaletteCommand } from "./support/paletteCommands";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -72,24 +73,11 @@ async function createIssueWorkspace(api: APIRequestContext, issueNumber: number)
 // attached, and a marker file cannot.
 async function typeMarkerCommand(page: Page, container: Locator, worktreePath: string, marker: string): Promise<void> {
   const markerPath = path.join(worktreePath, marker);
+  await waitForTerminalInputReady(container);
   await container.click({ position: { x: 10, y: 10 } });
   await page.keyboard.type(`touch '${markerPath}'`);
   await page.keyboard.press("Enter");
   await expect.poll(() => existsSync(markerPath), { timeout: 15_000 }).toBe(true);
-}
-
-function waitForTerminalReady(page: Page): Promise<void> {
-  const ready = page
-    .waitForEvent("websocket", (socket) => new URL(socket.url()).pathname.endsWith("/terminal"))
-    .then(async (socket) => {
-      await socket.waitForEvent(
-        "framereceived",
-        ({ payload }) => typeof payload === "string" && JSON.parse(payload).type === "replay_ready",
-      );
-    });
-  // A failed launch can end the test before it awaits readiness.
-  void ready.catch(() => {});
-  return ready;
 }
 
 test.describe("embedded workspace launcher", () => {
@@ -98,6 +86,7 @@ test.describe("embedded workspace launcher", () => {
   // The pane layout persists, so an arrangement left by another spec would decide
   // whether the workspace pane is even on screen here.
   test.beforeEach(async ({ page }) => {
+    trackTerminalReadiness(page);
     await page.addInitScript(() => {
       for (const surface of ["prs", "issues", "activity"]) {
         localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
@@ -142,7 +131,6 @@ test.describe("embedded workspace launcher", () => {
       await expect(page.getByRole("dialog", { name: "Workspace info", exact: true })).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(launcher).toBeVisible();
-      const initialTerminalReady = waitForTerminalReady(page);
       await launcher.getByRole("button", { name: "Shell", exact: true }).click();
 
       // The successful launch response records and publishes the session, so the
@@ -151,16 +139,13 @@ test.describe("embedded workspace launcher", () => {
       await expect(launcher).toBeHidden();
       const container = page.locator(".detail-pane-workspace-slot .terminal-container");
       await expect(container).toBeVisible();
-      await initialTerminalReady;
       await typeMarkerCommand(page, container, workspace.worktree_path, "launcher-marker");
 
       // Reopening over xterm must keep launch buttons above its canvas layers.
       await runPaletteCommand(page, "Launch a workspace session");
       await expect(launcher).toBeVisible();
-      const reopenedTerminalReady = waitForTerminalReady(page);
       await launcher.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launcher).toBeHidden();
-      await reopenedTerminalReady;
 
       await page.getByRole("button", { name: "Workspace info", exact: true }).click();
       const info = page.getByRole("dialog", { name: "Workspace info", exact: true });
@@ -179,7 +164,6 @@ test.describe("embedded workspace launcher", () => {
       await headerLaunch.click();
       const launchMenu = page.getByRole("dialog", { name: "Run configurations" });
       await expect(launchMenu).toBeVisible();
-      const terminalReady = waitForTerminalReady(page);
       await launchMenu.getByRole("button", { name: "Shell", exact: true }).click();
       await expect(launchMenu).toBeHidden();
 
@@ -193,8 +177,6 @@ test.describe("embedded workspace launcher", () => {
           return body.target_keys;
         })
         .toEqual(["plain_shell", "plain_shell", "plain_shell"]);
-      // Persistence can precede the new tab's selection and socket attachment.
-      await terminalReady;
       await expect(page.getByRole("tab", { name: "Shell 3", exact: true })).toHaveAttribute("aria-selected", "true");
       const activeContainer = page.locator(
         ".detail-pane-workspace-slot .tabbed-panel-tab-panel.active .terminal-container",
@@ -229,10 +211,7 @@ test.describe("embedded workspace launcher", () => {
         const workspace = await createIssueWorkspace(api, 10);
 
         await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
-        // xterm can take focus before its socket attaches; typing then drops input.
-        const terminalReady = waitForTerminalReady(page);
         await page.getByRole("region", { name: "Session launcher" }).getByRole("button", { name: "Shell" }).click();
-        await terminalReady;
 
         const terminal = page.locator(".workspace-tab-slot .terminal-container");
         await expect(terminal).toBeVisible();
@@ -241,6 +220,7 @@ test.describe("embedded workspace launcher", () => {
           .poll(() => page.evaluate(() => document.activeElement?.classList.contains("xterm-helper-textarea")))
           .toBe(false);
 
+        await waitForTerminalInputReady(terminal);
         await terminal.tap({ position: { x: 10, y: 10 } });
 
         await expect

@@ -172,7 +172,7 @@ owner:
   (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts::expectWheelScroll`).
 - Browser terminal input tests must await `replay_ready` before typing; visibility and
   focus can precede socket attachment and drop keystrokes
-  (`frontend/tests/e2e-full/00-workspace-launcher.spec.ts:210`).
+  (`frontend/tests/e2e-full/support/terminalReadiness.ts::waitForTerminalInputReady`).
 - Real-tmux websocket tests retry asynchronous resize probes on a bounded timer, never per repaint; repaint-coupled
   input creates a feedback loop that can overflow subscriber buffers
   (`internal/server/api_test.go::TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E`).

@@ -4131,6 +4131,10 @@ test.describe("sidebar toggle behavior", () => {
   test("moving the focused bottom terminal into Workflow returns focus to the workspace", async ({ page }) => {
     await page.goto("/terminal/ws-123");
     await page.getByRole("button", { name: "Open terminal panel" }).click();
+    // Opening the panel hands the keyboard to its terminal. Wait for that
+    // focus to land before taking it for the move control, or the queued
+    // explicit request arrives after the button focus and takes it back.
+    await expect(page.locator(".terminal-panel.bottom .xterm-helper-textarea")).toBeFocused();
 
     const moveToWorkflow = page.getByRole("button", { name: "Move terminal panel to workflow" });
     await moveToWorkflow.focus();

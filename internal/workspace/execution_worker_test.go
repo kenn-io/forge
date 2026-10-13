@@ -71,3 +71,42 @@ func TestExecutionWorkerTracksTheWorkspaceRemote(t *testing.T) {
 	require.Equal("upstream", strings.TrimSpace(string(runWorkspaceTestGit(t, work, "config", "branch.feature/topic.remote"))))
 	require.Equal("refs/heads/feature/topic", strings.TrimSpace(string(runWorkspaceTestGit(t, work, "config", "branch.feature/topic.merge"))))
 }
+
+// Push state reports a branch that tracks a non-origin remote only when that
+// remote is the workspace's own repository.
+func TestExecutionPushStateAcceptsTheWorkspaceRemote(t *testing.T) {
+	for _, tt := range []struct {
+		name, url string
+		reported  bool
+	}{
+		{name: "workspace repository", url: "https://github.com/acme/widget.git", reported: true},
+		{name: "other repository", url: "https://github.com/someone-else/widget.git"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			repo := gitfixture.NewRepository(t, false)
+			runWorkspaceTestGit(t, repo.Dir, "remote", "add", "upstream", tt.url)
+			work := filepath.Join(t.TempDir(), "work")
+			runWorkspaceTestGit(t, repo.Dir, "worktree", "add", "-b", "feature/topic", work)
+			runWorkspaceTestGit(t, work, "update-ref", "refs/remotes/upstream/feature/topic", "HEAD")
+			runWorkspaceTestGit(t, work, "branch", "--set-upstream-to=upstream/feature/topic")
+			m := newWorkspaceTestManager(t, nil, t.TempDir())
+			m.SetExecutionWorker(config.ExecutionWorker{Enabled: true}, "/opt/example/bin/forge")
+			summary := &WorkspaceSummary{Workspace: Workspace{
+				Status: "ready", WorktreePath: work, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget",
+			}}
+
+			state := m.ExecutionPushState(t.Context(), summary)
+
+			if !tt.reported {
+				require.Nil(state)
+				return
+			}
+			require.NotNil(state)
+			require.Equal("acme/widget", state.Repository)
+			require.Equal("feature/topic", state.Branch)
+			require.True(state.Pushed)
+		})
+	}
+}

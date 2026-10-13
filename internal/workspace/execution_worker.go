@@ -107,7 +107,7 @@ func (m *Manager) ExecutionPushState(ctx context.Context, summary *WorkspaceSumm
 		return nil
 	}
 	upstream, err := currentBranchUpstream(ctx, summary.WorktreePath)
-	if err != nil || upstream.remote != "origin" {
+	if err != nil || !m.executionPushRemote(ctx, summary, upstream.remote) {
 		return nil
 	}
 	out, err := gitOutput(ctx, summary.WorktreePath, "rev-parse", "HEAD", "@{upstream}")
@@ -119,4 +119,18 @@ func (m *Manager) ExecutionPushState(ctx context.Context, summary *WorkspaceSumm
 		return nil
 	}
 	return &devbox.PushState{Repository: summary.RepoOwner + "/" + summary.RepoName, Branch: upstream.branch, OID: refs[0], Pushed: refs[0] == refs[1]}
+}
+
+// executionPushRemote reports whether pushes to remote go to the workspace's
+// repository. A local worktree base can name that remote something other than
+// origin; it then counts only when its URLs match the repository identity.
+func (m *Manager) executionPushRemote(ctx context.Context, summary *WorkspaceSummary, remote string) bool {
+	if remote == originRemoteName {
+		return true
+	}
+	return validateBaseRemoteURLs(
+		ctx, summary.WorktreePath, remote, summary.Platform, summary.PlatformHost,
+		summary.RepoOwner, summary.RepoName,
+		m.allowsInsecureHTTP(summary.Platform, summary.PlatformHost),
+	) == nil
 }

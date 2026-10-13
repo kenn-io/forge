@@ -5240,6 +5240,62 @@ describe("WorkspaceTerminalView", () => {
     expect(panel?.classList.contains("input-active")).toBe(true);
   });
 
+  it("moves keyboard focus into the terminal when the panel header opens it", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTerminalSession());
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    const toggle = await screen.findByRole("button", { name: "Open terminal panel" });
+    toggle.focus();
+    expect(document.activeElement).toBe(toggle);
+
+    await fireEvent.click(toggle);
+
+    // The click is the user asking to type in the terminal: focus must leave
+    // the header button and land inside the pooled terminal, on every open.
+    await waitFor(() =>
+      expect(document.activeElement?.closest(".terminal-panel .session-host-wrapper")).not.toBeNull(),
+    );
+    await waitFor(() =>
+      expect(mocks.mockTerminalInstances.some((terminal) => terminal.focus.mock.calls.length > 0)).toBe(true),
+    );
+
+    const close = screen.getAllByRole("button", { name: "Close terminal panel" })[0]!;
+    close.focus();
+    await fireEvent.click(close);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Open terminal panel" })).not.toBeNull());
+
+    const reopen = screen.getByRole("button", { name: "Open terminal panel" });
+    reopen.focus();
+    await fireEvent.click(reopen);
+
+    await waitFor(() =>
+      expect(document.activeElement?.closest(".terminal-panel .session-host-wrapper")).not.toBeNull(),
+    );
+  });
+
+  it("moves keyboard focus into a terminal auto-launched by opening the panel", async () => {
+    localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "home");
+    let runtimePayload: unknown = runtimeWithLaunchTargetsOnly();
+    mocks.getWorkspaceRuntime.mockImplementation(async () => structuredClone(runtimePayload));
+    mocks.launchWorkspaceSession.mockImplementation(async () => {
+      runtimePayload = runtimeWithTerminalSession();
+      return runningShellSession;
+    });
+
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    const toggle = await screen.findByRole("button", { name: "Open terminal panel" });
+    toggle.focus();
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(document.activeElement?.closest(".terminal-panel .session-host-wrapper")).not.toBeNull(),
+    );
+  });
+
   it("uses the renderer-validated outer owner for nested workflow chrome", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "session:ws-1:helper");
     localStorage.setItem(

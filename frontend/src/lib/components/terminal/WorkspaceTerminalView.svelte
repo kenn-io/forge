@@ -2749,6 +2749,7 @@
               ),
             );
             if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+            requestSessionFocus(sessionHostKeyFor(session));
             clearRuntimeMutationPending(state);
             return true;
           });
@@ -2798,6 +2799,9 @@
             );
           }
           if (terminalLayout.dock === "top") selectWorkspaceTab("terminal");
+          // A launch is the user asking for a terminal to type in, the same
+          // explicit request the workflow placement above already makes.
+          requestSessionFocus(sessionHostKeyFor(session));
           clearRuntimeMutationPending(state);
           requestRuntime({ force: true });
           return true;
@@ -3136,9 +3140,21 @@
     terminalLayout = { ...terminalLayout, open: true };
     if (!terminalSessions.some(isActiveRuntimeSession)) {
       launchTerminalSession();
-    } else if (terminalLayout.dock === "top") {
+      return;
+    }
+    if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal");
     }
+    // Opening the panel is the user asking to type in it. An explicit
+    // request, like Focus Terminal: the pool's focus-ownership restore only
+    // covers a terminal the user had already focused, and it yields to the
+    // header button the click just focused, so without this the keystrokes
+    // after opening go nowhere.
+    const session =
+      terminalSessions.find(
+        (candidate) => candidate.key === terminalLayout.activeSessionKey && isActiveRuntimeSession(candidate),
+      ) ?? terminalSessions.find(isActiveRuntimeSession);
+    if (session) requestSessionFocus(sessionHostKeyFor(session));
   }
 
   function selectTerminalSession(

@@ -700,6 +700,10 @@ Keyboard handlers must have one clear owner for each key press.
   `shouldReclaimFocus`)
   (`frontend/src/lib/components/terminal/terminal-focus.ts`,
   `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
+- Opening the terminal dock from its header toggle, like launching a docked
+  terminal, is an explicit focus request for the dock's active session; a bare
+  reveal would leave the keyboard on the header button
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::toggleTerminalPanel`).
 - Active terminals must synchronously focus xterm on primary touch or pen
   pointerdown; xterm's built-in focus path is mouse-only, so a delayed handoff
   leaves the software keyboard closed (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPointerDown`).

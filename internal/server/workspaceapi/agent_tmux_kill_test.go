@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/db"
@@ -520,6 +521,124 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 	rows, err = database.ListAllWorkspaceRuntimeSessions(ctx)
 	require.NoError(err)
 	require.Len(rows, 1, "the killed agent is kept for recovery")
+	handler.runtimeRecoveryMu.Lock()
+	defer handler.runtimeRecoveryMu.Unlock()
+	require.True(handler.runtimeRecoveryPending[session.Key])
+}
+
+// The missing-tmux prune lists tmux and then deletes rows whose session is
+// gone. An agent killed during a pass must be judged on the evidence at
+// deletion time: kept once its exit handler kept it, and kept by its kill
+// record when that handler has not yet run.
+func TestTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"exit handled during the pass", "exit not yet handled"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testTmuxPruneKeepsAgentKilledDuringThePass(t, name == "exit handled during the pass")
+		})
+	}
+}
+
+func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass bool) {
+	require := require.New(t)
+	ctx := t.Context()
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux tests unsupported")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	require.NoError(err)
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	// Another session keeps the server running, as base terminals would.
+	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
+	// The prune's tmux listing waits while a pause file exists.
+	control := t.TempDir()
+	wrapper := filepath.Join(t.TempDir(), "tmux")
+	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n"+
+		"  if [ \"$a\" = list-sessions ] && [ -e "+shellquote.Join(filepath.Join(control, "pause"))+" ]; then\n"+
+		"    : > "+shellquote.Join(filepath.Join(control, "paused"))+"\n"+
+		"    while [ ! -e "+shellquote.Join(filepath.Join(control, "go"))+" ]; do sleep 0.02; done\n"+
+		"  fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
+	cwd := gitfixture.NewRepository(t, false).Dir
+	database := dbtest.Open(t)
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "workspace", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+		ItemKey: db.AdHocWorkspaceItemKey("work/prune-pass"), GitHeadRef: "work/prune-pass",
+		WorkspaceBranch: "work/prune-pass", WorktreePath: cwd, Status: "ready",
+	}))
+	agent := filepath.Join(t.TempDir(), "agent")
+	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
+	var handler *Handler
+	release := make(chan struct{})
+	exitHandled := make(chan struct{})
+	runtime := localruntime.NewManager(localruntime.Options{
+		TmuxCommand:             tmux,
+		WrapAgentSessionsInTmux: true,
+		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
+		TmuxOwnerMarker:         "kenn-forge:test-prune-pass",
+		AgentExitDir:            t.TempDir(),
+		Targets: []localruntime.LaunchTarget{{
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+		OnSessionExit: func(info localruntime.SessionInfo) {
+			<-release
+			handler.HandleRuntimeSessionExit(info)
+			close(exitHandled)
+		},
+	})
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		runtime.StopWorkspace(cleanupCtx, "workspace")
+		runtime.Shutdown()
+	})
+	workspaces := workspace.NewManager(database, t.TempDir())
+	workspaces.SetTmuxCommand([]string{wrapper})
+	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
+		5*time.Second, 10*time.Millisecond)
+	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
+	require.NoError(err)
+	out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+		"list-panes", "-t", session.TmuxSession, "-F", "#{pane_pid}")...).Output()
+	require.NoError(err)
+	panePID, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	require.NoError(err)
+	killAgent := func() {
+		require.NoError(syscall.Kill(-panePID, syscall.SIGTERM))
+		require.Eventually(func() bool { return runtime.Exited(session.Key) },
+			5*time.Second, 10*time.Millisecond)
+	}
+
+	if handledDuringPass {
+		require.NoError(os.WriteFile(filepath.Join(control, "pause"), nil, 0o600))
+		pruned := make(chan struct{})
+		go func() {
+			handler.runWorkspaceTmuxPrune(ctx)
+			close(pruned)
+		}()
+		require.Eventually(func() bool { _, err := os.Stat(filepath.Join(control, "paused")); return err == nil },
+			5*time.Second, 10*time.Millisecond)
+		killAgent()
+		close(release)
+		<-exitHandled
+		require.NoError(os.WriteFile(filepath.Join(control, "go"), nil, 0o600))
+		<-pruned
+	} else {
+		killAgent()
+		handler.runWorkspaceTmuxPrune(ctx)
+		close(release)
+		<-exitHandled
+	}
+
+	rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
+	require.NoError(err)
+	require.Len(rows, 1, "the killed agent is kept for recovery")
+	require.Equal("conversation", rows[0].ConversationID)
 	handler.runtimeRecoveryMu.Lock()
 	defer handler.runtimeRecoveryMu.Unlock()
 	require.True(handler.runtimeRecoveryPending[session.Key])

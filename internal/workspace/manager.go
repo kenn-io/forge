@@ -4692,9 +4692,14 @@ func (m *Manager) ReapOrphanTmuxSessions(ctx context.Context) error {
 // the host tmux server. Runtime-session rows whose tmux session was killed
 // outside kenn-forge are removed. Ready workspaces whose primary tmux session is
 // missing are marked errored so list responses stop probing dead session names
-// and the UI can offer retry/delete. It reports whether anything was pruned so
-// callers only notify clients about passes that changed state.
-func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery map[string]bool) (bool, error) {
+// and the UI can offer retry/delete. retain, when set, is asked about each
+// missing runtime row just before it would be deleted, after tmux was listed,
+// so a row whose agent is lost during the pass can still be kept. It reports
+// whether anything was pruned so callers only notify clients about passes
+// that changed state.
+func (m *Manager) PruneMissingTmuxSessions(
+	ctx context.Context, retain func(db.WorkspaceRuntimeSession) bool,
+) (bool, error) {
 	changed := false
 	sessions, err := m.listTmuxSessions(ctx)
 	if err != nil {
@@ -4721,10 +4726,10 @@ func (m *Manager) PruneMissingTmuxSessions(ctx context.Context, pendingRecovery 
 		return false, err
 	}
 	for _, stored := range storedSessions {
-		if stored.TmuxSession == "" || pendingRecovery[stored.SessionKey] {
+		if stored.TmuxSession == "" || live[stored.TmuxSession] {
 			continue
 		}
-		if live[stored.TmuxSession] {
+		if retain != nil && retain(stored) {
 			continue
 		}
 		slog.Debug(

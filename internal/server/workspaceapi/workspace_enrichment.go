@@ -3,7 +3,6 @@ package workspaceapi
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"strings"
 	"time"
 
@@ -686,6 +685,32 @@ func (s *Handler) scheduleWorkspaceTmuxPrune() {
 	s.workspaceEnrichmentMu.Unlock()
 }
 
+// retainMissingRuntime reports whether the missing-tmux prune must keep a
+// runtime row whose tmux session is gone. It is asked after tmux was listed,
+// so an agent lost during the pass is judged on current evidence: a runtime
+// pending recovery is kept, a runtime whose exit this process has not yet seen
+// waits for its exit handler, and a seen exit gets the exit handler's decision.
+func (s *Handler) retainMissingRuntime(stored db.WorkspaceRuntimeSession) bool {
+	s.runtimeRecoveryMu.Lock()
+	pending := s.runtimeRecoveryPending[stored.SessionKey]
+	s.runtimeRecoveryMu.Unlock()
+	if pending || s.runtime == nil {
+		return pending
+	}
+	// The runtime moves a session from running to exited in one step, so
+	// checking running first never misses an exit in between.
+	for _, live := range s.runtime.ListSessions(stored.WorkspaceID) {
+		if live.Key == stored.SessionKey {
+			return true
+		}
+	}
+	exited, ok := s.runtime.ExitedSession(stored.SessionKey)
+	if !ok || !exited.CreatedAt.Equal(stored.CreatedAt) {
+		return false
+	}
+	return s.keepAgentAfterTmuxServerLoss(exited)
+}
+
 func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	defer func() {
 		s.workspaceEnrichmentMu.Lock()
@@ -700,7 +725,6 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 	}
 	cancelRecovery()
 	s.runtimeRecoveryMu.Lock()
-	pendingRecovery := maps.Clone(s.runtimeRecoveryPending)
 	restoring := len(s.baseRestoreRemaining) > 0 || s.baseRestoreListPending
 	s.runtimeRecoveryMu.Unlock()
 	if restoring {
@@ -711,7 +735,7 @@ func (s *Handler) runWorkspaceTmuxPrune(ctx context.Context) {
 		ctx, workspaceEnrichmentRefreshTimeout,
 	)
 	defer cancel()
-	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx, pendingRecovery)
+	pruned, err := s.workspaces.PruneMissingTmuxSessions(pruneCtx, s.retainMissingRuntime)
 	if err != nil {
 		slog.Debug("prune missing tmux sessions", "err", err)
 	}

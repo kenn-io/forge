@@ -446,7 +446,12 @@ create a local process, PTY, or durable transport session
   an exit that landed first (the exit handler skips a runtime while its recovery is
   pending), and all callers share one cached decision per runtime generation. Kept agents
   list as unavailable until Stop forgets them or the next start resumes them. Pruning
-  deletes nothing while the server has no sessions, and a periodic recovery pass that
+  deletes nothing while the server has no sessions, and judges each missing row only
+  after listing tmux, never from an earlier snapshot: it keeps a pending runtime,
+  leaves one whose exit this process has not seen to its exit handler, and gives a
+  seen exit the exit handler's cached decision
+  (`internal/server/workspaceapi/workspace_enrichment.go::Handler.retainMissingRuntime`).
+  A periodic recovery pass that
   follows keeping such an agent restores every base terminal first, as startup does,
   even if the agent was stopped meanwhile, taking
   setup admission per workspace so a deletion is never undone. Workspaces a pass could

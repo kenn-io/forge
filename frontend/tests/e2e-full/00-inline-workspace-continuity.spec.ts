@@ -2508,7 +2508,6 @@ test.describe("inline workspace pane continuity", () => {
       expect(new URL(reconnectSocket!.url).searchParams.get("replay_boundary")).toBe("1");
       expect(new URL(reconnectSocket!.url).searchParams.has("cols")).toBe(false);
       expect(new URL(reconnectSocket!.url).searchParams.has("rows")).toBe(false);
-      await waitForTerminalInputReady(container);
       await expect
         .poll(
           async () =>

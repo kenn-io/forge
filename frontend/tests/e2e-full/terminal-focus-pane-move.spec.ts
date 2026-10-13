@@ -165,12 +165,14 @@ async function interceptClipboardFallback(page: Page): Promise<string[]> {
   return writes;
 }
 
-async function typeMarker(page: Page, marker: string): Promise<void> {
+async function typeMarker(page: Page, terminal: Locator, marker: string): Promise<void> {
+  await waitForTerminalInputReady(terminal);
   await page.keyboard.type(`printf '${marker}\\n'`);
   await page.keyboard.press("Enter");
 }
 
-async function runTmuxCommand(page: Page, command: string): Promise<void> {
+async function runTmuxCommand(page: Page, terminal: Locator, command: string): Promise<void> {
+  await waitForTerminalInputReady(terminal);
   await page.keyboard.press("Control+b");
   await page.keyboard.press(":");
   await page.keyboard.type(command);
@@ -201,8 +203,6 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     const inlineTerminal = page.locator(".workspace-stage .terminal-container");
     await expect(inlineTerminal).toBeVisible();
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
-    await waitForTerminalInputReady(inlineTerminal);
-
     // Start promotion with xterm holding DOM focus. The command palette restores
     // that saved focus before the handler reparents the terminal through parking,
     // so the workspace and pool recovery paths overlap exactly as they do in use.
@@ -273,7 +273,7 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     await expect.poll(() => activeElementDescription(page)).toContain("xterm-helper-textarea");
     const sourceOwner = page.locator('.tabbed-panel-leaf:has([data-pane-key="conversation"])');
     await expect(sourceOwner).toHaveClass(/input-active/);
-    await typeMarker(page, preMarker);
+    await typeMarker(page, movedTerminal, preMarker);
     await expect.poll(() => terminal.sent(preMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(preMarker), { timeout: 15_000 }).toBe(true);
     expect(await activeElementDescription(page)).toContain("xterm-helper-textarea");
@@ -303,13 +303,13 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     await expect(page.locator(".detail-pane-layout .tabbed-panel-leaf.input-active")).toHaveCount(1);
 
     // Keystrokes must still reach the live tmux session with no further click.
-    await typeMarker(page, postMarker);
+    await typeMarker(page, movedTerminal, postMarker);
     await expect.poll(() => terminal.sent(postMarker), { timeout: 15_000 }).toBe(true);
     await expect.poll(() => terminal.received(postMarker), { timeout: 15_000 }).toBe(true);
 
     // Keyboard-only tmux clipboard after the move, through the same OSC 52
     // fallback boundary the clipboard spec proves.
-    await runTmuxCommand(page, `set-buffer -w '${clipboardMarker}'`);
+    await runTmuxCommand(page, movedTerminal, `set-buffer -w '${clipboardMarker}'`);
     await expect
       .poll(() => fallbackWrites.some((write) => write.includes(clipboardMarker)), {
         timeout: 15_000,

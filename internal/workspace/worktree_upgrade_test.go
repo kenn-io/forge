@@ -271,3 +271,28 @@ func TestDeleteMissingCheckoutPrunesRelativeRegistration(t *testing.T) {
 	require.NotContains(string(runWorkspaceTestGit(t, root, "worktree", "list", "--porcelain")), path)
 	require.Empty(strings.TrimSpace(string(runWorkspaceTestGit(t, root, "branch", "--list", "kenn-forge/issue-7"))))
 }
+
+// Git refuses to remove a worktree it has locked. The delete fails, keeps the
+// checkout, and tells the user how to release the lock.
+func TestDeleteLockedWorkspaceExplainsTheLock(t *testing.T) {
+	require := require.New(t)
+	root := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/topic")
+	path := filepath.Join(t.TempDir(), "issue-7")
+	runWorkspaceTestGit(t, root, "worktree", "add", path, "-b", "kenn-forge/issue-7", "HEAD")
+	runWorkspaceTestGit(t, root, "worktree", "lock", "--reason", "removable media", path)
+	database := openTestDB(t)
+	ws := &Workspace{
+		ID: "ws-locked", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+		ItemNumber: 7, GitHeadRef: "kenn-forge/issue-7", WorkspaceBranch: "kenn-forge/issue-7",
+		WorktreePath: path, Status: "ready",
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), ws))
+	manager := newTestManager(t, database, t.TempDir())
+	manager.SetWorktreeBasePathResolver(staticBaseResolver(root))
+
+	_, err := manager.Delete(t.Context(), ws.ID, true, nil)
+
+	require.ErrorContains(err, "git worktree unlock")
+	require.DirExists(path)
+}

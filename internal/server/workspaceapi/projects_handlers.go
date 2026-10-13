@@ -1094,6 +1094,11 @@ func worktreeCauseProblem(err error, hookField string) error {
 	if condition, ok := errors.AsType[*worktree.ConditionError](err); ok && condition.Reason == worktree.ReasonDirty {
 		return httpapi.Conflict(httpapi.CodeWorktreeDirty, "worktree has uncommitted changes; retry with force", nil)
 	}
+	if condition, ok := errors.AsType[*worktree.ConditionError](err); ok && condition.Reason == worktree.ReasonLocked {
+		return httpapi.Conflict(httpapi.CodeConflict, "git has locked this worktree; retry with force to remove it anyway", map[string]any{
+			"reason": string(worktree.ReasonLocked),
+		})
+	}
 	if hookErr, ok := errors.AsType[*managedworktree.HookError](err); ok {
 		return httpapi.NewProblem(
 			http.StatusUnprocessableEntity, httpapi.CodeHookFailed,

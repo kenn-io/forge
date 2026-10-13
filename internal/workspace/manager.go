@@ -3617,6 +3617,9 @@ func (m *Manager) cleanupWorkspaceArtifactsForDeleteLocked(
 			Path: ws.WorktreePath, Force: true, Authority: worktree.ExactRegisteredPath,
 			Branches: workspaceRemovalBranches(ws, ws.WorkspaceBranch),
 		})
+		if condition, ok := errors.AsType[*worktree.ConditionError](err); ok && condition.Reason == worktree.ReasonLocked {
+			return fmt.Errorf("git has locked the worktree at %s; run `git worktree unlock %s` and delete again: %w", ws.WorktreePath, ws.WorktreePath, err)
+		}
 		if err != nil && (!result.CheckoutRemoved || !result.RegistrationRemoved) {
 			return err
 		}

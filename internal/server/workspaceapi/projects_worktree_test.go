@@ -231,7 +231,10 @@ func TestProjectForceRemovalRemovesLockedWorktree(t *testing.T) {
 			_, err = h.removeProjectWorktree(t.Context(), remove)
 
 			if !force {
-				require.Error(err)
+				problem, ok := errors.AsType[*httpapi.ProblemError](err)
+				require.True(ok, "want *ProblemError, got %T: %v", err, err)
+				require.Equal(http.StatusConflict, problem.Status)
+				require.Contains(problem.Detail, "retry with force")
 				require.DirExists(created.Body.Path)
 				return
 			}

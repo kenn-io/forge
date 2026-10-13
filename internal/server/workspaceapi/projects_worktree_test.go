@@ -3,7 +3,9 @@ package workspaceapi
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +16,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
@@ -307,4 +310,21 @@ func TestProjectForceRemovalRestoresLockAfterCancellation(t *testing.T) {
 	require.DirExists(path)
 	list := string(gitfixture.Run(t, repo.Dir, "worktree", "list", "--porcelain"))
 	require.Contains(list, "locked removable media\n")
+}
+
+// An invalid branch name is a request error. It must not resolve a checkout
+// destination or create the worktree base folder.
+func TestProjectCreationRejectsInvalidBranchName(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	h, project, repo := projectLifecycleFixture(t, "")
+	input := &registerWorktreeInput{ProjectID: project.ID}
+	input.Body.Branch, input.Body.CreateOnDisk = "..", true
+
+	_, err := h.RegisterWorktree(t.Context(), input)
+
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	require.True(ok, "want *ProblemError, got %T: %v", err, err)
+	require.Equal(http.StatusBadRequest, problem.Status)
+	require.NoDirExists(repo.Dir + "-worktrees")
 }

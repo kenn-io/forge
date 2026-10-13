@@ -645,6 +645,11 @@ func (s *Handler) createWorktreeOnDisk(
 		return nil, httpapi.Internal("get project: " + err.Error())
 	}
 
+	// The hook derives the checkout destination from the branch name, so reject
+	// an invalid name before it resolves or creates any folder.
+	if err := validateProjectBranchName(ctx, project.LocalPath, branch); err != nil {
+		return nil, worktreeLifecycleProblem(err, "body.setup_script")
+	}
 	hook, err := managedworktree.PrepareWorktreeHook(ctx, managedworktree.WorktreeHookOptions{
 		ProjectRoot: project.LocalPath, Path: path, BaseDir: input.Body.BaseDir,
 		Branch: branch, Script: input.Body.SetupScript, WorktreeName: input.Body.WorktreeName,
@@ -668,6 +673,20 @@ func (s *Handler) createWorktreeOnDisk(
 	}
 
 	return s.registerMaterializedWorktree(ctx, project, created)
+}
+
+func validateProjectBranchName(ctx context.Context, root, branch string) error {
+	out, err := runManagedWorktreeGit(ctx, gitcmd.Runner{StripEnv: true}, root, "check-ref-format", "--branch", branch)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if gitcmd.IsExitCode(err, 128) {
+		return fmt.Errorf("%w: %q", managedworktree.ErrInvalidBranchName, branch)
+	}
+	return fmt.Errorf("validate branch name %q: %w: %s", branch, err, strings.TrimSpace(string(out)))
 }
 
 // registerMaterializedWorktree records a worktree the lifecycle engine just

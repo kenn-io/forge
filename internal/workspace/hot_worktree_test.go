@@ -334,3 +334,51 @@ func TestHotWorktreeClaimedByFallbackCheckout(t *testing.T) {
 		})
 	}
 }
+
+// Forge before kwt left spares in a managed clone in one of three states:
+// registered and locked before its marker, "preparing" before the checkout
+// was filled, or "ready". The seed below writes that layout with plain Git,
+// including the per-worktree core.bare override managed clones need. After an
+// upgrade, each spare must still end up in a workspace instead of blocking or
+// being thrown away.
+func TestHotWorktreeAdoptsSparesLeftByEarlierForge(t *testing.T) {
+	for _, state := range []string{"registered", "preparing", "ready"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			ctx := t.Context()
+			clone := setupBareCloneForWorkspaceGitTest(t)
+			runWorkspaceTestGit(t, clone, "config", "extensions.worktreeConfig", "true")
+			ws := &Workspace{ID: "ws-upgrade", WorktreePath: filepath.Join(t.TempDir(), "workspace")}
+			hot := hotWorktreePath(clone, ws.WorktreePath)
+			runWorkspaceTestGit(t, clone, "worktree", "add", "--lock", "--reason", hotWorktreeMarkerFile, "--detach", "--no-checkout", hot, "HEAD")
+			if state != "registered" {
+				admin := strings.TrimSpace(string(runWorkspaceTestGit(t, hot, "-c", "core.bare=false", "rev-parse", "--path-format=absolute", "--git-dir")))
+				runWorkspaceTestGit(t, clone, "config", "--file", filepath.Join(admin, "config.worktree"), "core.bare", "false")
+				require.NoError(os.WriteFile(filepath.Join(admin, hotWorktreeMarkerFile), []byte("preparing\n"), 0o600))
+				runWorkspaceTestGit(t, clone, "worktree", "unlock", hot)
+				if state == "ready" {
+					runWorkspaceTestGit(t, hot, "-c", "submodule.recurse=false", "reset", "--hard", "HEAD")
+					require.NoError(os.WriteFile(filepath.Join(admin, hotWorktreeMarkerFile), []byte("ready\n"), 0o600))
+				}
+			}
+			manager := newWorkspaceTestManager(t, nil, t.TempDir())
+			if state != "ready" {
+				require.NoError(manager.prepareHotWorktree(ctx, clone, ws.WorktreePath, "HEAD"))
+			}
+			spare, err := os.Stat(filepath.Join(hot, "base.txt"))
+			require.NoError(err)
+
+			require.NoError(manager.withRepoLockForGitDir(ctx, clone, func(scope *worktree.Scope) error {
+				_, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: "feature/upgrade", BaseRef: "HEAD", Mode: managed.CheckoutNewBranch}, nil)
+				return err
+			}))
+
+			claimed, err := os.Stat(filepath.Join(ws.WorktreePath, "base.txt"))
+			require.NoError(err)
+			require.True(os.SameFile(spare, claimed), "the earlier spare should become the workspace")
+			require.Equal("feature/upgrade", strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "branch", "--show-current"))))
+			require.Empty(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain"))
+		})
+	}
+}

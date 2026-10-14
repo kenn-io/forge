@@ -119,6 +119,7 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			require.NoError(process.Signal(syscall.Signal(0)), "permission must complete in the original process")
 			require.NoError(second.Stop(t.Context(), "workspace", info.Key))
 			if backend == "tmux" {
+				// Tmux removes the session after the owner exits following its stop reply.
 				require.Eventually(func() bool {
 					return errors.Is(second.requireTmuxSession(t.Context(), info.TmuxSession), ErrSessionNotFound)
 				}, 5*time.Second, 10*time.Millisecond)

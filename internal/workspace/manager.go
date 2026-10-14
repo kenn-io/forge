@@ -5092,9 +5092,7 @@ func isTmuxKillSessionGone(err error) bool {
 	if err == nil {
 		return true
 	}
-	msg := err.Error()
-	return isTmuxSessionAbsent([]byte(msg), err) ||
-		strings.Contains(msg, "server exited unexpectedly")
+	return localruntime.IsTmuxKillSessionGone([]byte(err.Error()), err)
 }
 
 // killTmuxSession kills a tmux session via the manager's prefix.

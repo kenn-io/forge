@@ -1852,15 +1852,12 @@ func killProjectRuntimeTmuxSession(
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := procutil.Run(ctx, cmd, "project worktree runtime tmux cleanup")
-	if err == nil || projectRuntimeTmuxSessionAbsent(stderr.Bytes(), err) {
+	if localruntime.IsTmuxKillSessionGone(stderr.Bytes(), err) {
 		return nil
 	}
 	msg := strings.TrimSpace(stderr.String())
 	if msg == "" {
 		return err
-	}
-	if strings.Contains(msg, "server exited unexpectedly") {
-		return nil
 	}
 	return fmt.Errorf("%w: %s", err, msg)
 }

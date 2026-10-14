@@ -1456,6 +1456,33 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
+func TestIsTmuxKillSessionGone(t *testing.T) {
+	for _, status := range []int{1, 2} {
+		cmd := procutil.CommandContext(t.Context(), "sh", "-c", fmt.Sprintf("exit %d", status))
+		err := procutil.Run(t.Context(), cmd, "test tmux exit status")
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		for _, message := range []string{
+			"can't find session: nope",
+			"no current target",
+			"no server running",
+			"error connecting to /tmp/socket (No such file or directory)",
+			"server exited unexpectedly",
+			"wrapper: server exited unexpectedly",
+			"permission denied",
+			"",
+		} {
+			t.Run(fmt.Sprintf("%s/status%d", message, status), func(t *testing.T) {
+				wrapped := fmt.Errorf("kill tmux session: %w", err)
+				want := status == 1 && message != "permission denied" && message != ""
+				assert.Equal(t, want, IsTmuxKillSessionGone([]byte(message), wrapped))
+			})
+		}
+	}
+	assert.True(t, IsTmuxKillSessionGone(nil, nil))
+	assert.False(t, IsTmuxKillSessionGone([]byte("server exited unexpectedly"), errors.New("wrapper failed")))
+}
+
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	for _, tc := range []struct {
 		message string

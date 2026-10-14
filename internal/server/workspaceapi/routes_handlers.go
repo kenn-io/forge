@@ -2925,7 +2925,9 @@ func (s *Handler) importEarlyConversation(ctx context.Context, workspaceID, sess
 		return
 	}
 	reports := s.agentActivity.LiveReportsForWorkspace(ws.WorktreePath, []string{sessionKey})
-	if len(reports) == 0 {
+	// Several conversations mean a nested agent reported too, and nothing
+	// tells which is the terminal's own; the next hook decides instead.
+	if len(reports) == 0 || !singleConversation(reports) {
 		return
 	}
 	// A row that already saves a conversation, as a resumed agent's does,
@@ -2935,6 +2937,15 @@ func (s *Handler) importEarlyConversation(ctx context.Context, workspaceID, sess
 	); err != nil {
 		slog.Warn("import early agent conversation", "session_key", sessionKey, "err", err)
 	}
+}
+
+func singleConversation(reports []agentactivity.Report) bool {
+	for _, report := range reports[1:] {
+		if report.Agent != reports[0].Agent || report.SessionID != reports[0].SessionID {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeRuntimeDisplayRegion(

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -836,6 +837,22 @@ func TestAgentFinishedUnwatchedHonorsTermination(t *testing.T) {
 	require.False(t, handler.agentFinishedUnwatched(session), "a handled termination is not a finish")
 }
 
+const runtimeStartHelperArg = "record-runtime-start"
+
+// TestRuntimeStartHelper records when it started, in nanoseconds, in its
+// working directory, then waits like a running agent. Go keeps the time
+// portable where date lacks %N.
+func TestRuntimeStartHelper(t *testing.T) { //nolint:paralleltest // subprocess entry point
+	if !slices.Contains(os.Args, runtimeStartHelperArg) {
+		return
+	}
+	started := strconv.FormatInt(time.Now().UnixNano(), 10)
+	if os.WriteFile("started.tmp", []byte(started), 0o600) != nil || os.Rename("started.tmp", "started") != nil {
+		os.Exit(2)
+	}
+	time.Sleep(time.Hour)
+}
+
 // A runtime's start is taken before its tmux pane starts, so an agent's first
 // hook is never older than the runtime it reports for, even when tmux returns
 // slowly after starting the pane.
@@ -862,15 +879,14 @@ func TestRuntimeStartPrecedesItsAgent(t *testing.T) {
 		ItemKey: db.AdHocWorkspaceItemKey("work/start"), GitHeadRef: "work/start",
 		WorkspaceBranch: "work/start", WorktreePath: cwd, Status: "ready",
 	}))
-	agent := filepath.Join(t.TempDir(), "agent")
-	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\ndate +%s%N > started.tmp && mv started.tmp started\nexec sleep 600\n"), 0o755))
 	runtime := localruntime.NewManager(localruntime.Options{
 		TmuxCommand:             []string{wrapper},
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-start",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true,
+			Command: []string{os.Args[0], "-test.run=^TestRuntimeStartHelper$", "--", runtimeStartHelperArg},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
 	})
 	t.Cleanup(func() {

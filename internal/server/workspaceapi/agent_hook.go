@@ -106,7 +106,7 @@ func (s *Handler) recordAgentConversation(
 		}
 		return
 	}
-	if s.savedConversationHoldsRow(saved, agent, sessionID, runtimeSessionKey) {
+	if s.savedConversationHoldsRow(saved, agent, sessionID, runtimeSessionKey, hook.HookEventName) {
 		return
 	}
 	if _, err := s.db.RecordWorkspaceRuntimeConversation(
@@ -122,12 +122,16 @@ func (s *Handler) recordAgentConversation(
 // the runtime key, but the terminal's own conversation keeps its place until
 // its SessionEnd, which /clear and /resume also send first. A conversation
 // terminated by a signal keeps it until it reports again, so a nested agent
-// that outlives it cannot take its place. Only a report newer than both the
-// row's runtime and this daemon counts: a run before a restart, or hooks lost
-// while no daemon listened, leave older ones. An agent without SessionEnd
-// hooks never shows an end, so its newest conversation wins.
+// that outlives it cannot take its place.
+//
+// A report older than the row's runtime or this daemon is stale: a run before
+// a restart left it, or its SessionEnd was lost while no daemon listened. A
+// nested agent that outlived the restart reports before its waiting parent,
+// so only a conversation that starts, as after /clear, takes a stale place.
+// An agent without SessionEnd hooks never shows an end, so its newest
+// conversation wins.
 func (s *Handler) savedConversationHoldsRow(
-	saved db.RuntimeConversation, agent, sessionID, runtimeSessionKey string,
+	saved db.RuntimeConversation, agent, sessionID, runtimeSessionKey, event string,
 ) bool {
 	if saved.ID == "" || (saved.Agent == agent && saved.ID == sessionID) {
 		return false
@@ -139,7 +143,13 @@ func (s *Handler) savedConversationHoldsRow(
 		return false
 	}
 	updatedAt, ok := s.agentActivity.ReportUpdatedAt(saved.Agent, saved.ID, runtimeSessionKey)
-	return ok && !updatedAt.Before(saved.CreatedAt) && !updatedAt.Before(s.startedAt)
+	if !ok {
+		return false
+	}
+	if !updatedAt.Before(saved.CreatedAt) && !updatedAt.Before(s.startedAt) {
+		return true
+	}
+	return event != "SessionStart"
 }
 
 func reportsSessionEnd(agent string) bool {

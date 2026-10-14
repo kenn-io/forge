@@ -232,9 +232,10 @@ func TestAgentHooksKeepTheTerminalsOwnConversation(t *testing.T) {
 
 // Hooks can be lost while no daemon listens, as when the user runs /clear
 // during a Forge restart and the agent keeps running in tmux. Reattachment
-// keeps the runtime's start, so only a report newer than this daemon holds
-// the row; a conversation terminated by a signal holds it until it reports
-// again, so a nested agent that outlives it cannot take its place.
+// keeps the runtime's start, so a report older than this daemon is stale.
+// A nested agent that outlived the restart reports before its waiting
+// parent, so only a conversation that starts takes a stale place. A
+// conversation terminated by a signal holds the row until it reports again.
 func TestAgentHooksJudgeSavedConversationsOnFreshEvidence(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -274,12 +275,15 @@ func TestAgentHooksJudgeSavedConversationsOnFreshEvidence(t *testing.T) {
 
 	first := New(Deps{DB: database, AgentActivity: activity})
 	send(first, "reattached", "before-restart", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "startup"})
-	// Forge restarts; /clear's hooks went nowhere, and the runtime reattaches.
+	// Forge restarts and the runtime reattaches while a nested agent runs.
 	restarted := New(Deps{DB: database, AgentActivity: activity})
-	send(restarted, "reattached", "after-clear", agentactivity.HookEvent{HookEventName: "Stop"})
-	assert.Equal("after-clear", saved("reattached").ID, "a report from before the restart does not hold the row")
 	send(restarted, "reattached", "nested", agentactivity.HookEvent{HookEventName: "Stop"})
-	assert.Equal("after-clear", saved("reattached").ID, "a fresh report still holds it")
+	assert.Equal("before-restart", saved("reattached").ID, "a nested agent's hook does not take a stale place")
+	// A conversation the user started, such as after /clear, does.
+	send(restarted, "reattached", "after-clear", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "compact"})
+	assert.Equal("after-clear", saved("reattached").ID, "a starting conversation takes a stale place")
+	send(restarted, "reattached", "nested", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "startup"})
+	assert.Equal("after-clear", saved("reattached").ID, "a fresh report holds the row even against a start")
 
 	send(restarted, "terminated", "parent", agentactivity.HookEvent{HookEventName: "SessionStart", Source: "startup"})
 	send(restarted, "terminated", "parent", agentactivity.HookEvent{HookEventName: "SessionEnd", Reason: "other"})
@@ -326,4 +330,51 @@ func TestRecordingARuntimeKeepsItsSavedConversation(t *testing.T) {
 	require.NoError(err)
 	require.True(ok)
 	require.Equal("parent", saved.ID)
+}
+
+// Recording a runtime imports an early report only when one conversation
+// reported: with several, a nested agent reported too, and nothing tells
+// which is the terminal's own.
+func TestRecordingARuntimeImportsOnlyAnUnambiguousConversation(t *testing.T) {
+	t.Parallel()
+	for name, sessionIDs := range map[string][]string{
+		"one conversation":  {"parent"},
+		"two conversations": {"parent", "nested"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			ctx := t.Context()
+			database := dbtest.Open(t)
+			worktree := t.TempDir()
+			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+				ID: "workspace", Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
+				ItemKey: db.AdHocWorkspaceItemKey("work/early"), GitHeadRef: "work/early",
+				WorkspaceBranch: "work/early", WorktreePath: worktree, Status: "ready",
+			}))
+			require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+				WorkspaceID: "workspace", SessionKey: "terminal", TargetKey: "worker",
+				Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: "forge-terminal",
+			}))
+			activity := agentactivity.NewStore(t.TempDir())
+			for _, sessionID := range sessionIDs {
+				require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+					SessionID: sessionID, CWD: worktree, HookEventName: "SessionStart", Source: "startup",
+				}, "terminal"))
+			}
+			handler := New(Deps{DB: database, AgentActivity: activity})
+
+			handler.importEarlyConversation(ctx, "workspace", "terminal")
+
+			saved, ok, err := database.RuntimeSessionConversation(ctx, "terminal")
+			require.NoError(err)
+			require.True(ok)
+			if len(sessionIDs) == 1 {
+				require.Equal("parent", saved.ID)
+				return
+			}
+			require.Empty(saved.ID, "an ambiguous import waits for the next hook")
+		})
+	}
 }

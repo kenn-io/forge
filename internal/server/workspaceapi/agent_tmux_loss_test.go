@@ -334,6 +334,7 @@ rm -f quit started
 				WrapAgentSessionsInTmux: true,
 				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 				TmuxOwnerMarker:         "kenn-forge:test-record",
+				AgentExitDir:            t.TempDir(),
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true,
 					Command: []string{agent},

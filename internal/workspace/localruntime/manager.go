@@ -1343,6 +1343,9 @@ func (m *Manager) killTmuxSession(
 	if err == nil || isTmuxSessionAbsent(stderr.Bytes(), err) {
 		return nil
 	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 && strings.Contains(stderr.String(), "server exited unexpectedly") {
+		return nil
+	}
 	msg := strings.TrimSpace(stderr.String())
 	if msg == "" {
 		return err
@@ -1421,15 +1424,13 @@ func (m *Manager) refreshTmuxSessionClients(
 	return errors.Join(errs...)
 }
 
-// Unlike workspace.isTmuxSessionAbsent, runtime recovery also treats a confirmed server exit as absent.
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	exitErr, ok := errors.AsType[*exec.ExitError](err)
 	if !ok || exitErr.ExitCode() != 1 {
 		return false
 	}
 	msg := string(stderr)
-	return strings.TrimSpace(msg) == "server exited unexpectedly" ||
-		strings.Contains(msg, "can't find session") ||
+	return strings.Contains(msg, "can't find session") ||
 		strings.Contains(msg, "no current target") ||
 		strings.Contains(msg, "no server running") ||
 		(strings.Contains(msg, "error connecting to") &&

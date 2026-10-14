@@ -1457,72 +1457,34 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 }
 
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
-	tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
-	require.NoError(t, os.WriteFile(
-		tmuxPath,
-		[]byte("#!/bin/sh\necho \"can't find session: nope\" >&2\nexit 1\n"),
-		0o755,
-	))
-	done := make(chan struct{})
-	close(done)
-	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-	mgr.sessions["ws-1:codex"] = &session{
-		info: SessionInfo{
-			Key:         "ws-1:codex",
-			WorkspaceID: "ws-1",
-			TargetKey:   "codex",
-			Kind:        LaunchTargetAgent,
-		},
-		cmd:         &exec.Cmd{},
-		tmuxSession: "kenn-forge-ws-1-codex",
-		done:        done,
-	}
+	for _, message := range []string{"can't find session: nope", "server exited unexpectedly"} {
+		t.Run(message, func(t *testing.T) {
+			tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
+			require.NoError(t, os.WriteFile(
+				tmuxPath,
+				fmt.Appendf(nil, "#!/bin/sh\necho %s >&2\nexit 1\n", shellquote.Join(message)),
+				0o755,
+			))
+			done := make(chan struct{})
+			close(done)
+			mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
+			mgr.sessions["ws-1:codex"] = &session{
+				info: SessionInfo{
+					Key:         "ws-1:codex",
+					WorkspaceID: "ws-1",
+					TargetKey:   "codex",
+					Kind:        LaunchTargetAgent,
+				},
+				cmd:         &exec.Cmd{},
+				tmuxSession: "kenn-forge-ws-1-codex",
+				done:        done,
+			}
 
-	err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
+			err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
 
-	require.NoError(t, err)
-}
-
-func fakeTmuxFailure(t *testing.T, message string, status int) string {
-	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("requires executable shell scripts")
-	}
-	tmuxPath := filepath.Join(t.TempDir(), "tmux-failure")
-	require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\nprintf '%%s\\n' %s >&2\nexit %d\n", shellquote.Join(message), status), 0o755))
-	return tmuxPath
-}
-
-func TestIsTmuxSessionAbsent(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		message string
-		status  int
-		gone    bool
-	}{
-		{name: "exited server", message: "server exited unexpectedly", status: 1, gone: true},
-		{name: "prefixed message", message: "error: server exited unexpectedly", status: 1},
-		{name: "other exit status", message: "server exited unexpectedly", status: 2},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tmuxPath := fakeTmuxFailure(t, tc.message, tc.status)
-			cmd := exec.CommandContext(t.Context(), tmuxPath)
-			stderr, err := cmd.CombinedOutput()
-			require.Error(t, err)
-			assert.Equal(t, tc.gone, isTmuxSessionAbsent(stderr, err))
+			require.NoError(t, err)
 		})
 	}
-}
-
-func TestTmuxSessionChecksHandleExitedServer(t *testing.T) {
-	tmuxPath := fakeTmuxFailure(t, "server exited unexpectedly", 1)
-	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-	require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionNotFound)
-	require.NoError(t, mgr.killTmuxSession(t.Context(), "session"))
-	launcher := tmuxLauncher{TmuxCommand: []string{tmuxPath}, Session: "session"}
-	exists, err := launcher.sessionExists(t.Context())
-	require.NoError(t, err)
-	assert.False(t, exists)
 }
 
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {

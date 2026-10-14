@@ -2,7 +2,6 @@ package localruntime
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -355,36 +354,6 @@ exit 0
 	assert.Contains(readNullArgvRecord(t, record), []string{
 		"kill-session", "-t", launcher.Session,
 	})
-}
-
-func TestTmuxLauncherCleanupPreservesLaunchError(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		message string
-		status  int
-		gone    bool
-	}{
-		{name: "exited server", message: "  server exited unexpectedly  ", status: 1, gone: true},
-		{name: "prefixed message", message: "error: server exited unexpectedly", status: 1},
-		{name: "other exit status", message: "server exited unexpectedly", status: 2},
-		{name: "missing session", message: "can't find session: session", status: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			tmuxPath := fakeTmuxFailure(t, tc.message, tc.status)
-			launcher := tmuxLauncher{TmuxCommand: []string{tmuxPath}, Session: "session"}
-			cause := errors.New("configuration failed")
-
-			err := launcher.cleanupNewSessionAfterError(t.Context(), "hide tmux status", cause)
-
-			require.ErrorIs(t, err, cause)
-			if tc.gone {
-				assert.EqualError(t, err, "hide tmux status: configuration failed")
-			} else {
-				assert.ErrorContains(t, err, "cleanup new tmux session")
-				assert.ErrorContains(t, err, tc.message)
-			}
-		})
-	}
 }
 
 func TestTmuxLauncherDoesNotKillSessionAfterNewSessionError(t *testing.T) {

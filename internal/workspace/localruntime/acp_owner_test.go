@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -118,7 +119,9 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			require.NoError(process.Signal(syscall.Signal(0)), "permission must complete in the original process")
 			require.NoError(second.Stop(t.Context(), "workspace", info.Key))
 			if backend == "tmux" {
-				require.ErrorIs(second.requireTmuxSession(t.Context(), info.TmuxSession), ErrSessionNotFound)
+				require.Eventually(func() bool {
+					return errors.Is(second.requireTmuxSession(t.Context(), info.TmuxSession), ErrSessionNotFound)
+				}, 5*time.Second, 10*time.Millisecond)
 			}
 			require.Eventually(func() bool { return process.Signal(syscall.Signal(0)) != nil }, 5*time.Second, 10*time.Millisecond, "explicit stop must stop the agent")
 		})

@@ -5,9 +5,12 @@ CREATE TABLE forge_repo_merge_queues (
     observed_at DATETIME NOT NULL
 );
 
+-- attempt is the pull request's count of GitHub AddedToMergeQueue events
+-- when the entry was observed, identifying the queue attempt; 0 is unknown.
 CREATE TABLE forge_merge_queue_entries (
     repo_id INTEGER NOT NULL REFERENCES forge_repos(id) ON DELETE CASCADE,
     number INTEGER NOT NULL,
+    attempt INTEGER NOT NULL,
     position INTEGER NOT NULL,
     state TEXT NOT NULL,
     enqueued_at DATETIME NOT NULL,
@@ -17,11 +20,12 @@ CREATE TABLE forge_merge_queue_entries (
 );
 
 -- A row is a pending departure until removed_at is set from the provider's
--- removal event; only resolved rows are shown as removals.
+-- removal event; only resolved rows are shown as removals. attempt is the
+-- departed entry's attempt.
 CREATE TABLE forge_merge_queue_removals (
     repo_id INTEGER NOT NULL REFERENCES forge_repos(id) ON DELETE CASCADE,
     number INTEGER NOT NULL,
-    enqueued_at DATETIME NOT NULL,
+    attempt INTEGER NOT NULL,
     departed_at DATETIME NOT NULL,
     removed_at DATETIME,
     reason TEXT NOT NULL,

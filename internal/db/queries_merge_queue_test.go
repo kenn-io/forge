@@ -19,10 +19,12 @@ func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
 	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
 	insertTestMRWithOptions(t, database, testMR(repoID, 7))
 
-	queued := func(enqueuedAt, observedAt time.Time) MergeQueueSnapshot {
+	queued := func(attempt int, enqueuedAt, observedAt time.Time) MergeQueueSnapshot {
 		return MergeQueueSnapshot{
 			Configured: true, Branch: "main", MergeMethod: "squash",
-			Entries:    []MergeQueueEntry{{Number: 7, Position: 1, State: "QUEUED", EnqueuedAt: enqueuedAt}},
+			Entries: []MergeQueueEntry{{
+				Number: 7, Attempt: attempt, Position: 1, State: "QUEUED", EnqueuedAt: enqueuedAt,
+			}},
 			ObservedAt: observedAt,
 		}
 	}
@@ -31,7 +33,7 @@ func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
 	}
 
 	// First attempt leaves the queue; a lookup for it starts but is delayed.
-	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(base, base))
+	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(1, base, base))
 	require.NoError(err)
 	_, err = database.ReplaceMergeQueue(ctx, repoID, empty(base.Add(time.Minute)))
 	require.NoError(err)
@@ -40,7 +42,7 @@ func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
 	require.Len(first, 1)
 
 	// Meanwhile the pull request is queued again and leaves again.
-	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(base.Add(2*time.Minute), base.Add(2*time.Minute)))
+	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(2, base.Add(2*time.Minute), base.Add(2*time.Minute)))
 	require.NoError(err)
 	_, err = database.ReplaceMergeQueue(ctx, repoID, empty(base.Add(3*time.Minute)))
 	require.NoError(err)
@@ -56,7 +58,7 @@ func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
 	pending, err := database.ListPendingMergeQueueDepartures(ctx, repoID)
 	require.NoError(err)
 	require.Len(pending, 1)
-	assert.Equal(base.Add(2*time.Minute), pending[0].EnqueuedAt)
+	assert.Equal(2, pending[0].Attempt)
 
 	require.NoError(database.ResolveMergeQueueDeparture(ctx, repoID, pending[0], MergeQueueRemoval{
 		Number: 7, RemovedAt: base.Add(150 * time.Second), Reason: "dequeued",

@@ -435,12 +435,16 @@ func (s *Handler) completeDeferredMerge(
 	}
 	// An immediate enqueue can supersede this worker while its CI or target
 	// reads block. Enqueueing leaves the pull request open, so the target
-	// checks above cannot detect it; without this check the worker would
-	// enqueue again or re-add a pull request the queue already removed.
-	if handle.isSuperseded() {
+	// checks above cannot detect it. The supersession check runs under the
+	// pull request's merge lock, so it cannot race an immediate merge or
+	// enqueue that is still talking to the provider.
+	result, err := s.mergePRWithBodyAdmitted(
+		ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body,
+		func() bool { return !handle.isSuperseded() },
+	)
+	if errors.Is(err, errMergeNotAdmitted) {
 		return
 	}
-	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
 	if err != nil {
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return

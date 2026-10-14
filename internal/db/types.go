@@ -1248,7 +1248,10 @@ type StackPlacement struct {
 // MergeQueueEntry is one pull request's position in its repository's
 // provider merge queue, as last observed by sync.
 type MergeQueueEntry struct {
-	Number   int
+	Number int
+	// Attempt is the pull request's count of provider enqueue events when
+	// the entry was observed, identifying this queue attempt. 0 is unknown.
+	Attempt  int
 	Position int
 	// State is the provider's queue entry state, such as QUEUED,
 	// AWAITING_CHECKS, MERGEABLE, UNMERGEABLE, or LOCKED.
@@ -1291,9 +1294,22 @@ type MergeQueueChanges struct {
 // MergeQueueDeparture is a pull request that left the merge queue and whose
 // removal reason has not been resolved from the provider yet.
 type MergeQueueDeparture struct {
-	Number     int
-	EnqueuedAt time.Time
+	Number int
+	// Attempt is the departed entry's attempt; 0 is unknown.
+	Attempt    int
 	DepartedAt time.Time
+}
+
+// MergeQueueOutcome is the provider's latest merge queue record for a pull
+// request, in the provider's own event order.
+type MergeQueueOutcome struct {
+	// State is the pull request state, such as OPEN, CLOSED, or MERGED.
+	State string
+	// Attempts counts the pull request's enqueue events.
+	Attempts int
+	// LatestRemoval is the removal that ended the latest attempt, or nil
+	// while that attempt has not ended.
+	LatestRemoval *MergeQueueRemoval
 }
 
 // MergeQueueRemoval records that an open pull request left the merge queue

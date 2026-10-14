@@ -17,9 +17,10 @@ supersession, completion events, or pending-state presentation.
   worker silently (per-key handle): pending clears with the merge response and the worker emits no event.
   An immediate provider response with `merged: false` leaves the queued merge and
   all merge-completion side effects untouched.
-- An immediate enqueue leaves the pull request open, so target checks cannot
-  see it; the worker rechecks its handle after blocking reads and before the
-  provider mutation (`internal/server/pullapi/deferred_merge.go::Handler.completeDeferredMerge`).
+- Immediate and deferred merges and enqueues hold a per-pull-request merge
+  lock through the provider call. The deferred worker checks supersession
+  under that lock, because an enqueue leaves the pull request open where
+  target checks cannot see it (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - A deferred worker whose merge went to the target branch's merge queue
   completes with status `queued`: clear pending, publish no merged status, and
   leave the outcome to the pull request's queue state

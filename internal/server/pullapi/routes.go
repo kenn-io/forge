@@ -1833,6 +1833,27 @@ func (s *Handler) mergePRWithBody(
 	number int,
 	body mergePRInputBody,
 ) (mergePRBody, error) {
+	return s.mergePRWithBodyAdmitted(ctx, provider, platformHost, owner, name, number, body, nil)
+}
+
+// errMergeNotAdmitted reports that admit declined the provider mutation.
+var errMergeNotAdmitted = errors.New("merge was not admitted")
+
+// mergePRWithBodyAdmitted merges or enqueues while holding the pull request's
+// merge lock. admit, when set, runs under that lock immediately before the
+// provider mutation; returning false aborts with errMergeNotAdmitted. A
+// deferred worker uses it to check supersession without racing an immediate
+// merge or enqueue of the same pull request.
+func (s *Handler) mergePRWithBodyAdmitted(
+	ctx context.Context,
+	provider string,
+	platformHost string,
+	owner string,
+	name string,
+	number int,
+	body mergePRInputBody,
+	admit func() bool,
+) (mergePRBody, error) {
 	body.bindWorkspaceHost(ctx)
 	repo, err := s.requireRepoRouteCapability(
 		ctx,
@@ -1851,6 +1872,8 @@ func (s *Handler) mergePRWithBody(
 	if err != nil {
 		return mergePRBody{}, unsupportedCapabilityProblem(repo.Repo, capabilityMergeMutation)
 	}
+	release := s.mergeLocks.lock(deferredMergeKey(repo.Repo, number))
+	defer release()
 
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
@@ -1871,15 +1894,20 @@ func (s *Handler) mergePRWithBody(
 	if err != nil {
 		return mergePRBody{}, err
 	}
+	if admit != nil && !admit() {
+		return mergePRBody{}, errMergeNotAdmitted
+	}
 	var result platform.MergeResult
 	enqueueRequestedAt := s.now().UTC()
-	var attemptBoundary time.Time
+	enqueueAttempt := 0
 	if queueMutator != nil {
-		// Captured before the request: sync can observe this attempt's
-		// outcome while the asynchronous enqueue is still being confirmed.
-		attemptBoundary, err = s.db.MergeQueueAttemptBoundary(ctx, repo.ID, number)
-		if err != nil {
-			return mergePRBody{}, httpapi.Internal("load merge queue state failed")
+		// Counted before the request so the new attempt is told apart from
+		// earlier ones, even when sync observes its outcome while the
+		// asynchronous enqueue is still being confirmed.
+		if attempts, ok := s.syncer.MergeQueueAttempts(
+			ctx, mergeRequestRepoRef(repo.Repo), number,
+		); ok {
+			enqueueAttempt = attempts + 1
 		}
 		result, err = queueMutator.EnqueueMergeRequest(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
@@ -1986,7 +2014,7 @@ func (s *Handler) mergePRWithBody(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
-		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, enqueueRequestedAt, attemptBoundary)
+		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, enqueueAttempt, enqueueRequestedAt)
 	}
 
 	return mergePRBody{
@@ -3085,21 +3113,17 @@ func (s *Handler) repoMergeQueueFor(
 	return queue, nil
 }
 
-// enqueuedSlack absorbs clock skew between Forge and the provider when a
-// provisional queue entry's time bounds which removal events belong to it.
-const enqueuedSlack = time.Minute
-
 // recordEnqueuedMergeRequest reads the queue right after an enqueue so the
 // detail refresh that follows already shows the queue position. When that
 // read fails or does not show the pull request yet, a provisional entry makes
 // the next read that misses it record a departure, so a removal that happens
 // before any successful read is still reported.
 func (s *Handler) recordEnqueuedMergeRequest(
-	ctx context.Context, repo db.Repo, repoID int64, number int, requestedAt, boundary time.Time,
+	ctx context.Context, repo db.Repo, repoID int64, number, attempt int, requestedAt time.Time,
 ) {
 	s.syncer.RefreshMergeQueue(ctx, mergeRequestRepoRef(repo), repoID)
 	if err := s.db.RecordProvisionalMergeQueueEntry(
-		ctx, repoID, number, requestedAt.Add(-enqueuedSlack), boundary,
+		ctx, repoID, number, attempt, requestedAt,
 	); err != nil {
 		slog.Warn("record provisional merge queue entry",
 			"repo_id", repoID, "number", number, "err", err)

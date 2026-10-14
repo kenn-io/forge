@@ -160,24 +160,28 @@ For pull requests, that means:
 - Each read replaces the repository's queue configuration and entries; a null
   queue clears both. Only membership, position, and state changes announce a
   detail refresh, never estimate-only changes (`internal/db/queries_merge_queue.go::DB.ReplaceMergeQueue`).
+- Match queue attempts only by GitHub's own order, never by comparing Forge's
+  clock with GitHub event times (maintainer decision). An attempt is the pull
+  request's count of `AddedToMergeQueueEvent`s; entries record it when
+  observed, and a lagging count never lowers it
+  (`internal/db/queries_merge_queue.go::DB.ReplaceMergeQueue`).
 - A departure is stored pending in the same transaction as the snapshot that
-  observed it, and every pass retries its reason lookup. An open pull request
-  becomes a visible removal from GitHub's latest non-`merged` removal no older
-  than its queue entry; merged, closed, or unexplained-after-30-minutes
-  departures are dropped. Resolving or dropping applies only to the exact
-  departure looked up, since refreshes overlap and a delayed lookup must not
-  settle a later attempt (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
+  observed it, and every pass retries it. It resolves once GitHub reports at
+  least its attempt and the latest queue event is a removal: an open pull
+  request shows that removal, a `merged` one is dropped, and a closed one or
+  one unresolved after 30 minutes is dropped. Resolving or dropping applies
+  only to the exact departure looked up, since refreshes overlap
+  (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
 - A removal shows until the pull request is queued again. A terminal state
   write, including a first insert as closed or merged, deletes its entry and
   removal, so reopening never revives an earlier attempt
   (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
-- An entry that joins and leaves between two reads is never observed. A Forge
-  enqueue that the following read does not show is stored provisionally at
-  position 0, so its departure is still recorded. The previous attempt's
-  departure time, resolved or pending, is read before the enqueue request: an
-  outcome observed after it belongs to the new attempt and is kept, and the
-  provisional start never precedes it
-  (`internal/server/pullapi/routes.go::Handler.recordEnqueuedMergeRequest`).
+- An entry that joins and leaves between two reads is never observed. Forge
+  counts the attempts before it enqueues; when the following read does not
+  show the pull request, it stores the new attempt provisionally at position 0
+  so its departure is still recorded. A departure already observed for that
+  attempt is kept, and a stale cached entry is raised to it
+  (`internal/db/queries_merge_queue.go::DB.RecordProvisionalMergeQueueEntry`).
 - Hosts whose schema rejects `mergeQueue` latch it off per fetcher until restart
   (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).
 

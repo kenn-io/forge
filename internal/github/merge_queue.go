@@ -48,28 +48,40 @@ type gqlMergeQueueQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
+// gqlEnqueueCount counts a pull request's enqueue events. Each attempt adds
+// one, so the count identifies an attempt in GitHub's own order, with no clock
+// comparison.
+type gqlEnqueueCount struct {
+	TotalCount int
+}
+
 type gqlMergeQueueEntry struct {
 	Position             int
 	State                string
 	EnqueuedAt           time.Time
 	EstimatedTimeToMerge *int
 	PullRequest          *struct {
-		Number int
+		Number   int
+		Enqueues gqlEnqueueCount `graphql:"enqueues: timelineItems(itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT])"`
 	}
 }
 
-type gqlMergeQueueRemovalQuery struct {
+type gqlMergeQueueOutcomeQuery struct {
 	Repository struct {
 		PullRequest *struct {
-			State         string
-			TimelineItems struct {
+			State    string
+			Enqueues gqlEnqueueCount `graphql:"enqueues: timelineItems(itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT])"`
+			// LatestQueueEvent is the last enqueue or removal: a removal ends
+			// the latest attempt, an enqueue means it has not ended yet.
+			LatestQueueEvent struct {
 				Nodes []struct {
+					Typename                   string `graphql:"__typename"`
 					RemovedFromMergeQueueEvent struct {
 						CreatedAt time.Time
 						Reason    string
 					} `graphql:"... on RemovedFromMergeQueueEvent"`
 				}
-			} `graphql:"timelineItems(last: 1, itemTypes: [REMOVED_FROM_MERGE_QUEUE_EVENT])"`
+			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT])"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
@@ -130,6 +142,7 @@ func (g *GraphQLFetcher) FetchMergeQueue(
 		}
 		entry := db.MergeQueueEntry{
 			Number:     node.PullRequest.Number,
+			Attempt:    node.PullRequest.Enqueues.TotalCount,
 			Position:   node.Position,
 			State:      node.State,
 			EnqueuedAt: node.EnqueuedAt.UTC(),
@@ -142,36 +155,38 @@ func (g *GraphQLFetcher) FetchMergeQueue(
 	return snapshot, nil
 }
 
-// FetchMergeQueueRemoval reads a pull request's state and its most recent
-// removal from the merge queue. removal is nil when GitHub reports none.
-func (g *GraphQLFetcher) FetchMergeQueueRemoval(
+// FetchMergeQueueOutcome reads a pull request's state, its enqueue count, and
+// the removal that ended its latest queue attempt, if that attempt has ended.
+// found is false when GitHub reports no such pull request.
+func (g *GraphQLFetcher) FetchMergeQueueOutcome(
 	ctx context.Context, owner, name string, number int,
-) (state string, removal *db.MergeQueueRemoval, err error) {
+) (outcome db.MergeQueueOutcome, found bool, err error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
-	var q gqlMergeQueueRemovalQuery
+	var q gqlMergeQueueOutcomeQuery
 	if err := g.client.Query(ctx, &q, map[string]any{
 		"owner":  githubv4.String(owner),
 		"name":   githubv4.String(name),
 		"number": githubv4.Int(number),
 	}); err != nil {
-		return "", nil, fmt.Errorf("fetch merge queue removal for %s/%s#%d: %w", owner, name, number, err)
+		return db.MergeQueueOutcome{}, false, fmt.Errorf(
+			"fetch merge queue outcome for %s/%s#%d: %w", owner, name, number, err,
+		)
 	}
 	pr := q.Repository.PullRequest
 	if pr == nil {
-		return "", nil, nil
+		return db.MergeQueueOutcome{}, false, nil
 	}
-	if len(pr.TimelineItems.Nodes) == 0 {
-		return pr.State, nil, nil
+	outcome = db.MergeQueueOutcome{State: pr.State, Attempts: pr.Enqueues.TotalCount}
+	if nodes := pr.LatestQueueEvent.Nodes; len(nodes) > 0 &&
+		nodes[len(nodes)-1].Typename == "RemovedFromMergeQueueEvent" {
+		event := nodes[len(nodes)-1].RemovedFromMergeQueueEvent
+		outcome.LatestRemoval = &db.MergeQueueRemoval{
+			Number:    number,
+			RemovedAt: event.CreatedAt.UTC(),
+			Reason:    event.Reason,
+		}
 	}
-	event := pr.TimelineItems.Nodes[len(pr.TimelineItems.Nodes)-1].RemovedFromMergeQueueEvent
-	if event.CreatedAt.IsZero() {
-		return pr.State, nil, nil
-	}
-	return pr.State, &db.MergeQueueRemoval{
-		Number:    number,
-		RemovedAt: event.CreatedAt.UTC(),
-		Reason:    event.Reason,
-	}, nil
+	return outcome, true, nil
 }
 
 // isMergeQueueSchemaRejection reports whether err is GraphQL schema validation
@@ -278,11 +293,13 @@ func (s *Syncer) RefreshMergeQueueForRepository(ctx context.Context, repoID int6
 	return s.RefreshMergeQueue(ctx, repoRefFromStoredIdentity(repo, *stored), repoID)
 }
 
-// resolveMergeQueueDepartures looks up GitHub's removal reason for each
-// pending departure, including ones an earlier pass failed to resolve. An open
-// pull request removed without merging becomes a visible removal; a merged or
-// closed one is dropped. A departure GitHub has recorded no removal for since
-// it was queued is retried until mergeQueueDepartureLookupWindow passes. It
+// resolveMergeQueueDepartures looks up how each pending departure ended,
+// including ones an earlier pass failed to resolve. Attempts are matched in
+// GitHub's own event order, never by comparing Forge's clock with GitHub's:
+// a departure resolves once GitHub reports at least its attempt and the latest
+// attempt has ended. An open pull request removed without merging then shows
+// that removal; a merged or closed one is dropped. A departure GitHub has not
+// caught up with is retried until mergeQueueDepartureLookupWindow passes. It
 // returns the pull requests whose removal became visible.
 func (s *Syncer) resolveMergeQueueDepartures(
 	ctx context.Context,
@@ -300,9 +317,9 @@ func (s *Syncer) resolveMergeQueueDepartures(
 	}
 	var resolved []int
 	for _, departure := range departures {
-		state, removal, err := fetcher.FetchMergeQueueRemoval(ctx, repo.Owner, repo.Name, departure.Number)
+		outcome, found, err := fetcher.FetchMergeQueueOutcome(ctx, repo.Owner, repo.Name, departure.Number)
 		if err != nil {
-			slog.Warn("load merge queue removal failed",
+			slog.Warn("load merge queue outcome failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", departure.Number,
 				"err", err,
@@ -311,14 +328,14 @@ func (s *Syncer) resolveMergeQueueDepartures(
 		}
 		var storeErr error
 		switch {
-		case !strings.EqualFold(state, "OPEN"):
+		case !found || !strings.EqualFold(outcome.State, "OPEN"):
 			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
-		case removal != nil && !removal.RemovedAt.Before(departure.EnqueuedAt):
-			if strings.EqualFold(removal.Reason, "merged") {
+		case outcome.Attempts >= departure.Attempt && outcome.LatestRemoval != nil:
+			if strings.EqualFold(outcome.LatestRemoval.Reason, "merged") {
 				storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
 				break
 			}
-			storeErr = s.db.ResolveMergeQueueDeparture(ctx, repoID, departure, *removal)
+			storeErr = s.db.ResolveMergeQueueDeparture(ctx, repoID, departure, *outcome.LatestRemoval)
 			if storeErr == nil {
 				resolved = append(resolved, departure.Number)
 			}
@@ -334,6 +351,24 @@ func (s *Syncer) resolveMergeQueueDepartures(
 		}
 	}
 	return resolved
+}
+
+// MergeQueueAttempts returns how many times a pull request has been added to
+// a merge queue, read before Forge enqueues it so the new attempt can be told
+// apart from earlier ones. ok is false when the count cannot be read.
+func (s *Syncer) MergeQueueAttempts(ctx context.Context, repo RepoRef, number int) (int, bool) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return 0, false
+	}
+	fetcher := s.fetcherForContext(ctx, repo)
+	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		return 0, false
+	}
+	outcome, found, err := fetcher.FetchMergeQueueOutcome(ctx, repo.Owner, repo.Name, number)
+	if err != nil || !found {
+		return 0, false
+	}
+	return outcome.Attempts, true
 }
 
 // refreshWatchedMergeQueues refreshes the merge queue of each repository with

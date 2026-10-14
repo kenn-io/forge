@@ -567,3 +567,43 @@ func TestManualRefreshSkipsArchivedRepository(t *testing.T) {
 	assert.False(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
 	assert.Equal(queries, gql.queries.Load(), "an archived repository gets no live queue read")
 }
+
+func TestUnknownAttemptDepartureIsNeverMatchedToARemoval(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	// The attempt count could not be read before Forge enqueued, and the
+	// attempt left before any read observed it.
+	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
+	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(removal, "a removal cannot be attributed to an attempt Forge could not identify")
+}
+
+func TestAlreadyQueuedAcknowledgementKeepsAttempt(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	// Merging again while queued starts no new attempt.
+	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 1, time.Now().UTC()))
+	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal)
+	assert.Equal("branch_protection_failure", removal.Reason)
+}

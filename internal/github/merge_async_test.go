@@ -339,8 +339,46 @@ func TestGitHubComEnqueueReportsPullRequestAlreadyQueued(t *testing.T) {
 	result, err := enqueuer.EnqueuePullRequest(t.Context(), "acme", "widget", 7, "reviewed-head")
 	require.NoError(err)
 	assert.True(result.Queued)
+	assert.True(result.AlreadyQueued, "GitHub answers 200 without starting a new attempt")
 	assert.False(result.Merged)
 	assert.Equal("Pull request is already in the merge queue.", result.Message)
+}
+
+func TestGitHubComEnqueueStartsNewAttemptWhenAccepted(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{
+				"status":"pending",
+				"details":{"message":"Merge request is in progress.","uuid":"operation-id"}
+			}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{
+			"status":"enqueued",
+			"details":{"message":"Pull request was added to the merge queue."}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewClient(
+		testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+	enqueuer, ok := client.(platformgithub.MergeQueueAPI)
+	require.True(ok)
+
+	result, err := enqueuer.EnqueuePullRequest(t.Context(), "acme", "widget", 7, "reviewed-head")
+	require.NoError(err)
+	assert.True(result.Queued)
+	assert.False(result.AlreadyQueued)
 }
 
 func TestGitHubEnterpriseEnqueueFailsWithoutRequest(t *testing.T) {

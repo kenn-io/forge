@@ -213,3 +213,12 @@ func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) 
 	require.NoError(err)
 	require.Zero(status.ActiveDeferredMerges)
 }
+
+func TestEnqueuedAttemptKeepsAlreadyQueuedAttempt(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	require.Equal(3, enqueuedAttempt(2, true, false), "a new enqueue starts the next attempt")
+	require.Equal(2, enqueuedAttempt(2, true, true), "an already-queued pull request stays on its attempt")
+	require.Equal(0, enqueuedAttempt(2, false, false), "an unread count leaves the attempt unknown")
+}

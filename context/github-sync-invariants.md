@@ -178,9 +178,11 @@ For pull requests, that means:
   (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
 - An entry that joins and leaves between two reads is never observed. Forge
   counts the attempts before it enqueues; when the following read does not
-  show the pull request, it stores the new attempt provisionally at position 0
-  so its departure is still recorded. A departure already observed for that
-  attempt is kept, and a stale cached entry is raised to it
+  show the pull request, it stores the attempt provisionally at position 0
+  so its departure is still recorded. GitHub's 200 "already in the merge
+  queue" answer keeps the current attempt instead of starting one. A departure
+  already observed for that attempt is kept, a stale cached entry is raised to
+  it, and an attempt whose count could not be read (0) never resolves
   (`internal/db/queries_merge_queue.go::DB.RecordProvisionalMergeQueueEntry`).
 - Hosts whose schema rejects `mergeQueue` latch it off per fetcher until restart
   (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).

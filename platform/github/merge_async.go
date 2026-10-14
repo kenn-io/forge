@@ -85,7 +85,7 @@ func (c *Client) mergePullRequestAsync(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
 ) (*gh.PullRequestMergeResult, error) {
-	result, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
+	result, _, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
 		CommitTitle:   commitTitle,
 		CommitMessage: commitMessage,
 		SHA:           expectedHeadSHA,
@@ -111,28 +111,32 @@ func (c *Client) EnqueuePullRequest(
 			owner, repo, number, c.platformHost,
 		)
 	}
-	result, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
+	result, immediate, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
 		SHA:         expectedHeadSHA,
 		MergeAction: "merge_queue",
 	}, true)
 	if err != nil {
 		return platform.MergeResult{}, fmt.Errorf("enqueuing %s/%s#%d: %w", owner, repo, number, err)
 	}
+	queued := result.Status == "enqueued"
 	return platform.MergeResult{
-		Merged:  result.Status == "merged",
-		Queued:  result.Status == "enqueued",
-		SHA:     result.Details.SHA,
-		Message: result.Details.Message,
+		Merged:        result.Status == "merged",
+		Queued:        queued,
+		AlreadyQueued: queued && immediate,
+		SHA:           result.Details.SHA,
+		Message:       result.Details.Message,
 	}, nil
 }
 
 // runMergeAsync submits an asynchronous merge request and polls it to a
 // terminal status. "enqueued" is terminal success only when enqueueAccepted;
-// a direct merge that GitHub queued instead did not merge.
+// a direct merge that GitHub queued instead did not merge. immediate reports
+// that the submission itself was terminal: GitHub answers 200 instead of 202
+// when the pull request is already merged or already in the merge queue.
 func (c *Client) runMergeAsync(
 	ctx context.Context, owner, repo string, number int,
 	body mergeAsyncRequest, enqueueAccepted bool,
-) (mergeAsyncResponse, error) {
+) (result mergeAsyncResponse, immediate bool, err error) {
 	requestPath := fmt.Sprintf(
 		"repos/%s/%s/pulls/%d/merge-async", owner, repo, number,
 	)
@@ -140,33 +144,33 @@ func (c *Client) runMergeAsync(
 		ctx, http.MethodPut, requestPath, body,
 	)
 	if err != nil {
-		return result, err
+		return result, false, err
 	}
 	if terminal, err := mergeAsyncTerminalResult(resp, result, enqueueAccepted); terminal {
-		return result, err
+		return result, true, err
 	}
 	if resp == nil || resp.StatusCode != http.StatusAccepted {
-		return result, errors.New("GitHub returned pending without accepting an asynchronous merge")
+		return result, false, errors.New("GitHub returned pending without accepting an asynchronous merge")
 	}
 	if result.Details.UUID == "" {
-		return result, errors.New("GitHub accepted an asynchronous merge without an operation UUID")
+		return result, false, errors.New("GitHub accepted an asynchronous merge without an operation UUID")
 	}
 
 	pollPath := requestPath + "/" + result.Details.UUID
 	for poll := range mergeAsyncMaxPolls {
 		if err := waitForMergeAsyncPoll(ctx, poll); err != nil {
-			return result, err
+			return result, false, err
 		}
 		result, resp, err = c.doMergeAsyncRequest(ctx, http.MethodGet, pollPath, nil)
 		if err != nil {
-			return result, err
+			return result, false, err
 		}
 		if terminal, err := mergeAsyncTerminalResult(resp, result, enqueueAccepted); terminal {
-			return result, err
+			return result, false, err
 		}
 	}
 
-	return result, fmt.Errorf(
+	return result, false, fmt.Errorf(
 		"GitHub asynchronous merge did not complete after %d polls",
 		mergeAsyncMaxPolls,
 	)

@@ -297,7 +297,8 @@ func (s *Syncer) RefreshMergeQueueForRepository(ctx context.Context, repoID int6
 // including ones an earlier pass failed to resolve. Attempts are matched in
 // GitHub's own event order, never by comparing Forge's clock with GitHub's:
 // a departure resolves once GitHub reports at least its attempt and the latest
-// attempt has ended. An open pull request removed without merging then shows
+// attempt has ended. A departure of an unknown attempt (0) cannot be told apart
+// from earlier attempts, so it is never resolved and expires instead. An open pull request removed without merging then shows
 // that removal; a merged or closed one is dropped. A departure GitHub has not
 // caught up with is retried until mergeQueueDepartureLookupWindow passes. It
 // returns the pull requests whose removal became visible.
@@ -330,7 +331,8 @@ func (s *Syncer) resolveMergeQueueDepartures(
 		switch {
 		case !found || !strings.EqualFold(outcome.State, "OPEN"):
 			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
-		case outcome.Attempts >= departure.Attempt && outcome.LatestRemoval != nil:
+		case departure.Attempt > 0 && outcome.Attempts >= departure.Attempt &&
+			outcome.LatestRemoval != nil:
 			if strings.EqualFold(outcome.LatestRemoval.Reason, "merged") {
 				storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
 				break

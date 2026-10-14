@@ -283,9 +283,12 @@ type MergeResult struct {
 	Merged bool
 	// Queued reports that the provider accepted the merge request into its
 	// merge queue instead of merging it; the queue merges it later.
-	Queued  bool
-	SHA     string
-	Message string
+	Queued bool
+	// AlreadyQueued reports that the merge request was already in the merge
+	// queue, so the request started no new queue attempt.
+	AlreadyQueued bool
+	SHA           string
+	Message       string
 }
 
 type ReviewAction string

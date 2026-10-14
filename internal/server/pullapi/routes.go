@@ -1899,16 +1899,14 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	}
 	var result platform.MergeResult
 	enqueueRequestedAt := s.now().UTC()
-	enqueueAttempt := 0
+	priorAttempts, priorAttemptsKnown := 0, false
 	if queueMutator != nil {
 		// Counted before the request so the new attempt is told apart from
 		// earlier ones, even when sync observes its outcome while the
 		// asynchronous enqueue is still being confirmed.
-		if attempts, ok := s.syncer.MergeQueueAttempts(
+		priorAttempts, priorAttemptsKnown = s.syncer.MergeQueueAttempts(
 			ctx, mergeRequestRepoRef(repo.Repo), number,
-		); ok {
-			enqueueAttempt = attempts + 1
-		}
+		)
 		result, err = queueMutator.EnqueueMergeRequest(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
@@ -2014,7 +2012,11 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
-		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, enqueueAttempt, enqueueRequestedAt)
+		s.recordEnqueuedMergeRequest(
+			ctx, repo.Repo, repo.ID, number,
+			enqueuedAttempt(priorAttempts, priorAttemptsKnown, result.AlreadyQueued),
+			enqueueRequestedAt,
+		)
 	}
 
 	return mergePRBody{
@@ -3111,6 +3113,21 @@ func (s *Handler) repoMergeQueueFor(
 		return nil, nil
 	}
 	return queue, nil
+}
+
+// enqueuedAttempt identifies the queue attempt an enqueue left the pull
+// request in, from the provider's attempt count read before the request. An
+// enqueue of an already-queued pull request starts no new attempt. 0 means
+// unknown: a departure of an unknown attempt is never matched to a removal.
+func enqueuedAttempt(priorAttempts int, known, alreadyQueued bool) int {
+	switch {
+	case !known:
+		return 0
+	case alreadyQueued:
+		return priorAttempts
+	default:
+		return priorAttempts + 1
+	}
 }
 
 // recordEnqueuedMergeRequest reads the queue right after an enqueue so the

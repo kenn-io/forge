@@ -464,6 +464,10 @@ slow packages. CI also writes race timing JSON and summarizes slow packages and
 tests in the `go test -race` job summary. When a PR regresses race runtime, use
 the CI timing artifact rather than guessing from local timings alone.
 
+Keep race shards exhaustive: server descendants in `server`, CLI/DB/GitHub in
+`core`, and everything else in `rest`, including the server root. Rebalance
+from per-shard timing artifacts (`.github/workflows/ci.yml::race`).
+
 New full-stack server tests should default to `t.Parallel()` when they build
 their own `t.TempDir` filesystem, SQLite fixture, provider fake, and server
 fixture. This especially applies to workspace/git e2e coverage where each test

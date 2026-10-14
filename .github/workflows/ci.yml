@@ -491,7 +491,11 @@ jobs:
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
   race:
-    name: go test -race
+    name: go test -race (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [server, core, rest]
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
@@ -515,14 +519,36 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run tests (race detector)
+        env:
+          RACE_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race ./... -shuffle=on -parallel=4 -timeout 20m
+          package_list=$(go list ./...)
+          packages=()
+          while IFS= read -r package; do
+            case "$package" in
+              go.kenn.io/forge/internal/server/*) group=server ;;
+              go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
+              *) group=rest ;;
+            esac
+            if [[ "$group" == "$RACE_SHARD" && -n "$package" ]]; then
+              packages+=("$package")
+            fi
+          done <<< "$package_list"
+          if [[ ${#packages[@]} -eq 0 ]]; then
+            echo "No packages selected for race shard $RACE_SHARD" >&2
+            exit 1
+          fi
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
+        env:
+          RACE_SHARD: ${{ matrix.shard }}
         run: |
           {
+            echo "# Race shard $RACE_SHARD"
+            echo
             echo "## Slowest race packages"
             echo
             echo '```'
@@ -551,7 +577,7 @@ jobs:
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
-          name: Go race tests
+          name: Go race tests (${{ matrix.shard }})
           path: tmp/test-race-output.json
           reporter: golang-json
           fail-on-error: false
@@ -560,7 +586,7 @@ jobs:
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: go-race-timing
+          name: go-race-timing-${{ matrix.shard }}
           path: |
             tmp/test-race-output.json
             tmp/test-race-timing-events.json

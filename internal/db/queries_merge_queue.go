@@ -207,11 +207,28 @@ func (d *DB) DropMergeQueueDeparture(
 // RecordProvisionalMergeQueueEntry stores that Forge enqueued a pull request
 // the latest queue read did not show, so a later read that misses it records a
 // departure. Position 0 means sync has not observed its position yet. An
-// observed entry is left unchanged.
+// observed entry is left unchanged. The entry starts after any recorded
+// removal of an earlier attempt.
 func (d *DB) RecordProvisionalMergeQueueEntry(
 	ctx context.Context, repoID int64, number int, enqueuedAt time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
+		// The provider reports no enqueue time, so the caller's estimate is
+		// backdated for clock skew. It must still start after the previous
+		// attempt's recorded removal, or that removal would be accepted as
+		// this attempt's outcome when the new removal event is late.
+		var previousRemovedAt sql.NullTime
+		err := tx.QueryRowContext(ctx, `
+			SELECT removed_at FROM forge_merge_queue_removals
+			WHERE repo_id = ? AND number = ? AND removed_at IS NOT NULL`,
+			repoID, number,
+		).Scan(&previousRemovedAt)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("load previous merge queue removal: %w", err)
+		}
+		if previousRemovedAt.Valid && !enqueuedAt.After(previousRemovedAt.Time) {
+			enqueuedAt = previousRemovedAt.Time.Add(time.Second)
+		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO forge_merge_queue_entries (
 				repo_id, number, position, state, enqueued_at,

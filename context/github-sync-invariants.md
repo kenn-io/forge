@@ -171,7 +171,9 @@ For pull requests, that means:
   attempt (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
 - An entry that joins and leaves between two reads is never observed. A Forge
   enqueue that the following read does not show is stored provisionally at
-  position 0, so its departure is still recorded
+  position 0, so its departure is still recorded. Its skew-backdated start
+  never precedes the previous attempt's recorded removal, which would
+  otherwise settle the new attempt
   (`internal/server/pullapi/routes.go::Handler.recordEnqueuedMergeRequest`).
 - Hosts whose schema rejects `mergeQueue` latch it off per fetcher until restart
   (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).

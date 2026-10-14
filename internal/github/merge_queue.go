@@ -248,11 +248,20 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 // repository whose last read found one, for an explicit user refresh of one
 // of its pull requests. Scheduled sync may be paused, so this is the only
 // way a manual refresh can show that a pull request left the queue.
-// Repositories without a merge queue cost no request.
+// Repositories with neither a merge queue nor a pending departure cost no
+// request.
 func (s *Syncer) RefreshMergeQueueForRepository(ctx context.Context, repoID int64) bool {
 	queue, err := s.db.GetRepoMergeQueue(ctx, repoID)
-	if err != nil || queue == nil {
+	if err != nil {
 		return false
+	}
+	if queue == nil {
+		// A removed queue configuration can still leave departures whose
+		// reason lookup failed; a manual refresh retries those too.
+		pending, err := s.db.ListPendingMergeQueueDepartures(ctx, repoID)
+		if err != nil || len(pending) == 0 {
+			return false
+		}
 	}
 	stored, err := s.db.GetRepoByID(ctx, repoID)
 	if err != nil || stored == nil {
@@ -261,7 +270,9 @@ func (s *Syncer) RefreshMergeQueueForRepository(ctx context.Context, repoID int6
 	repo, ok := s.trackedRepoByProviderKey(
 		platform.Kind(stored.Platform), stored.PlatformHost, stored.Key,
 	)
-	if !ok {
+	// Archived repositories are collected for history only; live queue
+	// reads stay with live sync.
+	if !ok || repo.Archived {
 		return false
 	}
 	return s.RefreshMergeQueue(ctx, repoRefFromStoredIdentity(repo, *stored), repoID)

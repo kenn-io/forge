@@ -498,3 +498,51 @@ func TestEnqueueBookkeepingKeepsOutcomeObservedBeforeAcknowledgement(t *testing.
 	require.NotNil(removal, "the observed outcome must survive the late acknowledgement")
 	assert.Equal("branch_protection_failure", removal.Reason)
 }
+
+func TestManualRefreshRetriesPendingDepartureAfterQueueRemoved(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	// The repository drops its merge queue, and the removal lookup fails.
+	noQueue := `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}}}`
+	gql.set(noQueue, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
+	require.NoError(err)
+	require.Nil(queue)
+
+	gql.set(noQueue, `{"data":{"repository":{"pullRequest":{
+		"state":"OPEN",
+		"timelineItems":{"nodes":[{"createdAt":"`+time.Now().UTC().Format(time.RFC3339)+`","reason":"dequeued"}]}
+	}}}}`)
+	assert.True(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal)
+	assert.Equal("dequeued", removal.Reason)
+}
+
+func TestManualRefreshSkipsArchivedRepository(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	gql.set(queuedPR7, "")
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	queries := gql.queries.Load()
+
+	archived := repo
+	archived.Archived = true
+	syncer.SetRepos([]RepoRef{archived})
+
+	assert.False(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
+	assert.Equal(queries, gql.queries.Load(), "an archived repository gets no live queue read")
+}

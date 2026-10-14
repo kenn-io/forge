@@ -109,3 +109,36 @@ func TestClosingQueuedPullRequestEvictsItsQueueEntry(t *testing.T) {
 	require.NoError(err)
 	require.Empty(changes.Departed)
 }
+
+func TestInsertingClosedPullRequestEvictsCachedQueueEntry(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
+	// The queue read stores the entry before Forge has a row for the pull
+	// request.
+	_, err = database.ReplaceMergeQueue(ctx, repoID, MergeQueueSnapshot{
+		Configured: true, Branch: "main", MergeMethod: "squash",
+		Entries:    []MergeQueueEntry{{Number: 8, Position: 1, State: "QUEUED", EnqueuedAt: base}},
+		ObservedAt: base,
+	})
+	require.NoError(err)
+
+	closedAt := base.Add(time.Minute)
+	mr := testMR(repoID, 8, withMRActivity(closedAt))
+	mr.State = MergeRequestStateClosed
+	mr.ClosedAt = &closedAt
+	insertTestMRWithOptions(t, database, mr)
+	mr.State = MergeRequestStateOpen
+	mr.ClosedAt = nil
+	mr.UpdatedAt = closedAt.Add(time.Minute)
+	_, err = database.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+
+	entry, err := database.GetMergeQueueEntry(ctx, repoID, 8)
+	require.NoError(err)
+	require.Nil(entry, "a pull request first stored as closed must not reopen into stale queue membership")
+}

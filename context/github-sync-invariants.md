@@ -153,8 +153,9 @@ For pull requests, that means:
   `updated_at`, so the ETag-gated list never sees it. Every repository pass
   reads the default-branch queue, including on a 304 or a failed pull list.
   The watched lane re-reads queues holding a watched pull request it admitted,
-  and an explicit pull request refresh re-reads a configured queue even while
-  scheduled sync is paused (`internal/github/merge_queue.go::Syncer.RefreshMergeQueue`,
+  and an explicit pull request refresh re-reads a configured queue, or retries
+  pending departures, even while scheduled sync is paused; archived
+  repositories get no live queue read (`internal/github/merge_queue.go::Syncer.RefreshMergeQueue`,
   `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`).
 - Each read replaces the repository's queue configuration and entries; a null
   queue clears both. Only membership, position, and state changes announce a
@@ -167,8 +168,9 @@ For pull requests, that means:
   departure looked up, since refreshes overlap and a delayed lookup must not
   settle a later attempt (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
 - A removal shows until the pull request is queued again. A terminal state
-  write deletes its entry and removal, so reopening never revives an earlier
-  attempt (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
+  write, including a first insert as closed or merged, deletes its entry and
+  removal, so reopening never revives an earlier attempt
+  (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
 - An entry that joins and leaves between two reads is never observed. A Forge
   enqueue that the following read does not show is stored provisionally at
   position 0, so its departure is still recorded. The previous attempt's

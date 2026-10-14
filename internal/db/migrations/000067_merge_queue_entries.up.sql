@@ -39,3 +39,15 @@ BEGIN
     DELETE FROM forge_merge_queue_removals
     WHERE repo_id = NEW.repo_id AND number = NEW.number;
 END;
+
+-- A queue snapshot can store an entry before the pull request row exists, so
+-- a row first inserted as closed or merged evicts it too.
+CREATE TRIGGER forge_merge_queue_terminal_insert_eviction
+AFTER INSERT ON forge_merge_requests
+WHEN NEW.state IN ('closed', 'merged')
+BEGIN
+    DELETE FROM forge_merge_queue_entries
+    WHERE repo_id = NEW.repo_id AND number = NEW.number;
+    DELETE FROM forge_merge_queue_removals
+    WHERE repo_id = NEW.repo_id AND number = NEW.number;
+END;

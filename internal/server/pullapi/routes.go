@@ -2013,7 +2013,9 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
 		attempt, record := enqueuedAttempt(priorAttempts, priorAttemptsKnown, result.AlreadyQueued)
-		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, attempt, record, enqueueRequestedAt)
+		s.syncer.RecordEnqueue(
+			ctx, mergeRequestRepoRef(repo.Repo), repo.ID, number, attempt, record, enqueueRequestedAt,
+		)
 	}
 
 	return mergePRBody{
@@ -3128,25 +3130,5 @@ func enqueuedAttempt(priorAttempts int, known, alreadyQueued bool) (attempt int,
 		return 0, true
 	default:
 		return priorAttempts + 1, true
-	}
-}
-
-// recordEnqueuedMergeRequest reads the queue right after an enqueue so the
-// detail refresh that follows already shows the queue position. When that
-// read fails or does not show the pull request yet, a provisional entry makes
-// the next read that misses it record a departure, so a removal that happens
-// before any successful read is still reported.
-func (s *Handler) recordEnqueuedMergeRequest(
-	ctx context.Context, repo db.Repo, repoID int64, number, attempt int, record bool, requestedAt time.Time,
-) {
-	s.syncer.RefreshMergeQueue(ctx, mergeRequestRepoRef(repo), repoID)
-	if !record {
-		return
-	}
-	if err := s.db.RecordProvisionalMergeQueueEntry(
-		ctx, repoID, number, attempt, requestedAt,
-	); err != nil {
-		slog.Warn("record provisional merge queue entry",
-			"repo_id", repoID, "number", number, "err", err)
 	}
 }

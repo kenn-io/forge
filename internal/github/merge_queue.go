@@ -259,6 +259,26 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 	return len(changed) > 0
 }
 
+// RecordEnqueue tracks a pull request Forge just added to the merge queue.
+// It records the attempt provisionally first and then reads the queue, so a
+// read that shows the pull request sets the attempt from GitHub's count, and a
+// read that misses it records a departure for this attempt. Recording after
+// the read would overwrite an attempt the read had just identified. attempt is
+// the number from before the request, or 0 when unknown; record is false for
+// an enqueue that started no attempt Forge can identify, which only reads the
+// queue.
+func (s *Syncer) RecordEnqueue(
+	ctx context.Context, repo RepoRef, repoID int64, number, attempt int, record bool, requestedAt time.Time,
+) {
+	if record {
+		if err := s.db.RecordProvisionalMergeQueueEntry(ctx, repoID, number, attempt, requestedAt); err != nil {
+			slog.Warn("record provisional merge queue entry",
+				"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
+		}
+	}
+	s.RefreshMergeQueue(ctx, repo, repoID)
+}
+
 // RefreshMergeQueueForRepository refreshes the merge queue of a tracked
 // repository whose last read found one, for an explicit user refresh of one
 // of its pull requests. Scheduled sync may be paused, so this is the only

@@ -678,3 +678,26 @@ func TestQueueReadReidentifiesUnidentifiedAttempt(t *testing.T) {
 	require.NotNil(removal)
 	assert.Equal("dequeued", removal.Reason)
 }
+
+func TestRecordEnqueueKeepsAttemptIdentifiedByFollowingRead(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	// The count read before the enqueue failed, but the read right after
+	// it shows the pull request queued as attempt 2.
+	gql.set(strings.Replace(queuedPR7, `"enqueues":{"totalCount":1}`, `"enqueues":{"totalCount":2}`, 1), "")
+	syncer.RecordEnqueue(t.Context(), repo, repoID, 7, 0, true, time.Now().UTC())
+
+	// It leaves before another read observes it.
+	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:07:00Z", "branch_protection_failure"))
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal, "the attempt the read identified must keep its outcome")
+	assert.Equal("branch_protection_failure", removal.Reason)
+}

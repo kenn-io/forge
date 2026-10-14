@@ -177,9 +177,10 @@ For pull requests, that means:
   removal, so reopening never revives an earlier attempt
   (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
 - An entry that joins and leaves between two reads is never observed. Forge
-  counts the attempts before it enqueues; when the following read does not
-  show the pull request, it stores the attempt provisionally at position 0
-  so its departure is still recorded. GitHub's 200 "already in the merge
+  counts the attempts before it enqueues and stores the attempt provisionally
+  at position 0 before its follow-up queue read, so that read either sets the
+  attempt from GitHub's count or records its departure
+  (`internal/github/merge_queue.go::Syncer.RecordEnqueue`). GitHub's 200 "already in the merge
   queue" answer keeps the current attempt instead of starting one. A departure
   already observed for that attempt is kept and a stale cached entry is raised
   to it. An attempt whose count could not be read is unknown (0): it never

@@ -214,12 +214,11 @@ func (d *DB) DropMergeQueueDeparture(
 // departure. Position 0 means sync has not observed its position yet.
 //
 // attempt is the provider's enqueue-event count read before the enqueue plus
-// one, or 0 when that read failed. A cached queue entry is kept but raised to
-// this attempt. When sync has already observed this attempt as a departure of
-// an attempt at least this new, nothing changes, so an outcome seen while the
-// enqueue response was pending is kept.
-// With an unknown attempt, a departure observed after requestedAt counts as
-// this attempt.
+// one, or 0 when that read failed. A cached queue entry is kept but set to this
+// attempt. When sync has already observed a departure of an attempt at least
+// this new, nothing changes, so an outcome seen while the enqueue response was
+// pending is kept. An unknown attempt never inherits an earlier attempt's
+// number or departure; it stays unknown until a queue read identifies it.
 func (d *DB) RecordProvisionalMergeQueueEntry(
 	ctx context.Context, repoID int64, number, attempt int, requestedAt time.Time,
 ) error {
@@ -233,31 +232,36 @@ func (d *DB) RecordProvisionalMergeQueueEntry(
 			return fmt.Errorf("check merge queue entry: %w", err)
 		}
 		if queued {
-			// A cached entry can still describe an earlier attempt; its
-			// departure must wait for this attempt's outcome.
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE forge_merge_queue_entries SET attempt = MAX(attempt, ?)
-				WHERE repo_id = ? AND number = ?`,
-				attempt, repoID, number,
-			); err != nil {
+			// A cached entry can still describe an earlier attempt. Raise it
+			// to this attempt, or mark it unknown when this attempt could
+			// not be identified, so its departure never takes the earlier
+			// attempt's outcome. A later read that shows the pull request
+			// identifies the attempt again from GitHub's count.
+			update := `UPDATE forge_merge_queue_entries SET attempt = MAX(attempt, ?)
+				WHERE repo_id = ? AND number = ?`
+			if attempt == 0 {
+				update = `UPDATE forge_merge_queue_entries SET attempt = ?
+					WHERE repo_id = ? AND number = ?`
+			}
+			if _, err := tx.ExecContext(ctx, update, attempt, repoID, number); err != nil {
 				return fmt.Errorf("advance merge queue entry attempt: %w", err)
 			}
 			return nil
 		}
+		// An identified attempt keeps a departure sync already observed for
+		// it. An unidentified one cannot be matched to any departure, so it
+		// replaces whatever is recorded.
 		var departedAttempt int
-		var departedAt time.Time
 		err := tx.QueryRowContext(ctx, `
-			SELECT attempt, departed_at FROM forge_merge_queue_removals
+			SELECT attempt FROM forge_merge_queue_removals
 			WHERE repo_id = ? AND number = ?`,
 			repoID, number,
-		).Scan(&departedAttempt, &departedAt)
+		).Scan(&departedAttempt)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 		case err != nil:
 			return fmt.Errorf("load merge queue departure: %w", err)
 		case attempt > 0 && departedAttempt >= attempt:
-			return nil
-		case attempt == 0 && departedAt.After(requestedAt):
 			return nil
 		}
 		if _, err := tx.ExecContext(ctx, `

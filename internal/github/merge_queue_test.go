@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -606,4 +607,74 @@ func TestAlreadyQueuedAcknowledgementKeepsAttempt(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(removal)
 	assert.Equal("branch_protection_failure", removal.Reason)
+}
+
+func TestUnidentifiedAttemptOverStaleCachedEntryDoesNotInheritItsOutcome(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	// Attempt 1 is still cached as queued; the count read before the new
+	// enqueue failed, so the new attempt is unidentified.
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
+
+	// Both attempts are gone and the timeline still ends with attempt 1's
+	// removal.
+	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(removal, "an unidentified attempt must not take the cached attempt's outcome")
+}
+
+func TestUnidentifiedAttemptReplacesEarlierDeparture(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	// A new attempt whose number could not be read replaces the recorded
+	// failure, and the timeline has not caught up with it.
+	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(removal, "the earlier failure must not be shown as the new attempt's outcome")
+}
+
+func TestQueueReadReidentifiesUnidentifiedAttempt(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
+
+	// The next read shows the pull request queued as attempt 2.
+	gql.set(strings.Replace(queuedPR7, `"enqueues":{"totalCount":1}`, `"enqueues":{"totalCount":2}`, 1), "")
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:07:00Z", "dequeued"))
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal)
+	assert.Equal("dequeued", removal.Reason)
 }

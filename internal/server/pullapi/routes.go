@@ -2012,11 +2012,8 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
-		s.recordEnqueuedMergeRequest(
-			ctx, repo.Repo, repo.ID, number,
-			enqueuedAttempt(priorAttempts, priorAttemptsKnown, result.AlreadyQueued),
-			enqueueRequestedAt,
-		)
+		attempt, record := enqueuedAttempt(priorAttempts, priorAttemptsKnown, result.AlreadyQueued)
+		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, attempt, record, enqueueRequestedAt)
 	}
 
 	return mergePRBody{
@@ -3117,16 +3114,20 @@ func (s *Handler) repoMergeQueueFor(
 
 // enqueuedAttempt identifies the queue attempt an enqueue left the pull
 // request in, from the provider's attempt count read before the request. An
-// enqueue of an already-queued pull request starts no new attempt. 0 means
-// unknown: a departure of an unknown attempt is never matched to a removal.
-func enqueuedAttempt(priorAttempts int, known, alreadyQueued bool) int {
+// enqueue of an already-queued pull request starts no new attempt, so when
+// that attempt cannot be identified the cached state is left alone (record is
+// false). Otherwise 0 means a new attempt of unknown number: its departure is
+// never matched to a removal.
+func enqueuedAttempt(priorAttempts int, known, alreadyQueued bool) (attempt int, record bool) {
 	switch {
-	case !known:
-		return 0
+	case alreadyQueued && !known:
+		return 0, false
 	case alreadyQueued:
-		return priorAttempts
+		return priorAttempts, true
+	case !known:
+		return 0, true
 	default:
-		return priorAttempts + 1
+		return priorAttempts + 1, true
 	}
 }
 
@@ -3136,9 +3137,12 @@ func enqueuedAttempt(priorAttempts int, known, alreadyQueued bool) int {
 // the next read that misses it record a departure, so a removal that happens
 // before any successful read is still reported.
 func (s *Handler) recordEnqueuedMergeRequest(
-	ctx context.Context, repo db.Repo, repoID int64, number, attempt int, requestedAt time.Time,
+	ctx context.Context, repo db.Repo, repoID int64, number, attempt int, record bool, requestedAt time.Time,
 ) {
 	s.syncer.RefreshMergeQueue(ctx, mergeRequestRepoRef(repo), repoID)
+	if !record {
+		return
+	}
 	if err := s.db.RecordProvisionalMergeQueueEntry(
 		ctx, repoID, number, attempt, requestedAt,
 	); err != nil {

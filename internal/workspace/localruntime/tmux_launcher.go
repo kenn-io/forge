@@ -317,6 +317,9 @@ func (l tmuxLauncher) cleanupNewSessionAfterError(
 	)
 	defer cancel()
 	if err := l.run(cleanupCtx, l.killSessionCommand()); err != nil {
+		if tmuxErr, ok := errors.AsType[tmuxCommandError](err); ok && isTmuxServerExited(tmuxErr.stderr, tmuxErr.err) {
+			return fmt.Errorf("%s: %w", operation, cause)
+		}
 		return fmt.Errorf(
 			"%s: %w; cleanup new tmux session: %w",
 			operation, cause, err,

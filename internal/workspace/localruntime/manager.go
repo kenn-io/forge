@@ -1344,13 +1344,18 @@ func (m *Manager) killTmuxSession(
 		return nil
 	}
 	msg := strings.TrimSpace(stderr.String())
-	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok && exitErr.ExitCode() == 1 && msg == "server exited unexpectedly" {
+	if isTmuxServerExited(stderr.Bytes(), err) {
 		return nil
 	}
 	if msg == "" {
 		return err
 	}
 	return fmt.Errorf("%w: %s", err, msg)
+}
+
+func isTmuxServerExited(stderr []byte, err error) bool {
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
+	return ok && exitErr.ExitCode() == 1 && strings.TrimSpace(string(stderr)) == "server exited unexpectedly"
 }
 
 func (m *Manager) refreshSession(

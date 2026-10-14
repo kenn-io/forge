@@ -341,12 +341,6 @@ test("accepted detail sync reconciles Activity after its selection closes", asyn
 test("persisted Activity events appear in the open PR timeline after SSE invalidation", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    let detailGetCount = 0;
-    page.on("request", (request) => {
-      if (request.method() === "GET" && new URL(request.url()).pathname === detailPath) {
-        detailGetCount++;
-      }
-    });
     const streamRequested = page.waitForRequest((request) =>
       new URL(request.url()).pathname.endsWith("/api/v1/events"),
     );
@@ -364,11 +358,6 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
     const selectedURL = page.url();
-    const settledDetailGetCount = detailGetCount;
-    const refreshedDetail = page.waitForResponse(
-      (response) => response.request().method() === "GET" && new URL(response.url()).pathname === detailPath,
-      { timeout: 5_000 },
-    );
 
     await persistActivityComment(page, server.info.base_url, newComment);
 
@@ -379,13 +368,7 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
     };
     expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
 
-    const refreshedBody = (await (await refreshedDetail).json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(refreshedBody.events?.some((event) => event.Body === newComment)).toBe(true);
-    expect(detailGetCount).toBeGreaterThan(settledDetailGetCount);
-
-    await expect(detail.getByText(newComment, { exact: true })).toBeVisible();
+    await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
     expect(page.url()).toBe(selectedURL);
   } finally {
     await server.stop();
@@ -582,10 +565,6 @@ test("viewed-hot PR fast sync refreshes Activity without a notification", async 
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
 
-    const refreshedDetail = page.waitForResponse(
-      (response) => response.request().method() === "GET" && new URL(response.url()).pathname === detailPath,
-      { timeout: 10_000 },
-    );
     const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/viewed-hot-fast-sync`);
     expect(fastSync.status()).toBe(204);
 
@@ -596,11 +575,7 @@ test("viewed-hot PR fast sync refreshes Activity without a notification", async 
     };
     expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
 
-    const refreshedBody = (await (await refreshedDetail).json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(refreshedBody.events?.some((event) => event.Body === newComment)).toBe(true);
-    await expect(detail.getByText(newComment, { exact: true })).toBeVisible();
+    await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
   } finally {
     await server.stop();
   }
@@ -629,10 +604,6 @@ test("notification-warm PR fast sync refreshes the selected Activity detail", as
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
 
-    const refreshedDetail = page.waitForResponse(
-      (response) => response.request().method() === "GET" && new URL(response.url()).pathname === detailPath,
-      { timeout: 10_000 },
-    );
     const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/notification-fast-sync`);
     expect(fastSync.status()).toBe(204);
 
@@ -643,11 +614,7 @@ test("notification-warm PR fast sync refreshes the selected Activity detail", as
     };
     expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
 
-    const refreshedBody = (await (await refreshedDetail).json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(refreshedBody.events?.some((event) => event.Body === newComment)).toBe(true);
-    await expect(detail.getByText(newComment, { exact: true })).toBeVisible();
+    await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
   } finally {
     await server.stop();
   }

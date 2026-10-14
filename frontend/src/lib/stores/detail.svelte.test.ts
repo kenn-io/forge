@@ -654,6 +654,49 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.platform_head_sha).toBe("newer-head");
   });
 
+  it("keeps a new comment when an older detail refresh resolves last", async () => {
+    const olderRefresh = deferred<{ data: PullDetail }>();
+    const newerRefresh = deferred<{ data: PullDetail }>();
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({ data: pullDetail("head") })
+      .mockReturnValueOnce(olderRefresh.promise)
+      .mockReturnValueOnce(newerRefresh.promise);
+    const store = createDetailStore({ client: mockClient({ GET: get }) });
+    const identity = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
+    await loadDetail(store, "acme", "widget", 7, identity);
+    const older = refreshDetail(store, "acme", "widget", 7, identity);
+    const newer = refreshDetail(store, "acme", "widget", 7, identity);
+    const freshDetail = pullDetail("head");
+    freshDetail.events = [
+      {
+        Author: "user-a",
+        Body: "New Activity comment",
+        CreatedAt: "2026-01-01T00:00:00Z",
+        DedupeKey: "comment-1",
+        DirectURL: "https://example.com/comments/1",
+        EventType: "comment",
+        ID: 1,
+        MergeRequestID: 7,
+        MetadataJSON: "{}",
+        PlatformExternalID: "1",
+        PlatformID: 1,
+        Resolvable: false,
+        Resolved: false,
+        Summary: "",
+        ThreadID: null,
+      },
+    ];
+
+    newerRefresh.resolve({ data: freshDetail });
+    await newer;
+    expect(store.getDetail()?.events).toEqual(freshDetail.events);
+    olderRefresh.resolve({ data: pullDetail("head") });
+    await older;
+
+    expect(store.getDetail()?.events).toEqual(freshDetail.events);
+  });
+
   it("an older-started sync response cannot overwrite a newer envelope", async () => {
     // The sync path has no per-selection sequence guard; without atomic
     // payload+tick application its stale response would replace newer

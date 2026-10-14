@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"slices"
 	"strings"
@@ -317,8 +318,10 @@ func (l tmuxLauncher) cleanupNewSessionAfterError(
 	)
 	defer cancel()
 	if err := l.run(cleanupCtx, l.killSessionCommand()); err != nil {
-		if tmuxErr, ok := errors.AsType[tmuxCommandError](err); ok && isTmuxSessionAbsent(tmuxErr.stderr, tmuxErr.err) {
-			return fmt.Errorf("%s: %w", operation, cause)
+		if tmuxErr, ok := errors.AsType[tmuxCommandError](err); ok {
+			if exitErr, ok := errors.AsType[*exec.ExitError](tmuxErr.err); ok && exitErr.ExitCode() == 1 && strings.TrimSpace(string(tmuxErr.stderr)) == "server exited unexpectedly" {
+				return fmt.Errorf("%s: %w", operation, cause)
+			}
 		}
 		return fmt.Errorf(
 			"%s: %w; cleanup new tmux session: %w",

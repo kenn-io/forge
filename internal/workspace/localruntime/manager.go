@@ -1421,6 +1421,7 @@ func (m *Manager) refreshTmuxSessionClients(
 	return errors.Join(errs...)
 }
 
+// Unlike workspace.isTmuxSessionAbsent, runtime recovery also treats a confirmed server exit as absent.
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	exitErr, ok := errors.AsType[*exec.ExitError](err)
 	if !ok || exitErr.ExitCode() != 1 {

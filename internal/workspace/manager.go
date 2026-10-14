@@ -5075,6 +5075,7 @@ func (m *Manager) tmuxSessionExists(
 // exit 1 is a common generic wrapper/shell failure code, and
 // stdout content is not load-bearing — a wrapper could emit
 // anything there for unrelated reasons.
+// Unlike localruntime.isTmuxSessionAbsent, base-terminal probes keep unexpected server exits as errors.
 func isTmuxSessionAbsent(stderr []byte, err error) bool {
 	exitErr, ok := errors.AsType[*exec.ExitError](err)
 	if !ok || exitErr.ExitCode() != 1 {

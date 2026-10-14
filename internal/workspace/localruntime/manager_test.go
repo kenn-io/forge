@@ -1483,6 +1483,16 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func fakeTmuxFailure(t *testing.T, message string, status int) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("requires executable shell scripts")
+	}
+	tmuxPath := filepath.Join(t.TempDir(), "tmux-failure")
+	require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\nprintf '%%s\\n' %s >&2\nexit %d\n", shellquote.Join(message), status), 0o755))
+	return tmuxPath
+}
+
 func TestIsTmuxSessionAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -1495,8 +1505,7 @@ func TestIsTmuxSessionAbsent(t *testing.T) {
 		{name: "other exit status", message: "server exited unexpectedly", status: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
-			require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\necho '%s' >&2\nexit %d\n", tc.message, tc.status), 0o755))
+			tmuxPath := fakeTmuxFailure(t, tc.message, tc.status)
 			cmd := exec.CommandContext(t.Context(), tmuxPath)
 			stderr, err := cmd.CombinedOutput()
 			require.Error(t, err)
@@ -1506,8 +1515,7 @@ func TestIsTmuxSessionAbsent(t *testing.T) {
 }
 
 func TestTmuxSessionChecksHandleExitedServer(t *testing.T) {
-	tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
-	require.NoError(t, os.WriteFile(tmuxPath, []byte("#!/bin/sh\necho 'server exited unexpectedly' >&2\nexit 1\n"), 0o755))
+	tmuxPath := fakeTmuxFailure(t, "server exited unexpectedly", 1)
 	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
 	require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionNotFound)
 	require.NoError(t, mgr.killTmuxSession(t.Context(), "session"))

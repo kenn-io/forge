@@ -6285,6 +6285,9 @@ func (s *Syncer) indexSyncRepo(
 				mrListBlocked = true
 			} else {
 				s.markRepoFailed(repo, failMR)
+				// The queue read does not depend on the pull list, so a
+				// failing list must not freeze queue state.
+				s.RefreshMergeQueue(ctx, repo, repoID)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}

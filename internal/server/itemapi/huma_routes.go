@@ -292,6 +292,10 @@ func (s *Handlers) SyncPR(ctx context.Context, input *RepoNumberInput) (*SyncPRO
 		)
 	}
 
+	// Queue membership changes never touch the pull request itself, so an
+	// explicit refresh also re-reads the repository's merge queue.
+	(*s.Syncer).RefreshMergeQueueForRepository(ctx, repo.ID)
+
 	mr, err := s.Db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get pull request: " + err.Error())

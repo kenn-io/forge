@@ -151,9 +151,11 @@ For pull requests, that means:
 
 - Entering or leaving a merge queue does not change a pull request's
   `updated_at`, so the ETag-gated list never sees it. Every repository pass
-  reads the default-branch queue, including on a 304, and the watched lane
-  re-reads queues holding a watched pull request it admitted
-  (`internal/github/merge_queue.go::Syncer.RefreshMergeQueue`).
+  reads the default-branch queue, including on a 304 or a failed pull list.
+  The watched lane re-reads queues holding a watched pull request it admitted,
+  and an explicit pull request refresh re-reads a configured queue even while
+  scheduled sync is paused (`internal/github/merge_queue.go::Syncer.RefreshMergeQueue`,
+  `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`).
 - Each read replaces the repository's queue configuration and entries; a null
   queue clears both. Only membership, position, and state changes announce a
   detail refresh, never estimate-only changes (`internal/db/queries_merge_queue.go::DB.ReplaceMergeQueue`).

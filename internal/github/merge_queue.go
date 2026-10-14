@@ -244,6 +244,29 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 	return len(changed) > 0
 }
 
+// RefreshMergeQueueForRepository refreshes the merge queue of a tracked
+// repository whose last read found one, for an explicit user refresh of one
+// of its pull requests. Scheduled sync may be paused, so this is the only
+// way a manual refresh can show that a pull request left the queue.
+// Repositories without a merge queue cost no request.
+func (s *Syncer) RefreshMergeQueueForRepository(ctx context.Context, repoID int64) bool {
+	queue, err := s.db.GetRepoMergeQueue(ctx, repoID)
+	if err != nil || queue == nil {
+		return false
+	}
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil || stored == nil {
+		return false
+	}
+	repo, ok := s.trackedRepoByProviderKey(
+		platform.Kind(stored.Platform), stored.PlatformHost, stored.Key,
+	)
+	if !ok {
+		return false
+	}
+	return s.RefreshMergeQueue(ctx, repoRefFromStoredIdentity(repo, *stored), repoID)
+}
+
 // resolveMergeQueueDepartures looks up GitHub's removal reason for each
 // pending departure, including ones an earlier pass failed to resolve. An open
 // pull request removed without merging becomes a visible removal; a merged or

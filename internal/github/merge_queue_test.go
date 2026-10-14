@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/platform"
 )
 
 // mergeQueueGraphQL serves the merge queue and removal queries with values the
@@ -73,7 +75,10 @@ func newMergeQueueTestSyncerWithClient(
 
 	srv := httptest.NewServer(gql)
 	t.Cleanup(srv.Close)
-	repo := RepoRef{Owner: "acme", Name: "widgets", PlatformHost: "github.com"}
+	repo := RepoRef{
+		Owner: "acme", Name: "widgets", PlatformHost: "github.com",
+		Key: platform.RepositoryIDKey(testRepoID("acme", "widgets")),
+	}
 	syncer := NewSyncer(
 		map[string]Client{"github.com": client}, database, nil,
 		[]RepoRef{repo}, time.Minute, nil, nil,
@@ -332,4 +337,50 @@ func TestRunOnceObservesMergeQueueWhenPullListUnchanged(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(entry, "an unchanged pull list must not skip the merge queue read")
 	assert.Equal(1, entry.Position)
+}
+
+func TestRunOnceObservesMergeQueueWhenPullListFails(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	gql.set(queuedPR7, "")
+	client := &mockClient{listOpenPRsErr: errors.New("GitHub returned 502 Bad Gateway")}
+	syncer, database, _, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+
+	syncer.RunOnce(t.Context())
+
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(entry, "a failing pull list must not freeze merge queue state")
+}
+
+func TestRefreshMergeQueueForRepositoryReadsOnlyConfiguredQueues(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	assert.False(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
+	assert.Zero(gql.queries.Load(), "a repository without a merge queue costs no request")
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	// The queue drops the pull request while scheduled sync is paused; an
+	// explicit refresh is what observes it.
+	gql.set(emptyQueue, `{"data":{"repository":{"pullRequest":{
+		"state":"OPEN",
+		"timelineItems":{"nodes":[{"createdAt":"2026-10-14T19:06:07Z","reason":"branch_protection_failure"}]}
+	}}}}`)
+	require.True(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
+
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(entry)
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal)
+	assert.Equal("branch_protection_failure", removal.Reason)
 }

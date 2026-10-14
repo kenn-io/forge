@@ -297,7 +297,7 @@ func TestAgentHooksJudgeSavedConversationsOnFreshEvidence(t *testing.T) {
 
 // Recording a runtime imports a conversation its hooks reported before the
 // row existed, but never over one the row already saves: after a reboot the
-// newest leftover report can be a nested agent's.
+// only leftover report can be a nested agent's.
 func TestRecordingARuntimeKeepsItsSavedConversation(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
@@ -317,11 +317,9 @@ func TestRecordingARuntimeKeepsItsSavedConversation(t *testing.T) {
 	_, err := database.RecordWorkspaceRuntimeConversation(ctx, "terminal", "claude", "parent")
 	require.NoError(err)
 	activity := agentactivity.NewStore(t.TempDir())
-	for _, sessionID := range []string{"parent", "nested"} {
-		require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
-			SessionID: sessionID, CWD: worktree, HookEventName: "Stop",
-		}, "terminal"))
-	}
+	require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{
+		SessionID: "nested", CWD: worktree, HookEventName: "Stop",
+	}, "terminal"))
 	handler := New(Deps{DB: database, AgentActivity: activity})
 
 	handler.importEarlyConversation(ctx, "workspace", "terminal")

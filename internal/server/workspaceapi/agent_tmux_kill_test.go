@@ -747,7 +747,15 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 			require.NoError(os.WriteFile(agent, []byte(
 				"#!/bin/sh\ntrap 'exit 0' TERM\necho $$ > pid\nwhile :; do sleep 0.05; done\n"), 0o755))
 			var handler *Handler
-			runtime := localruntime.NewManager(localruntime.Options{
+			var runtime *localruntime.Manager
+			// Exit handling spends the record once it forgets the agent, so
+			// read it before the handler runs.
+			type exitRecord struct {
+				exit     localruntime.AgentExit
+				recorded bool
+			}
+			exitRecords := make(chan exitRecord, 1)
+			runtime = localruntime.NewManager(localruntime.Options{
 				TmuxCommand:             tmux,
 				WrapAgentSessionsInTmux: true,
 				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
@@ -756,7 +764,11 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 				}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
-				OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
+				OnSessionExit: func(info localruntime.SessionInfo) {
+					exit, recorded := runtime.AgentExit(info.TmuxSession)
+					exitRecords <- exitRecord{exit: exit, recorded: recorded}
+					handler.HandleRuntimeSessionExit(info)
+				},
 			})
 			t.Cleanup(func() {
 				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
@@ -794,10 +806,9 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 
 			// Only the agent is signaled; it exits 0 and its wrapper records that.
 			require.NoError(syscall.Kill(pid, syscall.SIGTERM))
-			require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
-			exit, recorded := runtime.AgentExit(session.TmuxSession)
-			require.True(recorded)
-			require.Equal(localruntime.AgentExit{Recorded: true, Status: 0}, exit)
+			record := <-exitRecords
+			require.True(record.recorded)
+			require.Equal(localruntime.AgentExit{Recorded: true, Status: 0}, record.exit)
 
 			rows := func() int {
 				stored, err := database.ListAllWorkspaceRuntimeSessions(ctx)

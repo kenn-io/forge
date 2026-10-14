@@ -405,7 +405,11 @@ create a local process, PTY, or durable transport session
   "other" keeps the row until it reports again. Agents without SessionEnd hooks (Droid)
   save their newest conversation. A runtime's start is taken before its pane starts.
   Recording an agent's row also saves a conversation its hooks reported before the row
-  existed, only into a row that saves none and only when one conversation reported. SessionEnd may delete the report, including when a
+  existed, only into a row that saves none and only when one conversation reported.
+  Hooks do not say which agent sent them, so a hooked nested agent in the same worktree
+  can still become the saved conversation when its SessionStart beats its waiting
+  parent's first hook after a restart, or when it reports first after an ambiguous
+  early import (accepted limit; process lineage is the robust signal). SessionEnd may delete the report, including when a
   host shutdown kills the agent, and saves its reason on the row while that conversation
   is the saved one
   (`internal/server/workspaceapi/agent_hook.go::Handler.recordAgentConversation`,

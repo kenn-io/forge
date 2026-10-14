@@ -1873,7 +1873,14 @@ func (s *Handler) mergePRWithBody(
 	}
 	var result platform.MergeResult
 	enqueueRequestedAt := s.now().UTC()
+	var attemptBoundary time.Time
 	if queueMutator != nil {
+		// Captured before the request: sync can observe this attempt's
+		// outcome while the asynchronous enqueue is still being confirmed.
+		attemptBoundary, err = s.db.MergeQueueAttemptBoundary(ctx, repo.ID, number)
+		if err != nil {
+			return mergePRBody{}, httpapi.Internal("load merge queue state failed")
+		}
 		result, err = queueMutator.EnqueueMergeRequest(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
@@ -1979,7 +1986,7 @@ func (s *Handler) mergePRWithBody(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
-		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, enqueueRequestedAt)
+		s.recordEnqueuedMergeRequest(ctx, repo.Repo, repo.ID, number, enqueueRequestedAt, attemptBoundary)
 	}
 
 	return mergePRBody{
@@ -3088,20 +3095,11 @@ const enqueuedSlack = time.Minute
 // the next read that misses it record a departure, so a removal that happens
 // before any successful read is still reported.
 func (s *Handler) recordEnqueuedMergeRequest(
-	ctx context.Context, repo db.Repo, repoID int64, number int, requestedAt time.Time,
+	ctx context.Context, repo db.Repo, repoID int64, number int, requestedAt, boundary time.Time,
 ) {
 	s.syncer.RefreshMergeQueue(ctx, mergeRequestRepoRef(repo), repoID)
-	entry, err := s.db.GetMergeQueueEntry(ctx, repoID, number)
-	if err != nil {
-		slog.Warn("load merge queue entry after enqueue",
-			"repo_id", repoID, "number", number, "err", err)
-		return
-	}
-	if entry != nil {
-		return
-	}
 	if err := s.db.RecordProvisionalMergeQueueEntry(
-		ctx, repoID, number, requestedAt.Add(-enqueuedSlack),
+		ctx, repoID, number, requestedAt.Add(-enqueuedSlack), boundary,
 	); err != nil {
 		slog.Warn("record provisional merge queue entry",
 			"repo_id", repoID, "number", number, "err", err)

@@ -204,46 +204,84 @@ func (d *DB) DropMergeQueueDeparture(
 	return nil
 }
 
+// MergeQueueAttemptBoundary returns when Forge observed the pull request's
+// latest recorded departure from the queue, resolved or still pending, or the
+// zero time when none is recorded. Read it before enqueueing: outcomes
+// observed after it belong to the new attempt.
+func (d *DB) MergeQueueAttemptBoundary(
+	ctx context.Context, repoID int64, number int,
+) (time.Time, error) {
+	var departedAt time.Time
+	err := d.roQueryRowContext(ctx, `
+		SELECT departed_at FROM forge_merge_queue_removals
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	).Scan(&departedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("get merge queue attempt boundary: %w", err)
+	}
+	return departedAt.UTC(), nil
+}
+
 // RecordProvisionalMergeQueueEntry stores that Forge enqueued a pull request
 // the latest queue read did not show, so a later read that misses it records a
-// departure. Position 0 means sync has not observed its position yet. An
-// observed entry is left unchanged. The entry starts after any recorded
-// removal of an earlier attempt.
+// departure. Position 0 means sync has not observed its position yet.
+//
+// boundary is MergeQueueAttemptBoundary read before the enqueue. When sync has
+// already observed this attempt, as a queue entry or as a departure after the
+// boundary, nothing changes, so an outcome seen while the enqueue response was
+// still pending is kept. Otherwise the earlier attempt's departure is replaced
+// and the entry starts after the boundary: the provider reports no enqueue
+// time, and a skew-backdated start must not let the earlier attempt's removal
+// event settle this one.
 func (d *DB) RecordProvisionalMergeQueueEntry(
-	ctx context.Context, repoID int64, number int, enqueuedAt time.Time,
+	ctx context.Context, repoID int64, number int, enqueuedAt, boundary time.Time,
 ) error {
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		// The provider reports no enqueue time, so the caller's estimate is
-		// backdated for clock skew. It must still start after the previous
-		// attempt's recorded removal, or that removal would be accepted as
-		// this attempt's outcome when the new removal event is late.
-		var previousRemovedAt sql.NullTime
+		var queued bool
+		if err := tx.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM forge_merge_queue_entries WHERE repo_id = ? AND number = ?
+			)`, repoID, number,
+		).Scan(&queued); err != nil {
+			return fmt.Errorf("check merge queue entry: %w", err)
+		}
+		if queued {
+			return nil
+		}
+		var departedAt time.Time
 		err := tx.QueryRowContext(ctx, `
-			SELECT removed_at FROM forge_merge_queue_removals
-			WHERE repo_id = ? AND number = ? AND removed_at IS NOT NULL`,
+			SELECT departed_at FROM forge_merge_queue_removals
+			WHERE repo_id = ? AND number = ?`,
 			repoID, number,
-		).Scan(&previousRemovedAt)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("load previous merge queue removal: %w", err)
+		).Scan(&departedAt)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+		case err != nil:
+			return fmt.Errorf("load merge queue departure: %w", err)
+		case departedAt.After(boundary):
+			return nil
 		}
-		if previousRemovedAt.Valid && !enqueuedAt.After(previousRemovedAt.Time) {
-			enqueuedAt = previousRemovedAt.Time.Add(time.Second)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO forge_merge_queue_entries (
-				repo_id, number, position, state, enqueued_at,
-				estimated_time_to_merge_seconds, observed_at
-			) VALUES (?, ?, 0, 'QUEUED', ?, NULL, ?)
-			ON CONFLICT(repo_id, number) DO NOTHING`,
-			repoID, number, enqueuedAt.UTC(), enqueuedAt.UTC(),
-		); err != nil {
-			return fmt.Errorf("record provisional merge queue entry: %w", err)
+		if !boundary.IsZero() && !enqueuedAt.After(boundary) {
+			enqueuedAt = boundary.Add(time.Second)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM forge_merge_queue_removals WHERE repo_id = ? AND number = ?`,
 			repoID, number,
 		); err != nil {
 			return fmt.Errorf("clear merge queue removal: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO forge_merge_queue_entries (
+				repo_id, number, position, state, enqueued_at,
+				estimated_time_to_merge_seconds, observed_at
+			) VALUES (?, ?, 0, 'QUEUED', ?, NULL, ?)`,
+			repoID, number, enqueuedAt.UTC(), enqueuedAt.UTC(),
+		); err != nil {
+			return fmt.Errorf("record provisional merge queue entry: %w", err)
 		}
 		return nil
 	})

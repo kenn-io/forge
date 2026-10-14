@@ -405,8 +405,10 @@ func TestRequeuedAttemptIgnoresPreviousRemovalWhileNewEventIsLate(t *testing.T) 
 	// The user adds it again 23 seconds after that failure; no queue read
 	// observes the new attempt, so Forge tracks it provisionally with a
 	// skew-backdated start that would otherwise predate the old removal.
+	boundary, err := database.MergeQueueAttemptBoundary(t.Context(), repoID, 7)
+	require.NoError(err)
 	require.NoError(database.RecordProvisionalMergeQueueEntry(
-		t.Context(), repoID, 7, time.Date(2026, time.October, 14, 19, 5, 30, 0, time.UTC),
+		t.Context(), repoID, 7, time.Date(2026, time.October, 14, 19, 5, 30, 0, time.UTC), boundary,
 	))
 
 	// The new attempt leaves too, but GitHub has not recorded its removal
@@ -416,13 +418,83 @@ func TestRequeuedAttemptIgnoresPreviousRemovalWhileNewEventIsLate(t *testing.T) 
 	require.NoError(err)
 	assert.Nil(removal, "the previous attempt's removal must not settle the new attempt")
 
+	// The new attempt's own removal happens after the user queued it again.
 	gql.set(emptyQueue, `{"data":{"repository":{"pullRequest":{
 		"state":"OPEN",
-		"timelineItems":{"nodes":[{"createdAt":"2026-10-14T19:07:00Z","reason":"dequeued"}]}
+		"timelineItems":{"nodes":[{"createdAt":"`+boundary.Add(time.Minute).Format(time.RFC3339)+`","reason":"dequeued"}]}
 	}}}}`)
 	assert.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
 	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
 	require.NoError(err)
 	require.NotNil(removal)
 	assert.Equal("dequeued", removal.Reason)
+}
+
+func TestRequeueWhileEarlierDepartureIsUnresolvedIgnoresItsRemoval(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	// The first attempt leaves, and its removal lookup fails, so the
+	// departure is still pending when the user adds the pull request again.
+	gql.set(emptyQueue, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	boundary, err := database.MergeQueueAttemptBoundary(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.False(boundary.IsZero(), "a pending departure bounds the next attempt")
+	require.NoError(database.RecordProvisionalMergeQueueEntry(
+		t.Context(), repoID, 7, boundary.Add(-time.Minute), boundary,
+	))
+
+	// The new attempt leaves before GitHub records its removal; the only
+	// removal event GitHub reports belongs to the first attempt.
+	gql.set(emptyQueue, `{"data":{"repository":{"pullRequest":{
+		"state":"OPEN",
+		"timelineItems":{"nodes":[{"createdAt":"`+boundary.Add(-30*time.Second).Format(time.RFC3339)+`","reason":"branch_protection_failure"}]}
+	}}}}`)
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(removal, "an earlier attempt's removal must not settle the new attempt")
+}
+
+func TestEnqueueBookkeepingKeepsOutcomeObservedBeforeAcknowledgement(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	// Captured before the enqueue request: no earlier attempt is recorded.
+	boundary, err := database.MergeQueueAttemptBoundary(t.Context(), repoID, 7)
+	require.NoError(err)
+
+	// While GitHub is still confirming the enqueue, sync sees the attempt
+	// enter the queue, leave it, and resolves why.
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	gql.set(emptyQueue, `{"data":{"repository":{"pullRequest":{
+		"state":"OPEN",
+		"timelineItems":{"nodes":[{"createdAt":"2026-10-14T19:06:07Z","reason":"branch_protection_failure"}]}
+	}}}}`)
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	// The enqueue acknowledgement arrives afterwards.
+	require.NoError(database.RecordProvisionalMergeQueueEntry(
+		t.Context(), repoID, 7, time.Date(2026, time.October, 14, 19, 4, 15, 0, time.UTC), boundary,
+	))
+
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(entry, "an attempt sync already saw leave must not be re-tracked")
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal, "the observed outcome must survive the late acknowledgement")
+	assert.Equal("branch_protection_failure", removal.Reason)
 }

@@ -15,6 +15,7 @@ var errEdits = errors.New("edit correspondence unavailable")
 type editRun struct {
 	removed, added string
 	anchor         insertionAnchor
+	position       int32
 }
 
 type insertionAnchor struct {
@@ -35,7 +36,12 @@ func sameEdits(a, b []fileEdit) bool {
 		if a.binary {
 			return a.oldID == b.oldID && a.newID == b.newID
 		}
-		return slices.Equal(a.runs, b.runs)
+		return slices.EqualFunc(a.runs, b.runs, func(x, y editRun) bool {
+			if a.oldID == b.oldID && x.position != y.position {
+				return false
+			}
+			return x.removed == y.removed && x.added == y.added && x.anchor == y.anchor
+		})
 	})
 }
 
@@ -59,10 +65,13 @@ func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source,
 		return nil, errEdits
 	}
 	for i := range a {
-		if err := v.fileEdits(ctx, sourceBefore, source, &a[i]); err != nil {
+		// Equal base blobs give each hunk an exact location, even when its
+		// text repeats. Different bases still require unique correspondence.
+		sameBase := a[i].oldID == b[i].oldID
+		if err := v.fileEdits(ctx, sourceBefore, source, &a[i], sameBase); err != nil {
 			return nil, err
 		}
-		if err := v.fileEdits(ctx, before, after, &b[i]); err != nil {
+		if err := v.fileEdits(ctx, before, after, &b[i], sameBase); err != nil {
 			return nil, err
 		}
 	}
@@ -122,7 +131,7 @@ func editMode(mode string) bool {
 	return false
 }
 
-func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fileEdit) error {
+func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fileEdit, sameBase bool) error {
 	var old []byte
 	for _, side := range []struct{ mode, id string }{{f.oldMode, f.oldID}, {f.newMode, f.newID}} {
 		if side.mode == "000000" {
@@ -169,11 +178,11 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		}
 		if run.removed != "" {
 			// Offset-free correspondence is valid only for a unique occurrence.
-			if !uniqueBytes(old, []byte(run.removed)) {
+			if !sameBase && !uniqueBytes(old, []byte(run.removed)) {
 				return errEdits
 			}
 		} else {
-			run.anchor, err = insertionSite(old, h.OrigStartLine)
+			run.anchor, err = insertionSite(old, h.OrigStartLine, sameBase)
 			if err != nil {
 				return err
 			}
@@ -195,8 +204,9 @@ func uniqueBytes(text, part []byte) bool {
 }
 
 // An insertion has no removed bytes. Pin it to its adjacent original lines,
-// requiring that neighborhood to occur once, including file-edge identity.
-func insertionSite(old []byte, position int32) (insertionAnchor, error) {
+// requiring a unique neighborhood when the base blobs differ. Equal bases
+// instead use the exact hunk position, including file-edge identity.
+func insertionSite(old []byte, position int32, sameBase bool) (insertionAnchor, error) {
 	lines := bytes.SplitAfter(old, []byte{'\n'})
 	if len(lines[len(lines)-1]) == 0 {
 		lines = lines[:len(lines)-1]
@@ -212,7 +222,7 @@ func insertionSite(old []byte, position int32) (insertionAnchor, error) {
 	if i < len(lines) {
 		a.after = string(lines[i])
 	}
-	if len(old) > 0 && !uniqueBytes(old, []byte(a.before+a.after)) {
+	if !sameBase && len(old) > 0 && !uniqueBytes(old, []byte(a.before+a.after)) {
 		return insertionAnchor{}, errEdits
 	}
 	return a, nil
@@ -245,5 +255,5 @@ func editHunk(h *gitdiff.Hunk) (editRun, error) {
 	if oldLines != h.OrigLines || newLines != h.NewLines {
 		return editRun{}, errEdits
 	}
-	return editRun{removed: removed.String(), added: added.String()}, nil
+	return editRun{removed: removed.String(), added: added.String(), position: h.OrigStartLine}, nil
 }

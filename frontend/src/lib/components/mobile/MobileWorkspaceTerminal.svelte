@@ -372,7 +372,9 @@
     );
   }
 
-  function loadWorkspace() {
+  // Background reloads only refresh metadata for a terminal already on
+  // screen, so a transient failure keeps that terminal instead of replacing it.
+  function loadWorkspace({ background = false }: { background?: boolean } = {}) {
     const id = workspaceId;
     const activeHostKey = hostKey;
     return Effect.gen(function* () {
@@ -394,6 +396,7 @@
             handleWorkspaceMissing();
             return;
           }
+          if (background && workspace?.id === id && workspace.fleet_host_key === activeHostKey) return;
           loadError = failureMessage(failure, hostKey ? "Fleet workspace unavailable" : "Workspace unavailable");
         }),
       ),
@@ -747,6 +750,22 @@
     });
   });
 
+  // Item changes are skipped while the retained page is hidden.
+  let wasVisible = untrack(() => visible);
+  $effect(() => {
+    const shown = visible && !wasVisible;
+    wasVisible = visible;
+    if (!shown) return;
+    untrack(() => {
+      if (workspace?.id !== workspaceId) return;
+      appRuntime.runCommand(loadWorkspace({ background: true }), {
+        operation: "reload shown mobile workspace",
+        safeContext: { workspaceId, remote: Boolean(hostKey) },
+        onFailure: () => undefined,
+      });
+    });
+  });
+
   $effect(() => {
     if (!terminalOptionsOpen) return;
     return untrack(() => pushModalFrame("mobile-workspace-terminal-options", []));
@@ -830,12 +849,11 @@
                   return loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid);
                 }
                 // The linked-item pill colors by PR state, and the poll skips
-                // detail once ready. A hidden page reloads when shown again
-                // because a visibility change restarts this lifecycle.
+                // detail once ready. A hidden page reloads when shown again.
                 const itemMayHaveChanged = event._tag === "ItemDataChanged" ||
                   (event._tag === "Associated" && event.workspaceId === activeWorkspaceId);
                 return itemMayHaveChanged && visible
-                  ? loadWorkspace().pipe(Effect.forkChild, Effect.asVoid)
+                  ? loadWorkspace({ background: true }).pipe(Effect.forkChild, Effect.asVoid)
                   : Effect.void;
               })),
               { startImmediately: true },

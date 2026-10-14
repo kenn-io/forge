@@ -31,7 +31,10 @@ test("local builds keep the checked-in app version", () => {
 test("each later release has a higher Android version code", () => {
   const releases = ["0.4.0", "0.4.1", "0.5.0", "0.999.999", "1.0.0", "2100.0.0"];
   const codes = releases.map(androidVersionCode);
-  assert.deepEqual(codes, [...codes].sort((a, b) => a - b));
+  assert.deepEqual(
+    codes,
+    [...codes].sort((a, b) => a - b),
+  );
   assert.equal(new Set(codes).size, codes.length);
 });
 

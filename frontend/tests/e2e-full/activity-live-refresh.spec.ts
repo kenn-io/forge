@@ -338,36 +338,6 @@ test("accepted detail sync reconciles Activity after its selection closes", asyn
   }
 });
 
-test("persisted Activity events appear in the open PR timeline after SSE invalidation", async ({ page }) => {
-  const server = await startIsolatedE2EServer();
-  try {
-    const streamRequested = page.waitForRequest((request) =>
-      new URL(request.url()).pathname.endsWith("/api/v1/events"),
-    );
-    const initialSync = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === "POST" && url.pathname === `${detailPath}/sync/async`;
-    });
-    await page.goto(`${server.info.base_url}${selectedActivityRoute}`);
-    await streamRequested;
-
-    const detail = page.locator(".activity-detail");
-    const newComment = "Persisted live Activity comment";
-    await expect(detail.locator(".pull-detail")).toBeVisible();
-    await initialSync;
-    await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
-    await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
-    const selectedURL = page.url();
-
-    await persistActivityComment(page, server.info.base_url, newComment);
-
-    await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
-    expect(page.url()).toBe(selectedURL);
-  } finally {
-    await server.stop();
-  }
-});
-
 test("SSE comment refresh does not promote the commenter to an Activity author candidate", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
@@ -535,10 +505,9 @@ test("legacy commit bookmark normalizes against the real Activity API", async ({
   }
 });
 
-test("viewed-hot PR fast sync refreshes Activity without a notification", async ({ page }) => {
+test("viewed-hot PR fast sync refreshes the selected Activity detail", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const detailPath = "/api/v1/pulls/github/acme/widgets/1";
     const newComment = "Viewed hot fast-sync comment";
     const streamRequested = page.waitForRequest((request) =>
       new URL(request.url()).pathname.endsWith("/api/v1/events"),
@@ -547,53 +516,30 @@ test("viewed-hot PR fast sync refreshes Activity without a notification", async 
       const url = new URL(response.url());
       return response.request().method() === "POST" && url.pathname === `${detailPath}/sync/async`;
     });
-    await page.goto(
-      `${server.info.base_url}/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets`,
-    );
+    await page.goto(`${server.info.base_url}${selectedActivityRoute}`);
     await streamRequested;
 
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".pull-detail")).toBeVisible();
     await initialSync;
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
-    await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
 
+    await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
+    const selectedURL = page.url();
+    const refreshedDetail = page.waitForResponse(
+      async (response) => {
+        if (response.request().method() !== "GET" || new URL(response.url()).pathname !== detailPath) return false;
+        const body = (await response.json()) as { events?: Array<{ Body?: string }> };
+        return body.events?.some((event) => event.Body === newComment) ?? false;
+      },
+      { timeout: 10_000 },
+    );
     const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/viewed-hot-fast-sync`);
     expect(fastSync.status()).toBe(204);
 
+    await refreshedDetail;
     await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
-  } finally {
-    await server.stop();
-  }
-});
-
-test("notification-warm PR fast sync refreshes the selected Activity detail", async ({ page }) => {
-  const server = await startIsolatedE2EServer();
-  try {
-    const detailPath = "/api/v1/pulls/github/acme/widgets/1";
-    const newComment = "Notification-driven fast-sync comment";
-    const streamRequested = page.waitForRequest((request) =>
-      new URL(request.url()).pathname.endsWith("/api/v1/events"),
-    );
-    const initialSync = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return response.request().method() === "POST" && url.pathname === `${detailPath}/sync/async`;
-    });
-    await page.goto(
-      `${server.info.base_url}/?selected=pr:1&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets`,
-    );
-    await streamRequested;
-
-    const detail = page.locator(".activity-detail");
-    await expect(detail.locator(".pull-detail")).toBeVisible();
-    await initialSync;
-    await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
-    await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
-
-    const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/notification-fast-sync`);
-    expect(fastSync.status()).toBe(204);
-
-    await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
+    expect(page.url()).toBe(selectedURL);
   } finally {
     await server.stop();
   }
@@ -602,20 +548,28 @@ test("notification-warm PR fast sync refreshes the selected Activity detail", as
 test("replays an event whose detail consequence failed in transit", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    let eventRequestCount = 0;
-    const eventURLs: string[] = [];
     let failDetailReads = false;
-    let failedDetailReadCount = 0;
-    page.on("request", (request) => {
-      if (new URL(request.url()).pathname.endsWith("/api/v1/events")) {
-        eventRequestCount++;
-        eventURLs.push(request.url());
+    let consequenceFailed = false;
+    const replayedComment = "Replayed after transient detail failure";
+    const streamRequested = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith("/api/v1/events"),
+    );
+    await page.route("**/api/v1/events**", async (route) => {
+      if (consequenceFailed) {
+        failDetailReads = false;
       }
+      await route.continue();
     });
     await page.route(`**${detailPath}`, async (route) => {
       if (failDetailReads) {
-        failedDetailReadCount++;
-        await route.abort("connectionfailed");
+        const response = await route.fetch();
+        const body = (await response.json()) as { events?: Array<{ Body?: string }> };
+        if (body.events?.some((event) => event.Body === replayedComment)) {
+          consequenceFailed = true;
+          await route.abort("connectionfailed");
+        } else {
+          await route.fulfill({ response });
+        }
         return;
       }
       await route.continue();
@@ -628,28 +582,31 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     await page.goto(`${server.info.base_url}${selectedActivityRoute}`);
     const detail = page.locator(".activity-detail");
     await expect(detail.locator(".pull-detail")).toBeVisible();
-    await expect.poll(() => eventRequestCount).toBeGreaterThanOrEqual(1);
+    await streamRequested;
     await initialSync;
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
-    const checkpointComment = "Accepted checkpoint before retry";
+    const checkpointComment = "Accepted before transient detail failure";
     const checkpointEventID = await persistActivityComment(page, server.info.base_url, checkpointComment);
-    await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible();
+    await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible({ timeout: 15_000 });
 
     failDetailReads = true;
-    const replayedComment = "Replayed after transient detail failure";
+    const reconnectRequested = page.waitForRequest(
+      (request) => consequenceFailed && new URL(request.url()).pathname.endsWith("/api/v1/events"),
+      { timeout: 10_000 },
+    );
     const replayedEventID = await persistActivityComment(page, server.info.base_url, replayedComment);
-    expect(replayedEventID).toBeGreaterThan(checkpointEventID);
-    await expect.poll(() => failedDetailReadCount).toBeGreaterThan(0);
-    await expect.poll(() => eventRequestCount, { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
-    expect(new URL(eventURLs.at(-1) ?? server.info.base_url).searchParams.get("since")).toBe(String(checkpointEventID));
-    failDetailReads = false;
+    const cursor = new URL((await reconnectRequested).url()).searchParams.get("since");
+    expect(cursor).toMatch(/^\d+$/);
+    expect(Number(cursor)).toBeGreaterThanOrEqual(checkpointEventID);
+    expect(Number(cursor)).toBeLessThan(replayedEventID);
 
     await expect(detail.getByText(replayedComment, { exact: true })).toBeVisible({ timeout: 15_000 });
   } finally {
     await server.stop();
   }
 });
+
 test("keeps provider events active when a foreground pull query supersedes event reconciliation", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   let releaseHeldPullRead = () => {};

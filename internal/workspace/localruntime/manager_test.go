@@ -1457,12 +1457,20 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 }
 
 func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
-	for _, message := range []string{"can't find session: nope", "server exited unexpectedly"} {
-		t.Run(message, func(t *testing.T) {
+	for _, tc := range []struct {
+		message string
+		status  int
+	}{
+		{message: "can't find session: nope", status: 1},
+		{message: "server exited unexpectedly", status: 1},
+		{message: "wrapper: server exited unexpectedly", status: 1},
+		{message: "server exited unexpectedly", status: 2},
+	} {
+		t.Run(fmt.Sprintf("%s/status%d", tc.message, tc.status), func(t *testing.T) {
 			tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
 			require.NoError(t, os.WriteFile(
 				tmuxPath,
-				fmt.Appendf(nil, "#!/bin/sh\necho %s >&2\nexit 1\n", shellquote.Join(message)),
+				fmt.Appendf(nil, "#!/bin/sh\necho %s >&2\nexit %d\n", shellquote.Join(tc.message), tc.status),
 				0o755,
 			))
 			done := make(chan struct{})
@@ -1482,7 +1490,11 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 
 			err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
 
-			require.NoError(t, err)
+			if tc.status == 1 {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tc.message)
+			}
 		})
 	}
 }

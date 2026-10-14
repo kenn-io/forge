@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -225,12 +224,14 @@ func TestOwnerPostExitAttachReplaysOutput(t *testing.T) {
 	pidPath := filepath.Join(t.TempDir(), "pid")
 	session := "kenn-forge-post-exit-replay"
 	done := make(chan error, 1)
+	ownerExited := make(chan struct{})
 	go func() {
 		done <- RunOwner(t.Context(), Options{
 			Root:    root,
 			Session: session,
 			Cwd:     t.TempDir(),
 			Command: []string{"sh", "-c", `printf '%s' "$$" > "$1"; printf ready; IFS= read -r line; printf final-output; exit 9`, "sh", pidPath},
+			onExit:  func() { close(ownerExited) },
 		})
 	}()
 	client := &Client{Root: root}
@@ -267,10 +268,11 @@ func TestOwnerPostExitAttachReplaysOutput(t *testing.T) {
 	require.NoError(json.NewDecoder(conn).Decode(&response))
 	require.True(response.OK)
 	require.NoError(conn.Close())
-	require.Eventually(func() bool {
-		err := process.Signal(syscall.Signal(0))
-		return errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone)
-	}, 2*time.Second, time.Millisecond, "the child must be reaped before attaching for replay")
+	select {
+	case <-ownerExited:
+	case <-time.After(2 * time.Second):
+		require.FailNow("owner did not complete its exit transition before replay")
+	}
 
 	attach, err := client.Attach(t.Context(), session, ptysize.Geometry{Cols: 120, Rows: 30})
 	require.NoError(err)

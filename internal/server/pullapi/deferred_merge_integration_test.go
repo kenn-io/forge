@@ -124,6 +124,10 @@ type deferredMergeTestProvider struct {
 	ciStarted     chan struct{}
 	ciStartedOnce sync.Once
 	ciRelease     chan struct{}
+	// mergeQueue advertises merge queue enqueueing; enqueueCh records each
+	// enqueue request.
+	mergeQueue bool
+	enqueueCh  chan int
 }
 
 type deferredMergeTestMergeCall struct {
@@ -137,7 +141,20 @@ type deferredMergeTestMergeCall struct {
 func (p *deferredMergeTestProvider) Capabilities() platform.Capabilities {
 	caps := p.deferredMergeProviderBase.Capabilities()
 	caps.MergeMutation = true
+	caps.MergeQueueMutation = p.mergeQueue
 	return caps
+}
+
+func (p *deferredMergeTestProvider) EnqueueMergeRequest(
+	_ context.Context,
+	_ platform.RepoRef,
+	number int,
+	_ string,
+) (platform.MergeResult, error) {
+	if p.enqueueCh != nil {
+		p.enqueueCh <- number
+	}
+	return platform.MergeResult{Queued: true, Message: "Pull request was added to the merge queue."}, nil
 }
 
 func (p *deferredMergeTestProvider) ListCIChecks(
@@ -1961,4 +1978,91 @@ func TestImmediateMergeRecordsMergedActor(t *testing.T) {
 	require.Len(mergedEvents, 1,
 		"detail must not synthesize a second merge beside an authored event")
 	require.Equal("merge-admin", mergedEvents[0].Author)
+}
+
+func TestImmediateEnqueueSupersedesQueuedDeferredMerge(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		},
+		mergeCh:    make(chan deferredMergeTestMergeCall, 2),
+		mergeQueue: true,
+		enqueueCh:  make(chan int, 2),
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	)
+	_, err := database.ReplaceMergeQueue(ctx, repoID, db.MergeQueueSnapshot{
+		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: now,
+	})
+	require.NoError(err)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.NoError(err)
+	require.Equal(202, deferResp.StatusCode, string(deferResp.Body))
+
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.NoError(err)
+	require.Equal(200, mergeResp.StatusCode, string(mergeResp.Body))
+	require.NotNil(mergeResp.JSON200)
+	require.True(*mergeResp.JSON200.Queued)
+	require.Equal(7, <-provider.enqueueCh)
+
+	detailResp, err := client.HTTP.GetPullOnHostWithResponse(ctx, &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}})
+	require.NoError(err)
+	require.Equal(200, detailResp.StatusCode, string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.False(detailResp.JSON200.DeferredMergePending,
+		"the merge queue owns the merge once the pull request is enqueued")
+	require.NotNil(detailResp.JSON200.MergeQueue,
+		"an enqueue the queue read has not observed yet is tracked provisionally")
+	require.EqualValues(0, detailResp.JSON200.MergeQueue.Position)
+
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	for {
+		select {
+		case ev := <-events:
+			require.NotEqual("deferred_merge_completed", ev.Event.Type)
+		case <-deadline:
+			require.Empty(provider.enqueueCh, "the superseded worker must not enqueue again")
+			require.Empty(provider.mergeCh)
+			return
+		}
+	}
 }

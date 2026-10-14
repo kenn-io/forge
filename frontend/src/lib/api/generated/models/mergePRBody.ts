@@ -7,6 +7,7 @@ export interface MergePRBody {
   readonly $schema?: string;
   merged: boolean;
   message: string;
+  queued?: boolean;
   sha: string;
   workspace_cleanup_pending?: boolean;
   workspace_cleanup_warning?: string;

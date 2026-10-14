@@ -700,6 +700,30 @@ describe("app store event wiring", () => {
     expect(onNotification).not.toHaveBeenCalled();
   });
 
+  it("reports a deferred merge that joined the merge queue as a notification, not a failure", async () => {
+    const onError = vi.fn();
+    const onNotification = vi.fn();
+    compose({ onError, onNotification });
+
+    await acceptEvent(
+      captured.store?.options.onDeferredMergeCompleted?.({
+        provider: "github",
+        platform_host: "github.com",
+        repo_path: "acme/widget",
+        owner: "acme",
+        name: "widget",
+        number: 42,
+        head_sha: "2222222",
+        status: "queued",
+        merged: false,
+        completed_at: "2026-07-10T15:00:00Z",
+      }),
+    );
+
+    expect(onNotification).toHaveBeenCalledWith("acme/widget#42 was added to the merge queue after CI passed.");
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   it("routes merged workspace cleanup failures through the warning callback", async () => {
     const onWarning = vi.fn();
     const onNotification = vi.fn();

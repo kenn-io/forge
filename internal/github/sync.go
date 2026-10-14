@@ -872,7 +872,10 @@ type Syncer struct {
 	// onMergedActorRepaired fires after scheduled reconciliation persists an
 	// authored merge event so consumers can refresh the affected detail.
 	onMergedActorRepaired func(context.Context, int64, int)
-	onStatusChange        func(status *SyncStatus)
+	// onMergeQueueChanged fires for each pull request whose merge queue
+	// membership, position, or state changed.
+	onMergeQueueChanged func(context.Context, int64, int)
+	onStatusChange      func(status *SyncStatus)
 	// onNotificationSyncComplete fires after each notification sync run
 	// (periodic, manual, or sidecar) so the server can broadcast the same
 	// data-change signal the normal sync uses. Notification sync can insert
@@ -2040,6 +2043,16 @@ func (s *Syncer) SetOnMergedActorRepaired(
 	s.onMergedActorRepaired = fn
 }
 
+// SetOnMergeQueueChanged registers a callback invoked for each pull request
+// whose merge queue membership, position, or state changed. RunOnce can
+// process repositories in parallel, so the callback must be concurrency-safe.
+// Register it before Start or RunOnce.
+func (s *Syncer) SetOnMergeQueueChanged(
+	fn func(context.Context, int64, int),
+) {
+	s.onMergeQueueChanged = fn
+}
+
 // SetParallelism sets the maximum number of repos synced
 // concurrently in RunOnce. Values <= 0 are clamped to 1
 // (sequential).
@@ -2689,6 +2702,13 @@ func (s *Syncer) MergeMutator(
 	host string,
 ) (platform.MergeMutator, error) {
 	return s.directClients.MergeMutator(kind, canonicalRepoHost(host))
+}
+
+func (s *Syncer) MergeQueueMutator(
+	kind platform.Kind,
+	host string,
+) (platform.MergeQueueMutator, error) {
+	return s.directClients.MergeQueueMutator(kind, canonicalRepoHost(host))
 }
 
 func (s *Syncer) WorkflowApprovalMutator(
@@ -3487,6 +3507,9 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
+	// Only pull requests this pass admitted may refresh their merge queue,
+	// so skipped buckets keep their cadence.
+	var admitted []WatchedMR
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -3523,6 +3546,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		admitted = append(admitted, mr)
 		probe, due := s.beginRepositoryFeatureProbe(
 			ctx, repo, platform.RepositoryFeatureMergeRequests,
 		)
@@ -3568,6 +3592,10 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		} else {
 			probe.abandon()
 		}
+		syncedAny = true
+	}
+
+	if s.refreshWatchedMergeQueues(ctx, admitted) {
 		syncedAny = true
 	}
 
@@ -6349,6 +6377,12 @@ func (s *Syncer) indexSyncRepo(
 			ctx, repo, repoID, nativeStackHints, prListUnchanged,
 		)
 		s.nativeStackResults.Store(repoFailKey(repo), nativeResult)
+	}
+	// The queue read does not depend on the pull list succeeding, so a
+	// partial pull failure still observes the queue.
+	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
+		disabledScope&failMR == 0 {
+		s.RefreshMergeQueue(ctx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.

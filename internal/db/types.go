@@ -1245,6 +1245,65 @@ type StackPlacement struct {
 	Size     int
 }
 
+// MergeQueueEntry is one pull request's position in its repository's
+// provider merge queue, as last observed by sync.
+type MergeQueueEntry struct {
+	Number   int
+	Position int
+	// State is the provider's queue entry state, such as QUEUED,
+	// AWAITING_CHECKS, MERGEABLE, UNMERGEABLE, or LOCKED.
+	State      string
+	EnqueuedAt time.Time
+	// EstimatedTimeToMerge is nil when the provider has no estimate.
+	EstimatedTimeToMerge *time.Duration
+	ObservedAt           time.Time
+}
+
+// MergeQueueSnapshot is one observation of a repository's default-branch
+// merge queue. Configured is false when the branch has no merge queue, in
+// which case Entries is empty.
+type MergeQueueSnapshot struct {
+	Configured bool
+	Branch     string
+	// MergeMethod is the queue's configured merge method: merge, squash,
+	// or rebase.
+	MergeMethod string
+	Entries     []MergeQueueEntry
+	ObservedAt  time.Time
+}
+
+// RepoMergeQueue is a repository's stored merge queue configuration.
+type RepoMergeQueue struct {
+	Branch      string
+	MergeMethod string
+	ObservedAt  time.Time
+}
+
+// MergeQueueChanges reports what a merge queue replacement changed. Changed
+// holds every pull request whose queue membership, position, or state
+// changed; Departed holds the entries that left the queue, each now recorded
+// as a pending departure.
+type MergeQueueChanges struct {
+	Changed  []int
+	Departed []MergeQueueEntry
+}
+
+// MergeQueueDeparture is a pull request that left the merge queue and whose
+// removal reason has not been resolved from the provider yet.
+type MergeQueueDeparture struct {
+	Number     int
+	EnqueuedAt time.Time
+	DepartedAt time.Time
+}
+
+// MergeQueueRemoval records that an open pull request left the merge queue
+// without merging, with the provider's reason.
+type MergeQueueRemoval struct {
+	Number    int
+	RemovedAt time.Time
+	Reason    string
+}
+
 // GitHubNativeStack is a cached GitHub stack resource. It remains separate
 // from Stack, which is the provider-neutral projection served to the UI.
 type GitHubNativeStack struct {

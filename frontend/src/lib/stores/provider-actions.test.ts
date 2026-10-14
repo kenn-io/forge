@@ -6,6 +6,7 @@ import type { ProblemBody } from "../api/problems.js";
 import type { GeneratedClient } from "../api/generated-api.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import { createDetailStore as createRuntimeDetailStore } from "./detail.svelte.js";
+import { dismissFlash, getFlashes } from "./flash.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -330,6 +331,44 @@ describe("provider action mutations", () => {
       _tag: "Merged",
       cleanupWarning: "workspace has uncommitted changes",
     });
+  });
+
+  it("treats a merge response that added the pull request to the merge queue as success", async () => {
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: detail() })),
+        POST: vi.fn().mockResolvedValue({
+          data: {
+            merged: false,
+            queued: true,
+            sha: "",
+            message: "Added to the merge queue",
+          },
+          response: new Response(null, { status: 200 }),
+        }),
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    const onSuccess = vi.fn();
+    const onFailure = vi.fn();
+    const settled = Promise.withResolvers<void>();
+
+    store.mergePull(routeRef, 1, { commit_message: "", commit_title: "Merge pull request", method: "squash" }, false, {
+      onSuccess,
+      onFailure,
+      onSettled: settled.resolve,
+    });
+    await settled.promise;
+
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(onSuccess).toHaveBeenCalledWith({ _tag: "Enqueued" });
+    expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
+      ["Added octo/repo #1 to the merge queue.", "success"],
+    ]);
   });
 
   it("reports a provider response that did not merge as a failed merge", async () => {

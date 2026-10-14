@@ -54,6 +54,8 @@
   import MergeModal from "./MergeModal.svelte";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
+  import MergeQueueChip from "./MergeQueueChip.svelte";
+  import { mergeQueueEntryDescription, mergeQueueRemovalReason } from "./merge-queue.js";
   import {
     runOpenMerge,
     type PRDetailActionInput,
@@ -64,6 +66,7 @@
   import ClockIcon from "@lucide/svelte/icons/clock";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
+  import ListOrderedIcon from "@lucide/svelte/icons/list-ordered";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
   import PackagePlusIcon from "@lucide/svelte/icons/package-plus";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
@@ -216,6 +219,7 @@
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
+    merge_queue_mutation: false,
     review_mutation: true,
     workflow_approval: true,
     ready_for_review: true,
@@ -1023,6 +1027,12 @@
     detailStore.getDetail()?.deferred_merge_pending ?? false,
   );
   const mergePending = $derived(!stalePR && detailStore.isPullMerging(mutationRef, number));
+  // GitHub merge queue state. The entry is present while the PR waits in
+  // the queue; the removal persists (server state) after the queue drops
+  // it without merging; the target means Merge enqueues instead of merging.
+  const mergeQueueEntry = $derived(detailStore.getDetail()?.merge_queue);
+  const mergeQueueRemoval = $derived(detailStore.getDetail()?.merge_queue_removal);
+  const mergeQueueTarget = $derived(detailStore.getDetail()?.merge_queue_target);
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
     if (!stack) return undefined;
@@ -1238,6 +1248,33 @@
       return "Rebase";
     }
     return "Merge";
+  }
+
+  type MergeButtonPresentation = {
+    label: string;
+    shortLabel: string;
+    icon: "merge" | "deferred" | "queue";
+    hasMenu: boolean;
+  };
+
+  // Shared by the live merge button and its FitStages measurement copy so
+  // both always measure the same labels.
+  function mergeButtonPresentation(settings: RepoSettings): MergeButtonPresentation {
+    if (mergeQueueEntry) {
+      return { label: "In merge queue", shortLabel: "Queued", icon: "queue", hasMenu: false };
+    }
+    if (deferredMergePending) {
+      return { label: "Merge queued", shortLabel: "Queued", icon: "deferred", hasMenu: false };
+    }
+    if (mergeQueueTarget) {
+      return { label: "Add to merge queue", shortLabel: "Queue", icon: "queue", hasMenu: false };
+    }
+    return {
+      label: mergeActionLabel(settings),
+      shortLabel: mergeActionShortLabel(settings),
+      icon: "merge",
+      hasMenu: mergeActionHasMenu(settings),
+    };
   }
 
   function hasMergeConflicts(
@@ -2497,6 +2534,7 @@
           expanded={expandedPanel === "merge"}
           ontoggle={(next) => { expandedPanel = next ? "merge" : null; }}
         />
+        <MergeQueueChip entry={detail.merge_queue} removal={detail.merge_queue_removal} />
         <StackStatus
           {owner}
           {name}
@@ -2694,8 +2732,11 @@
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
           {@const mergeSettings = repoSettings}
+          {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = midStackMergeBlocked
+          {@const mergeTitle = mergeQueueEntry
+            ? mergeQueueEntryDescription(mergeQueueEntry)
+            : midStackMergeBlocked
             ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
             : mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
@@ -2706,39 +2747,39 @@
               : mergeOpUnavailable
                 ? mergeGate.reason
                 : deferredMergePending
-                  ? "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : ""}
+                  ? mergeQueueTarget
+                    ? "A background request is waiting to add this pull request to the merge queue if its pending CI checks pass. Click to add it now; close the pull request to cancel."
+                    : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
+                  : mergeQueueTarget
+                    ? `${mergeQueueTarget.branch} uses a merge queue; this adds the pull request to the queue`
+                    : ""}
           <Button
-            class={deferredMergePending ? "btn--merge btn--merge-queued" : "btn--merge"}
-            disabled={stalePR || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            class={mergeQueueEntry
+              ? "btn--merge btn--merge-in-queue"
+              : deferredMergePending
+                ? "btn--merge btn--merge-queued"
+                : "btn--merge"}
+            disabled={stalePR || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              if (stalePR || mergeQueueEntry || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"
-            surface={deferredMergePending ? "soft" : "solid"}
+            surface={mergeQueueEntry || deferredMergePending ? "soft" : "solid"}
             size="sm"
-            ariaLabel={compactLabels
-              ? deferredMergePending
-                ? "Merge queued"
-                : mergeActionLabel(mergeSettings)
-              : undefined}
-            label={compactLabels
-              ? deferredMergePending
-                ? "Queued"
-                : mergeActionShortLabel(mergeSettings)
-              : deferredMergePending
-                ? "Merge queued"
-                : mergeActionLabel(mergeSettings)}
+            ariaLabel={compactLabels ? mergeButton.label : undefined}
+            label={compactLabels ? mergeButton.shortLabel : mergeButton.label}
           >
-            {#if deferredMergePending}
+            {#if mergeButton.icon === "deferred"}
               <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+            {:else if mergeButton.icon === "queue"}
+              <ListOrderedIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {:else}
               <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/if}
             {#snippet trailing()}
-              {#if !deferredMergePending && mergeActionHasMenu(mergeSettings)}
+              {#if mergeButton.hasMenu}
                 <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
               {/if}
             {/snippet}
@@ -2988,23 +3029,20 @@
             {@const mergeOp = repoOperations?.merge_pr}
             {#if repoSettings && (mergeOp !== undefined
                 || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
+              {@const measuredMergeButton = mergeButtonPresentation(repoSettings)}
               <Button
                 size="sm"
-                label={compactLabels
-                  ? deferredMergePending
-                    ? "Queued"
-                    : mergeActionShortLabel(repoSettings)
-                  : deferredMergePending
-                    ? "Merge queued"
-                    : mergeActionLabel(repoSettings)}
+                label={compactLabels ? measuredMergeButton.shortLabel : measuredMergeButton.label}
               >
-                {#if deferredMergePending}
+                {#if measuredMergeButton.icon === "deferred"}
                   <ClockIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+                {:else if measuredMergeButton.icon === "queue"}
+                  <ListOrderedIcon size="14" strokeWidth="2.2" aria-hidden="true" />
                 {:else}
                   <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
                 {/if}
                 {#snippet trailing()}
-                  {#if !deferredMergePending && repoSettings !== null && mergeActionHasMenu(repoSettings)}
+                  {#if measuredMergeButton.hasMenu}
                     <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
                   {/if}
                 {/snippet}
@@ -3221,6 +3259,12 @@
           </div>
           {/if}
           {#if hasPrimaryPRActions}
+            {#if mergeQueueRemoval && !mergeQueueEntry}
+              <p class="merge-queue-removal-notice" role="status">
+                Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
+                Fix the problem, then add it to the queue again.
+              </p>
+            {/if}
             {#if stateConflict === "stale_state"}
               <span class="action-error action-error--state" role="status">
                 The head commit changed since this pull request was reviewed. Re-review the latest changes before approving or merging.
@@ -3305,6 +3349,9 @@
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           ciFailed={ciStatusHasFailed(p.CIStatus)}
           alreadyQueued={deferredMergePending}
+          mergeQueue={d.merge_queue_target
+            ? { branch: d.merge_queue_target.branch, mergeMethod: d.merge_queue_target.merge_method }
+            : undefined}
           workspaceId={d.workspace?.id}
           stackNote={midStackBlocker
             ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
@@ -4213,6 +4260,19 @@
   .action-error--state {
     display: block;
     margin-top: 6px;
+  }
+
+  .merge-queue-removal-notice {
+    box-sizing: border-box;
+    margin: 6px 0 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid color-mix(in srgb, var(--accent-red) 40%, var(--border-default));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-red) 7%, var(--bg-surface));
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   .state-conflict-recovery {

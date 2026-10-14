@@ -54,6 +54,12 @@
     workspaceId?: string | undefined;
     /** Stack context shown when merging a pull request. */
     stackNote?: string | undefined;
+    /**
+     * Set when the base branch uses a merge queue: submitting adds the
+     * pull request to the queue, which merges it with its own configured
+     * method, so method, commit text, and workspace cleanup do not apply.
+     */
+    mergeQueue?: { branch: string; mergeMethod: string } | undefined;
     onclose: () => void;
     onstateconflict?: ((
       reason: Exclude<ConflictReason, "conflict">,
@@ -72,12 +78,18 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     ciFailed = false,
-    alreadyQueued = false, workspaceId, stackNote,
+    alreadyQueued = false, workspaceId, stackNote, mergeQueue,
     onclose, onstateconflict,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
   const offerDeferredMerge = $derived(deferUntilChecksPass && !alreadyQueued);
+
+  const queueMethodLabels: Record<string, string> = {
+    merge: "a merge commit",
+    squash: "squash and merge",
+    rebase: "rebase and merge",
+  };
 
   // Captured once when the modal opens: a background detail refresh
   // must not silently rebind the pin to a head the user has not seen
@@ -137,7 +149,8 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
+      // Queue merges never delete the workspace at enqueue time.
+      ...(!mergeQueue && workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
@@ -187,6 +200,9 @@
   }
 
   function primaryButtonLabel(): string {
+    if (mergeQueue) {
+      return offerDeferredMerge ? "Add to merge queue after CI is complete" : "Add to merge queue";
+    }
     if (offerDeferredMerge) return "Merge after CI is complete";
     return ciFailed ? "Merge Anyway" : methodLabel();
   }
@@ -194,7 +210,7 @@
 </script>
 
 <Modal
-  title="Merge Pull Request"
+  title={mergeQueue ? "Add to Merge Queue" : "Merge Pull Request"}
   width="min(560px, 92vw)"
   maxWidth="min(560px, 92vw)"
   {onclose}
@@ -203,7 +219,14 @@
       {#if stackNote}
         <p class="stack-note">{stackNote}</p>
       {/if}
-      {#if methods.length > 1}
+      {#if mergeQueue}
+        <p class="merge-queue-note">
+          <code>{mergeQueue.branch}</code> uses a merge queue. This adds the pull request
+          to the queue, which merges it using
+          {queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod} once its
+          checks pass.
+        </p>
+      {:else if methods.length > 1}
         <div class="field" role="group" aria-label="Merge method">
           <span class="field-label">Merge method</span>
           <div class="method-options">
@@ -225,54 +248,70 @@
         </div>
       {/if}
 
-      <div class="field">
-        <label class="field-label" for="commit-title">
-          Commit title
-        </label>
-        <input
-          id="commit-title"
-          class="field-input"
-          type="text"
-          bind:value={commitTitle}
-        />
-      </div>
+      {#if !mergeQueue}
+        <div class="field">
+          <label class="field-label" for="commit-title">
+            Commit title
+          </label>
+          <input
+            id="commit-title"
+            class="field-input"
+            type="text"
+            bind:value={commitTitle}
+          />
+        </div>
 
-      <div class="field">
-        <label class="field-label" for="commit-message">
-          Commit message
-        </label>
-        <textarea
-          id="commit-message"
-          class="field-textarea"
-          bind:value={commitMessage}
-          rows={8}
-        ></textarea>
-      </div>
+        <div class="field">
+          <label class="field-label" for="commit-message">
+            Commit message
+          </label>
+          <textarea
+            id="commit-message"
+            class="field-textarea"
+            bind:value={commitMessage}
+            rows={8}
+          ></textarea>
+        </div>
 
-      {#if workspaceId}
-        <Checkbox
-          checked={deleteWorkspaceAfterMerge}
-          label="Delete workspace after merge"
-          onchange={(checked) => {
-            deleteWorkspaceAfterMerge = checked;
-          }}
-        />
+        {#if workspaceId}
+          <Checkbox
+            checked={deleteWorkspaceAfterMerge}
+            label="Delete workspace after merge"
+            onchange={(checked) => {
+              deleteWorkspaceAfterMerge = checked;
+            }}
+          />
+        {/if}
       {/if}
 
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
-          CI has failed. Merging now will include changes with failing checks.
+          {#if mergeQueue}
+            CI has failed. The merge queue may remove the pull request if required checks fail.
+          {:else}
+            CI has failed. Merging now will include changes with failing checks.
+          {/if}
         </div>
       {/if}
       {#if alreadyQueued}
         <div class="ci-defer-note">
-          A merge is already queued; it runs only if the CI checks that were
-          pending when it was queued pass. Merging here merges immediately
-          instead.
+          {#if mergeQueue}
+            A request is already waiting to add this pull request to the merge
+            queue if the CI checks that were pending when it was made pass.
+            Adding it here adds it to the queue immediately instead.
+          {:else}
+            A merge is already queued; it runs only if the CI checks that were
+            pending when it was queued pass. Merging here merges immediately
+            instead.
+          {/if}
         </div>
       {:else if deferUntilChecksPass}
         <div class="ci-defer-note">
-          CI is still running. This will merge only if the checks that are pending now pass.
+          {#if mergeQueue}
+            CI is still running. This adds the pull request to the merge queue only if the checks that are pending now pass.
+          {:else}
+            CI is still running. This will merge only if the checks that are pending now pass.
+          {/if}
         </div>
       {/if}
 
@@ -310,7 +349,7 @@
         tone="success"
         surface="soft"
       >
-        Merge Anyway
+        {mergeQueue ? "Add to queue now" : "Merge Anyway"}
       </Button>
     {/if}
   {/snippet}
@@ -332,6 +371,18 @@
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.35;
+  }
+
+  .merge-queue-note {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+  }
+
+  .merge-queue-note code {
+    font-family: var(--font-mono);
+    color: var(--text-primary);
   }
 
   .head-pin-note {

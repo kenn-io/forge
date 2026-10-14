@@ -198,6 +198,20 @@ type MergeMutator interface {
 	) (MergeResult, error)
 }
 
+// MergeQueueMutator adds a merge request to the provider's merge queue for
+// its target branch. The queue merges it with the queue's configured method
+// once the queue's own checks pass, so no commit title, message, or method
+// applies. expectedHeadSHA binds the request like MergeMergeRequest. A
+// successful result reports Queued unless the provider merged it outright.
+type MergeQueueMutator interface {
+	EnqueueMergeRequest(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		expectedHeadSHA string,
+	) (MergeResult, error)
+}
+
 type WorkflowApprovalMutator interface {
 	ApproveWorkflow(ctx context.Context, ref RepoRef, runID string) error
 }

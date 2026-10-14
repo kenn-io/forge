@@ -147,6 +147,45 @@ it.layer(ProviderEventsTest)("workflow run activity", (it) => {
   );
 });
 
+it.layer(ProviderEventsTest)("deferred merge completion", (it) => {
+  it.effect("decodes a deferred merge that added the pull request to the merge queue", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const events = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onState: () => undefined,
+          onEvent: (event) => Queue.offer(events, event).pipe(Effect.asVoid),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+      emitFrame(
+        source,
+        "deferred_merge_completed",
+        {
+          provider: "github",
+          platform_host: "github.com",
+          repo_path: "acme/widget",
+          owner: "acme",
+          name: "widget",
+          number: 42,
+          head_sha: "2222222",
+          status: "queued",
+          merged: false,
+          completed_at: "2026-07-10T15:00:00Z",
+        },
+        "1",
+      );
+      const event = yield* Queue.take(events);
+      assert.strictEqual(event.type, "deferred_merge_completed");
+      if (event.type === "deferred_merge_completed") assert.strictEqual(event.payload.status, "queued");
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
 it.layer(ProviderEventsTest)("workspace lifecycle events", (it) => {
   it.effect("decodes workspace creation, status, and confirmed deletion events", () =>
     Effect.gen(function* () {

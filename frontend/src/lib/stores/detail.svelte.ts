@@ -109,8 +109,12 @@ export interface ProviderActionCallbacks extends MutationCallbacks {
   readonly onProblem?: (problem: ProblemBody) => void;
 }
 
+// "Queued" acknowledges a deferred (merge after CI) request; "Enqueued"
+// means the provider added the pull request to its merge queue, which
+// merges it later. Neither implies the provider merge completed.
 export type MergePullOutcome =
   | { readonly _tag: "Queued" }
+  | { readonly _tag: "Enqueued" }
   | { readonly _tag: "Merged"; readonly cleanupWarning?: string };
 
 export type MergePullCallbacks = Omit<ProviderActionCallbacks, "onSuccess"> & {
@@ -878,6 +882,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     if (mergingPulls.has(key)) return;
     mergingPulls.add(key);
     let workspaceCleanupWarning: string | undefined;
+    let addedToMergeQueue = false;
     const commit = (ref: DetailRequestRef) =>
       deferred
         ? executeGeneratedApiRequest("POST deferred pull request merge", (client, signal) =>
@@ -901,6 +906,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
                 }),
           ).pipe(
             Effect.flatMap((result) => {
+              if (!result.merged && result.queued === true) {
+                return Effect.sync(() => {
+                  addedToMergeQueue = true;
+                });
+              }
               if (!result.merged) {
                 return Effect.fail(
                   new ApiProblemError({
@@ -930,6 +940,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
       },
       onSuccess: () => {
         onDetailSynchronized();
+        if (addedToMergeQueue) {
+          showFlash(`Added ${ref.repoPath} #${number} to the merge queue.`, { tone: "success" });
+          callbacks.onSuccess?.({ _tag: "Enqueued" });
+          return;
+        }
         if (workspaceCleanupWarning) {
           showFlash(`Pull request merged, but the workspace was not pruned: ${workspaceCleanupWarning}`, {
             tone: "warning",

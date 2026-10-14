@@ -12,6 +12,7 @@
   import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import Layers2Icon from "@lucide/svelte/icons/layers-2";
+  import ListOrderedIcon from "@lucide/svelte/icons/list-ordered";
   import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import LabelRow from "../shared/LabelRow.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
@@ -19,6 +20,7 @@
   import SidebarTitlePopover from "./SidebarTitlePopover.svelte";
   import { repoIdentityKey } from "../../utils/repo-label.js";
   import { effectiveActivity } from "../../utils/effective-activity.js";
+  import { mergeQueueIndicatorLabel } from "../detail/merge-queue.js";
 
   const { pulls, activity } = getStores();
   const hostState = getHostState();
@@ -115,6 +117,8 @@
     },
   );
 
+  const mergeQueueLabel = $derived(mergeQueueIndicatorLabel(pr.merge_queue, pr.merge_queue_removal));
+
   const parsed = $derived(parseCIChecks(pr.CIChecksJSON));
   const bucketed = $derived(bucketCIChecks(parsed.checks));
 
@@ -176,6 +180,15 @@
           {:else}
             <OctagonXIcon size={13} strokeWidth={2.2} aria-hidden="true" />
           {/if}
+        </span>
+      {/if}
+      {#if mergeQueueLabel}
+        <span
+          class={["merge-queue-indicator", pr.merge_queue ? "merge-queue-indicator--queued" : "merge-queue-indicator--removed"]}
+          aria-label={mergeQueueLabel}
+          title={mergeQueueLabel}
+        >
+          <ListOrderedIcon size={13} strokeWidth={2.2} aria-hidden="true" />
         </span>
       {/if}
       {#if pr.stack}
@@ -392,6 +405,21 @@
   }
 
   .review-indicator--changes-requested {
+    color: var(--accent-red);
+  }
+
+  .merge-queue-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+
+  .merge-queue-indicator--queued {
+    color: var(--accent-amber);
+  }
+
+  .merge-queue-indicator--removed {
     color: var(--accent-red);
   }
 

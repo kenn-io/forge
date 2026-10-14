@@ -280,7 +280,10 @@ type CICheck struct {
 }
 
 type MergeResult struct {
-	Merged  bool
+	Merged bool
+	// Queued reports that the provider accepted the merge request into its
+	// merge queue instead of merging it; the queue merges it later.
+	Queued  bool
 	SHA     string
 	Message string
 }
@@ -628,8 +631,10 @@ type Capabilities struct {
 	// provider that could change state but not content (or vice
 	// versa) must split this capability rather than half-implement
 	// it.
-	StateMutation               bool
-	MergeMutation               bool
+	StateMutation bool
+	MergeMutation bool
+	// MergeQueueMutation means the provider implements MergeQueueMutator.
+	MergeQueueMutation          bool
 	ReviewMutation              bool
 	WorkflowApproval            bool
 	WorkflowDispatch            bool

@@ -343,6 +343,40 @@ describe("PullItem kanban status", () => {
     expect(screen.queryByLabelText("Changes requested")).toBeNull();
   });
 
+  it("shows the merge queue position while the PR is queued", () => {
+    renderItem(
+      mkPR({
+        merge_queue: {
+          position: 2,
+          state: "awaiting_checks",
+          enqueued_at: "2026-05-01T12:00:00Z",
+          observed_at: "2026-05-01T12:01:00Z",
+        },
+      }),
+    );
+
+    const indicator = screen.getByLabelText("In merge queue, position 2");
+    expect(indicator.classList.contains("merge-queue-indicator--queued")).toBe(true);
+    expect(screen.queryByLabelText(/^Removed from merge queue/)).toBeNull();
+  });
+
+  it("shows the humanized removal reason when the merge queue removed the PR", () => {
+    renderItem(
+      mkPR({
+        merge_queue_removal: { removed_at: "2026-05-01T12:00:00Z", reason: "branch_protection_failure" },
+      }),
+    );
+
+    const indicator = screen.getByLabelText("Removed from merge queue: Branch protection failure");
+    expect(indicator.classList.contains("merge-queue-indicator--removed")).toBe(true);
+  });
+
+  it("hides the merge queue indicator when the PR has no queue state", () => {
+    renderItem(mkPR({}));
+
+    expect(screen.queryByLabelText(/merge queue/)).toBeNull();
+  });
+
   it("never renders a status chip, regardless of kanban status or PR state", () => {
     const cases = [
       { State: "open", KanbanStatus: "new" },

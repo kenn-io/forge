@@ -289,4 +289,47 @@ describe("MergeModal acknowledged merge commands", () => {
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
+
+  describe("when the base branch uses a merge queue", () => {
+    const mergeQueue = { branch: "main", mergeMethod: "squash" };
+
+    it("explains the queue and hides method, commit text, and workspace cleanup", () => {
+      renderModal({ mergeQueue, workspaceId: "ws-1" });
+
+      expect(screen.getByText("Add to Merge Queue")).toBeTruthy();
+      expect(
+        screen.getByText(
+          /uses a merge queue\. This adds the pull request to the queue, which merges it using squash and merge once its checks pass\./,
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByRole("group", { name: "Merge method" })).toBeNull();
+      expect(screen.queryByLabelText("Commit title")).toBeNull();
+      expect(screen.queryByLabelText("Commit message")).toBeNull();
+      expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
+    });
+
+    it("adds the pull request to the queue immediately without deleting the workspace", async () => {
+      renderModal({ mergeQueue, workspaceId: "ws-1", expectedHeadSha: "abc123" });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue" }));
+
+      expect(mockMergePull).toHaveBeenCalledOnce();
+      expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+      expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "abc123" });
+      expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("delete_workspace_id");
+    });
+
+    it("offers queueing after CI with an immediate queue override while CI is pending", async () => {
+      renderModal({ mergeQueue, deferUntilChecksPass: true });
+
+      expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue after CI is complete" }));
+      expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+
+      cleanup();
+      renderModal({ mergeQueue, deferUntilChecksPass: true });
+      await fireEvent.click(screen.getByRole("button", { name: "Add to queue now" }));
+      expect(mockMergePull.mock.calls[1]?.[3]).toBe(false);
+    });
+  });
 });

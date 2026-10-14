@@ -2869,6 +2869,73 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
+  it("adds the pull request to the merge queue instead of offering merge methods when the base branch is queued", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: true,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const enqueue = await screen.findByRole("button", { name: "Add to merge queue" });
+    expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
+    await fireEvent.click(enqueue);
+
+    const dialog = within(screen.getByRole("dialog", { name: "Add to Merge Queue" }));
+    expect(dialog.queryByRole("group", { name: "Merge method" })).toBeNull();
+    expect(dialog.queryByLabelText("Commit title")).toBeNull();
+    expect(dialog.getByRole("button", { name: "Add to merge queue" })).toBeTruthy();
+  });
+
+  it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_queue = {
+      position: 2,
+      state: "awaiting_checks",
+      enqueued_at: "2026-05-01T12:00:00Z",
+      observed_at: "2026-05-01T12:04:00Z",
+    };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const inQueue = await screen.findByRole<HTMLButtonElement>("button", { name: "In merge queue" });
+    expect(inQueue.disabled).toBe(true);
+    expect(inQueue.title).toContain("Position 2 in the merge queue.");
+    expect(screen.queryByRole("button", { name: "Add to merge queue" })).toBeNull();
+    expect(screen.getByText("Queued #2 · Awaiting checks")).toBeTruthy();
+  });
+
+  it("keeps a persistent notice with the humanized reason after the merge queue removes the pull request", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_queue_removal = { removed_at: "2026-05-01T12:00:00Z", reason: "branch_protection_failure" };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const notice = await screen.findByText(/^Removed from the merge queue /);
+    expect(notice.textContent).toContain(": Branch protection failure.");
+    expect(notice.textContent).toContain("Fix the problem, then add it to the queue again.");
+    expect(screen.getByText("Removed from queue")).toBeTruthy();
+    expect((await screen.findByRole<HTMLButtonElement>("button", { name: "Add to merge queue" })).disabled).toBe(false);
+  });
+
   it.each(["failure", "failed", "error", "cancelled", "canceled", "timed_out"])(
     "warns before merging when aggregate CI is %s without check rows",
     async (status) => {

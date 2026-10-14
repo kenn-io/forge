@@ -127,7 +127,7 @@ export class DeferredMergeCompletedEvent extends Schema.Class<DeferredMergeCompl
 )({
   ...providerItemFields,
   head_sha: Schema.String,
-  status: Schema.Literals(["merged", "failed"]),
+  status: Schema.Literals(["merged", "failed", "queued"]),
   merged: Schema.optionalKey(Schema.Boolean),
   sha: Schema.optionalKey(Schema.String),
   message: Schema.optionalKey(Schema.String),

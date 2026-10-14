@@ -30,6 +30,36 @@ type MergeRequestResponse struct {
 	// than one visible member, so list rows can show a stack indicator without
 	// loading the full stack context.
 	Stack *StackPlacementResponse `json:"stack,omitempty"`
+	// MergeQueue is present only while the open pull request is queued in
+	// its provider merge queue.
+	MergeQueue *MergeQueueEntryResponse `json:"merge_queue,omitempty"`
+	// MergeQueueRemoval is present while the open pull request is out of the
+	// merge queue because the queue removed it without merging.
+	MergeQueueRemoval *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+}
+
+// MergeQueueRemovalResponse records why the merge queue removed a pull
+// request without merging it.
+type MergeQueueRemovalResponse struct {
+	RemovedAt string `json:"removed_at" format:"date-time"`
+	Reason    string `json:"reason" doc:"Provider removal reason, such as a failed required check"`
+}
+
+// MergeQueueTargetResponse describes the merge queue that merging this pull
+// request goes through.
+type MergeQueueTargetResponse struct {
+	Branch      string `json:"branch"`
+	MergeMethod string `json:"merge_method" doc:"Merge method the queue uses: merge, squash, or rebase"`
+}
+
+// MergeQueueEntryResponse is a pull request's place in its provider merge
+// queue, as last observed by sync.
+type MergeQueueEntryResponse struct {
+	Position                    int    `json:"position" doc:"1-based position in the merge queue; 0 until sync observes the position of a pull request Forge just enqueued"`
+	State                       string `json:"state" doc:"Provider queue entry state, lowercased: queued, awaiting_checks, mergeable, unmergeable, or locked"`
+	EnqueuedAt                  string `json:"enqueued_at" format:"date-time"`
+	EstimatedTimeToMergeSeconds *int64 `json:"estimated_time_to_merge_seconds,omitempty" doc:"Provider estimate of seconds until merge, when known"`
+	ObservedAt                  string `json:"observed_at" format:"date-time" doc:"When sync last read this entry from the provider"`
 }
 
 // StackPlacementResponse is a pull request's position within its stack.
@@ -97,6 +127,15 @@ type MergeRequestDetailResponse struct {
 	DetailFetchedAt      string                     `json:"detail_fetched_at,omitempty"`
 	Workspace            *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	Stack                *stackContextResponse      `json:"stack,omitempty"`
+	// MergeQueue is present only while the open pull request is queued in
+	// its provider merge queue.
+	MergeQueue *MergeQueueEntryResponse `json:"merge_queue,omitempty"`
+	// MergeQueueRemoval is present while the open pull request is out of the
+	// merge queue because the queue removed it without merging.
+	MergeQueueRemoval *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+	// MergeQueueTarget is present when merging adds the pull request to its
+	// base branch's merge queue instead of merging it directly.
+	MergeQueueTarget *MergeQueueTargetResponse `json:"merge_queue_target,omitempty"`
 	// Checks is the merge request's CI checks decoded from its cached
 	// ci_checks_json. Omitted when the merge request has no cached checks.
 	Checks []db.CICheck `json:"checks,omitempty"`

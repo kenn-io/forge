@@ -622,7 +622,8 @@ func newServer(
 		streamapi.WorkspaceConfigSnapshot(cfg, nil).KnownPlatformHosts,
 	)
 	if syncer != nil {
-		syncer.SetOnMergedActorRepaired(s.syncevents.BroadcastMergedActorDetailRefresh)
+		syncer.SetOnMergedActorRepaired(s.syncevents.BroadcastPRDetailRefresh)
+		syncer.SetOnMergeQueueChanged(s.syncevents.BroadcastPRDetailRefresh)
 		syncer.SetOnRelayRefresh(s.syncevents.BroadcastRelayRefresh)
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)

@@ -71,13 +71,15 @@ type deferredMergeTargetSnapshot struct {
 }
 
 type DeferredMergeCompletedPayload struct {
-	Provider                string `json:"provider"`
-	PlatformHost            string `json:"platform_host"`
-	RepoPath                string `json:"repo_path"`
-	Owner                   string `json:"owner"`
-	Name                    string `json:"name"`
-	Number                  int    `json:"number"`
-	HeadSHA                 string `json:"head_sha"`
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	RepoPath     string `json:"repo_path"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int    `json:"number"`
+	HeadSHA      string `json:"head_sha"`
+	// Status is "merged", "failed", or "queued" when the merge went to the
+	// target branch's merge queue.
 	Status                  string `json:"status"`
 	Merged                  bool   `json:"merged,omitempty"`
 	SHA                     string `json:"sha,omitempty"`
@@ -431,6 +433,28 @@ func (s *Handler) completeDeferredMerge(
 	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
 	if err != nil {
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
+		return
+	}
+	if result.Queued {
+		// The target branch's merge queue now owns the merge; it reports
+		// its own outcome through the pull request's queue state.
+		s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)
+		s.publish(Event{Type: "data_changed", Data: struct{}{}})
+		s.publish(Event{
+			Type: "deferred_merge_completed",
+			Data: DeferredMergeCompletedPayload{
+				Provider:     string(repoProviderKind(repo)),
+				PlatformHost: repoProviderHost(repo),
+				RepoPath:     repo.RepoPath,
+				Owner:        repo.Owner,
+				Name:         repo.Name,
+				Number:       number,
+				HeadSHA:      deferredMergeHeadSHA(body, queuedTarget.HeadSHA),
+				Status:       "queued",
+				Message:      result.Message,
+				CompletedAt:  formatUTCRFC3339(s.now().UTC()),
+			},
+		})
 		return
 	}
 	if !result.Merged {

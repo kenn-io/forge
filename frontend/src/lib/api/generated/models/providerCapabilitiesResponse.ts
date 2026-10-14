@@ -9,6 +9,7 @@ export interface ProviderCapabilitiesResponse {
   issue_mutation: boolean;
   label_mutation: boolean;
   merge_mutation: boolean;
+  merge_queue_mutation: boolean;
   mutation_head_binding: boolean;
   native_multiline_ranges: boolean;
   read_authenticated_user: boolean;

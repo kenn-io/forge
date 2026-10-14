@@ -5615,6 +5615,8 @@ components:
           type: boolean
         message:
           type: string
+        queued:
+          type: boolean
         sha:
           type: string
         workspace_cleanup_pending:
@@ -5650,6 +5652,58 @@ components:
         - commit_title
         - commit_message
         - method
+      type: object
+    MergeQueueEntryResponse:
+      additionalProperties: false
+      properties:
+        enqueued_at:
+          format: date-time
+          type: string
+        estimated_time_to_merge_seconds:
+          description: Provider estimate of seconds until merge, when known
+          format: int64
+          type: integer
+        observed_at:
+          description: When sync last read this entry from the provider
+          format: date-time
+          type: string
+        position:
+          description: 1-based position in the merge queue; 0 until sync observes the position of a pull request Forge just enqueued
+          format: int64
+          type: integer
+        state:
+          description: "Provider queue entry state, lowercased: queued, awaiting_checks, mergeable, unmergeable, or locked"
+          type: string
+      required:
+        - position
+        - state
+        - enqueued_at
+        - observed_at
+      type: object
+    MergeQueueRemovalResponse:
+      additionalProperties: false
+      properties:
+        reason:
+          description: Provider removal reason, such as a failed required check
+          type: string
+        removed_at:
+          format: date-time
+          type: string
+      required:
+        - removed_at
+        - reason
+      type: object
+    MergeQueueTargetResponse:
+      additionalProperties: false
+      properties:
+        branch:
+          type: string
+        merge_method:
+          description: "Merge method the queue uses: merge, squash, or rebase"
+          type: string
+      required:
+        - branch
+        - merge_method
       type: object
     MergeRequest:
       additionalProperties: false
@@ -5852,6 +5906,12 @@ components:
           type: string
         merge_base_sha:
           type: string
+        merge_queue:
+          $ref: "#/components/schemas/MergeQueueEntryResponse"
+        merge_queue_removal:
+          $ref: "#/components/schemas/MergeQueueRemovalResponse"
+        merge_queue_target:
+          $ref: "#/components/schemas/MergeQueueTargetResponse"
         merge_request:
           $ref: "#/components/schemas/MergeRequest"
         platform_base_sha:
@@ -6084,6 +6144,10 @@ components:
         last_workspace_activity_at:
           format: date-time
           type: string
+        merge_queue:
+          $ref: "#/components/schemas/MergeQueueEntryResponse"
+        merge_queue_removal:
+          $ref: "#/components/schemas/MergeQueueRemovalResponse"
         mergeable_state_observed_at:
           format: date-time
           type:
@@ -6919,6 +6983,8 @@ components:
           type: boolean
         merge_mutation:
           type: boolean
+        merge_queue_mutation:
+          type: boolean
         mutation_head_binding:
           type: boolean
         native_multiline_ranges:
@@ -6994,6 +7060,7 @@ components:
         - comment_mutation
         - state_mutation
         - merge_mutation
+        - merge_queue_mutation
         - review_mutation
         - workflow_approval
         - workflow_dispatch

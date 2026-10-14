@@ -398,6 +398,7 @@ type RoutedClient struct {
 var (
 	_ Client                              = (*RoutedClient)(nil)
 	_ platformgithub.ViewerAPI            = (*RoutedClient)(nil)
+	_ platformgithub.MergeQueueAPI        = (*RoutedClient)(nil)
 	_ platformgithub.ViewerCacheKeyAPI    = (*RoutedClient)(nil)
 	_ notificationThreadGetter            = (*RoutedClient)(nil)
 	_ routedNotificationPageLister        = (*RoutedClient)(nil)
@@ -1125,6 +1126,21 @@ func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string,
 		return nil, err
 	}
 	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA)
+}
+
+func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA string) (platform.MergeResult, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return platform.MergeResult{}, err
+	}
+	enqueuer, ok := client.(platformgithub.MergeQueueAPI)
+	if !ok {
+		return platform.MergeResult{}, fmt.Errorf(
+			"enqueuing %s/%s#%d: routed GitHub client does not support merge queues",
+			owner, repo, number,
+		)
+	}
+	return enqueuer.EnqueuePullRequest(ctx, owner, repo, number, expectedSHA)
 }
 
 func (c *RoutedClient) EditPullRequest(ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {

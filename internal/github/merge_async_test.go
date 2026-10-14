@@ -310,3 +310,62 @@ func TestGitHubEnterpriseMergeKeepsSynchronousAPI(t *testing.T) {
 	assert.True(result.GetMerged())
 	assert.Equal("merge-sha", result.GetSHA())
 }
+
+func TestGitHubComEnqueueReportsPullRequestAlreadyQueued(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPut, r.Method)
+		assert.Equal("/api/v3/repos/acme/widget/pulls/7/merge-async", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status":"enqueued",
+			"details":{"message":"Pull request is already in the merge queue."}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewClient(
+		testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+	enqueuer, ok := client.(platformgithub.MergeQueueAPI)
+	require.True(ok)
+
+	result, err := enqueuer.EnqueuePullRequest(t.Context(), "acme", "widget", 7, "reviewed-head")
+	require.NoError(err)
+	assert.True(result.Queued)
+	assert.False(result.Merged)
+	assert.Equal("Pull request is already in the merge queue.", result.Message)
+}
+
+func TestGitHubEnterpriseEnqueueFailsWithoutRequest(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewClient(
+		testTokenSource("token"), "github.example.com", nil, nil,
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+	enqueuer, ok := client.(platformgithub.MergeQueueAPI)
+	require.True(ok)
+
+	_, err = enqueuer.EnqueuePullRequest(t.Context(), "acme", "widget", 7, "reviewed-head")
+	require.Error(err)
+	assert.Contains(err.Error(), "asynchronous merge API")
+	assert.Zero(calls.Load())
+}

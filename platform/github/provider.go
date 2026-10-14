@@ -156,6 +156,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	_, markdownImages := p.client.(markdownImageClient)
 	_, markdownMedia := p.client.(markdownMediaClient)
 	_, directViewer := p.client.(ViewerAPI)
+	_, mergeQueue := p.client.(MergeQueueAPI)
 	_, routedViewer := p.client.(interface {
 		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
 	})
@@ -178,6 +179,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		CommentMutation:             true,
 		StateMutation:               true,
 		MergeMutation:               true,
+		MergeQueueMutation:          mergeQueue && p.host == "github.com",
 		ReviewMutation:              true,
 		MutationHeadBinding:         true,
 		WorkflowApproval:            true,
@@ -1098,6 +1100,42 @@ func (p *Provider) MergeMergeRequest(
 		SHA:     result.GetSHA(),
 		Message: result.GetMessage(),
 	}, nil
+}
+
+// MergeQueueAPI adds pull requests to a merge queue. Only GitHub.com exposes
+// the asynchronous merge API it uses.
+type MergeQueueAPI interface {
+	EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedHeadSHA string) (platform.MergeResult, error)
+}
+
+// EnqueueMergeRequest adds the pull request to its base branch's merge queue.
+// expectedHeadSHA binds the request the same way it binds a direct merge.
+func (p *Provider) EnqueueMergeRequest(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	expectedHeadSHA string,
+) (platform.MergeResult, error) {
+	client, ok := p.client.(MergeQueueAPI)
+	if !ok || p.host != "github.com" {
+		return platform.MergeResult{}, platform.UnsupportedCapability(
+			platform.KindGitHub, p.host, "merge_queue_mutation",
+		)
+	}
+	result, err := client.EnqueuePullRequest(ctx, ref.Owner, ref.Name, number, expectedHeadSHA)
+	if err != nil {
+		if expectedHeadSHA != "" && IsGitHubHeadModified(err) {
+			return platform.MergeResult{}, &platform.Error{
+				Code:         platform.ErrCodeStaleState,
+				Provider:     platform.KindGitHub,
+				PlatformHost: p.host,
+				Capability:   "merge_queue_mutation",
+				Err:          err,
+			}
+		}
+		return platform.MergeResult{}, err
+	}
+	return result, nil
 }
 
 // IsGitHubHeadModified reports whether a GitHub merge rejection is the

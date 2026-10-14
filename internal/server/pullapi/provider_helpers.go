@@ -14,6 +14,7 @@ const (
 	capabilityCommentMutation             = "comment_mutation"
 	capabilityStateMutation               = "state_mutation"
 	capabilityMergeMutation               = "merge_mutation"
+	capabilityMergeQueueMutation          = "merge_queue_mutation"
 	capabilityReviewMutation              = "review_mutation"
 	capabilityWorkflowApproval            = "workflow_approval"
 	capabilityReadyForReview              = "ready_for_review"

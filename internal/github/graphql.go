@@ -429,6 +429,9 @@ type GraphQLFetcher struct {
 	// every query, so re-sending it would abandon bulk fetch each cycle. A
 	// process restart is the reset point once the host gains the preview.
 	nativeStacksRejected atomic.Bool
+	// mergeQueueRejected latches when this host's schema has no merge queue,
+	// so later passes skip the read instead of failing it every cycle.
+	mergeQueueRejected atomic.Bool
 }
 
 type GraphQLFetcherOption func(*graphQLFetcherOptions)

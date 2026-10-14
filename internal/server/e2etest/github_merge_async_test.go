@@ -353,3 +353,212 @@ func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T)
 	assert.Positive(upstream.pullReads)
 	upstream.mu.Unlock()
 }
+
+func seedMergeQueue(t *testing.T, database *db.DB, repoID int64, branch string) {
+	t.Helper()
+	_, err := database.ReplaceMergeQueue(t.Context(), repoID, db.MergeQueueSnapshot{
+		Configured:  true,
+		Branch:      branch,
+		MergeMethod: "squash",
+		ObservedAt:  time.Now().UTC(),
+	})
+	require.NoError(t, err)
+}
+
+func TestGitHubMergeIntoMergeQueueBranchEnqueues(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+		t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
+		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
+	)
+	seedMergeQueue(t, database, repoID, "main")
+
+	detail := doJSONRequest(t, srv, http.MethodGet,
+		"/api/v1/pulls/github/acme/widget/7", nil,
+	)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var detailBody struct {
+		MergeQueueTarget *struct {
+			Branch      string `json:"branch"`
+			MergeMethod string `json:"merge_method"`
+		} `json:"merge_queue_target"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
+	require.NotNil(detailBody.MergeQueueTarget)
+	assert.Equal("main", detailBody.MergeQueueTarget.Branch)
+	assert.Equal("squash", detailBody.MergeQueueTarget.MergeMethod)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var result struct {
+		Merged  bool   `json:"merged"`
+		Queued  bool   `json:"queued"`
+		Message string `json:"message"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&result))
+	assert.False(result.Merged)
+	assert.True(result.Queued)
+	assert.Equal("Pull request was added to the merge queue.", result.Message)
+
+	requests := upstream.requests()
+	require.Len(requests, 2)
+	var body map[string]any
+	require.NoError(json.Unmarshal([]byte(requests[0].Body), &body))
+	assert.Equal(map[string]any{
+		"merge_action": "merge_queue",
+		"sha":          "reviewed-sha",
+	}, body, "the queue merges with its own method, so GitHub accepts no direct-merge parameters")
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(db.MergeRequestStateOpen, mr.State)
+
+	// No queue read succeeded after the enqueue, so Forge tracks the entry
+	// provisionally until sync observes its position.
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(entry)
+	assert.Equal(0, entry.Position)
+}
+
+func TestGitHubMergeIntoBranchWithoutQueueStaysDirect(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+		t,
+		`{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+	)
+	seedMergeQueue(t, database, repoID, "release")
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+	requests := upstream.requests()
+	require.Len(requests, 1)
+	assert.Contains(requests[0].Body, `"merge_action":"direct_merge"`)
+	assert.Contains(requests[0].Body, `"merge_method":"squash"`)
+}
+
+func TestGitHubDeferredMergeIntoMergeQueueReportsQueued(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+		t,
+		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
+	)
+	seedMergeQueue(t, database, repoID, "main")
+	eventCtx, cancelEvents := context.WithCancel(t.Context())
+	t.Cleanup(cancelEvents)
+	events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+	var completed pullapi.DeferredMergeCompletedPayload
+	deadline := time.After(3 * time.Second)
+	for completed.Status == "" {
+		select {
+		case event := <-events:
+			if event.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := event.Event.Data.(pullapi.DeferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-deadline:
+			require.FailNow("timed out waiting for deferred merge completion")
+		}
+	}
+	assert.Equal("queued", completed.Status)
+	assert.False(completed.Merged)
+
+	// Clients refresh detail as soon as the completion arrives; that read
+	// must no longer report a pending deferred merge.
+	detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var detailBody struct {
+		DeferredMergePending bool `json:"deferred_merge_pending"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
+	assert.False(detailBody.DeferredMergePending)
+
+	requests := upstream.requests()
+	require.Len(requests, 1)
+	assert.Contains(requests[0].Body, `"merge_action":"merge_queue"`)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(db.MergeRequestStateOpen, mr.State)
+}
+
+func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, repoID, _ := setupGitHubAsyncMergeE2E(t, `{"status":"failed","details":{}}`)
+	enqueuedAt := time.Date(2026, time.October, 14, 19, 5, 15, 0, time.UTC)
+	_, err := database.ReplaceMergeQueue(t.Context(), repoID, db.MergeQueueSnapshot{
+		Configured: true, Branch: "main", MergeMethod: "squash",
+		Entries: []db.MergeQueueEntry{{
+			Number: 7, Position: 2, State: "AWAITING_CHECKS", EnqueuedAt: enqueuedAt,
+		}},
+		ObservedAt: enqueuedAt.Add(time.Minute),
+	})
+	require.NoError(err)
+
+	type queueFields struct {
+		MergeQueue *struct {
+			Position   int    `json:"position"`
+			State      string `json:"state"`
+			EnqueuedAt string `json:"enqueued_at"`
+		} `json:"merge_queue"`
+		MergeQueueRemoval *struct {
+			RemovedAt string `json:"removed_at"`
+			Reason    string `json:"reason"`
+		} `json:"merge_queue_removal"`
+	}
+	list := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls?state=open", nil)
+	require.Equal(http.StatusOK, list.Code, list.Body.String())
+	var rows []queueFields
+	require.NoError(json.NewDecoder(list.Body).Decode(&rows))
+	require.Len(rows, 1)
+	require.NotNil(rows[0].MergeQueue)
+	assert.Equal(2, rows[0].MergeQueue.Position)
+	assert.Equal("awaiting_checks", rows[0].MergeQueue.State)
+	assert.Equal("2026-10-14T19:05:15Z", rows[0].MergeQueue.EnqueuedAt)
+	assert.Nil(rows[0].MergeQueueRemoval)
+
+	_, err = database.ReplaceMergeQueue(t.Context(), repoID, db.MergeQueueSnapshot{
+		Configured: true, Branch: "main", MergeMethod: "squash",
+		ObservedAt: enqueuedAt.Add(2 * time.Minute),
+	})
+	require.NoError(err)
+	require.NoError(database.ResolveMergeQueueDeparture(t.Context(), repoID, db.MergeQueueRemoval{
+		Number: 7, RemovedAt: enqueuedAt.Add(52 * time.Second), Reason: "branch_protection_failure",
+	}))
+
+	detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var detailBody queueFields
+	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
+	assert.Nil(detailBody.MergeQueue)
+	require.NotNil(detailBody.MergeQueueRemoval)
+	assert.Equal("branch_protection_failure", detailBody.MergeQueueRemoval.Reason)
+	assert.Equal("2026-10-14T19:06:07Z", detailBody.MergeQueueRemoval.RemovedAt)
+}

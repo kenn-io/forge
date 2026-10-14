@@ -134,6 +134,7 @@
     comment_mutation: true,
     state_mutation: true,
     merge_mutation: true,
+    merge_queue_mutation: false,
     review_mutation: true,
     workflow_approval: true,
     ready_for_review: true,

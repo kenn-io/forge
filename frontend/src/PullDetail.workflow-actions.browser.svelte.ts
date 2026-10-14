@@ -46,6 +46,7 @@ function pullDetail(): PullDetail {
     comment_mutation: false,
     state_mutation: true,
     merge_mutation: true,
+    merge_queue_mutation: false,
     label_mutation: true,
     assignee_mutation: false,
     reviewer_mutation: false,

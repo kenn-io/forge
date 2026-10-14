@@ -441,6 +441,7 @@ const config = {
       "@lucide/svelte/icons/list-checks",
       "@lucide/svelte/icons/list-chevrons-down-up",
       "@lucide/svelte/icons/list-chevrons-up-down",
+      "@lucide/svelte/icons/list-ordered",
       "@lucide/svelte/icons/list-plus",
       "@lucide/svelte/icons/list-todo",
       "@lucide/svelte/icons/loader-circle",

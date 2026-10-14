@@ -1,0 +1,4 @@
+DROP TRIGGER forge_merge_queue_removals_terminal_eviction;
+DROP TABLE forge_merge_queue_removals;
+DROP TABLE forge_merge_queue_entries;
+DROP TABLE forge_repo_merge_queues;

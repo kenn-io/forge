@@ -378,6 +378,18 @@ func (r *Registry) MergeMutator(kind Kind, host string) (MergeMutator, error) {
 	return mutator, nil
 }
 
+func (r *Registry) MergeQueueMutator(kind Kind, host string) (MergeQueueMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(MergeQueueMutator)
+	if !ok || !provider.Capabilities().MergeQueueMutation {
+		return nil, UnsupportedCapability(kind, host, "merge_queue_mutation")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) WorkflowApprovalMutator(kind Kind, host string) (WorkflowApprovalMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

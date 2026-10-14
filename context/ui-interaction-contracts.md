@@ -237,6 +237,9 @@ Interactive surfaces must agree on which item is selected.
 - Merge confirmation closes on submission; app-owned pending state keeps the PR and
   linked workspace visibly merging across navigation, and failures use shared flashes
   (`frontend/src/lib/stores/detail.svelte.ts::mergePull`).
+- Provider outcomes that arrive minutes later, such as a merge queue removing a
+  pull request, render from synced server state in the list and detail until
+  superseded; a flash alone is insufficient (maintainer decision).
 - `deleting`/`deletion_failed` remain workspace states, and only the provider-aware
   `workspace_deleted` event tombstones the row and reconciles visible item data
   (`frontend/src/lib/app-stores.svelte.ts::createAppStores`).

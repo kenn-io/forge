@@ -9,6 +9,8 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v92/github"
+
+	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -83,61 +85,90 @@ func (c *Client) mergePullRequestAsync(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
 ) (*gh.PullRequestMergeResult, error) {
-	requestPath := fmt.Sprintf(
-		"repos/%s/%s/pulls/%d/merge-async", owner, repo, number,
-	)
-	body := mergeAsyncRequest{
+	result, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
 		CommitTitle:   commitTitle,
 		CommitMessage: commitMessage,
 		SHA:           expectedHeadSHA,
 		MergeMethod:   method,
 		MergeAction:   "direct_merge",
+	}, false)
+	if err != nil {
+		return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
 	}
+	return result.pullRequestMergeResult(), nil
+}
+
+// EnqueuePullRequest adds a pull request to its base branch's merge queue
+// through the asynchronous merge API. The queue merges with its configured
+// method, so GitHub accepts no commit title, message, or method here. Only
+// GitHub.com offers the asynchronous API.
+func (c *Client) EnqueuePullRequest(
+	ctx context.Context, owner, repo string, number int, expectedHeadSHA string,
+) (platform.MergeResult, error) {
+	if c.platformHost != "github.com" {
+		return platform.MergeResult{}, fmt.Errorf(
+			"enqueuing %s/%s#%d: %s does not provide GitHub's asynchronous merge API",
+			owner, repo, number, c.platformHost,
+		)
+	}
+	result, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
+		SHA:         expectedHeadSHA,
+		MergeAction: "merge_queue",
+	}, true)
+	if err != nil {
+		return platform.MergeResult{}, fmt.Errorf("enqueuing %s/%s#%d: %w", owner, repo, number, err)
+	}
+	return platform.MergeResult{
+		Merged:  result.Status == "merged",
+		Queued:  result.Status == "enqueued",
+		SHA:     result.Details.SHA,
+		Message: result.Details.Message,
+	}, nil
+}
+
+// runMergeAsync submits an asynchronous merge request and polls it to a
+// terminal status. "enqueued" is terminal success only when enqueueAccepted;
+// a direct merge that GitHub queued instead did not merge.
+func (c *Client) runMergeAsync(
+	ctx context.Context, owner, repo string, number int,
+	body mergeAsyncRequest, enqueueAccepted bool,
+) (mergeAsyncResponse, error) {
+	requestPath := fmt.Sprintf(
+		"repos/%s/%s/pulls/%d/merge-async", owner, repo, number,
+	)
 	result, resp, err := c.doMergeAsyncRequest(
 		ctx, http.MethodPut, requestPath, body,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
+		return result, err
 	}
-	if terminal, err := mergeAsyncTerminalResult(resp, result); terminal {
-		if err != nil {
-			return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
-		}
-		return result.pullRequestMergeResult(), nil
+	if terminal, err := mergeAsyncTerminalResult(resp, result, enqueueAccepted); terminal {
+		return result, err
 	}
 	if resp == nil || resp.StatusCode != http.StatusAccepted {
-		return nil, fmt.Errorf(
-			"merging %s/%s#%d: GitHub returned pending without accepting an asynchronous merge",
-			owner, repo, number,
-		)
+		return result, errors.New("GitHub returned pending without accepting an asynchronous merge")
 	}
 	if result.Details.UUID == "" {
-		return nil, fmt.Errorf(
-			"merging %s/%s#%d: GitHub accepted an asynchronous merge without an operation UUID",
-			owner, repo, number,
-		)
+		return result, errors.New("GitHub accepted an asynchronous merge without an operation UUID")
 	}
 
 	pollPath := requestPath + "/" + result.Details.UUID
 	for poll := range mergeAsyncMaxPolls {
 		if err := waitForMergeAsyncPoll(ctx, poll); err != nil {
-			return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
+			return result, err
 		}
 		result, resp, err = c.doMergeAsyncRequest(ctx, http.MethodGet, pollPath, nil)
 		if err != nil {
-			return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
+			return result, err
 		}
-		if terminal, err := mergeAsyncTerminalResult(resp, result); terminal {
-			if err != nil {
-				return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)
-			}
-			return result.pullRequestMergeResult(), nil
+		if terminal, err := mergeAsyncTerminalResult(resp, result, enqueueAccepted); terminal {
+			return result, err
 		}
 	}
 
-	return nil, fmt.Errorf(
-		"merging %s/%s#%d: GitHub asynchronous merge did not complete after %d polls",
-		owner, repo, number, mergeAsyncMaxPolls,
+	return result, fmt.Errorf(
+		"GitHub asynchronous merge did not complete after %d polls",
+		mergeAsyncMaxPolls,
 	)
 }
 
@@ -184,13 +215,19 @@ func (c *Client) doMergeAsyncRequest(
 func mergeAsyncTerminalResult(
 	resp *gh.Response,
 	result mergeAsyncResponse,
+	enqueueAccepted bool,
 ) (bool, error) {
 	switch result.Status {
 	case "pending":
 		return false, nil
 	case "merged":
 		return true, nil
-	case "failed", "enqueued":
+	case "enqueued":
+		if enqueueAccepted {
+			return true, nil
+		}
+		fallthrough
+	case "failed":
 		message := result.Details.Message
 		if message == "" {
 			message = "GitHub asynchronous merge ended in state " + result.Status
@@ -249,3 +286,5 @@ func waitForMergeAsyncPoll(ctx context.Context, poll int) error {
 		return nil
 	}
 }
+
+var _ MergeQueueAPI = (*Client)(nil)

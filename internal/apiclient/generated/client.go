@@ -59692,6 +59692,7 @@ type MergePRBody struct {
 	Schema                  *string `json:"$schema,omitempty"`
 	Merged                  bool    `json:"merged"`
 	Message                 string  `json:"message"`
+	Queued                  *bool   `json:"queued,omitempty"`
 	Sha                     string  `json:"sha"`
 	WorkspaceCleanupPending *bool   `json:"workspace_cleanup_pending,omitempty"`
 	WorkspaceCleanupWarning *string `json:"workspace_cleanup_warning,omitempty"`
@@ -59705,6 +59706,35 @@ type MergePRInputBody struct {
 	DeleteWorkspaceID *string `json:"delete_workspace_id,omitempty"`
 	ExpectedHeadSha   *string `json:"expected_head_sha,omitempty"`
 	Method            string  `json:"method"`
+}
+
+type MergeQueueEntryResponse struct {
+	EnqueuedAt time.Time `json:"enqueued_at"`
+
+	// EstimatedTimeToMergeSeconds Provider estimate of seconds until merge, when known
+	EstimatedTimeToMergeSeconds *int64 `json:"estimated_time_to_merge_seconds,omitempty"`
+
+	// ObservedAt When sync last read this entry from the provider
+	ObservedAt time.Time `json:"observed_at"`
+
+	// Position 1-based position in the merge queue; 0 until sync observes the position of a pull request Forge just enqueued
+	Position int64 `json:"position"`
+
+	// State Provider queue entry state, lowercased: queued, awaiting_checks, mergeable, unmergeable, or locked
+	State string `json:"state"`
+}
+
+type MergeQueueRemovalResponse struct {
+	// Reason Provider removal reason, such as a failed required check
+	Reason    string    `json:"reason"`
+	RemovedAt time.Time `json:"removed_at"`
+}
+
+type MergeQueueTargetResponse struct {
+	Branch string `json:"branch"`
+
+	// MergeMethod Merge method the queue uses: merge, squash, or rebase
+	MergeMethod string `json:"merge_method"`
 }
 
 type MergeRequest struct {
@@ -59762,6 +59792,9 @@ type MergeRequestDetailResponse struct {
 	Events               []MergeRequestEventResponse            `json:"events"`
 	HeadRepoKind         MergeRequestDetailResponseHeadRepoKind `json:"head_repo_kind"`
 	MergeBaseSha         string                                 `json:"merge_base_sha"`
+	MergeQueue           *MergeQueueEntryResponse               `json:"merge_queue,omitempty"`
+	MergeQueueRemoval    *MergeQueueRemovalResponse             `json:"merge_queue_removal,omitempty"`
+	MergeQueueTarget     *MergeQueueTargetResponse              `json:"merge_queue_target,omitempty"`
 	MergeRequest         MergeRequest                           `json:"merge_request"`
 	PlatformBaseSha      string                                 `json:"platform_base_sha"`
 	PlatformHeadSha      string                                 `json:"platform_head_sha"`
@@ -59838,6 +59871,8 @@ type MergeRequestResponse struct {
 	DetailLoaded             bool                             `json:"detail_loaded"`
 	Labels                   []Label                          `json:"labels,omitempty"`
 	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
+	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
+	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
 	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
 	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
 	PlatformHost             string                           `json:"platform_host"`
@@ -60134,6 +60169,7 @@ type ProviderCapabilitiesResponse struct {
 	IssueMutation               bool     `json:"issue_mutation"`
 	LabelMutation               bool     `json:"label_mutation"`
 	MergeMutation               bool     `json:"merge_mutation"`
+	MergeQueueMutation          bool     `json:"merge_queue_mutation"`
 	MutationHeadBinding         bool     `json:"mutation_head_binding"`
 	NativeMultilineRanges       bool     `json:"native_multiline_ranges"`
 	ReadAuthenticatedUser       bool     `json:"read_authenticated_user"`

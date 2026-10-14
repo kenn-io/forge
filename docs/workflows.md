@@ -48,6 +48,11 @@ Unsupported actions remain visible but unavailable.
 Detected stacks show member order. Mid-stack merges stay blocked by default
 until earlier members land.
 
+On GitHub.com repositories whose default branch uses a merge queue, **Add to
+merge queue** replaces the merge action. Pull rows and the detail view show
+queue position and state. When the queue removes a pull request without
+merging it, the detail view keeps the reason until you queue it again.
+
 The conversation, files, and workspace can share a pane layout. Reorder,
 split, resize, hide, or maximize panes as the task changes.
 

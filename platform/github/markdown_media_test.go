@@ -223,7 +223,7 @@ func TestOpenMarkdownMediaStreamsPastHeaderBound(t *testing.T) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) //nolint:kennlint // delays the HTTP body past the 50ms header deadline to exercise streaming
 		_, _ = w.Write([]byte("late body"))
 	}))
 	defer upstream.Close()

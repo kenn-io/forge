@@ -88,6 +88,8 @@ type ACP struct {
 	// beforePromptWrite lets tests stop the owner between saving a prompt or
 	// a steer as sending and writing it. It is nil in production.
 	beforePromptWrite func()
+	// onConfigLockContention lets tests observe a settings command encountering the held turn lock.
+	onConfigLockContention func()
 	// beforePromptStart lets tests run between a submission finding the chat
 	// idle and starting its prompt. It is nil in production.
 	beforePromptStart func()

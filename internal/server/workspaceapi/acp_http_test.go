@@ -250,8 +250,17 @@ func (f *chatFixture) storedChats() []db.WorkspaceRuntimeSession {
 // the test ends, when the test context the database read uses is canceled.
 func (f *chatFixture) keepsStoredChat(d time.Duration, msg string) {
 	f.t.Helper()
-	for deadline := time.Now().Add(d); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
 		require.NotEmpty(f.t, f.storedChats(), msg)
+		select {
+		case <-timer.C: // The absence window checks that owner exit never removes the stored chat.
+			return
+		case <-tick.C:
+		}
 	}
 }
 

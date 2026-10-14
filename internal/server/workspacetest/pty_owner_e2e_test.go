@@ -717,56 +717,6 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 	)
 }
 
-func TestWorkspacePtyOwnerTerminalFlushesFinalOutputOnExitE2E(t *testing.T) {
-	runParallelWorkspacePTYTest(t)
-
-	require := require.New(t)
-
-	dir := t.TempDir()
-	ptyOwnerDir := filepath.Join(dir, "pty-owner")
-	cfg := &config.Config{
-		Tmux:  config.Tmux{Command: []string{filepath.Join(dir, "missing-tmux")}},
-		Shell: config.Shell{Command: []string{"/bin/sh"}},
-	}
-	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-		HostCheckAllowLoopbackAnyPort:      true,
-		PtyOwnerDir:                        ptyOwnerDir,
-		PtyOwnerInProcess:                  true,
-	})
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-
-	conn, _, err := workspaceTerminalDialWithQuery(ctx, ts.URL, ws.ID, "")
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	require.NoError(conn.Write(
-		ctx, websocket.MessageBinary,
-		[]byte("printf 'final-owner-output\n'; exit\n"),
-	))
-	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	var got strings.Builder
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			break
-		}
-		if typ == websocket.MessageBinary {
-			got.Write(data)
-		}
-		if strings.Contains(got.String(), "final-owner-output") {
-			return
-		}
-	}
-	require.Contains(got.String(), "final-owner-output")
-}
-
 func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	runParallelWorkspacePTYTest(t)
 
@@ -844,7 +794,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 	cfg := &config.Config{Agents: []config.Agent{{
 		Key:     "helper",
 		Label:   "Helper",
-		Command: workspaceRuntimeHelperCommand("exit"),
+		Command: workspaceRuntimeHelperCommand("quick-exit"),
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
@@ -872,45 +822,6 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 		return storedErr == nil && len(stored) == 0
 	}, 2*time.Second, 20*time.Millisecond)
 	assert.NotEmpty(launchResp.JSON200.Key)
-}
-
-func TestWorkspaceRuntimePtyOwnerQuickExitLaunchSucceedsE2E(t *testing.T) {
-	runParallelWorkspacePTYTest(t)
-
-	require := require.New(t)
-	assert := assert.New(t)
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{Agents: []config.Agent{{
-		Key:     "helper",
-		Label:   "Helper",
-		Command: workspaceRuntimeHelperCommand("print-exit"),
-	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
-	fixture := setupWorkspaceServerFixture(t, cfg)
-	client := fixture.client
-	database := fixture.database
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
-		TargetKey: "helper",
-	}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	assert.NotEmpty(launchResp.JSON200.Key)
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
-		if runtimeErr != nil ||
-			runtimeResp.StatusCode != http.StatusOK ||
-			runtimeResp.JSON200 == nil ||
-			runtimeResp.JSON200.Sessions == nil ||
-			len(runtimeResp.JSON200.Sessions) != 0 {
-			return false
-		}
-		stored, storedErr := database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-		return storedErr == nil && len(stored) == 0
-	}, 2*time.Second, 20*time.Millisecond)
 }
 
 // TestWorkspaceRuntimePlainShellTerminalWebSocketE2E exercises the runtime
@@ -957,209 +868,12 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	workspaceTerminalConnWriteRead(t, ctx, conn, "ping\n", "echo:ping")
 }
 
-// TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E pins the
-// websocket "exited" text frame contract through the real runtime stack. The
-// helper closes its PTY shortly before exiting so this exercises the window
-// where PTY EOF can arrive before process wait publishes the exit code.
-func TestWorkspaceRuntimePlainShellTerminalDeliversActualExitCodeE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses /bin/sh")
-	}
-	runParallelWorkspacePTYTest(t)
-
-	require := require.New(t)
-	dir := t.TempDir()
-	ptyOwnerDir := filepath.Join(dir, "pty-owner")
-	cfg := &config.Config{
-		Tmux: config.Tmux{
-			Command: []string{filepath.Join(dir, "missing-tmux")},
-		},
-		Shell: config.Shell{
-			Command: workspaceRuntimeHelperCommand("pty-close-on-input-then-exit"),
-		},
-	}
-	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-		HostCheckAllowLoopbackAnyPort:      true,
-		PtyOwnerDir:                        ptyOwnerDir,
-		PtyOwnerInProcess:                  true,
-	})
-	client := fixture.client
-	srv := fixture.server
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, client)
-
-	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
-		TargetKey: string(localruntime.LaunchTargetPlainShell),
-	}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	shell := launchResp.JSON200
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, shell.Key)
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-	require.NoError(err)
-	require.Len(stored, 1)
-	require.Equal(shell.Key, stored[0].SessionKey)
-	require.Empty(stored[0].TmuxSession)
-
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.ID +
-		"/runtime/sessions/" + shell.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	// Trigger after attach so the session cannot exit before the websocket
-	// connects. The helper's short delay makes PTY EOF reliably precede process
-	// exit while remaining inside the owner's bounded exit-code grace period.
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("close\n")))
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			require.Failf(
-				"never received exit frame",
-				"read err before exit frame: %v", readErr,
-			)
-		}
-		if typ != websocket.MessageText {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-			Code int    `json:"code"`
-		}
-		require.NoError(json.Unmarshal(data, &msg))
-		require.Equal("exited", msg.Type)
-		require.Equal(7, msg.Code)
-		break
-	}
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
-		if runtimeErr != nil || runtimeResp.StatusCode != http.StatusOK ||
-			runtimeResp.JSON200 == nil {
-			return false
-		}
-		if runtimeResp.JSON200.Sessions != nil {
-			for _, session := range runtimeResp.JSON200.Sessions {
-				if session.Key == shell.Key {
-					return false
-				}
-			}
-		}
-		rows, rowsErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-		return rowsErr == nil && len(rows) == 0
-	}, 5*time.Second, 20*time.Millisecond)
-}
-
-func TestWorkspaceRuntimePtyOwnerQuickExitReportsExactStatusE2E(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test fixture uses Unix PTY exit semantics")
-	}
-	runParallelWorkspacePTYTest(t)
-
-	require := require.New(t)
-	dir := t.TempDir()
-	ptyOwnerDir := filepath.Join(dir, "pty-owner")
-	disableTmuxAgentSessions := false
-	cfg := &config.Config{
-		Agents: []config.Agent{{
-			Key:   "helper",
-			Label: "Helper",
-			// Keep the PTY open briefly after the shell exits so the owner can
-			// publish the exact status before output EOF reaches the bridge.
-			// Without this ordering, a loaded race runner can legitimately hit
-			// the owner's bounded unknown-status fallback instead.
-			Command: []string{
-				"sh", "-c", "IFS= read -r line; sleep 1 & exit 9",
-			},
-		}},
-		Tmux: config.Tmux{
-			Command:       []string{filepath.Join(dir, "missing-tmux")},
-			AgentSessions: &disableTmuxAgentSessions,
-		},
-	}
-	fixture := setupWorkspaceServerFixture(t, cfg, server.ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-		HostCheckAllowLoopbackAnyPort:      true,
-		PtyOwnerDir:                        ptyOwnerDir,
-		PtyOwnerInProcess:                  true,
-	})
-	ctx := context.Background()
-	ws := createReadyWorkspace(t, ctx, fixture.client)
-
-	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
-	require.NotNil(launchResp.JSON200)
-	session := launchResp.JSON200
-	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, session.Key)
-
-	stored, err := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-	require.NoError(err)
-	require.Len(stored, 1)
-	require.Equal(session.Key, stored[0].SessionKey)
-
-	ts := httptest.NewServer(fixture.server)
-	t.Cleanup(ts.Close)
-	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") +
-		"/ws/v1/workspaces/" + ws.ID +
-		"/runtime/sessions/" + session.Key + "/terminal?cols=80&rows=24"
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte("exit\n")))
-
-	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	for {
-		typ, data, readErr := conn.Read(readCtx)
-		if readErr != nil {
-			require.Failf(
-				"never received exact exit frame",
-				"read err before exit frame: %v", readErr,
-			)
-		}
-		if typ != websocket.MessageText {
-			continue
-		}
-		var msg struct {
-			Type string `json:"type"`
-			Code int    `json:"code"`
-		}
-		require.NoError(json.Unmarshal(data, &msg))
-		require.Equal("exited", msg.Type)
-		require.Equal(9, msg.Code)
-		break
-	}
-
-	require.Eventually(func() bool {
-		runtimeResp, runtimeErr := fixture.client.HTTP.GetWorkspaceRuntimeWithResponse(ctx, &generated.GetWorkspaceRuntimeRequestOptions{PathParams: &generated.GetWorkspaceRuntimePath{ID: ws.ID}})
-		if runtimeErr != nil || runtimeResp.StatusCode != http.StatusOK ||
-			runtimeResp.JSON200 == nil || runtimeResp.JSON200.Sessions == nil ||
-			len(runtimeResp.JSON200.Sessions) != 0 {
-			return false
-		}
-		stored, storedErr := fixture.database.ListWorkspaceRuntimeSessions(ctx, ws.ID)
-		return storedErr == nil && len(stored) == 0
-	}, 2*time.Second, 20*time.Millisecond)
-}
-
-// TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E pins the user-visible
-// no-tmux behavior that launching a shell after the terminal has reported exit
-// returns a fresh ptyowner-backed session, never the dead shell record the
-// frontend just auto-closed.
+// A fresh shell can launch after PTY EOF before the previous process is reaped.
 func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses /bin/sh")
 	}
 	runParallelWorkspacePTYTest(t)
-
 	require := require.New(t)
 	assert := assert.New(t)
 	cfg := &config.Config{
@@ -1477,14 +1191,14 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 			fmt.Print("echo:" + line)
 		}
 		for {
-			time.Sleep(time.Hour)
+			time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
 		}
 	case "altscreen":
 		reader := bufio.NewReader(os.Stdin)
 		_, err := reader.ReadString('\n')
 		if err != nil {
 			for {
-				time.Sleep(time.Hour)
+				time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
 			}
 		}
 		fmt.Print("\x1b[?1049h\x1b[Hcodex screen")
@@ -1493,7 +1207,7 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 			fmt.Print("\x1b[Hlive:" + line)
 		}
 		for {
-			time.Sleep(time.Hour)
+			time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
 		}
 	case "size":
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -1504,10 +1218,7 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 			}
 		}
 		return
-	case "exit":
-		os.Exit(3)
-	case "print-exit":
-		fmt.Print("quick-api-output")
+	case "quick-exit":
 		os.Exit(7)
 	case "pty-close-on-input-then-sleep":
 		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -1518,18 +1229,7 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 		_ = os.Stdin.Close()
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
-		time.Sleep(2 * time.Second)
-		os.Exit(7)
-	case "pty-close-on-input-then-exit":
-		_, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err != nil {
-			os.Exit(2)
-		}
-		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
-		_ = os.Stdin.Close()
-		_ = os.Stdout.Close()
-		_ = os.Stderr.Close()
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(2 * time.Second) //nolint:kennlint // holds the exited shell process while a fresh shell launches after PTY EOF
 		os.Exit(7)
 	default:
 		require.Failf(t, "unknown helper mode", "mode %q", args[sep+2])

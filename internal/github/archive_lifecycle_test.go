@@ -32,6 +32,20 @@ type blockingArchiveRunner struct {
 	done    chan struct{}
 }
 
+type signalingArchiveRunner struct {
+	*archive.Service
+	passed chan struct{}
+}
+
+func (r *signalingArchiveRunner) RunPass(ctx context.Context) (bool, error) {
+	worked, err := r.Service.RunPass(ctx)
+	select {
+	case r.passed <- struct{}{}:
+	default:
+	}
+	return worked, err
+}
+
 type archiveLifecycleRecorder struct {
 	ensured []platform.RepoRef
 	retried []platform.RepoRef
@@ -836,7 +850,8 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
 	service.SetWake(syncer.WakeArchive)
-	syncer.SetArchiveService(service)
+	passes := make(chan struct{}, 1)
+	syncer.SetArchiveService(&signalingArchiveRunner{Service: service, passed: passes})
 	syncer.SetArchivePollIntervalForTesting(time.Millisecond)
 	requireEnsureConfigured(t, service, []platform.RepoRef{ref})
 	_, err = service.Start(t.Context(), []platform.RepoRef{ref})
@@ -847,23 +862,27 @@ func TestArchiveWorkerAdvancesRealServiceAfterStart(t *testing.T) {
 	repo, err := database.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(ref))
 	require.NoError(err)
 	require.NotNil(repo)
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		states, stateErr := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
-		require.NoError(stateErr)
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-passes:
+		case <-deadline.C:
+			require.FailNow("archive worker did not advance the real archive service")
+		}
+		states, err := database.ListArchiveRepoStates(t.Context(), []int64{repo.ID})
+		require.NoError(err)
 		if len(states) == 1 && states[0].IssueInventory.Complete() {
 			assert.Equal(db.ArchiveCollectionModeFull, states[0].CollectionMode)
-			var itemCount int
-			require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
-				SELECT COUNT(*) FROM forge_archive_items
-				WHERE repo_id = ? AND item_type = 'issue'`, repo.ID,
-			).Scan(&itemCount))
-			assert.Equal(1, itemCount)
-			return
+			break
 		}
-		time.Sleep(5 * time.Millisecond) //nolint:kennlint // waits for archive worker HTTP fixture to persist inventory
 	}
-	require.Fail("archive worker did not advance the real archive service")
+	var itemCount int
+	require.NoError(database.ReadDB().QueryRowContext(t.Context(), `
+		SELECT COUNT(*) FROM forge_archive_items
+		WHERE repo_id = ? AND item_type = 'issue'`, repo.ID,
+	).Scan(&itemCount))
+	assert.Equal(1, itemCount)
 }
 
 func TestSetReposSeedsArchiveDiscoveryAndRetriesCredentialsBeforeCutover(t *testing.T) {

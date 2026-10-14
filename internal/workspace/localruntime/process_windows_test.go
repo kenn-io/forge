@@ -28,7 +28,7 @@ func TestWindowsACPProcessTreeHelper(t *testing.T) {
 	}
 	if mode == "child" {
 		for {
-			time.Sleep(time.Second)
+			time.Sleep(time.Second) //nolint:kennlint // keeps the child subprocess alive until process-tree termination
 		}
 	}
 	executable, err := os.Executable()

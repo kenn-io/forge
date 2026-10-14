@@ -151,7 +151,7 @@ func runningTurn(t *testing.T, agent *ACP) ACPTurnRecord {
 
 // advance moves the fake clock and lets the turn clock handle every tick.
 func advance(d time.Duration) {
-	time.Sleep(d)
+	time.Sleep(d) //nolint:kennlint // every caller runs inside synctest; this only advances its fake clock
 	synctest.Wait()
 }
 

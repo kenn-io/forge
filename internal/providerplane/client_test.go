@@ -294,7 +294,7 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond) //nolint:kennlint // delays the HTTP body beyond the buffered client's 100ms timeout
 		_, _ = io.WriteString(w, "late video bytes")
 	}))
 	t.Cleanup(hub.Close)

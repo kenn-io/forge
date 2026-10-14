@@ -935,7 +935,7 @@ func doFleetContainerHTTPRequest(
 			return resp
 		}
 		lastErr = err
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) //nolint:kennlint // backs off HTTP requests until the container endpoint becomes ready
 	}
 	require.NoError(t, lastErr)
 	return nil

@@ -626,6 +626,14 @@ that names the case and what holds the wait: the asserted result is the deadline
 expiring, or a `select` on a timer shows that an event does not happen. Short
 positive `Never` windows are allowed because they cannot fail.
 
+`sleeptest` rejects `time.Sleep` outside synctest bubbles, including test helpers.
+A helper that advances fake time with `time.Sleep` needs one
+`//nolint:kennlint` explaining that it's only called in a bubble. Retain a sleep
+only for a real subprocess, HTTP, tmux, or container wait, with
+`//nolint:kennlint // reason` naming the external boundary and budget. For absence
+checks, select on the event and a timer, with a reason naming the event that must
+remain absent.
+
 ## HTTP testing discipline
 
 A test of user-visible HTTP behavior is **wire-level** when the request flows

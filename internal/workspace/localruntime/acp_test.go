@@ -62,6 +62,24 @@ func TestACPStdioHelper(t *testing.T) {
 			threadStatus(kind)
 		}
 	}
+	waitForParent := func(gate string) {
+		if gate == "" {
+			return
+		}
+		if err := os.WriteFile(gate+".ready", nil, 0o600); err != nil {
+			os.Exit(15)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			if _, err := os.Stat(gate); err == nil {
+				return
+			}
+			if time.Now().After(deadline) {
+				os.Exit(16)
+			}
+			time.Sleep(5 * time.Millisecond) //nolint:kennlint // the ACP subprocess polls a parent-controlled file gate for at most five seconds
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
 	elicitationOffered := false
@@ -91,7 +109,7 @@ func TestACPStdioHelper(t *testing.T) {
 		case "initialize":
 			// A slow start keeps the owner's socket closed while the daemon waits.
 			if delay, err := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_INITIALIZE_DELAY")); err == nil {
-				time.Sleep(delay)
+				time.Sleep(delay) //nolint:kennlint // delays the ACP subprocess initialization response to exercise startup cancellation
 			}
 			if os.Getenv("KENN_FORGE_ACP_BAD_VERSION") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
@@ -242,17 +260,14 @@ func TestACPStdioHelper(t *testing.T) {
 				// The agent starts and owns a new turn; the original prompt's
 				// completion arrives after the steering answer.
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"startedNewTurn"}}`+"\n", message.ID)
-				time.Sleep(20 * time.Millisecond)
+				waitForParent(os.Getenv("KENN_FORGE_ACP_PROMPT_COMPLETION_GATE"))
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", promptID)
-				if os.Getenv("KENN_FORGE_ACP_LATE_THREAD_STATUS") == "1" {
-					// The first status arrives only after the prompt completes.
-					time.Sleep(50 * time.Millisecond)
-				}
+				waitForParent(os.Getenv("KENN_FORGE_ACP_THREAD_STATUS_GATE"))
 				if os.Getenv("KENN_FORGE_ACP_TAKEOVER_IDLE_ONLY") != "1" {
 					threadStatus("active")
 				}
 				go func() {
-					time.Sleep(300 * time.Millisecond)
+					waitForParent(os.Getenv("KENN_FORGE_ACP_TAKEOVER_IDLE_GATE"))
 					threadStatus("idle")
 				}()
 			default:
@@ -447,27 +462,7 @@ func TestACPReportsActivityCommandsAndElicitation(t *testing.T) {
 }
 
 func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := newACPTestManager(t, Options{Targets: targets})
-	cwd, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-	require.NoError(t, err)
-	agent, err := manager.ACP("workspace", info.Key)
-	require.NoError(t, err)
-	snapshot := func() ACPState {
-		var state ACPState
-		data, err := agent.Snapshot()
-		if err == nil {
-			_ = json.Unmarshal(data, &state)
-		}
-		return state
-	}
+	agent, snapshot := setupACPSteerTakeover(t)
 	userTexts := func(state ACPState) []string {
 		var texts []string
 		for _, message := range state.Messages {
@@ -506,31 +501,71 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	assert.Empty(t, snapshot().Queue)
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
-
-	// A turn the agent starts after a steer keeps the chat busy, and queued
-	// work waits until the agent reports its thread idle.
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-3"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer-4"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued-3"}))
-	time.Sleep(100 * time.Millisecond)
-	state = snapshot()
-	assert.True(t, state.Busy, "the agent's own turn is still running")
-	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued-3", Text: "after takeover", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
-	require.Eventually(t, func() bool {
-		state = snapshot()
-		return !state.Busy && len(state.Queue) == 0 && slices.Contains(userTexts(state), "after takeover")
-	}, 5*time.Second, 10*time.Millisecond)
-	texts := userTexts(state)
-	assert.Equal(t, []string{"wait", "takeover", "after takeover"}, texts[len(texts)-3:])
 }
 
-// An agent that never reports thread status gives no signal for when a turn
-// it started after a steer ends, so that turn must not keep the chat busy.
-func TestACPSteerTakeoverWithoutThreadStatusStillDrains(t *testing.T) {
+func TestACPSteerTakeover(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		statusEnv  string
+		idleOnly   bool
+		lateStatus bool
+	}{
+		{name: "idle without active", statusEnv: "KENN_FORGE_ACP_TAKEOVER_IDLE_ONLY", idleOnly: true},
+		{name: "late thread status", statusEnv: "KENN_FORGE_ACP_LATE_THREAD_STATUS", lateStatus: true},
+		{name: "no thread status", statusEnv: "KENN_FORGE_ACP_NO_THREAD_STATUS"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.statusEnv, "1")
+			idleGate, promptGate, statusGate := "", "", ""
+			if tc.idleOnly || tc.lateStatus {
+				idleGate = filepath.Join(t.TempDir(), "idle-release")
+				t.Setenv("KENN_FORGE_ACP_TAKEOVER_IDLE_GATE", idleGate)
+			}
+			if tc.idleOnly {
+				promptGate = filepath.Join(t.TempDir(), "prompt-release")
+				t.Setenv("KENN_FORGE_ACP_PROMPT_COMPLETION_GATE", promptGate)
+			}
+			if tc.lateStatus {
+				statusGate = filepath.Join(t.TempDir(), "status-release")
+				t.Setenv("KENN_FORGE_ACP_THREAD_STATUS_GATE", statusGate)
+			}
+			agent, snapshot := setupACPSteerTakeover(t)
+			if tc.idleOnly {
+				// An earlier turn establishes status support before an idle-only takeover.
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "hello", ID: "first"}))
+				require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
+			}
+			require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+			require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
+			if tc.idleOnly {
+				require.NoError(t, os.WriteFile(promptGate, nil, 0o600))
+			}
+			if tc.lateStatus {
+				require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, time.Millisecond, "the prompt completes first")
+				require.NoError(t, os.WriteFile(statusGate, nil, 0o600))
+				require.Eventually(t, func() bool { return snapshot().Busy }, 5*time.Second, time.Millisecond, "the late status claims the takeover")
+				state := snapshot()
+				require.Len(t, state.Turns, 2)
+				assert.NotEmpty(t, state.Turns[0].EndedAt)
+				assert.Empty(t, state.Turns[1].EndedAt)
+			}
+			requireACPTakeoverDrainsQueue(t, agent, snapshot, idleGate)
+			if tc.lateStatus {
+				state := snapshot()
+				require.Len(t, state.Turns, 3)
+				assert.Empty(t, state.Turns[1].SubmissionID)
+				assert.Equal(t, "end_turn", state.Turns[1].StopReason)
+				assert.NotEmpty(t, state.Turns[1].EndedAt)
+			}
+		})
+	}
+}
+
+func setupACPSteerTakeover(t *testing.T) (ACPChat, func() ACPState) {
+	t.Helper()
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	t.Setenv("KENN_FORGE_ACP_NO_THREAD_STATUS", "1")
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
@@ -541,95 +576,31 @@ func TestACPSteerTakeoverWithoutThreadStatusStillDrains(t *testing.T) {
 	require.NoError(t, err)
 	agent, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
+	return agent, func() ACPState {
+		var state ACPState
+		if data, err := agent.Snapshot(); err == nil {
+			_ = json.Unmarshal(data, &state)
+		}
+		return state
+	}
+}
 
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
+func requireACPTakeoverDrainsQueue(t *testing.T, agent ACPChat, snapshot func() ACPState, idleGate string) {
+	t.Helper()
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
 	var state ACPState
-	require.Eventually(t, func() bool {
-		data, err := agent.Snapshot()
-		if err != nil || json.Unmarshal(data, &state) != nil || state.Busy || len(state.Queue) != 0 {
-			return false
-		}
-		return slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
-	}, 5*time.Second, 10*time.Millisecond)
-}
-
-// A status-reporting agent whose takeover turn reports only idle, with no
-// fresh active, still ends that turn once the original prompt completed.
-func TestACPSteerTakeoverEndsOnIdleWithoutActive(t *testing.T) {
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	t.Setenv("KENN_FORGE_ACP_TAKEOVER_IDLE_ONLY", "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := newACPTestManager(t, Options{Targets: targets})
-	cwd, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-	require.NoError(t, err)
-	agent, err := manager.ACP("workspace", info.Key)
-	require.NoError(t, err)
-	snapshot := func() ACPState {
-		var state ACPState
-		if data, err := agent.Snapshot(); err == nil {
-			_ = json.Unmarshal(data, &state)
-		}
-		return state
+	if idleGate != "" {
+		require.Eventually(t, func() bool {
+			_, err := os.Stat(idleGate + ".ready")
+			return err == nil
+		}, 5*time.Second, 10*time.Millisecond)
+		state = snapshot()
+		assert.True(t, state.Busy, "the agent's own turn is still running")
+		assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "after takeover", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue, "queued work waits for the agent's turn")
+		require.NoError(t, os.WriteFile(idleGate, nil, 0o600))
 	}
-
-	// An earlier turn shows the agent reports thread status.
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "hello", ID: "first"}))
-	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
-	time.Sleep(100 * time.Millisecond)
-	state := snapshot()
-	assert.True(t, state.Busy, "the agent's own turn is still running")
-	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "after takeover", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
 	require.Eventually(t, func() bool {
-		state := snapshot()
-		return !state.Busy && len(state.Queue) == 0 && slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
-	}, 5*time.Second, 10*time.Millisecond)
-}
-
-// An agent whose first thread status arrives only after the steer answered,
-// and even after the original prompt completed, still has its takeover turn
-// tracked: the chat is busy again until the thread goes idle.
-func TestACPSteerTakeoverTrackedByLateThreadStatus(t *testing.T) {
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	t.Setenv("KENN_FORGE_ACP_LATE_THREAD_STATUS", "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := newACPTestManager(t, Options{Targets: targets})
-	cwd, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-	require.NoError(t, err)
-	agent, err := manager.ACP("workspace", info.Key)
-	require.NoError(t, err)
-	snapshot := func() ACPState {
-		var state ACPState
-		if data, err := agent.Snapshot(); err == nil {
-			_ = json.Unmarshal(data, &state)
-		}
-		return state
-	}
-
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
-	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, time.Millisecond, "the prompt completes first")
-	require.Eventually(t, func() bool { return snapshot().Busy }, 5*time.Second, time.Millisecond, "the late status claims the takeover")
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
-	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "after takeover", Sender: ACPSender{Kind: ACPSenderUser}}}, snapshot().Queue, "queued work waits for the agent's turn")
-	require.Eventually(t, func() bool {
-		state := snapshot()
+		state = snapshot()
 		return !state.Busy && len(state.Queue) == 0 && slices.ContainsFunc(state.Messages, func(message ACPMessage) bool { return message.Text == "after takeover" })
 	}, 5*time.Second, 10*time.Millisecond)
 }

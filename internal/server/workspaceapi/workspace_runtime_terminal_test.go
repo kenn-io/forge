@@ -373,54 +373,6 @@ func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testin
 	}
 }
 
-func TestServeRuntimeTerminalClosedOutputStillReportsSessionExit(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	output := make(chan []byte)
-	close(output)
-	done := make(chan struct{})
-	attachment := localruntime.NewAttachmentForTesting(
-		localruntime.AttachmentForTestingOptions{
-			Output:              output,
-			Done:                done,
-			Resize:              func(ptysize.Geometry) error { return nil },
-			Refresh:             func(context.Context) error { return nil },
-			SessionOutputClosed: func() bool { return true },
-		},
-	)
-	wsURL, handlerDone := runtimeTerminalTestServer(t, attachment)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	conn, wsHTTPResp, err := websocket.Dial(
-		ctx, wsURL+"?cols=80&rows=24", nil,
-	)
-	if wsHTTPResp != nil {
-		t.Cleanup(func() {
-			if wsHTTPResp != nil && wsHTTPResp.Body != nil {
-				_ = wsHTTPResp.Body.Close()
-			}
-		})
-	}
-	require.NoError(err)
-	defer conn.Close(websocket.StatusNormalClosure, "done")
-
-	typ, data, err := conn.Read(ctx)
-	require.NoError(err)
-	require.Equal(websocket.MessageText, typ)
-	var msg struct {
-		Type string `json:"type"`
-	}
-	require.NoError(json.Unmarshal(data, &msg))
-	require.Equal("exited", msg.Type)
-	_ = conn.Close(websocket.StatusNormalClosure, "done")
-	select {
-	case <-handlerDone:
-	case <-ctx.Done():
-		require.Fail("terminal handler did not return after session exit")
-	}
-}
-
 func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -485,7 +437,7 @@ func TestServeRuntimeTerminalRestartDetachDoesNotReportSessionExit(t *testing.T)
 	}
 }
 
-func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testing.T) {
+func TestServeRuntimeTerminalWaitsForOutputAfterProcessExit(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	output := make(chan []byte, 1)
@@ -511,19 +463,37 @@ func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testin
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	close(done)
+	exitCtx, exitCancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer exitCancel()
+	select {
+	case done <- struct{}{}:
+	case <-exitCtx.Done():
+		require.FailNow("terminal bridge did not consume the exit signal")
+	}
+	type frame struct {
+		typ  websocket.MessageType
+		data []byte
+		err  error
+	}
+	firstFrame := make(chan frame, 1)
 	go func() {
-		time.Sleep(200 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
-		output <- []byte("final terminal output")
-		close(output)
+		typ, data, err := conn.Read(exitCtx)
+		firstFrame <- frame{typ: typ, data: data, err: err}
 	}()
+	select {
+	case <-firstFrame:
+		require.FailNow("terminal bridge returned before final output arrived")
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows no websocket frame arrives during the post-exit window before final output is released
+	}
+	output <- []byte("final terminal output")
+	close(output)
 
-	typ, data, err := conn.Read(ctx)
-	require.NoError(err)
-	require.Equal(websocket.MessageBinary, typ)
-	require.Equal("final terminal output", string(data))
+	first := <-firstFrame
+	require.NoError(first.err)
+	require.Equal(websocket.MessageBinary, first.typ)
+	require.Equal("final terminal output", string(first.data))
 
-	typ, data, err = conn.Read(ctx)
+	typ, data, err := conn.Read(exitCtx)
 	require.NoError(err)
 	require.Equal(websocket.MessageText, typ)
 	var msg struct {
@@ -534,7 +504,7 @@ func TestServeRuntimeTerminalDrainsDelayedFinalOutputBeforeSessionExit(t *testin
 
 	select {
 	case <-handlerDone:
-	case <-ctx.Done():
+	case <-exitCtx.Done():
 		require.Fail("terminal handler did not return after session exit")
 	}
 }

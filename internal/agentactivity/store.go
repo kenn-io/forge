@@ -93,7 +93,12 @@ type Store struct {
 }
 
 func NewStore(root string) *Store {
-	return &Store{root: root, now: time.Now, reportLock: make(chan struct{}, 1)}
+	return NewStoreWithClock(root, time.Now)
+}
+
+// NewStoreWithClock timestamps reports using now.
+func NewStoreWithClock(root string, now func() time.Time) *Store {
+	return &Store{root: root, now: now, reportLock: make(chan struct{}, 1)}
 }
 
 func (s *Store) HandleHook(agent string, input io.Reader, runtimeSessionKey string) error {

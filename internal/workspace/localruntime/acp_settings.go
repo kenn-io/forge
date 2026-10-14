@@ -35,7 +35,12 @@ func configOffers(option ACPConfigOption, value string) bool {
 }
 
 func (a *ACP) configure(id, value string, generation uint64) error {
-	a.turnMu.Lock()
+	if a.onConfigLockContention == nil {
+		a.turnMu.Lock()
+	} else if !a.turnMu.TryLock() {
+		a.onConfigLockContention()
+		a.turnMu.Lock()
+	}
 	defer a.turnMu.Unlock()
 	a.mu.Lock()
 	if err := a.supervisionGateLocked(generation); err != nil {

@@ -45,9 +45,7 @@ linters:
         settings:
           # Schema CHECK constraints are an intentional SQLite invariant
           # (context/db-migrations.md). Historical migrations are immutable.
-          # sleeptest stays off until the polling-wait conversion in
-          # kenn-io/forge#1103 deletes it from this list.
-          disable: [sqlcheck, sleeptest]
+          disable: [sqlcheck]
   disable:
     # kenn-io/forge#1154. Do not add t.Parallel() in bulk; shared DB,
     # httptest, and daemon fixtures race.

@@ -182,5 +182,5 @@ func TestWorkspaceAgentSessionHelper(t *testing.T) { //nolint:paralleltest // su
 		_, _ = fmt.Fprintln(os.Stderr, "unknown helper mode")
 		os.Exit(2)
 	}
-	time.Sleep(time.Hour)
+	time.Sleep(time.Hour) //nolint:kennlint // keeps the agent subprocess alive until runtime cleanup
 }

@@ -62,7 +62,7 @@ func TestInstallRunsCleanupBeforeSIGTERMExit(t *testing.T) {
 		if time.Now().After(deadline) {
 			require.FailNow("signal helper did not become ready")
 		}
-		time.Sleep(10 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture
+		time.Sleep(10 * time.Millisecond) //nolint:kennlint // polls the signal-helper subprocess readiness file before sending SIGTERM
 	}
 
 	require.NoError(cmd.Process.Signal(syscall.SIGTERM))

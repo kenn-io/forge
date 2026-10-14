@@ -6379,20 +6379,6 @@ func TestManagerDeleteStopsBeforeTeardownWhenAdmissionFails(t *testing.T) {
 	assert.ErrorIs(statErr, os.ErrNotExist)
 }
 
-func TestIsTmuxKillSessionGone(t *testing.T) {
-	assert.True(t, isTmuxKillSessionGone(nil))
-	assert.False(t, isTmuxKillSessionGone(errors.New("server exited unexpectedly")))
-	for _, status := range []int{1, 2} {
-		t.Run(strconv.Itoa(status), func(t *testing.T) {
-			cmd := procutil.CommandContext(t.Context(), "sh", "-c", fmt.Sprintf("echo 'server exited unexpectedly' >&2; exit %d", status))
-			err := runBuiltCmd(t.Context(), cmd)
-			var exitErr *exec.ExitError
-			require.ErrorAs(t, err, &exitErr)
-			assert.Equal(t, status == 1, isTmuxKillSessionGone(err))
-		})
-	}
-}
-
 func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

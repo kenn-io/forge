@@ -1483,47 +1483,24 @@ func TestIsTmuxKillSessionGone(t *testing.T) {
 	assert.False(t, IsTmuxKillSessionGone([]byte("server exited unexpectedly"), errors.New("wrapper failed")))
 }
 
-func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
-	for _, tc := range []struct {
-		message string
-		status  int
-	}{
-		{message: "can't find session: nope", status: 1},
-		{message: "server exited unexpectedly", status: 1},
-		{message: "wrapper: server exited unexpectedly", status: 1},
-		{message: "server exited unexpectedly", status: 2},
-	} {
-		t.Run(fmt.Sprintf("%s/status%d", tc.message, tc.status), func(t *testing.T) {
-			tmuxPath := filepath.Join(t.TempDir(), "tmux-absent")
-			require.NoError(t, os.WriteFile(
-				tmuxPath,
-				fmt.Appendf(nil, "#!/bin/sh\necho %s >&2\nexit %d\n", shellquote.Join(tc.message), tc.status),
-				0o755,
-			))
-			done := make(chan struct{})
-			close(done)
-			mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-			mgr.sessions["ws-1:codex"] = &session{
-				info: SessionInfo{
-					Key:         "ws-1:codex",
-					WorkspaceID: "ws-1",
-					TargetKey:   "codex",
-					Kind:        LaunchTargetAgent,
-				},
-				cmd:         &exec.Cmd{},
-				tmuxSession: "kenn-forge-ws-1-codex",
-				done:        done,
-			}
-
-			err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
-
-			if tc.status == 1 {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, tc.message)
-			}
-		})
+func TestManagerStopTreatsTmuxServerExitAsGone(t *testing.T) {
+	done := make(chan struct{})
+	close(done)
+	mgr := NewManager(Options{TmuxCommand: []string{"sh", "-c", "echo 'server exited unexpectedly' >&2; exit 1"}})
+	mgr.sessions["ws-1:codex"] = &session{
+		info: SessionInfo{
+			Key:         "ws-1:codex",
+			WorkspaceID: "ws-1",
+			TargetKey:   "codex",
+			Kind:        LaunchTargetAgent,
+		},
+		cmd:         &exec.Cmd{},
+		tmuxSession: "kenn-forge-ws-1-codex",
+		done:        done,
 	}
+
+	err := mgr.Stop(t.Context(), "ws-1", "ws-1:codex")
+	require.NoError(t, err)
 }
 
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {

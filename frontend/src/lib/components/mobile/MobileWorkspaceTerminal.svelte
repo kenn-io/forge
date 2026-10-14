@@ -756,13 +756,15 @@
     const shown = visible && !wasVisible;
     wasVisible = visible;
     if (!shown) return;
-    untrack(() => {
+    // Cleanup cancels a pending reload so a late reply cannot reclaim
+    // released sessions or navigate away from the next page.
+    return untrack(() => {
       if (workspace?.id !== workspaceId) return;
-      appRuntime.runCommand(loadWorkspace({ background: true }), {
+      return appRuntime.runCommand(loadWorkspace({ background: true }), {
         operation: "reload shown mobile workspace",
         safeContext: { workspaceId, remote: Boolean(hostKey) },
         onFailure: () => undefined,
-      });
+      }).interrupt;
     });
   });
 

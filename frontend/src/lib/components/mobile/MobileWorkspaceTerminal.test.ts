@@ -181,6 +181,29 @@ describe("MobileWorkspaceTerminal", () => {
     expect(events.subscribeWorkspaceEvents).toHaveBeenCalledOnce();
   });
 
+  it("cancels the reload on return when the terminal unmounts", async () => {
+    const onMissing = vi.fn();
+    const view = render(MobileWorkspaceTerminalTestHarness, { props: { ...props, onMissing } });
+    await screen.findByRole("button", { name: "Open linked PR #7" });
+    const reload = Promise.withResolvers<never>();
+    mocks.runtimeClient.getWorkspace.mockReturnValue(reload.promise);
+    const loadsBefore = mocks.runtimeClient.getWorkspace.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(loadsBefore + 1));
+    view.unmount();
+    reload.reject(
+      new GeneratedProblemResponse(
+        { type: "about:blank", title: "Not found", status: 404, code: "workspaceNotFound" },
+        new Response(null, { status: 404 }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onMissing).not.toHaveBeenCalled();
+  });
+
   it("keeps a loaded terminal when a background item reload fails", async () => {
     let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
     events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {

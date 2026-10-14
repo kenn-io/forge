@@ -358,8 +358,13 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
     const selectedURL = page.url();
+    const refreshedDetail = page.waitForRequest(
+      (request) => request.method() === "GET" && new URL(request.url()).pathname === detailPath,
+      { timeout: 10_000 },
+    );
 
     await persistActivityComment(page, server.info.base_url, newComment);
+    await refreshedDetail;
 
     const storedDetail = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
     expect(storedDetail.ok()).toBe(true);

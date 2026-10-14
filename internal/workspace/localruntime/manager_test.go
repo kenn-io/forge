@@ -1484,17 +1484,29 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 }
 
 func TestManagerKillTmuxSessionIgnoresExitedServer(t *testing.T) {
-	for _, message := range []string{"server exited unexpectedly", "error: server exited unexpectedly"} {
-		t.Run(message, func(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		message string
+		status  int
+		gone    bool
+	}{
+		{name: "exited server", message: "server exited unexpectedly", status: 1, gone: true},
+		{name: "prefixed message", message: "error: server exited unexpectedly", status: 1},
+		{name: "other exit status", message: "server exited unexpectedly", status: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
-			require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\necho '%s' >&2\nexit 1\n", message), 0o755))
+			require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\necho '%s' >&2\nexit %d\n", tc.message, tc.status), 0o755))
 			mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
 
 			err := mgr.killTmuxSession(t.Context(), "session")
-			if message == "server exited unexpectedly" {
+			if tc.gone {
 				require.NoError(t, err)
 			} else {
-				require.ErrorContains(t, err, message)
+				require.ErrorContains(t, err, tc.message)
+				exitErr, ok := errors.AsType[*exec.ExitError](err)
+				require.True(t, ok)
+				assert.Equal(t, tc.status, exitErr.ExitCode())
 			}
 			require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionUnavailable)
 		})

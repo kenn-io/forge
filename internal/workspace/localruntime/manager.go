@@ -1344,6 +1344,9 @@ func (m *Manager) killTmuxSession(
 		return nil
 	}
 	msg := strings.TrimSpace(stderr.String())
+	if msg == "server exited unexpectedly" {
+		return nil
+	}
 	if msg == "" {
 		return err
 	}

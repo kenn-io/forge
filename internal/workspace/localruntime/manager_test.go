@@ -1483,6 +1483,24 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestManagerKillTmuxSessionIgnoresExitedServer(t *testing.T) {
+	for _, message := range []string{"server exited unexpectedly", "error: server exited unexpectedly"} {
+		t.Run(message, func(t *testing.T) {
+			tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
+			require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\necho '%s' >&2\nexit 1\n", message), 0o755))
+			mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
+
+			err := mgr.killTmuxSession(t.Context(), "session")
+			if message == "server exited unexpectedly" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, message)
+			}
+			require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionUnavailable)
+		})
+	}
+}
+
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")

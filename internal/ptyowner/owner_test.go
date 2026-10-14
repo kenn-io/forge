@@ -299,7 +299,7 @@ func TestOwnerNaturalExitRetentionWaitsForAttachmentCompletion(t *testing.T) {
 	}{
 		{name: "active attachment at exit", activeAtExit: true},
 		{name: "no active attachments at exit"},
-		{name: "completion already signaled", alreadyCompleted: true},
+		{name: "completion already signaled", activeAtExit: true, alreadyCompleted: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -313,10 +313,12 @@ func TestOwnerNaturalExitRetentionWaitsForAttachmentCompletion(t *testing.T) {
 				}
 				if tc.activeAtExit {
 					o.activeAttachments = 1
-					close(o.postExitAttachmentDone)
+					if !tc.alreadyCompleted {
+						close(o.postExitAttachmentDone)
+					}
 				}
 				if tc.alreadyCompleted {
-					close(o.activeAttachmentsDone)
+					o.endAttach(false)
 				}
 				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 				defer cancel()
@@ -332,7 +334,7 @@ func TestOwnerNaturalExitRetentionWaitsForAttachmentCompletion(t *testing.T) {
 					default:
 					}
 					if tc.activeAtExit {
-						close(o.activeAttachmentsDone)
+						o.endAttach(false)
 					} else {
 						startedAfterExit := o.beginAttach()
 						require.True(startedAfterExit)

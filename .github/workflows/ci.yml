@@ -535,6 +535,10 @@ jobs:
               packages+=("$package")
             fi
           done <<< "$package_list"
+          if [[ ${#packages[@]} -eq 0 ]]; then
+            echo "No packages selected for race shard $RACE_SHARD" >&2
+            exit 1
+          fi
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Summarize race test timings

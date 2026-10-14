@@ -539,6 +539,12 @@ func TestACPSteerTakeover(t *testing.T) {
 			require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
 			if tc.idleOnly {
 				require.NoError(t, os.WriteFile(promptGate, nil, 0o600))
+				// The peer's response must reach the owner before its only idle notification.
+				require.Eventually(t, func() bool {
+					agent.mu.Lock()
+					defer agent.mu.Unlock()
+					return agent.external != nil && agent.external.promptDone
+				}, 5*time.Second, 10*time.Millisecond, "the owner processed the original prompt completion")
 			}
 			if tc.lateStatus {
 				require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, time.Millisecond, "the prompt completes first")
@@ -561,31 +567,14 @@ func TestACPSteerTakeover(t *testing.T) {
 	}
 }
 
-func setupACPSteerTakeover(t *testing.T) (ACPChat, func() ACPState) {
+func setupACPSteerTakeover(t *testing.T) (*ACP, func() ACPState) {
 	t.Helper()
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Label: "Chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
-	manager := newACPTestManager(t, Options{Targets: targets})
-	cwd, err := filepath.EvalSymlinks(t.TempDir())
-	require.NoError(t, err)
-	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-	require.NoError(t, err)
-	agent, err := manager.ACP("workspace", info.Key)
-	require.NoError(t, err)
-	return agent, func() ACPState {
-		var state ACPState
-		if data, err := agent.Snapshot(); err == nil {
-			_ = json.Unmarshal(data, &state)
-		}
-		return state
-	}
+	agent := newInProcessChat(t).start(nil)
+	return agent, func() ACPState { return publishedACPState(t, agent) }
 }
 
-func requireACPTakeoverDrainsQueue(t *testing.T, agent ACPChat, snapshot func() ACPState, idleGate string) {
+func requireACPTakeoverDrainsQueue(t *testing.T, agent *ACP, snapshot func() ACPState, idleGate string) {
 	t.Helper()
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "after takeover", ID: "queued"}))
 	var state ACPState

@@ -167,16 +167,20 @@ func (d *DB) ListPendingMergeQueueDepartures(
 }
 
 // ResolveMergeQueueDeparture records the provider's reason for a pending
-// departure, making it a visible removal. It stays until the pull request is
-// queued again or closed.
+// departure, making it a visible removal. It applies only while that exact
+// departure is still pending, so a delayed lookup cannot resolve a later queue
+// attempt of the same pull request. The removal stays until the pull request
+// is queued again or closed.
 func (d *DB) ResolveMergeQueueDeparture(
-	ctx context.Context, repoID int64, removal MergeQueueRemoval,
+	ctx context.Context, repoID int64, departure MergeQueueDeparture, removal MergeQueueRemoval,
 ) error {
 	if _, err := d.rwExecContext(ctx, `
 		UPDATE forge_merge_queue_removals
 		SET removed_at = ?, reason = ?
-		WHERE repo_id = ? AND number = ? AND removed_at IS NULL`,
-		removal.RemovedAt.UTC(), removal.Reason, repoID, removal.Number,
+		WHERE repo_id = ? AND number = ? AND removed_at IS NULL
+		  AND enqueued_at = ? AND departed_at = ?`,
+		removal.RemovedAt.UTC(), removal.Reason, repoID, departure.Number,
+		departure.EnqueuedAt.UTC(), departure.DepartedAt.UTC(),
 	); err != nil {
 		return fmt.Errorf("resolve merge queue departure: %w", err)
 	}
@@ -184,12 +188,16 @@ func (d *DB) ResolveMergeQueueDeparture(
 }
 
 // DropMergeQueueDeparture forgets a pending departure that is not a removal
-// to show, such as one the queue merged.
-func (d *DB) DropMergeQueueDeparture(ctx context.Context, repoID int64, number int) error {
+// to show, such as one the queue merged. Like ResolveMergeQueueDeparture, it
+// applies only to that exact departure.
+func (d *DB) DropMergeQueueDeparture(
+	ctx context.Context, repoID int64, departure MergeQueueDeparture,
+) error {
 	if _, err := d.rwExecContext(ctx, `
 		DELETE FROM forge_merge_queue_removals
-		WHERE repo_id = ? AND number = ? AND removed_at IS NULL`,
-		repoID, number,
+		WHERE repo_id = ? AND number = ? AND removed_at IS NULL
+		  AND enqueued_at = ? AND departed_at = ?`,
+		repoID, departure.Number, departure.EnqueuedAt.UTC(), departure.DepartedAt.UTC(),
 	); err != nil {
 		return fmt.Errorf("drop merge queue departure: %w", err)
 	}

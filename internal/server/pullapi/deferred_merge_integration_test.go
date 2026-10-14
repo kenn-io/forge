@@ -2066,3 +2066,89 @@ func TestImmediateEnqueueSupersedesQueuedDeferredMerge(t *testing.T) {
 		}
 	}
 }
+
+func TestDeferredMergeSupersededByEnqueueDuringBlockedCIReadDoesNotEnqueueAgain(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	ciStarted := make(chan struct{})
+	ciRelease := make(chan struct{})
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "pending",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		// The blocked CI read returns passing checks, so a worker that
+		// ignored its supersession would proceed to enqueue.
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		},
+		mergeCh:    make(chan deferredMergeTestMergeCall, 2),
+		mergeQueue: true,
+		enqueueCh:  make(chan int, 2),
+		ciStarted:  ciStarted,
+		ciRelease:  ciRelease,
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	)
+	_, err := database.ReplaceMergeQueue(ctx, repoID, db.MergeQueueSnapshot{
+		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: now,
+	})
+	require.NoError(err)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+	expectedHeadSHA := "head-sha"
+
+	deferResp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.NoError(err)
+	require.Equal(202, deferResp.StatusCode, string(deferResp.Body))
+	select {
+	case <-ciStarted:
+	case <-time.After(time.Second):
+		require.FailNow("timed out waiting for deferred CI refresh")
+	}
+
+	mergeResp, err := client.HTTP.MergePullOnHostWithResponse(ctx, &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+	require.NoError(err)
+	require.Equal(200, mergeResp.StatusCode, string(mergeResp.Body))
+	require.Equal(7, <-provider.enqueueCh)
+
+	close(ciRelease)
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	for {
+		select {
+		case ev := <-events:
+			require.NotEqual("deferred_merge_completed", ev.Event.Type)
+		case <-deadline:
+			require.Empty(provider.enqueueCh, "the superseded worker must not enqueue again")
+			return
+		}
+	}
+}

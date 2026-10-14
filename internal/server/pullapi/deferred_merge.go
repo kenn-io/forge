@@ -56,6 +56,9 @@ func (h *deferredMergeHandle) supersede() {
 }
 
 func (h *deferredMergeHandle) isSuperseded() bool {
+	if h == nil {
+		return false
+	}
 	select {
 	case <-h.superseded:
 		return true
@@ -430,12 +433,21 @@ func (s *Handler) completeDeferredMerge(
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
+	// An immediate enqueue can supersede this worker while its CI or target
+	// reads block. Enqueueing leaves the pull request open, so the target
+	// checks above cannot detect it; without this check the worker would
+	// enqueue again or re-add a pull request the queue already removed.
+	if handle.isSuperseded() {
+		return
+	}
 	result, err := s.mergePRWithBody(ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body)
 	if err != nil {
 		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 		return
 	}
 	if result.Queued {
+		// The enqueue above superseded this worker's own handle; that is
+		// expected and must not suppress its completion.
 		// The target branch's merge queue now owns the merge; it reports
 		// its own outcome through the pull request's queue state.
 		s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)

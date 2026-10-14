@@ -68,4 +68,22 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	var issueQuery gqlIssueQuery
 	err = client.Query(ctx, &issueQuery, vars)
 	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
+
+	var mergeQueueQuery gqlMergeQueueQuery
+	err = client.Query(ctx, &mergeQueueQuery, map[string]any{
+		"owner":    githubv4.String("kenn-io"),
+		"name":     githubv4.String("forge"),
+		"pageSize": githubv4.Int(mergeQueuePageSize),
+		"cursor":   (*githubv4.String)(nil),
+	})
+	require.NoError(err, "merge queue GraphQL query should validate against GitHub")
+
+	var removalQuery gqlMergeQueueRemovalQuery
+	err = client.Query(ctx, &removalQuery, map[string]any{
+		"owner":  githubv4.String("kenn-io"),
+		"name":   githubv4.String("forge"),
+		"number": githubv4.Int(830),
+	})
+	require.NoError(err, "merge queue removal GraphQL query should validate against GitHub")
+	require.NotNil(removalQuery.Repository.PullRequest, "live PR fixture should exist")
 }

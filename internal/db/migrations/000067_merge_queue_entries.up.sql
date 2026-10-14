@@ -28,10 +28,14 @@ CREATE TABLE forge_merge_queue_removals (
     PRIMARY KEY (repo_id, number)
 );
 
-CREATE TRIGGER forge_merge_queue_removals_terminal_eviction
+-- A closed or merged pull request leaves the queue, and its earlier queue
+-- attempt must not reappear if it is reopened before the next queue read.
+CREATE TRIGGER forge_merge_queue_terminal_eviction
 AFTER UPDATE OF state ON forge_merge_requests
 WHEN NEW.state IN ('closed', 'merged')
 BEGIN
+    DELETE FROM forge_merge_queue_entries
+    WHERE repo_id = NEW.repo_id AND number = NEW.number;
     DELETE FROM forge_merge_queue_removals
     WHERE repo_id = NEW.repo_id AND number = NEW.number;
 END;

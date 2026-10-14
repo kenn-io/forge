@@ -161,10 +161,12 @@ For pull requests, that means:
   observed it, and every pass retries its reason lookup. An open pull request
   becomes a visible removal from GitHub's latest non-`merged` removal no older
   than its queue entry; merged, closed, or unexplained-after-30-minutes
-  departures are dropped (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
-- A removal shows until the pull request is queued again; a terminal state
-  write deletes it so reopening never revives it
-  (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
+  departures are dropped. Resolving or dropping applies only to the exact
+  departure looked up, since refreshes overlap and a delayed lookup must not
+  settle a later attempt (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
+- A removal shows until the pull request is queued again. A terminal state
+  write deletes its entry and removal, so reopening never revives an earlier
+  attempt (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
 - An entry that joins and leaves between two reads is never observed. A Forge
   enqueue that the following read does not show is stored provisionally at
   position 0, so its departure is still recorded

@@ -549,7 +549,10 @@ func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
 		ObservedAt: enqueuedAt.Add(2 * time.Minute),
 	})
 	require.NoError(err)
-	require.NoError(database.ResolveMergeQueueDeparture(t.Context(), repoID, db.MergeQueueRemoval{
+	departures, err := database.ListPendingMergeQueueDepartures(t.Context(), repoID)
+	require.NoError(err)
+	require.Len(departures, 1)
+	require.NoError(database.ResolveMergeQueueDeparture(t.Context(), repoID, departures[0], db.MergeQueueRemoval{
 		Number: 7, RemovedAt: enqueuedAt.Add(52 * time.Second), Reason: "branch_protection_failure",
 	}))
 

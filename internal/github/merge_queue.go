@@ -278,18 +278,18 @@ func (s *Syncer) resolveMergeQueueDepartures(
 		var storeErr error
 		switch {
 		case !strings.EqualFold(state, "OPEN"):
-			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure.Number)
+			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
 		case removal != nil && !removal.RemovedAt.Before(departure.EnqueuedAt):
 			if strings.EqualFold(removal.Reason, "merged") {
-				storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure.Number)
+				storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
 				break
 			}
-			storeErr = s.db.ResolveMergeQueueDeparture(ctx, repoID, *removal)
+			storeErr = s.db.ResolveMergeQueueDeparture(ctx, repoID, departure, *removal)
 			if storeErr == nil {
 				resolved = append(resolved, departure.Number)
 			}
 		case now.Sub(departure.DepartedAt) > mergeQueueDepartureLookupWindow:
-			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure.Number)
+			storeErr = s.db.DropMergeQueueDeparture(ctx, repoID, departure)
 		}
 		if storeErr != nil {
 			slog.Error("store merge queue departure failed",

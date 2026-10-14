@@ -71,6 +71,11 @@ repackage the bundle, and prints the APK path. Add `--dry-run` to print the
 commands without running them. The generated project signs release builds with
 the debug keystore; distribution needs your own signing configuration.
 
+Set `FORGE_MOBILE_VERSION` to a release such as `v0.4.0` to stamp that version
+into the app. Its Android version code is `MAJOR * 1000000 + MINOR * 1000 + PATCH`,
+so every later release installs as an update. Delete `android/` first, because
+the version is applied only when the native project is generated.
+
 ## iOS
 
 The Expo config includes iOS settings, but the iOS app has not been built or

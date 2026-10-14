@@ -71,6 +71,7 @@
     mobileWorkspaceIdentity,
     mobileWorkspaceLinkedItem,
   } from "./mobile-workspace-detail.js";
+  import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
   import {
     loadMobileWorkspaceSession,
     saveMobileWorkspaceSession,
@@ -147,6 +148,7 @@
   const showLaunchProgress = $derived(startingTargetKey !== null && startingTargetKey !== undefined &&
     !selectedSession?.runtimeSession && !sessionSelectionExplicit);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
+  const linkedItemAccent = $derived(workspace && linkedItem ? workspaceItemAccent[workspaceItemState(workspace, linkedItem.itemType)] : undefined);
   const workspaceIdentity = $derived(
     workspace
       ? mobileWorkspaceIdentity(workspace, hostKey)
@@ -890,6 +892,7 @@
         <button
           type="button"
           class="mobile-workspace-terminal__item"
+          style:--item-accent={linkedItemAccent}
           aria-label={hostKey
             ? `Linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number} unavailable for Fleet workspace`
             : `Open linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number}`}
@@ -1178,7 +1181,7 @@
   .mobile-workspace-terminal__identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-terminal__identity strong { color: var(--text-primary); font-size: var(--font-size-md); }
   .mobile-workspace-terminal__actions { display: flex; gap: 0.375rem; }
-  .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: var(--text-on-accent) !important; border-color: var(--accent-green) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: color-mix(in srgb, var(--item-accent) 25%, var(--bubble-ink)) !important; border-color: color-mix(in srgb, var(--item-accent) 70%, #ffffff) !important; background: color-mix(in srgb, var(--item-accent) 70%, #ffffff) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
   .mobile-workspace-terminal__item:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
   .mobile-workspace-terminal__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal-bg, var(--bg-primary)); }
   .mobile-workspace-terminal__runtime-error { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; color: var(--text-secondary); border-bottom: thin solid var(--border-default); background: var(--bg-surface); font-size: var(--font-size-sm); }

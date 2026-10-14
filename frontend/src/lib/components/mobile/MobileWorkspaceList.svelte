@@ -59,6 +59,7 @@
     sortMobileWorkspaces,
     workspaceMatchesMobileSearch,
   } from "./mobile-workspace-list.js";
+  import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   type HostSummary = GeneratedHostSummary;
@@ -259,16 +260,7 @@
   }
 
   function itemAccent(workspace: WorkspaceListItem): string {
-    if (mobileWorkspaceLinkedItem(workspace)?.itemType === "issue") {
-      return workspace.mr_state === "closed" ? "var(--accent-red)" : "var(--accent-blue)";
-    }
-    // An issue workspace's mr_state describes the issue, not its associated
-    // PR, so the PR's lifecycle is unknown here.
-    if (workspace.item_type === "issue") return "var(--text-muted)";
-    if (workspace.mr_state === "merged") return "var(--accent-purple)";
-    if (workspace.mr_state === "closed") return "var(--accent-red)";
-    if (workspace.mr_is_draft) return "var(--accent-amber)";
-    return "var(--accent-green)";
+    return workspaceItemAccent[workspaceItemState(workspace, mobileWorkspaceLinkedItem(workspace)?.itemType ?? "pr")];
   }
 
   function providerItemURL(workspace: WorkspaceListItem): string | null {

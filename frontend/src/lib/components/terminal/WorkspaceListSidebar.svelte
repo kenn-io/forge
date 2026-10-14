@@ -88,6 +88,7 @@
   import { setWorkspaceRepoCatalog } from "../../stores/workspace-repo-catalog.svelte.js";
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
+  import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
 
   type Workspace = WorkspaceListItem;
 
@@ -794,17 +795,8 @@
     navigate(workspaceRoute(ws));
   }
 
-  function itemStateClass(ws: Workspace): string {
-    if (ws.item_type === "kata_task") {
-      return "kata";
-    }
-    if (ws.item_type === "issue") {
-      return ws.mr_state === "closed" ? "closed" : "issue";
-    }
-    if (ws.mr_is_draft) return "draft";
-    if (ws.mr_state === "merged") return "merged";
-    if (ws.mr_state === "closed") return "closed";
-    return "open";
+  function itemState(ws: Workspace): WorkspaceItemState {
+    return workspaceItemState(ws, ws.item_type === "issue" ? "issue" : "pr");
   }
 
   function shortBranch(ref: string): string {
@@ -1593,9 +1585,10 @@
                 <button
                   class={[
                     "item-bubble",
-                    itemStateClass(ws),
+                    itemState(ws),
                     ws.item_type === "kata_task" && "item-bubble--kata",
                   ]}
+                  style:--item-accent={workspaceItemAccent[itemState(ws)]}
                   onclick={(e) => handleItemBubbleClick(e, ws)}
                   disabled={!workspaceOperationAvailable(ws, "workspaceRead")}
                   onkeydown={(e) => {
@@ -2211,43 +2204,13 @@
       color 80ms ease;
   }
 
-  /* Bubble fills mix each accent toward pure white, and the ink toward
+  /* Bubble fills mix the state accent toward pure white, and the ink toward
      --bubble-ink, in both themes. kit-ui-check deliberately permits pure
      black/white shade constants inside color-mix — white here is a shade
      anchor, not a palette color. */
-  .item-bubble.open {
-    --bubble-bg: color-mix(in srgb, var(--accent-green) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-green) 25%, var(--bubble-ink));
-  }
-
-  .item-bubble.merged {
-    --bubble-bg: color-mix(in srgb, var(--accent-purple) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-purple) 25%, var(--bubble-ink));
-  }
-
-  .item-bubble.closed {
-    --bubble-bg: color-mix(in srgb, var(--accent-red) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-red) 25%, var(--bubble-ink));
-  }
-
-  .item-bubble.draft {
-    /* Amber matches the app-wide draft treatment (PR list, detail state
-     * chip, design system) so a draft PR reads as draft here too, rather
-     * than as a muted/neutral pill indistinguishable from other states. */
-    --bubble-bg: color-mix(in srgb, var(--accent-amber) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-amber) 25%, var(--bubble-ink));
-  }
-
-  /* Open issues use blue instead of the open/green PR treatment so an
-   * issue-backed workspace is distinguishable from a PR-backed one. */
-  .item-bubble.issue {
-    --bubble-bg: color-mix(in srgb, var(--accent-blue) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, var(--bubble-ink));
-  }
-
-  .item-bubble.kata {
-    --bubble-bg: color-mix(in srgb, var(--accent-blue) 70%, #ffffff);
-    --bubble-fg: color-mix(in srgb, var(--accent-blue) 25%, var(--bubble-ink));
+  .item-bubble {
+    --bubble-bg: color-mix(in srgb, var(--item-accent) 70%, #ffffff);
+    --bubble-fg: color-mix(in srgb, var(--item-accent) 25%, var(--bubble-ink));
   }
 
   /* Kata identity labels are short slugs/qualified IDs rather than a

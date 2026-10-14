@@ -123,6 +123,20 @@ describe("MobileWorkspaceTerminal", () => {
     resetSessionHostForTest();
   });
 
+  it.each([
+    [{ mr_state: "open" }, "var(--accent-green)"],
+    [{ mr_state: "merged" }, "var(--accent-purple)"],
+    [{ mr_state: "closed" }, "var(--accent-red)"],
+    [{ mr_state: "open", mr_is_draft: true }, "var(--accent-amber)"],
+    // An issue workspace's mr_state is the issue's state, not the PR's.
+    [{ item_type: "issue", associated_pr_number: 7, mr_state: "closed" }, "var(--text-muted)"],
+  ])("colors the linked PR pill by lifecycle state for %o", async (fields, accent) => {
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, ...fields });
+    render(MobileWorkspaceTerminal, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe(accent);
+  });
+
   it("waits for a directly launched ACP session without showing the base terminal", async () => {
     const session: RuntimeSession = {
       key: "chat-a",

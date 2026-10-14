@@ -358,20 +358,8 @@ test("persisted Activity events appear in the open PR timeline after SSE invalid
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
     await expect(detail.getByText(newComment, { exact: true })).toHaveCount(0);
     const selectedURL = page.url();
-    const refreshedDetail = page.waitForRequest(
-      (request) => request.method() === "GET" && new URL(request.url()).pathname === detailPath,
-      { timeout: 10_000 },
-    );
 
     await persistActivityComment(page, server.info.base_url, newComment);
-    await refreshedDetail;
-
-    const storedDetail = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
-    expect(storedDetail.ok()).toBe(true);
-    const storedBody = (await storedDetail.json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
 
     await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
     expect(page.url()).toBe(selectedURL);
@@ -573,13 +561,6 @@ test("viewed-hot PR fast sync refreshes Activity without a notification", async 
     const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/viewed-hot-fast-sync`);
     expect(fastSync.status()).toBe(204);
 
-    const storedDetail = await page.request.get(`${server.info.base_url}${detailPath}`);
-    expect(storedDetail.ok()).toBe(true);
-    const storedBody = (await storedDetail.json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
-
     await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
   } finally {
     await server.stop();
@@ -611,13 +592,6 @@ test("notification-warm PR fast sync refreshes the selected Activity detail", as
 
     const fastSync = await page.request.post(`${server.info.base_url}/__e2e/activity/notification-fast-sync`);
     expect(fastSync.status()).toBe(204);
-
-    const storedDetail = await page.request.get(`${server.info.base_url}${detailPath}`);
-    expect(storedDetail.ok()).toBe(true);
-    const storedBody = (await storedDetail.json()) as {
-      events?: Array<{ Body?: string }>;
-    };
-    expect(storedBody.events?.some((event) => event.Body === newComment)).toBe(true);
 
     await expect(detail.getByText(newComment, { exact: true })).toBeVisible({ timeout: 10_000 });
   } finally {

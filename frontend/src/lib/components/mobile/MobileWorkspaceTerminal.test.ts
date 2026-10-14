@@ -137,6 +137,41 @@ describe("MobileWorkspaceTerminal", () => {
     expect(pill.style.getPropertyValue("--item-accent")).toBe(accent);
   });
 
+  it("recolors the linked PR pill when synced PR data changes", async () => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open" });
+    render(MobileWorkspaceTerminal, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-green)");
+
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "merged" });
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    notify?.({ type: "data_changed" });
+
+    await waitFor(() => expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-purple)"));
+  });
+
+  it("recolors the linked PR pill when a retained terminal is shown again", async () => {
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open" });
+    const view = render(MobileWorkspaceTerminal, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-green)");
+
+    await view.rerender({ ...props, visible: false });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open", mr_is_draft: true });
+    await view.rerender({ ...props, visible: true });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Open linked PR #7" }).style.getPropertyValue("--item-accent")).toBe(
+        "var(--accent-amber)",
+      ),
+    );
+  });
+
   it("waits for a directly launched ACP session without showing the base terminal", async () => {
     const session: RuntimeSession = {
       key: "chat-a",

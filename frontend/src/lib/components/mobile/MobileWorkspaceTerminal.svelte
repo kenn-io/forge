@@ -826,8 +826,16 @@
                     }
                   }).pipe(Effect.andThen(loadWorkspace()), Effect.forkChild, Effect.asVoid);
                 }
-                return event._tag === "ReconnectStale"
-                  ? loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid)
+                if (event._tag === "ReconnectStale") {
+                  return loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid);
+                }
+                // The linked-item pill colors by PR state, and the poll skips
+                // detail once ready. A hidden page reloads when shown again
+                // because a visibility change restarts this lifecycle.
+                const itemMayHaveChanged = event._tag === "ItemDataChanged" ||
+                  (event._tag === "Associated" && event.workspaceId === activeWorkspaceId);
+                return itemMayHaveChanged && visible
+                  ? loadWorkspace().pipe(Effect.forkChild, Effect.asVoid)
                   : Effect.void;
               })),
               { startImmediately: true },

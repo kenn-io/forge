@@ -1344,18 +1344,10 @@ func (m *Manager) killTmuxSession(
 		return nil
 	}
 	msg := strings.TrimSpace(stderr.String())
-	if isTmuxServerExited(stderr.Bytes(), err) {
-		return nil
-	}
 	if msg == "" {
 		return err
 	}
 	return fmt.Errorf("%w: %s", err, msg)
-}
-
-func isTmuxServerExited(stderr []byte, err error) bool {
-	exitErr, ok := errors.AsType[*exec.ExitError](err)
-	return ok && exitErr.ExitCode() == 1 && strings.TrimSpace(string(stderr)) == "server exited unexpectedly"
 }
 
 func (m *Manager) refreshSession(
@@ -1435,7 +1427,8 @@ func isTmuxSessionAbsent(stderr []byte, err error) bool {
 		return false
 	}
 	msg := string(stderr)
-	return strings.Contains(msg, "can't find session") ||
+	return strings.TrimSpace(msg) == "server exited unexpectedly" ||
+		strings.Contains(msg, "can't find session") ||
 		strings.Contains(msg, "no current target") ||
 		strings.Contains(msg, "no server running") ||
 		(strings.Contains(msg, "error connecting to") &&

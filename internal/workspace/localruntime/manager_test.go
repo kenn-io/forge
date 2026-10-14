@@ -1483,7 +1483,7 @@ func TestManagerStopIgnoresAbsentTmuxSession(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestManagerKillTmuxSessionIgnoresExitedServer(t *testing.T) {
+func TestIsTmuxSessionAbsent(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		message string
@@ -1497,20 +1497,24 @@ func TestManagerKillTmuxSessionIgnoresExitedServer(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
 			require.NoError(t, os.WriteFile(tmuxPath, fmt.Appendf(nil, "#!/bin/sh\necho '%s' >&2\nexit %d\n", tc.message, tc.status), 0o755))
-			mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-
-			err := mgr.killTmuxSession(t.Context(), "session")
-			if tc.gone {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, tc.message)
-				exitErr, ok := errors.AsType[*exec.ExitError](err)
-				require.True(t, ok)
-				assert.Equal(t, tc.status, exitErr.ExitCode())
-			}
-			require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionUnavailable)
+			cmd := exec.CommandContext(t.Context(), tmuxPath)
+			stderr, err := cmd.CombinedOutput()
+			require.Error(t, err)
+			assert.Equal(t, tc.gone, isTmuxSessionAbsent(stderr, err))
 		})
 	}
+}
+
+func TestTmuxSessionChecksHandleExitedServer(t *testing.T) {
+	tmuxPath := filepath.Join(t.TempDir(), "tmux-exited")
+	require.NoError(t, os.WriteFile(tmuxPath, []byte("#!/bin/sh\necho 'server exited unexpectedly' >&2\nexit 1\n"), 0o755))
+	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
+	require.ErrorIs(t, mgr.requireTmuxSession(t.Context(), "session"), ErrSessionNotFound)
+	require.NoError(t, mgr.killTmuxSession(t.Context(), "session"))
+	launcher := tmuxLauncher{TmuxCommand: []string{tmuxPath}, Session: "session"}
+	exists, err := launcher.sessionExists(t.Context())
+	require.NoError(t, err)
+	assert.False(t, exists)
 }
 
 func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {

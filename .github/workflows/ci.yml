@@ -495,7 +495,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [server, core, rest]
+        shard: ${{ fromJSON(github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '["all"]' || '["server", "core", "rest"]') }}
     runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
@@ -523,21 +523,21 @@ jobs:
           RACE_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p tmp
-          package_list=$(go list ./...)
-          packages=()
-          while IFS= read -r package; do
-            case "$package" in
-              go.kenn.io/forge/internal/server/*) group=server ;;
-              go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
-              *) group=rest ;;
-            esac
-            if [[ "$group" == "$RACE_SHARD" ]]; then
-              packages+=("$package")
-            fi
-          done <<< "$package_list"
-          if [[ ${#packages[@]} -eq 0 ]]; then
-            echo "No packages selected for race shard $RACE_SHARD" >&2
-            exit 1
+          if [[ "$RACE_SHARD" == all ]]; then
+            packages=(./...)
+          else
+            package_list=$(go list ./...)
+            packages=()
+            while IFS= read -r package; do
+              case "$package" in
+                go.kenn.io/forge/internal/server/*) group=server ;;
+                go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
+                *) group=rest ;;
+              esac
+              if [[ "$group" == "$RACE_SHARD" ]]; then
+                packages+=("$package")
+              fi
+            done <<< "$package_list"
           fi
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 

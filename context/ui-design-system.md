@@ -311,9 +311,14 @@ tree. Indentation and a standard chevron are the affordance.
 ### Table
 
 Row-and-column data uses kit `Table`/`TableHeaderCell` with caller-owned sort state, not
-grid-styled buttons. Under `table-layout: fixed` with a full-width `colspan` detail row,
-collapse narrow-container columns to zero width; `display: none` leaves phantom columns
-that steal width (`frontend/src/lib/components/actions/WorkflowRunList.svelte`).
+grid-styled buttons. Every labeled data column sorts; short settings and status tables opt
+out with `<Table unsorted>`, the only exemption `kit-ui-check` accepts. A table whose
+scroller also holds controls below the rows keeps its own scroller and uses sortable
+`TableHeaderCell`s, since kit `Table` owns its scroll container
+(`frontend/src/lib/components/roborev/JobTable.svelte`). Under `table-layout: fixed` with a
+full-width `colspan` detail row, collapse narrow-container columns to zero width;
+`display: none` leaves phantom columns that steal width
+(`frontend/src/lib/components/actions/WorkflowRunList.svelte`).
 
 ### ActionButton
 

@@ -41,7 +41,7 @@ interface JobsAuthority {
   readonly queryScope: string;
 }
 
-type SortColumn = "id" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
+type SortColumn = "id" | "repo" | "status" | "verdict" | "agent" | "elapsed" | "cost" | "job_type" | "enqueued_at";
 type SortDirection = "asc" | "desc";
 type StringFilterKey = "repo" | "branch" | "status" | "search" | "jobType";
 type BooleanFilterKey = "hideClosed" | "showAutoDesign";
@@ -210,6 +210,10 @@ export function createJobsStore(opts: JobsStoreOptions) {
     switch (col) {
       case "id":
         return job.id;
+      case "repo":
+        // The column reads repo, then branch, then ref; NUL keeps each field
+        // comparing whole before the next one breaks the tie.
+        return [job.repo_name ?? "", job.branch ?? "", job.git_ref].join("\u0000");
       case "status":
         return job.status;
       case "verdict":

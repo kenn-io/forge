@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { EmptyState } from "@kenn-io/kit-ui";
+  import { EmptyState, TableHeaderCell, type SortDirection } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import { isPanelParent } from "../../utils/roborev-panel.js";
   import JobRow from "./JobRow.svelte";
@@ -9,6 +9,7 @@
 
   type SortColumn =
     | "id"
+    | "repo"
     | "status"
     | "verdict"
     | "agent"
@@ -17,55 +18,21 @@
     | "job_type"
     | "enqueued_at";
 
-  interface ColumnDef {
-    key: SortColumn;
-    label: string;
-    sortable: boolean;
-  }
-
-  const columns: ColumnDef[] = [
-    { key: "id", label: "ID", sortable: true },
-    {
-      key: "id",
-      label: "Repo / Branch / Ref",
-      sortable: false,
-    },
-    { key: "agent", label: "Agent", sortable: true },
-    { key: "status", label: "Status", sortable: true },
-    { key: "verdict", label: "Verdict", sortable: true },
-    {
-      key: "elapsed",
-      label: "Elapsed",
-      sortable: true,
-    },
-    {
-      key: "cost",
-      label: "Cost",
-      sortable: true,
-    },
-    {
-      key: "job_type",
-      label: "Type",
-      sortable: true,
-    },
-    {
-      key: "enqueued_at",
-      label: "Queued",
-      sortable: true,
-    },
+  const columns: { key: SortColumn; label: string }[] = [
+    { key: "id", label: "ID" },
+    { key: "repo", label: "Repo / Branch / Ref" },
+    { key: "agent", label: "Agent" },
+    { key: "status", label: "Status" },
+    { key: "verdict", label: "Verdict" },
+    { key: "elapsed", label: "Elapsed" },
+    { key: "cost", label: "Cost" },
+    { key: "job_type", label: "Type" },
+    { key: "enqueued_at", label: "Queued" },
   ];
 
-  function sortIndicator(col: ColumnDef): string {
-    if (!col.sortable) return "";
-    if (jobsStore?.getSortColumn() !== col.key) return "";
-    return jobsStore?.getSortDirection() === "asc"
-      ? " \u2191"
-      : " \u2193";
-  }
-
-  function handleHeaderClick(col: ColumnDef): void {
-    if (!col.sortable) return;
-    jobsStore?.setSortColumn(col.key);
+  function directionFor(key: SortColumn): SortDirection | null {
+    if (jobsStore?.getSortColumn() !== key) return null;
+    return jobsStore.getSortDirection();
   }
 </script>
 
@@ -75,13 +42,13 @@
   <table class="job-table">
     <thead>
       <tr>
-        {#each columns as col (col.label)}
-          <th
-            class:sortable={col.sortable}
-            onclick={() => handleHeaderClick(col)}
-          >
-            {col.label}{sortIndicator(col)}
-          </th>
+        {#each columns as col (col.key)}
+          <TableHeaderCell
+            label={col.label}
+            sortable
+            sortDirection={directionFor(col.key)}
+            onsort={() => jobsStore?.setSortColumn(col.key)}
+          />
         {/each}
       </tr>
     </thead>
@@ -201,26 +168,6 @@
     position: sticky;
     top: 0;
     z-index: 1;
-  }
-
-  th {
-    padding: 6px 10px;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    color: var(--text-muted);
-    text-align: left;
-    background: var(--bg-inset);
-    border-bottom: 1px solid var(--border-default);
-    white-space: nowrap;
-    user-select: none;
-  }
-
-  th.sortable {
-    cursor: pointer;
-  }
-
-  th.sortable:hover {
-    color: var(--text-primary);
   }
 
   .job-table :global(tbody tr:nth-child(even)) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -342,8 +343,9 @@ const mergeQueueBulkRecheck = time.Hour
 // refreshMergeQueueAfterBulkDetail checks a pull request's queue state after
 // bulk hydration marked its detail fresh. That postpones the scheduled detail
 // refresh, which is where a pull request enqueued without a relay hint is
-// otherwise noticed. A pull request read within mergeQueueBulkRecheck is
-// skipped, on top of the usual due rules.
+// otherwise noticed. A pull request read, or tried, within
+// mergeQueueBulkRecheck is skipped, on top of the usual due rules, so reads
+// that keep failing do not cost a request per pull request on every pass.
 func (s *Syncer) refreshMergeQueueAfterBulkDetail(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) {
@@ -354,9 +356,17 @@ func (s *Syncer) refreshMergeQueueAfterBulkDetail(
 	if err != nil {
 		return
 	}
-	if stored != nil && s.now().Sub(stored.ObservedAt) < mergeQueueBulkRecheck {
+	now := s.now()
+	if stored != nil && now.Sub(stored.ObservedAt) < mergeQueueBulkRecheck {
 		return
 	}
+	key := mergeQueueRepoKey(repo) + "\x00" + strconv.Itoa(number)
+	if triedAt, ok := s.mergeQueueBulkChecked.Load(key); ok {
+		if when, _ := triedAt.(time.Time); now.Sub(when) < mergeQueueBulkRecheck {
+			return
+		}
+	}
+	s.mergeQueueBulkChecked.Store(key, now)
 	s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, number)
 }
 

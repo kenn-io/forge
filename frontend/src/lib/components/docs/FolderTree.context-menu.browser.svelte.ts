@@ -24,7 +24,7 @@ const tree: TreeNode = {
 // The tree fills its parent, so give it a sized flex parent to lay out in.
 // Returns the element focused inside the tree's shadow root.
 async function renderTree(
-  onFileRename?: (from: string, to: string) => void,
+  onFileRename: (from: string, to: string) => void = () => {},
 ): Promise<() => Element | null | undefined> {
   const { container } = await render(FolderTree, {
     props: { tree, gitEntries: [], activePath: null, onFileRename },

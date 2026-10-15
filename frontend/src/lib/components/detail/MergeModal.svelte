@@ -91,6 +91,13 @@
     rebase: "rebase and merge",
   };
 
+  // The queue's merge method is omitted while Forge has not read it yet.
+  const queueMethodPhrase = $derived(
+    mergeQueue?.mergeMethod
+      ? ` using ${queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod}`
+      : "",
+  );
+
   // Captured once when the modal opens: a background detail refresh
   // must not silently rebind the pin to a head the user has not seen
   // while the form is already on screen. If the head really moved, the
@@ -222,9 +229,7 @@
       {#if mergeQueue}
         <p class="merge-queue-note">
           <code>{mergeQueue.branch}</code> uses a merge queue. This adds the pull request
-          to the queue, which merges it using
-          {queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod} once its
-          checks pass.
+          to the queue, which merges it{queueMethodPhrase} once its checks pass.
         </p>
       {:else if methods.length > 1}
         <div class="field" role="group" aria-label="Merge method">

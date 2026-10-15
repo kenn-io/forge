@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
+func TestUpsertMergeQueueStateReportsShownChanges(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -16,60 +16,75 @@ func TestStaleMergeQueueLookupLeavesLaterDepartureAlone(t *testing.T) {
 	database := openTestDB(t)
 	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
 	insertTestMRWithOptions(t, database, testMR(repoID, 7))
-
-	queued := func(attempt int, enqueuedAt, observedAt time.Time) MergeQueueSnapshot {
-		return MergeQueueSnapshot{
-			Configured: true, Branch: "main", MergeMethod: "squash",
-			Entries: []MergeQueueEntry{{
-				Number: 7, Attempt: attempt, Position: 1, State: "QUEUED", EnqueuedAt: enqueuedAt,
-			}},
-			ObservedAt: observedAt,
-		}
-	}
-	empty := func(observedAt time.Time) MergeQueueSnapshot {
-		return MergeQueueSnapshot{Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: observedAt}
+	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
+	eta := 4 * time.Minute
+	queued := MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, MergeMethod: "squash",
+		Queued: true, Position: 2, State: "AWAITING_CHECKS", EnqueuedAt: &base,
+		EstimatedTimeToMerge: &eta, ObservedAt: base,
 	}
 
-	// First attempt leaves the queue; a lookup for it starts but is delayed.
-	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(1, base, base))
+	changed, err := database.UpsertMergeQueueState(ctx, repoID, queued)
 	require.NoError(err)
-	_, err = database.ReplaceMergeQueue(ctx, repoID, empty(base.Add(time.Minute)))
-	require.NoError(err)
-	first, err := database.ListPendingMergeQueueDepartures(ctx, repoID)
-	require.NoError(err)
-	require.Len(first, 1)
+	assert.True(changed, "a first observation is a change")
 
-	// Meanwhile the pull request is queued again and leaves again.
-	_, err = database.ReplaceMergeQueue(ctx, repoID, queued(2, base.Add(2*time.Minute), base.Add(2*time.Minute)))
+	// Only the estimate moved, and the merge method was not read this time.
+	next := queued
+	next.EstimatedTimeToMerge = new(2 * time.Minute)
+	next.MergeMethod = ""
+	next.ObservedAt = base.Add(time.Minute)
+	changed, err = database.UpsertMergeQueueState(ctx, repoID, next)
 	require.NoError(err)
-	_, err = database.ReplaceMergeQueue(ctx, repoID, empty(base.Add(3*time.Minute)))
+	assert.False(changed, "an estimate-only update does not refresh views")
+	stored, err := database.GetMergeQueueState(ctx, repoID, 7)
 	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("squash", stored.MergeMethod, "an unread merge method keeps the stored one")
+	require.NotNil(stored.EstimatedTimeToMerge)
+	assert.Equal(2*time.Minute, *stored.EstimatedTimeToMerge)
 
-	// The delayed lookup for the first attempt must not settle the second.
-	require.NoError(database.ResolveMergeQueueDeparture(ctx, repoID, first[0], MergeQueueRemoval{
-		Number: 7, RemovedAt: base.Add(30 * time.Second), Reason: "branch_protection_failure",
-	}))
-	require.NoError(database.DropMergeQueueDeparture(ctx, repoID, first[0]))
-	removal, err := database.GetMergeQueueRemoval(ctx, repoID, 7)
+	removedAt := base.Add(2 * time.Minute)
+	changed, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true,
+		RemovedAt: &removedAt, RemovalReason: "branch_protection_failure",
+		ObservedAt: base.Add(3 * time.Minute),
+	})
 	require.NoError(err)
-	assert.Nil(removal)
-	pending, err := database.ListPendingMergeQueueDepartures(ctx, repoID)
+	assert.True(changed, "leaving the queue is a change")
+	stored, err = database.GetMergeQueueState(ctx, repoID, 7)
 	require.NoError(err)
-	require.Len(pending, 1)
-	assert.Equal(2, pending[0].Attempt)
-
-	require.NoError(database.ResolveMergeQueueDeparture(ctx, repoID, pending[0], MergeQueueRemoval{
-		Number: 7, RemovedAt: base.Add(150 * time.Second), Reason: "dequeued",
-	}))
-	removal, err = database.GetMergeQueueRemoval(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("dequeued", removal.Reason)
+	require.NotNil(stored)
+	assert.False(stored.Queued)
+	assert.Equal("branch_protection_failure", stored.RemovalReason)
 }
 
-func TestClosingQueuedPullRequestEvictsItsQueueEntry(t *testing.T) {
+func TestListQueuedMergeRequestNumbersListsOpenQueuedPullRequests(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	now := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
+	for _, number := range []int{7, 8} {
+		insertTestMRWithOptions(t, database, testMR(repoID, number))
+	}
+	_, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, Queued: true, State: "QUEUED", ObservedAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 8, BaseBranch: "main", Enabled: true, ObservedAt: now,
+	})
+	require.NoError(err)
+
+	numbers, err := database.ListQueuedMergeRequestNumbers(ctx, repoID)
+	require.NoError(err)
+	require.Equal([]int{7}, numbers)
+}
+
+func TestClosingPullRequestEvictsItsMergeQueueState(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	ctx := t.Context()
@@ -78,10 +93,10 @@ func TestClosingQueuedPullRequestEvictsItsQueueEntry(t *testing.T) {
 	require.NoError(err)
 	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
 	insertTestMRWithOptions(t, database, testMR(repoID, 7, withMRActivity(base)))
-	_, err = database.ReplaceMergeQueue(ctx, repoID, MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash",
-		Entries:    []MergeQueueEntry{{Number: 7, Position: 1, State: "QUEUED", EnqueuedAt: base}},
-		ObservedAt: base,
+	removedAt := base
+	_, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true,
+		RemovedAt: &removedAt, RemovalReason: "branch_protection_failure", ObservedAt: base,
 	})
 	require.NoError(err)
 
@@ -100,19 +115,12 @@ func TestClosingQueuedPullRequestEvictsItsQueueEntry(t *testing.T) {
 	_, err = database.UpsertMergeRequest(ctx, mr)
 	require.NoError(err)
 
-	// Reopened before any queue read: the earlier attempt is gone, so a
-	// later empty snapshot records no departure for it.
-	entry, err := database.GetMergeQueueEntry(ctx, repoID, 7)
+	state, err := database.GetMergeQueueState(ctx, repoID, 7)
 	require.NoError(err)
-	require.Nil(entry)
-	changes, err := database.ReplaceMergeQueue(ctx, repoID, MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: base.Add(3 * time.Minute),
-	})
-	require.NoError(err)
-	require.Empty(changes.Departed)
+	require.Nil(state, "reopening must not revive queue state from before the close")
 }
 
-func TestInsertingClosedPullRequestEvictsCachedQueueEntry(t *testing.T) {
+func TestInsertingClosedPullRequestEvictsMergeQueueState(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	ctx := t.Context()
@@ -120,12 +128,9 @@ func TestInsertingClosedPullRequestEvictsCachedQueueEntry(t *testing.T) {
 	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	base := time.Date(2026, 10, 14, 19, 0, 0, 0, time.UTC)
-	// The queue read stores the entry before Forge has a row for the pull
-	// request.
-	_, err = database.ReplaceMergeQueue(ctx, repoID, MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash",
-		Entries:    []MergeQueueEntry{{Number: 8, Position: 1, State: "QUEUED", EnqueuedAt: base}},
-		ObservedAt: base,
+	// Queue state can be stored before Forge has a row for the pull request.
+	_, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 8, BaseBranch: "main", Enabled: true, Queued: true, State: "QUEUED", ObservedAt: base,
 	})
 	require.NoError(err)
 
@@ -140,7 +145,7 @@ func TestInsertingClosedPullRequestEvictsCachedQueueEntry(t *testing.T) {
 	_, err = database.UpsertMergeRequest(ctx, mr)
 	require.NoError(err)
 
-	entry, err := database.GetMergeQueueEntry(ctx, repoID, 8)
+	state, err := database.GetMergeQueueState(ctx, repoID, 8)
 	require.NoError(err)
-	require.Nil(entry, "a pull request first stored as closed must not reopen into stale queue membership")
+	require.Nil(state, "a pull request first stored as closed must not reopen into stale queue state")
 }

@@ -2041,8 +2041,8 @@ func TestImmediateEnqueueSupersedesQueuedDeferredMerge(t *testing.T) {
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 	)
-	_, err := database.ReplaceMergeQueue(ctx, repoID, db.MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: now,
+	_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
 	})
 	require.NoError(err)
 	events, _ := srv.Hub().Subscribe(ctx, false)
@@ -2134,8 +2134,8 @@ func TestDeferredMergeSupersededByEnqueueDuringBlockedCIReadDoesNotEnqueueAgain(
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 	)
-	_, err := database.ReplaceMergeQueue(ctx, repoID, db.MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: now,
+	_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
 	})
 	require.NoError(err)
 	events, _ := srv.Hub().Subscribe(ctx, false)
@@ -2220,8 +2220,8 @@ func TestDeferredWorkerWaitsForImmediateEnqueueInFlight(t *testing.T) {
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 	)
-	_, err := database.ReplaceMergeQueue(ctx, repoID, db.MergeQueueSnapshot{
-		Configured: true, Branch: "main", MergeMethod: "squash", ObservedAt: now,
+	_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
 	})
 	require.NoError(err)
 	events, _ := srv.Hub().Subscribe(ctx, false)

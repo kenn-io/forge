@@ -304,8 +304,8 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		if target == activityrelay.PullRequest {
 			// GitHub delivers merge queue enqueues and removals as
 			// pull_request webhooks, so this hint is the prompt to re-read
-			// the queue instead of waiting for the next repository pass.
-			s.refreshMergeQueueForRelayHint(ctx, repo, repoID)
+			// the pull request's queue state.
+			s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, hint.Number)
 		}
 	case activityrelay.Repository:
 		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {

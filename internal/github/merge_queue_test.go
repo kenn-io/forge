@@ -3,12 +3,9 @@ package github
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -24,33 +21,83 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// mergeQueueGraphQL serves the merge queue and removal queries with values the
-// test swaps between refreshes.
-type mergeQueueGraphQL struct {
-	mu      sync.Mutex
-	queue   string
-	removal string
-	queries atomic.Int32
+// queuedPR7 is pull request 7 at position 1 of its base branch's queue.
+const queuedPR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,
+	"mergeQueueEntry":{"position":1,"state":"AWAITING_CHECKS","enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240},
+	"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}
+}}}}`
+
+// removedPR7 is pull request 7 after its queue removed it for a failed check.
+const removedPR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":null,
+	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:06:07Z","reason":"branch_protection_failure"}]}
+}}}}`
+
+// mergedByQueuePR7 is pull request 7 after the queue merged it, while GitHub
+// still reports it open.
+const mergedByQueuePR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":null,
+	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:09:58Z","reason":"merged"}]}
+}}}}`
+
+// enqueuedUnlistedPR7 is pull request 7 just after it was enqueued, before
+// the queue lists it.
+const enqueuedUnlistedPR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":null,
+	"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}
+}}}}`
+
+// noQueuePR7 is pull request 7 on a base branch without a merge queue.
+const noQueuePR7 = `{"data":{"repository":{"pullRequest":{
+	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":false,"mergeQueueEntry":null,
+	"latestQueueEvent":{"nodes":[]}
+}}}}`
+
+const squashConfiguration = `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`
+
+// refusedResponse answers like GitHub does for a GitHub App without the
+// Merge queues permission.
+const refusedResponse = `{"data":{"repository":{"pullRequest":null}},` +
+	`"errors":[{"type":"FORBIDDEN","path":["repository","pullRequest","mergeQueueEntry"],"message":"Resource not accessible by integration"}]}`
+
+// prQueueGraphQL serves pull request queue reads and queue configuration
+// reads, and counts each kind.
+type prQueueGraphQL struct {
+	mu            sync.Mutex
+	pullRequest   string
+	configuration string
+	prReads       atomic.Int32
+	configReads   atomic.Int32
 }
 
-func (g *mergeQueueGraphQL) set(queue, removal string) {
+func newPRQueueGraphQL(pullRequest string) *prQueueGraphQL {
+	return &prQueueGraphQL{pullRequest: pullRequest, configuration: squashConfiguration}
+}
+
+func (g *prQueueGraphQL) set(pullRequest string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.queue = queue
-	g.removal = removal
+	g.pullRequest = pullRequest
 }
 
-func (g *mergeQueueGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	g.queries.Add(1)
+func (g *prQueueGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	w.Header().Set("Content-Type", "application/json")
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if bytes.Contains(body, []byte("RemovedFromMergeQueueEvent")) {
-		_, _ = io.WriteString(w, g.removal)
-		return
+	switch {
+	case bytes.Contains(body, []byte("configuration")):
+		g.configReads.Add(1)
+		_, _ = io.WriteString(w, g.configuration)
+	case bytes.Contains(body, []byte("isMergeQueueEnabled")):
+		g.prReads.Add(1)
+		_, _ = io.WriteString(w, g.pullRequest)
+	case bytes.Contains(body, []byte("pullRequests")):
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+	default:
+		_, _ = io.WriteString(w, `{"data":{"repository":{"issues":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
 	}
-	_, _ = io.WriteString(w, g.queue)
 }
 
 func newMergeQueueTestSyncer(
@@ -68,13 +115,15 @@ func newMergeQueueTestSyncerWithClient(
 	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Second)
-	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID: repoID, PlatformID: 7001, Number: 7,
-		Title: "Queued change", Author: "author", State: db.MergeRequestStateOpen,
-		HeadBranch: "feature", BaseBranch: "main",
-		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
-	})
-	require.NoError(t, err)
+	for _, number := range []int{7, 8} {
+		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(7000 + number), Number: number,
+			Title: "Queued change", Author: "author", State: db.MergeRequestStateOpen,
+			HeadBranch: "feature", BaseBranch: "main",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(t, err)
+	}
 
 	srv := httptest.NewServer(gql)
 	t.Cleanup(srv.Close)
@@ -93,634 +142,6 @@ func newMergeQueueTestSyncerWithClient(
 	})
 	return syncer, database, repo, repoID
 }
-
-const queuedPR7 = `{"data":{"repository":{
-	"defaultBranchRef":{"name":"main"},
-	"mergeQueue":{
-		"configuration":{"mergeMethod":"SQUASH"},
-		"entries":{"nodes":[{
-			"position":1,"state":"AWAITING_CHECKS",
-			"enqueuedAt":"2026-10-14T19:05:15Z","estimatedTimeToMerge":240,
-			"pullRequest":{"number":7,"enqueues":{"totalCount":1}}
-		}],"pageInfo":{"hasNextPage":false,"endCursor":""}}
-	}
-}}}`
-
-// queueOutcome is a merge queue outcome response: the pull request's state,
-// its enqueue count, and its latest queue event. An empty reason makes the
-// latest event an enqueue, meaning the latest attempt has not ended.
-func queueOutcome(state string, attempts int, removedAt, reason string) string {
-	latest := `{"__typename":"AddedToMergeQueueEvent"}`
-	if reason != "" {
-		latest = `{"__typename":"RemovedFromMergeQueueEvent","createdAt":"` + removedAt + `","reason":"` + reason + `"}`
-	}
-	return `{"data":{"repository":{"pullRequest":{"state":"` + state + `",` +
-		`"enqueues":{"totalCount":` + strconv.Itoa(attempts) + `},` +
-		`"latestQueueEvent":{"nodes":[` + latest + `]}}}}}`
-}
-
-const emptyQueue = `{"data":{"repository":{
-	"defaultBranchRef":{"name":"main"},
-	"mergeQueue":{
-		"configuration":{"mergeMethod":"SQUASH"},
-		"entries":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}
-	}
-}}}`
-
-func TestRefreshMergeQueueRecordsFailedRemovalUntilRequeued(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-	var announced []int
-	syncer.SetOnMergeQueueChanged(func(_ context.Context, gotRepoID int64, number int) {
-		assert.Equal(repoID, gotRepoID)
-		announced = append(announced, number)
-	})
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
-	require.NoError(err)
-	require.NotNil(queue)
-	assert.Equal("main", queue.Branch)
-	assert.Equal("squash", queue.MergeMethod)
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(entry)
-	assert.Equal(1, entry.Position)
-	assert.Equal("AWAITING_CHECKS", entry.State)
-	require.NotNil(entry.EstimatedTimeToMerge)
-	assert.Equal(4*time.Minute, *entry.EstimatedTimeToMerge)
-
-	// The queue drops the pull request after a failed check; the pull
-	// request itself does not change, so only the queue read observes it.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	entry, err = database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(entry)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("branch_protection_failure", removal.Reason)
-	assert.Equal(time.Date(2026, time.October, 14, 19, 6, 7, 0, time.UTC), removal.RemovedAt)
-
-	// Queuing it again supersedes the failure.
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal)
-
-	assert.Equal([]int{7, 7, 7}, announced)
-}
-
-func TestRefreshMergeQueueIgnoresQueueMergeDeparture(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:09:58Z", "merged"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "leaving the queue because it merged is not a failure")
-}
-
-func TestRefreshMergeQueueClearsConfigurationWhenQueueRemoved(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(emptyQueue, "")
-	assert.False(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
-	require.NoError(err)
-	require.NotNil(queue)
-
-	gql.set(`{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}}}`, "")
-	assert.False(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	queue, err = database.GetRepoMergeQueue(t.Context(), repoID)
-	require.NoError(err)
-	assert.Nil(queue, "a branch without a merge queue merges directly")
-}
-
-func TestRefreshMergeQueueStopsQueryingHostWithoutMergeQueueSchema(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(`{"errors":[{"message":"Field 'mergeQueue' doesn't exist on type 'Repository'"}]}`, "")
-	assert.False(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	assert.False(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	assert.EqualValues(1, gql.queries.Load())
-
-	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
-	require.NoError(err)
-	assert.Nil(queue)
-}
-
-func TestRunOnceObservesMergeQueue(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case bytes.Contains(body, []byte("mergeQueue")):
-			_, _ = io.WriteString(w, queuedPR7)
-		case bytes.Contains(body, []byte("pullRequests")):
-			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
-		default:
-			_, _ = io.WriteString(w, `{"data":{"repository":{"issues":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
-		}
-	})
-	syncer, database, _, repoID := newMergeQueueTestSyncer(t, gql)
-
-	syncer.RunOnce(t.Context())
-
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(entry, "a repository pass must read the merge queue")
-	assert.Equal(1, entry.Position)
-}
-
-func TestRefreshMergeQueueRetriesFailedRemovalLookup(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// The pull request leaves the queue, but the removal lookup fails.
-	gql.set(emptyQueue, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.Nil(removal)
-
-	// A later pass observes the same empty queue and still resolves why it left.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	assert.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestClosingPullRequestClearsMergeQueueRemoval(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(mr)
-	closedAt := mr.UpdatedAt.Add(time.Minute)
-	mr.State = db.MergeRequestStateClosed
-	mr.ClosedAt = &closedAt
-	mr.UpdatedAt = closedAt
-	_, err = database.UpsertMergeRequest(t.Context(), mr)
-	require.NoError(err)
-	reopenedAt := closedAt.Add(time.Minute)
-	mr.State = db.MergeRequestStateOpen
-	mr.ClosedAt = nil
-	mr.UpdatedAt = reopenedAt
-	_, err = database.UpsertMergeRequest(t.Context(), mr)
-	require.NoError(err)
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "a removal from before the pull request closed must not return when it reopens")
-}
-
-func TestRunOnceObservesMergeQueueWhenPullListUnchanged(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	gql.set(queuedPR7, "")
-	// Entering the queue does not touch the pull request, so the list
-	// validator still matches.
-	client := &mockClient{listOpenPRsErr: notModifiedErr()}
-	syncer, database, _, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
-
-	syncer.RunOnce(t.Context())
-
-	require.True(client.listOpenPRsCalled.Load())
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(entry, "an unchanged pull list must not skip the merge queue read")
-	assert.Equal(1, entry.Position)
-}
-
-func TestRunOnceObservesMergeQueueWhenPullListFails(t *testing.T) {
-	t.Parallel()
-
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	gql.set(queuedPR7, "")
-	client := &mockClient{listOpenPRsErr: errors.New("GitHub returned 502 Bad Gateway")}
-	syncer, database, _, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
-
-	syncer.RunOnce(t.Context())
-
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(entry, "a failing pull list must not freeze merge queue state")
-}
-
-func TestRefreshMergeQueueForRepositoryReadsOnlyConfiguredQueues(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	assert.False(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
-	assert.Zero(gql.queries.Load(), "a repository without a merge queue costs no request")
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// The queue drops the pull request while scheduled sync is paused; an
-	// explicit refresh is what observes it.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
-
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(entry)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestRequeuedAttemptIgnoresPreviousRemovalWhileNewEventIsLate(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	// Forge adds it again as attempt 2, which leaves the queue before any
-	// read observes it.
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 2, time.Now().UTC()))
-	// GitHub's timeline still ends with the first attempt's removal.
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "the previous attempt's removal must not settle the new attempt")
-
-	// The new attempt is recorded but has not ended yet.
-	gql.set(emptyQueue, queueOutcome("OPEN", 2, "", ""))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal)
-
-	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:06:30Z", "dequeued"))
-	assert.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("dequeued", removal.Reason)
-}
-
-func TestRequeueWhileEarlierDepartureIsUnresolvedIgnoresItsRemoval(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// The first attempt leaves, and its outcome lookup fails, so the
-	// departure is still pending when Forge adds the pull request again.
-	gql.set(emptyQueue, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 2, time.Now().UTC()))
-
-	// The new attempt leaves before GitHub records it; the timeline still
-	// ends with the first attempt's removal.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "an earlier attempt's removal must not settle the new attempt")
-}
-
-func TestEnqueueBookkeepingKeepsOutcomeObservedBeforeAcknowledgement(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	// While GitHub is still confirming the enqueue of attempt 1, sync sees
-	// it enter the queue, leave it, and resolves why.
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	// The enqueue acknowledgement for attempt 1 arrives afterwards.
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 1, time.Now().UTC()))
-
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(entry, "an attempt sync already saw leave must not be re-tracked")
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal, "the observed outcome must survive the late acknowledgement")
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestDepartureResolvesWhateverForgesClockSays(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// GitHub's removal time is far behind Forge's clock and before the
-	// entry's enqueue time; only GitHub's event order decides the attempt.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2001-01-01T00:00:00Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestRequeueOverStaleCachedEntryWaitsForNewAttempt(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	// Attempt 1 is still cached as queued when Forge enqueues attempt 2.
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 2, time.Now().UTC()))
-
-	// Both attempts are gone by the next read, and GitHub's timeline has
-	// not caught up past attempt 1's removal.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "attempt 1's removal must not settle attempt 2")
-
-	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:07:00Z", "dequeued"))
-	assert.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	removal, err = database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("dequeued", removal.Reason)
-}
-
-func TestManualRefreshRetriesPendingDepartureAfterQueueRemoved(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// The repository drops its merge queue, and the removal lookup fails.
-	noQueue := `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}}}`
-	gql.set(noQueue, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
-	require.NoError(err)
-	require.Nil(queue)
-
-	gql.set(noQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "dequeued"))
-	assert.True(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("dequeued", removal.Reason)
-}
-
-func TestManualRefreshSkipsArchivedRepository(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	gql.set(queuedPR7, "")
-	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	queries := gql.queries.Load()
-
-	archived := repo
-	archived.Archived = true
-	syncer.SetRepos([]RepoRef{archived})
-
-	assert.False(syncer.RefreshMergeQueueForRepository(t.Context(), repoID))
-	assert.Equal(queries, gql.queries.Load(), "an archived repository gets no live queue read")
-}
-
-func TestUnknownAttemptDepartureIsNeverMatchedToARemoval(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	// The attempt count could not be read before Forge enqueued, and the
-	// attempt left before any read observed it.
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "a removal cannot be attributed to an attempt Forge could not identify")
-}
-
-func TestAlreadyQueuedAcknowledgementKeepsAttempt(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	// Merging again while queued starts no new attempt.
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 1, time.Now().UTC()))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestUnidentifiedAttemptOverStaleCachedEntryDoesNotInheritItsOutcome(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	// Attempt 1 is still cached as queued; the count read before the new
-	// enqueue failed, so the new attempt is unidentified.
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
-
-	// Both attempts are gone and the timeline still ends with attempt 1's
-	// removal.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "an unidentified attempt must not take the cached attempt's outcome")
-}
-
-func TestUnidentifiedAttemptReplacesEarlierDeparture(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	// A new attempt whose number could not be read replaces the recorded
-	// failure, and the timeline has not caught up with it.
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	assert.Nil(removal, "the earlier failure must not be shown as the new attempt's outcome")
-}
-
-func TestQueueReadReidentifiesUnidentifiedAttempt(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	require.NoError(database.RecordProvisionalMergeQueueEntry(t.Context(), repoID, 7, 0, time.Now().UTC()))
-
-	// The next read shows the pull request queued as attempt 2.
-	gql.set(strings.Replace(queuedPR7, `"enqueues":{"totalCount":1}`, `"enqueues":{"totalCount":2}`, 1), "")
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:07:00Z", "dequeued"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal)
-	assert.Equal("dequeued", removal.Reason)
-}
-
-func TestRecordEnqueueKeepsAttemptIdentifiedByFollowingRead(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-
-	// The count read before the enqueue failed, but the read right after
-	// it shows the pull request queued as attempt 2.
-	gql.set(strings.Replace(queuedPR7, `"enqueues":{"totalCount":1}`, `"enqueues":{"totalCount":2}`, 1), "")
-	syncer.RecordEnqueue(t.Context(), repo, repoID, 7, 0, true, time.Now().UTC())
-
-	// It leaves before another read observes it.
-	gql.set(emptyQueue, queueOutcome("OPEN", 2, "2026-10-14T19:07:00Z", "branch_protection_failure"))
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
-	require.NoError(err)
-	require.NotNil(removal, "the attempt the read identified must keep its outcome")
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-// countingHandler counts requests to an inner handler.
-type countingHandler struct {
-	inner    http.Handler
-	requests atomic.Int32
-}
-
-func (h *countingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.requests.Add(1)
-	h.inner.ServeHTTP(w, r)
-}
-
-// refusedMergeQueue answers like GitHub does for a GitHub App without the
-// Merge queues permission.
-var refusedMergeQueue = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = io.WriteString(w, `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}},`+
-		`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue"],"message":"Resource not accessible by integration"}]}`)
-})
 
 // newSplitCredentialMergeQueueSyncer routes reads through app and writes
 // through user, like a GitHub App sync credential with a user merge token.
@@ -750,150 +171,297 @@ func newSplitCredentialMergeQueueSyncer(
 	return syncer, database, repo, repoID
 }
 
-func TestMergeQueueReadsFallBackToMergeCredentialWhenAppIsRefused(t *testing.T) {
+func relayHintForPR(number int) activityrelay.Hint {
+	return activityrelay.Hint{
+		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
+		Target: activityrelay.PullRequest, Number: number,
+	}
+}
+
+func TestRefreshPullRequestMergeQueueStoresQueuedState(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
 	require := require.New(t)
-	user := &mergeQueueGraphQL{}
-	user.set(queuedPR7, "")
-	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, refusedMergeQueue, user)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	var announced []int
+	syncer.SetOnMergeQueueChanged(func(_ context.Context, _ int64, number int) {
+		announced = append(announced, number)
+	})
 
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
 	require.NoError(err)
-	require.NotNil(queue, "the merge credential must observe the queue the App cannot read")
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NotNil(state)
+	assert.True(state.Enabled)
+	assert.True(state.Queued)
+	assert.Equal(1, state.Position)
+	assert.Equal("AWAITING_CHECKS", state.State)
+	assert.Equal("squash", state.MergeMethod)
+	require.NotNil(state.EstimatedTimeToMerge)
+	assert.Equal(4*time.Minute, *state.EstimatedTimeToMerge)
+	assert.Equal([]int{7}, announced)
+
+	assert.False(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7),
+		"an unchanged queue state is not announced again")
+}
+
+func TestRefreshPullRequestMergeQueueKeepsRemovalReason(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+	gql.set(removedPR7)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
 	require.NoError(err)
-	require.NotNil(entry)
-	assert.Equal(1, entry.Position)
+	require.NotNil(state)
+	assert.False(state.Queued)
+	assert.Equal("branch_protection_failure", state.RemovalReason)
+	require.NotNil(state.RemovedAt)
+	assert.Equal(time.Date(2026, time.October, 14, 19, 6, 7, 0, time.UTC), *state.RemovedAt)
+
+	// Queuing it again replaces the failure.
+	gql.set(queuedPR7)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err = database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.True(state.Queued)
+	assert.Empty(state.RemovalReason)
+}
+
+func TestRefreshPullRequestMergeQueueIgnoresQueueMerge(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := newPRQueueGraphQL(mergedByQueuePR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	require.Empty(state.RemovalReason, "leaving the queue because it merged is not a failure")
+}
+
+func TestRefreshPullRequestMergeQueueShowsEnqueueBeforeQueueListsIt(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(enqueuedUnlistedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.True(state.Queued)
+	assert.Equal(0, state.Position, "the queue has not reported a position yet")
+}
+
+func TestRepositoryPassReadsOnlyQueuedPullRequests(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	client := &mockClient{listOpenPRsErr: notModifiedErr()}
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	reads := gql.prReads.Load()
+
+	// The queue removes pull request 7 without touching it; an unchanged
+	// pull list still lets the pass notice.
+	gql.set(removedPR7)
+	syncer.RunOnce(t.Context())
+
+	assert.Equal(reads+1, gql.prReads.Load(), "only the queued pull request is read, not pull request 8")
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.Equal("branch_protection_failure", state.RemovalReason)
+}
+
+func TestRelayHintRefreshesPullRequestMergeQueue(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+	// GitHub sends a pull_request dequeued webhook; the relay forwards it.
+	gql.set(removedPR7)
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.Equal("branch_protection_failure", state.RemovalReason,
+		"the relay hint surfaces the removal without waiting for a pass")
+}
+
+func TestRelayHintSkipsPullRequestRecentlySeenWithoutQueue(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	now := time.Now().UTC()
+	syncer.now = func() time.Time { return now }
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	require.EqualValues(1, gql.prReads.Load())
+
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	assert.EqualValues(1, gql.prReads.Load(), "a base branch without a queue is not re-read on every hint")
+
+	now = now.Add(mergeQueueRecheck + time.Minute)
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	assert.EqualValues(2, gql.prReads.Load(), "it is checked again once the recheck interval passes")
+}
+
+func TestManualRefreshSkipsArchivedRepository(t *testing.T) {
+	t.Parallel()
+
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	archived := repo
+	archived.Archived = true
+	syncer.SetRepos([]RepoRef{archived})
+
+	assert.False(t, syncer.RefreshPullRequestMergeQueueForRepository(t.Context(), repoID, 7))
+	assert.Zero(t, gql.prReads.Load(), "an archived repository gets no live queue read")
+}
+
+func TestRecordPullRequestEnqueuedShowsQueuedWhenReadFails(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(`{"errors":[{"message":"Something went wrong while executing your query."}]}`)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	syncer.RecordPullRequestEnqueued(t.Context(), repo, repoID, 7, "main")
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.True(state.Queued, "Forge shows its own enqueue until a read replaces it")
+	assert.Equal(0, state.Position)
+
+	// The next pass re-reads queued pull requests and takes GitHub's state.
+	gql.set(queuedPR7)
+	syncer.refreshQueuedPullRequests(t.Context(), repo, repoID)
+	state, err = database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.Equal(1, state.Position)
+}
+
+func TestMergeQueueReadsStopForHostWithoutMergeQueueSchema(t *testing.T) {
+	t.Parallel()
+
+	gql := newPRQueueGraphQL(`{"errors":[{"message":"Field 'mergeQueueEntry' doesn't exist on type 'PullRequest'"}]}`)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	assert.False(t, syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	assert.False(t, syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	assert.EqualValues(t, 1, gql.prReads.Load())
+}
+
+// refusingApp answers queue reads like a GitHub App without the Merge queues
+// permission, and counts them.
+type refusingApp struct {
+	reads atomic.Int32
+}
+
+func (a *refusingApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	if bytes.Contains(body, []byte("isMergeQueueEnabled")) {
+		a.reads.Add(1)
+	}
+	_, _ = io.WriteString(w, refusedResponse)
+}
+
+func TestMergeQueueReadsFallBackToMergeCredentialWhenAppIsRefused(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	user := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, &refusingApp{}, user)
+
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state, "the merge credential reads the queue the App cannot")
+	require.True(state.Queued)
 }
 
 func TestMergeQueueReadsStayOnAppWhenItHasPermission(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	app := &mergeQueueGraphQL{}
-	app.set(queuedPR7, "")
-	user := &countingHandler{inner: refusedMergeQueue}
+	app := newPRQueueGraphQL(queuedPR7)
+	user := newPRQueueGraphQL(queuedPR7)
 	syncer, _, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
 
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	require.Zero(user.requests.Load(), "a permitted App must not spend the merge credential's quota")
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	require.Zero(user.prReads.Load(), "a permitted App must not spend the merge credential's quota")
 }
 
 func TestRefusedAppIsRetriedAfterRecheckWindow(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	require := require.New(t)
-	app := &countingHandler{inner: refusedMergeQueue}
-	user := &mergeQueueGraphQL{}
-	user.set(queuedPR7, "")
+	app := &refusingApp{}
+	user := newPRQueueGraphQL(queuedPR7)
 	syncer, _, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
 	now := time.Date(2026, time.October, 15, 3, 0, 0, 0, time.UTC)
 	syncer.now = func() time.Time { return now }
 
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	assert.EqualValues(1, app.requests.Load(), "a refused App is not asked again inside the recheck window")
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, app.reads.Load(), "a refused App is not asked again inside the recheck window")
 
 	now = now.Add(mergeQueueReadRecheck + time.Minute)
-	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
-	assert.EqualValues(2, app.requests.Load(), "the App is tried again once the window passes")
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	assert.EqualValues(2, app.reads.Load(), "the App is tried again once the window passes")
 }
 
-// mergeQueueQueryCounter answers merge queue reads with response and counts
-// them; other GraphQL reads get empty lists.
-type mergeQueueQueryCounter struct {
-	response string
-	queries  atomic.Int32
-}
-
-func (c *mergeQueueQueryCounter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
-	w.Header().Set("Content-Type", "application/json")
-	switch {
-	case bytes.Contains(body, []byte("mergeQueue")):
-		c.queries.Add(1)
-		_, _ = io.WriteString(w, c.response)
-	case bytes.Contains(body, []byte("pullRequests")):
-		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
-	default:
-		_, _ = io.WriteString(w, `{"data":{"repository":{"issues":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
-	}
-}
-
-func TestRepositoryPassesReadAbsentMergeQueueRarely(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	gql := &mergeQueueQueryCounter{
-		response: `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}}}`,
-	}
-	client := &mockClient{listOpenPRsErr: notModifiedErr()}
-	syncer, _, _, _ := newMergeQueueTestSyncerWithClient(t, gql, client)
-	now := time.Now().UTC()
-	syncer.now = func() time.Time { return now }
-
-	syncer.RunOnce(t.Context())
-	syncer.RunOnce(t.Context())
-	assert.EqualValues(1, gql.queries.Load(), "a repository without a merge queue is not re-read every pass")
-
-	now = now.Add(mergeQueueAbsentCheckInterval + time.Minute)
-	syncer.RunOnce(t.Context())
-	assert.EqualValues(2, gql.queries.Load(), "it is checked again once the interval passes")
-}
-
-func TestRepositoryPassesReadKnownMergeQueueEveryPass(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	gql := &mergeQueueQueryCounter{response: queuedPR7}
-	client := &mockClient{listOpenPRsErr: notModifiedErr()}
-	syncer, _, _, _ := newMergeQueueTestSyncerWithClient(t, gql, client)
-
-	syncer.RunOnce(t.Context())
-	syncer.RunOnce(t.Context())
-	assert.EqualValues(2, gql.queries.Load(), "a repository with a merge queue is read every pass")
-}
-
-func TestRelayPullRequestHintRefreshesKnownMergeQueue(t *testing.T) {
+func TestAppWithMergeQueuesPermissionReadsQueueWithoutConfiguration(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
 	require := require.New(t)
-	gql := &mergeQueueGraphQL{}
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-	gql.set(queuedPR7, "")
-	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	// The App can read the pull request's queue state but not the queue's
+	// configuration, as GitHub allows with only the Merge queues permission.
+	app := newPRQueueGraphQL(queuedPR7)
+	app.configuration = `{"data":{"repository":{"mergeQueue":{"configuration":null}}},` +
+		`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue","configuration"],"message":"Resource not accessible by integration"}]}`
+	user := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
 
-	// GitHub removes the pull request and sends a pull_request webhook; the
-	// relay forwards it as a hint before any repository pass runs.
-	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
-	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
-		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
-		Target: activityrelay.PullRequest, Number: 7,
-	})
-
-	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
 	require.NoError(err)
-	assert.Nil(entry)
-	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NotNil(state)
+	assert.Equal("squash", state.MergeMethod, "the merge method comes from the merge credential")
+	assert.Zero(user.prReads.Load(), "queue reads stay on the App")
+	assert.EqualValues(1, user.configReads.Load())
+
+	// Later reads reuse the stored merge method until it is due again.
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, user.configReads.Load())
+	state, err = database.GetMergeQueueState(t.Context(), repoID, 7)
 	require.NoError(err)
-	require.NotNil(removal, "the relay hint must surface the removal without waiting for a pass")
-	assert.Equal("branch_protection_failure", removal.Reason)
-}
-
-func TestRelayPullRequestHintSkipsRepositoryWithoutMergeQueue(t *testing.T) {
-	t.Parallel()
-
-	gql := &mergeQueueQueryCounter{response: queuedPR7}
-	syncer, _, _, _ := newMergeQueueTestSyncer(t, gql)
-
-	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
-		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
-		Target: activityrelay.PullRequest, Number: 7,
-	})
-	assert.Zero(t, gql.queries.Load(), "a hint for a repository without a known queue reads no queue")
+	assert.Equal("squash", state.MergeMethod)
 }

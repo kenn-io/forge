@@ -308,6 +308,15 @@ describe("MergeModal acknowledged merge commands", () => {
       expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
     });
 
+    it("omits the merge method while Forge has not read it", () => {
+      renderModal({ mergeQueue: { branch: "main", mergeMethod: "" } });
+
+      const note = screen.getByText(/uses a merge queue\./);
+      expect(note.textContent?.replace(/\s+/g, " ")).toContain(
+        "This adds the pull request to the queue, which merges it once its checks pass.",
+      );
+    });
+
     it("adds the pull request to the queue immediately without deleting the workspace", async () => {
       renderModal({ mergeQueue, workspaceId: "ws-1", expectedHeadSha: "abc123" });
 

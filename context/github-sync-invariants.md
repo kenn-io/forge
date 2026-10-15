@@ -149,58 +149,44 @@ For pull requests, that means:
 
 ## Merge Queue Rules
 
-- Entering or leaving a merge queue does not change a pull request's
-  `updated_at`, so the ETag-gated list never sees it. A repository pass reads
-  the default-branch queue, including on a 304 or a failed pull list, but only
-  for a repository with a known queue or pending departure; others are
-  re-checked every 6 hours, since reading every repository each pass spends
-  quota on empty answers (`internal/github/merge_queue.go::Syncer.refreshMergeQueueIfDue`).
-- GitHub reports enqueues and removals as `pull_request` webhooks, so a relay
-  `PullRequest` hint re-reads the queue of a repository with a known queue or
-  pending departure; the repository pass is the fallback without the relay.
-  The async merge API cannot replace either: its `enqueued` result is final
-  and never reports the queue's outcome
-  (`internal/github/merge_queue.go::Syncer.refreshMergeQueueForRelayHint`).
-  The watched lane re-reads queues holding a watched pull request it admitted,
-  and an explicit pull request refresh re-reads a configured queue, or retries
-  pending departures, even while scheduled sync is paused; archived
-  repositories get no live queue read (`internal/github/merge_queue.go::Syncer.RefreshMergeQueue`,
-  `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`).
-- Each read replaces the repository's queue configuration and entries; a null
-  queue clears both. Only membership, position, and state changes announce a
-  detail refresh, never estimate-only changes (`internal/db/queries_merge_queue.go::DB.ReplaceMergeQueue`).
-- Match queue attempts only by GitHub's own order, never by comparing Forge's
-  clock with GitHub event times (maintainer decision). An attempt is the pull
-  request's count of `AddedToMergeQueueEvent`s; entries record it when
-  observed, and a lagging count never lowers it
-  (`internal/db/queries_merge_queue.go::DB.ReplaceMergeQueue`).
-- A departure is stored pending in the same transaction as the snapshot that
-  observed it, and every pass retries it. It resolves once GitHub reports at
-  least its attempt and the latest queue event is a removal: an open pull
-  request shows that removal, a `merged` one is dropped, and a closed one or
-  one unresolved after 30 minutes is dropped. Resolving or dropping applies
-  only to the exact departure looked up, since refreshes overlap
-  (`internal/github/merge_queue.go::Syncer.resolveMergeQueueDepartures`).
-- A removal shows until the pull request is queued again. A terminal state
-  write, including a first insert as closed or merged, deletes its entry and
-  removal, so reopening never revives an earlier attempt
-  (`internal/db/migrations/000067_merge_queue_entries.up.sql`).
-- An entry that joins and leaves between two reads is never observed. Forge
-  counts the attempts before it enqueues and stores the attempt provisionally
-  at position 0 before its follow-up queue read, so that read either sets the
-  attempt from GitHub's count or records its departure
-  (`internal/github/merge_queue.go::Syncer.RecordEnqueue`). GitHub's 200 "already in the merge
-  queue" answer keeps the current attempt instead of starting one. A departure
-  already observed for that attempt is kept and a stale cached entry is raised
-  to it. An attempt whose count could not be read is unknown (0): it never
-  inherits an earlier attempt's number or departure, never resolves, and stays
-  unknown until a queue read identifies it
-  (`internal/db/queries_merge_queue.go::DB.RecordProvisionalMergeQueueEntry`).
-- Do not add guards for attempt-attribution races that need a concurrent
-  external enqueue, overlapping queue reads, or a lagging GitHub event count;
-  they are not real-world failures (maintainer decision).
-- Hosts whose schema rejects `mergeQueue` latch it off per fetcher until restart
-  (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).
+- Merge queue state is a property of the pull request, read per pull request
+  (`isMergeQueueEnabled`, `mergeQueueEntry`, and its latest enqueue or removal
+  timeline event), as the GitHub Pull Requests extension for VS Code does.
+  Never read or snapshot a repository's whole queue
+  (`internal/github/merge_queue.go::GraphQLFetcher.FetchPullRequestMergeQueue`).
+- The state shown is GitHub's answer at read time: an entry is queued; no entry
+  with a latest enqueue event is queued at an unknown position; no entry with a
+  latest non-`merged` removal shows that removal and its reason. No attempt
+  matching across reads (maintainer decision).
+- Entering or leaving a queue does not change a pull request's `updated_at`,
+  so ordinary pull request sync never notices it. Reads run on relay
+  `PullRequest` hints (GitHub sends enqueued and dequeued as `pull_request`
+  webhooks), in the watched lane, on manual pull request refresh, after an
+  enqueue, and on repository passes for pull requests last seen queued. The
+  async merge API cannot replace them: its `enqueued` result is final
+  (`internal/github/merge_queue.go::Syncer.RefreshPullRequestMergeQueue`).
+- A pull request whose base branch had no queue is re-read on hints and in the
+  watched lane only every 6 hours, so repositories without merge queues cost
+  no requests (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
+- Never request `mergeQueue.configuration` in the pull request read: GitHub
+  refuses it to an App with only the Merge queues permission, and one refused
+  field fails the whole query. The branch's merge method is read separately at
+  most every 6 hours, falling back to the merge credential
+  (`internal/github/merge_queue.go::Syncer.mergeQueueMergeMethodIfDue`).
+- Queue reads use the read credential first and fall back to the route's
+  separate write (merge) credential when GitHub refuses it ("Resource not
+  accessible by integration"); the fallback sticks per repository for an hour.
+  The App permission is optional and only keeps reads on the App's quota
+  (`internal/github/merge_queue.go::Syncer.mergeQueueRead`).
+- When the read after an enqueue cannot run, the pull request is stored as
+  queued at an unknown position; it then counts as queued, so the next
+  repository pass replaces it with GitHub's state
+  (`internal/github/merge_queue.go::Syncer.RecordPullRequestEnqueued`).
+- A terminal state write, including a first insert as closed or merged,
+  deletes the pull request's queue state, so reopening never revives it
+  (`internal/db/migrations/000068_merge_queue_states.up.sql`).
+- Hosts whose schema rejects the merge queue fields latch them off per fetcher
+  until restart (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).
 
 ## Timeline Event Rules
 
@@ -310,23 +296,16 @@ fallback repository listing.
 - GitHub.com merges are versioned asynchronous direct operations polled to terminal
   `merged`; `pending`/`enqueued` never count as merged. GHES stays synchronous with no
   probe fallback. (`platform/github/merge_async.go::Client.MergePullRequest`)
-- Merge queue reads use the read credential first and fall back to the
-  route's separate write (merge) credential when GitHub refuses it ("Resource
-  not accessible by integration", a GitHub App without the Merge queues
-  permission). The fallback sticks per repository for an hour, then the read
-  credential is retried. The App permission is optional: it keeps reads on the
-  App's quota, and merging works without it
-  (`internal/github/merge_queue.go::Syncer.mergeQueueRead`).
 - GitHub's "Changes must be made through the merge queue" refusal of a direct
   merge is `platform.ErrMergeQueueRequired`; the merge handler then enqueues
   instead. Do not rely on synced queue state alone: a sync credential (such as
   a GitHub App) can be forbidden from reading `mergeQueue` while the merge
   credential can still enqueue (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
-- A merge whose base is the branch with a synced merge queue enqueues with
-  `merge_action: merge_queue` and no method, title, or message, which GitHub
-  rejects for queued merges; `enqueued` is success with `queued: true`, never
-  merged, and runs no merge-completion side effects. Only GitHub.com enqueues
-  (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`,
+- A merge of a pull request whose base branch sync last saw with a merge queue
+  enqueues with `merge_action: merge_queue` and no method, title, or message,
+  which GitHub rejects for queued merges; `enqueued` is success with
+  `queued: true`, never merged, and runs no merge-completion side effects. Only
+  GitHub.com enqueues (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`,
   `platform/github/merge_async.go::Client.EnqueuePullRequest`).
 - Preserve required-rebase failures verbatim; do not substitute private website routes
   or local force-pushes until GitHub exposes a token-authenticated stack-rebase API.

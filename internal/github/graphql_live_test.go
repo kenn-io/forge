@@ -69,21 +69,20 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	err = client.Query(ctx, &issueQuery, vars)
 	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
 
-	var mergeQueueQuery gqlMergeQueueQuery
-	err = client.Query(ctx, &mergeQueueQuery, map[string]any{
-		"owner":    githubv4.String("kenn-io"),
-		"name":     githubv4.String("forge"),
-		"pageSize": githubv4.Int(mergeQueuePageSize),
-		"cursor":   (*githubv4.String)(nil),
-	})
-	require.NoError(err, "merge queue GraphQL query should validate against GitHub")
-
-	var outcomeQuery gqlMergeQueueOutcomeQuery
-	err = client.Query(ctx, &outcomeQuery, map[string]any{
+	var pullRequestQueueQuery gqlPullRequestMergeQueueQuery
+	err = client.Query(ctx, &pullRequestQueueQuery, map[string]any{
 		"owner":  githubv4.String("kenn-io"),
 		"name":   githubv4.String("forge"),
 		"number": githubv4.Int(830),
 	})
-	require.NoError(err, "merge queue outcome GraphQL query should validate against GitHub")
-	require.NotNil(outcomeQuery.Repository.PullRequest, "live PR fixture should exist")
+	require.NoError(err, "pull request merge queue GraphQL query should validate against GitHub")
+	require.NotNil(pullRequestQueueQuery.Repository.PullRequest, "live PR fixture should exist")
+
+	var configurationQuery gqlMergeQueueConfigurationQuery
+	err = client.Query(ctx, &configurationQuery, map[string]any{
+		"owner":  githubv4.String("kenn-io"),
+		"name":   githubv4.String("forge"),
+		"branch": githubv4.String("main"),
+	})
+	require.NoError(err, "merge queue configuration GraphQL query should validate against GitHub")
 }

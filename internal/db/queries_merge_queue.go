@@ -6,450 +6,211 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 )
 
-// ReplaceMergeQueue replaces a repository's merge queue configuration and
-// entry snapshot. A pull request entering the queue clears its recorded
-// removal, since the new attempt supersedes it. Estimate-only changes are
-// stored but not reported, so a moving estimate does not refresh every queued
-// pull request on each pass.
-func (d *DB) ReplaceMergeQueue(
-	ctx context.Context, repoID int64, snapshot MergeQueueSnapshot,
-) (MergeQueueChanges, error) {
-	var changes MergeQueueChanges
+const mergeQueueStateColumns = `
+	q.number, q.base_branch, q.queue_enabled, q.merge_method, q.queued,
+	q.position, q.state, q.enqueued_at, q.estimated_time_to_merge_seconds,
+	q.removed_at, q.removal_reason, q.observed_at`
+
+// UpsertMergeQueueState stores a pull request's merge queue state and reports
+// whether anything a reader shows changed: whether the queue is enabled, the
+// queued flag, position, state, or removal. Estimate-only changes are stored
+// without counting as a change, so a moving estimate does not refresh views.
+// A state without a merge method keeps the stored one for the same base branch.
+func (d *DB) UpsertMergeQueueState(
+	ctx context.Context, repoID int64, state MergeQueueState,
+) (bool, error) {
+	var changed bool
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
-		previous, err := loadMergeQueueEntriesTx(ctx, tx, repoID)
+		prior, err := scanMergeQueueStateRow(tx.QueryRowContext(ctx, `
+			SELECT `+mergeQueueStateColumns+`
+			FROM forge_merge_queue_states q
+			WHERE q.repo_id = ? AND q.number = ?`, repoID, state.Number))
 		if err != nil {
 			return err
 		}
-
-		if snapshot.Configured {
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO forge_repo_merge_queues (repo_id, branch, merge_method, observed_at)
-				VALUES (?, ?, ?, ?)
-				ON CONFLICT(repo_id) DO UPDATE SET
-					branch = excluded.branch,
-					merge_method = excluded.merge_method,
-					observed_at = excluded.observed_at`,
-				repoID, snapshot.Branch, snapshot.MergeMethod, snapshot.ObservedAt.UTC(),
-			); err != nil {
-				return fmt.Errorf("store merge queue configuration: %w", err)
-			}
-		} else if _, err := tx.ExecContext(ctx,
-			`DELETE FROM forge_repo_merge_queues WHERE repo_id = ?`, repoID,
+		if state.MergeMethod == "" && prior != nil && prior.BaseBranch == state.BaseBranch {
+			state.MergeMethod = prior.MergeMethod
+		}
+		changed = prior == nil || mergeQueueStateShownChanged(*prior, state)
+		var estimate *int64
+		if state.EstimatedTimeToMerge != nil {
+			estimate = new(int64(state.EstimatedTimeToMerge.Seconds()))
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO forge_merge_queue_states (
+				repo_id, number, base_branch, queue_enabled, merge_method, queued,
+				position, state, enqueued_at, estimated_time_to_merge_seconds,
+				removed_at, removal_reason, observed_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(repo_id, number) DO UPDATE SET
+				base_branch = excluded.base_branch,
+				queue_enabled = excluded.queue_enabled,
+				merge_method = excluded.merge_method,
+				queued = excluded.queued,
+				position = excluded.position,
+				state = excluded.state,
+				enqueued_at = excluded.enqueued_at,
+				estimated_time_to_merge_seconds = excluded.estimated_time_to_merge_seconds,
+				removed_at = excluded.removed_at,
+				removal_reason = excluded.removal_reason,
+				observed_at = excluded.observed_at`,
+			repoID, state.Number, state.BaseBranch, state.Enabled, state.MergeMethod,
+			state.Queued, state.Position, state.State, utcTimePtr(state.EnqueuedAt),
+			estimate, utcTimePtr(state.RemovedAt), state.RemovalReason,
+			state.ObservedAt.UTC(),
 		); err != nil {
-			return fmt.Errorf("delete merge queue configuration: %w", err)
-		}
-
-		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM forge_merge_queue_entries WHERE repo_id = ?`, repoID,
-		); err != nil {
-			return fmt.Errorf("delete merge queue entries: %w", err)
-		}
-		for _, entry := range snapshot.Entries {
-			var estimate *int64
-			if entry.EstimatedTimeToMerge != nil {
-				estimate = new(int64(entry.EstimatedTimeToMerge.Seconds()))
-			}
-			attempt := entry.Attempt
-			if prior, ok := previous[entry.Number]; ok && prior.Attempt > attempt {
-				// A lagging provider count must not lower the attempt an
-				// earlier read already established.
-				attempt = prior.Attempt
-			}
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO forge_merge_queue_entries (
-					repo_id, number, attempt, position, state, enqueued_at,
-					estimated_time_to_merge_seconds, observed_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-				repoID, entry.Number, attempt, entry.Position, entry.State,
-				entry.EnqueuedAt.UTC(), estimate, snapshot.ObservedAt.UTC(),
-			); err != nil {
-				return fmt.Errorf("insert merge queue entry: %w", err)
-			}
-			if _, err := tx.ExecContext(ctx, `
-				DELETE FROM forge_merge_queue_removals
-				WHERE repo_id = ? AND number = ?`,
-				repoID, entry.Number,
-			); err != nil {
-				return fmt.Errorf("clear merge queue removal: %w", err)
-			}
-			prior, ok := previous[entry.Number]
-			delete(previous, entry.Number)
-			if !ok || prior.Position != entry.Position || prior.State != entry.State {
-				changes.Changed = append(changes.Changed, entry.Number)
-			}
-		}
-		for number, prior := range previous {
-			changes.Changed = append(changes.Changed, number)
-			changes.Departed = append(changes.Departed, prior)
-			// Record the departure in the same transaction as the snapshot
-			// that observed it, so a failed reason lookup is retried on a
-			// later pass instead of being lost with the replaced entry.
-			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO forge_merge_queue_removals (
-					repo_id, number, attempt, departed_at, removed_at, reason
-				) VALUES (?, ?, ?, ?, NULL, '')
-				ON CONFLICT(repo_id, number) DO UPDATE SET
-					attempt = excluded.attempt,
-					departed_at = excluded.departed_at,
-					removed_at = NULL,
-					reason = ''`,
-				repoID, number, prior.Attempt, snapshot.ObservedAt.UTC(),
-			); err != nil {
-				return fmt.Errorf("record merge queue departure: %w", err)
-			}
+			return fmt.Errorf("store merge queue state: %w", err)
 		}
 		return nil
 	})
 	if err != nil {
-		return MergeQueueChanges{}, err
+		return false, err
 	}
-	slices.Sort(changes.Changed)
-	slices.SortFunc(changes.Departed, func(a, b MergeQueueEntry) int {
-		return a.Number - b.Number
-	})
-	return changes, nil
+	return changed, nil
 }
 
-func loadMergeQueueEntriesTx(
-	ctx context.Context, tx *sql.Tx, repoID int64,
-) (map[int]MergeQueueEntry, error) {
-	rows, err := tx.QueryContext(ctx, `
-		SELECT number, attempt, position, state, enqueued_at
-		FROM forge_merge_queue_entries
-		WHERE repo_id = ?`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("load merge queue entries: %w", err)
-	}
-	defer rows.Close()
-	previous := make(map[int]MergeQueueEntry)
-	for rows.Next() {
-		var prior MergeQueueEntry
-		if err := rows.Scan(
-			&prior.Number, &prior.Attempt, &prior.Position, &prior.State, &prior.EnqueuedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan merge queue entry: %w", err)
-		}
-		prior.EnqueuedAt = prior.EnqueuedAt.UTC()
-		previous[prior.Number] = prior
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("load merge queue entries: %w", err)
-	}
-	return previous, nil
+func mergeQueueStateShownChanged(prior, next MergeQueueState) bool {
+	return prior.Enabled != next.Enabled ||
+		prior.BaseBranch != next.BaseBranch ||
+		prior.MergeMethod != next.MergeMethod ||
+		prior.Queued != next.Queued ||
+		prior.Position != next.Position ||
+		prior.State != next.State ||
+		prior.RemovalReason != next.RemovalReason ||
+		!timePtrEqual(prior.RemovedAt, next.RemovedAt)
 }
 
-// ListPendingMergeQueueDepartures returns the repository's queue departures
-// whose removal reason has not been resolved yet.
-func (d *DB) ListPendingMergeQueueDepartures(
-	ctx context.Context, repoID int64,
-) ([]MergeQueueDeparture, error) {
-	rows, err := d.roQueryContext(ctx, `
-		SELECT number, attempt, departed_at
-		FROM forge_merge_queue_removals
-		WHERE repo_id = ? AND removed_at IS NULL
-		ORDER BY number`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("list pending merge queue departures: %w", err)
-	}
-	defer rows.Close()
-	var departures []MergeQueueDeparture
-	for rows.Next() {
-		var departure MergeQueueDeparture
-		if err := rows.Scan(&departure.Number, &departure.Attempt, &departure.DepartedAt); err != nil {
-			return nil, fmt.Errorf("scan pending merge queue departure: %w", err)
-		}
-		departure.DepartedAt = departure.DepartedAt.UTC()
-		departures = append(departures, departure)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list pending merge queue departures: %w", err)
-	}
-	return departures, nil
+// GetMergeQueueState returns an open pull request's merge queue state, or nil
+// when Forge has not read it.
+func (d *DB) GetMergeQueueState(
+	ctx context.Context, repoID int64, number int,
+) (*MergeQueueState, error) {
+	return scanMergeQueueStateRow(d.roQueryRowContext(ctx, `
+		SELECT `+mergeQueueStateColumns+`
+		FROM forge_merge_queue_states q
+		JOIN forge_merge_requests p ON p.repo_id = q.repo_id AND p.number = q.number
+		WHERE q.repo_id = ? AND q.number = ? AND p.state = 'open'`, repoID, number))
 }
 
-// ResolveMergeQueueDeparture records the provider's reason for a pending
-// departure, making it a visible removal. It applies only while that exact
-// departure is still pending, so a lookup that overlaps a newer departure
-// cannot settle it. The removal stays until the pull request is queued again
-// or closed.
-func (d *DB) ResolveMergeQueueDeparture(
-	ctx context.Context, repoID int64, departure MergeQueueDeparture, removal MergeQueueRemoval,
-) error {
-	if _, err := d.rwExecContext(ctx, `
-		UPDATE forge_merge_queue_removals
-		SET removed_at = ?, reason = ?
-		WHERE repo_id = ? AND number = ? AND removed_at IS NULL
-		  AND attempt = ? AND departed_at = ?`,
-		removal.RemovedAt.UTC(), removal.Reason, repoID, departure.Number,
-		departure.Attempt, departure.DepartedAt.UTC(),
-	); err != nil {
-		return fmt.Errorf("resolve merge queue departure: %w", err)
-	}
-	return nil
-}
-
-// DropMergeQueueDeparture forgets a pending departure that is not a removal
-// to show, such as one the queue merged. Like ResolveMergeQueueDeparture, it
-// applies only to that exact departure.
-func (d *DB) DropMergeQueueDeparture(
-	ctx context.Context, repoID int64, departure MergeQueueDeparture,
-) error {
-	if _, err := d.rwExecContext(ctx, `
-		DELETE FROM forge_merge_queue_removals
-		WHERE repo_id = ? AND number = ? AND removed_at IS NULL
-		  AND attempt = ? AND departed_at = ?`,
-		repoID, departure.Number, departure.Attempt, departure.DepartedAt.UTC(),
-	); err != nil {
-		return fmt.Errorf("drop merge queue departure: %w", err)
-	}
-	return nil
-}
-
-// RecordProvisionalMergeQueueEntry stores that Forge enqueued a pull request
-// the latest queue read did not show, so a later read that misses it records a
-// departure. Position 0 means sync has not observed its position yet.
-//
-// attempt is the provider's enqueue-event count read before the enqueue plus
-// one, or 0 when that read failed. A cached queue entry is kept but set to this
-// attempt. When sync has already observed a departure of an attempt at least
-// this new, nothing changes, so an outcome seen while the enqueue response was
-// pending is kept. An unknown attempt never inherits an earlier attempt's
-// number or departure; it stays unknown until a queue read identifies it.
-func (d *DB) RecordProvisionalMergeQueueEntry(
-	ctx context.Context, repoID int64, number, attempt int, requestedAt time.Time,
-) error {
-	return d.Tx(ctx, func(tx *sql.Tx) error {
-		var queued bool
-		if err := tx.QueryRowContext(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM forge_merge_queue_entries WHERE repo_id = ? AND number = ?
-			)`, repoID, number,
-		).Scan(&queued); err != nil {
-			return fmt.Errorf("check merge queue entry: %w", err)
-		}
-		if queued {
-			// A cached entry can still describe an earlier attempt. Raise it
-			// to this attempt, or mark it unknown when this attempt could
-			// not be identified, so its departure never takes the earlier
-			// attempt's outcome. A later read that shows the pull request
-			// identifies the attempt again from GitHub's count.
-			update := `UPDATE forge_merge_queue_entries SET attempt = MAX(attempt, ?)
-				WHERE repo_id = ? AND number = ?`
-			if attempt == 0 {
-				update = `UPDATE forge_merge_queue_entries SET attempt = ?
-					WHERE repo_id = ? AND number = ?`
-			}
-			if _, err := tx.ExecContext(ctx, update, attempt, repoID, number); err != nil {
-				return fmt.Errorf("advance merge queue entry attempt: %w", err)
-			}
-			return nil
-		}
-		// An identified attempt keeps a departure sync already observed for
-		// it. An unidentified one cannot be matched to any departure, so it
-		// replaces whatever is recorded.
-		var departedAttempt int
-		err := tx.QueryRowContext(ctx, `
-			SELECT attempt FROM forge_merge_queue_removals
-			WHERE repo_id = ? AND number = ?`,
-			repoID, number,
-		).Scan(&departedAttempt)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-		case err != nil:
-			return fmt.Errorf("load merge queue departure: %w", err)
-		case attempt > 0 && departedAttempt >= attempt:
-			return nil
-		}
-		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM forge_merge_queue_removals WHERE repo_id = ? AND number = ?`,
-			repoID, number,
-		); err != nil {
-			return fmt.Errorf("clear merge queue removal: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO forge_merge_queue_entries (
-				repo_id, number, attempt, position, state, enqueued_at,
-				estimated_time_to_merge_seconds, observed_at
-			) VALUES (?, ?, ?, 0, 'QUEUED', ?, NULL, ?)`,
-			repoID, number, attempt, requestedAt.UTC(), requestedAt.UTC(),
-		); err != nil {
-			return fmt.Errorf("record provisional merge queue entry: %w", err)
-		}
-		return nil
-	})
-}
-
-// GetRepoMergeQueue returns the repository's default-branch merge queue
-// configuration, or nil when the last observation found no merge queue.
-func (d *DB) GetRepoMergeQueue(ctx context.Context, repoID int64) (*RepoMergeQueue, error) {
-	var queue RepoMergeQueue
-	err := d.roQueryRowContext(ctx, `
-		SELECT branch, merge_method, observed_at
-		FROM forge_repo_merge_queues
-		WHERE repo_id = ?`, repoID,
-	).Scan(&queue.Branch, &queue.MergeMethod, &queue.ObservedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get repository merge queue: %w", err)
-	}
-	queue.ObservedAt = queue.ObservedAt.UTC()
-	return &queue, nil
-}
-
-// ListMergeQueueEntriesForMRs returns the merge queue entry of each open merge
-// request that is currently queued. The IDs are bound once as a JSON array so
-// the pull list size is not limited by SQLite's bind-parameter ceiling.
-func (d *DB) ListMergeQueueEntriesForMRs(
+// ListMergeQueueStatesForMRs returns the merge queue state of each open merge
+// request Forge has read it for, keyed by merge request ID. The IDs are bound
+// once as a JSON array so the pull list size is not limited by SQLite's
+// bind-parameter ceiling.
+func (d *DB) ListMergeQueueStatesForMRs(
 	ctx context.Context, mrIDs []int64,
-) (map[int64]MergeQueueEntry, error) {
-	entries := make(map[int64]MergeQueueEntry)
+) (map[int64]MergeQueueState, error) {
+	states := make(map[int64]MergeQueueState)
 	if len(mrIDs) == 0 {
-		return entries, nil
+		return states, nil
 	}
 	payload, err := json.Marshal(mrIDs)
 	if err != nil {
-		return nil, fmt.Errorf("encode merge queue ids: %w", err)
+		return nil, fmt.Errorf("encode merge queue state ids: %w", err)
 	}
 	rows, err := d.roQueryContext(ctx, `
-		SELECT p.id, q.number, q.position, q.state, q.enqueued_at,
-		       q.estimated_time_to_merge_seconds, q.observed_at
+		SELECT p.id, `+mergeQueueStateColumns+`
 		FROM forge_merge_requests p
-		JOIN forge_merge_queue_entries q
-		  ON q.repo_id = p.repo_id AND q.number = p.number
+		JOIN forge_merge_queue_states q ON q.repo_id = p.repo_id AND q.number = p.number
 		WHERE p.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
 		  AND p.state = 'open'`, string(payload))
 	if err != nil {
-		return nil, fmt.Errorf("list merge queue entries: %w", err)
+		return nil, fmt.Errorf("list merge queue states: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var mrID int64
-		entry, err := scanMergeQueueEntry(rows, &mrID)
+		state, err := scanMergeQueueState(rows.Scan, &mrID)
 		if err != nil {
 			return nil, err
 		}
-		entries[mrID] = entry
+		states[mrID] = state
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list merge queue entries: %w", err)
+		return nil, fmt.Errorf("list merge queue states: %w", err)
 	}
-	return entries, nil
+	return states, nil
 }
 
-// GetMergeQueueEntry returns the merge queue entry of an open merge request,
-// or nil when it is not queued.
-func (d *DB) GetMergeQueueEntry(
-	ctx context.Context, repoID int64, number int,
-) (*MergeQueueEntry, error) {
+// ListQueuedMergeRequestNumbers returns the open pull requests Forge last saw
+// in a merge queue, so a repository pass can notice them leave without the
+// activity relay.
+func (d *DB) ListQueuedMergeRequestNumbers(ctx context.Context, repoID int64) ([]int, error) {
 	rows, err := d.roQueryContext(ctx, `
-		SELECT p.id, q.number, q.position, q.state, q.enqueued_at,
-		       q.estimated_time_to_merge_seconds, q.observed_at
-		FROM forge_merge_queue_entries q
-		JOIN forge_merge_requests p
-		  ON p.repo_id = q.repo_id AND p.number = q.number
-		WHERE q.repo_id = ? AND q.number = ? AND p.state = 'open'`,
-		repoID, number)
+		SELECT q.number
+		FROM forge_merge_queue_states q
+		JOIN forge_merge_requests p ON p.repo_id = q.repo_id AND p.number = q.number
+		WHERE q.repo_id = ? AND q.queued = 1 AND p.state = 'open'
+		ORDER BY q.number`, repoID)
 	if err != nil {
-		return nil, fmt.Errorf("get merge queue entry: %w", err)
+		return nil, fmt.Errorf("list queued merge requests: %w", err)
 	}
 	defer rows.Close()
-	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("get merge queue entry: %w", err)
-		}
-		return nil, nil
-	}
-	var mrID int64
-	entry, err := scanMergeQueueEntry(rows, &mrID)
-	if err != nil {
-		return nil, err
-	}
-	return &entry, nil
-}
-
-// ListMergeQueueRemovalsForMRs returns the recorded merge queue removal of
-// each open merge request, keyed by merge request ID.
-func (d *DB) ListMergeQueueRemovalsForMRs(
-	ctx context.Context, mrIDs []int64,
-) (map[int64]MergeQueueRemoval, error) {
-	removals := make(map[int64]MergeQueueRemoval)
-	if len(mrIDs) == 0 {
-		return removals, nil
-	}
-	payload, err := json.Marshal(mrIDs)
-	if err != nil {
-		return nil, fmt.Errorf("encode merge queue removal ids: %w", err)
-	}
-	rows, err := d.roQueryContext(ctx, `
-		SELECT p.id, r.number, r.removed_at, r.reason
-		FROM forge_merge_requests p
-		JOIN forge_merge_queue_removals r
-		  ON r.repo_id = p.repo_id AND r.number = p.number
-		WHERE p.id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-		  AND p.state = 'open' AND r.removed_at IS NOT NULL`, string(payload))
-	if err != nil {
-		return nil, fmt.Errorf("list merge queue removals: %w", err)
-	}
-	defer rows.Close()
+	var numbers []int
 	for rows.Next() {
-		var mrID int64
-		var removal MergeQueueRemoval
-		if err := rows.Scan(&mrID, &removal.Number, &removal.RemovedAt, &removal.Reason); err != nil {
-			return nil, fmt.Errorf("scan merge queue removal: %w", err)
+		var number int
+		if err := rows.Scan(&number); err != nil {
+			return nil, fmt.Errorf("scan queued merge request: %w", err)
 		}
-		removal.RemovedAt = removal.RemovedAt.UTC()
-		removals[mrID] = removal
+		numbers = append(numbers, number)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list merge queue removals: %w", err)
+		return nil, fmt.Errorf("list queued merge requests: %w", err)
 	}
-	return removals, nil
+	return numbers, nil
 }
 
-// GetMergeQueueRemoval returns the recorded merge queue removal of an open
-// merge request, or nil when there is none.
-func (d *DB) GetMergeQueueRemoval(
-	ctx context.Context, repoID int64, number int,
-) (*MergeQueueRemoval, error) {
-	var removal MergeQueueRemoval
-	err := d.roQueryRowContext(ctx, `
-		SELECT r.number, r.removed_at, r.reason
-		FROM forge_merge_queue_removals r
-		JOIN forge_merge_requests p
-		  ON p.repo_id = r.repo_id AND p.number = r.number
-		WHERE r.repo_id = ? AND r.number = ? AND p.state = 'open'
-		  AND r.removed_at IS NOT NULL`,
-		repoID, number,
-	).Scan(&removal.Number, &removal.RemovedAt, &removal.Reason)
+func scanMergeQueueStateRow(row *sql.Row) (*MergeQueueState, error) {
+	state, err := scanMergeQueueState(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get merge queue removal: %w", err)
+		return nil, err
 	}
-	removal.RemovedAt = removal.RemovedAt.UTC()
-	return &removal, nil
+	return &state, nil
 }
 
-func scanMergeQueueEntry(rows *sql.Rows, mrID *int64) (MergeQueueEntry, error) {
-	var entry MergeQueueEntry
+func scanMergeQueueState(scan func(...any) error, leading ...any) (MergeQueueState, error) {
+	var state MergeQueueState
+	var enqueuedAt, removedAt sql.NullTime
 	var estimate sql.NullInt64
-	if err := rows.Scan(
-		mrID, &entry.Number, &entry.Position, &entry.State, &entry.EnqueuedAt,
-		&estimate, &entry.ObservedAt,
-	); err != nil {
-		return entry, fmt.Errorf("scan merge queue entry: %w", err)
+	dest := append(leading,
+		&state.Number, &state.BaseBranch, &state.Enabled, &state.MergeMethod, &state.Queued,
+		&state.Position, &state.State, &enqueuedAt, &estimate,
+		&removedAt, &state.RemovalReason, &state.ObservedAt,
+	)
+	if err := scan(dest...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return state, err
+		}
+		return state, fmt.Errorf("scan merge queue state: %w", err)
 	}
-	entry.EnqueuedAt = entry.EnqueuedAt.UTC()
-	entry.ObservedAt = entry.ObservedAt.UTC()
+	if enqueuedAt.Valid {
+		state.EnqueuedAt = new(enqueuedAt.Time.UTC())
+	}
+	if removedAt.Valid {
+		state.RemovedAt = new(removedAt.Time.UTC())
+	}
 	if estimate.Valid {
-		entry.EstimatedTimeToMerge = new(time.Duration(estimate.Int64) * time.Second)
+		state.EstimatedTimeToMerge = new(time.Duration(estimate.Int64) * time.Second)
 	}
-	return entry, nil
+	state.ObservedAt = state.ObservedAt.UTC()
+	return state, nil
+}
+
+func utcTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	return new(t.UTC())
+}
+
+func timePtrEqual(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(*b)
 }

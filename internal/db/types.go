@@ -1245,79 +1245,30 @@ type StackPlacement struct {
 	Size     int
 }
 
-// MergeQueueEntry is one pull request's position in its repository's
-// provider merge queue, as last observed by sync.
-type MergeQueueEntry struct {
-	Number int
-	// Attempt is the pull request's count of provider enqueue events when
-	// the entry was observed, identifying this queue attempt. 0 is unknown.
-	Attempt  int
-	Position int
-	// State is the provider's queue entry state, such as QUEUED,
-	// AWAITING_CHECKS, MERGEABLE, UNMERGEABLE, or LOCKED.
-	State      string
-	EnqueuedAt time.Time
-	// EstimatedTimeToMerge is nil when the provider has no estimate.
+// MergeQueueState is a pull request's merge queue state, read from the pull
+// request itself.
+type MergeQueueState struct {
+	Number     int
+	BaseBranch string
+	// Enabled reports whether the base branch has a merge queue, so merging
+	// adds the pull request to it.
+	Enabled bool
+	// MergeMethod is the queue's merge method (merge, squash, or rebase), or
+	// "" when Forge has not read it. A write with "" keeps the stored method
+	// for the same base branch.
+	MergeMethod string
+	// Queued reports that the pull request is in the queue. Position 0 means
+	// the queue has not reported its position yet.
+	Queued               bool
+	Position             int
+	State                string
+	EnqueuedAt           *time.Time
 	EstimatedTimeToMerge *time.Duration
-	ObservedAt           time.Time
-}
-
-// MergeQueueSnapshot is one observation of a repository's default-branch
-// merge queue. Configured is false when the branch has no merge queue, in
-// which case Entries is empty.
-type MergeQueueSnapshot struct {
-	Configured bool
-	Branch     string
-	// MergeMethod is the queue's configured merge method: merge, squash,
-	// or rebase.
-	MergeMethod string
-	Entries     []MergeQueueEntry
-	ObservedAt  time.Time
-}
-
-// RepoMergeQueue is a repository's stored merge queue configuration.
-type RepoMergeQueue struct {
-	Branch      string
-	MergeMethod string
-	ObservedAt  time.Time
-}
-
-// MergeQueueChanges reports what a merge queue replacement changed. Changed
-// holds every pull request whose queue membership, position, or state
-// changed; Departed holds the entries that left the queue, each now recorded
-// as a pending departure.
-type MergeQueueChanges struct {
-	Changed  []int
-	Departed []MergeQueueEntry
-}
-
-// MergeQueueDeparture is a pull request that left the merge queue and whose
-// removal reason has not been resolved from the provider yet.
-type MergeQueueDeparture struct {
-	Number int
-	// Attempt is the departed entry's attempt; 0 is unknown.
-	Attempt    int
-	DepartedAt time.Time
-}
-
-// MergeQueueOutcome is the provider's latest merge queue record for a pull
-// request, in the provider's own event order.
-type MergeQueueOutcome struct {
-	// State is the pull request state, such as OPEN, CLOSED, or MERGED.
-	State string
-	// Attempts counts the pull request's enqueue events.
-	Attempts int
-	// LatestRemoval is the removal that ended the latest attempt, or nil
-	// while that attempt has not ended.
-	LatestRemoval *MergeQueueRemoval
-}
-
-// MergeQueueRemoval records that an open pull request left the merge queue
-// without merging, with the provider's reason.
-type MergeQueueRemoval struct {
-	Number    int
-	RemovedAt time.Time
-	Reason    string
+	// RemovalReason is set when the queue's latest action removed the pull
+	// request without merging it.
+	RemovedAt     *time.Time
+	RemovalReason string
+	ObservedAt    time.Time
 }
 
 // GitHubNativeStack is a cached GitHub stack resource. It remains separate

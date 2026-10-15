@@ -875,10 +875,9 @@ type Syncer struct {
 	// onMergeQueueChanged fires for each pull request whose merge queue
 	// membership, position, or state changed.
 	onMergeQueueChanged func(context.Context, int64, int)
-	// mergeQueueCheckedAt records, per repository, when a repository pass
-	// last read the merge queue, so repositories without one are checked
-	// only every mergeQueueAbsentCheckInterval.
-	mergeQueueCheckedAt sync.Map
+	// mergeQueueMethodCheckedAt records, per repository and branch, when the
+	// merge queue's merge method was last read.
+	mergeQueueMethodCheckedAt sync.Map
 	// mergeQueueReadDenied records, per repository, when the read
 	// credential was refused the merge queue, so reads use the write
 	// credential until mergeQueueReadRecheck passes.
@@ -6295,7 +6294,7 @@ func (s *Syncer) indexSyncRepo(
 				s.markRepoFailed(repo, failMR)
 				// The queue read does not depend on the pull list, so a
 				// failing list must not freeze queue state.
-				s.refreshMergeQueueIfDue(ctx, repo, repoID)
+				s.refreshQueuedPullRequests(ctx, repo, repoID)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
@@ -6393,7 +6392,7 @@ func (s *Syncer) indexSyncRepo(
 	// partial pull failure still observes the queue.
 	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
 		disabledScope&failMR == 0 {
-		s.refreshMergeQueueIfDue(ctx, repo, repoID)
+		s.refreshQueuedPullRequests(ctx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.

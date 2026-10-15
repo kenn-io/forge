@@ -24,7 +24,7 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("fixture uses a POSIX smudge filter")
 	}
-	for _, stage := range []string{"fill", "claim"} {
+	for _, stage := range []string{"fill", "claim", "claim-new-branch"} {
 		t.Run(stage, func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
@@ -45,7 +45,7 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 			workspacePath := filepath.Join(t.TempDir(), "workspace")
 			ws := &Workspace{ID: "foreground-workspace", WorktreePath: workspacePath}
 			hot := hotWorktreePath(clone, workspacePath)
-			if stage == "claim" {
+			if stage != "fill" {
 				require.NoError(manager.prepareHotWorktree(ctx, clone, workspacePath, "HEAD"))
 			}
 			buildCtx, cancel := context.WithCancel(ctx)
@@ -56,7 +56,11 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 				if stage == "fill" {
 					buildErr = manager.prepareHotWorktree(buildCtx, clone, workspacePath, target)
 				} else {
-					_, buildErr = createTestWorkspace(manager, buildCtx, clone, ws, managed.CreateWorktreeOptions{Mode: managed.CheckoutDetached, BaseRef: target})
+					opts := managed.CreateWorktreeOptions{Mode: managed.CheckoutDetached, BaseRef: target}
+					if stage == "claim-new-branch" {
+						opts.Mode, opts.Branch = managed.CheckoutNewBranch, "new-workspace"
+					}
+					_, buildErr = createTestWorkspace(manager, buildCtx, clone, ws, opts)
 				}
 			}()
 			t.Cleanup(func() {
@@ -78,7 +82,7 @@ func TestHotWorktreeCanceledCheckout(t *testing.T) {
 			cancel()
 			<-done
 			require.Error(buildErr)
-			if stage == "claim" {
+			if stage != "fill" {
 				require.NoDirExists(workspacePath, "an interrupted claim must not publish a workspace")
 				require.NoDirExists(hot, "failed claim cleanup removes the interrupted spare")
 			} else {

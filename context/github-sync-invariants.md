@@ -155,6 +155,12 @@ For pull requests, that means:
   for a repository with a known queue or pending departure; others are
   re-checked every 6 hours, since reading every repository each pass spends
   quota on empty answers (`internal/github/merge_queue.go::Syncer.refreshMergeQueueIfDue`).
+- GitHub reports enqueues and removals as `pull_request` webhooks, so a relay
+  `PullRequest` hint re-reads the queue of a repository with a known queue or
+  pending departure; the repository pass is the fallback without the relay.
+  The async merge API cannot replace either: its `enqueued` result is final
+  and never reports the queue's outcome
+  (`internal/github/merge_queue.go::Syncer.refreshMergeQueueForRelayHint`).
   The watched lane re-reads queues holding a watched pull request it admitted,
   and an explicit pull request refresh re-reads a configured queue, or retries
   pending departures, even while scheduled sync is paused; archived

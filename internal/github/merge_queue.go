@@ -295,6 +295,26 @@ func (s *Syncer) refreshMergeQueueIfDue(ctx context.Context, repo RepoRef, repoI
 	s.RefreshMergeQueue(ctx, repo, repoID)
 }
 
+// refreshMergeQueueForRelayHint re-reads a repository's merge queue when the
+// activity relay reports a pull request change, since GitHub sends enqueued
+// and dequeued as pull_request webhooks. Only repositories with a known queue
+// or a departure still being resolved are read, so hints for other
+// repositories cost nothing. The repository pass stays the fallback when the
+// relay is off or disconnected.
+func (s *Syncer) refreshMergeQueueForRelayHint(ctx context.Context, repo RepoRef, repoID int64) {
+	queue, err := s.db.GetRepoMergeQueue(ctx, repoID)
+	if err != nil {
+		return
+	}
+	if queue == nil {
+		pending, err := s.db.ListPendingMergeQueueDepartures(ctx, repoID)
+		if err != nil || len(pending) == 0 {
+			return
+		}
+	}
+	s.RefreshMergeQueue(ctx, repo, repoID)
+}
+
 // mergeQueueReadRecheck is how long merge queue reads stay on the write
 // credential after the read credential was refused, before the read credential
 // is tried again. A permission granted later is picked up within this window.

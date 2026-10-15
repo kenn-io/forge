@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
@@ -855,4 +856,44 @@ func TestRepositoryPassesReadKnownMergeQueueEveryPass(t *testing.T) {
 	syncer.RunOnce(t.Context())
 	syncer.RunOnce(t.Context())
 	assert.EqualValues(2, gql.queries.Load(), "a repository with a merge queue is read every pass")
+}
+
+func TestRelayPullRequestHintRefreshesKnownMergeQueue(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := &mergeQueueGraphQL{}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	gql.set(queuedPR7, "")
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+
+	// GitHub removes the pull request and sends a pull_request webhook; the
+	// relay forwards it as a hint before any repository pass runs.
+	gql.set(emptyQueue, queueOutcome("OPEN", 1, "2026-10-14T19:06:07Z", "branch_protection_failure"))
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
+		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
+		Target: activityrelay.PullRequest, Number: 7,
+	})
+
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	assert.Nil(entry)
+	removal, err := database.GetMergeQueueRemoval(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(removal, "the relay hint must surface the removal without waiting for a pass")
+	assert.Equal("branch_protection_failure", removal.Reason)
+}
+
+func TestRelayPullRequestHintSkipsRepositoryWithoutMergeQueue(t *testing.T) {
+	t.Parallel()
+
+	gql := &mergeQueueQueryCounter{response: queuedPR7}
+	syncer, _, _, _ := newMergeQueueTestSyncer(t, gql)
+
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), activityrelay.Hint{
+		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
+		Target: activityrelay.PullRequest, Number: 7,
+	})
+	assert.Zero(t, gql.queries.Load(), "a hint for a repository without a known queue reads no queue")
 }

@@ -22,16 +22,21 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Keep the quiet dark canvas and content surfaces dark enough for comfortable
   reading. Inset, hover, and border tokens step up in small, even increments so
   tab strips, group headers, chips, and hovered rows read as structure, never as
-  bright gray fills. The quiet light palette mirrors this with muted
-  slate-blue chrome and reading surface and slate ink (about 10:1, never
-  near-black on white); diff code text follows `--text-primary` rather than
-  the Pierre theme's own foreground
+  bright gray fills. The quiet light palette mirrors this with dimmed warm
+  cream "paper" chrome and reading surface and soft brown-black ink (about
+  10:1, never near-black on white or a cold blue cast); diff code text
+  follows `--text-primary` rather than the Pierre theme's own foreground
   (`frontend/src/lib/components/diff/PierreFileDiff.svelte`). Muted text and
   accent text must stay AA on every step and, for accents, on their own
   `color-mix` tints (up to 16%) such as stale banners; selected rows stay between the
   surface and hover in both themes. The light contrast and both row orders are
   checked in `frontend/tests/e2e-full/sidebar-scroll-indicator.spec.ts`.
   Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
+- Workspace terminals follow the app theme: a cream xterm theme in light mode
+  and the dark theme in dark mode, with `--terminal-bg` matching each. Light
+  ANSI text hues clear 4.5:1 on the cream page, and the 4.5 contrast floor
+  darkens colors a TUI chose for a dark background
+  (`frontend/src/lib/components/terminal/terminal-appearance.ts`).
 - PR background refresh uses an out-of-flow top progress bar at every width so
   narrow workspace panels do not reflow (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
 - Issue background refresh uses the metadata-row `Syncing` indicator

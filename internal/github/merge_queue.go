@@ -221,8 +221,8 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 	if repoID <= 0 || repoPlatform(repo) != platform.KindGitHub {
 		return false
 	}
-	fetcher := s.fetcherForContext(ctx, repo)
-	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+	fetcher := s.mergeQueueFetcher(ctx, repo)
+	if fetcher == nil {
 		return false
 	}
 	observedAt := s.now().UTC()
@@ -257,6 +257,40 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 		}
 	}
 	return len(changed) > 0
+}
+
+// mergeQueueFetcher returns the GraphQL fetcher for merge queue reads, or nil
+// when none may run now. Merge queue reads run as the write (merge) credential
+// when the repository's route has a separate one: the queue belongs with
+// merging, and a sync credential such as a GitHub App can be refused the
+// queue ("Resource not accessible by integration") while the user who merges
+// can read it. Otherwise they use the read credential.
+func (s *Syncer) mergeQueueFetcher(ctx context.Context, repo RepoRef) *GraphQLFetcher {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil
+	}
+	if router := s.routers[repoHost(repo)]; router != nil {
+		if fetcher, err := router.WriteFetcherForRepo(repo.Owner, repo.Name); err == nil && fetcher != nil {
+			verdict := s.reserveVerdictForContext(
+				ctx, repo, QuotaResourceGraphQL, true, IsSyncBudgetContext(ctx),
+			)
+			if verdict.known {
+				if verdict.exhausted {
+					return nil
+				}
+				return fetcher
+			}
+			if backoff, _ := fetcher.ShouldBackoff(); backoff {
+				return nil
+			}
+			return fetcher
+		}
+	}
+	fetcher := s.fetcherForContext(ctx, repo)
+	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		return nil
+	}
+	return fetcher
 }
 
 // RecordEnqueue tracks a pull request Forge just added to the merge queue.
@@ -382,8 +416,8 @@ func (s *Syncer) MergeQueueAttempts(ctx context.Context, repo RepoRef, number in
 	if repoPlatform(repo) != platform.KindGitHub {
 		return 0, false
 	}
-	fetcher := s.fetcherForContext(ctx, repo)
-	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+	fetcher := s.mergeQueueFetcher(ctx, repo)
+	if fetcher == nil {
 		return 0, false
 	}
 	outcome, found, err := fetcher.FetchMergeQueueOutcome(ctx, repo.Owner, repo.Name, number)

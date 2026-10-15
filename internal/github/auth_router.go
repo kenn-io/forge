@@ -40,8 +40,12 @@ type Route struct {
 	DiscoveryClient     Client
 	WriteSnapshotClient Client
 	Fetcher             *GraphQLFetcher
-	ReadIdentity        IdentityKey
-	WriteIdentity       IdentityKey
+	// WriteFetcher reads GraphQL as the write (merge) credential when it
+	// differs from the read credential. Merge queue reads use it: they
+	// belong with merging, and a sync App can be denied the queue.
+	WriteFetcher  *GraphQLFetcher
+	ReadIdentity  IdentityKey
+	WriteIdentity IdentityKey
 	// ArchiveKey and ArchiveClient are optional. When present, requests
 	// carrying the archive budget marker use the dedicated App route and its
 	// independent quota instead of the ordinary sync route.
@@ -349,6 +353,16 @@ func withoutArchiveRoute(route *Route) *Route {
 	cloned.ArchiveCredentialKey = ""
 	cloned.ArchiveReadIdentity = IdentityKey{}
 	return &cloned
+}
+
+// WriteFetcherForRepo returns the GraphQL fetcher for the repository's write
+// credential, or nil when the route reads and writes with one credential.
+func (r *HostRouter) WriteFetcherForRepo(owner, name string) (*GraphQLFetcher, error) {
+	route, err := r.RouteForRepo(owner, name)
+	if err != nil {
+		return nil, err
+	}
+	return route.WriteFetcher, nil
 }
 
 func (r *HostRouter) WriteIdentityForRepo(owner, name string) (IdentityKey, error) {

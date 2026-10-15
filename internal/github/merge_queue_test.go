@@ -701,3 +701,48 @@ func TestRecordEnqueueKeepsAttemptIdentifiedByFollowingRead(t *testing.T) {
 	require.NotNil(removal, "the attempt the read identified must keep its outcome")
 	assert.Equal("branch_protection_failure", removal.Reason)
 }
+
+func TestMergeQueueReadsUseMergeCredential(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	// The sync credential, like a GitHub App without merge queue access, is
+	// refused the queue; the user credential that merges can read it.
+	appGQL := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}},`+
+			`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue"],"message":"Resource not accessible by integration"}]}`)
+	})
+	userGQL := &mergeQueueGraphQL{}
+	userGQL.set(queuedPR7, "")
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, appGQL)
+	userSrv := httptest.NewServer(userGQL)
+	t.Cleanup(userSrv.Close)
+	appSrv := httptest.NewServer(appGQL)
+	t.Cleanup(appSrv.Close)
+
+	router, err := NewHostRouter("github.com", &Route{
+		Key:    RouteKey{Host: "github.com", Owner: "acme"},
+		Client: &mockClient{},
+		Fetcher: NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(appSrv.URL, appSrv.Client()), nil,
+		),
+		WriteFetcher: NewGraphQLFetcherWithClient(
+			githubv4.NewEnterpriseClient(userSrv.URL, userSrv.Client()), nil,
+		),
+		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "app:1"},
+		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:7"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
+	require.NoError(err)
+	require.NotNil(queue, "the merge credential must observe the queue the App cannot read")
+	entry, err := database.GetMergeQueueEntry(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(entry)
+	assert.Equal(1, entry.Position)
+}

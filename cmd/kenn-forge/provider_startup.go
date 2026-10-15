@@ -1188,7 +1188,15 @@ func buildGitHubRouteClients(startup *providerControlPlane) error {
 			)
 		}
 		var writeSnapshotClient github.Client
+		var writeFetcher *github.GraphQLFetcher
 		if writeRuntime != nil && configured.writeIdentity != configured.readIdentity {
+			writeFetcher = github.NewGraphQLFetcher(
+				mutationTokenSource{Source: configured.source}, key.Host,
+				writeRuntime.graphql, writeRuntime.budget,
+				github.WithGraphQLQuotaAccounting(
+					startup.quotaRegistry, configured.writeIdentity,
+				),
+			)
 			writeSnapshotClient, err = github.NewClient(
 				mutationTokenSource{Source: configured.source}, key.Host,
 				writeRuntime.rest, nil,
@@ -1225,7 +1233,8 @@ func buildGitHubRouteClients(startup *providerControlPlane) error {
 			WriteCredentialKey: writeCredentialKey(descriptor),
 			Client:             client, DiscoveryClient: discoveryClient,
 			WriteSnapshotClient: writeSnapshotClient,
-			Fetcher:             fetcher, ReadIdentity: configured.readIdentity,
+			Fetcher:             fetcher, WriteFetcher: writeFetcher,
+			ReadIdentity:  configured.readIdentity,
 			WriteIdentity: configured.writeIdentity,
 			ArchiveKey:    archiveRouteKey(configured.archiveKey, key.Host),
 			ArchiveClient: archiveClient, ArchiveFetcher: archiveFetcher,

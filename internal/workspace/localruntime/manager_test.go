@@ -2504,7 +2504,10 @@ func TestManagerTmuxAttachKeepsSynchronizedOutputForBrowserTerminals(t *testing.
 	require.Eventually(func() bool {
 		for {
 			select {
-			case chunk := <-attachment.Output:
+			case chunk, ok := <-attachment.Output:
+				if !ok {
+					return false
+				}
 				output = append(output, chunk...)
 			default:
 				start := bytes.Index(output, []byte("\x1b[?2026h"))

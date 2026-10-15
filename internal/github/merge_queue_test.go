@@ -3,6 +3,7 @@ package github
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -635,4 +636,59 @@ func TestBranchWithoutQueueIsReadOnceForAllItsPullRequests(t *testing.T) {
 	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 7)
 	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 8)
 	assert.EqualValues(1, gql.prReads.Load(), "pull request 8 shares main's recent no-queue answer")
+}
+
+func TestScheduledDetailRefreshDiscoversEnqueueForgeDidNotSee(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	client := &mockClient{
+		singlePR: buildOpenPR(9, time.Now().UTC()),
+		comments: []*gh.IssueComment{}, reviews: []*gh.PullRequestReview{}, commits: []*gh.RepositoryCommit{},
+	}
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+
+	// The detail drain refreshes dormant pull requests through fetchMRDetail.
+	_, err := syncer.fetchMRDetail(WithSyncBudget(t.Context()), repo, repoID, 9, false)
+	require.NoError(err)
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 9)
+	require.NoError(err)
+	require.NotNil(state, "the scheduled detail refresh reads queue state for a pull request nobody has open")
+	require.True(state.Queued)
+}
+
+func TestPostSyncQueueCheckSkipsArchivedRepositoriesAndFailedSyncs(t *testing.T) {
+	t.Parallel()
+
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	archived := repo
+	archived.Archived = true
+
+	var synced error
+	syncer.refreshMergeQueueAfterDetailSync(t.Context(), archived, repoID, 7, &synced)
+	failed := errors.New("GitHub returned 502")
+	syncer.refreshMergeQueueAfterDetailSync(t.Context(), repo, repoID, 7, &failed)
+	assert.Zero(t, gql.prReads.Load(), "archived repositories and failed syncs get no live queue read")
+
+	syncer.refreshMergeQueueAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	assert.EqualValues(t, 1, gql.prReads.Load())
+}
+
+func TestMergeQueueCachesFollowRepositoryIdentityNotRoute(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, gql.prReads.Load())
+
+	// A different repository now holds the acme/widgets route.
+	other := repo
+	other.Key = platform.RepositoryIDKey(testRepoID("acme", "widgets") + 1)
+	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), other, repoID, 8)
+	assert.EqualValues(2, gql.prReads.Load(), "another repository on the same route does not inherit the no-queue answer")
 }

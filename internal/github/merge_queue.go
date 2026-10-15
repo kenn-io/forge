@@ -273,7 +273,7 @@ func (s *Syncer) refreshPullRequestMergeQueue(
 		}
 		return deleted, true
 	}
-	branchKey := repoFailKey(repo) + "\x00" + state.BaseBranch
+	branchKey := mergeQueueRepoKey(repo) + "\x00" + state.BaseBranch
 	if state.Enabled {
 		s.mergeQueueBranchAbsent.Delete(branchKey)
 		state.MergeMethod = s.mergeQueueMergeMethod(ctx, repo, state.BaseBranch)
@@ -313,6 +313,26 @@ func (s *Syncer) RefreshPullRequestMergeQueueForRepository(
 	return s.RefreshPullRequestMergeQueue(ctx, repoRefFromStoredIdentity(repo, *stored), repoID, number)
 }
 
+// refreshMergeQueueAfterDetailSync checks a pull request's merge queue state
+// after its detail sync, because queue membership never changes the pull
+// request itself. Every live detail sync calls it once the repository is
+// resolved and the archived and removed-upstream checks have passed: watched,
+// relay, and manual syncs, and the scheduled refresh of dormant pull
+// requests. A sync that failed for anything but its diff checks nothing.
+func (s *Syncer) refreshMergeQueueAfterDetailSync(
+	ctx context.Context, repo RepoRef, repoID int64, number int, syncErr *error,
+) {
+	if *syncErr != nil {
+		if _, onlyDiffFailed := (*syncErr).(*DiffSyncError); !onlyDiffFailed { //nolint:errorlint // joined hard failures must not count as synced
+			return
+		}
+	}
+	if repo.Archived || IsArchiveSyncBudgetContext(ctx) {
+		return
+	}
+	s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, number)
+}
+
 // refreshPullRequestMergeQueueIfDue refreshes an open pull request whose
 // queue state may have moved: one whose base branch has a queue, one with
 // queue state to show, one retargeted since its last read, or one Forge has
@@ -342,10 +362,21 @@ func (s *Syncer) refreshPullRequestMergeQueueIfDue(
 	return s.RefreshPullRequestMergeQueue(ctx, repo, repoID, number)
 }
 
+// mergeQueueRepoKey identifies a repository for the merge queue caches by its
+// stable provider key, so another repository that takes over the owner/name
+// route never inherits them. Refs not yet resolved to a key fall back to the
+// route.
+func mergeQueueRepoKey(repo RepoRef) string {
+	if repo.Key.IsZero() {
+		return repoFailKey(repo)
+	}
+	return string(repoPlatform(repo)) + "\x00" + repoHost(repo) + "\x00" + repo.Key.String()
+}
+
 // mergeQueueBranchAbsentRecently reports whether a read within
 // mergeQueueRecheck found branch without a merge queue.
 func (s *Syncer) mergeQueueBranchAbsentRecently(repo RepoRef, branch string) bool {
-	readAt, ok := s.mergeQueueBranchAbsent.Load(repoFailKey(repo) + "\x00" + branch)
+	readAt, ok := s.mergeQueueBranchAbsent.Load(mergeQueueRepoKey(repo) + "\x00" + branch)
 	if !ok {
 		return false
 	}
@@ -384,7 +415,7 @@ type cachedMergeMethod struct {
 // queues permission, so a refused read retries with the merge credential
 // without moving queue reads off the read credential.
 func (s *Syncer) mergeQueueMergeMethod(ctx context.Context, repo RepoRef, branch string) string {
-	key := repoFailKey(repo) + "\x00" + branch
+	key := mergeQueueRepoKey(repo) + "\x00" + branch
 	if cached, ok := s.mergeQueueMethods.Load(key); ok {
 		if entry, _ := cached.(cachedMergeMethod); s.now().Sub(entry.readAt) < mergeQueueRecheck {
 			return entry.method
@@ -437,7 +468,7 @@ func (s *Syncer) mergeQueueRead(
 		return nil, errNoMergeQueueFetcher
 	}
 	writeFetcher := s.mergeQueueWriteFetcher(ctx, repo)
-	key := repoFailKey(repo)
+	key := mergeQueueRepoKey(repo)
 	if deniedAt, ok := s.mergeQueueReadDenied.Load(key); ok && writeFetcher != nil {
 		if when, _ := deniedAt.(time.Time); s.now().Sub(when) < mergeQueueReadRecheck {
 			return writeFetcher, read(writeFetcher)

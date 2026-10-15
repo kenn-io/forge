@@ -165,17 +165,19 @@ For pull requests, that means:
   stored base branch matches the pull request's
   (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`).
 - Entering or leaving a queue does not change a pull request's `updated_at`,
-  so ordinary pull request sync never notices it. Every successful pull
-  request detail sync, scheduled dormant refreshes and watched and relay syncs
-  included, also checks queue state when due; manual refresh, an enqueue, and
-  repository passes for pull requests last seen queued read it directly. The
-  async merge API cannot replace this: its `enqueued` result is final
-  (`internal/github/sync.go::Syncer.syncMRForRepoResolved`,
-  `internal/github/merge_queue.go::Syncer.RefreshPullRequestMergeQueue`).
+  so ordinary pull request sync never notices it. Every successful live pull
+  request detail sync also checks queue state when due, after the repository
+  is resolved and the archived and removed-upstream checks pass: watched,
+  relay, and manual syncs and the scheduled refresh of dormant pull requests.
+  Manual refresh, an enqueue, and repository passes for pull requests last seen
+  queued read it directly. The async merge API cannot replace this: its
+  `enqueued` result is final
+  (`internal/github/merge_queue.go::Syncer.refreshMergeQueueAfterDetailSync`).
 - A pull request is due unless its state shows nothing and its base branch was
   read without a queue within 6 hours, by it or any pull request on that
-  branch, so branches without merge queues cost one read per 6 hours
-  (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
+  branch, so branches without merge queues cost one read per 6 hours. Merge
+  queue caches are keyed by the repository's stable key, never its owner/name
+  route (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
 - Never request `mergeQueue.configuration` in the pull request read: GitHub
   refuses it to an App with only the Merge queues permission, and one refused
   field fails the whole query. The branch's merge method is read separately at

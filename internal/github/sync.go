@@ -8252,6 +8252,7 @@ func (s *Syncer) fetchMRDetail(
 	if errors.Is(err, db.ErrRepositoryIdentityChanged) {
 		return calls, nil
 	}
+	s.refreshMergeQueueAfterDetailSync(ctx, repo, repoID, number, &err)
 	return calls, err
 }
 
@@ -11162,36 +11163,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	fetchedEvidence *mergeRequestFetchEvidence,
 	lifecyclePersisted *bool,
 	expectedRepoID *int64,
-) error {
-	var repoID int64
-	if resolvedRepoID == nil {
-		resolvedRepoID = &repoID
-	}
-	err := s.syncMRDetailForRepo(
-		ctx, repo, number, useConditionalPRDetail, providerAttempted,
-		resolvedRepoID, fetchedEvidence, lifecyclePersisted, expectedRepoID,
-	)
-	_, onlyDiffFailed := err.(*DiffSyncError) //nolint:errorlint // joined hard failures must not count as synced
-	if (err == nil || onlyDiffFailed) && *resolvedRepoID > 0 && !IsArchiveSyncBudgetContext(ctx) {
-		// Queue membership never changes the pull request itself, so every
-		// detail refresh, including the scheduled one for dormant pull
-		// requests, also checks its merge queue state when that is due.
-		s.refreshPullRequestMergeQueueIfDue(ctx, repo, *resolvedRepoID, number)
-	}
-	return err
-}
-
-func (s *Syncer) syncMRDetailForRepo(
-	ctx context.Context,
-	repo RepoRef,
-	number int,
-	useConditionalPRDetail bool,
-	providerAttempted *bool,
-	resolvedRepoID *int64,
-	fetchedEvidence *mergeRequestFetchEvidence,
-	lifecyclePersisted *bool,
-	expectedRepoID *int64,
-) error {
+) (retErr error) {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
 	}
@@ -11246,6 +11218,7 @@ func (s *Syncer) syncMRDetailForRepo(
 		return nil
 	}
 	ctx = withCloneRepositoryIdentity(ctx, repo)
+	defer s.refreshMergeQueueAfterDetailSync(ctx, repo, repoID, number, &retErr)
 
 	// Preserve derived fields that provider detail doesn't populate. CI is
 	// refreshed later in this sync path; keeping the previous values here

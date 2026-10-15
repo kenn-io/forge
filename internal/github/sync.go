@@ -8153,6 +8153,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 		if !detailApplied {
 			return nil
 		}
+		// Bulk hydration marks the detail fresh, which postpones the
+		// scheduled detail refresh that would otherwise check queue state.
+		s.refreshMergeQueueAfterBulkDetail(ctx, repo, repoID, number)
 		// Refresh workflow approval state so the DB-only detail GET
 		// can render the Approve workflows button without a foreground
 		// sync. GraphQL doesn't return action_required runs, so this

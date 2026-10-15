@@ -169,8 +169,10 @@ For pull requests, that means:
   request detail sync also checks queue state when due, after the repository
   is resolved and the archived and removed-upstream checks pass: watched,
   relay, and manual syncs and the scheduled refresh of dormant pull requests.
-  Manual refresh, an enqueue, and repository passes for pull requests last seen
-  queued read it directly. The async merge API cannot replace this: its
+  Bulk hydration, which marks details fresh and so postpones that scheduled
+  refresh, checks each pull request at most hourly. Manual refresh, an
+  enqueue, and repository passes for pull requests last seen queued read it
+  directly. The async merge API cannot replace this: its
   `enqueued` result is final
   (`internal/github/merge_queue.go::Syncer.refreshMergeQueueAfterDetailSync`).
 - A pull request is due unless its state shows nothing and its base branch was

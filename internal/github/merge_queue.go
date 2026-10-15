@@ -333,6 +333,33 @@ func (s *Syncer) refreshMergeQueueAfterDetailSync(
 	s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, number)
 }
 
+// mergeQueueBulkRecheck bounds how often bulk pull request hydration re-reads
+// a pull request's queue state. Bulk hydration runs whenever anything in the
+// repository changes and covers every open pull request, so reading each one
+// every time would cost a request per pull request on a queued branch.
+const mergeQueueBulkRecheck = time.Hour
+
+// refreshMergeQueueAfterBulkDetail checks a pull request's queue state after
+// bulk hydration marked its detail fresh. That postpones the scheduled detail
+// refresh, which is where a pull request enqueued without a relay hint is
+// otherwise noticed. A pull request read within mergeQueueBulkRecheck is
+// skipped, on top of the usual due rules.
+func (s *Syncer) refreshMergeQueueAfterBulkDetail(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+) {
+	if repo.Archived || IsArchiveSyncBudgetContext(ctx) {
+		return
+	}
+	stored, err := s.db.GetMergeQueueState(ctx, repoID, number)
+	if err != nil {
+		return
+	}
+	if stored != nil && s.now().Sub(stored.ObservedAt) < mergeQueueBulkRecheck {
+		return
+	}
+	s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, number)
+}
+
 // refreshPullRequestMergeQueueIfDue refreshes an open pull request whose
 // queue state may have moved: one whose base branch has a queue, one with
 // queue state to show, one retargeted since its last read, or one Forge has

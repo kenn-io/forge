@@ -173,6 +173,15 @@ func newSplitCredentialMergeQueueSyncer(
 	return syncer, database, repo, repoID
 }
 
+// servingPR returns a client whose pull request detail reads succeed for
+// number, so a detail sync completes and runs its queue check.
+func servingPR(number int) *mockClient {
+	return &mockClient{
+		singlePR: buildOpenPR(number, time.Now().UTC()),
+		comments: []*gh.IssueComment{}, reviews: []*gh.PullRequestReview{}, commits: []*gh.RepositoryCommit{},
+	}
+}
+
 func relayHintForPR(number int) activityrelay.Hint {
 	return activityrelay.Hint{
 		Provider: "github", Host: "github.com", RepositoryID: testRepoID("acme", "widgets"),
@@ -297,7 +306,7 @@ func TestRelayHintRefreshesPullRequestMergeQueue(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	gql := newPRQueueGraphQL(queuedPR7)
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, servingPR(7))
 	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
 
 	// GitHub sends a pull_request dequeued webhook; the relay forwards it.
@@ -317,7 +326,7 @@ func TestRelayHintSkipsPullRequestRecentlySeenWithoutQueue(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	gql := newPRQueueGraphQL(noQueuePR7)
-	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	syncer, _, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, servingPR(7))
 	now := time.Now().UTC()
 	syncer.now = func() time.Time { return now }
 	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
@@ -486,7 +495,7 @@ func TestRetargetedPullRequestIsReadAgainForNewBaseQueue(t *testing.T) {
 	_, err = database.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(err)
 
-	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 7)
 	assert.EqualValues(2, gql.prReads.Load(), "a new base branch is not covered by the old branch's cached absence")
 }
 
@@ -691,4 +700,28 @@ func TestMergeQueueCachesFollowRepositoryIdentityNotRoute(t *testing.T) {
 	other.Key = platform.RepositoryIDKey(testRepoID("acme", "widgets") + 1)
 	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), other, repoID, 8)
 	assert.EqualValues(2, gql.prReads.Load(), "another repository on the same route does not inherit the no-queue answer")
+}
+
+func TestBulkHydrationChecksQueueStateAtMostHourly(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	now := time.Now().UTC()
+	syncer.now = func() time.Time { return now }
+
+	// A pull request bulk hydration marks fresh is checked, so an enqueue
+	// without a relay hint is still noticed.
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, gql.prReads.Load())
+
+	// Bulk hydration repeats whenever the repository changes; it does not
+	// re-read the queue each time.
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, gql.prReads.Load())
+
+	now = now.Add(mergeQueueBulkRecheck + time.Minute)
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(2, gql.prReads.Load())
 }

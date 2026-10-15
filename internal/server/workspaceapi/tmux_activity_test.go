@@ -305,7 +305,7 @@ else
 fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
-	manager := workspace.NewManager(nil, dir)
+	manager := workspace.NewManager(nil, dir, nil)
 	manager.SetTmuxCommand([]string{scriptPath})
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
@@ -359,7 +359,7 @@ else
 fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
-	manager := workspace.NewManager(nil, dir)
+	manager := workspace.NewManager(nil, dir, nil)
 	manager.SetTmuxCommand([]string{scriptPath})
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })

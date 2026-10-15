@@ -41,7 +41,7 @@ require (
 	gitlab.com/gitlab-org/api/client-go/v3 v3.13.0
 	go.kenn.io/kata v0.18.0
 	go.kenn.io/kit v0.35.1
-	go.kenn.io/kwt v0.9.4-0.20261015130654-c3c73263bd04
+	go.kenn.io/kwt v0.9.4-0.20261015163017-a92affa6b55e
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0

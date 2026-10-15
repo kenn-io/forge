@@ -2595,7 +2595,7 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-delete-failed");
 
     await fireEvent.contextMenu(container.querySelector(".ws-row")!);
-    expect((screen.getByRole("menuitem", { name: "Retry deletion..." }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByRole("menuitem", { name: "Retry deletion..." }).getAttribute("aria-disabled")).toBeNull();
     await fireEvent.click(screen.getByRole("menuitem", { name: "Force delete workspace..." }));
 
     const dialog = await screen.findByRole("dialog", { name: "Force delete workspace?" });
@@ -2823,7 +2823,8 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Ahead workspace");
 
-    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    const row = container.querySelector(".ws-row")!;
+    await fireEvent.contextMenu(row);
 
     await fireEvent.click(screen.getByRole("menuitem", { name: /Push branch/ }));
 
@@ -2831,8 +2832,12 @@ describe("WorkspaceListSidebar", () => {
       params: { path: { id: "ws-ahead" } },
       signal: expect.any(AbortSignal),
     });
-    expect((screen.getByRole("menuitem", { name: /Pushing\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("menu", { name: "Workspace actions" })).toBeNull();
     expect(screen.getByLabelText("Pushing branch")).toBeTruthy();
+
+    // Reopening the menu while the push runs shows it and blocks a second one.
+    await fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: /Pushing\.\.\./ }).getAttribute("aria-disabled")).toBe("true");
 
     push.resolve({ data: undefined, response: { ok: true, status: 200 } });
     await waitFor(() => {
@@ -2936,14 +2941,16 @@ describe("WorkspaceListSidebar", () => {
     });
     await screen.findByText("Behind workspace");
 
-    await fireEvent.contextMenu(container.querySelector(".ws-row")!);
+    const row = container.querySelector(".ws-row")!;
+    await fireEvent.contextMenu(row);
     await fireEvent.click(screen.getByRole("menuitem", { name: /Pull remote changes/ }));
 
     expect(mockPost).toHaveBeenCalledWith("/workspaces/{id}/pull", {
       params: { path: { id: "ws-behind" } },
       signal: expect.any(AbortSignal),
     });
-    expect((screen.getByRole("menuitem", { name: /Pulling\.\.\./ }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: /Pulling\.\.\./ }).getAttribute("aria-disabled")).toBe("true");
 
     pull.resolve({ data: undefined, response: { ok: true, status: 200 } });
     await waitFor(() => {

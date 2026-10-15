@@ -8,17 +8,29 @@
     formatRelativeTime,
     formatTimestamp,
     IconButton,
+    Menu,
+    MenuContent,
+    MenuItem,
+    MenuSeparator,
     StatusDot,
+    type MenuAnchorPoint,
     type StatusDotStatus,
   } from "@kenn-io/kit-ui";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import PinIcon from "@lucide/svelte/icons/pin";
+  import PinOffIcon from "@lucide/svelte/icons/pin-off";
+  import CopyIcon from "@lucide/svelte/icons/copy";
+  import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+  import FolderOpenIcon from "@lucide/svelte/icons/folder-open";
+  import LinkIcon from "@lucide/svelte/icons/link";
+  import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import {
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { Effect, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -179,22 +191,22 @@
   let pinnedWorkspaceKeys = $state.raw(loadPinnedWorkspaces());
   let pinsCollapsed = $state(false);
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
+  // Kept after close so the menu can return focus to the right-clicked row.
   let contextMenu = $state<{
     ws: Workspace;
-    x: number;
-    y: number;
+    anchor: MenuAnchorPoint;
+    row: HTMLElement | undefined;
   } | null>(null);
+  let contextMenuOpen = $state(false);
   let deleteConfirmWorkspace = $state<Workspace | null>(null);
   let deleteConfirmForce = $state(false);
   let workspaceAction = $state<{
     workspaceKey: string;
     action: "push" | "pull" | "reveal" | "delete";
   } | null>(null);
-  let contextMenuEl = $state<HTMLDivElement | null>(null);
   // Row elements keyed by workspaceRowKey so the snippet-rendered rows can
   // each anchor their own truncation popover.
   let rowEls = $state<Record<string, HTMLElement | null>>({});
-  let contextMenuStyle = $state("");
   let acknowledgedDoneStates = $state.raw<Record<string, string>>(
     loadDoneAcknowledgements(),
   );
@@ -410,40 +422,6 @@
     displayOptions = { ...displayOptions, [key]: value };
     saveWorkspaceListDisplayOptions(displayOptions);
   }
-
-  $effect(() => {
-    if (!contextMenu) return;
-
-    function closeForOutsideClick(event: MouseEvent): void {
-      if (
-        contextMenuEl &&
-        event.target instanceof Node &&
-        contextMenuEl.contains(event.target)
-      ) {
-        return;
-      }
-      closeContextMenu();
-    }
-
-    function closeForEscape(event: KeyboardEvent): void {
-      if (event.key === "Escape") closeContextMenu();
-    }
-
-    function reposition(): void {
-      positionContextMenu();
-    }
-
-    document.addEventListener("mousedown", closeForOutsideClick);
-    document.addEventListener("keydown", closeForEscape);
-    window.addEventListener("resize", reposition);
-    window.addEventListener("scroll", closeContextMenu, true);
-    return () => {
-      document.removeEventListener("mousedown", closeForOutsideClick);
-      document.removeEventListener("keydown", closeForEscape);
-      window.removeEventListener("resize", reposition);
-      window.removeEventListener("scroll", closeContextMenu, true);
-    };
-  });
 
   $effect(() => {
     onWorkspaceListStateChange?.({
@@ -920,35 +898,14 @@
     event.stopPropagation();
     contextMenu = {
       ws,
-      x: event.clientX,
-      y: event.clientY,
+      anchor: { x: event.clientX, y: event.clientY },
+      row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
     };
-    runtime.runCommand(Effect.promise(() => tick()).pipe(Effect.andThen(Effect.sync(positionContextMenu))), {
-      operation: "position workspace context menu",
-      safeContext: { workspaceId: ws.id },
-      onFailure: () => undefined,
-    });
-  }
-
-  function positionContextMenu(): void {
-    if (!contextMenu || !contextMenuEl) return;
-    const margin = 8;
-    const width = contextMenuEl.offsetWidth;
-    const height = contextMenuEl.offsetHeight;
-    const left = Math.min(
-      Math.max(margin, contextMenu.x),
-      Math.max(margin, window.innerWidth - width - margin),
-    );
-    const top = Math.min(
-      Math.max(margin, contextMenu.y),
-      Math.max(margin, window.innerHeight - height - margin),
-    );
-    contextMenuStyle = `left: ${left}px; top: ${top}px;`;
+    contextMenuOpen = true;
   }
 
   function closeContextMenu(): void {
-    contextMenu = null;
-    contextMenuStyle = "";
+    contextMenuOpen = false;
   }
 
   function copyMenuText(value: string, successMessage: string): void {
@@ -1429,7 +1386,10 @@
           {@const sortTimestamp = workspaceListSortTimestamp(ws, sortMode)}
           {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
           <div
-            class={["ws-row", { selected: isSelectedWorkspace(ws) }]}
+            class={["ws-row", {
+              selected: isSelectedWorkspace(ws),
+              "context-target": contextMenuOpen && contextMenu !== null && workspaceRowKey(contextMenu.ws) === workspaceRowKey(ws),
+            }]}
             bind:this={rowEls[workspaceRowKey(ws)]}
             onclick={(e) => {
               // The PR/issue bubble is a focusable child button; let
@@ -1454,9 +1414,7 @@
                 openWorkspace(ws);
               }
             }}
-            oncontextmenu={(e) => {
-              void openContextMenu(e, ws);
-            }}
+            oncontextmenu={(e) => openContextMenu(e, ws)}
             aria-disabled={!workspaceReadable}
             tabindex={workspaceReadable ? 0 : -1}
             role="button"
@@ -1637,182 +1595,90 @@
 
 </div>
 
-{#if contextMenu}
-  {@const menuWorkspace = contextMenu.ws}
-  {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
-  {@const itemURL = providerItemURL(menuWorkspace)}
-  {@const actionBusy = workspaceAction !== null}
-  {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
-  <div
-    class="workspace-context-menu kit-filter-dropdown__panel"
-    bind:this={contextMenuEl}
-    style={contextMenuStyle}
-    role="menu"
-    aria-label="Workspace actions"
-    tabindex="-1"
-    oncontextmenu={(e) => e.preventDefault()}
-  >
-    <div class="workspace-context-heading">
-      <div class="workspace-context-title">
-        {displayName(menuWorkspace)}
-      </div>
-      <div class="workspace-context-meta">
-        {repoLabel(menuWorkspace)} · {shortBranch(menuWorkspace.git_head_ref)}
-      </div>
-    </div>
+<Menu bind:open={contextMenuOpen} anchor={contextMenu?.anchor} returnFocus={contextMenu?.row} class="workspace-context-menu-root">
+  <MenuContent ariaLabel="Workspace actions" class="workspace-context-menu">
+    {#if contextMenu}
+      {@const menuWorkspace = contextMenu.ws}
+      {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
+      {@const itemURL = providerItemURL(menuWorkspace)}
+      {@const actionBusy = workspaceAction !== null}
+      {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
+      {@const deleteDisabled = actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
+      <MenuItem onselect={() => togglePin(menuWorkspace)}>
+        {#snippet icon()}
+          {#if isPinned(menuWorkspace)}<PinOffIcon size={14} />{:else}<PinIcon size={14} />{/if}
+        {/snippet}
+        {isPinned(menuWorkspace) ? "Unpin workspace" : "Pin workspace"}
+      </MenuItem>
 
-    <button
-      class="kit-filter-dropdown__item active"
-      role="menuitem"
-      type="button"
-      onclick={() => togglePin(menuWorkspace)}
-    >
-      <PinIcon size={12} aria-hidden="true" />
-      <span class="kit-filter-dropdown__label">{isPinned(menuWorkspace) ? "Unpin workspace" : "Pin workspace"}</span>
-    </button>
+      <MenuSeparator />
+      {#if canPush(menuWorkspace)}
+        <MenuItem disabled={actionDisabled} onselect={() => void syncWorkspaceBranch(menuWorkspace, "push")}>
+          {#snippet icon()}<ArrowUpIcon size={14} />{/snippet}
+          {workspaceActionMatches(menuWorkspace, "push") ? "Pushing..." : "Push branch"}
+          {#snippet trailing()}{syncActionDetail(menuWorkspace)}{/snippet}
+        </MenuItem>
+      {:else if canPull(menuWorkspace)}
+        <MenuItem disabled={actionDisabled} onselect={() => void syncWorkspaceBranch(menuWorkspace, "pull")}>
+          {#snippet icon()}<ArrowDownIcon size={14} />{/snippet}
+          {workspaceActionMatches(menuWorkspace, "pull") ? "Pulling..." : "Pull remote changes"}
+          {#snippet trailing()}{syncActionDetail(menuWorkspace)}{/snippet}
+        </MenuItem>
+      {/if}
+      <MenuItem disabled={actionDisabled} onselect={() => void refreshWorkspaceStatus(menuWorkspace)}>
+        {#snippet icon()}<RefreshCwIcon size={14} />{/snippet}
+        Refresh git status
+      </MenuItem>
 
-    <div class="kit-filter-dropdown__section-title">Sync branch</div>
-    {#if canPush(menuWorkspace)}
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
-        disabled={actionDisabled}
-        onclick={() => {
-          void syncWorkspaceBranch(menuWorkspace, "push");
-        }}
-      >
-        <span class="kit-filter-dropdown__dot filter-dot--success"></span>
-        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "push") ? "Pushing..." : "Push branch"}</span>
-        <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
-      </button>
-    {:else if canPull(menuWorkspace)}
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
-        disabled={actionDisabled}
-        onclick={() => {
-          void syncWorkspaceBranch(menuWorkspace, "pull");
-        }}
-      >
-        <span class="kit-filter-dropdown__dot filter-dot--warning"></span>
-        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "pull") ? "Pulling..." : "Pull remote changes"}</span>
-        <span class="workspace-context-detail">{syncActionDetail(menuWorkspace)}</span>
-      </button>
-    {/if}
-    <button
-      class="kit-filter-dropdown__item active"
-      role="menuitem"
-      type="button"
-      disabled={actionDisabled}
-      onclick={() => {
-        void refreshWorkspaceStatus(menuWorkspace);
-      }}
-    >
-      <span class="kit-filter-dropdown__dot"></span>
-      <span class="kit-filter-dropdown__label">Refresh git status</span>
-    </button>
-
-    <div class="kit-filter-dropdown__divider"></div>
-    <button
-      class="kit-filter-dropdown__item active"
-      role="menuitem"
-      type="button"
-      disabled={actionBusy}
-      onclick={() => {
-        void copyMenuText(
-          shortBranch(menuWorkspace.git_head_ref),
-          "Copied branch name.",
-        );
-      }}
-    >
-      <span class="kit-filter-dropdown__dot"></span>
-      <span class="kit-filter-dropdown__label">Copy branch name</span>
-    </button>
-    {#if localWorkspace}
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
+      <MenuSeparator />
+      <MenuItem
         disabled={actionBusy}
-        onclick={() => {
-          void copyMenuText(
-            menuWorkspace.worktree_path,
-            "Copied worktree path.",
-          );
-        }}
+        onselect={() => void copyMenuText(shortBranch(menuWorkspace.git_head_ref), "Copied branch name.")}
       >
-        <span class="kit-filter-dropdown__dot"></span>
-        <span class="kit-filter-dropdown__label">Copy worktree path</span>
-      </button>
-      {#if !menuWorkspace.fleet_host_key?.startsWith("devbox:")}
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
-        disabled={actionDisabled}
-        onclick={() => {
-          void revealWorkspacePath(menuWorkspace);
-        }}
+        {#snippet icon()}<CopyIcon size={14} />{/snippet}
+        Copy branch name
+      </MenuItem>
+      {#if localWorkspace}
+        <MenuItem onselect={() => void copyMenuText(menuWorkspace.worktree_path, "Copied worktree path.")}>
+          {#snippet icon()}<CopyIcon size={14} />{/snippet}
+          Copy worktree path
+        </MenuItem>
+        {#if !menuWorkspace.fleet_host_key?.startsWith("devbox:")}
+          <MenuItem disabled={actionDisabled} onselect={() => void revealWorkspacePath(menuWorkspace)}>
+            {#snippet icon()}<FolderOpenIcon size={14} />{/snippet}
+            {workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}
+          </MenuItem>
+        {/if}
+      {/if}
+
+      {#if itemURL}
+        <MenuSeparator />
+        <MenuItem disabled={actionBusy} onselect={() => openProviderItem(menuWorkspace)}>
+          {#snippet icon()}<ExternalLinkIcon size={14} />{/snippet}
+          {providerLabel(menuWorkspace)}
+        </MenuItem>
+        <MenuItem disabled={actionBusy} onselect={() => copyProviderItemURL(menuWorkspace)}>
+          {#snippet icon()}<LinkIcon size={14} />{/snippet}
+          Copy item URL
+        </MenuItem>
+      {/if}
+
+      <MenuSeparator />
+      <MenuItem
+        disabled={deleteDisabled || menuWorkspace.status === "deleting"}
+        onselect={() => openDeleteWorkspaceDialog(menuWorkspace)}
       >
-        <span class="kit-filter-dropdown__dot"></span>
-        <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "reveal") ? "Opening..." : revealLabel(menuWorkspace)}</span>
-      </button>
+        {#snippet icon()}<Trash2Icon size={14} />{/snippet}
+        {workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : menuWorkspace.status === "deletion_failed" ? "Retry deletion..." : "Delete workspace..."}
+      </MenuItem>
+      {#if menuWorkspace.status === "deletion_failed"}
+        <MenuItem disabled={deleteDisabled} onselect={() => openDeleteWorkspaceDialog(menuWorkspace, true)}>
+          Force delete workspace...
+        </MenuItem>
       {/if}
     {/if}
-
-    {#if itemURL}
-      <div class="kit-filter-dropdown__divider"></div>
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
-        disabled={actionBusy}
-        onclick={() => openProviderItem(menuWorkspace)}
-      >
-        <span class="kit-filter-dropdown__dot"></span>
-        <span class="kit-filter-dropdown__label">{providerLabel(menuWorkspace)}</span>
-      </button>
-      <button
-        class="kit-filter-dropdown__item active"
-        role="menuitem"
-        type="button"
-        disabled={actionBusy}
-        onclick={() => copyProviderItemURL(menuWorkspace)}
-      >
-        <span class="kit-filter-dropdown__dot"></span>
-        <span class="kit-filter-dropdown__label">Copy item URL</span>
-      </button>
-    {/if}
-
-    <div class="kit-filter-dropdown__divider"></div>
-    <button
-      class="kit-filter-dropdown__item active workspace-context-danger"
-      role="menuitem"
-      type="button"
-      disabled={actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || menuWorkspace.status === "deleting" || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
-      onclick={() => {
-        openDeleteWorkspaceDialog(menuWorkspace);
-      }}
-    >
-      <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
-      <span class="kit-filter-dropdown__label">{workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : menuWorkspace.status === "deletion_failed" ? "Retry deletion..." : "Delete workspace..."}</span>
-    </button>
-    {#if menuWorkspace.status === "deletion_failed"}
-      <button
-        class="kit-filter-dropdown__item active workspace-context-danger"
-        role="menuitem"
-        type="button"
-        disabled={actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
-        onclick={() => openDeleteWorkspaceDialog(menuWorkspace, true)}
-      >
-        <span class="kit-filter-dropdown__dot filter-dot--danger"></span>
-        <span class="kit-filter-dropdown__label">Force delete workspace...</span>
-      </button>
-    {/if}
-  </div>
-{/if}
+  </MenuContent>
+</Menu>
 
 <ConfirmDialog
   open={deleteConfirmWorkspace !== null && hostVisible}
@@ -1975,6 +1841,11 @@
 
   .ws-row.selected:hover {
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  /* Marks the row a context menu acts on, as desktop file lists do. */
+  .ws-row.context-target {
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
   }
 
   .ws-row-text {
@@ -2264,122 +2135,13 @@
     font-size: var(--font-size-2xs);
   }
 
-  .workspace-context-menu {
-    position: fixed;
+  /* The menu root only hosts context; it must not add a box to the layout. */
+  :global(.kit-menu.workspace-context-menu-root) {
+    display: contents;
+  }
+
+  :global(.kit-menu__content.workspace-context-menu) {
     min-width: 224px;
-    max-width: min(320px, calc(100vw - 16px));
-    background: var(--bg-surface);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-md);
-    z-index: var(--z-popover);
-    padding: 4px 0;
-  }
-
-  .workspace-context-heading {
-    padding: 6px 12px 7px;
-    border-bottom: 1px solid var(--border-muted);
-    margin-bottom: 4px;
-  }
-
-  .workspace-context-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-primary);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .workspace-context-meta {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-top: 2px;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-  }
-
-  .kit-filter-dropdown__section-title {
-    padding: 4px 12px;
-    font-size: 0.9em;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: var(--label-transform, uppercase);
-    letter-spacing: var(--letter-spacing-label, 0.04em);
-  }
-
-  .kit-filter-dropdown__divider {
-    height: 1px;
-    background: var(--border-muted);
-    margin: 4px 8px;
-  }
-
-  .kit-filter-dropdown__item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 4px 12px;
-    font-size: var(--font-size-xs);
-    color: var(--text-secondary);
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.08s;
-    background: transparent;
-    border: 0;
-  }
-
-  .kit-filter-dropdown__item:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-  }
-
-  .kit-filter-dropdown__item:not(.active) {
-    opacity: 0.5;
-  }
-
-  .kit-filter-dropdown__item:disabled {
-    cursor: default;
-  }
-
-  .kit-filter-dropdown__dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--border-muted);
-  }
-
-  .filter-dot--success {
-    background: var(--accent-green);
-  }
-
-  .filter-dot--warning {
-    background: var(--accent-amber);
-  }
-
-  .filter-dot--danger {
-    background: var(--accent-red);
-  }
-
-  .kit-filter-dropdown__label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .workspace-context-detail {
-    flex-shrink: 0;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-2xs);
-  }
-
-  .workspace-context-danger {
-    color: var(--accent-red);
   }
 
   /* Width-aware hiding: shed least-critical chrome first as the

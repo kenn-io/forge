@@ -469,6 +469,7 @@ const config = {
       "@lucide/svelte/icons/paperclip",
       "@lucide/svelte/icons/pencil",
       "@lucide/svelte/icons/pin",
+      "@lucide/svelte/icons/pin-off",
       "@lucide/svelte/icons/play",
       "@lucide/svelte/icons/plus",
       "@lucide/svelte/icons/refresh-ccw",

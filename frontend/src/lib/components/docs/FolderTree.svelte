@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FileTree, type GitStatusEntry } from "@pierre/trees";
-  import { untrack } from "svelte";
+  import PencilIcon from "@lucide/svelte/icons/pencil";
+  import { mount, unmount, untrack } from "svelte";
   import type { TreeNode } from "../../api/docs/types";
   import { flattenTreePaths } from "./folderTreePaths";
 
@@ -30,6 +31,14 @@
   // selections (trailing slash) and stale paths are ignored so a
   // folder click doesn't trigger a doc read.
   let knownFiles = new Set<string>();
+  // The library drops menu nodes without telling us, so keep the one live
+  // icon and unmount it when the next menu renders or the tree goes away.
+  let menuIcon: ReturnType<typeof mount> | undefined;
+
+  function unmountMenuIcon(): void {
+    if (menuIcon) void unmount(menuIcon);
+    menuIcon = undefined;
+  }
 
   $effect(() => {
     if (!host) return;
@@ -132,6 +141,7 @@
     }
     instance = fileTree;
     return () => {
+      unmountMenuIcon();
       fileTree.unmount();
       fileTree.cleanUp();
       instance = null;
@@ -170,21 +180,40 @@
   // menu lives outside the shadow DOM so it inherits app styles.
   function buildContextMenu(
     item: { kind: "file" | "directory"; path: string; name: string },
-    context: { close: () => void },
+    context: { close: (options?: { restoreFocus?: boolean }) => void },
   ): HTMLElement {
+    unmountMenuIcon();
     const menu = document.createElement("div");
     menu.className = "folder-tree-context-menu kit-popover-card";
     if (item.kind === "file") {
+      menu.setAttribute("role", "menu");
+      menu.setAttribute("aria-label", "File actions");
       const rename = document.createElement("button");
       rename.type = "button";
-      rename.className = "folder-tree-context-menu-item";
-      rename.textContent = "Rename";
+      rename.className = "folder-tree-context-menu-item kit-control-states";
+      rename.setAttribute("role", "menuitem");
+      // The tree binds F2 to inline rename.
+      rename.setAttribute("aria-keyshortcuts", "F2");
+      const icon = document.createElement("span");
+      icon.className = "folder-tree-context-menu-icon";
+      icon.setAttribute("aria-hidden", "true");
+      menuIcon = mount(PencilIcon, { target: icon, props: { size: 14 } });
+      const label = document.createElement("span");
+      label.textContent = "Rename";
+      const shortcut = document.createElement("span");
+      shortcut.className = "folder-tree-context-menu-shortcut";
+      shortcut.setAttribute("aria-hidden", "true");
+      shortcut.textContent = "F2";
+      rename.append(icon, label, shortcut);
       rename.addEventListener("click", () => {
-        context.close();
+        // Focus moves into the rename input, so the close must not pull it
+        // back to the row.
+        context.close({ restoreFocus: false });
         instance?.startRenaming(item.path);
       });
       menu.appendChild(rename);
     } else {
+      // No role="menu": a menu with no items would announce as empty.
       const note = document.createElement("div");
       note.className = "folder-tree-context-menu-note";
       note.textContent = "No actions";
@@ -250,29 +279,55 @@
   /* The library renders the context menu through its own portal — at
      the document level, outside the shadow DOM and our component's
      scoped CSS. `:global` is required so these rules reach it. */
+  /* Mirrors the kit-ui MenuItem metrics so the Docs and workspace context
+     menus read as one family. */
   :global(.folder-tree-context-menu) {
-    min-width: 140px;
-    padding: 4px;
-    font-size: var(--font-size-sm);
+    min-width: 160px;
+    padding: var(--space-2);
   }
   :global(.folder-tree-context-menu-item) {
-    display: block;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     width: 100%;
-    padding: 6px 10px;
-    border: none;
-    background: transparent;
-    color: var(--text-primary);
-    text-align: left;
+    min-height: 28px;
+    padding: var(--space-3) var(--space-4);
+    border: 0;
     border-radius: var(--radius-sm);
-    cursor: pointer;
+    background: transparent;
+    color: var(--text-secondary);
     font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
   }
-  :global(.folder-tree-context-menu-item:hover) {
+  :global(.folder-tree-context-menu-item:hover),
+  :global(.folder-tree-context-menu-item:focus-visible) {
     background: var(--bg-surface-hover);
+    color: var(--text-primary);
+  }
+  :global(.folder-tree-context-menu-item:focus-visible) {
+    outline-offset: -2px;
+  }
+  :global(.folder-tree-context-menu-icon) {
+    display: inline-flex;
+    flex: 0 0 16px;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+  }
+  :global(.folder-tree-context-menu-shortcut) {
+    margin-left: auto;
+    padding-left: var(--space-7);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
   :global(.folder-tree-context-menu-note) {
-    padding: 6px 10px;
+    padding: var(--space-3) var(--space-4);
     color: var(--text-muted);
-    font-style: italic;
+    font-size: var(--font-size-sm);
   }
 </style>

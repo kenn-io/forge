@@ -334,6 +334,52 @@ fi
 	}
 }
 
+func TestProbeWorkspaceTmuxActivityGivesFreeSlotsToWaitingSessions(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "fake-tmux")
+	// The slow session outlasts the whole probe budget; the others answer
+	// immediately.
+	script := `#!/bin/sh
+mode="$1"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-t" ]; then shift; session="$1"; break; fi
+  shift
+done
+if [ "$session" = "slow" ]; then exec sleep 5; fi
+if [ "$mode" = "display-message" ]; then
+  case "$session" in
+    working) printf '⠴ agent-working\n' ;;
+    *) printf 'idle\n' ;;
+  esac
+else
+  printf 'stable\n'
+fi
+`
+	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
+	manager := workspace.NewManager(nil, dir)
+	manager.SetTmuxCommand([]string{scriptPath})
+	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
+	tracker := newTmuxActivityTracker(func() time.Time { return now })
+	srv := &Handler{workspaces: manager, tmuxActivity: tracker}
+	// Five sessions exceed the four probe slots. The fifth session must take
+	// the first slot that frees up, not wait behind the slow first session.
+	sessions := []string{"slow", "idle-a", "idle-b", "idle-c", "working"}
+	started := time.Now()
+	result, ok, err := srv.probeWorkspaceTmuxActivity(
+		t.Context(), &db.WorkspaceSummary{}, sessions,
+	)
+	t.Logf("elapsed=%s probe_error=%v result=%+v", time.Since(started), err, result)
+	require.ErrorContains(err, `tmux session "slow"`)
+	assert.True(ok)
+	assert.True(result.Working, "the working session must be sampled")
+	assert.Equal("⠴ agent-working", result.PaneTitle)
+	_, cached := tracker.Cached("working")
+	assert.True(cached, "the working session must complete within the budget")
+}
+
 func TestProbeWorkspaceTmuxActivityPreservesDeadlines(t *testing.T) {
 	t.Parallel()
 	for _, timeout := range []time.Duration{100 * time.Millisecond, tmuxActivityProbeTimeout} {

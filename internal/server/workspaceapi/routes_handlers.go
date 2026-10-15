@@ -2313,30 +2313,27 @@ func (s *Handler) probeWorkspaceTmuxActivity(
 	defer cancelProbe()
 
 	// One slow session must not spend the shared budget before healthy
-	// siblings can start. The tracker still bounds probes across workspaces.
+	// siblings can start. Every session waits for the tracker's probe slots,
+	// so the next free slot goes to whichever session is still waiting.
 	results := make([]tmuxActivityResult, len(sessions))
 	probeErrs := make([]error, len(sessions))
-	workers := min(len(sessions), tmuxProbeMaxConcurrency)
 	var probes sync.WaitGroup
-	for worker := range workers {
+	for i, session := range sessions {
 		probes.Go(func() {
-			for i := worker; i < len(sessions); i += workers {
-				session := sessions[i]
-				if s.tmuxActivity != nil {
-					if result, ok := tracker.Cached(session); ok {
-						results[i] = result
-						continue
-					}
-				}
-				result, ok, err := s.probeOneTmuxSession(
-					probeCtx, tracker, summary, session,
-				)
-				if ok {
+			if s.tmuxActivity != nil {
+				if result, ok := tracker.Cached(session); ok {
 					results[i] = result
+					return
 				}
-				if err != nil {
-					probeErrs[i] = fmt.Errorf("tmux session %q: %w", session, err)
-				}
+			}
+			result, ok, err := s.probeOneTmuxSession(
+				probeCtx, tracker, summary, session,
+			)
+			if ok {
+				results[i] = result
+			}
+			if err != nil {
+				probeErrs[i] = fmt.Errorf("tmux session %q: %w", session, err)
 			}
 		})
 	}

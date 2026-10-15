@@ -763,7 +763,9 @@ async function renderScrollMarkers(
   output: ReturnType<typeof observeTerminalOutput>,
 ): Promise<TerminalDimensions> {
   const lastMarker = "edge-scroll-080";
-  await container.click({ position: { x: 10, y: 10 } });
+  // A setup click can turn the following drag into tmux's double-click
+  // selection. Focus without sending an extra mouse report.
+  await container.locator(".xterm-helper-textarea").focus();
   await page.keyboard.type("clear; i=1; while [ $i -le 80 ]; do printf 'edge-scroll-%03d\\n' \"$i\"; i=$((i+1)); done");
   await page.keyboard.press("Enter");
   await expect.poll(() => output.includes(lastMarker), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
@@ -1440,7 +1442,6 @@ test("tmux drag-copy autoscrolls beyond the terminal edge", async ({ page, brows
     await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
     const terminal = await openTerminalPanel(page);
     const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
-    await terminal.click({ position: { x: 10, y: 10 } });
     runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
     const dimensions = await renderScrollMarkers(page, terminal, output);
     if (browserName === "chromium") {

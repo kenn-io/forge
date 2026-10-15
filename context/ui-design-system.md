@@ -531,8 +531,8 @@ placeholder. Destructive items use `tone="danger"`. Library-rendered menus
 (Docs folder tree) mirror kit `MenuItem` metrics. An item that moves focus into
 a field or dialog must not restore focus to the row on close
 (`frontend/src/lib/components/docs/FolderTree.svelte::buildContextMenu`). An item
-that moves the row to another list focuses the new row
-(`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::togglePin`).
+that moves the row to another list expands that list if collapsed, then focuses
+the new row (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::togglePin`).
 
 ### Overlays
 

@@ -407,14 +407,19 @@
 
   async function togglePin(ws: Workspace): Promise<void> {
     const key = workspaceRowKey(ws);
-    pinnedWorkspaceKeys = isPinned(ws)
-      ? pinnedWorkspaceKeys.filter((candidate) => candidate !== key)
-      : [...pinnedWorkspaceKeys, key];
+    if (isPinned(ws)) {
+      pinnedWorkspaceKeys = pinnedWorkspaceKeys.filter((candidate) => candidate !== key);
+      const groupKey = repoIdentityKey(workspaceRepoIdentity(ws));
+      collapsedGroups = collapsedGroups.filter((candidate) => candidate !== groupKey);
+    } else {
+      pinnedWorkspaceKeys = [...pinnedWorkspaceKeys, key];
+    }
     savePinnedWorkspaces(pinnedWorkspaceKeys);
     pinsCollapsed = false;
     closeContextMenu();
     // Pinning moves the row into another list, replacing the element the
-    // menu would return focus to.
+    // menu would return focus to. The destination list is expanded above so
+    // the new row renders.
     await tick();
     rowEls[key]?.focus();
   }

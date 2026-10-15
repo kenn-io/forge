@@ -315,7 +315,7 @@ fi
 		// early session cannot carry a later session into the next refresh.
 		now = now.Add(workspaceTmuxEnrichmentTTL + time.Millisecond)
 		started := time.Now()
-		result, ok, err := srv.probeWorkspaceTmuxActivity(
+		result, ok, _, err := srv.probeWorkspaceTmuxActivity(
 			t.Context(), &db.WorkspaceSummary{}, []string{"base", "idle", "working"},
 		)
 		trace, readErr := os.ReadFile(tracePath)
@@ -368,7 +368,7 @@ fi
 	// the first slot that frees up, not wait behind the slow first session.
 	sessions := []string{"slow", "idle-a", "idle-b", "idle-c", "working"}
 	started := time.Now()
-	result, ok, err := srv.probeWorkspaceTmuxActivity(
+	result, ok, _, err := srv.probeWorkspaceTmuxActivity(
 		t.Context(), &db.WorkspaceSummary{}, sessions,
 	)
 	t.Logf("elapsed=%s probe_error=%v result=%+v", time.Since(started), err, result)
@@ -401,7 +401,7 @@ func TestProbeWorkspaceTmuxActivityPreservesDeadlines(t *testing.T) {
 				}
 				srv := &Handler{tmuxActivity: tracker}
 				started := time.Now()
-				_, ok, err := srv.probeWorkspaceTmuxActivity(ctx, &db.WorkspaceSummary{}, sessions)
+				_, ok, _, err := srv.probeWorkspaceTmuxActivity(ctx, &db.WorkspaceSummary{}, sessions)
 				assert.False(t, ok)
 				require.ErrorIs(t, err, context.DeadlineExceeded)
 				assert.Equal(t, timeout, time.Since(started))

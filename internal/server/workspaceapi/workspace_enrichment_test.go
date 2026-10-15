@@ -1091,3 +1091,111 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 	)
 	assert.False(ok)
 }
+
+func TestWorkspaceEnrichmentCachesWorkingActivityDespiteSlowSession(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "fake-tmux")
+	// The slow session outlasts the whole probe budget; the others answer
+	// immediately.
+	script := `#!/bin/sh
+mode="$1"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "-t" ]; then shift; session="$1"; break; fi
+  shift
+done
+if [ "$session" = "slow" ]; then exec sleep 5; fi
+if [ "$mode" = "display-message" ]; then
+  case "$session" in
+    working) printf '⠴ agent-working\n' ;;
+    *) printf 'idle\n' ;;
+  esac
+else
+  printf 'stable\n'
+fi
+`
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o755))
+	priorTitle := "prior title"
+	for _, tc := range []struct {
+		name        string
+		sibling     string
+		slowSample  bool
+		wantTitle   string
+		wantWorking bool
+	}{
+		// A session that answered shows the agent working, so the missing
+		// session cannot make that wrong.
+		{name: "answered working", sibling: "working", wantTitle: "⠴ agent-working", wantWorking: true},
+		// The slow session may be the one working, so an idle partial
+		// result must not replace the last good sample.
+		{name: "answered idle", sibling: "idle", wantTitle: priorTitle, wantWorking: true},
+		// An old working sample from the failed session is a fallback, not
+		// an answer, so it must not count as a working signal.
+		{name: "failed session's old sample", sibling: "idle", slowSample: true, wantTitle: priorTitle, wantWorking: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := dbtest.Open(t)
+			workspaceID := "ws-slow-sibling"
+			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+				ID:              workspaceID,
+				Platform:        "github",
+				PlatformHost:    "github.com",
+				RepoOwner:       "acme",
+				RepoName:        "widgets",
+				ItemType:        db.WorkspaceItemTypePullRequest,
+				ItemNumber:      7,
+				GitHeadRef:      "feature/slow",
+				WorkspaceBranch: "feature/slow",
+				WorktreePath:    t.TempDir(),
+				TmuxSession:     "slow",
+				Status:          "ready",
+			}))
+			require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{
+				WorkspaceID: workspaceID, SessionKey: "sibling", TargetKey: "worker",
+				Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: tc.sibling,
+			}))
+			manager := workspacetest.NewManager(t, database, t.TempDir())
+			manager.SetTmuxCommand([]string{scriptPath})
+			handler := New(Deps{DB: database, Workspaces: manager})
+			if tc.slowSample {
+				now := time.Now()
+				trackerNow := now.Add(-tmuxSampleMinInterval - time.Second)
+				handler.tmuxActivity = newTmuxActivityTracker(func() time.Time { return trackerNow })
+				handler.tmuxActivity.Update("slow", tmuxActivityObservation{
+					PaneTitle: "⠴ slow-working",
+					Output:    "old output",
+					HasOutput: true,
+				})
+				trackerNow = now
+			}
+			summary, err := database.GetWorkspaceSummary(ctx, workspaceID)
+			require.NoError(err)
+			handler.workspaceEnrichmentMu.Lock()
+			handler.workspaceEnrichmentGenerations[workspaceID] = 1
+			handler.workspaceEnrichmentCache[workspaceID] = workspaceEnrichmentCacheEntry{
+				response: workspaceResponse{
+					TmuxPaneTitle:      &priorTitle,
+					TmuxWorking:        true,
+					TmuxActivitySource: tmuxActivitySourceTitle,
+				},
+				hasTmux: true,
+			}
+			handler.workspaceEnrichmentMu.Unlock()
+
+			result := handler.workspaceResponseWithTmuxEnrichment(ctx, summary)
+			_, recorded, _ := handler.recordWorkspaceEnrichmentResult(workspaceID, 1, result)
+			require.True(recorded)
+
+			got := handler.toCachedWorkspaceResponse(summary)
+			require.NotNil(got.TmuxPaneTitle)
+			assert.Equal(tc.wantTitle, *got.TmuxPaneTitle)
+			assert.Equal(tc.wantWorking, got.TmuxWorking)
+			require.NotNil(got.EnrichmentError, "the slow session's failure stays visible")
+			assert.Contains(*got.EnrichmentError, `tmux session "slow"`)
+		})
+	}
+}

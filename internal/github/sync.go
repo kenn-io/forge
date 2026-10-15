@@ -878,6 +878,9 @@ type Syncer struct {
 	// mergeQueueMethods caches, per repository and branch, the merge queue's
 	// merge method and when it was read.
 	mergeQueueMethods sync.Map
+	// mergeQueueBranchAbsent records, per repository and branch, when a read
+	// last found that branch without a merge queue.
+	mergeQueueBranchAbsent sync.Map
 	// mergeQueueReadDenied records, per repository, when the read
 	// credential was refused the merge queue, so reads use the write
 	// credential until mergeQueueReadRecheck passes.
@@ -3514,9 +3517,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
-	// Only pull requests this pass admitted may refresh their merge queue,
-	// so skipped buckets keep their cadence.
-	var admitted []WatchedMR
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -3553,7 +3553,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		admitted = append(admitted, mr)
 		probe, due := s.beginRepositoryFeatureProbe(
 			ctx, repo, platform.RepositoryFeatureMergeRequests,
 		)
@@ -3599,10 +3598,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		} else {
 			probe.abandon()
 		}
-		syncedAny = true
-	}
-
-	if s.refreshWatchedMergeQueues(ctx, admitted) {
 		syncedAny = true
 	}
 
@@ -11158,6 +11153,35 @@ type mergeRequestFetchEvidence struct {
 }
 
 func (s *Syncer) syncMRForRepoResolved(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	useConditionalPRDetail bool,
+	providerAttempted *bool,
+	resolvedRepoID *int64,
+	fetchedEvidence *mergeRequestFetchEvidence,
+	lifecyclePersisted *bool,
+	expectedRepoID *int64,
+) error {
+	var repoID int64
+	if resolvedRepoID == nil {
+		resolvedRepoID = &repoID
+	}
+	err := s.syncMRDetailForRepo(
+		ctx, repo, number, useConditionalPRDetail, providerAttempted,
+		resolvedRepoID, fetchedEvidence, lifecyclePersisted, expectedRepoID,
+	)
+	_, onlyDiffFailed := err.(*DiffSyncError) //nolint:errorlint // joined hard failures must not count as synced
+	if (err == nil || onlyDiffFailed) && *resolvedRepoID > 0 && !IsArchiveSyncBudgetContext(ctx) {
+		// Queue membership never changes the pull request itself, so every
+		// detail refresh, including the scheduled one for dormant pull
+		// requests, also checks its merge queue state when that is due.
+		s.refreshPullRequestMergeQueueIfDue(ctx, repo, *resolvedRepoID, number)
+	}
+	return err
+}
+
+func (s *Syncer) syncMRDetailForRepo(
 	ctx context.Context,
 	repo RepoRef,
 	number int,

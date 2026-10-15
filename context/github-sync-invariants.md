@@ -165,27 +165,31 @@ For pull requests, that means:
   stored base branch matches the pull request's
   (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`).
 - Entering or leaving a queue does not change a pull request's `updated_at`,
-  so ordinary pull request sync never notices it. Reads run on relay
-  `PullRequest` hints (GitHub sends enqueued and dequeued as `pull_request`
-  webhooks), in the watched lane, on manual pull request refresh, after an
-  enqueue, and on repository passes for pull requests last seen queued. The
-  async merge API cannot replace them: its `enqueued` result is final
-  (`internal/github/merge_queue.go::Syncer.RefreshPullRequestMergeQueue`).
-- A pull request whose base branch had no queue is re-read on hints and in the
-  watched lane only every 6 hours, so repositories without merge queues cost
-  no requests (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
+  so ordinary pull request sync never notices it. Every successful pull
+  request detail sync, scheduled dormant refreshes and watched and relay syncs
+  included, also checks queue state when due; manual refresh, an enqueue, and
+  repository passes for pull requests last seen queued read it directly. The
+  async merge API cannot replace this: its `enqueued` result is final
+  (`internal/github/sync.go::Syncer.syncMRForRepoResolved`,
+  `internal/github/merge_queue.go::Syncer.RefreshPullRequestMergeQueue`).
+- A pull request is due unless its state shows nothing and its base branch was
+  read without a queue within 6 hours, by it or any pull request on that
+  branch, so branches without merge queues cost one read per 6 hours
+  (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
 - Never request `mergeQueue.configuration` in the pull request read: GitHub
   refuses it to an App with only the Merge queues permission, and one refused
   field fails the whole query. The branch's merge method is read separately at
-  most every 6 hours and shared by every pull request on that branch, falling
-  back to the merge credential (`internal/github/merge_queue.go::Syncer.mergeQueueMergeMethod`).
+  most every 6 hours, including after a refused read, and shared by every pull
+  request on that branch, falling back to the merge credential
+  (`internal/github/merge_queue.go::Syncer.mergeQueueMergeMethod`).
 - Queue reads use the read credential first and fall back to the route's
   separate write (merge) credential when GitHub refuses it ("Resource not
   accessible by integration"); the fallback sticks per repository for an hour.
   The App permission is optional and only keeps reads on the App's quota
   (`internal/github/merge_queue.go::Syncer.mergeQueueRead`).
 - When the read after an enqueue cannot run, the pull request is stored as
-  queued at an unknown position; it then counts as queued, so the next
+  queued at an unknown position, even if the request was cancelled, since
+  GitHub accepted the enqueue; it then counts as queued, so the next
   repository pass replaces it with GitHub's state
   (`internal/github/merge_queue.go::Syncer.RecordPullRequestEnqueued`).
 - A terminal state write, including a first insert as closed or merged,

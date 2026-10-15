@@ -214,6 +214,9 @@ func (s *Syncer) RecordPullRequestEnqueued(
 	if _, read := s.refreshPullRequestMergeQueue(ctx, repo, repoID, number); read {
 		return
 	}
+	// GitHub already accepted the enqueue, so record it even if the request
+	// that made it was cancelled during the read.
+	ctx = context.WithoutCancel(ctx)
 	changed, err := s.db.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
 		Number:     number,
 		BaseBranch: baseBranch,
@@ -270,8 +273,12 @@ func (s *Syncer) refreshPullRequestMergeQueue(
 		}
 		return deleted, true
 	}
+	branchKey := repoFailKey(repo) + "\x00" + state.BaseBranch
 	if state.Enabled {
+		s.mergeQueueBranchAbsent.Delete(branchKey)
 		state.MergeMethod = s.mergeQueueMergeMethod(ctx, repo, state.BaseBranch)
+	} else {
+		s.mergeQueueBranchAbsent.Store(branchKey, s.now())
 	}
 	state.ObservedAt = observedAt
 	changed, err = s.db.UpsertMergeQueueState(ctx, repoID, state)
@@ -306,28 +313,44 @@ func (s *Syncer) RefreshPullRequestMergeQueueForRepository(
 	return s.RefreshPullRequestMergeQueue(ctx, repoRefFromStoredIdentity(repo, *stored), repoID, number)
 }
 
-// refreshPullRequestMergeQueueIfDue refreshes a pull request whose queue
-// state may have moved: one whose base branch has a queue, one with queue
-// state to show, one retargeted since its last read, or one Forge has not
-// read. A pull request whose base branch had no queue is re-read only after
-// mergeQueueRecheck, so relay hints and watched refreshes for repositories
-// without merge queues cost no request.
+// refreshPullRequestMergeQueueIfDue refreshes an open pull request whose
+// queue state may have moved: one whose base branch has a queue, one with
+// queue state to show, one retargeted since its last read, or one Forge has
+// not read. A pull request on a branch read without a queue within
+// mergeQueueRecheck is skipped, whether that read was its own or another pull
+// request's, so detail refreshes, relay hints, and watched refreshes for
+// branches without merge queues cost no request.
 func (s *Syncer) refreshPullRequestMergeQueueIfDue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) bool {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return false
+	}
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil || mr == nil || mr.State != db.MergeRequestStateOpen {
+		return false
+	}
 	stored, err := s.db.GetMergeQueueState(ctx, repoID, number)
 	if err != nil {
 		return false
 	}
-	if stored != nil && !stored.Enabled && !stored.Queued && stored.RemovalReason == "" &&
-		s.now().Sub(stored.ObservedAt) < mergeQueueRecheck {
-		// A retargeted pull request may now have a queue on its new base.
-		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-		if err != nil || mr == nil || mr.BaseBranch == stored.BaseBranch {
-			return false
-		}
+	quiet := stored == nil ||
+		(!stored.Enabled && !stored.Queued && stored.RemovalReason == "" && stored.BaseBranch == mr.BaseBranch)
+	if quiet && s.mergeQueueBranchAbsentRecently(repo, mr.BaseBranch) {
+		return false
 	}
 	return s.RefreshPullRequestMergeQueue(ctx, repo, repoID, number)
+}
+
+// mergeQueueBranchAbsentRecently reports whether a read within
+// mergeQueueRecheck found branch without a merge queue.
+func (s *Syncer) mergeQueueBranchAbsentRecently(repo RepoRef, branch string) bool {
+	readAt, ok := s.mergeQueueBranchAbsent.Load(repoFailKey(repo) + "\x00" + branch)
+	if !ok {
+		return false
+	}
+	when, _ := readAt.(time.Time)
+	return s.now().Sub(when) < mergeQueueRecheck
 }
 
 // refreshQueuedPullRequests re-reads the pull requests Forge last saw in a
@@ -346,37 +369,6 @@ func (s *Syncer) refreshQueuedPullRequests(ctx context.Context, repo RepoRef, re
 	for _, number := range numbers {
 		s.RefreshPullRequestMergeQueue(ctx, repo, repoID, number)
 	}
-}
-
-// refreshWatchedMergeQueues refreshes the merge queue state of watched pull
-// requests that are due, so a pull request the user is looking at follows its
-// queue on the fast watched cadence. It reports whether any state changed.
-func (s *Syncer) refreshWatchedMergeQueues(ctx context.Context, mrs []WatchedMR) bool {
-	changed := false
-	for _, mr := range mrs {
-		kind := watchedMRPlatform(mr)
-		if kind != platform.KindGitHub {
-			continue
-		}
-		repo, ok := s.trackedRepoByIdentity(kind, mr.Owner, mr.Name, mr.PlatformHost)
-		if !ok {
-			continue
-		}
-		stored, err := s.db.GetRepoByIdentity(ctx, db.RepoIdentity{
-			Platform:     string(kind),
-			PlatformHost: repoHost(repo),
-			Owner:        repo.Owner,
-			Name:         repo.Name,
-			RepoPath:     repo.RepoPath,
-		})
-		if err != nil || stored == nil {
-			continue
-		}
-		if s.refreshPullRequestMergeQueueIfDue(ctx, repo, stored.ID, mr.Number) {
-			changed = true
-		}
-	}
-	return changed
 }
 
 // cachedMergeMethod is a branch queue's merge method and when it was read.
@@ -412,9 +404,19 @@ func (s *Syncer) mergeQueueMergeMethod(ctx context.Context, repo RepoRef, branch
 		}
 	}
 	if err != nil {
+		// Keep the last known method and wait out the interval before asking
+		// again, so a refused configuration read is not repeated on every
+		// refresh.
+		var known string
+		if cached, ok := s.mergeQueueMethods.Load(key); ok {
+			if entry, ok := cached.(cachedMergeMethod); ok {
+				known = entry.method
+			}
+		}
 		slog.Warn("merge queue merge method read failed",
 			"repo", repo.Owner+"/"+repo.Name, "branch", branch, "err", err)
-		return ""
+		s.mergeQueueMethods.Store(key, cachedMergeMethod{method: known, readAt: s.now()})
+		return known
 	}
 	s.mergeQueueMethods.Store(key, cachedMergeMethod{method: method, readAt: s.now()})
 	return method

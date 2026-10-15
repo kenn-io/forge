@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v92/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -565,4 +566,73 @@ func TestReopenedPullRequestDoesNotShowPreCloseRemoval(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(state)
 	require.Empty(state.RemovalReason, "a removal from before the close no longer applies")
+}
+
+func TestDetailSyncDiscoversEnqueueForgeDidNotSee(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	// Pull request 9 was enqueued on GitHub while no relay hint arrived and
+	// nobody had it open; its scheduled detail refresh still notices.
+	gql := newPRQueueGraphQL(queuedPR7)
+	client := &mockClient{
+		singlePR: buildOpenPR(9, time.Now().UTC()),
+		comments: []*gh.IssueComment{}, reviews: []*gh.PullRequestReview{}, commits: []*gh.RepositoryCommit{},
+	}
+	syncer, database, _, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+
+	require.NoError(syncer.SyncMR(t.Context(), "acme", "widgets", 9))
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 9)
+	require.NoError(err)
+	require.NotNil(state, "a detail refresh reads the queue state of a pull request Forge never saw queued")
+	require.True(state.Queued)
+}
+
+func TestCancelledEnqueueReadStillRecordsQueuedState(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	syncer.RecordPullRequestEnqueued(ctx, repo, repoID, 7, "main")
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state, "GitHub accepted the enqueue, so it is recorded even if the request was cancelled")
+	require.True(state.Queued)
+	numbers, err := database.ListQueuedMergeRequestNumbers(t.Context(), repoID)
+	require.NoError(err)
+	require.Equal([]int{7}, numbers, "repository passes will re-read it")
+}
+
+func TestRefusedMergeMethodReadIsNotRepeatedEveryRefresh(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	// One credential that may read the queue but not its configuration, and
+	// no merge credential to fall back to.
+	gql := newPRQueueGraphQL(queuedPR7)
+	gql.configuration = `{"data":{"repository":{"mergeQueue":{"configuration":null}}},` +
+		`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue","configuration"],"message":"Resource not accessible by integration"}]}`
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 8)
+	assert.EqualValues(1, gql.configReads.Load(), "a refused configuration read waits out the recheck interval")
+}
+
+func TestBranchWithoutQueueIsReadOnceForAllItsPullRequests(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 7)
+	syncer.refreshPullRequestMergeQueueIfDue(t.Context(), repo, repoID, 8)
+	assert.EqualValues(1, gql.prReads.Load(), "pull request 8 shares main's recent no-queue answer")
 }

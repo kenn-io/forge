@@ -156,8 +156,14 @@ For pull requests, that means:
   (`internal/github/merge_queue.go::GraphQLFetcher.FetchPullRequestMergeQueue`).
 - The state shown is GitHub's answer at read time: an entry is queued; no entry
   with a latest enqueue event is queued at an unknown position; no entry with a
-  latest non-`merged` removal shows that removal and its reason. No attempt
-  matching across reads (maintainer decision).
+  latest non-`merged` removal shows that removal and its reason. Reopenings are
+  part of that timeline read, so a removal from before a close does not return.
+  A read that finds the pull request closed or merged clears its state. No
+  attempt matching across reads (maintainer decision).
+- Queue state belongs to the base branch it was read for: a retargeted pull
+  request is re-read, and the merge action offers the queue only when the
+  stored base branch matches the pull request's
+  (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`).
 - Entering or leaving a queue does not change a pull request's `updated_at`,
   so ordinary pull request sync never notices it. Reads run on relay
   `PullRequest` hints (GitHub sends enqueued and dequeued as `pull_request`
@@ -171,8 +177,8 @@ For pull requests, that means:
 - Never request `mergeQueue.configuration` in the pull request read: GitHub
   refuses it to an App with only the Merge queues permission, and one refused
   field fails the whole query. The branch's merge method is read separately at
-  most every 6 hours, falling back to the merge credential
-  (`internal/github/merge_queue.go::Syncer.mergeQueueMergeMethodIfDue`).
+  most every 6 hours and shared by every pull request on that branch, falling
+  back to the merge credential (`internal/github/merge_queue.go::Syncer.mergeQueueMergeMethod`).
 - Queue reads use the read credential first and fall back to the route's
   separate write (merge) credential when GitHub refuses it ("Resource not
   accessible by integration"); the fallback sticks per repository for an hour.

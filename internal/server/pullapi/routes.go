@@ -672,7 +672,8 @@ func (s *Handler) buildPullDetailResponse(
 	}
 	if mergeQueueState != nil {
 		resp.MergeQueue, resp.MergeQueueRemoval = mergeQueueStateResponses(*mergeQueueState)
-		if mergeQueueState.Enabled && s.capabilitiesForRepo(*repo).MergeQueueMutation {
+		if mergeQueueState.Enabled && mergeQueueState.BaseBranch == mr.BaseBranch &&
+			s.capabilitiesForRepo(*repo).MergeQueueMutation {
 			resp.MergeQueueTarget = &MergeQueueTargetResponse{
 				Branch:      mergeQueueState.BaseBranch,
 				MergeMethod: mergeQueueState.MergeMethod,

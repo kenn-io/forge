@@ -641,3 +641,23 @@ func TestGitHubEnqueueAfterRefusalShowsPullRequestQueued(t *testing.T) {
 	require.NotNil(detailBody.MergeQueue, "the pull request shows as queued right after the enqueue")
 	assert.Equal(0, detailBody.MergeQueue.Position)
 }
+
+func TestRetargetedPullRequestDoesNotOfferOldBaseQueue(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database, repoID, _ := setupGitHubAsyncMergeE2E(t, `{"status":"failed","details":{}}`)
+	// Sync last saw the queue on another base branch.
+	_, err := database.UpsertMergeQueueState(t.Context(), repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "release", Enabled: true, MergeMethod: "squash",
+		ObservedAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+
+	detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var detailBody struct {
+		MergeQueueTarget *struct{} `json:"merge_queue_target"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
+	require.Nil(detailBody.MergeQueueTarget, "the UI must not offer a queue the merge will not use")
+}

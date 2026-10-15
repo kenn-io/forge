@@ -875,9 +875,9 @@ type Syncer struct {
 	// onMergeQueueChanged fires for each pull request whose merge queue
 	// membership, position, or state changed.
 	onMergeQueueChanged func(context.Context, int64, int)
-	// mergeQueueMethodCheckedAt records, per repository and branch, when the
-	// merge queue's merge method was last read.
-	mergeQueueMethodCheckedAt sync.Map
+	// mergeQueueMethods caches, per repository and branch, the merge queue's
+	// merge method and when it was read.
+	mergeQueueMethods sync.Map
 	// mergeQueueReadDenied records, per repository, when the read
 	// credential was refused the merge queue, so reads use the write
 	// credential until mergeQueueReadRecheck passes.

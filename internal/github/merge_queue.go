@@ -50,9 +50,10 @@ type gqlPullRequestMergeQueueQuery struct {
 				EnqueuedAt           time.Time
 				EstimatedTimeToMerge *int
 			}
-			// LatestQueueEvent is the last enqueue or removal. With no entry,
-			// an enqueue means the queue has not listed the pull request yet,
-			// and a removal says why it left.
+			// LatestQueueEvent is the last enqueue, removal, or reopening.
+			// With no entry, an enqueue means the queue has not listed the
+			// pull request yet, and a removal says why it left; a reopening
+			// after a removal means that removal belongs to before the close.
 			LatestQueueEvent struct {
 				Nodes []struct {
 					Typename                   string `graphql:"__typename"`
@@ -61,7 +62,7 @@ type gqlPullRequestMergeQueueQuery struct {
 						Reason    string
 					} `graphql:"... on RemovedFromMergeQueueEvent"`
 				}
-			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT])"`
+			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, REOPENED_EVENT])"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
@@ -256,10 +257,21 @@ func (s *Syncer) refreshPullRequestMergeQueue(
 		return false, false
 	}
 	if !found || !open {
-		return false, true
+		// GitHub reports the pull request closed or gone even if ordinary
+		// sync has not recorded it yet; its queue state no longer applies.
+		deleted, err := s.db.DeleteMergeQueueState(ctx, repoID, number)
+		if err != nil {
+			slog.Error("clear merge queue state failed",
+				"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
+			return false, true
+		}
+		if deleted && s.onMergeQueueChanged != nil {
+			s.onMergeQueueChanged(ctx, repoID, number)
+		}
+		return deleted, true
 	}
 	if state.Enabled {
-		state.MergeMethod = s.mergeQueueMergeMethodIfDue(ctx, repo, state.BaseBranch)
+		state.MergeMethod = s.mergeQueueMergeMethod(ctx, repo, state.BaseBranch)
 	}
 	state.ObservedAt = observedAt
 	changed, err = s.db.UpsertMergeQueueState(ctx, repoID, state)
@@ -296,9 +308,10 @@ func (s *Syncer) RefreshPullRequestMergeQueueForRepository(
 
 // refreshPullRequestMergeQueueIfDue refreshes a pull request whose queue
 // state may have moved: one whose base branch has a queue, one with queue
-// state to show, or one Forge has not read. A pull request whose base branch
-// had no queue is re-read only after mergeQueueRecheck, so relay hints and
-// watched refreshes for repositories without merge queues cost no request.
+// state to show, one retargeted since its last read, or one Forge has not
+// read. A pull request whose base branch had no queue is re-read only after
+// mergeQueueRecheck, so relay hints and watched refreshes for repositories
+// without merge queues cost no request.
 func (s *Syncer) refreshPullRequestMergeQueueIfDue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) bool {
@@ -308,7 +321,11 @@ func (s *Syncer) refreshPullRequestMergeQueueIfDue(
 	}
 	if stored != nil && !stored.Enabled && !stored.Queued && stored.RemovalReason == "" &&
 		s.now().Sub(stored.ObservedAt) < mergeQueueRecheck {
-		return false
+		// A retargeted pull request may now have a queue on its new base.
+		mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if err != nil || mr == nil || mr.BaseBranch == stored.BaseBranch {
+			return false
+		}
 	}
 	return s.RefreshPullRequestMergeQueue(ctx, repo, repoID, number)
 }
@@ -362,16 +379,23 @@ func (s *Syncer) refreshWatchedMergeQueues(ctx context.Context, mrs []WatchedMR)
 	return changed
 }
 
-// mergeQueueMergeMethodIfDue returns the merge method of a branch's queue, read
-// at most once per mergeQueueRecheck, and "" when it is not due so the stored
-// method is kept. GitHub refuses the queue configuration to an App that only
-// has the Merge queues permission, so a refused read retries with the merge
-// credential without moving queue reads off the read credential.
-func (s *Syncer) mergeQueueMergeMethodIfDue(ctx context.Context, repo RepoRef, branch string) string {
+// cachedMergeMethod is a branch queue's merge method and when it was read.
+type cachedMergeMethod struct {
+	method string
+	readAt time.Time
+}
+
+// mergeQueueMergeMethod returns the merge method of a branch's queue, read at
+// most once per mergeQueueRecheck and shared by every pull request targeting
+// that branch, or "" when it cannot be read so the stored method is kept.
+// GitHub refuses the queue configuration to an App that only has the Merge
+// queues permission, so a refused read retries with the merge credential
+// without moving queue reads off the read credential.
+func (s *Syncer) mergeQueueMergeMethod(ctx context.Context, repo RepoRef, branch string) string {
 	key := repoFailKey(repo) + "\x00" + branch
-	if checkedAt, ok := s.mergeQueueMethodCheckedAt.Load(key); ok {
-		if when, _ := checkedAt.(time.Time); s.now().Sub(when) < mergeQueueRecheck {
-			return ""
+	if cached, ok := s.mergeQueueMethods.Load(key); ok {
+		if entry, _ := cached.(cachedMergeMethod); s.now().Sub(entry.readAt) < mergeQueueRecheck {
+			return entry.method
 		}
 	}
 	read := func(fetcher *GraphQLFetcher) (string, error) {
@@ -392,7 +416,7 @@ func (s *Syncer) mergeQueueMergeMethodIfDue(ctx context.Context, repo RepoRef, b
 			"repo", repo.Owner+"/"+repo.Name, "branch", branch, "err", err)
 		return ""
 	}
-	s.mergeQueueMethodCheckedAt.Store(key, s.now())
+	s.mergeQueueMethods.Store(key, cachedMergeMethod{method: method, readAt: s.now()})
 	return method
 }
 

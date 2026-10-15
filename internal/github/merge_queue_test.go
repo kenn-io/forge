@@ -465,3 +465,104 @@ func TestAppWithMergeQueuesPermissionReadsQueueWithoutConfiguration(t *testing.T
 	require.NoError(err)
 	assert.Equal("squash", state.MergeMethod)
 }
+
+func TestRetargetedPullRequestIsReadAgainForNewBaseQueue(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	require.EqualValues(1, gql.prReads.Load())
+
+	// The pull request is retargeted to a branch that has a queue.
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	mr.BaseBranch = "release"
+	mr.UpdatedAt = mr.UpdatedAt.Add(time.Minute)
+	_, err = database.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(err)
+
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	assert.EqualValues(2, gql.prReads.Load(), "a new base branch is not covered by the old branch's cached absence")
+}
+
+func TestQueueReadOfClosedPullRequestClearsItsState(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+	var announced []int
+	syncer.SetOnMergeQueueChanged(func(_ context.Context, _ int64, number int) {
+		announced = append(announced, number)
+	})
+
+	// GitHub reports the pull request merged before ordinary sync records it.
+	gql.set(`{"data":{"repository":{"pullRequest":{"state":"MERGED","baseRefName":"main",` +
+		`"isMergeQueueEnabled":true,"mergeQueueEntry":null,"latestQueueEvent":{"nodes":[]}}}}}`)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.Nil(state, "a merged pull request must not keep showing as queued")
+	require.Equal([]int{7}, announced)
+}
+
+func TestMergeMethodReadOnceIsSharedByPullRequestsOnSameBranch(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(queuedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 8)
+
+	assert.EqualValues(1, gql.configReads.Load())
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 8)
+	require.NoError(err)
+	require.NotNil(state)
+	assert.Equal("squash", state.MergeMethod, "the second pull request reuses the branch's merge method")
+}
+
+func TestReopenedPullRequestDoesNotShowPreCloseRemoval(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := newPRQueueGraphQL(removedPR7)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+	// Closed and reopened after the removal. GitHub reports the reopening as
+	// the latest event only to a query that asks for reopenings; otherwise
+	// the pre-close removal is still the latest one it returns.
+	reopened := `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main",` +
+		`"isMergeQueueEnabled":true,"mergeQueueEntry":null,` +
+		`"latestQueueEvent":{"nodes":[{"__typename":"ReopenedEvent"}]}}}}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case bytes.Contains(body, []byte("configuration")):
+			_, _ = io.WriteString(w, squashConfiguration)
+		case bytes.Contains(body, []byte("REOPENED_EVENT")):
+			_, _ = io.WriteString(w, reopened)
+		default:
+			_, _ = io.WriteString(w, removedPR7)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+	)})
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+
+	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(state)
+	require.Empty(state.RemovalReason, "a removal from before the close no longer applies")
+}

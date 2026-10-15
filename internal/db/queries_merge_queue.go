@@ -83,6 +83,22 @@ func mergeQueueStateShownChanged(prior, next MergeQueueState) bool {
 		!timePtrEqual(prior.RemovedAt, next.RemovedAt)
 }
 
+// DeleteMergeQueueState forgets a pull request's merge queue state and
+// reports whether there was any.
+func (d *DB) DeleteMergeQueueState(ctx context.Context, repoID int64, number int) (bool, error) {
+	result, err := d.rwExecContext(ctx, `
+		DELETE FROM forge_merge_queue_states WHERE repo_id = ? AND number = ?`,
+		repoID, number)
+	if err != nil {
+		return false, fmt.Errorf("delete merge queue state: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("delete merge queue state: %w", err)
+	}
+	return affected > 0, nil
+}
+
 // GetMergeQueueState returns an open pull request's merge queue state, or nil
 // when Forge has not read it.
 func (d *DB) GetMergeQueueState(

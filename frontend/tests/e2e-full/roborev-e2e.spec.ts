@@ -727,7 +727,7 @@ test.describe.serial("Roborev", () => {
       const firstIdBefore = await page.locator(".col-id .mono").first().textContent();
 
       // Click ID header to toggle to ascending
-      const idHeader = page.locator("th.sortable").filter({ hasText: "ID" });
+      const idHeader = page.locator(".job-table thead").getByRole("button", { name: "ID", exact: true });
       await idHeader.click();
       await page.waitForTimeout(300);
 
@@ -742,7 +742,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Click Status header
-      const statusHeader = page.locator("th.sortable").filter({ hasText: "Status" });
+      const statusHeader = page.locator(".job-table thead").getByRole("button", { name: "Status", exact: true });
       await statusHeader.click();
       await page.waitForTimeout(300);
 
@@ -763,7 +763,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
+      const elapsedHeader = page.locator(".job-table thead").getByRole("button", { name: "Elapsed", exact: true });
       await elapsedHeader.click();
 
       const elapsedRows = await page.locator(".job-row").evaluateAll((rows) =>
@@ -789,7 +789,7 @@ test.describe.serial("Roborev", () => {
       // page; every other row renders "--". Ascending order
       // puts missing costs first, so the costed row sinks to
       // the bottom; descending brings it to the top.
-      const costHeader = page.locator("th.sortable").filter({ hasText: "Cost" });
+      const costHeader = page.locator(".job-table thead").getByRole("button", { name: "Cost", exact: true });
       await costHeader.click();
       await page.waitForTimeout(300);
 
@@ -809,7 +809,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Sort by agent
-      const agentHeader = page.locator("th.sortable").filter({ hasText: "Agent" });
+      const agentHeader = page.locator(".job-table thead").getByRole("button", { name: "Agent", exact: true });
       await agentHeader.click();
       await page.waitForTimeout(300);
 

@@ -521,9 +521,10 @@ opaque single-word label for default behavior.
 
 Right-click menus use kit `Menu` with a pointer `anchor` and `returnFocus` on the
 clicked row; group with separators, not heading rows. Show a shortcut hint only
-for a binding that exists. Library-rendered menus (Docs folder tree) mirror kit
-`MenuItem` metrics. An item that moves focus into a field or dialog must not
-restore focus to the row on close
+for a binding that exists. A row with no actions opens no menu, not a
+placeholder. Library-rendered menus (Docs folder tree) mirror kit `MenuItem`
+metrics. An item that moves focus into a field or dialog must not restore focus
+to the row on close
 (`frontend/src/lib/components/docs/FolderTree.svelte::buildContextMenu`).
 
 ### Overlays

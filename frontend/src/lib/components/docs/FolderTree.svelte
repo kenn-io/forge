@@ -181,44 +181,43 @@
   function buildContextMenu(
     item: { kind: "file" | "directory"; path: string; name: string },
     context: { close: (options?: { restoreFocus?: boolean }) => void },
-  ): HTMLElement {
+  ): HTMLElement | null {
     unmountMenuIcon();
+    if (item.kind === "directory") {
+      // Folders have no actions, and a menu that only says so is noise.
+      // The tree has already opened its menu state, so close it once the
+      // render returns.
+      queueMicrotask(() => context.close());
+      return null;
+    }
     const menu = document.createElement("div");
     menu.className = "folder-tree-context-menu kit-popover-card";
-    if (item.kind === "file") {
-      menu.setAttribute("role", "menu");
-      menu.setAttribute("aria-label", "File actions");
-      const rename = document.createElement("button");
-      rename.type = "button";
-      rename.className = "folder-tree-context-menu-item kit-control-states";
-      rename.setAttribute("role", "menuitem");
-      // The tree binds F2 to inline rename.
-      rename.setAttribute("aria-keyshortcuts", "F2");
-      const icon = document.createElement("span");
-      icon.className = "folder-tree-context-menu-icon";
-      icon.setAttribute("aria-hidden", "true");
-      menuIcon = mount(PencilIcon, { target: icon, props: { size: 14 } });
-      const label = document.createElement("span");
-      label.textContent = "Rename";
-      const shortcut = document.createElement("span");
-      shortcut.className = "folder-tree-context-menu-shortcut";
-      shortcut.setAttribute("aria-hidden", "true");
-      shortcut.textContent = "F2";
-      rename.append(icon, label, shortcut);
-      rename.addEventListener("click", () => {
-        // Focus moves into the rename input, so the close must not pull it
-        // back to the row.
-        context.close({ restoreFocus: false });
-        instance?.startRenaming(item.path);
-      });
-      menu.appendChild(rename);
-    } else {
-      // No role="menu": a menu with no items would announce as empty.
-      const note = document.createElement("div");
-      note.className = "folder-tree-context-menu-note";
-      note.textContent = "No actions";
-      menu.appendChild(note);
-    }
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "File actions");
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "folder-tree-context-menu-item kit-control-states";
+    rename.setAttribute("role", "menuitem");
+    // The tree binds F2 to inline rename.
+    rename.setAttribute("aria-keyshortcuts", "F2");
+    const icon = document.createElement("span");
+    icon.className = "folder-tree-context-menu-icon";
+    icon.setAttribute("aria-hidden", "true");
+    menuIcon = mount(PencilIcon, { target: icon, props: { size: 14 } });
+    const label = document.createElement("span");
+    label.textContent = "Rename";
+    const shortcut = document.createElement("span");
+    shortcut.className = "folder-tree-context-menu-shortcut";
+    shortcut.setAttribute("aria-hidden", "true");
+    shortcut.textContent = "F2";
+    rename.append(icon, label, shortcut);
+    rename.addEventListener("click", () => {
+      // Focus moves into the rename input, so the close must not pull it
+      // back to the row.
+      context.close({ restoreFocus: false });
+      instance?.startRenaming(item.path);
+    });
+    menu.appendChild(rename);
     return menu;
   }
 
@@ -324,10 +323,5 @@
     padding-left: var(--space-7);
     color: var(--text-muted);
     font-size: var(--font-size-xs);
-  }
-  :global(.folder-tree-context-menu-note) {
-    padding: var(--space-3) var(--space-4);
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
   }
 </style>

@@ -83,7 +83,7 @@ func requireProcessGone(t *testing.T, pid int) {
 		if processGone(pid) {
 			return
 		}
-		time.Sleep(25 * time.Millisecond)
+		time.Sleep(25 * time.Millisecond) //nolint:kennlint // polls the OS until the tmux subprocess has exited
 	}
 	require.Fail(t, "process survived cleanup", "pid=%d", pid)
 }
@@ -526,7 +526,7 @@ func TestProcessStartIsStableForLiveProcess(t *testing.T) {
 	}
 	first, err := processStart(os.Getpid())
 	require.NoError(err)
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) //nolint:kennlint // separates OS process-start samples to verify identity stays stable across wall-clock time
 	second, err := processStart(os.Getpid())
 	require.NoError(err)
 	assert.NotEmpty(first)

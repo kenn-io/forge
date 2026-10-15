@@ -861,7 +861,7 @@ func TestRuntimeStartHelper(t *testing.T) { //nolint:paralleltest // subprocess 
 	if os.WriteFile("started.tmp", []byte(started), 0o600) != nil || os.Rename("started.tmp", "started") != nil {
 		os.Exit(2)
 	}
-	time.Sleep(time.Hour)
+	time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the runtime stops its tmux session
 }
 
 // A runtime's start is taken before its tmux pane starts, so an agent's first

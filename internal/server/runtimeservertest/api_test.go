@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"syscall"
 	"testing"
 	"time"
 
@@ -207,24 +205,6 @@ func TestServerRuntimeHelperProcess(t *testing.T) {
 				fmt.Printf("size:%d:%d:%s", rows, cols, line)
 			}
 		}
-	case "pty-close-then-sleep":
-		// Simulate the systemd-run-wrapper window the bridge has to
-		// survive: PTY EOF observed (drainOutput exits) well before
-		// cmd.Wait returns. Ignoring SIGHUP keeps us alive when the
-		// runtime closes the PTY master in response to our slave
-		// close — without that, the kernel SIGHUPs the session leader
-		// and cmd.Wait returns alongside drainOutput, which hides the
-		// race we're trying to exercise. Closing stdin/stdout/stderr
-		// drops every slave fd; the master sees EOF immediately. The
-		// 2 s sleep gives the exit-frame promptness assertion clear
-		// daylight: a regression that gates on cmd.Wait would deliver
-		// at ~2 s, well past the test's promptness budget.
-		signal.Ignore(syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
-		_ = os.Stdin.Close()
-		_ = os.Stdout.Close()
-		_ = os.Stderr.Close()
-		time.Sleep(2 * time.Second)
-		os.Exit(7)
 	default:
 		os.Exit(2)
 	}

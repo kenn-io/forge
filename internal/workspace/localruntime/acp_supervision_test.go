@@ -117,10 +117,6 @@ func TestACPCoordinatorCancelNeedsTheGenerationItHolds(t *testing.T) {
 
 	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation + 1}), ErrACPStaleGeneration)
 	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
-	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation}), ErrACPStaleGeneration,
-		"a retried cancel never stops a turn after a person took over")
-	require.ErrorIs(t, agent.Command(ACPCommand{Type: "cancel", Generation: generation + 1}), ErrACPStaleGeneration,
-		"the taken-over generation is the person's, not the coordinator's")
 	assert.False(t, publishedACPState(t, agent).Stopping)
 
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}), "a person can still stop the turn")
@@ -149,8 +145,7 @@ func TestACPCoordinatorCannotStopAPersonsTurn(t *testing.T) {
 	assert.False(t, state.Stopping)
 }
 
-// A takeover ends supervision: queued prompts stay, and the former
-// coordinator's later input is stale.
+// A takeover ends supervision and keeps queued prompts.
 func TestACPTakeoverEndsSupervision(t *testing.T) {
 	agent, generation := supervisedACP(t)
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first", Generation: generation}))
@@ -169,8 +164,6 @@ func TestACPTakeoverEndsSupervision(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
 	assert.Equal(t, state.Supervision, publishedACPState(t, agent).Supervision, "a repeated takeover changes nothing")
 
-	require.ErrorIs(t, agent.Command(ACPCommand{Type: "prompt", Text: "late", ID: "late", Generation: generation}),
-		ErrACPStaleGeneration, "the former supervisor's input never runs")
 	require.NoError(t, agent.Prompt("from a tool", ACPSender{Kind: ACPSenderCoordinator}), "agents may send to an unsupervised chat")
 	queue := publishedACPState(t, agent).Queue
 	require.Len(t, queue, 3)
@@ -230,17 +223,27 @@ func TestACPSupervisionThroughTheOwner(t *testing.T) {
 	require.ErrorIs(t, c.chat.Command(ACPCommand{Type: "resume", Generation: generation}), ErrACPPersonOnly)
 }
 
-func TestACPTakeoverMakesTheFormerSupervisorsCommandsStale(t *testing.T) {
-	agent, generation := supervisedACP(t)
-	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
-
-	for _, command := range []ACPCommand{
-		{Type: "config", ID: "model", Value: "deep", Generation: generation},
-		{Type: "permission", ID: "request", OptionID: "allow", Generation: generation},
-		{Type: "elicitation", ID: "request", Action: "decline", Generation: generation},
-		{Type: "unqueue", ID: "queued", Generation: generation},
-	} {
-		require.ErrorIs(t, agent.Command(command), ErrACPStaleGeneration, command.Type)
+func TestACPTakeoverRejectsStaleGenerations(t *testing.T) {
+	for name, offset := range map[string]uint64{"original": 0, "taken over": 1} {
+		t.Run(name, func(t *testing.T) {
+			agent, generation := supervisedACP(t)
+			require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+			generation += offset
+			for _, command := range []ACPCommand{
+				{Type: "cancel", Generation: generation},
+				{Type: "prompt", Text: "work", ID: "late", Generation: generation},
+				{Type: "config", ID: "model", Value: "deep", Generation: generation},
+				{Type: "permission", ID: "request", OptionID: "allow", Generation: generation},
+				{Type: "elicitation", ID: "request", Action: "decline", Generation: generation},
+				{Type: "unqueue", ID: "queued", Generation: generation},
+			} {
+				require.ErrorIs(t, agent.Command(command), ErrACPStaleGeneration, command.Type)
+			}
+			state := publishedACPState(t, agent)
+			assert.False(t, state.Busy)
+			assert.Empty(t, state.Messages)
+			assert.Empty(t, state.Queue)
+		})
 	}
 }
 
@@ -273,15 +276,23 @@ func TestACPSettingsChangeWaitingDuringTakeoverIsStale(t *testing.T) {
 	before := fixtureModel(t, agent)
 
 	agent.turnMu.Lock()
+	contended := make(chan struct{})
+	agent.onConfigLockContention = func() { close(contended) }
 	result := make(chan error, 1)
 	go func() {
 		result <- agent.Command(ACPCommand{Type: "config", ID: "model", Value: "deep", Generation: generation})
 	}()
-	// Give the command time to reach the turn lock; the outcome must not
-	// depend on whether it did.
-	time.Sleep(50 * time.Millisecond)
-	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	select {
+	case <-contended:
+	case <-ctx.Done():
+		agent.turnMu.Unlock()
+		require.FailNow(t, "settings command did not contend for the turn lock")
+	}
+	err := agent.Command(ACPCommand{Type: "takeover"})
 	agent.turnMu.Unlock()
+	require.NoError(t, err)
 
 	require.ErrorIs(t, <-result, ErrACPStaleGeneration)
 	assert.Equal(t, before, fixtureModel(t, agent))
@@ -305,30 +316,6 @@ func TestACPTakeoverDuringAPromptWriteDisarmsItsAllowance(t *testing.T) {
 	assert.Zero(t, state.Turns[0].Allowance, "the person's turn carries the supervisor's allowance")
 	require.NotNil(t, state.Supervision)
 	assert.True(t, state.Supervision.TakenOver)
-}
-
-// After a takeover, the generation it produced belongs to no coordinator. A
-// coordinator that re-reads the snapshot and sends it is stale, exactly as
-// its cancel is, rather than passing as a person.
-func TestACPTakenOverGenerationIsStale(t *testing.T) {
-	agent, generation := supervisedACP(t)
-	require.NoError(t, agent.Command(ACPCommand{Type: "takeover"}))
-	current := generation + 1
-
-	for _, command := range []ACPCommand{
-		{Type: "prompt", Text: "work", ID: "late", Generation: current},
-		{Type: "config", ID: "model", Value: "deep", Generation: current},
-		{Type: "permission", ID: "request", OptionID: "allow", Generation: current},
-		{Type: "elicitation", ID: "request", Action: "decline", Generation: current},
-		{Type: "unqueue", ID: "queued", Generation: current},
-		{Type: "cancel", Generation: current},
-	} {
-		require.ErrorIs(t, agent.Command(command), ErrACPStaleGeneration, command.Type)
-	}
-	state := publishedACPState(t, agent)
-	assert.False(t, state.Busy)
-	assert.Empty(t, state.Messages)
-	assert.Empty(t, state.Queue)
 }
 
 // A claim may land while a person's turn runs. The turn stays the person's:

@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -131,100 +133,69 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	}
 }
 
-func TestOwnerQuickExitRemainsAttachable(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	if runtime.GOOS == "windows" {
-		t.Skip("in-process PTY owner test requires a host PTY")
-	}
-
-	root := t.TempDir()
-	session := "kenn-forge-quick-exit"
-	done := make(chan error, 1)
-	go func() {
-		done <- RunOwner(t.Context(), Options{
-			Root:    root,
-			Session: session,
-			Cwd:     t.TempDir(),
-			Command: []string{"sh", "-c", "printf quick-exit-output; exit 7"},
-		})
-	}()
-
-	client := &Client{Root: root}
-	waitOwnerReady(t, done, client, session)
-
-	attach, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 120, Rows: 30},
-	)
-	require.NoError(err)
-	defer attach.Close()
-
-	assert.Contains(
-		readUntil(t, attach.Output, "quick-exit-output"),
-		"quick-exit-output",
-	)
-	select {
-	case <-attach.Done:
-	case <-time.After(2 * time.Second):
-		require.Fail("attachment did not receive exit")
-	}
-	assert.Equal(7, attach.ExitCode())
-	require.NoError(client.Stop(context.Background(), session))
-	select {
-	case err := <-done:
-		require.NoError(err)
-	case <-time.After(2 * time.Second):
-		require.Fail("owner did not stop after quick exit")
-	}
-}
-
-func TestOwnerPTYEOFClosesAttachmentBeforeProcessWait(t *testing.T) {
-	require := require.New(t)
+func TestOwnerExitStatusAcrossPTYEOFOrderings(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test fixture uses Unix PTY signal semantics")
 	}
+	for _, tc := range []struct {
+		name     string
+		suffix   string
+		delay    string
+		command  []string
+		exitCode int
+	}{
+		{name: "exit beyond grace window", suffix: "beyond-grace", delay: "2s", exitCode: -1},
+		{name: "exit within grace window", suffix: "within-grace", delay: "10ms", exitCode: 7},
+		// The descendant holds the PTY open until process status is available.
+		{name: "exit before PTY EOF", suffix: "process-first", command: []string{"sh", "-c", "IFS= read -r line; sleep 1 & exit 9"}, exitCode: 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			root := t.TempDir()
+			session := "kenn-forge-pty-exit-" + tc.suffix
+			command := tc.command
+			if command == nil {
+				t.Setenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_HELPER", "1")
+				t.Setenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_DELAY", tc.delay)
+				command = []string{os.Args[0], "-test.run=TestPtyOwnerClosePTYThenSleepHelperProcess", "--"}
+			}
+			done := make(chan error, 1)
+			go func() {
+				done <- RunOwner(t.Context(), Options{
+					Root:    root,
+					Session: session,
+					Cwd:     t.TempDir(),
+					Command: command,
+				})
+			}()
 
-	root := t.TempDir()
-	session := "kenn-forge-pty-eof-before-wait"
-	t.Setenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_HELPER", "1")
-	done := make(chan error, 1)
-	go func() {
-		done <- RunOwner(t.Context(), Options{
-			Root:    root,
-			Session: session,
-			Cwd:     t.TempDir(),
-			Command: []string{
-				os.Args[0],
-				"-test.run=TestPtyOwnerClosePTYThenSleepHelperProcess",
-				"--",
-			},
+			client := &Client{Root: root}
+			waitOwnerReady(t, done, client, session)
+
+			attach, err := client.Attach(
+				context.Background(), session,
+				ptysize.Geometry{Cols: 120, Rows: 30},
+			)
+			require.NoError(err)
+			defer attach.Close()
+
+			require.NoError(attach.Write([]byte("exit\n")))
+
+			select {
+			case <-attach.Done:
+			case <-time.After(5 * time.Second):
+				require.Fail("attachment did not close promptly after PTY EOF")
+			}
+			require.Equal(tc.exitCode, attach.ExitCode())
+			attach.Close()
+
+			select {
+			case err := <-done:
+				require.NoError(err)
+			case <-time.After(ownerFirstRequestTimeout + 3*time.Second):
+				require.Fail("owner did not exit after helper sleep")
+			}
 		})
-	}()
-
-	client := &Client{Root: root}
-	waitOwnerReady(t, done, client, session)
-
-	attach, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 120, Rows: 30},
-	)
-	require.NoError(err)
-	defer attach.Close()
-
-	select {
-	case <-attach.Done:
-	case <-time.After(5 * time.Second):
-		require.Fail("attachment did not close promptly after PTY EOF")
-	}
-	require.Equal(-1, attach.ExitCode())
-	attach.Close()
-
-	select {
-	case err := <-done:
-		require.NoError(err)
-	case <-time.After(ownerFirstRequestTimeout + 3*time.Second):
-		require.Fail("owner did not exit after helper sleep")
 	}
 }
 
@@ -232,121 +203,165 @@ func TestPtyOwnerClosePTYThenSleepHelperProcess(t *testing.T) {
 	if os.Getenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_HELPER") != "1" {
 		return
 	}
+	delay, err := time.ParseDuration(os.Getenv("KENN_FORGE_PTYOWNER_CLOSE_PTY_DELAY"))
+	require.NoError(t, err)
+	_, err = bufio.NewReader(os.Stdin).ReadString('\n')
+	require.NoError(t, err)
 	ignorePtyOwnerHangupForTest()
 	_ = os.Stdin.Close()
 	_ = os.Stdout.Close()
 	_ = os.Stderr.Close()
-	time.Sleep(2 * time.Second)
+	time.Sleep(delay) //nolint:kennlint // exits within or beyond the owner grace window after PTY EOF
 	os.Exit(7)
 }
 
-func TestOwnerDetachedBeforeExitKeepsPostExitAttachWindow(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
+func TestOwnerPostExitAttachReplaysOutput(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("in-process PTY owner test requires a host PTY")
+		t.Skip("test fixture uses a Unix PTY shell")
 	}
-
+	require := require.New(t)
 	root := t.TempDir()
-	session := "kenn-forge-detach-before-exit"
+	pidPath := filepath.Join(t.TempDir(), "pid")
+	session := "kenn-forge-post-exit-replay"
 	done := make(chan error, 1)
+	ownerExited := make(chan struct{})
 	go func() {
 		done <- RunOwner(t.Context(), Options{
 			Root:    root,
 			Session: session,
 			Cwd:     t.TempDir(),
-			Command: []string{"sh", "-c", "printf ready; sleep 0.2; printf final-output; exit 9"},
+			Command: []string{"sh", "-c", `printf '%s' "$$" > "$1"; printf ready; IFS= read -r line; printf final-output; exit 9`, "sh", pidPath},
+			onExit:  func() { close(ownerExited) },
 		})
 	}()
-
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, session)
-
-	first, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 120, Rows: 30},
-	)
+	first, err := client.Attach(t.Context(), session, ptysize.Geometry{Cols: 120, Rows: 30})
 	require.NoError(err)
-	assert.Contains(readUntil(t, first.Output, "ready"), "ready")
+	defer first.Close()
+	require.Contains(readUntil(t, first.Output, "ready"), "ready")
+	unixConn, ok := first.conn.(*net.UnixConn)
+	require.True(ok)
+	// Keep reads open so completion follows the owner's handling of the write-side EOF.
+	require.NoError(unixConn.CloseWrite())
+	select {
+	case <-first.Done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("owner did not complete the pre-exit detach")
+	}
 	first.Close()
 
-	time.Sleep(300 * time.Millisecond)
-	second, err := client.Attach(
-		context.Background(), session,
-		ptysize.Geometry{Cols: 120, Rows: 30},
-	)
+	data, err := os.ReadFile(pidPath)
 	require.NoError(err)
-	defer second.Close()
-	assert.Contains(readUntil(t, second.Output, "final-output"), "final-output")
+	pid, err := strconv.Atoi(string(data))
+	require.NoError(err)
+	process, err := os.FindProcess(pid)
+	require.NoError(err)
+	t.Cleanup(func() { _ = process.Release() })
+	require.NoError(process.Signal(syscall.Signal(0)), "the child must remain alive until the attachment detaches")
+	conn, state, err := client.connect(t.Context(), session)
+	require.NoError(err)
+	defer conn.Close()
+	require.NoError(conn.SetDeadline(time.Now().Add(2 * time.Second)))
+	require.NoError(json.NewEncoder(conn).Encode(Request{Type: RequestInput, Token: state.Token, Data: []byte("exit\n")}))
+	var response Response
+	require.NoError(json.NewDecoder(conn).Decode(&response))
+	require.True(response.OK)
+	require.NoError(conn.Close())
 	select {
-	case <-second.Done:
+	case <-ownerExited:
 	case <-time.After(2 * time.Second):
-		require.Fail("post-exit attachment did not receive exit")
+		require.FailNow("owner did not complete its exit transition before replay")
 	}
-	assert.Equal(9, second.ExitCode())
-	second.Close()
 
+	attach, err := client.Attach(t.Context(), session, ptysize.Geometry{Cols: 120, Rows: 30})
+	require.NoError(err)
+	defer attach.Close()
+	require.Contains(readUntil(t, attach.Output, "final-output"), "final-output")
+	select {
+	case <-attach.Done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("post-exit attachment did not receive exit")
+	}
+	require.Equal(9, attach.ExitCode())
+	attach.Close()
 	select {
 	case err := <-done:
 		require.NoError(err)
 	case <-time.After(2 * time.Second):
-		require.Fail("owner did not stop after post-exit attachment")
+		require.Fail("owner did not return after post-exit attachment completed")
 	}
 }
 
-func TestOwnerNaturalExitRetentionHonorsCompletedPreExitAttachment(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		require := require.New(t)
-		o := &owner{
-			stopRequested:          make(chan struct{}),
-			activeAttachmentsDone:  make(chan struct{}),
-			postExitAttachmentDone: make(chan struct{}),
-		}
-		close(o.activeAttachmentsDone)
-		start := time.Now()
+func TestOwnerNaturalExitRetentionWaitsForAttachmentCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		activeAtExit     bool
+		alreadyCompleted bool
+	}{
+		{name: "active attachment at exit", activeAtExit: true},
+		{name: "no active attachments at exit"},
+		{name: "completion already signaled", activeAtExit: true, alreadyCompleted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				o := &owner{
+					activeAttachmentsAtExit: tc.activeAtExit,
+					exited:                  true,
+					stopRequested:           make(chan struct{}),
+					activeAttachmentsDone:   make(chan struct{}),
+					postExitAttachmentDone:  make(chan struct{}),
+				}
+				if tc.activeAtExit {
+					o.activeAttachments = 1
+					if !tc.alreadyCompleted {
+						close(o.postExitAttachmentDone)
+					}
+				}
+				if tc.alreadyCompleted {
+					o.endAttach(false)
+				}
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				done := make(chan error, 1)
+				start := time.Now()
+				go func() { done <- o.waitAfterNaturalExit(ctx, make(chan error)) }()
+				synctest.Wait()
 
-		err := o.waitAfterNaturalExit(t.Context(), make(chan error))
-
-		require.NoError(err)
-		// The retention timer would also return nil, so require that no fake time passed.
-		require.Zero(time.Since(start))
-	})
-}
-
-func TestOwnerNaturalExitWaitsForPreExitAttachmentBeforePostExitAttach(t *testing.T) {
-	require := require.New(t)
-	o := &owner{
-		activeAttachments:       1,
-		activeAttachmentsAtExit: true,
-		exited:                  true,
-		stopRequested:           make(chan struct{}),
-		activeAttachmentsDone:   make(chan struct{}),
-		postExitAttachmentDone:  make(chan struct{}),
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
-	defer cancel()
-	done := make(chan error, 1)
-
-	go func() {
-		done <- o.waitAfterNaturalExit(ctx, make(chan error))
-	}()
-	close(o.postExitAttachmentDone)
-
-	select {
-	case err := <-done:
-		require.Failf(
-			"owner returned before pre-exit attachment completed",
-			"waitAfterNaturalExit returned %v", err,
-		)
-	case <-time.After(20 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the open pre-exit attachment keeps the owner waiting until activeAttachmentsDone
-	}
-
-	close(o.activeAttachmentsDone)
-	select {
-	case err := <-done:
-		require.NoError(err)
-	case <-time.After(time.Second):
-		require.Fail("owner did not return after pre-exit attachment completed")
+				if !tc.alreadyCompleted {
+					select {
+					case err := <-done:
+						require.Failf("owner returned before attachment completion", "waitAfterNaturalExit returned %v", err)
+					default:
+					}
+					if tc.activeAtExit {
+						o.endAttach(false)
+					} else {
+						startedAfterExit := o.beginAttach()
+						require.True(startedAfterExit)
+						secondAfterExit := o.beginAttach()
+						require.True(secondAfterExit)
+						defer o.endAttach(secondAfterExit)
+						o.endAttach(startedAfterExit)
+						select {
+						case <-o.activeAttachmentsDone:
+							require.FailNow("the remaining late attachment must keep active completion open")
+						default:
+						}
+					}
+					synctest.Wait()
+				}
+				select {
+				case err := <-done:
+					require.NoError(err)
+				default:
+					require.Fail("owner did not return after the required attachment completed")
+				}
+				// The retention timer also returns nil, so attachment completion must consume no fake time.
+				require.Zero(time.Since(start))
+			})
+		})
 	}
 }
 
@@ -889,7 +904,7 @@ func TestPtyOwnerEchoHelperProcess(t *testing.T) {
 
 func blockPtyOwnerTestHelper() {
 	for {
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive until owner cleanup
 	}
 }
 

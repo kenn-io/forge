@@ -4299,6 +4299,8 @@
                 return signal.workspaceId === id
                   ? fetchWorkspaceProgram(id, hostKey).pipe(Effect.asVoid)
                   : Effect.void;
+              case "ItemDataChanged":
+                return Effect.void;
               case "ReconnectStale":
                 return Effect.sync(() => {
                   diffRefreshToken += 1;

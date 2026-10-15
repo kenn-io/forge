@@ -204,6 +204,9 @@ func (s *Handler) waitForWorkspaceReady(ctx context.Context, workspaceID string)
 			}
 			return agenthandoff.WorkspaceState{}, err
 		}
+		if summary.Status != "ready" && summary.Status != "error" && s.onAgentHandoffPending != nil {
+			s.onAgentHandoffPending()
+		}
 		state := agenthandoff.WorkspaceState{Status: summary.Status}
 		if summary.ErrorMessage != nil {
 			state.ErrorMessage = *summary.ErrorMessage

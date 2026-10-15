@@ -151,7 +151,10 @@ func TestRebaseRepeatedOccurrence(t *testing.T) {
 				require.Len(r.Coverage.Gaps, 1)
 				reason := "source_correspondence_unproven"
 				if prefix != "" {
-					reason = "edits_unavailable"
+					reason = "removed_text_not_unique"
+					if insertion {
+						reason = "insertion_context_not_unique"
+					}
 				}
 				assert.Equal(reason, r.Coverage.Gaps[0].Reason)
 			}
@@ -182,6 +185,8 @@ func TestRebaseDuplicateEdits(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, r.Landings)
 		assert.False(t, r.Coverage.Complete)
+		require.Len(t, r.Coverage.Gaps, 1)
+		assert.Equal(t, "repeated_source_edits", r.Coverage.Gaps[0].Reason)
 	}
 }
 

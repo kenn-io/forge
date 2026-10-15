@@ -905,8 +905,11 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 			if writeErr := os.WriteFile(os.Getenv("KENN_FORGE_E2E_SIGNAL_READY"), encoded, 0o600); writeErr != nil {
 				os.Exit(4)
 			}
-			//nolint:kennlint // waits for subprocess/HTTP fixture
-			time.Sleep(250 * time.Millisecond)
+			// Hold tracker.mu through the parent's SIGTERM delivery.
+			var release [1]byte
+			if _, readErr := io.ReadFull(os.Stdin, release[:]); readErr != nil {
+				os.Exit(5)
+			}
 		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -930,7 +933,12 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 	// Model the interval after WriteFile creates the ready file but before it
 	// writes the JSON payload.
 	require.NoError(os.WriteFile(readyFile, nil, 0o600))
-	cmd := procutil.Command(os.Args[0], "-test.run=^TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM$")
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	cmd := procutil.CommandContext(ctx, os.Args[0], "-test.run=^TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM$")
+	release, err := cmd.StdinPipe()
+	require.NoError(err)
+	t.Cleanup(func() { _ = release.Close() })
 	cmd.Env = append(os.Environ(),
 		"KENN_FORGE_E2E_SIGNAL_HELPER=1",
 		"KENN_FORGE_E2E_SIGNAL_READY="+readyFile,
@@ -954,6 +962,8 @@ func TestE2EServerTestMainStopsPrivateTmuxOnSIGTERM(t *testing.T) {
 			if jsonErr := json.Unmarshal(data, &tmuxCommand); jsonErr == nil && len(tmuxCommand) > 0 {
 				t.Cleanup(func() { killTmuxServer(tmuxCommand) })
 				require.NoError(cmd.Process.Signal(syscall.SIGTERM))
+				_, err = release.Write([]byte{1})
+				require.NoError(err)
 				waitErr := cmd.Wait()
 				var exitErr *exec.ExitError
 				require.ErrorAs(waitErr, &exitErr)

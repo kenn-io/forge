@@ -2015,32 +2015,44 @@ func TestSessionWatchPtyOwnerWaitsForFinalOutputDrain(t *testing.T) {
 }
 
 func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
-		exited := make(chan SessionInfo, 1)
-		owner := newFakeRuntimePtyOwner()
-		mgr := NewManager(Options{Targets: []LaunchTarget{
-			helperTarget("helper", "sleep"),
-		}, OnSessionExit: func(info SessionInfo) {
-			exited <- info
-		}, PtyOwnerRuntime: owner})
-		t.Cleanup(mgr.Shutdown)
+	for _, tc := range []struct {
+		name         string
+		target       LaunchTarget
+		shellCommand []string
+	}{
+		{name: "agent", target: helperTarget("helper", "sleep")},
+		{name: "shell", target: plainShellTarget(), shellCommand: []string{"/bin/sh"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx := context.Background()
+				exited := make(chan SessionInfo, 1)
+				owner := newFakeRuntimePtyOwner()
+				mgr := NewManager(Options{
+					ShellCommand:    tc.shellCommand,
+					Targets:         []LaunchTarget{tc.target},
+					OnSessionExit:   func(info SessionInfo) { exited <- info },
+					PtyOwnerRuntime: owner,
+				})
+				t.Cleanup(mgr.Shutdown)
 
-		session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
-		require.NoError(t, err)
-		owner.startedPTY.Close()
+				session, err := mgr.Launch(ctx, "ws-1", t.TempDir(), tc.target.Key)
+				require.NoError(t, err)
+				owner.startedPTY.exitCode = 7
+				owner.startedPTY.Close()
+				synctest.Wait()
+				got := <-exited
 
-		synctest.Wait()
-		got := <-exited
-
-		assert := assert.New(t)
-		assert.Equal(session.Key, got.Key)
-		assert.Equal(SessionStatusExited, got.Status)
-		assert.NotNil(got.ExitedAt)
-		assert.NotNil(got.ExitCode)
-		assert.Equal(0, *got.ExitCode)
-		assert.Empty(mgr.ListSessions("ws-1"))
-	})
+				assert := assert.New(t)
+				assert.Equal(session.Key, got.Key)
+				assert.Equal(SessionStatusExited, got.Status)
+				assert.NotNil(got.ExitedAt)
+				assert.NotNil(got.ExitCode)
+				assert.Equal(7, *got.ExitCode)
+				assert.Empty(mgr.ListSessions("ws-1"))
+			})
+		})
+	}
 }
 
 // Exit handling that began before shutdown can be forgetting a finished
@@ -2075,40 +2087,6 @@ func TestManagerShutdownWaitsForExitHandling(t *testing.T) {
 		close(release)
 		synctest.Wait()
 		assert.True(t, returned.Load())
-	})
-}
-
-func TestManagerRemovesNaturallyExitedShell(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
-		exited := make(chan SessionInfo, 1)
-		owner := newFakeRuntimePtyOwner()
-		mgr := NewManager(Options{
-			ShellCommand: []string{"/bin/sh"},
-			Targets:      []LaunchTarget{plainShellTarget()},
-			OnSessionExit: func(info SessionInfo) {
-				exited <- info
-			},
-			PtyOwnerRuntime: owner,
-		})
-		t.Cleanup(mgr.Shutdown)
-
-		shell, err := mgr.Launch(
-			ctx, "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
-		)
-		require.NoError(t, err)
-		owner.startedPTY.Close()
-
-		synctest.Wait()
-		got := <-exited
-
-		assert := assert.New(t)
-		assert.Equal(shell.Key, got.Key)
-		assert.Equal(SessionStatusExited, got.Status)
-		assert.NotNil(got.ExitedAt)
-		assert.NotNil(got.ExitCode)
-		assert.Equal(0, *got.ExitCode)
-		assert.Empty(mgr.ListSessions("ws-1"))
 	})
 }
 
@@ -2750,6 +2728,7 @@ func (f *fakeRuntimePtyOwner) Stop(_ context.Context, session string) error {
 }
 
 type fakeRuntimePTY struct {
+	exitCode      int
 	mu            sync.Mutex
 	output        chan []byte
 	done          chan struct{}
@@ -2835,7 +2814,7 @@ func (f *fakeRuntimePTY) resizes() []terminalResize {
 	return slices.Clone(f.resizeCalls)
 }
 
-func (f *fakeRuntimePTY) ExitCode() int { return 0 }
+func (f *fakeRuntimePTY) ExitCode() int { return f.exitCode }
 
 func (f *fakeRuntimePTY) Close() {
 	select {
@@ -3924,7 +3903,7 @@ func TestHelperProcess(t *testing.T) {
 	mode := helperArgs[0]
 	switch mode {
 	case "sleep":
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
 	case "sleep-record":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3939,7 +3918,7 @@ func TestHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
 		_ = f.Close()
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
 	case "spawn-child":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3962,7 +3941,7 @@ func TestHelperProcess(t *testing.T) {
 			f, "%d\n%d\n", os.Getpid(), child.Process.Pid,
 		)
 		_ = f.Close()
-		time.Sleep(time.Hour)
+		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
 	case "exit":
 		os.Exit(3)
 	default:

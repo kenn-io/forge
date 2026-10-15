@@ -44,6 +44,7 @@ type recordedGitLabRequest struct {
 type gitlabAPIRecorder struct {
 	mu       sync.Mutex
 	requests []recordedGitLabRequest
+	recorded chan struct{}
 }
 
 func (rec *gitlabAPIRecorder) record(r *http.Request) recordedGitLabRequest {
@@ -56,6 +57,10 @@ func (rec *gitlabAPIRecorder) record(r *http.Request) recordedGitLabRequest {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	rec.requests = append(rec.requests, entry)
+	select {
+	case rec.recorded <- struct{}{}:
+	default:
+	}
 	return entry
 }
 
@@ -70,18 +75,18 @@ func (rec *gitlabAPIRecorder) find(method, path string) (recordedGitLabRequest, 
 	return recordedGitLabRequest{}, false
 }
 
-// findEventually polls for a request issued from a background goroutine
-// (e.g. the resync triggered after a stale mutation).
-func (rec *gitlabAPIRecorder) findEventually(method, path string) bool {
-	deadline := time.Now().Add(3 * time.Second)
+func (rec *gitlabAPIRecorder) waitForRequest(method, path string, budget time.Duration) bool {
+	deadline := time.NewTimer(budget)
+	defer deadline.Stop()
 	for {
-		if _, ok := rec.find(method, path); ok {
+		if _, found := rec.find(method, path); found {
 			return true
 		}
-		if time.Now().After(deadline) {
+		select {
+		case <-rec.recorded:
+		case <-deadline.C:
 			return false
 		}
-		time.Sleep(25 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
 	}
 }
 
@@ -96,7 +101,7 @@ func setupGitLabMutationServer(
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
-	recorder := &gitlabAPIRecorder{}
+	recorder := &gitlabAPIRecorder{recorded: make(chan struct{}, 1)}
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		request := recorder.record(r)
 		w.Header().Set("Content-Type", "application/json")
@@ -789,10 +794,8 @@ func TestGitLabMutationMergeStaleHeadReturnsConflict(t *testing.T) {
 	require.NotNil(mr)
 	assert.Equal("open", string(mr.State), "stale merge must not mark the MR merged locally")
 
-	assert.True(
-		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
-		"stale merge must trigger an MR resync",
-	)
+	assert.True(recorder.waitForRequest(http.MethodGet, "/api/v4/projects/4242/merge_requests/7", 3*time.Second),
+		"stale merge must trigger an MR resync")
 }
 
 // When the head goes stale only after the approval note posted (a push
@@ -995,10 +998,8 @@ func TestGitLabMutationBodylessStaleApproveReliesOnShaBinding(t *testing.T) {
 		assert.NotEqual("review", event.EventType, "stale approval must not persist a review event")
 	}
 
-	assert.True(
-		recorder.findEventually(http.MethodGet, "/api/v4/projects/4242/merge_requests/7"),
-		"stale approval must trigger an MR resync",
-	)
+	assert.True(recorder.waitForRequest(http.MethodGet, "/api/v4/projects/4242/merge_requests/7", 3*time.Second),
+		"stale approval must trigger an MR resync")
 }
 
 // GitLab projects with squash_option=always must stop offering the
@@ -1210,10 +1211,19 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 	require.NotNil(problem.Details)
 	assert.Equal("conflict", problem.Details["reason"])
 
-	// Give a wrongly-scheduled background sync time to surface.
-	time.Sleep(300 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
-	_, synced := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
-	assert.False(synced, "generic conflicts must not resync on head-binding providers")
+	deadline := time.NewTimer(300 * time.Millisecond) //nolint:kennlint // 300ms HTTP observation window checks that the MR-resync GET remains absent after a generic conflict
+	defer deadline.Stop()
+	for {
+		select {
+		case <-recorder.recorded:
+			_, found := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+			require.False(found, "generic conflicts must not resync on head-binding providers")
+		case <-deadline.C:
+			_, found := recorder.find(http.MethodGet, "/api/v4/projects/4242/merge_requests/7")
+			assert.False(found, "generic conflicts must not resync on head-binding providers")
+			return
+		}
+	}
 }
 
 // A legacy or partially synced row with no head SHA fails closed for merge:

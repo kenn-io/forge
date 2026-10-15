@@ -212,9 +212,14 @@ func Run(t *testing.T, adapter Adapter) {
 	})
 
 	t.Run("foreground timeout", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			time.Sleep(200 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture
-			w.WriteHeader(http.StatusOK)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The fallback releases a broken adapter with a valid response so the timeout assertion fails.
+			select {
+			case <-r.Context().Done():
+			case <-time.After(time.Second):
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(repositoryJSON())
 		}))
 		defer server.Close()
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{

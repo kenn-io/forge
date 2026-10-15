@@ -2377,6 +2377,42 @@ describe("WorkspaceListSidebar", () => {
     expect(openBubble?.classList.contains("draft")).toBe(false);
   });
 
+  it("colors pull request bubbles with the same lifecycle accent as the phone badges", async () => {
+    const base = { provider: "github", platformHost: "github.com", owner: "acme", name: "widgets" };
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({ ...base, id: "ws-open", number: 1, title: "Open PR" }),
+          { ...workspaceFixture({ ...base, id: "ws-merged", number: 2, title: "Merged PR" }), mr_state: "merged" },
+          { ...workspaceFixture({ ...base, id: "ws-closed", number: 3, title: "Closed PR" }), mr_state: "closed" },
+          workspaceFixture({ ...base, id: "ws-draft", number: 4, title: "Draft PR", isDraft: true }),
+          {
+            ...workspaceFixture({ ...base, id: "ws-closed-draft", number: 5, title: "Closed draft PR", isDraft: true }),
+            mr_state: "closed",
+          },
+        ],
+      },
+    });
+
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-open" } });
+    await screen.findByText("Closed draft PR");
+
+    const accents = Object.fromEntries(
+      Array.from(container.querySelectorAll<HTMLElement>(".item-bubble")).map((bubble) => [
+        bubble.textContent?.trim(),
+        bubble.style.getPropertyValue("--item-accent"),
+      ]),
+    );
+    expect(accents).toEqual({
+      "#1": "var(--accent-green)",
+      "#2": "var(--accent-purple)",
+      "#3": "var(--accent-red)",
+      "#4": "var(--accent-amber)",
+      // Matches the PR list and detail: a closed draft reads as closed.
+      "#5": "var(--accent-red)",
+    });
+  });
+
   it("gives an issue-backed workspace bubble the issue state class, not open", async () => {
     // An open issue-backed workspace must not reuse the open/green PR
     // treatment; the blue issue styling tells it apart from PR-backed

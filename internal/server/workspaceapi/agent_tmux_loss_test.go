@@ -190,9 +190,11 @@ rm -f quit args
 			// kill-server can exit non-zero when its own client loses the
 			// server mid-command, so check the outcome rather than the status.
 			killErr := procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-			server, err := workspaces.TmuxServerID(ctx)
-			require.NoError(err)
-			require.Empty(server, "kill-server: %v", killErr)
+			// The kill client can return before the server finishes shutting down.
+			require.Eventually(func() bool {
+				server, err := workspaces.TmuxServerID(ctx)
+				return err == nil && server == ""
+			}, 5*time.Second, 10*time.Millisecond, "kill-server: %v", killErr)
 			require.Eventually(pending, 5*time.Second, 10*time.Millisecond)
 			// The dying agent reports SessionEnd while Forge still runs, which
 			// deletes its activity report but not its saved conversation.

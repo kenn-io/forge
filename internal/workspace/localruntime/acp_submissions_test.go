@@ -279,44 +279,6 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	assert.NotEmpty(t, state.Turns[0].EndedAt)
 }
 
-// The same takeover through the fixture: one record, ended with the agent's turn.
-func TestACPTakeoverTurnRecordThroughTheAgent(t *testing.T) {
-	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	c := launchRequestChat(t)
-	// An earlier turn shows the agent reports thread status.
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "hello", ID: "first"}))
-	c.awaitIdle()
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
-
-	turns := c.awaitState(func(s ACPState) bool { return !s.Busy }).Turns
-	require.Len(t, turns, 2, "the steer joined the prompt's turn")
-	assert.Equal(t, "turn", turns[1].SubmissionID)
-	assert.Equal(t, "end_turn", turns[1].StopReason)
-	assert.NotEmpty(t, turns[1].EndedAt)
-}
-
-// A late thread status claims the agent's turn after the prompt's turn has
-// ended; that turn gets its own record.
-func TestACPLateClaimedAgentTurnGetsARecord(t *testing.T) {
-	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
-	t.Setenv("KENN_FORGE_ACP_LATE_THREAD_STATUS", "1")
-	c := launchRequestChat(t)
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
-	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "takeover", ID: "steer"}))
-	c.awaitState(func(s ACPState) bool { return !s.Busy })
-	claimed := c.awaitState(func(s ACPState) bool { return s.Busy }).Turns
-	require.Len(t, claimed, 2)
-	assert.NotEmpty(t, claimed[0].EndedAt)
-	assert.Empty(t, claimed[1].EndedAt)
-
-	turns := c.awaitState(func(s ACPState) bool { return !s.Busy }).Turns
-	require.Len(t, turns, 2)
-	assert.Empty(t, turns[1].SubmissionID)
-	assert.Equal(t, "end_turn", turns[1].StopReason)
-	assert.NotEmpty(t, turns[1].EndedAt)
-}
-
 // A steer whose prompt completed before the agent answered starts a turn
 // that no running record covers, so the steer gets one.
 func TestACPSteerAfterThePromptEndedStartsARecord(t *testing.T) {

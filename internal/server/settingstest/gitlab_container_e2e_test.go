@@ -555,7 +555,7 @@ func gitlabContainerAPI(
 		require.NoError(err)
 		if resp.StatusCode >= 500 && time.Now().Before(deadline) {
 			t.Logf("retrying %s %s after transient %d", method, path, resp.StatusCode)
-			time.Sleep(3 * time.Second)
+			time.Sleep(3 * time.Second) //nolint:kennlint // backs off HTTP retries while the GitLab container recovers from transient server errors
 			continue
 		}
 		require.Less(resp.StatusCode, 300, "%s %s: %s", method, path, string(raw))
@@ -630,7 +630,7 @@ func waitForGitLabMergeable(
 		}
 		require.False(t, time.Now().After(deadline),
 			"MR %d never became mergeable, last detailed_merge_status=%q", iid, status)
-		time.Sleep(3 * time.Second)
+		time.Sleep(3 * time.Second) //nolint:kennlint // polls the GitLab container until background mergeability checks finish
 	}
 }
 

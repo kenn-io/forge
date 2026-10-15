@@ -6,6 +6,8 @@ export type WorkspaceEventSignal =
   | { readonly _tag: "Status"; readonly workspaceId?: string | undefined; readonly status?: string | undefined }
   | { readonly _tag: "Associated"; readonly workspaceId?: string | undefined }
   | { readonly _tag: "ReconnectStale" }
+  // Synced PR or issue data changed, which can move a linked item's state.
+  | { readonly _tag: "ItemDataChanged" }
   | {
       readonly _tag: "DiffReady" | "DiffChanged";
       readonly workspaceId?: string | undefined;
@@ -24,6 +26,9 @@ function workspaceEventSignal(event: WorkspaceEventsNotification): WorkspaceEven
       return { _tag: "Associated", workspaceId: event.payload.workspace_id };
     case "reconnect.stale":
       return { _tag: "ReconnectStale" };
+    case "data_changed":
+    case "pr_detail_refreshed":
+      return { _tag: "ItemDataChanged" };
     case "workspace_diff_ready":
       return {
         _tag: "DiffReady",

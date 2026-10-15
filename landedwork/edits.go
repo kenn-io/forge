@@ -12,6 +12,13 @@ import (
 
 var errEdits = errors.New("edit correspondence unavailable")
 
+// editProofError preserves the inconclusive-edit category while reporting the
+// exact failed check. Reason tokens contain no patch content or Git paths.
+type editProofError string
+
+func (e editProofError) Error() string { return string(e) }
+func (e editProofError) Unwrap() error { return errEdits }
+
 type editRun struct {
 	removed, added string
 	anchor         insertionAnchor
@@ -62,7 +69,7 @@ func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source,
 		return nil, errCorrespondence
 	}
 	if len(a) == 0 || len(b) == 0 {
-		return nil, errEdits
+		return nil, editProofError("empty_tree_edits")
 	}
 	for i := range a {
 		// Equal base blobs give each hunk an exact location, even when its
@@ -95,21 +102,21 @@ func parseEditFiles(raw []byte) ([]fileEdit, error) {
 	for len(raw) > 0 {
 		header, tail, ok := bytes.Cut(raw, []byte{0})
 		if !ok {
-			return nil, errEdits
+			return nil, editProofError("diff_metadata_truncated")
 		}
 		path, rest, ok := bytes.Cut(tail, []byte{0})
 		fields := strings.Fields(string(header))
 		if !ok || len(path) == 0 || len(fields) != 5 || !strings.HasPrefix(fields[0], ":") {
-			return nil, errEdits
+			return nil, editProofError("diff_metadata_invalid")
 		}
 		oldMode, newMode := strings.TrimPrefix(fields[0], ":"), fields[1]
 		if !editMode(oldMode) || !editMode(newMode) || !objectID(fields[2]) || !objectID(fields[3]) {
-			return nil, errEdits
+			return nil, editProofError("diff_metadata_invalid")
 		}
 		switch fields[4] {
 		case "A", "D", "M", "T":
 		default:
-			return nil, errEdits
+			return nil, editProofError("diff_status_unsupported")
 		}
 		files = append(files, fileEdit{path: string(path), oldMode: oldMode, newMode: newMode, oldID: fields[2], newID: fields[3]})
 		raw = rest
@@ -117,7 +124,7 @@ func parseEditFiles(raw []byte) ([]fileEdit, error) {
 	slices.SortFunc(files, func(a, b fileEdit) int { return strings.Compare(a.path, b.path) })
 	for i := 1; i < len(files); i++ {
 		if files[i-1].path == files[i].path {
-			return nil, errEdits
+			return nil, editProofError("diff_path_duplicate")
 		}
 	}
 	return files, nil
@@ -164,12 +171,12 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 	}
 	parsed, err := gitdiff.ParseMultiFileDiff(patch)
 	if err != nil {
-		return errors.Join(errEdits, err)
+		return errors.Join(editProofError("patch_parse_failed"), err)
 	}
 	if len(parsed) != 1 {
 		// go-diff can also split header-like removed/added lines into files.
 		// This safe false negative loses proof, not edit differences.
-		return errEdits
+		return editProofError("patch_file_count_ambiguous")
 	}
 	for _, h := range parsed[0].Hunks {
 		run, err := editHunk(h)
@@ -179,7 +186,7 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 		if run.removed != "" {
 			// Offset-free correspondence is valid only for a unique occurrence.
 			if !sameBase && !uniqueBytes(old, []byte(run.removed)) {
-				return errEdits
+				return editProofError("removed_text_not_unique")
 			}
 		} else {
 			run.anchor, err = insertionSite(old, h.OrigStartLine, sameBase)
@@ -192,7 +199,7 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 	if f.oldID != f.newID && len(f.runs) == 0 {
 		// Adding/removing an empty file has no hunk but still changes its mode.
 		if f.oldMode != "000000" && f.newMode != "000000" {
-			return errEdits
+			return editProofError("changed_blob_without_hunks")
 		}
 	}
 	return nil
@@ -213,7 +220,7 @@ func insertionSite(old []byte, position int32, sameBase bool) (insertionAnchor, 
 	}
 	i := int(position)
 	if i < 0 || i > len(lines) {
-		return insertionAnchor{}, errEdits
+		return insertionAnchor{}, editProofError("insertion_position_invalid")
 	}
 	a := insertionAnchor{atStart: i == 0, atEnd: i == len(lines)}
 	if i > 0 {
@@ -223,7 +230,7 @@ func insertionSite(old []byte, position int32, sameBase bool) (insertionAnchor, 
 		a.after = string(lines[i])
 	}
 	if !sameBase && len(old) > 0 && !uniqueBytes(old, []byte(a.before+a.after)) {
-		return insertionAnchor{}, errEdits
+		return insertionAnchor{}, editProofError("insertion_context_not_unique")
 	}
 	return a, nil
 }
@@ -249,11 +256,11 @@ func editHunk(h *gitdiff.Hunk) (editRun, error) {
 			added.Write(content)
 			newLines++
 		default:
-			return editRun{}, errEdits
+			return editRun{}, editProofError("hunk_line_invalid")
 		}
 	}
 	if oldLines != h.OrigLines || newLines != h.NewLines {
-		return editRun{}, errEdits
+		return editRun{}, editProofError("hunk_line_count_mismatch")
 	}
 	return editRun{removed: removed.String(), added: added.String(), position: h.OrigStartLine}, nil
 }

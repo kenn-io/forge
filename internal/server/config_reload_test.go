@@ -420,6 +420,7 @@ func TestConfigReload_WatcherFiresOnInPlaceEdit(t *testing.T) {
 	stream := streamConfigEvents(t, srv)
 	defer stream.Close()
 
+	// configwatch.TestWatcher_DebouncesBurst covers debounce; this test checks server delivery.
 	writeConfigToml(t, cfgPath, validReloadConfigChangedActivity)
 
 	ev := waitForConfigEvent(t, stream, 2*time.Second)
@@ -2123,48 +2124,6 @@ func TestConfigReload_GlobFailureKeepsPreviouslyTrackedMatches(t *testing.T) {
 	require.Len(tracked, 1)
 	assert.Equal("acme", tracked[0].Owner)
 	assert.Equal("widget-api", tracked[0].Name)
-}
-
-func TestConfigReload_DebouncesBurstedWrites(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(
-		t, validReloadConfig, &serverfake.MockGH{},
-	)
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	// Multiple rapid writes within the 100 ms debounce window should
-	// coalesce into one config.changed event.
-	for i := range 4 {
-		var content string
-		switch i % 2 {
-		case 0:
-			content = validReloadConfig
-		case 1:
-			content = validReloadConfigChangedActivity
-		}
-		writeConfigToml(t, cfgPath, content)
-		time.Sleep(10 * time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
-	}
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
-	assert.True(ev.Valid)
-
-	// Drain any extra events that arrive within a short window — the
-	// debounce should have prevented them, but we don't assert "no
-	// extras at all" since fsnotify ordering on some kernels can
-	// flush a second event after the rename burst.
-	select {
-	case extra, ok := <-stream.events:
-		if ok {
-			// A second event is acceptable but should be valid and quick.
-			assert.True(extra.Valid)
-		}
-	case <-time.After(200 * time.Millisecond): //nolint:kennlint // shows the event does not happen; no invalid reload follows the debounced one
-	}
 }
 
 func TestConfigReload_SubscriberAfterParseErrorGetsCachedEvent(t *testing.T) {

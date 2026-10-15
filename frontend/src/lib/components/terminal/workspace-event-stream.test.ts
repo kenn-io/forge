@@ -22,6 +22,17 @@ describe("workspaceEventStream", () => {
     ]);
   });
 
+  it("signals synced item data changes so linked-item state can reload", async () => {
+    const signals = await Effect.runPromise(
+      workspaceEventStream((next) => {
+        queueMicrotask(() => next({ type: "data_changed" }));
+        return () => {};
+      }).pipe(Stream.take(1), Stream.runCollect, Effect.timeout("1 second")),
+    );
+
+    expect(signals).toEqual([{ _tag: "ItemDataChanged" }]);
+  });
+
   it("maps workspace events and unsubscribes when the stream ends", async () => {
     const unsubscribe = vi.fn();
 

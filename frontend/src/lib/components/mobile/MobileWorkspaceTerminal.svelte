@@ -71,6 +71,7 @@
     mobileWorkspaceIdentity,
     mobileWorkspaceLinkedItem,
   } from "./mobile-workspace-detail.js";
+  import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
   import {
     loadMobileWorkspaceSession,
     saveMobileWorkspaceSession,
@@ -147,6 +148,7 @@
   const showLaunchProgress = $derived(startingTargetKey !== null && startingTargetKey !== undefined &&
     !selectedSession?.runtimeSession && !sessionSelectionExplicit);
   const linkedItem = $derived(workspace ? mobileWorkspaceLinkedItem(workspace) : null);
+  const linkedItemAccent = $derived(workspace && linkedItem ? workspaceItemAccent[workspaceItemState(workspace, linkedItem.itemType)] : undefined);
   const workspaceIdentity = $derived(
     workspace
       ? mobileWorkspaceIdentity(workspace, hostKey)
@@ -370,7 +372,9 @@
     );
   }
 
-  function loadWorkspace() {
+  // Background reloads only refresh metadata for a terminal already on
+  // screen, so a transient failure keeps that terminal instead of replacing it.
+  function loadWorkspace({ background = false }: { background?: boolean } = {}) {
     const id = workspaceId;
     const activeHostKey = hostKey;
     return Effect.gen(function* () {
@@ -392,6 +396,7 @@
             handleWorkspaceMissing();
             return;
           }
+          if (background && workspace?.id === id && workspace.fleet_host_key === activeHostKey) return;
           loadError = failureMessage(failure, hostKey ? "Fleet workspace unavailable" : "Workspace unavailable");
         }),
       ),
@@ -745,6 +750,24 @@
     });
   });
 
+  // Item changes are skipped while the retained page is hidden.
+  let wasVisible = untrack(() => visible);
+  $effect(() => {
+    const shown = visible && !wasVisible;
+    wasVisible = visible;
+    if (!shown) return;
+    // Cleanup cancels a pending reload so a late reply cannot reclaim
+    // released sessions or navigate away from the next page.
+    return untrack(() => {
+      if (workspace?.id !== workspaceId) return;
+      return appRuntime.runCommand(loadWorkspace({ background: true }), {
+        operation: "reload shown mobile workspace",
+        safeContext: { workspaceId, remote: Boolean(hostKey) },
+        onFailure: () => undefined,
+      }).interrupt;
+    });
+  });
+
   $effect(() => {
     if (!terminalOptionsOpen) return;
     return untrack(() => pushModalFrame("mobile-workspace-terminal-options", []));
@@ -824,8 +847,15 @@
                     }
                   }).pipe(Effect.andThen(loadWorkspace()), Effect.forkChild, Effect.asVoid);
                 }
-                return event._tag === "ReconnectStale"
-                  ? loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid)
+                if (event._tag === "ReconnectStale") {
+                  return loadWorkspaceAndRuntime().pipe(Effect.forkChild, Effect.asVoid);
+                }
+                // The linked-item pill colors by PR state, and the poll skips
+                // detail once ready. A hidden page reloads when shown again.
+                const itemMayHaveChanged = event._tag === "ItemDataChanged" ||
+                  (event._tag === "Associated" && event.workspaceId === activeWorkspaceId);
+                return itemMayHaveChanged && visible
+                  ? loadWorkspace({ background: true }).pipe(Effect.forkChild, Effect.asVoid)
                   : Effect.void;
               })),
               { startImmediately: true },
@@ -890,6 +920,7 @@
         <button
           type="button"
           class="mobile-workspace-terminal__item"
+          style:--item-accent={linkedItemAccent}
           aria-label={hostKey
             ? `Linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number} unavailable for Fleet workspace`
             : `Open linked ${linkedItem.itemType === "pr" ? "PR" : "issue"} #${linkedItem.number}`}
@@ -1178,7 +1209,7 @@
   .mobile-workspace-terminal__identity strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-workspace-terminal__identity strong { color: var(--text-primary); font-size: var(--font-size-md); }
   .mobile-workspace-terminal__actions { display: flex; gap: 0.375rem; }
-  .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: var(--text-on-accent) !important; border-color: var(--accent-green) !important; background: var(--accent-green) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
+  .mobile-workspace-terminal__item { min-width: auto !important; min-height: 2rem !important; color: color-mix(in srgb, var(--item-accent) 25%, var(--bubble-ink)) !important; border-color: color-mix(in srgb, var(--item-accent) 70%, #ffffff) !important; background: color-mix(in srgb, var(--item-accent) 70%, #ffffff) !important; font-family: var(--font-mono) !important; font-weight: 700 !important; }
   .mobile-workspace-terminal__item:disabled { cursor: not-allowed; opacity: var(--opacity-disabled); }
   .mobile-workspace-terminal__stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--terminal-bg, var(--bg-primary)); }
   .mobile-workspace-terminal__runtime-error { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0.75rem; color: var(--text-secondary); border-bottom: thin solid var(--border-default); background: var(--bg-surface); font-size: var(--font-size-sm); }

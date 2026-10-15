@@ -33,7 +33,7 @@ func TestExternalContextHelper(t *testing.T) {
 	args := os.Args[separator+1:]
 	mode, dir := args[0], args[1]
 	if mode == "hold-pipes" {
-		time.Sleep(time.Second)
+		time.Sleep(time.Second) //nolint:kennlint // holds inherited subprocess pipes open beyond WaitDelay
 		os.Exit(0)
 	}
 	data, err := io.ReadAll(os.Stdin)
@@ -53,7 +53,7 @@ func TestExternalContextHelper(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "release")); err == nil {
 				break
 			}
-			time.Sleep(time.Millisecond)
+			time.Sleep(time.Millisecond) //nolint:kennlint // polls the parent-created release file in the external command subprocess
 		}
 	}
 	if mode == "gate-action-exit" && request.Operation == "action" {
@@ -61,7 +61,7 @@ func TestExternalContextHelper(t *testing.T) {
 	}
 	switch mode {
 	case "timeout":
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) //nolint:kennlint // keeps the external command alive until the runner kills it at its timeout
 	case "stdout":
 		_, _ = io.WriteString(os.Stdout, strings.Repeat("x", 1024*1024+1))
 	case "stderr":
@@ -337,8 +337,13 @@ func TestCacheExpiresAndEvictsOldest(t *testing.T) {
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)
 	assert.Len(t, invocations(t, dir), 66)
-	// Exercise the real fixed TTL; subprocess I/O cannot run inside synctest.
-	time.Sleep(5 * time.Second)
+	// Seed expired completions to test the normal TTL comparison without waiting for wall-clock expiry.
+	runner.mu.Lock()
+	for key, cached := range runner.cache {
+		cached.completed = time.Now().Add(-cacheLifetime)
+		runner.cache[key] = cached
+	}
+	runner.mu.Unlock()
 	_, err = runner.Read(t.Context(), "metrics", pull, false)
 	require.NoError(t, err)
 	assert.Len(t, invocations(t, dir), 67)

@@ -51,6 +51,7 @@ import {
 } from "../../stores/workspace-quick-actions.js";
 import type { RuntimeSession } from "../../api/types.js";
 import MobileWorkspaceTerminal from "./MobileWorkspaceTerminal.svelte";
+import MobileWorkspaceTerminalTestHarness from "./MobileWorkspaceTerminalTestHarness.svelte";
 import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js";
 import {
   markWorkspaceIdDeleted,
@@ -121,6 +122,111 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+  });
+
+  it.each([
+    [{ mr_state: "open" }, "var(--accent-green)"],
+    [{ mr_state: "merged" }, "var(--accent-purple)"],
+    [{ mr_state: "closed" }, "var(--accent-red)"],
+    [{ mr_state: "open", mr_is_draft: true }, "var(--accent-amber)"],
+    // An issue workspace's mr_state is the issue's state, not the PR's.
+    [{ item_type: "issue", associated_pr_number: 7, mr_state: "closed" }, "var(--text-muted)"],
+  ])("colors the linked PR pill by lifecycle state for %o", async (fields, accent) => {
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, ...fields });
+    render(MobileWorkspaceTerminal, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe(accent);
+  });
+
+  it("recolors the linked PR pill when synced PR data changes", async () => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open" });
+    render(MobileWorkspaceTerminal, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-green)");
+
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "merged" });
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    notify?.({ type: "data_changed" });
+
+    await waitFor(() => expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-purple)"));
+  });
+
+  it("recolors the linked PR pill for item changes that arrived while the terminal was hidden", async () => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open" });
+    render(MobileWorkspaceTerminalTestHarness, { props });
+    const pill = await screen.findByRole("button", { name: "Open linked PR #7" });
+    expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-green)");
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, mr_state: "open", mr_is_draft: true });
+    const loadsBeforeHiddenChange = mocks.runtimeClient.getWorkspace.mock.calls.length;
+    notify?.({ type: "data_changed" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(loadsBeforeHiddenChange);
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+
+    await waitFor(() => expect(pill.style.getPropertyValue("--item-accent")).toBe("var(--accent-amber)"));
+    // A visibility change keeps the retained terminal's lifecycle running.
+    expect(events.subscribeWorkspaceEvents).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the reload on return when the terminal unmounts", async () => {
+    const onMissing = vi.fn();
+    const view = render(MobileWorkspaceTerminalTestHarness, { props: { ...props, onMissing } });
+    await screen.findByRole("button", { name: "Open linked PR #7" });
+    const reload = Promise.withResolvers<never>();
+    mocks.runtimeClient.getWorkspace.mockReturnValue(reload.promise);
+    const loadsBefore = mocks.runtimeClient.getWorkspace.mock.calls.length;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace).toHaveBeenCalledTimes(loadsBefore + 1));
+    view.unmount();
+    reload.reject(
+      new GeneratedProblemResponse(
+        { type: "about:blank", title: "Not found", status: 404, code: "workspaceNotFound" },
+        new Response(null, { status: 404 }),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(onMissing).not.toHaveBeenCalled();
+  });
+
+  it("keeps a loaded terminal when a background item reload fails", async () => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByRole("button", { name: "Open linked PR #7" });
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    const loadsBefore = mocks.runtimeClient.getWorkspace.mock.calls.length;
+    mocks.runtimeClient.getWorkspace.mockRejectedValue(
+      new GeneratedProblemResponse(
+        { type: "about:blank", title: "Bad gateway", status: 502 },
+        new Response(null, { status: 502 }),
+      ),
+    );
+
+    notify?.({ type: "data_changed" });
+
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspace.mock.calls.length).toBeGreaterThan(loadsBefore));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText("Workspace unavailable")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open linked PR #7" })).toBeTruthy();
   });
 
   it("waits for a directly launched ACP session without showing the base terminal", async () => {

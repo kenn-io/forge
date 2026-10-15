@@ -735,9 +735,9 @@ url = "`+upstream.URL+`"
 	close(start)
 
 	<-entered
-	deadline := time.Now().Add(250 * time.Millisecond)
-	for time.Now().Before(deadline) && probes.Load() == 1 {
-		time.Sleep(time.Millisecond) //nolint:kennlint // waits for subprocess/HTTP fixture for tmux/e2e waits
+	select {
+	case <-entered:
+	case <-time.After(250 * time.Millisecond): //nolint:kennlint // shows the event does not happen; concurrent HTTP callers must share the blocked health probe
 	}
 	got := probes.Load()
 	close(release)

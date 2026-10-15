@@ -38,7 +38,7 @@ func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess e
 	if os.WriteFile("args.tmp", []byte(strings.Join(args, "\n")), 0o600) != nil || os.Rename("args.tmp", "args") != nil {
 		os.Exit(2)
 	}
-	time.Sleep(time.Hour)
+	time.Sleep(time.Hour) //nolint:kennlint // keeps the resumed agent subprocess alive until runtime cleanup
 }
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_RESUME_AGENT_HELPER

@@ -1365,21 +1365,17 @@ func TestTmuxWrapperAttachSession(t *testing.T) {
 	// with our "wrap" prefix.
 	var attach []string
 	for _, argv := range serverfake.ReadTmuxRecord(t, record) {
-		if len(argv) >= 3 &&
+		if len(argv) >= 5 &&
 			argv[1] == "-u" &&
-			argv[2] == "attach-session" {
+			argv[4] == "attach-session" {
 			attach = argv
 			break
 		}
 	}
 	require.NotNil(attach, "attach-session argv not recorded")
-	require.Len(attach, 6)
-	assert.Equal("wrap", attach[0])
-	assert.Equal("-u", attach[1])
-	assert.Equal("attach-session", attach[2])
-	assert.Equal("-E", attach[3])
-	assert.Equal("-t", attach[4])
-	assert.NotEmpty(attach[5])
+	require.Len(attach, 8)
+	assert.Equal([]string{"wrap", "-u", "-T", "sync", "attach-session", "-E", "-t"}, attach[:7])
+	assert.NotEmpty(attach[7])
 }
 
 func TestTerminalRouteE2EPropagatesWorkspaceID(t *testing.T) {

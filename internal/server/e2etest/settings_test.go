@@ -341,6 +341,7 @@ func TestSettingsAPIE2EHideTmuxStatusUpdateAffectsRuntimeSessions(t *testing.T) 
 record=%q
 printf '%%s\0' "$#" "$@" >> "$record"
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 case "$1" in
   has-session)
     echo "can't find session: $3" >&2

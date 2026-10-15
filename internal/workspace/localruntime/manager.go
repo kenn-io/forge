@@ -827,7 +827,7 @@ func (m *Manager) restoredRuntimeCommand(
 	if len(command) == 0 {
 		command = config.DefaultTmuxCommand()
 	}
-	return tmuxAttachSessionCommand(command, restored.TmuxSession), nil
+	return TmuxAttachSessionCommand(command, restored.TmuxSession), nil
 }
 
 func isTmuxCommandUnavailable(err error) bool {

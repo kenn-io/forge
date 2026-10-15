@@ -629,10 +629,18 @@ create a local process, PTY, or durable transport session
   update-environment, and without `-E` the next attach copies the attach
   client's variables into the session environment; external attach specs
   additionally run in the caller's unsanitized shell
-  (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+  (`internal/workspace/localruntime/tmux_launcher.go::TmuxAttachSessionCommand`).
 - Every tmux client attach must force UTF-8; service launchers may omit locale
   variables, causing tmux to replace non-ASCII output before WebSocket transport
-  (`internal/workspace/localruntime/tmux_launcher.go::tmuxAttachSessionCommand`).
+  (`internal/workspace/localruntime/tmux_launcher.go::TmuxAttachSessionCommand`).
+- Every attach that feeds a browser terminal passes `-T sync` so tmux brackets
+  its redraws in DEC mode 2026. Tmux cannot identify xterm.js and
+  `xterm-256color` lacks the Sync capability; without the flag tmux drops the
+  brackets agents put around repaints, and each full-pane redraw spans several
+  WebSocket messages that xterm.js paints separately, so the screen and cursor
+  flicker. External attach specs run in the caller's terminal, which tmux
+  detects itself, and omit it
+  (`internal/workspace/localruntime/tmux_launcher.go::TmuxAttachSessionCommand`).
 - On macOS, tmux and PTY-owner shells with no configured `LANG`, `LC_ALL`, or `LC_CTYPE` must
   default `LC_CTYPE` to UTF-8 without overriding an explicit locale; launchd can
   otherwise leave zsh with incorrect Unicode prompt widths (`internal/workspace/localruntime/shell_environment.go::shellCharacterLocaleDefault`).

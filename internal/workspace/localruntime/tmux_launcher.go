@@ -663,18 +663,24 @@ func (l tmuxLauncher) killSessionCommand() []string {
 }
 
 func (l tmuxLauncher) attachSessionCommand() []string {
-	return tmuxAttachSessionCommand(l.TmuxCommand, l.Session)
+	return TmuxAttachSessionCommand(l.TmuxCommand, l.Session)
 }
 
-func tmuxAttachSessionCommand(command []string, session string) []string {
+// TmuxAttachSessionCommand builds the attach client that feeds a browser
+// terminal.
+func TmuxAttachSessionCommand(command []string, session string) []string {
 	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
 	// tmux does not replace non-ASCII terminal output with underscores.
+	// -T sync makes tmux wrap its redraws in DEC mode 2026. Tmux cannot detect
+	// that xterm.js supports it and xterm-256color has no Sync capability, so
+	// without the flag tmux drops the brackets agents put around repaints and
+	// the browser paints half-drawn screens.
 	// -E disables update-environment: a pane can widen that server
 	// option, and without -E the next attach would copy the attach
 	// client's variables into the session environment.
 	return append(
 		slices.Clone(command),
-		"-u", "attach-session", "-E", "-t", session,
+		"-u", "-T", "sync", "attach-session", "-E", "-t", session,
 	)
 }
 

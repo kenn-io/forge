@@ -390,7 +390,7 @@ exit 0
 	sessionName := tmuxSessionName("ws:alpha", "codex")
 
 	assert.Equal(
-		[]string{tmuxPath, "-u", "attach-session", "-E", "-t", sessionName},
+		[]string{tmuxPath, "-u", "-T", "sync", "attach-session", "-E", "-t", sessionName},
 		launch.Command,
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
@@ -452,8 +452,7 @@ exit 0
 	require.NoError(err)
 
 	assert.Equal(tmuxPath, launch.Command[0])
-	assert.Equal("-u", launch.Command[1])
-	assert.Equal("attach-session", launch.Command[2])
+	assert.Equal([]string{"-u", "-T", "sync", "attach-session"}, launch.Command[1:5])
 }
 
 func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T) {
@@ -487,6 +486,7 @@ func TestManagerReattachTmuxClientsReplacesDedicatedTmuxSessions(t *testing.T) {
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 if [ "$1" = "-L" ]; then shift 2; fi
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "attach-session" ]; then
   trap 'exit 0' HUP INT TERM
   while :; do sleep 1; done
@@ -589,7 +589,7 @@ exit 0
 	sessionName := tmuxSessionName("ws-1", "codex")
 
 	assert.Equal(
-		[]string{tmuxPath, "-L", "kenn-forge", "-u", "attach-session", "-E", "-t", sessionName},
+		[]string{tmuxPath, "-L", "kenn-forge", "-u", "-T", "sync", "attach-session", "-E", "-t", sessionName},
 		launch.Command,
 	)
 	assert.Equal(sessionName, launch.TmuxSession)
@@ -625,6 +625,7 @@ func TestManagerLaunchPlainShellWrapsInTmuxWhenAvailable(t *testing.T) {
 	require.NoError(os.WriteFile(tmuxPath, fmt.Appendf(nil, `#!/bin/sh
 printf '%%s\0' "$#" "$@" >> %s
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "attach-session" ]; then
   trap 'exit 0' HUP INT TERM
   while :; do sleep 1; done
@@ -738,7 +739,7 @@ func TestManagerRestoredRuntimeCommandForcesUTF8(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"/usr/bin/tmux", "-L", "kenn-forge-test",
-			"-u", "attach-session", "-E", "-t", "kenn-forge-ws-1-shell",
+			"-u", "-T", "sync", "attach-session", "-E", "-t", "kenn-forge-ws-1-shell",
 		},
 		command,
 	)
@@ -880,6 +881,7 @@ func TestManagerRestoreTmuxSessionAttachesStoredSessionWithoutOwnerValidation(t 
 	tmuxPath := filepath.Join(dir, "tmux")
 	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "show-options" ]; then
   exit 99
 fi
@@ -2468,6 +2470,50 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
+func TestManagerTmuxAttachKeepsSynchronizedOutputForBrowserTerminals(t *testing.T) {
+	if !testtmux.Supported() {
+		t.Skip("requires private tmux")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux unavailable")
+	}
+	require := require.New(t)
+	// Agents such as Claude Code wrap each repaint in DEC mode 2026. Tmux
+	// re-renders the pane for its client, and the browser terminal can only
+	// hold that redraw until it is complete if the client output is bracketed.
+	script := "while :; do printf '\033[?2026h\033[H\033[2Jrepaint one\r\nrepaint two\033[?2026l'; sleep 0.05; done"
+	mgr := NewManager(Options{
+		TmuxCommand:             privateTmuxOwner.Command(t, tmuxPath),
+		WrapAgentSessionsInTmux: true,
+		Targets: []LaunchTarget{{
+			Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Available: true,
+			Command: []string{"/bin/sh", "-c", script},
+		}, {
+			Key: string(LaunchTargetShell), Kind: LaunchTargetShell, Available: true,
+		}},
+	})
+	t.Cleanup(mgr.Shutdown)
+	info, err := mgr.Launch(t.Context(), "ws-1", t.TempDir(), "agent")
+	require.NoError(err)
+	attachment, err := mgr.AttachSession("ws-1", info.Key)
+	require.NoError(err)
+	defer attachment.Close()
+
+	var output []byte
+	require.Eventually(func() bool {
+		for {
+			select {
+			case chunk := <-attachment.Output:
+				output = append(output, chunk...)
+			default:
+				start := bytes.Index(output, []byte("\x1b[?2026h"))
+				return start >= 0 && bytes.Contains(output[start:], []byte("\x1b[?2026l"))
+			}
+		}
+	}, 5*time.Second, 20*time.Millisecond, "tmux must forward synchronized output to the attach client")
+}
+
 func TestManagerSubmitInitialMessageWritesEnterAsSeparateKeystrokeAfterPaste(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -2668,6 +2714,7 @@ func writeLongRunningAttachTmux(t *testing.T) string {
 	tmuxPath := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(t, os.WriteFile(tmuxPath, []byte(`#!/bin/sh
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "attach-session" ]; then
   trap 'exit 0' HUP INT TERM
   while :; do sleep 1; done

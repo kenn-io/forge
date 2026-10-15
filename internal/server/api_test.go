@@ -6064,6 +6064,7 @@ func TestWorkspaceRuntimeIncludesStoredRuntimeSessionsAfterReloadE2E(t *testing.
 		"TMUX_TEST_OWNER_MARKER="+shellquote.Join(ownerMarker)+"\n"+
 		"TMUX_TEST_RESTORED_SESSION="+shellquote.Join(restoredSession)+"\n"+
 		`if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 case "$1" in
   list-sessions)
     printf '%s\n' kenn-forge-0000000000000001
@@ -6186,6 +6187,7 @@ if [ "$mode" = "capture-pane" ]; then
   exit 0
 fi
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "has-session" ]; then
   echo "can't find session: $3" >&2
   exit 1
@@ -6311,6 +6313,7 @@ for a in "$@"; do
   prev="$a"
 done
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 case "$1" in
   list-sessions)
     printf '%s\n' 'forge-0000000000000001-e81d3b0e9d82feaa'
@@ -6729,6 +6732,7 @@ for a in "$@"; do
   prev="$a"
 done
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 if [ "$1" = "attach-session" ]; then
   cat >/dev/null
   exit 0
@@ -7650,6 +7654,11 @@ option_arg() {
 cmd="${1:-}"
 [ "$#" -gt 0 ] && shift || true
 if [ "$cmd" = "-u" ]; then
+  cmd="${1:-}"
+  [ "$#" -gt 0 ] && shift || true
+fi
+if [ "$cmd" = "-T" ]; then
+  [ "$#" -gt 0 ] && shift || true
   cmd="${1:-}"
   [ "$#" -gt 0 ] && shift || true
 fi

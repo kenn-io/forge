@@ -186,7 +186,7 @@ func (h *Handler) ServeHTTP(
 	if len(prefix) == 0 {
 		prefix = config.DefaultTmuxCommand()
 	}
-	argv := tmuxAttachCommand(prefix, ws.TmuxSession)
+	argv := localruntime.TmuxAttachSessionCommand(prefix, ws.TmuxSession)
 	cmd := procutil.CommandContext(ctx, argv[0], argv[1:]...)
 	// Attach cannot spawn the tmux server, but a user tmux.conf with a
 	// widened update-environment could copy client variables into the
@@ -326,17 +326,6 @@ func (h *Handler) ServeHTTP(
 		"workspace_id", id,
 		"exit_code", exitCode,
 	)
-}
-
-func tmuxAttachCommand(prefix []string, session string) []string {
-	argv := make([]string, 0, len(prefix)+4)
-	argv = append(argv, prefix...)
-	// Kenn Forge may run as a service without locale variables. Force UTF-8 so
-	// tmux does not replace non-ASCII terminal output with underscores.
-	// -E disables update-environment: a pane can widen that server
-	// option, and without -E the next attach would copy the attach
-	// client's variables into the session environment.
-	return append(argv, "-u", "attach-session", "-E", "-t", session)
 }
 
 func bridgePtyOwnerAttachment(

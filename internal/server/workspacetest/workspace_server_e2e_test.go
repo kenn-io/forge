@@ -104,6 +104,7 @@ func TestWorkspaceRuntimeNaturalTmuxAgentExitForgetsStoredSessionE2E(
 	tmuxPath := filepath.Join(dir, "fake-tmux")
 	require.NoError(os.WriteFile(tmuxPath, []byte("#!/bin/sh\n"+
 		`if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 case "$1" in
   has-session)
     echo "can't find session: $3" >&2

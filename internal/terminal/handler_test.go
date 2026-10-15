@@ -153,20 +153,6 @@ func TestStopUnattachedTerminalReservesOnlyWorkspaceSlot(t *testing.T) {
 	release()
 }
 
-func TestTmuxAttachCommandForcesUTF8(t *testing.T) {
-	assert.Equal(
-		t,
-		[]string{
-			"/usr/bin/env", "tmux", "-u",
-			"attach-session", "-E", "-t", "kenn-forge-test",
-		},
-		tmuxAttachCommand(
-			[]string{"/usr/bin/env", "tmux"},
-			"kenn-forge-test",
-		),
-	)
-}
-
 func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	require := require.New(t)
 

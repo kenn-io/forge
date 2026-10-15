@@ -36,6 +36,7 @@ func writeRuntimeCommandFakeTmux(t *testing.T) (tmuxPath, recordPath string) {
 	script := fmt.Sprintf(`#!/bin/sh
 printf '%%s\0' "$#" "$@" >> %[1]s
 if [ "$1" = "-u" ]; then shift; fi
+if [ "$1" = "-T" ]; then shift 2; fi
 case "$1" in
   has-session)
     if [ -f %[2]s ]; then exit 0; fi

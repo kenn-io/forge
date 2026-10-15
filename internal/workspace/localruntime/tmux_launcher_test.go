@@ -185,7 +185,7 @@ func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
 	assert.Equal(t,
 		[]string{
 			"/usr/bin/tmux", "-L", "kenn-forge-test",
-			"-u", "attach-session", "-E", "-t", "kenn-forge-test",
+			"-u", "-T", "sync", "attach-session", "-E", "-t", "kenn-forge-test",
 		},
 		launcher.attachSessionCommand(),
 	)
@@ -264,7 +264,7 @@ exit 0
 		"kill-session", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-E", "-t", "kenn-forge-test",
+		"-u", "-T", "sync", "attach-session", "-E", "-t", "kenn-forge-test",
 	})
 	assert.NoFileExists(created)
 }
@@ -537,7 +537,7 @@ exit 0
 		"show-options", "-qv", "-t", "kenn-forge-test", "@forge_owner",
 	})
 	assert.NotContains(records, []string{
-		"-u", "attach-session", "-E", "-t", "kenn-forge-test",
+		"-u", "-T", "sync", "attach-session", "-E", "-t", "kenn-forge-test",
 	})
 	assert.NotContains(records, []string{
 		"new-session", "-e", "PATH", "-e", "TERM",
@@ -661,8 +661,8 @@ func TestTmuxAgentPolicyPreservesTmuxTmpdirInClientEnv(t *testing.T) {
 // variables into the session environment where panes read them back.
 func TestTmuxAttachSessionCommandDisablesUpdateEnvironment(t *testing.T) {
 	assert.Equal(t,
-		[]string{"tmux", "-L", "sock", "-u", "attach-session", "-E", "-t", "kenn-forge-test"},
-		tmuxAttachSessionCommand(
+		[]string{"tmux", "-L", "sock", "-u", "-T", "sync", "attach-session", "-E", "-t", "kenn-forge-test"},
+		TmuxAttachSessionCommand(
 			[]string{"tmux", "-L", "sock"}, "kenn-forge-test",
 		),
 	)

@@ -120,6 +120,11 @@ func (u *githubAsyncMergeUpstream) writeMergeResult(w http.ResponseWriter, r *ht
 		u.pollStartOnce.Do(func() { close(u.pollStarted) })
 		<-u.pollRelease
 	}
+	if conflict, ok := strings.CutPrefix(result, "409:"); ok {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, conflict)
+		return
+	}
 	if strings.Contains(result, `"status":"pending"`) {
 		w.WriteHeader(http.StatusAccepted)
 	}
@@ -564,4 +569,44 @@ func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
 	require.NotNil(detailBody.MergeQueueRemoval)
 	assert.Equal("branch_protection_failure", detailBody.MergeQueueRemoval.Reason)
 	assert.Equal("2026-10-14T19:06:07Z", detailBody.MergeQueueRemoval.RemovedAt)
+}
+
+func TestGitHubMergeRefusedByMergeQueueRuleEnqueuesInstead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	// Forge has not observed the queue (its read is forbidden), so it tries a
+	// direct merge; GitHub accepts the request and then refuses it by rule.
+	srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+		t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"direct-op"}}`,
+		`409:{"message":"Repository rule violations found\n\nChanges must be made through the merge queue"}`,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"queue-op"}}`,
+		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
+	)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var result struct {
+		Merged bool `json:"merged"`
+		Queued bool `json:"queued"`
+	}
+	require.NoError(json.NewDecoder(rr.Body).Decode(&result))
+	assert.False(result.Merged)
+	assert.True(result.Queued)
+
+	requests := upstream.requests()
+	require.Len(requests, 4)
+	assert.Contains(requests[0].Body, `"merge_action":"direct_merge"`)
+	var enqueueBody map[string]any
+	require.NoError(json.Unmarshal([]byte(requests[2].Body), &enqueueBody))
+	assert.Equal(map[string]any{"merge_action": "merge_queue", "sha": "reviewed-sha"}, enqueueBody)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	assert.Equal(db.MergeRequestStateOpen, mr.State)
 }

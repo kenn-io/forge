@@ -301,6 +301,11 @@ fallback repository listing.
 - GitHub.com merges are versioned asynchronous direct operations polled to terminal
   `merged`; `pending`/`enqueued` never count as merged. GHES stays synchronous with no
   probe fallback. (`platform/github/merge_async.go::Client.MergePullRequest`)
+- GitHub's "Changes must be made through the merge queue" refusal of a direct
+  merge is `platform.ErrMergeQueueRequired`; the merge handler then enqueues
+  instead. Do not rely on synced queue state alone: a sync credential (such as
+  a GitHub App) can be forbidden from reading `mergeQueue` while the merge
+  credential can still enqueue (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - A merge whose base is the branch with a synced merge queue enqueues with
   `merge_action: merge_queue` and no method, title, or message, which GitHub
   rejects for queued merges; `enqueued` is success with `queued: true`, never

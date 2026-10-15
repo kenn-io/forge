@@ -1090,6 +1090,15 @@ func (p *Provider) MergeMergeRequest(
 				Err:          err,
 			}
 		}
+		if IsGitHubMergeQueueRequired(err) {
+			return platform.MergeResult{}, &platform.Error{
+				Code:         platform.ErrCodeMergeQueueRequired,
+				Provider:     platform.KindGitHub,
+				PlatformHost: p.host,
+				Capability:   "merge_merge_request",
+				Err:          err,
+			}
+		}
 		return platform.MergeResult{}, err
 	}
 	if result == nil {
@@ -1136,6 +1145,17 @@ func (p *Provider) EnqueueMergeRequest(
 		return platform.MergeResult{}, err
 	}
 	return result, nil
+}
+
+// IsGitHubMergeQueueRequired reports whether GitHub refused a direct merge
+// because a repository rule requires the merge queue ("Changes must be made
+// through the merge queue"). GitHub reports it only as message text.
+func IsGitHubMergeQueueRequired(err error) bool {
+	ghErr, ok := errors.AsType[*gh.ErrorResponse](err)
+	if !ok || ghErr == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(ghErr.Message), "must be made through the merge queue") //nolint:kennlint // GitHub exposes this rule only as message text
 }
 
 // IsGitHubHeadModified reports whether a GitHub merge rejection is the

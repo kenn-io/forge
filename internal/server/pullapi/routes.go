@@ -1900,16 +1900,20 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	var result platform.MergeResult
 	enqueueRequestedAt := s.now().UTC()
 	priorAttempts, priorAttemptsKnown := 0, false
-	if queueMutator != nil {
+	enqueue := func(queueMutator platform.MergeQueueMutator) (platform.MergeResult, error) {
 		// Counted before the request so the new attempt is told apart from
 		// earlier ones, even when sync observes its outcome while the
 		// asynchronous enqueue is still being confirmed.
 		priorAttempts, priorAttemptsKnown = s.syncer.MergeQueueAttempts(
 			ctx, mergeRequestRepoRef(repo.Repo), number,
 		)
-		result, err = queueMutator.EnqueueMergeRequest(
+		enqueueRequestedAt = s.now().UTC()
+		return queueMutator.EnqueueMergeRequest(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
+	}
+	if queueMutator != nil {
+		result, err = enqueue(queueMutator)
 	} else {
 		result, err = mutator.MergeMergeRequest(
 			ctx,
@@ -1920,6 +1924,19 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			body.Method,
 			expectedHeadSHA,
 		)
+		// Forge may not know the branch requires a merge queue: reading the
+		// queue can be forbidden to the sync credential while the merge
+		// credential may still enqueue. The provider's refusal is the
+		// authoritative signal, so add the pull request to the queue instead.
+		if errors.Is(err, platform.ErrMergeQueueRequired) {
+			if fallback, mutatorErr := s.syncer.MergeQueueMutator(
+				repoProviderKind(repo.Repo), repoProviderHost(repo.Repo),
+			); mutatorErr == nil {
+				slog.Info("branch requires the merge queue; adding pull request to it",
+					"owner", owner, "repo", name, "number", number)
+				result, err = enqueue(fallback)
+			}
+		}
 	}
 	if err != nil {
 		if status, message, ok := mergeHTTPErrorStatus(err); ok {

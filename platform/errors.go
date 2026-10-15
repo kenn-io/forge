@@ -43,6 +43,9 @@ const (
 	ErrCodeUnsupportedMediaType PlatformErrorCode = "unsupported_media_type"
 	// ErrCodeRangeNotSatisfiable marks an upstream 416 for a media Range.
 	ErrCodeRangeNotSatisfiable PlatformErrorCode = "range_not_satisfiable"
+	// ErrCodeMergeQueueRequired marks a direct merge the provider refused
+	// because the target branch only accepts merges through its merge queue.
+	ErrCodeMergeQueueRequired PlatformErrorCode = "merge_queue_required"
 )
 
 var (
@@ -58,6 +61,7 @@ var (
 	ErrRateLimited               = &Error{Code: ErrCodeRateLimited}
 	ErrStaleState                = &Error{Code: ErrCodeStaleState}
 	ErrPageLimit                 = &Error{Code: ErrCodePageLimit}
+	ErrMergeQueueRequired        = &Error{Code: ErrCodeMergeQueueRequired}
 )
 
 // ErrArchiveAttemptBudget is returned by budget-counting transports when an

@@ -559,6 +559,7 @@ func ProviderMutationProblem(err error, provider, host string) huma.StatusError 
 			platform.ErrCodeRateLimited,
 			platform.ErrCodeStaleState,
 			platform.ErrCodeConflict,
+			platform.ErrCodeMergeQueueRequired,
 			platform.ErrCodeUnsupportedMediaType,
 			platform.ErrCodeRangeNotSatisfiable:
 			return ProviderCallProblem(err, provider, host)

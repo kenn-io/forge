@@ -96,6 +96,9 @@ and the root event stream.
 - Bare `kenn-forge` is help-only, `serve` is foreground, and background
   lifecycle management is under `daemon start|status|stop|restart`
   (`cmd/kenn-forge/cli.go::newRootCommand`).
+- Development reloads must allow the full daemon shutdown budget; a short
+  Air or supervisor kill delay interrupts runtime cleanup
+  (`internal/shutdownbudget/budget.go::Total`).
 - Foreground listener flags belong only to `serve`; preserve explicit changed-state
   above environment values and redact endpoint credentials from startup source logs
   (`internal/cli/serve/serve.go::NewCommand`, `cmd/kenn-forge/main.go::logRuntimeConfig`).

@@ -26,7 +26,13 @@ processes:
     description: "Go backend with Air live reload on 127.0.0.1:8091"
     namespace: dev
     log_location: "tmp/logs/backend-process-compose.log"
-    command: "make frontend && sh ./scripts/dev-stack-backend.sh"
+    command: "make frontend && exec sh ./scripts/dev-stack-backend.sh"
+    availability:
+      restart: always
+      backoff_seconds: 5
+    shutdown:
+      signal: 2
+      timeout_seconds: 160
     # process-compose kills the backend when readiness exhausts its failures.
     # The first start after a pull runs the frontend build and a cold Go build
     # before the server listens, which can take several minutes.

@@ -70,10 +70,28 @@ describe("XtermTerminalPane appearance", () => {
 
   // Plain e-reader forces black ink (21:1); color e-reader keeps ANSI hues at
   // 7:1. WebGL output hides contrast, so read it from the live instance.
+  it("follows the app between light and dark", async () => {
+    const component = mountPane();
+    try {
+      expect(await viewportBackground()).toBe("rgb(217, 215, 211)");
+      const xterm = target.querySelector(".xterm");
+
+      switchTo("dark");
+      await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(13, 17, 23)"));
+
+      switchTo("light");
+      await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(217, 215, 211)"));
+      expect(component.appearanceOptions()?.minimumContrastRatio).toBe(4.5);
+      expect(target.querySelector(".xterm")).toBe(xterm);
+    } finally {
+      unmount(component);
+    }
+  });
+
   it("repaints the mounted terminal when entering and leaving e-reader modes", async () => {
     const component = mountPane();
     try {
-      expect(await viewportBackground()).toBe("rgb(13, 17, 23)");
+      expect(await viewportBackground()).toBe("rgb(217, 215, 211)");
       expect(component.appearanceOptions()?.minimumContrastRatio).toBe(4.5);
       const xterm = target.querySelector(".xterm");
 
@@ -86,7 +104,7 @@ describe("XtermTerminalPane appearance", () => {
       expect(await viewportBackground()).toBe("rgb(255, 255, 255)");
 
       switchTo("light");
-      await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(13, 17, 23)"));
+      await vi.waitFor(async () => expect(await viewportBackground()).toBe("rgb(217, 215, 211)"));
       expect(component.appearanceOptions()?.minimumContrastRatio).toBe(4.5);
       expect(target.querySelector(".xterm")).toBe(xterm);
     } finally {

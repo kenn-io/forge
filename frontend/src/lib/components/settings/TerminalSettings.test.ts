@@ -779,6 +779,31 @@ describe("TerminalSettings", () => {
     expect(screen.getByRole("dialog", { name: "Choose monospace font" })).toBeTruthy();
   });
 
+  it("explains when the browser shares no installed fonts", async () => {
+    const queryLocalFonts = vi.fn().mockResolvedValue([]);
+    vi.stubGlobal("queryLocalFonts", queryLocalFonts);
+
+    render(TerminalSettings, {
+      props: {
+        terminal: { ...mockTerminalStore.defaultTerminal },
+        onUpdate: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Choose" }));
+
+    expect(await screen.findByText(/did not share any installed fonts/)).toBeTruthy();
+    expect(screen.queryByText(/No local monospace fonts were found/)).toBeNull();
+
+    queryLocalFonts.mockResolvedValue([
+      { family: "Example Mono", fullName: "Example Mono", postscriptName: "ExampleMono", style: "Regular" },
+    ]);
+    await fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("button", { name: /Example Mono/ })).toBeTruthy();
+    expect(queryLocalFonts).toHaveBeenCalledTimes(2);
+  });
+
   it("persists a font selected from the chooser", async () => {
     const selectedFontFamily = '"Fira Code", monospace';
     mockUpdateSettings.mockResolvedValue({

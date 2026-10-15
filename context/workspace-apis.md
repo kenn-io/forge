@@ -272,9 +272,15 @@ embedder protocol for arbitrary host state.
 - Failed enrichment retains last-known-good values and component-owned errors;
   one component's success clears only its own error
   (`internal/server/workspaceapi/workspace_enrichment.go::recordWorkspaceEnrichmentResult`).
+- A partial tmux probe replaces last-known-good only when an answering session shows
+  the agent working; idle partials and failed sessions' fallback samples cannot, since
+  the failed session may be the working one (`internal/server/workspaceapi/routes_handlers.go::Handler.applyWorkspaceTmuxEnrichment`).
 - Each workspace admits one background enrichment flight at a time; a full
   refresh upgrade waits behind active tmux work, and only the matching unique
   flight may release ownership (`internal/server/workspaceapi/workspace_enrichment.go::nextWorkspaceEnrichmentJob`).
+- Do not rely on cached earlier tmux sessions to rescue later probes under load;
+  samples expire before the next enrichment refresh, so each pass needs sibling progress
+  (`internal/server/workspaceapi/routes_handlers.go::probeWorkspaceTmuxActivity`).
 - Overlapping tmux probes wait for the active sample within the caller budget;
   fallback carries an error only when waiting or sample production fails
   (`internal/server/workspaceapi/routes_handlers.go::probeOneTmuxSession`).
@@ -433,13 +439,16 @@ without replacing explicit or implicit user exclusion rules. That exclude copies
 the user's rules, so each agent launch rebuilds it from the current rules; the
 refresh is best-effort and never blocks the launch
 (`internal/workspace/repository_hooks.go::refreshManagedCloneExclude`). A custom effective
-hooks directory is a setup error; shared hook changes roll back unless
+hooks directory prevents hook initialization; shared hook changes roll back unless
 registration succeeds.
 Only regular root config files on that commit are trusted; a workspace Roborev
 snapshot path must match it or use `.roborev`. Registration confirmation, final
 route validation, and rollback stay under the repository lock; cache invalidation
 follows lock release
 (`internal/workspace/repository_hooks.go::Manager.setupManagedRepositoryHooks`).
+Roborev initialization is optional: failures warn without blocking workspace,
+terminal, or agent access. Repository identity validation remains mandatory
+(`internal/workspace/manager.go::Manager.SetupWithOptions`).
 
 Consolidate reusable worktree lifecycle in the public `kwt` library, reusing Kit
 underneath. Add needed customization in `kwt` while preserving existing Forge

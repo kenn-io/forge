@@ -170,7 +170,8 @@ For pull requests, that means:
   is resolved and the archived and removed-upstream checks pass: watched,
   relay, and manual syncs and the scheduled refresh of dormant pull requests.
   Bulk hydration, which marks details fresh and so postpones that scheduled
-  refresh, checks each pull request at most hourly. Manual refresh, an
+  refresh, checks each pull request at most hourly, counting failed reads as
+  checks so a refused queue read is not retried on every pass. Manual refresh, an
   enqueue, and repository passes for pull requests last seen queued read it
   directly. The async merge API cannot replace this: its
   `enqueued` result is final

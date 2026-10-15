@@ -5,7 +5,7 @@
   import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
-  import { isColorEReader, isEReader } from "../../stores/theme.svelte.js";
+  import { isColorEReader, isDark, isEReader } from "../../stores/theme.svelte.js";
   import { terminalAppearance } from "./terminal-appearance.js";
   import { Terminal } from "@xterm/xterm";
   import type { ILinkHandler } from "@xterm/xterm";
@@ -103,7 +103,9 @@
   let containerEl: HTMLElement;
   let terminal: Terminal | null = $state(null);
   const appearance = $derived(
-    terminalAppearance(isColorEReader() ? "e-reader-color" : isEReader() ? "e-reader" : "default"),
+    terminalAppearance(
+      isColorEReader() ? "e-reader-color" : isEReader() ? "e-reader" : isDark() ? "dark" : "light",
+    ),
   );
   let hoveredTerminalLink: string | null = $state(null);
   let fitAddon: FitAddon | null = null;

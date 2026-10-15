@@ -507,7 +507,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 	require.NoError(err)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 	workspaceTerminalConnWriteRead(
-		t, ctx, conn, "stty -echo\rprintf '%s\\n' $((40+2))\r", "42",
+		t, ctx, conn, "stty -echo\r"+`/bin/sh -c 'printf "%s\n" $((40+2))'`+"\r", "42",
 	)
 	// The spinner glyph is sent as printf octal escapes (\342\240\264
 	// is "⠴") so the typed line stays pure ASCII. Raw multibyte bytes
@@ -851,6 +851,10 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
 		TargetKey: string(localruntime.LaunchTargetPlainShell),
 	}})
+	if launchResp != nil && (err != nil || launchResp.StatusCode != http.StatusOK) {
+		t.Logf("runtime launch status=%d context=%v error=%v response=%s",
+			launchResp.StatusCode, ctx.Err(), err, launchResp.Body)
+	}
 	require.NoError(err)
 	require.Equal(http.StatusOK, launchResp.StatusCode, string(launchResp.Body))
 	require.NotNil(launchResp.JSON200)

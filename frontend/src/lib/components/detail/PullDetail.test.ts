@@ -1040,6 +1040,52 @@ describe("PullDetail provider workflow actions", () => {
 });
 
 describe("PullDetail activity refresh", () => {
+  it.each([
+    { provider: "gitlab" },
+    { platformHost: "code.example.com" },
+    { owner: "other-team", name: "other-widget", repoPath: "other-team/other-widget" },
+    { repositoryKey: { kind: "id", id: 7999 } },
+  ] satisfies Partial<ComponentProps<typeof PullDetailComponent>>[])(
+    "reloads merge settings after a repository change: %j",
+    async (next) => {
+      const detail = pullDetail();
+      detail.repo.capabilities.merge_mutation = true;
+      const initialSettings = {
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: false,
+        ViewerCanMerge: true,
+      };
+      const refreshedSettings = Promise.withResolvers<{ data: typeof initialSettings }>();
+      let refreshing = false;
+      const apiClient = {
+        GET: vi.fn(async () => (refreshing ? refreshedSettings.promise : { data: initialSettings })),
+        POST: vi.fn(async () => ({ data: {} })),
+      };
+      const { rerender } = renderPullDetail(detail, initialSettings, apiClient, {
+        detailProps: { repositoryKey: repositoryKeyFromWire(detail.repo) },
+      });
+      await screen.findByRole("button", { name: "Squash and merge" });
+
+      const initialReads = apiClient.GET.mock.calls.length;
+      refreshing = true;
+      detail.repo.provider = next.provider ?? detail.repo.provider;
+      detail.repo.platform_host = next.platformHost ?? detail.repo.platform_host;
+      detail.repo_owner = next.owner ?? detail.repo_owner;
+      detail.repo_name = next.name ?? detail.repo_name;
+      detail.repo.repo_path = next.repoPath ?? detail.repo.repo_path;
+      if (next.repositoryKey?.kind === "id") detail.repo.platform_repo_id = next.repositoryKey.id;
+      await rerender(next);
+      await waitFor(() => expect(apiClient.GET.mock.calls.length).toBeGreaterThan(initialReads));
+      expect(screen.queryByRole("button", { name: "Squash and merge" })).toBeNull();
+      refreshedSettings.resolve({
+        data: { ...initialSettings, AllowSquashMerge: false, AllowRebaseMerge: true },
+      });
+      expect(await screen.findByRole("button", { name: "Rebase and merge" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Squash and merge" })).toBeNull();
+    },
+  );
+
   it.each([false, true])("allows a cached pull draft only for the selected item (mismatch=%s)", async (mismatch) => {
     const detail = pullDetail();
     detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };

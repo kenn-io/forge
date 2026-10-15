@@ -1831,16 +1831,21 @@ func TestSetupCreatesPRWorktreeFromForkStyleWorktreeBase(t *testing.T) {
 	assert.Equal("upstream", remote)
 }
 
-func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
+func TestSetupWithOptionsKeepsWorkspaceUsableAfterRoborevFailure(t *testing.T) {
 	tests := []struct {
-		name     string
-		response string
-		wantErr  string
+		name           string
+		response       string
+		wantErr        string
+		initFail       bool
+		deactivateRepo bool
 	}{
 		{name: "registered repo without review jobs", response: "registered"},
 		{name: "malformed inventory", response: "malformed", wantErr: "invalid daemon response"},
 		{name: "missing total count", response: "missing total count", wantErr: "invalid daemon response"},
 		{name: "absent registration", response: "absent", wantErr: "workspace is absent"},
+		{name: "daemon unavailable", response: "unavailable", wantErr: "daemon returned status 503"},
+		{name: "initialization failure", initFail: true, wantErr: "initialization failed"},
+		{name: "repository removed during registration", response: "absent", deactivateRepo: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1887,6 +1892,7 @@ func TestSetupWithOptionsConfirmsRoborevBeforeTerminal(t *testing.T) {
 			binDir := t.TempDir()
 			roborevInvocations := filepath.Join(t.TempDir(), "roborev-invocations")
 			t.Setenv("ROBOREV_INVOCATIONS", roborevInvocations)
+			t.Setenv("ROBOREV_INIT_FAIL", strconv.FormatBool(tt.initFail))
 			require.NoError(os.WriteFile(filepath.Join(binDir, "roborev"), []byte(`#!/bin/sh
 set -eu
 printf 'run\n' >> "$ROBOREV_INVOCATIONS"
@@ -1895,11 +1901,24 @@ mkdir -p "$hooks"
 printf '\n# roborev post-commit hook\n' >> "$hooks/post-commit"
 printf '#!/bin/sh\n# roborev post-rewrite hook\n' > "$hooks/post-rewrite"
 chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
+if [ "$ROBOREV_INIT_FAIL" = true ]; then
+  echo 'initialization failed' >&2
+  exit 1
+fi
 `), 0o755))
 			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 			var ws *Workspace
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(http.MethodGet, r.Method)
+				assert.Equal("/api/repos", r.URL.Path)
+				if tt.deactivateRepo {
+					_, deactivateErr := d.DeactivateRepository(ctx, platform.RepositoryIdentity{
+						Provider: "github", PlatformHost: platformHost,
+						Key: platform.RepositoryIDKey(testRepoID("acme", "widget")),
+					})
+					assert.NoError(deactivateErr)
+				}
 				switch tt.response {
 				case "registered":
 					_ = json.NewEncoder(w).Encode(map[string]any{
@@ -1917,6 +1936,8 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 						"repos":       []map[string]string{},
 						"total_count": 0,
 					})
+				case "unavailable":
+					http.Error(w, "daemon unavailable", http.StatusServiceUnavailable)
 				}
 			}))
 			t.Cleanup(server.Close)
@@ -1936,10 +1957,33 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 			stored, getErr := d.GetWorkspace(ctx, ws.ID)
 			require.NoError(getErr)
 			require.NotNil(stored)
-			if tt.wantErr != "" {
-				require.ErrorContains(err, tt.wantErr)
+			if tt.deactivateRepo {
+				require.ErrorIs(err, db.ErrRepositoryIdentityChanged)
 				assert.Equal("error", stored.Status)
 				assert.NoFileExists(tmuxRecord)
+				return
+			}
+			require.NoError(err)
+			assert.Equal("ready", stored.Status)
+			assert.Nil(stored.ErrorMessage)
+			assert.FileExists(tmuxRecord)
+			require.NoError(mgr.PrepareAgentLaunchContext(ctx, PrepareAgentLaunchContextOptions{
+				WorkspaceID: ws.ID, TargetKey: "codex",
+			}))
+			assert.FileExists(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
+			events, eventErr := d.ListWorkspaceSetupEvents(ctx, ws.ID)
+			require.NoError(eventErr)
+			var hookEvent *db.WorkspaceSetupEvent
+			for i := range events {
+				assert.NotEqual("failure", events[i].Outcome)
+				if events[i].Stage == "repository_hooks" {
+					hookEvent = &events[i]
+				}
+			}
+			require.NotNil(hookEvent)
+			if tt.wantErr != "" {
+				assert.Equal("warning", hookEvent.Outcome)
+				assert.Contains(hookEvent.Message, tt.wantErr)
 				assert.Zero(invalidations.Load())
 				content, readErr := os.ReadFile(postCommitPath)
 				require.NoError(readErr)
@@ -1960,9 +2004,7 @@ chmod +x "$hooks/post-commit" "$hooks/post-rewrite"
 				return
 			}
 
-			require.NoError(err)
-			assert.Equal("ready", stored.Status)
-			assert.FileExists(tmuxRecord)
+			assert.Equal("success", hookEvent.Outcome)
 			assert.Equal(int32(1), invalidations.Load())
 			content, readErr := os.ReadFile(postCommitPath)
 			require.NoError(readErr)

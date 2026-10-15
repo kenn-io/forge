@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 	"uuid"
 
@@ -2152,8 +2153,7 @@ func (s *Handler) probeWorkspaceEnrichment(
 	}
 	var tmuxErr error
 	if plan.tmux {
-		tmuxErr = s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
-		result.tmuxComplete = tmuxErr == nil
+		result.tmuxComplete, tmuxErr = s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
 		result.tmuxErr = tmuxErr
 	}
 	err := errors.Join(gitStateErr, tmuxErr)
@@ -2184,9 +2184,9 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 	if s.workspaces == nil || summary.Status != "ready" {
 		return workspaceEnrichmentProbeResult{response: resp, kind: workspaceEnrichmentTmux}
 	}
-	err := s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
+	complete, err := s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
 	return workspaceEnrichmentProbeResult{
-		response: resp, tmuxComplete: err == nil, tmuxErr: err, err: err,
+		response: resp, tmuxComplete: complete, tmuxErr: err, err: err,
 		kind: workspaceEnrichmentTmux,
 	}
 }
@@ -2198,22 +2198,31 @@ func (s *Handler) workspaceResponseWithTmuxEnrichment(
 // tmux spawns to second-guess them. Such a workspace counts as a complete
 // tmux sample whose last-activity time is the hook report's own timestamp, so
 // subject activity feeds still see hook-driven work move.
+//
+// The returned bool reports whether resp is a sample worth caching. A probe
+// that failed for some sessions still counts when a session that answered
+// shows the agent working: a missing session cannot make that signal wrong.
+// A partial idle result does not count, because the failed session may be
+// the one that is working.
 func (s *Handler) applyWorkspaceTmuxEnrichment(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 	resp *workspaceResponse,
-) error {
+) (bool, error) {
 	if latest, ok := s.latestHookReportForWorkspace(summary); ok {
 		activityAt := latest.UpdatedAt.UTC().Format(time.RFC3339)
 		resp.TmuxLastOutputAt = &activityAt
-		return nil
+		return true, nil
 	}
 	sessions, sessionsErr := s.workspaceTmuxActivitySessions(ctx, summary)
-	activity, hasActivity, activityErr := s.probeWorkspaceTmuxActivity(ctx, summary, sessions)
+	activity, hasActivity, answeredWorking, activityErr := s.probeWorkspaceTmuxActivity(
+		ctx, summary, sessions,
+	)
 	if hasActivity {
 		applyTmuxActivity(resp, activity)
 	}
-	return errors.Join(sessionsErr, activityErr)
+	err := errors.Join(sessionsErr, activityErr)
+	return err == nil || answeredWorking, err
 }
 
 // latestHookReportForWorkspace returns the most recent hook report among the
@@ -2296,13 +2305,16 @@ func (s *Handler) workspaceTmuxActivitySessions(
 	return sessions, listErr
 }
 
+// probeWorkspaceTmuxActivity merges the activity of every session. The
+// second bool reports whether a session whose probe succeeded shows the
+// agent working; a failed session's fallback sample never counts.
 func (s *Handler) probeWorkspaceTmuxActivity(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 	sessions []string,
-) (tmuxActivityResult, bool, error) {
+) (tmuxActivityResult, bool, bool, error) {
 	if len(sessions) == 0 {
-		return tmuxActivityResult{}, false, nil
+		return tmuxActivityResult{}, false, false, nil
 	}
 	tracker := s.tmuxActivity
 	if tracker == nil {
@@ -2311,27 +2323,41 @@ func (s *Handler) probeWorkspaceTmuxActivity(
 	probeCtx, cancelProbe := context.WithTimeout(ctx, tmuxActivityProbeTimeout)
 	defer cancelProbe()
 
-	results := make([]tmuxActivityResult, 0, len(sessions))
-	var probeErrs []error
-	for _, session := range sessions {
-		if s.tmuxActivity != nil {
-			if result, ok := tracker.Cached(session); ok {
-				results = append(results, result)
-				continue
+	// One slow session must not spend the shared budget before healthy
+	// siblings can start. Every session waits for the tracker's probe slots,
+	// so the next free slot goes to whichever session is still waiting.
+	results := make([]tmuxActivityResult, len(sessions))
+	probeErrs := make([]error, len(sessions))
+	var probes sync.WaitGroup
+	for i, session := range sessions {
+		probes.Go(func() {
+			if s.tmuxActivity != nil {
+				if result, ok := tracker.Cached(session); ok {
+					results[i] = result
+					return
+				}
 			}
-		}
-		result, ok, err := s.probeOneTmuxSession(
-			probeCtx, tracker, summary, session,
-		)
-		if ok {
-			results = append(results, result)
-		}
-		if err != nil {
-			probeErrs = append(probeErrs, err)
+			result, ok, err := s.probeOneTmuxSession(
+				probeCtx, tracker, summary, session,
+			)
+			if ok {
+				results[i] = result
+			}
+			if err != nil {
+				probeErrs[i] = fmt.Errorf("tmux session %q: %w", session, err)
+			}
+		})
+	}
+	probes.Wait()
+	answeredWorking := false
+	for i := range results {
+		if probeErrs[i] == nil && results[i].Working {
+			answeredWorking = true
 		}
 	}
+	// Preserve session order for ties regardless of probe completion order.
 	result, ok := mergeTmuxActivityResults(results)
-	return result, ok, errors.Join(probeErrs...)
+	return result, ok, answeredWorking, errors.Join(probeErrs...)
 }
 
 func (s *Handler) probeOneTmuxSession(

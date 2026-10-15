@@ -131,12 +131,14 @@ func TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E(t *testing.T) { //nolin
 	// The base terminal pane receives the credential-sanitized full
 	// daemon environment through the env-file handoff: benign daemon
 	// variables stay usable while tokens never appear.
-	probe := "printf 'PROBE:%s:%s:%s:%s:%s:%s:%s\\n' \"$WKSP_BENIGN_PROXY\" " +
-		"\"${GITHUB_TOKEN:-unset}\" \"${KATA_AUTH_TOKEN:-unset}\" " +
-		"\"${KENN_FORGE_FORGEJO_TOKEN:-unset}\" " +
-		"\"${WORKSPACETEST_CUSTOM_TOKEN:-unset}\" " +
-		"\"${XDG_WORKSPACETEST_TOKEN:-unset}\" " +
-		"\"${TMUX:+tmux-set}\"\r"
+	// The base terminal uses the user's login shell, which may be fish. Keep
+	// POSIX parameter expansion inside an explicit sh child of that pane.
+	probe := `/bin/sh -c 'printf "PROBE:%s:%s:%s:%s:%s:%s:%s\n" "$WKSP_BENIGN_PROXY" ` +
+		`"${GITHUB_TOKEN:-unset}" "${KATA_AUTH_TOKEN:-unset}" ` +
+		`"${KENN_FORGE_FORGEJO_TOKEN:-unset}" ` +
+		`"${WORKSPACETEST_CUSTOM_TOKEN:-unset}" ` +
+		`"${XDG_WORKSPACETEST_TOKEN:-unset}" ` +
+		`"${TMUX:+tmux-set}"'` + "\r"
 	require.NoError(conn.Write(ctx, websocket.MessageBinary, []byte(probe)))
 	readCtx, cancelRead := context.WithTimeout(ctx, 15*time.Second)
 	defer cancelRead()

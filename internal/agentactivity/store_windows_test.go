@@ -31,19 +31,19 @@ func TestStoreRemoveWithOpenReports(t *testing.T) {
 			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
-			store := NewStore(t.TempDir())
+			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			store := NewStoreWithClock(t.TempDir(), func() time.Time { return now })
 			cwd := t.TempDir()
 			live := []string{"runtime"}
-			require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
-			require.Len(store.LiveReportsForWorkspace(cwd, live), 1)
 			survivors := []Report{}
 			if tc.otherLive {
 				require.NoError(store.Record("claude", "live", "runtime", cwd, StateWorking))
-				reports := store.LiveReportsForWorkspace(cwd, live)
-				require.Len(reports, 2)
-				survivors = reports[:1]
+				survivors = store.LiveReportsForWorkspace(cwd, live)
+				require.Len(survivors, 1)
 				require.Equal("live", survivors[0].SessionID)
 			}
+			require.NoError(store.Record("claude", "chat", "runtime", cwd, StateDone))
+			require.Len(store.LiveReportsForWorkspace(cwd, live), len(survivors)+1)
 			path := store.reportPath("claude", "chat", "runtime")
 			if tc.invalidContent {
 				require.NoError(os.WriteFile(path, []byte("invalid"), 0o600))

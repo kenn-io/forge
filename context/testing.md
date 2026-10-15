@@ -597,6 +597,10 @@ Async cache tests must observe the baseline through the consumer boundary
 before mutating inputs or advancing a fake clock; initial in-flight work can
 otherwise publish stale data at the new time. (`internal/server/workspacetest/workspace_enrichment_wire_test.go::TestWorkspaceListReportsCommitsAheadBehindE2E`)
 
+Workspace enrichment clocks must advance through failed attempts during polling;
+the retry TTL uses the same injected clock
+(`internal/server/workspacetest/workspace_enrichment_wire_test.go::waitForWorkspaceEnrichment`).
+
 When server e2e tests chain `POST /api/v1/sync` with another ad-hoc sync
 trigger, treat the HTTP 202 and DB row timestamps as intermediate observations.
 `TriggerRun` is non-blocking and single-flight; wait for `/api/v1/sync/status`

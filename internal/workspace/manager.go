@@ -1506,12 +1506,21 @@ func (m *Manager) SetupWithOptions(
 			"setting up managed repository hooks",
 		)
 		if err := m.setupManagedRepositoryHooks(ctx, commonDir, ws); err != nil {
-			return m.failSetup(ctx, ws.ID, workspaceSetupStageRepositoryHooks, err)
+			// Optional review tooling must not prevent access to the workspace.
+			slog.Warn("workspace Roborev setup incomplete", "workspace_id", ws.ID, "err", err)
+			m.recordSetupEvent(
+				ctx, ws.ID, workspaceSetupStageRepositoryHooks, "warning", err.Error(),
+			)
+		} else {
+			m.recordSetupEvent(
+				ctx, ws.ID, workspaceSetupStageRepositoryHooks, "success",
+				"managed repository hooks ready",
+			)
 		}
-		m.recordSetupEvent(
-			ctx, ws.ID, workspaceSetupStageRepositoryHooks, "success",
-			"managed repository hooks ready",
-		)
+		// Repository validity remains required even when hook setup failed.
+		if err := m.verifyWorkspaceRepository(ctx, ws); err != nil {
+			return m.failSetup(ctx, ws.ID, workspaceSetupStageWorktree, err)
+		}
 	}
 
 	nextStage(workspaceSetupStageTmuxSession)

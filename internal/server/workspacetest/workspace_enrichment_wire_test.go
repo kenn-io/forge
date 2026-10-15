@@ -1,6 +1,7 @@
 package workspacetest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server"
@@ -32,32 +34,17 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		},
 	})
 	ws := createReadyWorkspace(t, t.Context(), fixture.client)
-	workspaceByID := func() *generated.WorkspaceResponse {
-		resp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
-		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {
-			return nil
-		}
-		for i := range resp.JSON200.Workspaces {
-			candidate := &resp.JSON200.Workspaces[i]
-			if candidate.ID == ws.ID {
-				return candidate
-			}
-		}
-		return nil
-	}
-	require.Eventually(func() bool {
-		initial := workspaceByID()
+	waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, func(initial *generated.WorkspaceResponse) bool {
 		return initial != nil && initial.CommitsAhead != nil && initial.CommitsBehind != nil &&
 			initial.WorktreeDirty != nil && *initial.CommitsAhead == 0 &&
 			*initial.CommitsBehind == 0 && !*initial.WorktreeDirty
-	}, 10*time.Second, 10*time.Millisecond)
+	})
 
 	gitfixture.Run(t, ws.WorktreePath, "update-ref", "-d", "refs/remotes/origin/feature")
-	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())
-	require.Eventually(func() bool {
-		found := workspaceByID()
+	clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
+	waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, func(found *generated.WorkspaceResponse) bool {
 		return found != nil && found.BranchUpstreamMissing != nil && *found.BranchUpstreamMissing
-	}, 10*time.Second, 10*time.Millisecond)
+	})
 
 	includePeers := false
 	fleetResponse, err := fixture.client.HTTP.GetSnapshotWithResponse(t.Context(), &generated.GetSnapshotRequestOptions{Query: &generated.GetSnapshotQuery{IncludePeers: &includePeers}})
@@ -86,15 +73,13 @@ func TestWorkspaceListReportsCommitsAheadBehindE2E(t *testing.T) {
 		gitfixture.Run(t, ws.WorktreePath, "commit", "-m", name)
 	}
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "uncommitted.txt"), []byte("dirty\n"), 0o644))
-	clockNow.Store(now.Add(2*workspaceapi.EnrichmentTTL + 2*time.Second).UnixNano())
+	clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
 
-	var found *generated.WorkspaceResponse
-	require.Eventually(func() bool {
-		found = workspaceByID()
+	found := waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, func(found *generated.WorkspaceResponse) bool {
 		return found != nil && found.CommitsAhead != nil && found.CommitsBehind != nil &&
 			found.WorktreeDirty != nil && *found.CommitsAhead == 2 &&
 			*found.CommitsBehind == 0 && *found.WorktreeDirty
-	}, 10*time.Second, 10*time.Millisecond)
+	})
 	require.NotNil(found)
 	assert.Equal(int64(2), *found.CommitsAhead)
 	assert.Equal(int64(0), *found.CommitsBehind)
@@ -150,43 +135,27 @@ func TestWorkspaceListReportsForkPullRequestDivergenceE2E(t *testing.T) {
 	require.NotNil(created.JSON202)
 	ws := waitForWorkspaceReady(t, t.Context(), fixture.client, created.JSON202.ID)
 
-	workspaceByID := func() *generated.WorkspaceResponse {
-		resp, err := fixture.client.HTTP.ListWorkspacesWithResponse(t.Context())
-		if err != nil || resp.JSON200 == nil || resp.JSON200.Workspaces == nil {
-			return nil
-		}
-		for i := range resp.JSON200.Workspaces {
-			candidate := &resp.JSON200.Workspaces[i]
-			if candidate.ID == ws.ID {
-				return candidate
-			}
-		}
-		return nil
-	}
-	countsAre := func(ahead, behind int64) func() bool {
-		return func() bool {
-			found := workspaceByID()
+	countsAre := func(ahead, behind int64) func(*generated.WorkspaceResponse) bool {
+		return func(found *generated.WorkspaceResponse) bool {
 			return found != nil && found.CommitsAhead != nil && found.CommitsBehind != nil &&
 				*found.CommitsAhead == ahead && *found.CommitsBehind == behind
 		}
 	}
-	require.Eventually(countsAre(0, 0), 10*time.Second, 10*time.Millisecond)
+	waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, countsAre(0, 0))
 
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	gitfixture.Run(t, ws.WorktreePath, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "local.txt"), []byte("local\n"), 0o644))
 	gitfixture.Run(t, ws.WorktreePath, "add", ".")
 	gitfixture.Run(t, ws.WorktreePath, "commit", "-m", "local only")
-	clockNow.Store(now.Add(workspaceapi.EnrichmentTTL + time.Second).UnixNano())
-	require.Eventually(countsAre(1, 0), 10*time.Second, 10*time.Millisecond)
+	clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
+	waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, countsAre(1, 0))
 
 	// The contributor pushes; the next clone fetch moves the provider head ref.
 	gitfixture.Run(t, ws.WorktreePath, "update-ref", "refs/pull/2/head", "HEAD")
 	gitfixture.Run(t, ws.WorktreePath, "reset", "--hard", "HEAD~1")
-	clockNow.Store(now.Add(2*workspaceapi.EnrichmentTTL + 2*time.Second).UnixNano())
-	require.Eventually(countsAre(0, 1), 10*time.Second, 10*time.Millisecond)
-
-	found := workspaceByID()
+	clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
+	found := waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, countsAre(0, 1))
 	require.NotNil(found)
 	require.NotNil(found.CommitsVsPrHead)
 	assert.True(*found.CommitsVsPrHead,
@@ -208,4 +177,97 @@ func TestWorkspaceListReportsForkPullRequestDivergenceE2E(t *testing.T) {
 	require.NotNil(fleetWorkspace)
 	require.NotNil(fleetWorkspace.CommitsVsPrHead)
 	assert.True(*fleetWorkspace.CommitsVsPrHead)
+}
+
+func waitForWorkspaceEnrichment(
+	t *testing.T,
+	client *apiclient.Client,
+	workspaceID string,
+	clockNow *atomic.Int64,
+	matches func(*generated.WorkspaceResponse) bool,
+) *generated.WorkspaceResponse {
+	t.Helper()
+	require := require.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	lastEnrichmentError := ""
+	loggedEnrichmentError := ""
+	lastResponse := ""
+	for {
+		started := time.Now()
+		resp, err := client.HTTP.ListWorkspacesWithResponse(ctx)
+		if resp != nil {
+			lastResponse = string(resp.Body)
+		}
+		require.NoError(err, "request elapsed=%s context=%v last enrichment error=%q response=%s",
+			time.Since(started), ctx.Err(), lastEnrichmentError, lastResponse)
+		require.NotNil(resp.JSON200, "context=%v response=%s", ctx.Err(), lastResponse)
+		for i := range resp.JSON200.Workspaces {
+			candidate := &resp.JSON200.Workspaces[i]
+			if candidate.ID != workspaceID {
+				continue
+			}
+			if matches(candidate) {
+				return candidate
+			}
+			if candidate.EnrichmentError != nil {
+				lastEnrichmentError = *candidate.EnrichmentError
+			}
+			if candidate.EnrichmentStatus == "failed" {
+				// Failed probes use the same TTL as successful refreshes. Keep the
+				// controlled clock moving so each failed attempt can retry.
+				clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
+				if lastEnrichmentError != loggedEnrichmentError {
+					t.Logf("advancing enrichment retry clock after: %s", lastEnrichmentError)
+					loggedEnrichmentError = lastEnrichmentError
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			require.NoError(ctx.Err(), "workspace enrichment did not converge: %s", resp.Body)
+		case <-ticker.C:
+		}
+	}
+}
+
+func TestWorkspaceListEnrichmentRetriesAfterProbeFailureE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
+	require := require.New(t)
+	var clockNow atomic.Int64
+	clockNow.Store(time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC).UnixNano())
+	fixture := setupWorkspaceServerFixture(t, nil, server.ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+		PtyOwnerInProcess:                  true,
+		WorkspaceNow:                       func() time.Time { return time.Unix(0, clockNow.Load()).UTC() },
+	})
+	ws := createReadyWorkspace(t, t.Context(), fixture.client)
+	countsReady := func(found *generated.WorkspaceResponse) bool {
+		return found.CommitsAhead != nil && found.CommitsBehind != nil &&
+			*found.CommitsAhead == 0 && *found.CommitsBehind == 0 && found.EnrichmentError == nil
+	}
+	waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, countsReady)
+
+	// Make one real Git probe fail, then restore the same worktree before retrying.
+	offlinePath := ws.WorktreePath + "-offline"
+	require.NoError(os.Rename(ws.WorktreePath, offlinePath))
+	offline := true
+	t.Cleanup(func() {
+		if offline {
+			require.NoError(os.Rename(offlinePath, ws.WorktreePath))
+		}
+	})
+	clockNow.Add(int64(workspaceapi.EnrichmentTTL + time.Second))
+	failed := waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow,
+		func(found *generated.WorkspaceResponse) bool { return found.EnrichmentStatus == "failed" })
+	require.NotNil(failed.EnrichmentError)
+	require.NoError(os.Rename(offlinePath, ws.WorktreePath))
+	offline = false
+
+	recovered := waitForWorkspaceEnrichment(t, fixture.client, ws.ID, &clockNow, countsReady)
+	require.Nil(recovered.EnrichmentError)
+	require.Equal(int64(0), *recovered.CommitsAhead)
+	require.Equal(int64(0), *recovered.CommitsBehind)
 }

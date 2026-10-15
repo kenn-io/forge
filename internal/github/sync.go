@@ -885,7 +885,11 @@ type Syncer struct {
 	// credential was refused the merge queue, so reads use the write
 	// credential until mergeQueueReadRecheck passes.
 	mergeQueueReadDenied sync.Map
-	onStatusChange       func(status *SyncStatus)
+	// mergeQueueBulkChecked records, per repository and pull request, when
+	// bulk hydration last tried to read its queue state, so a read that
+	// keeps failing waits out mergeQueueBulkRecheck like a successful one.
+	mergeQueueBulkChecked sync.Map
+	onStatusChange        func(status *SyncStatus)
 	// onNotificationSyncComplete fires after each notification sync run
 	// (periodic, manual, or sidecar) so the server can broadcast the same
 	// data-change signal the normal sync uses. Notification sync can insert

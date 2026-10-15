@@ -58,6 +58,12 @@ fixtures, or changing shell-script coverage.
   load-sensitive sync E2Es; those flows belong in full Go lanes (`cmd/kenn-forge/lock_e2e_test.go::buildForgeWithLDFlags`, `internal/server/e2etest/sync_cooldown_test.go::TestTriggerSyncE2EPrioritizesNonDefaultHostFilter`).
 - Race tests must synchronize at the narrow boundary under test; do not put a short
   wall-clock deadline around an entire sync pipeline (`internal/github/sync_test.go::TestResolveDisplayNameDedupsConcurrentLookups`).
+- Eventual-poll callbacks can outlive their test; return errors to the test goroutine
+  or use `CollectT` assertions so late failures cannot panic the whole package
+  (`internal/server/tmux_wrapper_test.go::TestWorkspaceSetupResourceExhaustionGetsHelpfulErrorViaAPI`).
+- Real CLI confirmation prompts may render before their input guard settles; wait
+  for a stable selection before submitting the test's explicit decision
+  (`internal/workspace/localruntime/agent_initial_message_test.go::TestClaudeInitialMessageWaitsForTrustWithRealCLI`).
 - Filesystem writes are not a deterministic event burst under load. Test debounce timing
   with controlled event channels and `synctest`; keep real filesystem tests for delivery
   (`internal/configwatch/watcher_test.go::TestWatcher_DebouncesBurst`).
@@ -95,6 +101,10 @@ fixtures, or changing shell-script coverage.
 - Fixed historical timestamps must use an explicit query window or controlled
   clock; rolling defaults otherwise make fixtures expire with wall time
   (`internal/server/e2etest/notifications_test.go::TestNotificationSyncReconcilesReusedRouteE2E`).
+- Config path assertions must expect physical directory identity; macOS temporary
+  parents can be symlink aliases (`internal/config/runtime_overrides_test.go::TestRuntimeEnvironmentOverlayAndSave`).
+- Base terminal tests inherit the user's login shell; run POSIX expansions through
+  an explicit `/bin/sh -c` (`internal/server/workspacetest/tmux_server_env_test.go::TestWorkspaceTmuxServerEnvironmentExcludesTokensE2E`).
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.

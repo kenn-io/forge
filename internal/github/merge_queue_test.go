@@ -725,3 +725,24 @@ func TestBulkHydrationChecksQueueStateAtMostHourly(t *testing.T) {
 	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
 	assert.EqualValues(2, gql.prReads.Load())
 }
+
+func TestBulkHydrationRetriesFailedQueueReadsAtMostHourly(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	// No credential may read the queue, so no read ever stores state.
+	app := &refusingApp{}
+	syncer, _, repo, repoID := newMergeQueueTestSyncer(t, app)
+	now := time.Now().UTC()
+	syncer.now = func() time.Time { return now }
+
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, app.reads.Load())
+
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(1, app.reads.Load(), "a failed read is not repeated on the next bulk pass")
+
+	now = now.Add(mergeQueueBulkRecheck + time.Minute)
+	syncer.refreshMergeQueueAfterBulkDetail(t.Context(), repo, repoID, 7)
+	assert.EqualValues(2, app.reads.Load())
+}

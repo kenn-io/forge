@@ -631,6 +631,18 @@
               </button>
             {/each}
           </div>
+        {:else if localFonts?.length === 0}
+          <p class="font-state">
+            The browser did not share any installed fonts. Allow local font
+            access for this site and try again, or type a font family manually.
+          </p>
+          <button
+            class="retry-fonts-btn"
+            type="button"
+            onclick={loadLocalFonts}
+          >
+            Try again
+          </button>
         {:else if localMonospaceFonts.length === 0}
           <p class="font-state">
             No local monospace fonts were found. You can still type a font

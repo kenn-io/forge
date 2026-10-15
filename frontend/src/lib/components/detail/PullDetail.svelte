@@ -1141,14 +1141,19 @@
     handleStateConflict(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
+  const mergeSettingsIdentity = $derived(JSON.stringify([
+    canonicalProvider(provider),
+    resolvedPlatformHost(provider, platformHost),
+    owner,
+    name,
+    repoPath,
+    repositoryKey ? repositoryKeyString(repositoryKey) : null,
+  ]));
+
   $effect(() => {
-    const selectedRef = {
-      provider: routeRef.provider,
-      platformHost: routeRef.platformHost,
-      owner: routeRef.owner,
-      name: routeRef.name,
-      repoPath: routeRef.repoPath,
-    };
+    // Feed refreshes replace route objects without changing the repository.
+    void mergeSettingsIdentity;
+    const selectedRef = untrack(() => ({ ...routeRef }));
     repoSettings = null;
     const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
       providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),

@@ -60,6 +60,9 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalLinkMouse`).
 - When a view changes from item A to item B, reset transient action state that
   could otherwise submit or render against the wrong item.
+- Repository-scoped detail reads must track identity values, not route-object references;
+  unchanged feed refreshes must retain loaded actions
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
   Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
   cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).

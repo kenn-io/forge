@@ -2838,6 +2838,7 @@ describe("WorkspaceListSidebar", () => {
     // Reopening the menu while the push runs shows it and blocks a second one.
     await fireEvent.contextMenu(row);
     expect(screen.getByRole("menuitem", { name: /Pushing\.\.\./ }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "Copy worktree path" }).getAttribute("aria-disabled")).toBe("true");
 
     push.resolve({ data: undefined, response: { ok: true, status: 200 } });
     await waitFor(() => {

@@ -1639,7 +1639,7 @@
         Copy branch name
       </MenuItem>
       {#if localWorkspace}
-        <MenuItem onselect={() => void copyMenuText(menuWorkspace.worktree_path, "Copied worktree path.")}>
+        <MenuItem disabled={actionBusy} onselect={() => void copyMenuText(menuWorkspace.worktree_path, "Copied worktree path.")}>
           {#snippet icon()}<CopyIcon size={14} />{/snippet}
           Copy worktree path
         </MenuItem>
@@ -1666,13 +1666,15 @@
       <MenuSeparator />
       <MenuItem
         disabled={deleteDisabled || menuWorkspace.status === "deleting"}
+        tone="danger"
         onselect={() => openDeleteWorkspaceDialog(menuWorkspace)}
       >
         {#snippet icon()}<Trash2Icon size={14} />{/snippet}
         {workspaceActionMatches(menuWorkspace, "delete") ? "Deleting..." : menuWorkspace.status === "deletion_failed" ? "Retry deletion..." : "Delete workspace..."}
       </MenuItem>
       {#if menuWorkspace.status === "deletion_failed"}
-        <MenuItem disabled={deleteDisabled} onselect={() => openDeleteWorkspaceDialog(menuWorkspace, true)}>
+        <MenuItem disabled={deleteDisabled} tone="danger" onselect={() => openDeleteWorkspaceDialog(menuWorkspace, true)}>
+          {#snippet icon()}<Trash2Icon size={14} />{/snippet}
           Force delete workspace...
         </MenuItem>
       {/if}

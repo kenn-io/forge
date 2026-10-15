@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
 
@@ -22,19 +22,22 @@ const tree: TreeNode = {
 };
 
 // The tree fills its parent, so give it a sized flex parent to lay out in.
-// Returns the label of the focused row, which lives in the tree's shadow root.
-async function renderTree(): Promise<() => string | null | undefined> {
+// Returns the element focused inside the tree's shadow root.
+async function renderTree(
+  onFileRename?: (from: string, to: string) => void,
+): Promise<() => Element | null | undefined> {
   const { container } = await render(FolderTree, {
-    props: { tree, gitEntries: [], activePath: null },
+    props: { tree, gitEntries: [], activePath: null, onFileRename },
   });
   container.style.cssText = "display: flex; flex-direction: column; height: 400px;";
   const host = container.querySelector(".folder-tree");
-  return () => host?.shadowRoot?.activeElement?.getAttribute("aria-label");
+  return () => host?.shadowRoot?.activeElement;
 }
 
 describe("folder tree context menu (browser)", () => {
   it("opens no menu on a folder and leaves the tree navigable", async () => {
-    const focusedRow = await renderTree();
+    const focused = await renderTree();
+    const focusedRow = () => focused()?.getAttribute("aria-label");
     const folder = page.getByRole("treeitem", { name: "guides" });
     await expect.element(folder).toBeVisible();
 
@@ -51,5 +54,22 @@ describe("folder tree context menu (browser)", () => {
     await renderTree();
     await page.getByRole("treeitem", { name: "README.md" }).click({ button: "right" });
     await expect.element(page.getByRole("menuitem", { name: /Rename/ })).toHaveFocus();
+  });
+
+  it("hands focus to the inline rename field and renames the file", async () => {
+    const onFileRename = vi.fn();
+    const focused = await renderTree(onFileRename);
+    await page.getByRole("treeitem", { name: "README.md" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: /Rename/ }).click();
+
+    await expect.poll(() => focused()?.tagName).toBe("INPUT");
+    // The menu finishes closing on a later frame; focus must still be in the field.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    expect(focused()?.tagName).toBe("INPUT");
+
+    const input = focused() as HTMLInputElement;
+    input.select();
+    await userEvent.keyboard("guide.md{Enter}");
+    await expect.poll(() => onFileRename.mock.calls).toEqual([["README.md", "guide.md"]]);
   });
 });

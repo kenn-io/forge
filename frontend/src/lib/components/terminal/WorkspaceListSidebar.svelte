@@ -30,7 +30,7 @@
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Effect, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -405,7 +405,7 @@
     return pinnedWorkspaceKeys.includes(workspaceRowKey(ws));
   }
 
-  function togglePin(ws: Workspace): void {
+  async function togglePin(ws: Workspace): Promise<void> {
     const key = workspaceRowKey(ws);
     pinnedWorkspaceKeys = isPinned(ws)
       ? pinnedWorkspaceKeys.filter((candidate) => candidate !== key)
@@ -413,6 +413,10 @@
     savePinnedWorkspaces(pinnedWorkspaceKeys);
     pinsCollapsed = false;
     closeContextMenu();
+    // Pinning moves the row into another list, replacing the element the
+    // menu would return focus to.
+    await tick();
+    rowEls[key]?.focus();
   }
 
   function setDisplayOption(
@@ -1604,7 +1608,7 @@
       {@const actionBusy = workspaceAction !== null}
       {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
       {@const deleteDisabled = actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
-      <MenuItem onselect={() => togglePin(menuWorkspace)}>
+      <MenuItem onselect={() => void togglePin(menuWorkspace)}>
         {#snippet icon()}
           {#if isPinned(menuWorkspace)}<PinOffIcon size={14} />{:else}<PinIcon size={14} />{/if}
         {/snippet}

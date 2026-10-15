@@ -1639,6 +1639,40 @@ describe("WorkspaceListSidebar", () => {
     },
   );
 
+  it("keeps focus on the workspace row after pinning and unpinning it", async () => {
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [
+          workspaceFixture({
+            id: "ws-focus",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "api",
+            number: 1,
+            title: "Focus workspace",
+          }),
+        ],
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Focus workspace");
+    const focusRow = () => screen.getByText("Focus workspace").closest(".ws-row") as HTMLElement;
+
+    const unpinnedRow = focusRow();
+    unpinnedRow.focus();
+    await fireEvent.contextMenu(unpinnedRow);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Pin workspace", exact: true }));
+    await waitFor(() => expect(document.activeElement).toBe(focusRow()));
+    expect(focusRow()).not.toBe(unpinnedRow);
+
+    const pinnedRow = focusRow();
+    await fireEvent.contextMenu(pinnedRow);
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Unpin workspace", exact: true }));
+    await waitFor(() => expect(document.activeElement).toBe(focusRow()));
+    expect(focusRow()).not.toBe(pinnedRow);
+  });
+
   it("pins only the chosen host when workspace IDs match", async () => {
     const local = workspaceFixture({
       id: "shared-id",

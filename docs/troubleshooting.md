@@ -198,11 +198,17 @@ If Roborev listens elsewhere, update the endpoint and restart Forge:
 endpoint = "http://127.0.0.1:17373"
 ```
 
-If workspace setup fails in the `repository_hooks` stage, check the error in
-the workspace setup history. Enabling **Initialize Roborev in managed clones**
-requires `roborev` on `PATH`, a running daemon, and a loopback HTTP endpoint.
-Fix the reported issue and retry the workspace; Forge keeps the created
-worktree but waits to start the terminal until hook setup succeeds.
+Enabling **Initialize Roborev in managed clones** requires `roborev` on `PATH`,
+a running daemon, and a loopback HTTP endpoint. Initialization failures appear
+in Forge's logs as `workspace Roborev setup incomplete`. Forge restores the
+previous hooks and still opens the workspace.
+
+After fixing the reported issue, retry from the workspace terminal, using
+the endpoint configured in Forge:
+
+```sh
+roborev --server http://127.0.0.1:7373 init --no-daemon
+```
 
 ## The database will not migrate
 

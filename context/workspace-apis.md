@@ -433,13 +433,16 @@ without replacing explicit or implicit user exclusion rules. That exclude copies
 the user's rules, so each agent launch rebuilds it from the current rules; the
 refresh is best-effort and never blocks the launch
 (`internal/workspace/repository_hooks.go::refreshManagedCloneExclude`). A custom effective
-hooks directory is a setup error; shared hook changes roll back unless
+hooks directory prevents hook initialization; shared hook changes roll back unless
 registration succeeds.
 Only regular root config files on that commit are trusted; a workspace Roborev
 snapshot path must match it or use `.roborev`. Registration confirmation, final
 route validation, and rollback stay under the repository lock; cache invalidation
 follows lock release
 (`internal/workspace/repository_hooks.go::Manager.setupManagedRepositoryHooks`).
+Roborev initialization is optional: failures warn without blocking workspace,
+terminal, or agent access. Repository identity validation remains mandatory
+(`internal/workspace/manager.go::Manager.SetupWithOptions`).
 
 Consolidate reusable worktree lifecycle in the public `kwt` library, reusing Kit
 underneath. Add needed customization in `kwt` while preserving existing Forge

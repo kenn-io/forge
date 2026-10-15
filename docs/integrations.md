@@ -27,8 +27,10 @@ Initialization applies only to Forge's managed clones. A repository configured
 with `worktree_base_path`, a source-browser clone, or another user-owned
 checkout keeps its existing user-managed hooks. Forge keeps each worktree's
 Roborev snapshot exclusion separate, so changing or removing one workspace
-does not hide paths in its siblings. Hook setup failures leave the workspace
-available for retry but do not start its terminal session.
+does not hide paths in its siblings. If hook setup fails, Forge records a warning
+and restores the previous hooks. The workspace still opens, with its terminal
+and agents available. See [Roborev troubleshooting](troubleshooting.md#the-roborev-daemon-is-not-reachable)
+to retry initialization separately.
 
 Open **Reviews** in a pull request's workspace panel or a local workspace.
 Forge loads jobs when you display the panel and scopes them to the workspace's

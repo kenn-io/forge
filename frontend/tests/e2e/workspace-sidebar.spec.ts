@@ -3677,7 +3677,7 @@ test.describe("workspace launcher", () => {
       firstLeafBorderRight: "0px",
       firstLeafToSplitLeft: 0,
       firstLeafToSplitTop: 0,
-      firstViewportBackground: "rgb(227, 217, 198)",
+      firstViewportBackground: "rgb(217, 215, 211)",
       firstViewportToLeafRight: 0,
       secondLeafBorderLeft: "0px",
       splitToTreeBottom: 0,

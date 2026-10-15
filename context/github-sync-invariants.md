@@ -187,6 +187,9 @@ For pull requests, that means:
   inherits an earlier attempt's number or departure, never resolves, and stays
   unknown until a queue read identifies it
   (`internal/db/queries_merge_queue.go::DB.RecordProvisionalMergeQueueEntry`).
+- Do not add guards for attempt-attribution races that need a concurrent
+  external enqueue, overlapping queue reads, or a lagging GitHub event count;
+  they are not real-world failures (maintainer decision).
 - Hosts whose schema rejects `mergeQueue` latch it off per fetcher until restart
   (`internal/github/merge_queue.go::isMergeQueueSchemaRejection`).
 

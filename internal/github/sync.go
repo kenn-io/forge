@@ -875,7 +875,15 @@ type Syncer struct {
 	// onMergeQueueChanged fires for each pull request whose merge queue
 	// membership, position, or state changed.
 	onMergeQueueChanged func(context.Context, int64, int)
-	onStatusChange      func(status *SyncStatus)
+	// mergeQueueCheckedAt records, per repository, when a repository pass
+	// last read the merge queue, so repositories without one are checked
+	// only every mergeQueueAbsentCheckInterval.
+	mergeQueueCheckedAt sync.Map
+	// mergeQueueReadDenied records, per repository, when the read
+	// credential was refused the merge queue, so reads use the write
+	// credential until mergeQueueReadRecheck passes.
+	mergeQueueReadDenied sync.Map
+	onStatusChange       func(status *SyncStatus)
 	// onNotificationSyncComplete fires after each notification sync run
 	// (periodic, manual, or sidecar) so the server can broadcast the same
 	// data-change signal the normal sync uses. Notification sync can insert
@@ -6287,7 +6295,7 @@ func (s *Syncer) indexSyncRepo(
 				s.markRepoFailed(repo, failMR)
 				// The queue read does not depend on the pull list, so a
 				// failing list must not freeze queue state.
-				s.RefreshMergeQueue(ctx, repo, repoID)
+				s.refreshMergeQueueIfDue(ctx, repo, repoID)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
@@ -6385,7 +6393,7 @@ func (s *Syncer) indexSyncRepo(
 	// partial pull failure still observes the queue.
 	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
 		disabledScope&failMR == 0 {
-		s.RefreshMergeQueue(ctx, repo, repoID)
+		s.refreshMergeQueueIfDue(ctx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.

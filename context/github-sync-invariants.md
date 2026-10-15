@@ -150,8 +150,11 @@ For pull requests, that means:
 ## Merge Queue Rules
 
 - Entering or leaving a merge queue does not change a pull request's
-  `updated_at`, so the ETag-gated list never sees it. Every repository pass
-  reads the default-branch queue, including on a 304 or a failed pull list.
+  `updated_at`, so the ETag-gated list never sees it. A repository pass reads
+  the default-branch queue, including on a 304 or a failed pull list, but only
+  for a repository with a known queue or pending departure; others are
+  re-checked every 6 hours, since reading every repository each pass spends
+  quota on empty answers (`internal/github/merge_queue.go::Syncer.refreshMergeQueueIfDue`).
   The watched lane re-reads queues holding a watched pull request it admitted,
   and an explicit pull request refresh re-reads a configured queue, or retries
   pending departures, even while scheduled sync is paused; archived
@@ -301,10 +304,13 @@ fallback repository listing.
 - GitHub.com merges are versioned asynchronous direct operations polled to terminal
   `merged`; `pending`/`enqueued` never count as merged. GHES stays synchronous with no
   probe fallback. (`platform/github/merge_async.go::Client.MergePullRequest`)
-- Merge queue reads run as the route's write (merge) credential when it differs
-  from the read credential, using that identity's GraphQL quota: merges run as
-  the user, and a sync GitHub App without the Merge queues permission is refused
-  the queue (`internal/github/merge_queue.go::Syncer.mergeQueueFetcher`).
+- Merge queue reads use the read credential first and fall back to the
+  route's separate write (merge) credential when GitHub refuses it ("Resource
+  not accessible by integration", a GitHub App without the Merge queues
+  permission). The fallback sticks per repository for an hour, then the read
+  credential is retried. The App permission is optional: it keeps reads on the
+  App's quota, and merging works without it
+  (`internal/github/merge_queue.go::Syncer.mergeQueueRead`).
 - GitHub's "Changes must be made through the merge queue" refusal of a direct
   merge is `platform.ErrMergeQueueRequired`; the merge handler then enqueues
   instead. Do not rely on synced queue state alone: a sync credential (such as

@@ -702,26 +702,36 @@ func TestRecordEnqueueKeepsAttemptIdentifiedByFollowingRead(t *testing.T) {
 	assert.Equal("branch_protection_failure", removal.Reason)
 }
 
-func TestMergeQueueReadsUseMergeCredential(t *testing.T) {
-	t.Parallel()
+// countingHandler counts requests to an inner handler.
+type countingHandler struct {
+	inner    http.Handler
+	requests atomic.Int32
+}
 
-	assert := assert.New(t)
-	require := require.New(t)
-	// The sync credential, like a GitHub App without merge queue access, is
-	// refused the queue; the user credential that merges can read it.
-	appGQL := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}},`+
-			`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue"],"message":"Resource not accessible by integration"}]}`)
-	})
-	userGQL := &mergeQueueGraphQL{}
-	userGQL.set(queuedPR7, "")
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, appGQL)
-	userSrv := httptest.NewServer(userGQL)
-	t.Cleanup(userSrv.Close)
-	appSrv := httptest.NewServer(appGQL)
+func (h *countingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.requests.Add(1)
+	h.inner.ServeHTTP(w, r)
+}
+
+// refusedMergeQueue answers like GitHub does for a GitHub App without the
+// Merge queues permission.
+var refusedMergeQueue = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = io.WriteString(w, `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}},`+
+		`"errors":[{"type":"FORBIDDEN","path":["repository","mergeQueue"],"message":"Resource not accessible by integration"}]}`)
+})
+
+// newSplitCredentialMergeQueueSyncer routes reads through app and writes
+// through user, like a GitHub App sync credential with a user merge token.
+func newSplitCredentialMergeQueueSyncer(
+	t *testing.T, app, user http.Handler,
+) (*Syncer, *db.DB, RepoRef, int64) {
+	t.Helper()
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, app)
+	appSrv := httptest.NewServer(app)
 	t.Cleanup(appSrv.Close)
-
+	userSrv := httptest.NewServer(user)
+	t.Cleanup(userSrv.Close)
 	router, err := NewHostRouter("github.com", &Route{
 		Key:    RouteKey{Host: "github.com", Owner: "acme"},
 		Client: &mockClient{},
@@ -734,8 +744,19 @@ func TestMergeQueueReadsUseMergeCredential(t *testing.T) {
 		ReadIdentity:  IdentityKey{Host: "github.com", Principal: "app:1"},
 		WriteIdentity: IdentityKey{Host: "github.com", Principal: "user:7"},
 	})
-	require.NoError(err)
+	require.NoError(t, err)
 	syncer.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	return syncer, database, repo, repoID
+}
+
+func TestMergeQueueReadsFallBackToMergeCredentialWhenAppIsRefused(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	user := &mergeQueueGraphQL{}
+	user.set(queuedPR7, "")
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, refusedMergeQueue, user)
 
 	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
 	queue, err := database.GetRepoMergeQueue(t.Context(), repoID)
@@ -745,4 +766,93 @@ func TestMergeQueueReadsUseMergeCredential(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(entry)
 	assert.Equal(1, entry.Position)
+}
+
+func TestMergeQueueReadsStayOnAppWhenItHasPermission(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	app := &mergeQueueGraphQL{}
+	app.set(queuedPR7, "")
+	user := &countingHandler{inner: refusedMergeQueue}
+	syncer, _, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	require.Zero(user.requests.Load(), "a permitted App must not spend the merge credential's quota")
+}
+
+func TestRefusedAppIsRetriedAfterRecheckWindow(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	app := &countingHandler{inner: refusedMergeQueue}
+	user := &mergeQueueGraphQL{}
+	user.set(queuedPR7, "")
+	syncer, _, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	now := time.Date(2026, time.October, 15, 3, 0, 0, 0, time.UTC)
+	syncer.now = func() time.Time { return now }
+
+	require.True(syncer.RefreshMergeQueue(t.Context(), repo, repoID))
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	assert.EqualValues(1, app.requests.Load(), "a refused App is not asked again inside the recheck window")
+
+	now = now.Add(mergeQueueReadRecheck + time.Minute)
+	syncer.RefreshMergeQueue(t.Context(), repo, repoID)
+	assert.EqualValues(2, app.requests.Load(), "the App is tried again once the window passes")
+}
+
+// mergeQueueQueryCounter answers merge queue reads with response and counts
+// them; other GraphQL reads get empty lists.
+type mergeQueueQueryCounter struct {
+	response string
+	queries  atomic.Int32
+}
+
+func (c *mergeQueueQueryCounter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case bytes.Contains(body, []byte("mergeQueue")):
+		c.queries.Add(1)
+		_, _ = io.WriteString(w, c.response)
+	case bytes.Contains(body, []byte("pullRequests")):
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequests":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+	default:
+		_, _ = io.WriteString(w, `{"data":{"repository":{"issues":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`)
+	}
+}
+
+func TestRepositoryPassesReadAbsentMergeQueueRarely(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := &mergeQueueQueryCounter{
+		response: `{"data":{"repository":{"defaultBranchRef":{"name":"main"},"mergeQueue":null}}}`,
+	}
+	client := &mockClient{listOpenPRsErr: notModifiedErr()}
+	syncer, _, _, _ := newMergeQueueTestSyncerWithClient(t, gql, client)
+	now := time.Now().UTC()
+	syncer.now = func() time.Time { return now }
+
+	syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
+	assert.EqualValues(1, gql.queries.Load(), "a repository without a merge queue is not re-read every pass")
+
+	now = now.Add(mergeQueueAbsentCheckInterval + time.Minute)
+	syncer.RunOnce(t.Context())
+	assert.EqualValues(2, gql.queries.Load(), "it is checked again once the interval passes")
+}
+
+func TestRepositoryPassesReadKnownMergeQueueEveryPass(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := &mergeQueueQueryCounter{response: queuedPR7}
+	client := &mockClient{listOpenPRsErr: notModifiedErr()}
+	syncer, _, _, _ := newMergeQueueTestSyncerWithClient(t, gql, client)
+
+	syncer.RunOnce(t.Context())
+	syncer.RunOnce(t.Context())
+	assert.EqualValues(2, gql.queries.Load(), "a repository with a merge queue is read every pass")
 }

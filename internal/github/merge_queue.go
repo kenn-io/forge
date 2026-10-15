@@ -221,13 +221,14 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 	if repoID <= 0 || repoPlatform(repo) != platform.KindGitHub {
 		return false
 	}
-	fetcher := s.mergeQueueFetcher(ctx, repo)
-	if fetcher == nil {
-		return false
-	}
 	observedAt := s.now().UTC()
-	snapshot, err := fetcher.FetchMergeQueue(ctx, repo.Owner, repo.Name)
-	if errors.Is(err, errMergeQueueUnsupported) {
+	var snapshot db.MergeQueueSnapshot
+	fetcher, err := s.mergeQueueRead(ctx, repo, func(fetcher *GraphQLFetcher) error {
+		var fetchErr error
+		snapshot, fetchErr = fetcher.FetchMergeQueue(ctx, repo.Owner, repo.Name)
+		return fetchErr
+	})
+	if errors.Is(err, errNoMergeQueueFetcher) || errors.Is(err, errMergeQueueUnsupported) {
 		return false
 	}
 	if err != nil {
@@ -259,38 +260,124 @@ func (s *Syncer) RefreshMergeQueue(ctx context.Context, repo RepoRef, repoID int
 	return len(changed) > 0
 }
 
-// mergeQueueFetcher returns the GraphQL fetcher for merge queue reads, or nil
-// when none may run now. Merge queue reads run as the write (merge) credential
-// when the repository's route has a separate one: the queue belongs with
-// merging, and a sync credential such as a GitHub App can be refused the
-// queue ("Resource not accessible by integration") while the user who merges
-// can read it. Otherwise they use the read credential.
-func (s *Syncer) mergeQueueFetcher(ctx context.Context, repo RepoRef) *GraphQLFetcher {
-	if repoPlatform(repo) != platform.KindGitHub {
-		return nil
+// mergeQueueAbsentCheckInterval is how often a repository pass re-reads a
+// repository whose last read found no merge queue, so a newly enabled queue is
+// noticed. Merge queues are rare and their configuration changes rarely, so
+// reading every repository on every pass would spend quota on empty answers.
+const mergeQueueAbsentCheckInterval = 6 * time.Hour
+
+// refreshMergeQueueIfDue reads the repository's merge queue on a repository
+// pass when it is worth a request: every pass for a repository with a known
+// queue or a departure still being resolved, and otherwise once per
+// mergeQueueAbsentCheckInterval. A merge GitHub refuses because the branch
+// requires the queue refreshes it immediately through RecordEnqueue.
+func (s *Syncer) refreshMergeQueueIfDue(ctx context.Context, repo RepoRef, repoID int64) {
+	if repoID <= 0 || repoPlatform(repo) != platform.KindGitHub {
+		return
 	}
-	if router := s.routers[repoHost(repo)]; router != nil {
-		if fetcher, err := router.WriteFetcherForRepo(repo.Owner, repo.Name); err == nil && fetcher != nil {
-			verdict := s.reserveVerdictForContext(
-				ctx, repo, QuotaResourceGraphQL, true, IsSyncBudgetContext(ctx),
-			)
-			if verdict.known {
-				if verdict.exhausted {
-					return nil
-				}
-				return fetcher
+	key := repoFailKey(repo)
+	queue, err := s.db.GetRepoMergeQueue(ctx, repoID)
+	if err != nil {
+		return
+	}
+	if queue == nil {
+		pending, err := s.db.ListPendingMergeQueueDepartures(ctx, repoID)
+		if err != nil {
+			return
+		}
+		if checkedAt, ok := s.mergeQueueCheckedAt.Load(key); ok && len(pending) == 0 {
+			if when, _ := checkedAt.(time.Time); s.now().Sub(when) < mergeQueueAbsentCheckInterval {
+				return
 			}
-			if backoff, _ := fetcher.ShouldBackoff(); backoff {
-				return nil
-			}
-			return fetcher
 		}
 	}
-	fetcher := s.fetcherForContext(ctx, repo)
-	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+	s.mergeQueueCheckedAt.Store(key, s.now())
+	s.RefreshMergeQueue(ctx, repo, repoID)
+}
+
+// mergeQueueReadRecheck is how long merge queue reads stay on the write
+// credential after the read credential was refused, before the read credential
+// is tried again. A permission granted later is picked up within this window.
+const mergeQueueReadRecheck = time.Hour
+
+// errNoMergeQueueFetcher reports that no credential may read the merge queue
+// right now, because none is configured or quota holds them back.
+var errNoMergeQueueFetcher = errors.New("no credential may read the merge queue now")
+
+// mergeQueueRead runs read with the repository's read credential, and retries
+// with the write (merge) credential when the read credential is refused the
+// merge queue. A sync GitHub App without the Merge queues permission is
+// refused ("Resource not accessible by integration") while the user who merges
+// can read it. Granting the App that permission keeps reads on the App's own
+// quota; without it, reads still work through the merge credential, which is
+// then used directly until mergeQueueReadRecheck passes. It returns the
+// fetcher that served the read.
+func (s *Syncer) mergeQueueRead(
+	ctx context.Context, repo RepoRef, read func(*GraphQLFetcher) error,
+) (*GraphQLFetcher, error) {
+	if repoPlatform(repo) != platform.KindGitHub {
+		return nil, errNoMergeQueueFetcher
+	}
+	writeFetcher := s.mergeQueueWriteFetcher(ctx, repo)
+	key := repoFailKey(repo)
+	if deniedAt, ok := s.mergeQueueReadDenied.Load(key); ok && writeFetcher != nil {
+		if when, _ := deniedAt.(time.Time); s.now().Sub(when) < mergeQueueReadRecheck {
+			return writeFetcher, read(writeFetcher)
+		}
+	}
+	readFetcher := s.fetcherForContext(ctx, repo)
+	if readFetcher == nil || !s.graphQLReadAllowed(ctx, repo, readFetcher) {
+		if writeFetcher == nil {
+			return nil, errNoMergeQueueFetcher
+		}
+		return writeFetcher, read(writeFetcher)
+	}
+	err := read(readFetcher)
+	if err == nil || writeFetcher == nil || !isMergeQueueReadRefused(err) {
+		if err == nil {
+			s.mergeQueueReadDenied.Delete(key)
+		}
+		return readFetcher, err
+	}
+	s.mergeQueueReadDenied.Store(key, s.now())
+	slog.Info("read credential refused the merge queue; reading it as the merge credential",
+		"repo", repo.Owner+"/"+repo.Name,
+	)
+	return writeFetcher, read(writeFetcher)
+}
+
+// mergeQueueWriteFetcher returns the repository's write-credential fetcher
+// when its route has one separate from the read credential and its GraphQL
+// quota allows a read, or nil.
+func (s *Syncer) mergeQueueWriteFetcher(ctx context.Context, repo RepoRef) *GraphQLFetcher {
+	router := s.routers[repoHost(repo)]
+	if router == nil {
+		return nil
+	}
+	fetcher, err := router.WriteFetcherForRepo(repo.Owner, repo.Name)
+	if err != nil || fetcher == nil {
+		return nil
+	}
+	verdict := s.reserveVerdictForContext(
+		ctx, repo, QuotaResourceGraphQL, true, IsSyncBudgetContext(ctx),
+	)
+	if verdict.known {
+		if verdict.exhausted {
+			return nil
+		}
+		return fetcher
+	}
+	if backoff, _ := fetcher.ShouldBackoff(); backoff {
 		return nil
 	}
 	return fetcher
+}
+
+// isMergeQueueReadRefused reports whether GitHub refused a merge queue read
+// for lack of permission, as it does for a GitHub App without the Merge
+// queues permission.
+func isMergeQueueReadRefused(err error) bool {
+	return strings.Contains(strings.ToLower(err.Error()), "resource not accessible by integration") //nolint:kennlint // githubv4 exposes GraphQL errors only as text
 }
 
 // RecordEnqueue tracks a pull request Forge just added to the merge queue.
@@ -416,11 +503,13 @@ func (s *Syncer) MergeQueueAttempts(ctx context.Context, repo RepoRef, number in
 	if repoPlatform(repo) != platform.KindGitHub {
 		return 0, false
 	}
-	fetcher := s.mergeQueueFetcher(ctx, repo)
-	if fetcher == nil {
-		return 0, false
-	}
-	outcome, found, err := fetcher.FetchMergeQueueOutcome(ctx, repo.Owner, repo.Name, number)
+	var outcome db.MergeQueueOutcome
+	var found bool
+	_, err := s.mergeQueueRead(ctx, repo, func(fetcher *GraphQLFetcher) error {
+		var fetchErr error
+		outcome, found, fetchErr = fetcher.FetchMergeQueueOutcome(ctx, repo.Owner, repo.Name, number)
+		return fetchErr
+	})
 	if err != nil || !found {
 		return 0, false
 	}

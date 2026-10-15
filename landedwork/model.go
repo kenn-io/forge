@@ -37,7 +37,11 @@ type Limits struct{ Records, Nodes, InputBytes, OutputBytes int64 }
 // Empty Before is the boundary before history, only for FromRoot intervals.
 type (
 	Span struct{ Before, Through string }
-	Gap  struct {
+	// Gap identifies the failed candidate/object and the check that prevented proof.
+	// Edit failures distinguish ambiguous removed text or insertion context,
+	// repeated source edits, empty diffs, invalid metadata, patch parsing and
+	// hunk validation. Reason tokens contain no file content or paths.
+	Gap struct {
 		CandidateID, ObjectID, Reason string
 		Span                          Span
 	}

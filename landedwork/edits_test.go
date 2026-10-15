@@ -25,8 +25,13 @@ func TestEditHunkBytes(t *testing.T) {
 }
 
 func TestEditMetadataRejectsTruncation(t *testing.T) {
-	for _, raw := range []string{":100644 100644\x00name\x00", ":100644 100644 a b M\x00name", "garbage"} {
-		_, err := parseEditFiles([]byte(raw))
+	for _, tc := range []struct{ raw, reason string }{
+		{":100644 100644\x00name\x00", "diff_metadata_invalid"},
+		{":100644 100644 a b M\x00name", "diff_metadata_invalid"},
+		{"garbage", "diff_metadata_truncated"},
+	} {
+		_, err := parseEditFiles([]byte(tc.raw))
 		require.ErrorIs(t, err, errEdits)
+		assert.Equal(t, tc.reason, editReason(err))
 	}
 }

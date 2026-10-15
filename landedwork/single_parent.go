@@ -78,8 +78,8 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 }
 
 func editReason(err error) string {
-	if errors.Is(err, errEdits) {
-		return "edits_unavailable"
+	if failure, ok := errors.AsType[editProofError](err); ok {
+		return string(failure)
 	}
 	return graphReason(err)
 }

@@ -178,7 +178,7 @@ func TestAutomaticAggregateCancellation(t *testing.T) {
 			assert.False(r.Coverage.Complete)
 			assert.Equal(f.base, r.Coverage.CertifiedHead)
 			require.Len(t, r.Coverage.Gaps, 1)
-			assert.Equal("edits_unavailable", r.Coverage.Gaps[0].Reason)
+			assert.Equal("empty_tree_edits", r.Coverage.Gaps[0].Reason)
 		} else {
 			require.Len(t, r.Landings, 1)
 			assert.Equal([]string{"squash"}, r.Landings[0].Proofs)

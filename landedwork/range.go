@@ -67,7 +67,7 @@ func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, source
 		if compareErr == nil {
 			for _, previous := range rewritten {
 				if sameEdits(previous, edits) {
-					compareErr = errEdits
+					compareErr = editProofError("repeated_source_edits")
 					break
 				}
 			}

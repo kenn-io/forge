@@ -138,3 +138,13 @@ it("sorts runs from the column headers and returns to provider order", async () 
   expect(order()).toEqual(["Run 42 Deploy", "Run 41 Build"]);
   expect(status.closest("th")?.hasAttribute("aria-sort")).toBe(false);
 });
+
+it("sorts runs by commit SHA", async () => {
+  const older: Run = { ...runs[0]!, id: "run-1", run_number: 41, name: "Build", head_sha: "00aa000000000000" };
+  render(WorkflowRunList, { runs: [runs[0]!, older], jobs: {}, jobErrors: {}, loadingJobs: [], onexpand: vi.fn() });
+  const order = () =>
+    screen.getAllByRole("button", { name: /^Run \d+/ }).map((button) => button.getAttribute("aria-label"));
+
+  await fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+  expect(order()).toEqual(["Run 41 Build", "Run 42 Deploy"]);
+});

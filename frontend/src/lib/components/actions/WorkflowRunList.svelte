@@ -18,7 +18,7 @@
 
   type Run = WorkflowRunResponse;
   type Job = WorkflowRunJobResponse;
-  type SortKey = "run" | "branch" | "actor" | "status" | "started";
+  type SortKey = "run" | "branch" | "actor" | "status" | "started" | "commit";
 
   interface Props {
     runs: readonly Run[];
@@ -56,6 +56,8 @@
           - workflowStatusPresentation(b.status, b.conclusion).rank;
       case "started":
         return (a.created_at ?? "").localeCompare(b.created_at ?? "");
+      case "commit":
+        return a.head_sha.localeCompare(b.head_sha);
     }
   }
 
@@ -108,7 +110,7 @@
       <TableHeaderCell label="Actor" class="runs-col-actor" sortable sortDirection={directionFor("actor")} onsort={() => sortBy("actor")} />
       <TableHeaderCell label="Status" class="runs-col-status" sortable sortDirection={directionFor("status")} onsort={() => sortBy("status")} />
       <TableHeaderCell label="Started" class="runs-col-started" sortable sortDirection={directionFor("started")} onsort={() => sortBy("started")} />
-      <TableHeaderCell label="Commit" class="runs-col-commit" />
+      <TableHeaderCell label="Commit" class="runs-col-commit" sortable sortDirection={directionFor("commit")} onsort={() => sortBy("commit")} />
       <TableHeaderCell class="runs-col-link"><span class="kit-sr-only">Provider link</span></TableHeaderCell>
     {/snippet}
     {#each sortedRuns as run (run.id)}

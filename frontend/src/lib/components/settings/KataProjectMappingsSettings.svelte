@@ -5,7 +5,7 @@
   import { Effect } from "effect";
   import { Typeahead, type SelectDropdownOption, type TypeaheadOption } from "@kenn-io/kit-ui";
   import { onDestroy, onMount } from "svelte";
-  import { Button, Chip, SelectDropdown } from "@kenn-io/kit-ui";
+  import { Button, Chip, SelectDropdown, Table } from "@kenn-io/kit-ui";
   import type { KataProjectRepoMapping } from "../../api/types.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
@@ -420,63 +420,63 @@
     {:else if !diagnostics || diagnostics.projects.length === 0}
       <p class="empty-mappings">This Kata daemon reports no projects.</p>
     {:else}
-      <div class="mapping-table-wrap">
-        <table class="mapping-table effective-table" aria-label="Effective Kata project mappings">
-          <thead>
-            <tr>
-              <th scope="col">Kata project</th>
-              <th scope="col">Repository target</th>
-              <th scope="col">Resolution</th>
-              <th scope="col" aria-label="Mapping actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each diagnostics.projects as project (project.project_uid)}
-              {@const inferredTarget = project.repo
-                ? repoOptionsByKey.get(repoKey(project.repo.provider, project.repo.platform_host, project.repo.repo_path))
-                : undefined}
-              <tr>
-                <td>
-                  <strong>{project.project_name || project.project_uid}</strong>
-                  <span class="mapping-meta">{project.project_uid}</span>
-                </td>
-                <td>
-                  {#if inferredTarget}
-                    <span>{inferredTarget.displayName}</span>
-                    <span class="mapping-meta">{inferredTarget.repo.repo_path}</span>
-                  {:else if project.repo}
-                    <span class="mapping-empty">No selectable repository</span>
-                    <span class="mapping-meta">Inferred repository: {project.repo.repo_path}</span>
-                  {:else}
-                    <span class="mapping-empty">No inferred project</span>
-                  {/if}
-                </td>
-                <td>
-                  <Chip size="xs" tone={statusTone(project.status)} uppercase={false}>
-                    {statusLabel(project.status)}
-                  </Chip>
-                  <span class="mapping-meta">{sourceLabel(project.source)}</span>
-                </td>
-                <td class="action-cell">
-                  {#if !project.source?.startsWith("manual_")}
-                    <Button
-                      size="sm"
-                      surface="outline"
-                      type="button"
-                      onclick={() => addOverride(project)}
-                      disabled={saving || repoOptions.length === 0}
-                    >
-                      Add override
-                    </Button>
-                  {:else}
-                    <span class="mapping-meta">Edit below</span>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <Table
+        unsorted
+        ariaLabel="Effective Kata project mappings"
+        zebra={false}
+        stickyHeader={false}
+        class="mapping-table-wrap effective-table"
+      >
+        {#snippet header()}
+          <th scope="col">Kata project</th>
+          <th scope="col">Repository target</th>
+          <th scope="col">Resolution</th>
+          <th scope="col" aria-label="Mapping actions"></th>
+        {/snippet}
+        {#each diagnostics.projects as project (project.project_uid)}
+          {@const inferredTarget = project.repo
+            ? repoOptionsByKey.get(repoKey(project.repo.provider, project.repo.platform_host, project.repo.repo_path))
+            : undefined}
+          <tr>
+            <td>
+              <strong>{project.project_name || project.project_uid}</strong>
+              <span class="mapping-meta">{project.project_uid}</span>
+            </td>
+            <td>
+              {#if inferredTarget}
+                <span>{inferredTarget.displayName}</span>
+                <span class="mapping-meta">{inferredTarget.repo.repo_path}</span>
+              {:else if project.repo}
+                <span class="mapping-empty">No selectable repository</span>
+                <span class="mapping-meta">Inferred repository: {project.repo.repo_path}</span>
+              {:else}
+                <span class="mapping-empty">No inferred project</span>
+              {/if}
+            </td>
+            <td>
+              <Chip size="xs" tone={statusTone(project.status)} uppercase={false}>
+                {statusLabel(project.status)}
+              </Chip>
+              <span class="mapping-meta">{sourceLabel(project.source)}</span>
+            </td>
+            <td class="action-cell">
+              {#if !project.source?.startsWith("manual_")}
+                <Button
+                  size="sm"
+                  surface="outline"
+                  type="button"
+                  onclick={() => addOverride(project)}
+                  disabled={saving || repoOptions.length === 0}
+                >
+                  Add override
+                </Button>
+              {:else}
+                <span class="mapping-meta">Edit below</span>
+              {/if}
+            </td>
+          </tr>
+        {/each}
+      </Table>
     {/if}
   </section>
 
@@ -504,73 +504,67 @@
           : "No manual Kata project mappings configured."}
       </p>
     {:else}
-      <div class="mapping-table-wrap">
-        <table class="mapping-table" aria-label="Kata project mappings">
-          <colgroup>
-            <col class="daemon-col" />
-            <col class="project-col" />
-            <col class="repo-col" />
-            <col class="action-col" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">Daemon</th>
-              <th scope="col">Project UID</th>
-              <th scope="col">Repository target</th>
-              <th scope="col" aria-label="Mapping actions"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each drafts as draft, index (draft.id)}
-              {@const label = rowLabel(draft, index)}
-              <tr>
-                <td>
-                  <input
-                    bind:value={draft.daemonID}
-                    placeholder="Any daemon"
-                    disabled={saving}
-                    aria-label={`Kata project ${label} daemon ID`}
-                  />
-                </td>
-                <td>
-                  <input
-                    bind:value={draft.projectUID}
-                    disabled={saving}
-                    aria-label={`Kata project ${label} UID`}
-                  />
-                </td>
-                <td>
-                  <Typeahead
-                    value={draft.repoKey}
-                    options={repoTypeaheadOptions}
-                    fallbackLabel="Select a repository"
-                    placeholder={`Kata project ${label} repository target`}
-                    emptyLabel="No matching repositories"
-                    onselect={(value) => {
-                      draft.repoKey = value;
-                    }}
-                    disabled={saving}
-                  />
-                </td>
-                <td class="action-cell">
-                  <Button
-                    size="sm"
-                    tone="danger"
-                    surface="outline"
-                    type="button"
-                    onclick={() => removeMapping(draft.id)}
-                    disabled={saving}
-                    ariaLabel={`Remove Kata project mapping ${label}`}
-                    title={`Remove Kata project mapping ${label}`}
-                  >
-                    <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
-                  </Button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
+      <Table
+        unsorted
+        ariaLabel="Kata project mappings"
+        zebra={false}
+        stickyHeader={false}
+        class="mapping-table-wrap"
+      >
+        {#snippet header()}
+          <th scope="col" class="daemon-col">Daemon</th>
+          <th scope="col" class="project-col">Project UID</th>
+          <th scope="col" class="repo-col">Repository target</th>
+          <th scope="col" class="action-col" aria-label="Mapping actions"></th>
+        {/snippet}
+        {#each drafts as draft, index (draft.id)}
+          {@const label = rowLabel(draft, index)}
+          <tr>
+            <td>
+              <input
+                bind:value={draft.daemonID}
+                placeholder="Any daemon"
+                disabled={saving}
+                aria-label={`Kata project ${label} daemon ID`}
+              />
+            </td>
+            <td>
+              <input
+                bind:value={draft.projectUID}
+                disabled={saving}
+                aria-label={`Kata project ${label} UID`}
+              />
+            </td>
+            <td>
+              <Typeahead
+                value={draft.repoKey}
+                options={repoTypeaheadOptions}
+                fallbackLabel="Select a repository"
+                placeholder={`Kata project ${label} repository target`}
+                emptyLabel="No matching repositories"
+                onselect={(value) => {
+                  draft.repoKey = value;
+                }}
+                disabled={saving}
+              />
+            </td>
+            <td class="action-cell">
+              <Button
+                size="sm"
+                tone="danger"
+                surface="outline"
+                type="button"
+                onclick={() => removeMapping(draft.id)}
+                disabled={saving}
+                ariaLabel={`Remove Kata project mapping ${label}`}
+                title={`Remove Kata project mapping ${label}`}
+              >
+                <TrashIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            </td>
+          </tr>
+        {/each}
+      </Table>
     {/if}
   </section>
 
@@ -631,31 +625,30 @@
     line-height: 1.4;
   }
 
-  .mapping-table-wrap {
-    overflow: visible;
+  /* The Typeahead panel is fixed-position, so the wrapper's scrollport does
+     not clip it. */
+  .mapping-section :global(.mapping-table-wrap) {
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
   }
 
-  .mapping-table {
-    width: 100%;
+  .mapping-section :global(.mapping-table-wrap .kit-table) {
     min-width: 660px;
-    border-collapse: collapse;
     table-layout: fixed;
   }
 
-  .mapping-table th,
-  .mapping-table td {
+  .mapping-section th,
+  .mapping-section td {
     padding: 8px;
     border-bottom: 1px solid var(--border-muted);
     vertical-align: top;
   }
 
-  .mapping-table tbody tr:last-child td {
+  .mapping-section tr:last-child td {
     border-bottom: 0;
   }
 
-  .mapping-table th {
+  .mapping-section th {
     color: var(--text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 700;
@@ -663,7 +656,7 @@
     background: var(--bg-inset);
   }
 
-  .mapping-table input {
+  .mapping-section input {
     width: 100%;
     min-height: 30px;
     padding: 4px 8px;
@@ -675,13 +668,13 @@
     font-weight: 400;
   }
 
-  .mapping-table input:disabled {
+  .mapping-section input:disabled {
     color: var(--text-muted);
     background: var(--bg-inset);
   }
 
-  .effective-table strong,
-  .effective-table > tbody > tr > td > span:first-child {
+  :global(.effective-table) strong,
+  :global(.effective-table) td > span:first-child {
     display: block;
     color: var(--text-primary);
     font-size: var(--font-size-sm);
@@ -713,7 +706,7 @@
     min-width: 160px;
   }
 
-  .mapping-table :global(.kit-typeahead) {
+  .mapping-section :global(.kit-typeahead) {
     width: 100%;
     min-width: 0;
     max-width: none;
@@ -733,8 +726,10 @@
     width: auto;
   }
 
+  /* Fits the 40px remove button plus the cell padding; the table wrapper
+     scrolls, so a narrower column would scroll the whole table sideways. */
   .action-col {
-    width: 46px;
+    width: 58px;
   }
 
   .action-cell {
@@ -747,9 +742,4 @@
     gap: var(--space-4);
   }
 
-  @media (max-width: 759px) {
-    .mapping-table-wrap {
-      overflow-x: auto;
-    }
-  }
 </style>

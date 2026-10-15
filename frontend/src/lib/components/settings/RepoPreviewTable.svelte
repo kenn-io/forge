@@ -91,7 +91,7 @@
 </div>
 
 <Card level="default" padding="none" class="table-wrap">
-  <Table ariaLabel="Repository import preview" zebra={false} stickyHeader={false}>
+  <Table unsorted ariaLabel="Repository import preview" zebra={false} stickyHeader={false}>
     {#snippet header()}
       <TableHeaderCell label="Select" class="select-col" />
       <TableHeaderCell

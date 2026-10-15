@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Card, Checkbox, EmptyState } from "@kenn-io/kit-ui";
+  import { Button, Card, Checkbox, EmptyState, Table } from "@kenn-io/kit-ui";
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
   import { Effect } from "effect";
   import type {
@@ -185,29 +185,29 @@
       {#if currentFleet.members.length === 0}
         <EmptyState title="No active spokes are enrolled." />
       {:else}
-        <div class="table-wrap">
-          <table aria-label="Federation member status">
-            <thead>
-              <tr>
-                <th scope="col">Spoke</th>
-                <th scope="col">HTTPS endpoint</th>
-                <th scope="col">State</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each currentFleet.members as member (member.node_id)}
-                <tr>
-                  <td>
-                    <strong>{displayName(member.name, "Unnamed spoke")}</strong>
-                    <code>{member.node_id}</code>
-                  </td>
-                  <td><a class="endpoint-link" href={member.base_url}>{member.base_url}</a></td>
-                  <td><span class="state-badge enabled">{member.state}</span></td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          unsorted
+          ariaLabel="Federation member status"
+          zebra={false}
+          stickyHeader={false}
+          class="member-table-wrap"
+        >
+          {#snippet header()}
+            <th scope="col">Spoke</th>
+            <th scope="col">HTTPS endpoint</th>
+            <th scope="col">State</th>
+          {/snippet}
+          {#each currentFleet.members as member (member.node_id)}
+            <tr>
+              <td>
+                <strong>{displayName(member.name, "Unnamed spoke")}</strong>
+                <code>{member.node_id}</code>
+              </td>
+              <td><a class="endpoint-link" href={member.base_url}>{member.base_url}</a></td>
+              <td><span class="state-badge enabled">{member.state}</span></td>
+            </tr>
+          {/each}
+        </Table>
       {/if}
     </section>
 
@@ -423,31 +423,28 @@
     margin-top: 2px;
   }
 
-  .table-wrap {
-    overflow-x: auto;
+  .membership-section :global(.member-table-wrap) {
     border: 1px solid var(--border-muted);
     border-radius: var(--radius-sm);
   }
 
-  table {
-    width: 100%;
+  .membership-section :global(.member-table-wrap .kit-table) {
     min-width: 600px;
-    border-collapse: collapse;
   }
 
-  th,
-  td {
+  .membership-section th,
+  .membership-section td {
     padding: 8px;
     border-bottom: 1px solid var(--border-muted);
     vertical-align: top;
     text-align: left;
   }
 
-  tbody tr:last-child td {
+  .membership-section tr:last-child td {
     border-bottom: 0;
   }
 
-  th {
+  .membership-section th {
     color: var(--text-secondary);
     background: var(--bg-inset);
     font-size: var(--font-size-xs);

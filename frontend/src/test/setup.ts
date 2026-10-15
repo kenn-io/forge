@@ -76,3 +76,24 @@ if (typeof document !== "undefined" && document.fonts === undefined) {
     value: new EventTarget(),
   });
 }
+
+// jsdom has no matchMedia. Importing kit-ui loads svelte/reactivity/window,
+// whose devicePixelRatio tracker calls matchMedia as the module loads. Tests
+// that depend on a media query still install their own stub over this one.
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string): MediaQueryList => {
+      const list = new EventTarget() as MediaQueryList;
+      Object.assign(list, {
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+      });
+      return list;
+    },
+  });
+}

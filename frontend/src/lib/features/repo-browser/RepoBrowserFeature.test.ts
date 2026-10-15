@@ -57,6 +57,7 @@ function mockPointerCapture(element: HTMLElement): void {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("RepoBrowserFeature", () => {
@@ -685,6 +686,13 @@ describe("RepoBrowserFeature", () => {
   });
 
   it("resizes both side rails within usable viewer constraints across view modes", async () => {
+    // The history rail only shows on a desktop-width viewport.
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(min-width: 901px)",
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
     render(RepoBrowserFeature, {
       props: {
         client: testClient(),

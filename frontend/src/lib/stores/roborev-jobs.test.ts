@@ -221,6 +221,31 @@ describe("createJobsStore cost sorting", () => {
   });
 });
 
+describe("createJobsStore repo sorting", () => {
+  it("sorts by repo, then branch, then ref, comparing each field whole", async () => {
+    const jobs: ReviewJob[] = [
+      { ...makeJob(1), repo_name: "app-web", branch: "alpha" },
+      { ...makeJob(2), repo_name: "app", branch: "zeta" },
+      { ...makeJob(3), repo_name: "app", branch: "beta", git_ref: "bbb" },
+      { ...makeJob(4), repo_name: "app", branch: "beta", git_ref: "aaa" },
+      makeJob(5),
+    ];
+    const client = {
+      GET: vi.fn().mockResolvedValue({
+        data: { jobs, has_more: false, stats: { done: 1, closed: 0, open: 0 } },
+        error: undefined,
+      }),
+    };
+    const store = createJobsStore({ client: client as never });
+
+    await loadJobs(store);
+    store.setSortColumn("repo");
+
+    expect(store.getSortDirection()).toBe("asc");
+    expect(store.getJobs().map((job) => job.id)).toEqual([5, 4, 3, 2, 1]);
+  });
+});
+
 describe("createJobsStore elapsed sorting", () => {
   beforeEach(() => {
     vi.useFakeTimers();

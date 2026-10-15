@@ -25,6 +25,10 @@ function parseElapsed(text: string): number {
   );
 }
 
+function sortHeader(page: Page, label: string) {
+  return page.locator(".job-table thead").getByRole("button", { name: label, exact: true });
+}
+
 function jobRowById(page: Page, id: number) {
   return page.locator(".job-row").filter({
     has: page.locator(".col-id .mono", { hasText: new RegExp(`^${id}$`) }),
@@ -727,7 +731,7 @@ test.describe.serial("Roborev", () => {
       const firstIdBefore = await page.locator(".col-id .mono").first().textContent();
 
       // Click ID header to toggle to ascending
-      const idHeader = page.locator("th.sortable").filter({ hasText: "ID" });
+      const idHeader = sortHeader(page, "ID");
       await idHeader.click();
       await page.waitForTimeout(300);
 
@@ -742,7 +746,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Click Status header
-      const statusHeader = page.locator("th.sortable").filter({ hasText: "Status" });
+      const statusHeader = sortHeader(page, "Status");
       await statusHeader.click();
       await page.waitForTimeout(300);
 
@@ -763,7 +767,7 @@ test.describe.serial("Roborev", () => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
 
-      const elapsedHeader = page.locator("th.sortable").filter({ hasText: "Elapsed" });
+      const elapsedHeader = sortHeader(page, "Elapsed");
       await elapsedHeader.click();
 
       const elapsedRows = await page.locator(".job-row").evaluateAll((rows) =>
@@ -789,7 +793,7 @@ test.describe.serial("Roborev", () => {
       // page; every other row renders "--". Ascending order
       // puts missing costs first, so the costed row sinks to
       // the bottom; descending brings it to the top.
-      const costHeader = page.locator("th.sortable").filter({ hasText: "Cost" });
+      const costHeader = sortHeader(page, "Cost");
       await costHeader.click();
       await page.waitForTimeout(300);
 
@@ -809,7 +813,7 @@ test.describe.serial("Roborev", () => {
       await waitForJobRows(page, 10);
 
       // Sort by agent
-      const agentHeader = page.locator("th.sortable").filter({ hasText: "Agent" });
+      const agentHeader = sortHeader(page, "Agent");
       await agentHeader.click();
       await page.waitForTimeout(300);
 

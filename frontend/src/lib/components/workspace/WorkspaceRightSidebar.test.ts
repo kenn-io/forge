@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -333,16 +334,27 @@ describe("WorkspaceRightSidebar", () => {
       document.dispatchEvent(new Event("visibilitychange"));
       await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
       expect(coreActions.mock.calls[0]?.[0]).toMatchObject({ event: "pr_viewed", properties: { provider: "github" } });
+      visibility.mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      await view.rerender({ runtime, sidebarProps });
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true } });
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
       await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true, refreshToken: 1 } });
       await screen.findByRole("heading", { name: "Add browser regression coverage" });
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(coreActions).toHaveBeenCalledTimes(2);
       await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true, associatedPRNumber: 55 } });
       await waitFor(() => expect(held).toBe(true));
       expect(screen.queryByRole("heading", { name: "Add browser regression coverage" })).toBeNull();
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(coreActions).toHaveBeenCalledTimes(2);
       pending.resolve();
       await screen.findByRole("heading", { name: "Refactor theme system" });
-      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(3));
     } finally {
       pending.resolve();
     }

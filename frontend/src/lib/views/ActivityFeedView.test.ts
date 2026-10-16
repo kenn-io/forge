@@ -1,6 +1,6 @@
 import { makeGeneratedClient } from "../testing/generated-client.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { createRawSnippet, tick, type Snippet } from "svelte";
+import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -171,6 +171,26 @@ describe("ActivityFeedView detail panes", () => {
         properties: { provider: "github" },
       }),
     );
+  });
+
+  it("reports another PR visit after restoring the drawer from a maximized workspace", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 1600 } as DOMRect);
+    const { controller } = createClaimTestController("activity");
+    renderActivity({
+      drawerItem: prDrawer(),
+      pullDetail: pullDetailFixture(12, { id: "ws-1", status: "ready" }),
+      inlineWorkspace: controller,
+    });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+
+    const layout = getPaneLayoutStore("activity");
+    const workspaceLeaf = layout.leafIDForTab("workspace")!;
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["workspace"]);
+    expect(coreActions).toHaveBeenCalledTimes(1);
+
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
   });
 
   it("offers no diff pane for an issue selection", () => {

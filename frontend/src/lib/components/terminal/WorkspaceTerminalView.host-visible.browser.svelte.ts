@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createDetailStore } from "../../stores/detail.svelte.js";
 import { getStackDepth } from "../../stores/keyboard/modal-stack.svelte.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../../stores/paneLayout.svelte.js";
@@ -608,7 +609,12 @@ describe("WorkspaceTerminalView hostVisible", () => {
           return hostVisible;
         },
       },
-      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
+      context: new Map([
+        [
+          STORES_KEY,
+          { events: eventsStore, settings: settingsStore, diff: diffStore, detail: createDetailStore({ runtime }) },
+        ],
+      ]),
     });
 
     const pressSidebarToggle = () => {
@@ -697,7 +703,12 @@ describe("WorkspaceTerminalView hostVisible", () => {
         hideWorkspaceList: true,
         hideRightSidebar: false,
       },
-      context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
+      context: new Map([
+        [
+          STORES_KEY,
+          { events: eventsStore, settings: settingsStore, diff: diffStore, detail: createDetailStore({ runtime }) },
+        ],
+      ]),
     });
 
     const resizeWindow = () => {

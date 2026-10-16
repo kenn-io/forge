@@ -5,6 +5,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vite-plus/test"
 import { DEFAULT_TERMINAL_SETTINGS } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
+import { createDetailStore } from "../../stores/detail.svelte.js";
 
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../../test/mockApiFetch.js";
@@ -455,7 +456,12 @@ describe("WorkspaceHost", () => {
       instance = mount(WorkspaceHost, {
         target: hostContainer,
         props: { runtime },
-        context: new Map([[STORES_KEY, { events: eventsStore, settings: settingsStore, diff: diffStore }]]),
+        context: new Map([
+          [
+            STORES_KEY,
+            { events: eventsStore, settings: settingsStore, diff: diffStore, detail: createDetailStore({ runtime }) },
+          ],
+        ]),
       });
 
       navigate("/terminal/ws-1");

@@ -39,7 +39,7 @@ export function trackPRVisit(
       provider === "gitea" ||
       provider === "bitbucket";
     return {
-      key: prVisitKey(ref),
+      key: visible ? prVisitKey(ref) : null,
       action:
         visible && supported && pullDetailMatchesRef(detail, ref)
           ? { event: "pr_viewed", properties: { provider } }

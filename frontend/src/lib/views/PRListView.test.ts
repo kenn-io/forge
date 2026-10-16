@@ -210,6 +210,21 @@ describe("PRListView detail panes", () => {
     expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
+  it("reports another PR visit after restoring details from a maximized workspace", async () => {
+    const { controller } = createClaimTestController("prs");
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+
+    const layout = getPaneLayoutStore("prs");
+    const workspaceLeaf = layout.leafIDForTab("workspace")!;
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["workspace"]);
+    expect(coreActions).toHaveBeenCalledTimes(1);
+
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
   it("renders a focused detail without consulting the persisted desktop pane tree", async () => {
     const storedLayout = JSON.stringify({
       tree: {

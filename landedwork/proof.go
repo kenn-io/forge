@@ -66,7 +66,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 	}
 	introduced := []string{c.Terminal}
 	if method == "merge" {
-		introduced, err = mergeCorrespondence(ctx, v, c, parents[0])
+		introduced, err = sourceCorrespondence(ctx, v, c, parents[0])
 		if err != nil {
 			if errors.Is(err, errCorrespondence) {
 				return reject("source_correspondence_unproven")
@@ -99,12 +99,11 @@ func checkSources(ctx context.Context, v *objectView, c Candidate) (string, stri
 
 var errCorrespondence = errors.New("source correspondence unproven")
 
-func mergeCorrespondence(ctx context.Context, v *objectView, c Candidate, before string) ([]string, error) {
-	ids, err := v.introduced(ctx, before, c.Terminal)
+func sourceCorrespondence(ctx context.Context, v *objectView, c Candidate, before string) ([]string, error) {
+	ids, err := v.introduced(ctx, before, c.SourceHead)
 	if err != nil {
 		return nil, err
 	}
-	ids = slices.DeleteFunc(ids, func(id string) bool { return id == c.Terminal })
 	expected := make([]string, 0, len(c.Source))
 	for _, id := range c.Source {
 		present, err := v.ancestor(ctx, id, before)

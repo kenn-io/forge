@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	gitcmd "go.kenn.io/kit/git/cmd"
@@ -94,7 +95,7 @@ func openView(ctx context.Context, path string, m *meter) (_ *objectView, err er
 		return nil, err
 	}
 	v.runner.Env = append(gitenv.StripAll(os.Environ()),
-		"GIT_OBJECT_DIRECTORY="+strings.TrimSpace(string(objects)), "GIT_NO_LAZY_FETCH=1",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES="+strconv.Quote(strings.TrimSpace(string(objects))), "GIT_NO_LAZY_FETCH=1",
 		"GIT_NO_REPLACE_OBJECTS=1", "GIT_OPTIONAL_LOCKS=0")
 	v.runner.StripEnv = false
 	return v, nil

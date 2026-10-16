@@ -6,46 +6,62 @@ import (
 	"slices"
 )
 
-func sourceBoundary(ctx context.Context, v *objectView, c Candidate) (string, Gap) {
+func sourceShape(ctx context.Context, v *objectView, c Candidate) (string, bool, Gap) {
 	g := Gap{CandidateID: c.ID, ObjectID: c.SourceHead}
 	if c.Source[len(c.Source)-1] != c.SourceHead {
 		g.Reason = "source_head_mismatch"
-		return "", g
+		return "", false, g
 	}
 	before := ""
+	linear := true
+	var orderGap Gap
 	seen := make(map[string]bool, len(c.Source))
 	for i, id := range c.Source {
 		g.ObjectID = id
 		if id == "" || seen[id] {
 			g.Reason = "source_invalid"
-			return "", g
+			return "", false, g
 		}
 		seen[id] = true
 		parents, err := v.parents(ctx, id)
 		if err != nil {
 			g.Reason = graphReason(err)
-			return "", g
+			return "", false, g
 		}
-		if len(parents) != 1 {
+		if len(parents) == 0 {
 			g.Reason = "topology_unproven"
-			return "", g
+			return "", false, g
 		}
+		linear = linear && len(parents) == 1
 		if i == 0 {
 			before = parents[0]
 		} else if parents[0] != c.Source[i-1] {
-			g.Reason = "source_order_unproven"
-			return "", g
+			orderGap = Gap{CandidateID: c.ID, ObjectID: id, Reason: "source_order_unproven"}
 		}
+	}
+	if !linear {
+		return "", false, Gap{}
+	}
+	if orderGap.Reason != "" {
+		return "", false, orderGap
 	}
 	if _, err := v.parents(ctx, before); err != nil {
 		g.ObjectID, g.Reason = before, graphReason(err)
-		return "", g
+		return "", false, g
 	}
-	return before, Gap{}
+	return before, true, Gap{}
+}
+
+func sourceBoundary(ctx context.Context, v *objectView, c Candidate) (string, Gap) {
+	before, linear, g := sourceShape(ctx, v, c)
+	if g.Reason == "" && !linear {
+		g = Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: "topology_unproven"}
+	}
+	return before, g
 }
 
 func proveSquash(ctx context.Context, v *objectView, c Candidate, before string) (Landing, Gap) {
-	sourceBefore, g := sourceBoundary(ctx, v, c)
+	sourceBefore, _, g := sourceShape(ctx, v, c)
 	if g.Reason != "" {
 		return Landing{}, g
 	}
@@ -66,6 +82,22 @@ func proveSquash(ctx context.Context, v *objectView, c Candidate, before string)
 // not evidence against this alternative and must prevent choosing another one.
 func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string) (bool, Gap) {
 	g := Gap{CandidateID: c.ID}
+	if sourceBefore == "" {
+		// Nonlinear sources must contain every source-side commit, including
+		// merged side branches. Target ancestors may be listed as context.
+		_, err := sourceCorrespondence(ctx, v, c, before)
+		if errors.Is(err, errCorrespondence) {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: "source_incomplete"}
+		}
+		if err != nil {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: editReason(err)}
+		}
+		matched, err := v.mergeTreeMatches(ctx, "", before, c.SourceHead, c.Terminal)
+		if err != nil {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: editReason(err)}
+		}
+		return matched, Gap{}
+	}
 	_, err := v.compareTreeEdits(ctx, sourceBefore, c.SourceHead, before, c.Terminal)
 	if errors.Is(err, errCorrespondence) {
 		return false, Gap{}
@@ -85,7 +117,7 @@ func editReason(err error) string {
 }
 
 func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candidate, before string) (Landing, Gap) {
-	sourceBefore, g := sourceBoundary(ctx, v, c)
+	sourceBefore, linear, g := sourceShape(ctx, v, c)
 	if g.Reason != "" {
 		return Landing{}, g
 	}
@@ -99,7 +131,12 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 	} else if matched {
 		squash = proofAttempt{state: attemptMatch, landing: squashLanding(c, before)}
 	}
-	ranges := rangeAlternatives(ctx, v, p, c, sourceBefore, before)
+	// A source graph containing merges cannot be the linear, one-to-one
+	// source chain required by either rewritten-range alternative.
+	ranges := [2]proofAttempt{{state: attemptMismatch}, {state: attemptMismatch}}
+	if linear {
+		ranges = rangeAlternatives(ctx, v, p, c, sourceBefore, before)
+	}
 	return resolveAlternatives(c, []proofAttempt{squash, ranges[0], ranges[1]}, v.meter.failed)
 }
 

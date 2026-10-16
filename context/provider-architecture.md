@@ -78,11 +78,14 @@ Git's commit-graph can outlive commit objects; verify required commits physicall
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
-Squash proof compares the net source-boundary delta, not concatenated patches;
-even an explicit method label requires a complete linear source chain
-(`landedwork/single_parent.go::proveSquash`).
-Offset-free text proof requires uniquely occurring removed bytes or a unique
-insertion neighborhood; repeated locations stay unproven (`landedwork/edits.go::fileEdits`).
+Squash sources may contain merges only with complete source-side ancestry and
+an exact three-way tree match; rewritten ranges still require a linear source
+(`landedwork/single_parent.go::squashCorrespondence`).
+Across different bases, repeated text needs an exact three-way location witness;
+preserve full edit correspondence so partly applied sources keep their origin
+(`landedwork/edits.go::compareTreeEdits`).
+Synthesized merge objects belong only to the disposable view; caller objects
+are read-only alternates (`landedwork/git.go::openView`).
 Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 Collection must preserve unfinished candidates and the exact prepared query;

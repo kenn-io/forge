@@ -55,6 +55,27 @@ func sameEdits(a, b []fileEdit) bool {
 // Callers physically verify the boundary commits before comparing their trees.
 // A different path/mode inventory disproves correspondence without parsing text.
 func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source, before, after string) ([]fileEdit, error) {
+	edits, err := v.compareEdits(ctx, sourceBefore, source, before, after, false)
+	if !errors.Is(err, editProofError("removed_text_not_unique")) && !errors.Is(err, editProofError("insertion_context_not_unique")) {
+		return edits, err
+	}
+	// Repeated text has no unique offset-free anchor. An exact three-way
+	// merge can supply the missing location evidence; keep comparing the full
+	// edit sequence so a partly applied source cannot become a squash.
+	matched, mergeErr := v.mergeTreeMatches(ctx, sourceBefore, before, source, after)
+	if errors.Is(mergeErr, editProofError("merge_conflict")) {
+		return nil, err
+	}
+	if mergeErr != nil {
+		return nil, mergeErr
+	}
+	if !matched {
+		return nil, err
+	}
+	return v.compareEdits(ctx, sourceBefore, source, before, after, true)
+}
+
+func (v *objectView) compareEdits(ctx context.Context, sourceBefore, source, before, after string, located bool) ([]fileEdit, error) {
 	a, err := v.treeFiles(ctx, sourceBefore, source)
 	if err != nil {
 		return nil, err
@@ -72,13 +93,12 @@ func (v *objectView) compareTreeEdits(ctx context.Context, sourceBefore, source,
 		return nil, editProofError("empty_tree_edits")
 	}
 	for i := range a {
-		// Equal base blobs give each hunk an exact location, even when its
-		// text repeats. Different bases still require unique correspondence.
-		sameBase := a[i].oldID == b[i].oldID
-		if err := v.fileEdits(ctx, sourceBefore, source, &a[i], sameBase); err != nil {
+		// Equal base blobs or a witnessed merge locate repeated edits.
+		exactLocation := located || a[i].oldID == b[i].oldID
+		if err := v.fileEdits(ctx, sourceBefore, source, &a[i], exactLocation); err != nil {
 			return nil, err
 		}
-		if err := v.fileEdits(ctx, before, after, &b[i], sameBase); err != nil {
+		if err := v.fileEdits(ctx, before, after, &b[i], exactLocation); err != nil {
 			return nil, err
 		}
 	}

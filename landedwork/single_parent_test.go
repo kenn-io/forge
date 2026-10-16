@@ -32,7 +32,7 @@ func TestSquashRequiresSourceChain(t *testing.T) {
 		{"omitted", "source_order_unproven"},
 		{"head", "source_head_mismatch"},
 		{"root", "topology_unproven"},
-		{"merge", "topology_unproven"},
+		{"merge", "source_incomplete"},
 		{"empty ID", "source_invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

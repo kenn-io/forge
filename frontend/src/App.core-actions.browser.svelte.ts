@@ -28,7 +28,7 @@ describe("core action navigation", () => {
     await resetKeyboardModuleState();
   });
 
-  it("counts a phone workspace-list linked PR without opening its terminal", async () => {
+  it("counts a phone workspace-list linked PR visit", async () => {
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
     const workspace = {
       id: "ws-9",

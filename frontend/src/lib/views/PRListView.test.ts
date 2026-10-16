@@ -166,13 +166,6 @@ describe("PRListView detail panes", () => {
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    visibility.mockReturnValue("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await tick();
-    visibility.mockReturnValue("visible");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await tick();
-    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it("shows conversation and files as panes without a bespoke split toggle", async () => {

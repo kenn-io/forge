@@ -18,6 +18,7 @@ import {
   setWorkspaceRepoCatalog,
 } from "../../stores/workspace-repo-catalog.svelte.js";
 import { repositoryKeyToWire, type RepositoryKey } from "../../api/repository-key.js";
+import { getFlashes } from "../../stores/flash.svelte.js";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -3225,6 +3226,84 @@ describe("WorkspaceListSidebar", () => {
     expect(window.confirm).not.toHaveBeenCalled();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("bulk-deletes a shift-click range and keeps workspaces with uncommitted changes", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    mockDelete.mockImplementation((_path: string, options: { params: { path: { id: string } } }) =>
+      Promise.resolve(
+        options.params.path.id === "ws-old"
+          ? { error: { detail: "workspace has uncommitted changes" }, response: new Response(null, { status: 409 }) }
+          : { response: { ok: true, status: 204 } },
+      ),
+    );
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const selectedTitles = () =>
+      Array.from(container.querySelectorAll(".ws-row.multi-selected .ws-name")).map((el) => el.textContent?.trim());
+
+    // Grouped order is kenn-forge (Newest, Oldest) then agentsview, so the
+    // range from the opened row stops before the other repository's row.
+    await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
+    expect(selectedTitles()).toEqual(["Newest created", "Oldest without activity"]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.contextMenu(await row("Oldest without activity"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete 2 workspaces..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete 2 workspaces?" });
+    expect(dialog.textContent).toContain('Delete "Newest created", "Oldest without activity"?');
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Delete 2 workspaces" }));
+
+    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    expect(mockDelete.mock.calls.map(([, options]) => options.params.path.id).sort()).toEqual(["ws-new", "ws-old"]);
+    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+    expect(screen.getByText("Most recently active")).toBeTruthy();
+    expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
+    await waitFor(() => {
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        expect.stringContaining("Could not delete 1 of 2 workspaces. Oldest without activity:"),
+      );
+    });
+    expect(screen.queryByRole("dialog", { name: "Delete 2 workspaces?" })).toBeNull();
+    expect(selectedTitles()).toEqual([]);
+  });
+
+  it("toggles rows with Cmd/Ctrl-click without opening them", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const selectedTitles = () =>
+      Array.from(container.querySelectorAll(".ws-row.multi-selected .ws-name")).map((el) => el.textContent?.trim());
+
+    await fireEvent.click(await row("Newest created"), { ctrlKey: true });
+    await fireEvent.click(await row("Most recently active"), { metaKey: true });
+    expect(selectedTitles()).toEqual(["Newest created", "Most recently active"]);
+    await fireEvent.click(await row("Newest created"), { ctrlKey: true });
+    expect(selectedTitles()).toEqual(["Most recently active"]);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.keyDown(await row("Most recently active"), { key: "Escape" });
+    expect(selectedTitles()).toEqual([]);
+
+    await fireEvent.click(await row("Newest created"), { ctrlKey: true });
+    await fireEvent.click(await row("Oldest without activity"), { ctrlKey: true });
+    await fireEvent.click(await row("Most recently active"));
+    expect(selectedTitles()).toEqual([]);
+    expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-mid");
+  });
+
+  it("acts on a single row when right-clicking outside the selection", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+
+    await fireEvent.click(await row("Newest created"), { ctrlKey: true });
+    await fireEvent.click(await row("Oldest without activity"), { ctrlKey: true });
+    await fireEvent.contextMenu(await row("Most recently active"));
+
+    expect(screen.getByRole("menuitem", { name: "Delete workspace..." })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Delete \d+ workspaces/ })).toBeNull();
+    expect(container.querySelectorAll(".ws-row.multi-selected")).toHaveLength(0);
   });
 
   it("omits local filesystem actions and offers force-delete recovery for remote workspaces", async () => {

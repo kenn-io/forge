@@ -47,6 +47,8 @@ func TestArchiveContextScenarioExportsEvidenceAndCoverage(t *testing.T) {
 	assert.NotEmpty(result.PullRequests)
 	for _, pr := range result.PullRequests {
 		assert.Len(pr.HeadSHA, 40)
+		assert.NotNil(pr.MergeStatusObservedAt)
+		assert.NotContains(pr.Gaps, "merge_status_observation_time_unknown")
 	}
 	first := result.PullRequests[0]
 	response = httptest.NewRecorder()

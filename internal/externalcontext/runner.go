@@ -165,6 +165,10 @@ func cloneResult(result ExternalContextResult) ExternalContextResult {
 	if result.Card != nil {
 		card := *result.Card
 		card.Actions = slices.Clone(card.Actions)
+		if card.Recommendation != nil {
+			recommendation := *card.Recommendation
+			card.Recommendation = &recommendation
+		}
 		result.Card = &card
 	}
 	return result
@@ -306,6 +310,11 @@ func decodeResult(data []byte) (ExternalContextResult, error) {
 	}
 	if strings.TrimSpace(card.Summary) == "" || len(card.Summary) > 4096 || len(card.Markdown) > 512*1024 || len(card.ResultHeadSHA) > 256 || len(card.Actions) > 32 || card.RefreshAfterSeconds < 0 {
 		return ExternalContextResult{}, ErrInvalidResponse
+	}
+	if recommendation := card.Recommendation; recommendation != nil {
+		if (recommendation.Verdict != "Merge" && recommendation.Verdict != "Hold") || strings.TrimSpace(recommendation.Reason) == "" || len(recommendation.Reason) > 512 {
+			return ExternalContextResult{}, ErrInvalidResponse
+		}
 	}
 	seen := make(map[string]bool, len(card.Actions))
 	for _, action := range card.Actions {

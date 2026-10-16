@@ -40,6 +40,31 @@ describe("external PR context", () => {
     vi.useRealTimers();
   });
 
+  it("shows the recommendation outside Details without adding a merge action", async () => {
+    vi.stubGlobal("fetch", async (request: Request) => {
+      if (request.url.endsWith("/external-context/sources"))
+        return Response.json({ sources: [{ id: "grading", name: "PR grading" }] });
+      return Response.json({
+        card: {
+          status: "neutral",
+          summary: "Importance 8/10",
+          markdown: "Fixes startup on an empty cache.",
+          recommendation: { verdict: "Hold", reason: "CI checks are failing." },
+          actions: [{ id: "reassess:1", label: "Reassess" }],
+        },
+      });
+    });
+    render(ExternalContextCards, { props });
+    const reason = await screen.findByText("CI checks are failing.");
+    expect(screen.getByText("Hold")).toBeTruthy();
+    expect(reason.closest("details")).toBeNull();
+    expect(details().open).toBe(false);
+    expect(screen.getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Refresh", "Reassess"]);
+    await fireEvent.click(screen.getByText("Details:", { exact: false }));
+    expect(details().open).toBe(true);
+    expect(screen.getAllByText("CI checks are failing.")).toHaveLength(1);
+  });
+
   it("renders compact cards, their older-commit label, read-only Markdown and a failed source", async () => {
     vi.stubGlobal(
       "fetch",

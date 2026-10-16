@@ -272,6 +272,8 @@ export * from "./externalContextActionInput.ts";
 export * from "./externalContextActionRequest.ts";
 export * from "./externalContextCard.ts";
 export * from "./externalContextCardStatus.ts";
+export * from "./externalContextRecommendation.ts";
+export * from "./externalContextRecommendationVerdict.ts";
 export * from "./externalContextResult.ts";
 export * from "./externalContextSourceInfo.ts";
 export * from "./externalContextSourcesResponse.ts";

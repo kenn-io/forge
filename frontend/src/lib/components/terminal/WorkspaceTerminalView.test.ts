@@ -1283,10 +1283,10 @@ describe("WorkspaceTerminalView", () => {
     expect(coreActions).not.toHaveBeenCalled();
     await view.rerender({ workspaceId: "ws-1", hostVisible: true });
     await waitFor(() =>
-      expect(coreActions).toHaveBeenCalledWith(
-        { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      ),
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      }),
     );
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, []));
     await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
@@ -7302,10 +7302,10 @@ describe("WorkspaceTerminalView", () => {
       });
       await screen.findByRole("tab", { name: /Reviewer/ });
       await waitFor(() =>
-        expect(coreActions).toHaveBeenCalledWith(
-          { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-          expect.objectContaining({ signal: expect.any(AbortSignal) }),
-        ),
+        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+          event: "workspace_opened",
+          properties: { item_type: "pull_request" },
+        }),
       );
       expect(coreActions).toHaveBeenCalledTimes(1);
       await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: true });

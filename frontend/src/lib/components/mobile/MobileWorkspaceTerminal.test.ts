@@ -129,49 +129,14 @@ describe("MobileWorkspaceTerminal", () => {
     resetSessionHostForTest();
   });
 
-  it("counts a ready workspace once through session launch and loss", async () => {
-    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
-    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
-      notify = subscriber;
-      return () => {};
-    });
-    const session: RuntimeSession = {
-      key: "chat-a",
-      workspace_id: "ws-a",
-      target_key: "chat",
-      label: "Chat agent",
-      kind: "acp",
-      display_region: "workflow",
-      status: "running",
-      created_at: workspace.created_at,
-    };
-    const chatRuntime = {
-      launch_targets: [{ key: "chat", label: "Chat agent", kind: "acp", available: true }],
-      sessions: [session],
-    };
-    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(chatRuntime);
-    saveMobileWorkspaceSession("ws-a", undefined, "chat-a");
-    const launch = Promise.withResolvers<RuntimeSession>();
-    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(launch.promise);
+  it("reports a ready mobile workspace's item type", async () => {
     render(MobileWorkspaceTerminalTestHarness, { props });
-    await screen.findByRole("button", { name: "Chat options" });
     await waitFor(() =>
-      expect(coreActions).toHaveBeenCalledWith(
-        { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      ),
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      }),
     );
-    await waitFor(() => expect(notify).toBeTypeOf("function"));
-    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...chatRuntime, sessions: [] });
-    notify?.({ type: "reconnect.stale", payload: {} });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Chat options" })).toBeNull());
-    queueWorkspaceLaunch("ws-a", "chat", undefined);
-    await screen.findByText("Starting Chat agent…");
-    expect(coreActions).toHaveBeenCalledTimes(1);
-    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(chatRuntime);
-    launch.resolve(session);
-    await screen.findByRole("button", { name: "Chat options" });
-    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it.each([

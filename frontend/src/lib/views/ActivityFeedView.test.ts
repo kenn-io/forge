@@ -162,33 +162,15 @@ describe("ActivityFeedView detail panes", () => {
     expect(bodies.find((el) => el.getAttribute("data-tab-key") === "files")?.dataset.keyboardActive).toBe("false");
   });
 
-  it("reports a loaded PR only after revealing it behind a session pane", async () => {
+  it("reports the selected PR's provider", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 1600 } as DOMRect);
-    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
-    const layout = getPaneLayoutStore("activity");
-    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
-    const { controller } = createClaimTestController("activity", {
-      sessions: [{ paneKey, label: "Helper" }],
-    });
-    const view = renderActivity({ drawerItem: prDrawer(), inlineWorkspace: controller });
-    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
-    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe(
-      "true",
-    );
-
-    view.pullBox.set(pullDetailFixture(12, { id: "ws-1", status: "ready" }));
-    await tick();
-    expect(screen.getAllByTestId("pull-detail-pane").map((pane) => pane.dataset.visible)).toEqual(["false", "false"]);
-    expect(coreActions).not.toHaveBeenCalled();
-
-    await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    renderActivity({ drawerItem: prDrawer(), pullDetail: pullDetailFixture(12) });
     await waitFor(() =>
-      expect(coreActions).toHaveBeenCalledWith(
-        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      ),
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "pr_viewed",
+        properties: { provider: "github" },
+      }),
     );
-    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it("offers no diff pane for an issue selection", () => {

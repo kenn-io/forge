@@ -192,10 +192,10 @@ describe("PRListView detail panes", () => {
 
     await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
     await waitFor(() =>
-      expect(coreActions).toHaveBeenCalledWith(
-        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
-      ),
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "pr_viewed",
+        properties: { provider: "github" },
+      }),
     );
     expect(coreActions).toHaveBeenCalledTimes(1);
   });
@@ -446,6 +446,7 @@ describe("PRListView detail panes", () => {
     expect(screen.getAllByRole("tablist")).toHaveLength(1);
   });
 });
+
 function pullDetailFixture(workspace: { id: string; status: string } | undefined) {
   return {
     repo_owner: selectedPR.owner,

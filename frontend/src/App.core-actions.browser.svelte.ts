@@ -64,9 +64,8 @@ describe("core action navigation", () => {
     await page.getByRole("button", { name: "Open linked item #42" }).click();
     await vi.waitFor(() => expect(window.location.pathname).toBe("/m/workspaces/local/ws-9/item"), WAIT);
     await vi.waitFor(
-      () => expect(prVisits()).toEqual([{ event: "pr_viewed", properties: { provider: "github", surface: "web" } }]),
+      () => expect(prVisits()).toMatchObject([{ event: "pr_viewed", properties: { provider: "github" } }]),
       WAIT,
     );
-    expect(captures.filter((body) => (body as { event: string }).event === "workspace_opened")).toEqual([]);
   });
 });

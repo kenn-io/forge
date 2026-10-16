@@ -3,6 +3,7 @@
  */
 import type { ExternalContextAction } from "./externalContextAction.ts";
 import type { ExternalContextCardStatus } from "./externalContextCardStatus.ts";
+import type { ExternalContextRecommendation } from "./externalContextRecommendation.ts";
 
 /**
  * @nullable
@@ -10,6 +11,7 @@ import type { ExternalContextCardStatus } from "./externalContextCardStatus.ts";
 export type ExternalContextCard = {
   actions?: ExternalContextAction[];
   markdown?: string;
+  recommendation?: ExternalContextRecommendation;
   refresh_after_seconds?: number;
   result_head_sha?: string;
   status: ExternalContextCardStatus;

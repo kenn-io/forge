@@ -177,6 +177,9 @@ func TestReadValidationAndFailureCache(t *testing.T) {
 		{"action input max length", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"max_length":2000}}]}}`, nil, []ExternalContextAction{{ID: "note", Label: "Add note", Input: &ExternalContextActionInput{MaxLength: 2000}}}},
 		{"action input max length range", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"max_length":16385}}]}}`, ErrInvalidResponse, nil},
 		{"action input placeholder limit", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"note","label":"Add note","input":{"placeholder":"` + strings.Repeat("x", 257) + `"}}]}}`, ErrInvalidResponse, nil},
+		{"recommendation verdict", "raw", `{"card":{"status":"neutral","summary":"Grade","recommendation":{"verdict":"Ship","reason":"Ready."}}}`, ErrInvalidResponse, nil},
+		{"recommendation reason", "raw", `{"card":{"status":"neutral","summary":"Grade","recommendation":{"verdict":"Merge","reason":" "}}}`, ErrInvalidResponse, nil},
+		{"recommendation reason limit", "raw", `{"card":{"status":"neutral","summary":"Grade","recommendation":{"verdict":"Merge","reason":"` + strings.Repeat("x", 513) + `"}}}`, ErrInvalidResponse, nil},
 		{"duplicate action", "raw", `{"card":{"status":"success","summary":"hello","actions":[{"id":"run","label":"Run"},{"id":"run","label":"Again"}]}}`, ErrInvalidResponse, nil},
 		{"stdout limit", "stdout", "", ErrOutputLimit, nil},
 		{"stderr limit", "stderr", "", ErrOutputLimit, nil},
@@ -412,4 +415,19 @@ func TestCloseCancelsInflightCommand(t *testing.T) {
 	require.Eventually(t, func() bool { return len(invocations(t, dir)) == 1 }, 3*time.Second, time.Millisecond)
 	runner.Close()
 	require.ErrorIs(t, <-readDone, ErrInvocation)
+}
+
+func TestReadRecommendation(t *testing.T) {
+	for _, verdict := range []string{"Merge", "Hold"} {
+		t.Run(verdict, func(t *testing.T) {
+			source, _ := fixtureSource(t, "raw", `{"card":{"status":"neutral","summary":"Importance 8/10","recommendation":{"verdict":"`+verdict+`","reason":"Fix the failing CI checks."}}}`)
+			runner := New([]config.ExternalContextSource{source})
+			t.Cleanup(runner.Close)
+			result, err := runner.Read(t.Context(), "metrics", fixturePull(), false)
+			require.NoError(t, err)
+			require.NotNil(t, result.Card.Recommendation)
+			assert.Equal(t, verdict, result.Card.Recommendation.Verdict)
+			assert.Equal(t, "Fix the failing CI checks.", result.Card.Recommendation.Reason)
+		})
+	}
 }

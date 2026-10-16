@@ -3214,6 +3214,8 @@ components:
           type: array
         markdown:
           type: string
+        recommendation:
+          $ref: "#/components/schemas/ExternalContextRecommendation"
         refresh_after_seconds:
           format: int64
           type: integer
@@ -3235,6 +3237,22 @@ components:
       type:
         - object
         - "null"
+    ExternalContextRecommendation:
+      additionalProperties: false
+      properties:
+        reason:
+          maxLength: 512
+          minLength: 1
+          type: string
+        verdict:
+          enum:
+            - Merge
+            - Hold
+          type: string
+      required:
+        - verdict
+        - reason
+      type: object
     ExternalContextResult:
       additionalProperties: false
       properties:

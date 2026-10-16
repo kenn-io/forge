@@ -112,6 +112,12 @@
         >Refresh</Button>
       </div>
       {#if context.card}
+        {#if context.card.recommendation}
+          <div class="context-recommendation" aria-label="Merge recommendation">
+            <Chip size="sm" tone={context.card.recommendation.verdict === "Merge" ? "success" : "warning"}>{context.card.recommendation.verdict}</Chip>
+            <p>{context.card.recommendation.reason}</p>
+          </div>
+        {/if}
         {#if !context.card.markdown}<p>{context.card.summary}</p>{/if}
         {#if context.card.markdown}
           <details bind:open>
@@ -155,6 +161,9 @@
     flex-wrap: wrap;
     gap: var(--space-3);
   }
+
+  .context-recommendation { display: flex; align-items: baseline; gap: var(--space-3); }
+  .context-recommendation p { min-width: 0; overflow-wrap: anywhere; color: var(--text-primary); }
 
   .context-header strong { margin-right: auto; }
   .context-action.with-input { flex-basis: 100%; flex-direction: column; align-items: flex-start; }

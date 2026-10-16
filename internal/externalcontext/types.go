@@ -41,13 +41,20 @@ type ExternalContextResult struct {
 	Card *ExternalContextCard `json:"card"`
 }
 
+// ExternalContextRecommendation is advisory text, independent of card actions.
+type ExternalContextRecommendation struct {
+	Verdict string `json:"verdict" enum:"Merge,Hold"`
+	Reason  string `json:"reason" minLength:"1" maxLength:"512"`
+}
+
 type ExternalContextCard struct {
-	Status              string                  `json:"status" enum:"neutral,pending,success,warning,error"`
-	Summary             string                  `json:"summary"`
-	Markdown            string                  `json:"markdown,omitempty"`
-	ResultHeadSHA       string                  `json:"result_head_sha,omitempty"`
-	Actions             []ExternalContextAction `json:"actions,omitempty"`
-	RefreshAfterSeconds int                     `json:"refresh_after_seconds,omitempty"`
+	Recommendation      *ExternalContextRecommendation `json:"recommendation,omitzero"`
+	Status              string                         `json:"status" enum:"neutral,pending,success,warning,error"`
+	Summary             string                         `json:"summary"`
+	Markdown            string                         `json:"markdown,omitempty"`
+	ResultHeadSHA       string                         `json:"result_head_sha,omitempty"`
+	Actions             []ExternalContextAction        `json:"actions,omitempty"`
+	RefreshAfterSeconds int                            `json:"refresh_after_seconds,omitempty"`
 }
 
 // A source returns null when it does not apply to the pull request.

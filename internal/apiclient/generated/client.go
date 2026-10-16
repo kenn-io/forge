@@ -49194,6 +49194,13 @@ const (
 	ExternalContextCardStatusWarning ExternalContextCardStatus = "warning"
 )
 
+type ExternalContextRecommendationVerdict string
+
+const (
+	ExternalContextRecommendationVerdictHold  ExternalContextRecommendationVerdict = "Hold"
+	ExternalContextRecommendationVerdictMerge ExternalContextRecommendationVerdict = "Merge"
+)
+
 type GitAccessProblemReason string
 
 const (
@@ -58623,12 +58630,18 @@ type ExternalContextActionRequest struct {
 }
 
 type ExternalContextCard struct {
-	Actions             []ExternalContextAction   `json:"actions,omitempty"`
-	Markdown            *string                   `json:"markdown,omitempty"`
-	RefreshAfterSeconds *int64                    `json:"refresh_after_seconds,omitempty"`
-	ResultHeadSha       *string                   `json:"result_head_sha,omitempty"`
-	Status              ExternalContextCardStatus `json:"status"`
-	Summary             string                    `json:"summary"`
+	Actions             []ExternalContextAction        `json:"actions,omitempty"`
+	Markdown            *string                        `json:"markdown,omitempty"`
+	Recommendation      *ExternalContextRecommendation `json:"recommendation,omitempty"`
+	RefreshAfterSeconds *int64                         `json:"refresh_after_seconds,omitempty"`
+	ResultHeadSha       *string                        `json:"result_head_sha,omitempty"`
+	Status              ExternalContextCardStatus      `json:"status"`
+	Summary             string                         `json:"summary"`
+}
+
+type ExternalContextRecommendation struct {
+	Reason  string                               `json:"reason"`
+	Verdict ExternalContextRecommendationVerdict `json:"verdict"`
 }
 
 type ExternalContextResult struct {

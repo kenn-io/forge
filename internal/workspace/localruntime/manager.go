@@ -114,6 +114,8 @@ type RestoredRuntimeSession struct {
 }
 
 type Options struct {
+	// TmuxEnvironmentDir holds the short-lived terminal handoff files.
+	TmuxEnvironmentDir string
 	AgentMCPURL        string
 	AgentMCPToken      string
 	ACPPreferencesPath string
@@ -166,6 +168,7 @@ type Options struct {
 }
 
 type Manager struct {
+	tmuxEnvironmentDir string
 	agentMCPURL        string
 	agentMCPToken      string
 	acpPreferencesMu   sync.Mutex
@@ -332,6 +335,7 @@ func NewManager(options Options) *Manager {
 		targetsList = append(targetsList, cloneTarget(cloned))
 	}
 	return &Manager{
+		tmuxEnvironmentDir: options.TmuxEnvironmentDir,
 		agentMCPURL:        options.AgentMCPURL,
 		agentMCPToken:      options.AgentMCPToken,
 		acpPreferencesPath: options.ACPPreferencesPath,
@@ -1858,6 +1862,7 @@ func (m *Manager) shellLaunchCommand(
 		os.Environ(), resolvedCommand, m.currentStripEnvVars(),
 	)
 	prepared, err := tmuxLauncher{
+		EnvironmentDir:  m.tmuxEnvironmentDir,
 		TmuxCommand:     tmuxCommand,
 		Session:         tmuxSession,
 		CWD:             cwd,
@@ -2080,6 +2085,7 @@ func (m *Manager) launchCommand(
 		paneEnv.paneCommand = recordAgentExitPaneCommand(paneEnv.paneCommand, m.agentExitPaths(tmuxSession))
 	}
 	prepared, err := tmuxLauncher{
+		EnvironmentDir:  m.tmuxEnvironmentDir,
 		TmuxCommand:     tmuxCommand,
 		Session:         tmuxSession,
 		CWD:             cwd,

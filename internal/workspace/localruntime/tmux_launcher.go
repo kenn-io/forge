@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -189,6 +190,7 @@ func (p tmuxEnvPolicy) environmentForOS(
 }
 
 type tmuxLauncher struct {
+	EnvironmentDir  string
 	TmuxCommand     []string
 	Session         string
 	CWD             string
@@ -433,7 +435,7 @@ func (e tmuxCommandError) Unwrap() error {
 }
 
 func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
-	return paneHandoffCommand(l.Pane)
+	return paneHandoffCommand(l.EnvironmentDir, l.Pane)
 }
 
 // NewTmuxPaneHandoff builds the pane shell-command that delivers env to
@@ -444,22 +446,31 @@ func (l tmuxLauncher) newSessionPaneCommand() (string, func(), error) {
 // detection and tmux's terminal capabilities. The returned cleanup
 // removes the handoff files; call it when the pane was never started.
 func NewTmuxPaneHandoff(
-	env []string, command []string,
+	dir string, env []string, command []string,
 ) (string, func(), error) {
-	return paneHandoffCommand(paneEnvironmentFromEnvWithPaneLocals(
+	return paneHandoffCommand(dir, paneEnvironmentFromEnvWithPaneLocals(
 		env, command, []string{"TERM", "TMUX", "TMUX_PANE"},
 	))
 }
 
-func paneHandoffCommand(pane tmuxPaneEnvironment) (string, func(), error) {
-	path, err := writeTmuxPaneEnvironment(pane.commandEnv, pane.keys)
+func paneHandoffCommand(dir string, pane tmuxPaneEnvironment) (string, func(), error) {
+	if dir == "" {
+		dir = os.Getenv("KENN_FORGE_TMUX_ENV_DIR")
+	}
+	if dir == "" {
+		dir = filepath.Join(config.DefaultDataDir(), "tmux-env")
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", nil, fmt.Errorf("create tmux handoff directory: %w", err)
+	}
+	path, err := writeTmuxPaneEnvironment(dir, pane.commandEnv, pane.keys)
 	if err != nil {
 		return "", nil, fmt.Errorf("write tmux pane environment: %w", err)
 	}
 	// tmux parses shell-command with its default shell, which may not be
 	// POSIX-compatible. Keep the POSIX handoff in a script run by /bin/sh.
 	scriptPath, err := writeTmuxPaneScript(
-		path, pane.paneCommand, pane.paneLocalKeys,
+		dir, path, pane.paneCommand, pane.paneLocalKeys,
 	)
 	if err != nil {
 		_ = os.Remove(path)
@@ -473,9 +484,9 @@ func paneHandoffCommand(pane tmuxPaneEnvironment) (string, func(), error) {
 }
 
 func writeTmuxPaneScript(
-	envPath string, paneCommand string, paneLocals []string,
+	dir string, envPath string, paneCommand string, paneLocals []string,
 ) (string, error) {
-	file, err := safefileio.CreatePrivateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-pane-*")
+	file, err := safefileio.CreatePrivateTemp(dir, "kenn-forge-tmux-pane-*")
 	if err != nil {
 		return "", err
 	}
@@ -519,7 +530,7 @@ func writeTmuxPaneScript(
 	return path, nil
 }
 
-func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
+func writeTmuxPaneEnvironment(dir string, env []string, keys []string) (string, error) {
 	values := make(map[string]string, len(env))
 	for _, kv := range env {
 		eq := strings.IndexByte(kv, '=')
@@ -544,7 +555,7 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 	// This short-lived handoff keeps preserved values out of tmux argv. The
 	// file is 0600 and cleaned on tmux launch failure and pane shell exit, but
 	// it is not intended to be a same-user sandbox boundary.
-	file, err := safefileio.CreatePrivateTemp(tmuxPaneEnvironmentTempDir(), "kenn-forge-tmux-env-*")
+	file, err := safefileio.CreatePrivateTemp(dir, "kenn-forge-tmux-env-*")
 	if err != nil {
 		return "", err
 	}
@@ -559,10 +570,6 @@ func writeTmuxPaneEnvironment(env []string, keys []string) (string, error) {
 		return "", err
 	}
 	return path, nil
-}
-
-func tmuxPaneEnvironmentTempDir() string {
-	return os.Getenv("KENN_FORGE_TMUX_ENV_DIR")
 }
 
 func (l tmuxLauncher) hasSessionCommand() []string {

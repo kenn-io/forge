@@ -607,7 +607,10 @@ create a local process, PTY, or durable transport session
   (including the base workspace terminal, which keeps the credential-sanitized
   full daemon environment) get their environment only through the env-file
   handoff (`internal/workspace/localruntime/manager.go::TmuxClientEnvironment`,
-  `internal/workspace/localruntime/manager.go::NewTmuxPaneHandoff`).
+  `internal/workspace/localruntime/tmux_launcher.go::NewTmuxPaneHandoff`).
+- Keep terminal handoff files in Forge state storage: shared temporary-file
+  exhaustion must not prevent writing the pane environment or script
+  (`internal/workspace/localruntime/tmux_launcher.go::paneHandoffCommand`).
 - The allowlist names exact variables only — never prefixes, which a secret
   such as `XDG_API_TOKEN` could hide under. It must keep `TMUX_TMPDIR`: tmux
   resolves `-L` sockets beneath it, so dropping it routes tmux clients to a

@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,54 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestTmuxPaneHandoffWithoutSystemTemp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("tmux handoff requires a POSIX shell")
+	}
+	for _, configured := range []bool{false, true} {
+		t.Run(strconv.FormatBool(configured), func(t *testing.T) {
+			assert := assert.New(t)
+			root := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", filepath.Join(root, "forge"))
+			t.Setenv("KENN_FORGE_TMUX_ENV_DIR", "")
+			t.Setenv("TMPDIR", filepath.Join(root, "unavailable"))
+			dir := ""
+			wantDir := filepath.Join(root, "forge", "tmux-env")
+			if configured {
+				dir = filepath.Join(root, "custom-state", "tmux-env")
+				wantDir = dir
+			}
+			command, cleanup, err := NewTmuxPaneHandoff(dir,
+				[]string{"HANDOFF_VALUE=hello 'pane'"},
+				[]string{"/bin/sh", "-c", `printf '%s' "$HANDOFF_VALUE"`},
+			)
+			require.NoError(t, err)
+			t.Cleanup(cleanup)
+			entries, err := os.ReadDir(wantDir)
+			require.NoError(t, err)
+			require.Len(t, entries, 2)
+			for _, entry := range entries {
+				info, err := entry.Info()
+				require.NoError(t, err)
+				assert.Equal(os.FileMode(0o600), info.Mode().Perm())
+			}
+			output, err := exec.CommandContext(t.Context(), "/bin/sh", "-c", command).CombinedOutput()
+			require.NoError(t, err, string(output))
+			assert.Equal("hello 'pane'", string(output))
+			entries, err = os.ReadDir(wantDir)
+			require.NoError(t, err)
+			assert.Empty(entries, "a started pane removes both handoff files")
+
+			_, cleanup, err = NewTmuxPaneHandoff(dir, nil, []string{"/bin/sh"})
+			require.NoError(t, err)
+			cleanup()
+			entries, err = os.ReadDir(wantDir)
+			require.NoError(t, err)
+			assert.Empty(entries, "a failed launch removes both handoff files")
+		})
+	}
+}
 
 func TestTmuxLauncherAgentOperationsKeepEnvValuesOutOfArgv(t *testing.T) {
 	assert := assert.New(t)

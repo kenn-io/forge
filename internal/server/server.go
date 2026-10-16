@@ -849,6 +849,7 @@ func newServer(
 			acpPreferencesPath = filepath.Join(cfg.DataDir, "acp-preferences.json")
 		}
 		s.runtime = localruntime.NewManager(localruntime.Options{
+			TmuxEnvironmentDir: filepath.Join(filepath.Dir(options.WorktreeDir), "tmux-env"),
 			AgentActivityDir:   agentActivityDir(options.WorktreeDir),
 			AgentExitDir:       filepath.Join(filepath.Dir(options.WorktreeDir), "agent-exits"),
 			AgentMCPURL:        options.AgentMCPURL,

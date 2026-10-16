@@ -289,6 +289,7 @@ func (m *Manager) commandSessionLaunch(
 		os.Environ(), command, stripEnvVars, spec.Env,
 	)
 	prepared, err := tmuxLauncher{
+		EnvironmentDir:  m.tmuxEnvironmentDir,
 		TmuxCommand:     tmuxCommand,
 		Session:         tmuxSession,
 		CWD:             spec.CWD,

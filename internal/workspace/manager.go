@@ -4809,6 +4809,7 @@ func (m *Manager) newTmuxSession(
 	// sessions: benign daemon variables stay usable in the base
 	// terminal while the tmux client itself stays allowlisted.
 	paneCommand, cleanupHandoff, err := localruntime.NewTmuxPaneHandoff(
+		filepath.Join(filepath.Dir(m.worktreeDir), "tmux-env"),
 		localruntime.SessionEnvironment(
 			os.Environ(), m.currentTmuxStripEnvVars(),
 		),

@@ -49,20 +49,20 @@ describe("external PR context", () => {
           status: "neutral",
           summary: "Importance 8/10",
           markdown: "Fixes startup on an empty cache.",
-          recommendation: { verdict: "Hold", reason: "Fix the failing CI checks." },
+          recommendation: { verdict: "Hold", reason: "CI checks are failing." },
           actions: [{ id: "reassess:1", label: "Reassess" }],
         },
       });
     });
     render(ExternalContextCards, { props });
-    const reason = await screen.findByText("Fix the failing CI checks.");
+    const reason = await screen.findByText("CI checks are failing.");
     expect(screen.getByText("Hold")).toBeTruthy();
     expect(reason.closest("details")).toBeNull();
     expect(details().open).toBe(false);
     expect(screen.getAllByRole("button").map((button) => button.textContent?.trim())).toEqual(["Refresh", "Reassess"]);
     await fireEvent.click(screen.getByText("Details:", { exact: false }));
     expect(details().open).toBe(true);
-    expect(screen.getAllByText("Fix the failing CI checks.")).toHaveLength(1);
+    expect(screen.getAllByText("CI checks are failing.")).toHaveLength(1);
   });
 
   it("renders compact cards, their older-commit label, read-only Markdown and a failed source", async () => {

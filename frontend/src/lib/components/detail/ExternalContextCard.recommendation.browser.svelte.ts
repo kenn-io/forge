@@ -17,7 +17,7 @@ const cards = {
     refresh_after_seconds: 0,
   },
   hold: {
-    recommendation: { verdict: "Hold", reason: "Fix the failing CI checks." },
+    recommendation: { verdict: "Hold", reason: "CI checks are failing." },
     status: "neutral",
     summary: "Importance 8/10 \u00b7 Complexity 2.1 \u00b7 Alignment 9.2",
     markdown:
@@ -27,7 +27,7 @@ const cards = {
     refresh_after_seconds: 0,
   },
   stale: {
-    recommendation: { verdict: "Hold", reason: "Reassess the current PR evidence." },
+    recommendation: { verdict: "Hold", reason: "The assessment does not cover the current PR evidence." },
     status: "neutral",
     summary: "Importance 8/10 \u00b7 Complexity 2.1 \u00b7 Alignment 9.2",
     markdown:

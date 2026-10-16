@@ -1,6 +1,6 @@
 import contextlib
 import io
-import shutil
+import os
 import subprocess
 import sys
 import tempfile
@@ -61,41 +61,37 @@ class FrontendUnitCITest(unittest.TestCase):
         return status, captured_output, warnings.getvalue()
 
     def test_process_exit_status_survives_closed_output_pipe(self) -> None:
-        scripts_dir = self.root / "scripts"
-        scripts_dir.mkdir()
-        shutil.copy2(
-            Path(__file__).with_name("frontend_unit_ci.py"),
-            scripts_dir / "frontend_unit_ci.py",
+        source = (
+            "import sys; from pathlib import Path; "
+            "from scripts.frontend_unit_ci import run_frontend_unit; "
+            "raise SystemExit(run_frontend_unit("
+            "repo_root=Path(sys.argv[1]), "
+            "test_command=(sys.executable, '-c', sys.argv[2]), "
+            "version_commands=()))"
         )
-        vp = self.root / "node_modules" / ".bin" / "vp"
-        vp.parent.mkdir(parents=True)
-        marker = self.root / "release-child"
-        vp.write_text(
-            f"#!{sys.executable}\n"
-            "import pathlib\n"
-            "import sys\n"
-            "import time\n"
-            f"marker = pathlib.Path({str(marker)!r})\n"
-            "while not marker.exists():\n"
-            "    time.sleep(0.01)\n"
-            "print('child output', flush=True)\n"
-            "sys.exit(23)\n"
-        )
-        vp.chmod(0o755)
-
-        process = subprocess.Popen(
-            (sys.executable, "scripts/frontend_unit_ci.py"),
-            cwd=self.root,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        assert process.stdout is not None
-        process.stdout.close()
-        marker.touch()
-        self.assertEqual(23, process.wait(timeout=10))
-        assert process.stderr is not None
-        process.stderr.close()
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        with os.fdopen(write_fd, "wb") as output:
+            with subprocess.Popen(
+                (
+                    sys.executable,
+                    "-c",
+                    source,
+                    str(self.root),
+                    "import sys; print('child output', flush=True); sys.exit(23)",
+                ),
+                cwd=Path(__file__).resolve().parents[1],
+                stdout=output,
+                stderr=subprocess.PIPE,
+                text=True,
+            ) as process:
+                try:
+                    _, stderr = process.communicate(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.communicate()
+                self.assertEqual(23, process.returncode, stderr)
         self.assertIn(
             "child output",
             (self.root / "tmp" / "frontend-unit-diagnostics" / "vitest.log").read_text(),

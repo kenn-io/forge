@@ -158,6 +158,23 @@ describe("PRListView detail panes", () => {
     vi.unstubAllGlobals();
   });
 
+  it("waits for the browser tab to show the selected PR", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    renderPRListView({ detail: pullDetailFixture(undefined) });
+    await tick();
+    expect(coreActions).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await tick();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await tick();
+    expect(coreActions).toHaveBeenCalledTimes(1);
+  });
+
   it("shows conversation and files as panes without a bespoke split toggle", async () => {
     renderPRListView();
     await tick();

@@ -72,7 +72,7 @@ export function createScreenViewReporter(now: () => Date = () => new Date()) {
 }
 
 export type CoreAction =
-  | { event: "pr_viewed"; properties: { provider: string } }
+  | { event: "pr_viewed"; properties: { provider: "github" | "gitlab" | "forgejo" | "gitea" | "bitbucket" } }
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
 export function prVisitKey(ref: (ProviderRouteRef & { number: number }) | null): string | null {

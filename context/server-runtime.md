@@ -12,6 +12,8 @@
 - Core-action telemetry counts selected PR details and visible ready workspaces,
   including launchers. Session changes preserve visits; hiding or changing selection
   ends them (`frontend/src/lib/app/telemetry.ts::createCoreActionVisitReporter`).
+  Background browser tabs defer reporting until visible and preserve the selected visit
+  (`frontend/src/lib/app/telemetry.svelte.ts::trackCoreActionVisit`).
 
 ## Package layout
 

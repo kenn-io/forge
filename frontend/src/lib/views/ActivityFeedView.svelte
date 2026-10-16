@@ -1,8 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { getAppRuntime } from "../app/runtime-context.js";
-  import { createCoreActionVisitReporter, prVisitKey } from "../app/telemetry.js";
-  import { canonicalProvider } from "../api/provider-routes.js";
+  import { trackPRVisit } from "../app/telemetry.svelte.js";
   import type { Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
@@ -283,14 +282,7 @@
     const tabs = paneLayout.paneRender()?.onScreenTabs;
     return tabs?.includes("conversation") || tabs?.includes("files");
   });
-  const reportVisit = createCoreActionVisitReporter(getAppRuntime());
-  $effect(() => {
-    const ref = drawerPRSelection;
-    const key = prVisitKey(ref);
-    const action = selectedPullDetail && ref && prDetailVisible
-      ? { event: "pr_viewed" as const, properties: { provider: canonicalProvider(ref.provider) } } : undefined;
-    untrack(() => reportVisit(key, action));
-  });
+  trackPRVisit(getAppRuntime(), () => ({ ref: drawerPRSelection, detail: selectedPullDetail, visible: !!prDetailVisible }));
 
   function loadedDetailMatchesSelection(): boolean {
     if (drawerPRSelection) return pullDetailMatchesRef(detailStore.getDetail(), drawerPRSelection);

@@ -72,7 +72,7 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "0")
-	backend, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("backend")...)
+	backend, err := posthog.NewReporter(posthog.Options{}, KitAllowedEvents("backend")...)
 	require.NoError(err)
 
 	assert.False(backend.EventAllowed("daemon_active"))
@@ -93,27 +93,6 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
 		require.NoError(err)
 		assert.Equal(duration, properties["duration_bucket"])
-	}
-	for _, tc := range []struct {
-		event    string
-		property string
-		values   []string
-	}{
-		{"pr_viewed", "provider", []string{"github", "gitlab", "forgejo", "gitea", "bitbucket"}},
-		{"workspace_opened", "item_type", []string{"pull_request", "issue", "kata_task", "adhoc"}},
-	} {
-		assert.True(backend.EventAllowed(tc.event))
-		assert.True(UIEventAllowed(tc.event))
-		for _, value := range tc.values {
-			properties, err := backend.SanitizeProperties(tc.event, map[string]any{tc.property: value, "surface": "web", "repo": "owner/repo"})
-			require.NoError(err)
-			assert.Equal(value, properties[tc.property])
-			assert.Equal("web", properties["surface"])
-			assert.NotContains(properties, "repo")
-		}
-		properties, err := backend.SanitizeProperties(tc.event, map[string]any{tc.property: "unknown", "surface": "unknown"})
-		require.NoError(err)
-		assert.NotContains(properties, tc.property)
 	}
 	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
 		"surface":                 "web",

@@ -4,8 +4,7 @@
 
 <script lang="ts">
   import { getAppRuntime } from "../app/runtime-context.js";
-  import { createCoreActionVisitReporter, prVisitKey } from "../app/telemetry.js";
-  import { canonicalProvider } from "../api/provider-routes.js";
+  import { trackPRVisit } from "../app/telemetry.svelte.js";
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
@@ -187,14 +186,7 @@
     const tabs = paneLayout.paneRender()?.onScreenTabs;
     return tabs?.includes("conversation") || tabs?.includes("files");
   });
-  const reportVisit = createCoreActionVisitReporter(getAppRuntime());
-  $effect(() => {
-    const ref = selectedPR;
-    const key = prVisitKey(ref);
-    const action = selectedDetail && ref && prDetailVisible
-      ? { event: "pr_viewed" as const, properties: { provider: canonicalProvider(ref.provider) } } : undefined;
-    untrack(() => reportVisit(key, action));
-  });
+  trackPRVisit(getAppRuntime(), () => ({ ref: selectedPR, detail: selectedDetail, visible: !!prDetailVisible }));
 
   function refreshSelectedDetail(): void {
     if (selectedPR === null) return;

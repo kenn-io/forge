@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { trackPRVisit } from "../../app/telemetry.svelte.js";
+  import { getStores } from "../../context.js";
   import WorkspaceTargets, { type CurrentWorkspaceTarget } from "./WorkspaceTargets.svelte";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import type { WorkspaceTarget } from "../../api/generated/models/workspaceTarget.js";
@@ -67,6 +70,13 @@
     onselect,
     onselectkata,
   }: Props = $props();
+
+  const { detail } = getStores();
+  trackPRVisit(getAppRuntime(), () => ({
+    ref: activeTab === "pr" ? displayedPR : null,
+    detail: detail.getDetail(),
+    visible: visible && !disabled && activeTab === "pr",
+  }));
 
   let selectedKata = $state<{ daemonID: string; issueUID: string } | undefined>();
   let kataPanelSelection = $state<{ daemonID: string; issueUID: string } | null>(null);

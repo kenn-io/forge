@@ -157,6 +157,7 @@ vi.mock("../../context.js", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
+      detail: { getDetail: () => null },
       settings: {
         getTerminalSettings: () => ({
           font_family: "",
@@ -1276,12 +1277,16 @@ describe("WorkspaceTerminalView", () => {
   });
 
   it("counts one workspace visit across session loss and restart, then another after hiding", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     const sources = installEventSourceRecorder();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
     await screen.findByRole("tab", { name: runningSession.label });
     expect(coreActions).not.toHaveBeenCalled();
     await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    expect(coreActions).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() =>
       expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
         event: "workspace_opened",

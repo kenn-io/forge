@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createCoreActionVisitReporter } from "../../app/telemetry.js";
+  import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
@@ -1538,12 +1538,11 @@
     });
   });
 
-  const reportVisit = createCoreActionVisitReporter(appRuntime);
-  $effect(() => {
+  trackCoreActionVisit(appRuntime, () => {
     const key = interactionVisible ? viewWorkspaceKey : null;
-    const action = workspaceLive && workspace?.status === "ready" && workspace
+    const action = workspaceLive && workspace?.status === "ready"
       ? { event: "workspace_opened" as const, properties: { item_type: workspace.item_type } } : undefined;
-    untrack(() => reportVisit(key, action));
+    return { key, action };
   });
 
   // While `workspaceId` has moved on but the previous workspace's

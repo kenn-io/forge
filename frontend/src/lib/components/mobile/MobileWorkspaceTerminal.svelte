@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createCoreActionVisitReporter } from "../../app/telemetry.js";
+  import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -141,12 +141,11 @@
   const selectedHostKey = $derived(
     selectedSession ? pooledHostKey(selectedSession) : null,
   );
-  const reportVisit = createCoreActionVisitReporter(appRuntime);
-  $effect(() => {
+  trackCoreActionVisit(appRuntime, () => {
     const key = visible ? JSON.stringify([hostKey, workspaceId]) : null;
-    const action = workspace?.id === workspaceId && workspace.status === "ready" && workspace
+    const action = workspace?.id === workspaceId && workspace.status === "ready"
       ? { event: "workspace_opened" as const, properties: { item_type: workspace.item_type } } : undefined;
-    untrack(() => reportVisit(key, action));
+    return { key, action };
   });
 
   const pendingLaunch = $derived(pendingWorkspaceLaunch(workspaceId, hostKey));

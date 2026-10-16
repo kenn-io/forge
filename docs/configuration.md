@@ -670,7 +670,7 @@ per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
 Showing a selected PR's matching detail in the PR list, focus route, Activity
-drawer or mobile linked-PR page reports `pr_viewed` once per visit. Keyboard
+drawer, workspace sidebar or mobile linked-PR page reports `pr_viewed` once per visit. Keyboard
 selection, direct links and reloads qualify; tab changes and background refreshes
 stay in the same visit. Its `provider` is `github`, `gitlab`, `forgejo`, `gitea`,
 or `bitbucket`.

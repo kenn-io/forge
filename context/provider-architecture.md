@@ -78,9 +78,9 @@ Git's commit-graph can outlive commit objects; verify required commits physicall
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
-Squash sources may contain merges only with complete source-side ancestry and
-an exact three-way tree match; rewritten ranges still require a linear source
-(`landedwork/single_parent.go::squashCorrespondence`).
+Nonlinear squash sources require complete ancestry, a unique merge base, full
+net-edit correspondence, and an exact three-way tree match; rewritten ranges
+still require a linear source (`landedwork/single_parent.go::squashCorrespondence`).
 Across different bases, repeated text needs an exact three-way location witness;
 preserve full edit correspondence so partly applied sources keep their origin
 (`landedwork/edits.go::compareTreeEdits`).

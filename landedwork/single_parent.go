@@ -96,7 +96,16 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 		if err != nil {
 			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: editReason(err)}
 		}
-		return matched, Gap{}
+		if !matched {
+			return false, Gap{}
+		}
+		// A tree match alone can consume only part of the source edits when
+		// the target already contains a cherry-pick under another commit ID.
+		// Compare the full net edits since the shared branch-update boundary.
+		sourceBefore, err = v.mergeBase(ctx, before, c.SourceHead)
+		if err != nil {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: editReason(err)}
+		}
 	}
 	_, err := v.compareTreeEdits(ctx, sourceBefore, c.SourceHead, before, c.Terminal)
 	if errors.Is(err, errCorrespondence) {

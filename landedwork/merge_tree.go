@@ -7,6 +7,29 @@ import (
 	"strings"
 )
 
+// A nonlinear source needs one unambiguous boundary for its full net edits.
+// A recursively synthesized base does not establish that edit inventory.
+func (v *objectView) mergeBase(ctx context.Context, before, source string) (string, error) {
+	if err := v.meter.node(); err != nil {
+		return "", err
+	}
+	raw, err := v.run(ctx, "merge-base", "--all", before, source)
+	if err != nil {
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok && exit.ExitCode() == 1 {
+			return "", editProofError("merge_base_unproven")
+		}
+		return "", err
+	}
+	ids := strings.Fields(string(raw))
+	if len(ids) != 1 || !objectID(ids[0]) {
+		return "", editProofError("merge_base_unproven")
+	}
+	if _, err := v.parents(ctx, ids[0]); err != nil {
+		return "", err
+	}
+	return ids[0], nil
+}
+
 // merge-tree writes synthesized objects only into the disposable object view.
 // The caller's object store is a read-only alternate. A conflict, absent object,
 // or exhausted budget remains inconclusive, even if Git prints a tree ID.

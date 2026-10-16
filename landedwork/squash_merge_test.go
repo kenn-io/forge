@@ -12,7 +12,7 @@ import (
 
 func TestSquashAfterUpdatingBranch(t *testing.T) {
 	for _, method := range []string{"squash", "automatic"} {
-		for _, mode := range []string{"complete", "omitted", "different tree", "missing source", "conflict"} {
+		for _, mode := range []string{"complete", "omitted", "different tree", "missing source", "conflict", "partly present"} {
 			t.Run(method+"/"+mode, func(t *testing.T) {
 				f := buildFixture(t, true)
 				f.repo.Checkout("-b", "target", f.base)
@@ -22,6 +22,13 @@ func TestSquashAfterUpdatingBranch(t *testing.T) {
 				f.source = append(f.source, f.repo.Head())
 				f.repo.Checkout("target")
 				f.base = f.repo.CommitFile("later", "later\n", "target advances again")
+				if mode == "partly present" {
+					// The first source edit is present under a different commit ID.
+					// Squashing now applies only the second edit in the same file.
+					f.repo.Run("cherry-pick", f.source[0])
+					f.base = f.repo.Head()
+					require.NotEqual(t, f.source[0], f.base)
+				}
 				if mode == "conflict" {
 					f.base = f.repo.CommitFile("work.txt", "target change\n", "target edits same lines")
 					require.NoError(t, os.WriteFile(filepath.Join(f.repo.Root, "work.txt"), []byte("resolved\n"), 0o600))
@@ -55,8 +62,9 @@ func TestSquashAfterUpdatingBranch(t *testing.T) {
 				if mode != "complete" {
 					assert.Empty(r.Landings)
 					assert.False(r.Coverage.Complete)
+					assert.Equal(f.base, r.Coverage.CertifiedHead)
 					require.Len(t, r.Coverage.Gaps, 1)
-					assert.Equal(map[string]string{"omitted": "source_incomplete", "different tree": "source_correspondence_unproven", "missing source": "objects_unavailable", "conflict": "merge_conflict"}[mode], r.Coverage.Gaps[0].Reason)
+					assert.Equal(map[string]string{"omitted": "source_incomplete", "different tree": "source_correspondence_unproven", "missing source": "objects_unavailable", "conflict": "merge_conflict", "partly present": "source_correspondence_unproven"}[mode], r.Coverage.Gaps[0].Reason)
 					return
 				}
 				require.Len(t, r.Landings, 1)
@@ -66,6 +74,44 @@ func TestSquashAfterUpdatingBranch(t *testing.T) {
 				assert.NotContains(r.Landings[0].Source, update)
 			})
 		}
+	}
+}
+
+func TestSquashWithMultipleMergeBasesRemainsUnresolved(t *testing.T) {
+	for _, method := range []string{"squash", "automatic"} {
+		t.Run(method, func(t *testing.T) {
+			f := buildFixture(t, true)
+			f.repo.Checkout("-b", "target", f.base)
+			f.repo.CommitFile("target", "update\n", "target advances")
+			f.repo.Checkout("topic")
+			f.repo.Run("merge", "--no-ff", "target", "-m", "update branch")
+			f.source = append(f.source, f.repo.Head())
+			f.source = append(f.source, f.repo.CommitFile("extra", "extra\n", "source advances"))
+			f.repo.Checkout("target")
+			// Both branches merge the other's earlier tip independently. Neither
+			// of those tips is the unique boundary for the remaining source edits.
+			f.repo.Run("merge", "--no-ff", f.source[1], "-m", "integrate earlier source")
+			f.base = f.repo.Head()
+			f.repo.Run("merge", "--squash", "topic")
+			f.repo.Run("commit", "-m", "squash remaining source")
+			f.head = f.repo.Head()
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "squash")
+			if method == "automatic" {
+				e.Candidates[0].Method = ""
+				e.Candidates[0].MethodEvidence = ""
+				e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
+			}
+			r, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(r.Landings)
+			assert.Empty(r.DirectPushes)
+			assert.False(r.Coverage.Complete)
+			assert.Equal(f.base, r.Coverage.CertifiedHead)
+			require.Len(t, r.Coverage.Gaps, 1)
+			assert.Equal("merge_base_unproven", r.Coverage.Gaps[0].Reason)
+		})
 	}
 }
 

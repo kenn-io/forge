@@ -1,10 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import {
-  mountBrowserApp,
-  resetKeyboardModuleState,
-  type MountedBrowserApp,
-} from "./test/browserAppHarness.js";
+import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
 
 const WAIT = 10_000;

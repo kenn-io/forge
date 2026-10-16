@@ -172,7 +172,9 @@ describe("ActivityFeedView detail panes", () => {
     });
     const view = renderActivity({ drawerItem: prDrawer(), inlineWorkspace: controller });
     await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
-    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe("true");
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe(
+      "true",
+    );
 
     view.pullBox.set(pullDetailFixture(12, { id: "ws-1", status: "ready" }));
     await tick();

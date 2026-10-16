@@ -177,12 +177,16 @@ describe("PRListView detail panes", () => {
     });
     const view = renderPRListView({ inlineWorkspace: controller });
     await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
-    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe("true");
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe(
+      "true",
+    );
     expect(coreActions).not.toHaveBeenCalled();
 
     view.detailBox.set(pullDetailFixture({ id: "ws-1", status: "ready" }));
     await tick();
-    expect(screen.getByTestId("pull-detail").closest(".tabbed-panel-tab-panel")?.classList.contains("active")).toBe(false);
+    expect(screen.getByTestId("pull-detail").closest(".tabbed-panel-tab-panel")?.classList.contains("active")).toBe(
+      false,
+    );
     expect(coreActions).not.toHaveBeenCalled();
 
     await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));

@@ -23,6 +23,28 @@ type SeedResult struct {
 	FixtureClient func() *FixtureClient
 }
 
+// Seeded acme/widgets PR #1 commit SHAs. SetupDiffRepo replaces the commits
+// that survive both force pushes (widgetsPR1SurvivingCommits) with real commits
+// in the diff fixture repository, so clone-verified commit liveness leaves only
+// the rebased-away w1Commit3 and w1OldHead obsolete.
+const (
+	w1Commit1             = "abc1111111111111111111111111111111111111"
+	w1Commit2             = "abc2222222222222222222222222222222222222"
+	w1Commit3             = "abc3333333333333333333333333333333333333"
+	w1OldHead             = "abc4444444444444444444444444444444444444"
+	w1NewCommit           = "def3333333333333333333333333333333333333"
+	w1NewHead             = "def5555555555555555555555555555555555555"
+	w1SecondMissingBefore = "abc9999999999999999999999999999999999999"
+	w1SecondHead          = "def7777777777777777777777777777777777777"
+	w1FollowUp            = "def6666666666666666666666666666666666666"
+)
+
+// widgetsPR1SurvivingCommits lists the seeded PR #1 commits still on the
+// branch after both force pushes, oldest first.
+var widgetsPR1SurvivingCommits = []string{
+	w1Commit1, w1Commit2, w1NewCommit, w1NewHead, w1SecondHead, w1FollowUp,
+}
+
 // SeedFixtures populates d with a synthetic data set for E2E tests and returns
 // a SeedResult containing a FixtureClient factory for the seeded open items.
 func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
@@ -563,15 +585,6 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 
 	// widgets PR#1: 2 comments (bob, carol), 1 review (bob APPROVED), commits around a force-push
 	commitBase := now.Add(-9 * 24 * time.Hour)
-	w1Commit1 := "abc1111111111111111111111111111111111111"
-	w1Commit2 := "abc2222222222222222222222222222222222222"
-	w1Commit3 := "abc3333333333333333333333333333333333333"
-	w1OldHead := "abc4444444444444444444444444444444444444"
-	w1NewCommit := "def3333333333333333333333333333333333333"
-	w1NewHead := "def5555555555555555555555555555555555555"
-	w1SecondMissingBefore := "abc9999999999999999999999999999999999999"
-	w1SecondHead := "def7777777777777777777777777777777777777"
-	w1FollowUp := "def6666666666666666666666666666666666666"
 	w1BobCommentUTC := time.Date(now.Year(), now.Month(), now.Day(), 1, 30, 0, 0, time.UTC).Add(-8 * 24 * time.Hour)
 	w1BobComment, err := time.Parse(
 		time.RFC3339,

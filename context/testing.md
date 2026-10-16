@@ -297,6 +297,10 @@ and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.t
   for an admitted creation before killing the private server (`cmd/e2e-server/main.go::tmuxCreationGate`).
 - Keep explicit PTY-owner test mode unwrapped so its missing tmux command remains
   unavailable to backend selection (`cmd/e2e-server/main.go::buildAppState`).
+- e2e-server never calls `gitsafe.RunIsolatedMain`, so its fixture Git reads the developer's
+  global config and each `git commit` may sign or run hooks. Every worker builds fixtures at
+  startup under a 60s readiness timeout; create bulk fixture commits with plumbing such as
+  `git fast-import` (`internal/testutil/diff_repo.go::appendSeededPR1Commits`).
 - Markdown video browser tests use a committed synthetic VP9 WebM clip, which
   every Playwright browser decodes, on a dedicated e2e server; the clip's extra
   seeded items would change other specs' lists

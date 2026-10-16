@@ -264,6 +264,9 @@ Some PR-derived state is only valid for one head commit.
   (`internal/github/sync.go::computeCommitLiveness`,
   `internal/db/queries.go::UpsertMergeRequestSnapshotWithLabelsAndEventMetadata`,
   `internal/gitclone/reachability.go::CommitsReachableFrom`).
+- A fixture whose PR head is a real clone commit must seed live commit events with SHAs
+  reachable from that head; liveness flags every other SHA obsolete, and the timeline collapses
+  obsolete commits in all orders (`internal/testutil/diff_repo.go::alignWidgetsPR1CommitEvents`).
 - Mutation-triggered closed-MR refetches resolve the repository by its stored
   provider ID and carry stable clone identity
   (`internal/github/sync.go::SyncClosedMROnProvider`).

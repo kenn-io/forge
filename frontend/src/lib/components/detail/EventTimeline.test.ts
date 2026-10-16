@@ -2197,7 +2197,8 @@ describe("EventTimeline", () => {
     expect(groupedText.indexOf("new C3 after rebase")).toBeLessThan(
       groupedText.indexOf("comment between commits and push"),
     );
-    expect(groupedText).toContain("old C3 before rebase");
+    expect(groupedText).toContain("2 commits replaced by a later force push");
+    expect(groupedText).not.toContain("old C3 before rebase");
     cleanup();
 
     const chronological = renderTimeline({
@@ -2248,6 +2249,63 @@ describe("EventTimeline", () => {
     expect(text).not.toContain("commit two obsolete");
     expect(text).not.toContain("commit one obsolete");
     expect(text).toContain("2 commits replaced by a later force push");
+  });
+
+  it("collapses obsolete commits in grouped order so the load-more count covers only visible entries", () => {
+    const oldHead = "5555555555555555555555555555555555555555";
+    const newHead = "8888888888888888888888888888888888888888";
+    const obsoleteCommits = [5, 4, 3, 2, 1].map((n) =>
+      makeEvent({
+        ID: n,
+        EventType: "commit",
+        Summary: String(n).repeat(40),
+        Body: `old commit ${n} before rebase`,
+        CreatedAt: `2024-06-01T10:0${n}:00Z`,
+        MetadataJSON: JSON.stringify({ commit_order_key: n, obsolete: true }),
+      }),
+    );
+    const events = [
+      makeEvent({
+        ID: 9,
+        EventType: "force_push",
+        Author: "alice",
+        Summary: "5555555 -> 8888888",
+        CreatedAt: "2024-06-01T12:00:00Z",
+        MetadataJSON: JSON.stringify({ before_sha: oldHead, after_sha: newHead }),
+      }),
+      makeEvent({
+        ID: 8,
+        EventType: "commit",
+        Summary: newHead,
+        Body: "new commit 8 after rebase",
+        CreatedAt: "2024-06-01T10:08:00Z",
+        MetadataJSON: JSON.stringify({ commit_order_key: 8 }),
+      }),
+      makeEvent({
+        ID: 7,
+        EventType: "commit",
+        Summary: "7777777777777777777777777777777777777777",
+        Body: "new commit 7 after rebase",
+        CreatedAt: "2024-06-01T10:07:00Z",
+        MetadataJSON: JSON.stringify({ commit_order_key: 7 }),
+      }),
+      ...obsoleteCommits,
+    ];
+
+    for (const activityViewMode of ["normal", "compact"] as const) {
+      renderTimeline({
+        props: { events, activityViewMode, initialEntryLimit: 2, itemIdentity: "github:acme/widget#42" },
+      });
+      expect(screen.getByRole("button", { name: "Show 2 more" })).toBeTruthy();
+      cleanup();
+
+      const { container } = renderTimeline({ props: { events, activityViewMode } });
+      const text = container.textContent ?? "";
+      expect(text).toContain("new commit 8 after rebase");
+      expect(text).toContain("5 commits replaced by a later force push");
+      expect(text).not.toContain("old commit 3 before rebase");
+      cleanup();
+    }
   });
 
   it("ignores the obsolete flag outside commit events and non-boolean values", () => {

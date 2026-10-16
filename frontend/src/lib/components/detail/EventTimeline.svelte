@@ -743,9 +743,7 @@
       });
     }
 
-    return timelineOrder === "chronological"
-      ? collapseObsoleteCommitEntries(entries, "")
-      : entries;
+    return collapseObsoleteCommitEntries(entries, "");
   }
 
   const displayEvents = $derived(collapseLifecycleTransitions(events));
@@ -798,9 +796,7 @@
       reviewThread: reviewThreadFor(event) ?? undefined,
       replies: [],
     }));
-    return timelineOrder === "chronological"
-      ? collapseObsoleteCommitEntries(entries, "compact-")
-      : entries;
+    return collapseObsoleteCommitEntries(entries, "compact-");
   }
 
   function isCompactEvent(eventType: string): boolean {

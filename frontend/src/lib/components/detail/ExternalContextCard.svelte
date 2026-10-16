@@ -47,7 +47,8 @@
   });
 
   $effect(() => {
-    const interval = context.card?.refresh_after_seconds;
+    // A failed first read has no card yet to supply a polling interval.
+    const interval = context.card?.refresh_after_seconds || (context.error ? 15 : 0);
     if (!interval || context.needsRefresh) return;
     const currentPull = pull;
     const sourceId = source.id;

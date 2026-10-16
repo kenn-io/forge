@@ -93,7 +93,9 @@ seconds. Manual Refresh bypasses completed cached results and shares an
 in-flight read. A result SHA different from the displayed PR head is visibly
 stale; an absent result SHA does not attest to current-head coverage
 (`frontend/src/lib/components/detail/ExternalContextCard.svelte`). Omitting
-the interval or setting it to zero disables polling.
+the interval or setting it to zero disables polling after successful reads. Failed
+reads without an interval retry every 15 seconds while visible; failed actions
+still require manual Refresh.
 
 Adapters enqueue long-running work and return a pending card promptly. They
 own upstream authentication, repository applicability, business rules, and

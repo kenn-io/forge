@@ -195,6 +195,45 @@ describe("external PR context", () => {
     expect(screen.getByText("Run queued")).toBeTruthy();
   });
 
+  it.each([
+    { name: "initial read", initialCard: null, recoveredCard: card },
+    { name: "non-polling refresh", initialCard: card, recoveredCard: null },
+  ])(
+    "recovers a failed $name without manual refresh and stops after success",
+    async ({ initialCard, recoveredCard }) => {
+      let reads = 0;
+      vi.stubGlobal("fetch", async (request: Request) => {
+        if (request.url.endsWith("/external-context/sources"))
+          return Response.json({ sources: [{ id: "checks", name: "Quality checks" }] });
+        expect(request.method).toBe("GET");
+        expect(new URL(request.url).pathname).toBe("/api/v1/pulls/github/example/project/42/external-context/checks");
+        reads++;
+        if (initialCard && reads === 1) return Response.json({ card: initialCard });
+        if (reads === (initialCard ? 2 : 1))
+          return Response.json({ code: "upstreamError", detail: "external context command failed" }, { status: 502 });
+        return Response.json({ card: recoveredCard });
+      });
+      vi.useFakeTimers();
+      render(ExternalContextCards, { props });
+      if (initialCard) {
+        await vi.waitFor(() => expect(screen.getByText("A slower result")).toBeTruthy());
+        await fireEvent.click(screen.getByRole("button", { name: "Refresh Quality checks" }));
+      }
+      await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toBe("external context command failed"));
+      if (initialCard) expect(screen.getByText("A slower result")).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(14_000);
+      expect(screen.getByRole("alert")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+      if (recoveredCard) expect(screen.getByText("A slower result")).toBeTruthy();
+      else expect(screen.queryByText("Quality checks")).toBeNull();
+      const completedReads = reads;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(reads).toBe(completedReads);
+    },
+  );
+
   it("shows a failed action with Refresh and never retries the submission", async () => {
     const posts = vi.fn();
     vi.stubGlobal(
@@ -210,14 +249,21 @@ describe("external PR context", () => {
         return Response.json({ card });
       }),
     );
+    vi.useFakeTimers();
     render(ExternalContextCards, { props });
-    await fireEvent.click(await screen.findByRole("button", { name: "Run checks" }));
-    expect((await screen.findByRole("alert")).textContent).toContain(
-      "The action may have been submitted. Refresh to check its status.",
+    await vi.waitFor(() => expect(screen.getByRole("button", { name: "Run checks" })).toBeTruthy());
+    await fireEvent.click(screen.getByRole("button", { name: "Run checks" }));
+    await vi.waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toContain(
+        "The action may have been submitted. Refresh to check its status.",
+      ),
     );
     expect((screen.getByRole("button", { name: "Run checks" }) as HTMLButtonElement).disabled).toBe(true);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Run checks" }) as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(screen.getByRole("button", { name: "Refresh Quality checks" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    await vi.waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect((screen.getByRole("button", { name: "Run checks" }) as HTMLButtonElement).disabled).toBe(false);
     expect(posts).toHaveBeenCalledTimes(1);
   });

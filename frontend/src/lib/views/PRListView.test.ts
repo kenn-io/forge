@@ -51,10 +51,11 @@ const selectedPR: PullRequestRouteRef = {
 class ResizeObserverMock {
   constructor(private callback: ResizeObserverCallback) {}
 
-  observe(): void {
+  observe(target: Element): void {
     this.callback(
       [
         {
+          target,
           contentRect: { width: observedWidth.value },
         } as ResizeObserverEntry,
       ],

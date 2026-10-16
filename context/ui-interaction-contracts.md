@@ -72,6 +72,9 @@ Interactive surfaces must agree on which item is selected.
 - Confirmed workspace deletions evict the matching host and ID from visible rows and the shared snapshot
   before revalidation, preserving same-ID entries on other hosts
   (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::removeWorkspaceListEntry`).
+- Workspace list multi-selection never navigates and covers only on-screen rows (not collapsed or filtered);
+  bulk delete never forces, so dirty worktrees survive and are reported
+  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmBulkDelete`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

@@ -5401,6 +5401,27 @@ test.describe("workspace list sorting", () => {
     await expect(names).toHaveCount(3);
   });
 
+  test("shift-click selects a row range instead of text and offers bulk deletion", async ({ page }) => {
+    await page.goto("/workspaces");
+    const sidebar = page.locator(".workspace-list-sidebar");
+    const rows = sidebar.locator(".ws-row");
+    await expect(rows).toHaveCount(3);
+
+    await rows.filter({ hasText: "Newest created" }).click({ modifiers: ["Shift"] });
+    await rows.filter({ hasText: "Most recently active" }).click({ modifiers: ["Shift"] });
+
+    await expect(sidebar.locator(".ws-row.multi-selected .ws-name")).toHaveText([
+      "Newest created",
+      "Oldest without activity",
+      "Most recently active",
+    ]);
+    expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+    await expect(page).toHaveURL(/\/workspaces$/);
+
+    await rows.filter({ hasText: "Oldest without activity" }).click({ button: "right" });
+    await expect(page.getByRole("menuitem", { name: "Delete 3 workspaces..." })).toBeVisible();
+  });
+
   test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {
     await page.goto("/workspaces");
 

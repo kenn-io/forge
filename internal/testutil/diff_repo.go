@@ -358,7 +358,7 @@ func alignWidgetsPR1CommitEvents(
 			}
 			afterSHA, _ := metadata["after_sha"].(string)
 			realSHA, ok := realSHAs[afterSHA]
-			if !ok {
+			if !ok || metadata == nil {
 				continue
 			}
 			metadata["after_sha"] = realSHA

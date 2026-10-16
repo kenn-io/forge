@@ -9,6 +9,9 @@
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
+- Core-action telemetry counts selected PR details and visible ready workspaces,
+  including launchers. Session changes preserve visits; hiding or changing selection
+  ends them (`frontend/src/lib/app/telemetry.ts::createCoreActionVisitReporter`).
 
 ## Package layout
 

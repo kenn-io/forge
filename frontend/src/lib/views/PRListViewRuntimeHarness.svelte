@@ -5,12 +5,12 @@
   import { setAppRuntime } from "../app/runtime-context.js";
   import PRListView from "./PRListView.svelte";
 
-  const runtime = makeAppRuntime();
+  const { client, ...props }: ComponentProps<typeof PRListView> & { client?: import("../api/generated-api.js").GeneratedClient } = $props();
+  const runtime = makeAppRuntime(untrack(() => client));
   setAppRuntime(untrack(() => runtime));
   onDestroy(() => {
     Effect.runFork(runtime.disposeEffect);
   });
-  const props: ComponentProps<typeof PRListView> = $props();
 </script>
 
 <PRListView {...props} />

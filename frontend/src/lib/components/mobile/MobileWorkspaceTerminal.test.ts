@@ -1,3 +1,4 @@
+import { saveMobileWorkspaceSession } from "./mobile-workspace-session.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -6,6 +7,8 @@ import { GeneratedProblemResponse } from "../../api/runtime.js";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { navigate } from "../../stores/router.svelte.js";
 import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
+
+const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -95,6 +98,7 @@ const workspaceRef = { id: "ws-a", status: "ready" };
 
 describe("MobileWorkspaceTerminal", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     for (const mock of Object.values(mocks.runtimeClient)) mock.mockReset();
     mocks.runtimeClient.getWorkspace.mockResolvedValue(workspace);
     mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(runtime);
@@ -103,6 +107,7 @@ describe("MobileWorkspaceTerminal", () => {
     events.subscribeWorkspaceEvents.mockReset().mockReturnValue(() => {});
     runtimeState.appRuntime = makeAppRuntime(
       makeGeneratedClient({
+        SystemService: { captureTelemetryEvent: coreActions },
         WorkspacesService: mocks.runtimeClient,
         FleetService: mocks.runtimeClient,
       }),
@@ -122,6 +127,51 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+  });
+
+  it("counts a ready workspace once through session launch and loss", async () => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    const session: RuntimeSession = {
+      key: "chat-a",
+      workspace_id: "ws-a",
+      target_key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    };
+    const chatRuntime = {
+      launch_targets: [{ key: "chat", label: "Chat agent", kind: "acp", available: true }],
+      sessions: [session],
+    };
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(chatRuntime);
+    saveMobileWorkspaceSession("ws-a", undefined, "chat-a");
+    const launch = Promise.withResolvers<RuntimeSession>();
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockReturnValue(launch.promise);
+    render(MobileWorkspaceTerminalTestHarness, { props });
+    await screen.findByRole("button", { name: "Chat options" });
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledWith(
+        { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    await waitFor(() => expect(notify).toBeTypeOf("function"));
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...chatRuntime, sessions: [] });
+    notify?.({ type: "reconnect.stale", payload: {} });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Chat options" })).toBeNull());
+    queueWorkspaceLaunch("ws-a", "chat", undefined);
+    await screen.findByText("Starting Chat agent…");
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(chatRuntime);
+    launch.resolve(session);
+    await screen.findByRole("button", { name: "Chat options" });
+    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it.each([

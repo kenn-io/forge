@@ -5,12 +5,12 @@
   import { setAppRuntime } from "../app/runtime-context.js";
   import ActivityFeedView from "./ActivityFeedView.svelte";
 
-  const runtime = makeAppRuntime();
+  const { client, ...props }: ComponentProps<typeof ActivityFeedView> & { client?: import("../api/generated-api.js").GeneratedClient } = $props();
+  const runtime = makeAppRuntime(untrack(() => client));
   setAppRuntime(untrack(() => runtime));
   onDestroy(() => {
     Effect.runFork(runtime.disposeEffect);
   });
-  const props: ComponentProps<typeof ActivityFeedView> = $props();
 </script>
 
 <ActivityFeedView {...props} />

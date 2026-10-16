@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { createCoreActionVisitReporter } from "../../app/telemetry.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
@@ -1535,6 +1536,14 @@
     untrack(() => {
       for (const key of showing) mountSessionTerminal(key);
     });
+  });
+
+  const reportVisit = createCoreActionVisitReporter(appRuntime);
+  $effect(() => {
+    const key = interactionVisible ? viewWorkspaceKey : null;
+    const action = workspaceLive && workspace?.status === "ready" && workspace
+      ? { event: "workspace_opened" as const, properties: { item_type: workspace.item_type } } : undefined;
+    untrack(() => reportVisit(key, action));
   });
 
   // While `workspaceId` has moved on but the previous workspace's

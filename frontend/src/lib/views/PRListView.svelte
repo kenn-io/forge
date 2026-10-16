@@ -3,6 +3,9 @@
 </script>
 
 <script lang="ts">
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import { createCoreActionVisitReporter, prVisitKey } from "../app/telemetry.js";
+  import { canonicalProvider } from "../api/provider-routes.js";
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
@@ -177,6 +180,20 @@
   const selectedDetail = $derived.by(() => {
     const detail = detailStore.getDetail();
     return pullDetailMatchesRef(detail, selectedPR) ? detail : null;
+  });
+
+  const prDetailVisible = $derived.by(() => {
+    if (paneLayout === null) return true;
+    const tabs = paneLayout.paneRender()?.onScreenTabs;
+    return tabs?.includes("conversation") || tabs?.includes("files");
+  });
+  const reportVisit = createCoreActionVisitReporter(getAppRuntime());
+  $effect(() => {
+    const ref = selectedPR;
+    const key = prVisitKey(ref);
+    const action = selectedDetail && ref && prDetailVisible
+      ? { event: "pr_viewed" as const, properties: { provider: canonicalProvider(ref.provider) } } : undefined;
+    untrack(() => reportVisit(key, action));
   });
 
   function refreshSelectedDetail(): void {

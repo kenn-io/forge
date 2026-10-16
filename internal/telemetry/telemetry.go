@@ -45,6 +45,14 @@ func SessionDuration(value any) (any, bool) {
 }
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"pr_viewed": {
+		"provider": posthog.AllowStringValues("github", "gitlab", "forgejo", "gitea", "bitbucket"),
+		"surface":  posthog.AllowStringValues("web"),
+	},
+	"workspace_opened": {
+		"item_type": posthog.AllowStringValues("pull_request", "issue", "kata_task", "adhoc"),
+		"surface":   posthog.AllowStringValues("web"),
+	},
 	"screen_viewed": {
 		"screen":  screenFilter,
 		"surface": posthog.AllowStringValues("web"),

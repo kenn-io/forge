@@ -669,6 +669,16 @@ open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
+Showing a selected PR's matching detail in the PR list, focus route, Activity
+drawer or mobile linked-PR page reports `pr_viewed` once per visit. Keyboard
+selection, direct links and reloads qualify; tab changes and background refreshes
+stay in the same visit. Its `provider` is `github`, `gitlab`, `forgejo`, `gitea`,
+or `bitbucket`.
+Showing a ready workspace reports `workspace_opened`, including its launcher,
+with `item_type` set to `pull_request`, `issue`, `kata_task`, or `adhoc`.
+Session starts and restarts stay in the same visit. Leaving, hiding or selecting
+another workspace ends it; returning counts again.
+Both events carry `surface: web`; the agent-facing CLI sends neither event.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.

@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { makeGeneratedClient } from "../testing/generated-client.js";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { createRawSnippet, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { STORES_KEY } from "../context.js";
@@ -7,6 +8,8 @@ import { getPaneLayoutStore, resetPaneLayoutStoresForTest } from "../stores/pane
 import { sessionPaneKey } from "../stores/session-pane-key.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
+
+const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 
 vi.mock("../components/ActivityFeed.svelte", async () => ({
   default: (await import("./ActivityFeedViewTestActivityFeed.svelte")).default,
@@ -99,6 +102,7 @@ function renderActivity(options: RenderOptions = {}) {
     issueBox,
     ...render(ActivityFeedView, {
       props: {
+        client: makeGeneratedClient({ SystemService: { captureTelemetryEvent: coreActions } }),
         drawerItem: options.drawerItem ?? null,
         ...(options.commitItem !== undefined ? { commitItem: options.commitItem } : {}),
         ...(options.onSelectCommit !== undefined ? { onSelectCommit: options.onSelectCommit } : {}),
@@ -114,6 +118,7 @@ function renderActivity(options: RenderOptions = {}) {
 
 describe("ActivityFeedView detail panes", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     localStorage.clear();
     resetModalStack();
     resetPaneLayoutStoresForTest();
@@ -155,6 +160,33 @@ describe("ActivityFeedView detail panes", () => {
       "false",
     );
     expect(bodies.find((el) => el.getAttribute("data-tab-key") === "files")?.dataset.keyboardActive).toBe("false");
+  });
+
+  it("reports a loaded PR only after revealing it behind a session pane", async () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ width: 1600 } as DOMRect);
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    const layout = getPaneLayoutStore("activity");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
+    const { controller } = createClaimTestController("activity", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+    const view = renderActivity({ drawerItem: prDrawer(), inlineWorkspace: controller });
+    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe("true");
+
+    view.pullBox.set(pullDetailFixture(12, { id: "ws-1", status: "ready" }));
+    await tick();
+    expect(screen.getAllByTestId("pull-detail-pane").map((pane) => pane.dataset.visible)).toEqual(["false", "false"]);
+    expect(coreActions).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledWith(
+        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
+    );
+    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it("offers no diff pane for an issue selection", () => {

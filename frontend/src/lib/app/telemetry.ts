@@ -1,5 +1,9 @@
 import { Effect } from "effect";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import type { ProviderRouteRef } from "../api/provider-routes.js";
+import { providerItemKey } from "../stores/provider-key.js";
+import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
+import type { OwnedAppRuntime } from "./runtime.js";
 import type { Page, Route } from "../stores/router.svelte.js";
 
 // Must match the daemon's screen allowlist in internal/telemetry/telemetry.go.
@@ -66,3 +70,39 @@ export function createScreenViewReporter(now: () => Date = () => new Date()) {
     reportedDay.set(screen, day);
   });
 }
+
+export type CoreAction =
+  | { event: "pr_viewed"; properties: { provider: string } }
+  | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
+
+export function prVisitKey(ref: (ProviderRouteRef & { number: number }) | null): string | null {
+  return ref ? providerItemKey({ ...ref, platformHost: ref.platformHost ?? "" }) : null;
+}
+
+/** Each mounted presentation reports once until its selection changes or it is hidden. */
+export function createCoreActionVisitReporter(runtime: Pick<OwnedAppRuntime, "runCommand">) {
+  let selection: string | null = null;
+  let reported = false;
+  return (key: string | null, action?: CoreAction) => {
+    if (key !== selection) {
+      selection = key;
+      reported = false;
+    }
+    if (key === null || reported || !action) return;
+    reported = true;
+    runtime.runCommand(reportCoreAction(action), {
+      operation: "telemetry.coreAction",
+      safeContext: { surface: "web" },
+      onFailure: () => undefined,
+    });
+  };
+}
+
+const reportCoreAction = Effect.fn("Telemetry.reportCoreAction")(function* (action: CoreAction) {
+  yield* executeGeneratedApiRequest("report core action", (client, signal) =>
+    client.SystemService.captureTelemetryEvent(
+      { ...action, properties: { ...action.properties, surface: "web" } },
+      { signal },
+    ),
+  ).pipe(Effect.timeout("8 seconds"));
+});

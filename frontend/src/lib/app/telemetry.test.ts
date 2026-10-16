@@ -1,9 +1,17 @@
+import { waitFor } from "@testing-library/svelte";
+import { makeAppRuntime } from "./runtime.js";
 import { Effect, Exit } from "effect";
 import { describe, expect, it } from "vite-plus/test";
 import { makeGeneratedApiLayer } from "../api/generated-api.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { createScreenViewReporter, type ScreenName, visibleScreen } from "./telemetry.js";
+import {
+  createScreenViewReporter,
+  createCoreActionVisitReporter,
+  type CoreAction,
+  type ScreenName,
+  visibleScreen,
+} from "./telemetry.js";
 
 describe("visible screen names", () => {
   it.each([
@@ -79,5 +87,44 @@ describe("screen view reporter", () => {
     expect(Exit.isSuccess(await run("docs"))).toBe(true);
     await run("docs");
     expect(sent).toEqual(["docs", "docs"]);
+  });
+});
+
+describe("core action visits", () => {
+  it.each([
+    ["successful", false],
+    ["failed", true],
+  ])("counts each visit once after a %s report", async (_name, failure) => {
+    const sent: unknown[] = [];
+    const runtime = makeAppRuntime(
+      makeGeneratedClient({
+        SystemService: {
+          captureTelemetryEvent: async (body) => {
+            sent.push(body);
+            if (failure) throw new Error("daemon unavailable");
+            return { status: "queued" };
+          },
+        },
+      }),
+    );
+    const report = createCoreActionVisitReporter(runtime);
+    const action: CoreAction = { event: "pr_viewed", properties: { provider: "gitlab" } };
+    report("pr-a");
+    expect(sent).toEqual([]);
+    report("pr-a", action);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    report("pr-a");
+    report("pr-a", action);
+    report("pr-b", action);
+    await waitFor(() => expect(sent).toHaveLength(2));
+    report(null);
+    report("pr-b", action);
+    await waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent).toEqual([
+      { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
+      { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
+      { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
+    ]);
+    await Effect.runPromise(runtime.disposeEffect);
   });
 });

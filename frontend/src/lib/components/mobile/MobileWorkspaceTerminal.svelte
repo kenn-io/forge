@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -140,6 +141,13 @@
   const selectedHostKey = $derived(
     selectedSession ? pooledHostKey(selectedSession) : null,
   );
+  trackCoreActionVisit(appRuntime, () => {
+    const key = visible ? JSON.stringify([hostKey, workspaceId]) : null;
+    const action = workspace?.id === workspaceId && workspace.status === "ready"
+      ? { event: "workspace_opened" as const, properties: { item_type: workspace.item_type } } : undefined;
+    return { key, action };
+  });
+
   const pendingLaunch = $derived(pendingWorkspaceLaunch(workspaceId, hostKey));
   const quickActionLaunch = $derived(quickActionLaunches.get(quickActionWorkspaceKey(workspaceId, hostKey)));
   const startingTargetKey = $derived(pendingLaunch?.targetKey ?? quickActionLaunch?.targetKey ?? launchingTarget);

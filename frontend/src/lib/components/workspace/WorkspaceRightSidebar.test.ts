@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createDiffStore } from "../../stores/diff.svelte.js";
@@ -12,9 +14,11 @@ import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness
 import type { WorkspaceDiffGitState } from "./workspace-diff-default.js";
 
 let runtime: OwnedAppRuntime;
+const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 
 beforeEach(() => {
-  runtime = makeAppRuntime();
+  coreActions.mockClear();
+  runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: coreActions } }));
 });
 
 vi.mock("../kata/KataLinksPanel.svelte", async () => ({
@@ -23,6 +27,7 @@ vi.mock("../kata/KataLinksPanel.svelte", async () => ({
 
 function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
   return {
+    detail: createAppStores({ runtime }).stores.detail,
     diff: createDiffStore({ runtime }),
     roborevDaemon: {
       isAvailable: () => false,
@@ -284,6 +289,75 @@ describe("WorkspaceRightSidebar", () => {
     await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPR: null } });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
+  });
+
+  it("reports the visible matching PR once across sidebar refresh", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const api = createMockApiFetch();
+    const pending = Promise.withResolvers<void>();
+    let held = false;
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.includes("/pulls/github/acme/widgets/55") && !url.includes("/sync")) {
+        held = true;
+        await pending.promise;
+      }
+      return api.fetch(input, init);
+    });
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "pr" as const,
+      workspaceID: "ws-1",
+      worktreePath: "",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      branch: "work",
+      roborevBaseUrl: "/api/roborev",
+      visible: false,
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    try {
+      await screen.findByRole("heading", { name: "Add browser regression coverage" });
+      expect(coreActions).not.toHaveBeenCalled();
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true } });
+      expect(coreActions).not.toHaveBeenCalled();
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({ event: "pr_viewed", properties: { provider: "github" } });
+      visibility.mockReturnValue("hidden");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      await view.rerender({ runtime, sidebarProps });
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true } });
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true, refreshToken: 1 } });
+      await screen.findByRole("heading", { name: "Add browser regression coverage" });
+      expect(coreActions).toHaveBeenCalledTimes(2);
+      await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true, associatedPRNumber: 55 } });
+      await waitFor(() => expect(held).toBe(true));
+      expect(screen.queryByRole("heading", { name: "Add browser regression coverage" })).toBeNull();
+      expect(coreActions).toHaveBeenCalledTimes(2);
+      pending.resolve();
+      await screen.findByRole("heading", { name: "Refactor theme system" });
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(3));
+    } finally {
+      pending.resolve();
+    }
   });
 
   it.each([

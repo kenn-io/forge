@@ -72,7 +72,7 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require := require.New(t)
 
 	t.Setenv(EnabledEnv, "0")
-	backend, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("backend")...)
+	backend, err := posthog.NewReporter(posthog.Options{}, KitAllowedEvents("backend")...)
 	require.NoError(err)
 
 	assert.False(backend.EventAllowed("daemon_active"))

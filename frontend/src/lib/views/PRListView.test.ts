@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { makeGeneratedClient } from "../testing/generated-client.js";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { createRawSnippet, flushSync, tick, type Snippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { NAVIGATE_KEY, SIDEBAR_KEY, STORES_KEY } from "../context.js";
@@ -8,6 +9,8 @@ import { sessionPaneKey } from "../stores/session-pane-key.js";
 import type { PullRequestRouteRef } from "../routes.js";
 import type { InlineWorkspaceController } from "../workspace-inline.js";
 import { createClaimTestController, createReactiveValue } from "./viewWorkspaceTestDoubles.svelte.js";
+
+const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 
 const observedWidth = vi.hoisted(() => ({ value: 0 }));
 
@@ -48,10 +51,11 @@ const selectedPR: PullRequestRouteRef = {
 class ResizeObserverMock {
   constructor(private callback: ResizeObserverCallback) {}
 
-  observe(): void {
+  observe(target: Element): void {
     this.callback(
       [
         {
+          target,
           contentRect: { width: observedWidth.value },
         } as ResizeObserverEntry,
       ],
@@ -105,6 +109,7 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
     detailBox,
     ...render(PRListView, {
       props: {
+        client: makeGeneratedClient({ SystemService: { captureTelemetryEvent: coreActions } }),
         selectedPR: options.selectedPR === undefined ? selectedPR : options.selectedPR,
         detailTab: options.detailTab ?? "conversation",
         detailPresentation: options.detailPresentation ?? "panes",
@@ -131,6 +136,7 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
 
 describe("PRListView detail panes", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     localStorage.clear();
     resetModalStack();
     resetPaneLayoutStoresForTest();
@@ -152,6 +158,16 @@ describe("PRListView detail panes", () => {
     vi.unstubAllGlobals();
   });
 
+  it("waits for the browser tab to show the selected PR", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    renderPRListView({ detail: pullDetailFixture(undefined) });
+    await tick();
+    expect(coreActions).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+  });
+
   it("shows conversation and files as panes without a bespoke split toggle", async () => {
     renderPRListView();
     await tick();
@@ -160,6 +176,53 @@ describe("PRListView detail panes", () => {
     expect(screen.getByRole("tab", { name: "Conversation" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files changed" })).toBeTruthy();
     expect(screen.getByTestId("pull-detail").textContent).toContain("Conversation acme/widgets#12");
+  });
+
+  it("reports a loaded PR only after revealing it behind a session pane", async () => {
+    vi.spyOn(ResizeObserverMock.prototype, "observe").mockImplementation(() => undefined);
+    const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
+    const layout = getPaneLayoutStore("prs");
+    layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("conversation")! });
+    const { controller } = createClaimTestController("prs", {
+      sessions: [{ paneKey, label: "Helper" }],
+    });
+    const view = renderPRListView({ inlineWorkspace: controller });
+    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
+    expect(document.querySelector(`[data-session-pane="${paneKey}"]`)?.getAttribute("data-session-pane-visible")).toBe(
+      "true",
+    );
+    expect(coreActions).not.toHaveBeenCalled();
+
+    view.detailBox.set(pullDetailFixture({ id: "ws-1", status: "ready" }));
+    await tick();
+    expect(screen.getByTestId("pull-detail").closest(".tabbed-panel-tab-panel")?.classList.contains("active")).toBe(
+      false,
+    );
+    expect(coreActions).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("tab", { name: "Conversation" }));
+    await waitFor(() =>
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "pr_viewed",
+        properties: { provider: "github" },
+      }),
+    );
+    expect(coreActions).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports another PR visit after restoring details from a maximized workspace", async () => {
+    const { controller } = createClaimTestController("prs");
+    renderPRListView({ inlineWorkspace: controller, detail: pullDetailFixture({ id: "ws-1", status: "ready" }) });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+
+    const layout = getPaneLayoutStore("prs");
+    const workspaceLeaf = layout.leafIDForTab("workspace")!;
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    expect(layout.paneRender()?.onScreenTabs).toEqual(["workspace"]);
+    expect(coreActions).toHaveBeenCalledTimes(1);
+
+    flushSync(() => layout.toggleZoom(workspaceLeaf));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
   });
 
   it("renders a focused detail without consulting the persisted desktop pane tree", async () => {

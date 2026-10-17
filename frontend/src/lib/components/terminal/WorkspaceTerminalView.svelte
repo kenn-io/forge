@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
@@ -1535,6 +1536,13 @@
     untrack(() => {
       for (const key of showing) mountSessionTerminal(key);
     });
+  });
+
+  trackCoreActionVisit(appRuntime, () => {
+    const key = interactionVisible ? viewWorkspaceKey : null;
+    const action = workspaceLive && workspace?.status === "ready"
+      ? { event: "workspace_opened" as const, properties: { item_type: workspace.item_type } } : undefined;
+    return { key, action };
   });
 
   // While `workspaceId` has moved on but the previous workspace's

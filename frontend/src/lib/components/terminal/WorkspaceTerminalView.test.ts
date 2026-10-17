@@ -32,6 +32,8 @@ import {
 } from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
 
+const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
+
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
   listWorkspaceTargets: vi.fn(),
@@ -155,6 +157,7 @@ vi.mock("../../context.js", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
+      detail: { getDetail: () => null },
       settings: {
         getTerminalSettings: () => ({
           font_family: "",
@@ -219,6 +222,7 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
     return result;
   };
   const client = makeGeneratedClient({
+    SystemService: { captureTelemetryEvent: coreActions },
     WorkspacesService: {
       listWorkspaceTargets: mocks.listWorkspaceTargets,
       getWorkspaceRuntime: ({ id }: { id: string }, params?: { viewing?: boolean }) => {
@@ -722,6 +726,7 @@ function fakeDataTransfer(): DataTransfer {
 
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     mocks.mockOpen.mockImplementation((container: HTMLElement) => {
       const screen = document.createElement("div");
       screen.className = "xterm-screen";
@@ -1269,6 +1274,38 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("button", { name: /Claude review agent/i })).toBeNull();
     expect((screen.getByRole("button", { name: /Configured Agent/i }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("counts one workspace visit across session loss and restart, then another after hiding", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const sources = installEventSourceRecorder();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
+    await screen.findByRole("tab", { name: runningSession.label });
+    expect(coreActions).not.toHaveBeenCalled();
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    expect(coreActions).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() =>
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, []));
+    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
+    await waitFor(() => expect(screen.queryByRole("tab", { name: runningSession.label })).toBeNull());
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
+    await screen.findByRole("tab", { name: runningSession.label });
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
   });
 
   it("uses the launch target harness icon for a workflow session tab", async () => {
@@ -7250,6 +7287,38 @@ describe("WorkspaceTerminalView", () => {
       intervals[0]!.callback();
 
       await waitFor(() => expect(mocks.getWorkspaceRuntime).toHaveBeenCalledTimes(readsBeforePoll + 1));
+    });
+
+    it("counts a promoted pane while its workspace host is parked", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithTwoWorkflowSessions());
+      claimForPrs();
+      const paneKey = promoteSession("prs", "ws-1:helper");
+      const layout = getPaneLayoutStore("prs");
+      const presentation = {
+        activeInputTabKey: paneKey,
+        editableTabs: [paneKey, "workspace"],
+        onScreenTabs: [paneKey],
+        flattened: false,
+        soloChromeTabs: [],
+      };
+      layout.notePaneRender(presentation);
+      const view = render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const, hostVisible: false },
+      });
+      await screen.findByRole("tab", { name: /Reviewer/ });
+      await waitFor(() =>
+        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+          event: "workspace_opened",
+          properties: { item_type: "pull_request" },
+        }),
+      );
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: true });
+      await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: false });
+      expect(coreActions).toHaveBeenCalledTimes(1);
+      flushSync(() => layout.notePaneRender({ ...presentation, onScreenTabs: [] }));
+      flushSync(() => layout.notePaneRender(presentation));
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
     });
 
     it("leaves a connected focused workflow terminal to the pool during promotion", async () => {

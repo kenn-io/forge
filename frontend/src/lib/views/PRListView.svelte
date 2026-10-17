@@ -3,6 +3,8 @@
 </script>
 
 <script lang="ts">
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import { trackPRVisit } from "../app/telemetry.svelte.js";
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
@@ -178,6 +180,13 @@
     const detail = detailStore.getDetail();
     return pullDetailMatchesRef(detail, selectedPR) ? detail : null;
   });
+
+  const prDetailVisible = $derived.by(() => {
+    if (paneLayout === null) return true;
+    const tabs = paneLayout.paneRender()?.onScreenTabs;
+    return tabs?.includes("conversation") || tabs?.includes("files");
+  });
+  trackPRVisit(getAppRuntime(), () => ({ ref: selectedPR, detail: selectedDetail, visible: !!prDetailVisible }));
 
   function refreshSelectedDetail(): void {
     if (selectedPR === null) return;

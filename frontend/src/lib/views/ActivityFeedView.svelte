@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { untrack } from "svelte";
+  import { getAppRuntime } from "../app/runtime-context.js";
+  import { trackPRVisit } from "../app/telemetry.svelte.js";
   import type { Snippet } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStackDepth } from "../stores/keyboard/modal-stack.svelte.js";
@@ -274,6 +277,12 @@
     const detail = detailStore.getDetail();
     return pullDetailMatchesRef(detail, drawerPRSelection) ? detail : null;
   });
+
+  const prDetailVisible = $derived.by(() => {
+    const tabs = paneLayout.paneRender()?.onScreenTabs;
+    return tabs?.includes("conversation") || tabs?.includes("files");
+  });
+  trackPRVisit(getAppRuntime(), () => ({ ref: drawerPRSelection, detail: selectedPullDetail, visible: !!prDetailVisible }));
 
   function loadedDetailMatchesSelection(): boolean {
     if (drawerPRSelection) return pullDetailMatchesRef(detailStore.getDetail(), drawerPRSelection);

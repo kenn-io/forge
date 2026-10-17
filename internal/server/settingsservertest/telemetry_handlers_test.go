@@ -7,10 +7,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/telemetryapi"
+	telemetrypkg "go.kenn.io/forge/internal/telemetry"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
 	"go.kenn.io/kit/telemetry/posthog"
@@ -144,6 +147,75 @@ func TestCaptureTelemetryEvent_SessionDuration(t *testing.T) {
 			assert.Equal(http.StatusAccepted, rr.Code)
 			assert.Equal("session_ended", telemetry.Event)
 			assert.Equal(tc.name, telemetry.Properties["duration_bucket"])
+		})
+	}
+}
+
+func TestCaptureTelemetryEvent_CoreActions(t *testing.T) {
+	t.Setenv(telemetrypkg.EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	for _, tc := range []struct {
+		event, property string
+		values          []string
+	}{
+		{"pr_viewed", "provider", []string{"github", "gitlab", "forgejo", "gitea", "bitbucket"}},
+		{"workspace_opened", "item_type", []string{"pull_request", "issue", "kata_task", "adhoc"}},
+	} {
+		t.Run(tc.event, func(t *testing.T) {
+			type capturedEvent struct {
+				Event      string         `json:"event"`
+				Properties map[string]any `json:"properties"`
+			}
+			batches := make(chan []capturedEvent, 1)
+			collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var batch struct {
+					Batch []capturedEvent `json:"batch"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&batch); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				batches <- batch.Batch
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer collector.Close()
+			reporter, err := posthog.NewReporter(posthog.Options{
+				APIKey: "test-key", Endpoint: collector.URL, Application: "kenn-forge", EnvPrefix: "KENN_FORGE", Source: "backend", DistinctID: "test-install",
+			}, telemetrypkg.KitAllowedEvents("backend")...)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, reporter.Close()) })
+			srv := server.New(serverfake.OpenTestDB(t), nil, nil, "/", nil, server.ServerOptions{Telemetry: reporter})
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			values := append(append([]string{}, tc.values...), "unknown")
+			for _, value := range values {
+				payload, err := json.Marshal(map[string]any{"event": tc.event, "properties": map[string]any{tc.property: value, "surface": "web", "repo": "acme/widgets"}})
+				require.NoError(t, err)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(string(payload)))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, req)
+				require.Equal(t, http.StatusAccepted, rr.Code, rr.Body.String())
+				var response telemetryapi.TelemetryEventResponse
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &response))
+				assert.Equal(t, "queued", response.Status)
+			}
+			require.NoError(t, reporter.Close())
+			select {
+			case events := <-batches:
+				require.Len(t, events, len(values))
+				for i, event := range events {
+					assert.Equal(t, tc.event, event.Event)
+					assert.Equal(t, "web", event.Properties["surface"])
+					assert.NotContains(t, event.Properties, "repo")
+					if i < len(tc.values) {
+						assert.Equal(t, tc.values[i], event.Properties[tc.property])
+					} else {
+						assert.NotContains(t, event.Properties, tc.property)
+					}
+				}
+			case <-time.After(5 * time.Second):
+				require.FailNow(t, "telemetry collector received no batch")
+			}
 		})
 	}
 }

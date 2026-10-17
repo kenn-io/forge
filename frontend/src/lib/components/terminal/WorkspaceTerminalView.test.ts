@@ -1329,42 +1329,45 @@ describe("WorkspaceTerminalView", () => {
     ["creating", false],
     ["deleting", true],
     ["ready", true],
-  ] as const)("counts a visible standalone workspace with status %s and deletion pending %s", async (status, blocked) => {
-    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    if (blocked) beginWorkspaceDeletion("ws-1", undefined);
-    const originalFetch = globalThis.fetch;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: Request | URL | string, init?: RequestInit) =>
-        fetchPath(input) === "/api/v1/workspaces/ws-1"
-          ? Promise.resolve(Response.json({ ...workspaceResponse, status, error_message: "Setup command failed" }))
-          : originalFetch(input, init),
-      ),
-    );
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
-    if (status === "ready") await screen.findByRole("tab", { name: runningSession.label });
-    else if (status === "error") await screen.findByText("Setup command failed");
-    else if (status === "deleting") await screen.findByText("Deleting workspace...");
-    else await screen.findByText("Setting up workspace...");
-    expect(coreActions).not.toHaveBeenCalled();
-    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
-    expect(coreActions).not.toHaveBeenCalled();
-    visibility.mockReturnValue("visible");
-    document.dispatchEvent(new Event("visibilitychange"));
-    if (blocked) {
-      await tick();
+  ] as const)(
+    "counts a visible standalone workspace with status %s and deletion pending %s",
+    async (status, blocked) => {
+      const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+      if (blocked) beginWorkspaceDeletion("ws-1", undefined);
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) =>
+          fetchPath(input) === "/api/v1/workspaces/ws-1"
+            ? Promise.resolve(Response.json({ ...workspaceResponse, status, error_message: "Setup command failed" }))
+            : originalFetch(input, init),
+        ),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+      const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
+      if (status === "ready") await screen.findByRole("tab", { name: runningSession.label });
+      else if (status === "error") await screen.findByText("Setup command failed");
+      else if (status === "deleting") await screen.findByText("Deleting workspace...");
+      else await screen.findByText("Setting up workspace...");
       expect(coreActions).not.toHaveBeenCalled();
-      return;
-    }
-    await waitFor(() =>
-      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-        event: "workspace_opened",
-        properties: { item_type: "pull_request" },
-      }),
-    );
-    expect(coreActions).toHaveBeenCalledTimes(1);
-  });
+      await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+      expect(coreActions).not.toHaveBeenCalled();
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      if (blocked) {
+        await tick();
+        expect(coreActions).not.toHaveBeenCalled();
+        return;
+      }
+      await waitFor(() =>
+        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+          event: "workspace_opened",
+          properties: { item_type: "pull_request" },
+        }),
+      );
+      expect(coreActions).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses the launch target harness icon for a workflow session tab", async () => {
     const codexSession = {

@@ -42,7 +42,12 @@ it.each(["detail", "files"])("counts PR %s when the pane and document are visibl
     visibility.mockReturnValue("hidden");
     await view.rerender({
       runtime,
-      paneProps: { ...paneProps, visible: true, tabKey: content === "files" ? "files" : "inactive", detail: content === "files" ? null : detail },
+      paneProps: {
+        ...paneProps,
+        visible: true,
+        tabKey: content === "files" ? "files" : "inactive",
+        detail: content === "files" ? null : detail,
+      },
     });
     await tick();
     expect(capture).not.toHaveBeenCalled();

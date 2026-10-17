@@ -64,7 +64,11 @@ type CoreAction =
 function createDailyReporter(now: () => Date = () => new Date()) {
   const reportedDay = new Map<string, string>();
   const hasReportedToday = (key: string) => reportedDay.get(key) === now().toISOString().slice(0, 10);
-  const report = Effect.fn("Telemetry.reportDaily")(function* (key: string, event: string, properties: Record<string, string>) {
+  const report = Effect.fn("Telemetry.reportDaily")(function* (
+    key: string,
+    event: string,
+    properties: Record<string, string>,
+  ) {
     const day = now().toISOString().slice(0, 10);
     if (reportedDay.get(key) === day) return;
     reportedDay.set(key, day);
@@ -95,20 +99,16 @@ function reportCoreAction(runtime: AppRuntime, action: CoreAction): void {
     report = createDailyReporter();
     coreReporters.set(runtime, report);
   }
-  const key = action.event === "pr_viewed"
-    ? `pr_viewed:${action.properties.provider}`
-    : `workspace_opened:${action.properties.item_type}`;
+  const key =
+    action.event === "pr_viewed"
+      ? `pr_viewed:${action.properties.provider}`
+      : `workspace_opened:${action.properties.item_type}`;
   if (report.hasReportedToday(key)) return;
-  runtime.runCommand(
-    report.report(key, action.event, action.properties).pipe(
-      Effect.ignore,
-    ),
-    {
-      operation: "report core action",
-      safeContext: {},
-      onFailure: () => {},
-    },
-  );
+  runtime.runCommand(report.report(key, action.event, action.properties).pipe(Effect.ignore), {
+    operation: "report core action",
+    safeContext: {},
+    onFailure: () => {},
+  });
 }
 
 export function reportPRViewed(runtime: AppRuntime, rawProvider: string): void {

@@ -696,7 +696,6 @@
   const runtimeLive = $derived(
     runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
   );
-  const usableWorkspace = $derived(workspaceLive && !actionsBlocked ? workspace : null);
   let pendingWorkspaceUse = $state<string | null>(null);
   function reportWorkspaceUse(): void {
     if (usableWorkspace) {
@@ -1595,6 +1594,7 @@
       workspaceDeletionLifecycleActive ||
       forceDeleting,
   );
+  const usableWorkspace = $derived(workspaceLive && !actionsBlocked ? workspace : null);
   $effect(() => {
     if (!hostVisible || actionsBlocked) itemSearchAnchor = null;
   });

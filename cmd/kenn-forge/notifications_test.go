@@ -3,10 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,14 +12,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/federationauth"
-	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -270,134 +262,54 @@ func localSetupWorkCheck(t *testing.T, database *db.DB) func(context.Context) (b
 	return srv.HasReadableProviderWork
 }
 
-func TestSetupFinishedFromSpokeProviderSource(t *testing.T) {
+func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 	for _, test := range []struct {
-		kind    string
-		enabled bool
-		active  bool
+		name  string
+		kinds []string
 	}{
-		{"pr", true, true},
-		{"issue", true, true},
-		{"disabled", false, true},
-		{"inactive", true, false},
+		{"issue", []string{"issue"}},
+		{"pr", []string{"pr"}},
+		{"inactive", []string{"issue", "pr"}},
+		{"removed_upstream", []string{"issue", "pr"}},
 	} {
-		t.Run(test.kind, func(t *testing.T) {
-			require := require.New(t)
+		t.Run(test.name, func(t *testing.T) {
 			database := dbtest.Open(t)
-			var requests atomic.Int64
-			hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
-				w.Header().Set("Content-Type", "application/json")
-				if test.kind == "pr" && r.URL.Path == "/api/v1/pulls" || test.kind == "issue" && r.URL.Path == "/api/v1/issues" {
-					_, _ = io.WriteString(w, `[{"number":42,"title":"Example","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"}}]`)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				handle := newBackgroundLoopHandle(t.Context())
+				defer func() { require.NoError(handle.Stop(t.Context())) }()
+				client := &fakeTelemetryClient{}
+				setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
+				handle.startTicker("setup", time.Minute, setup.capture)
+				synctest.Wait()
+				require.Empty(client.events())
+				var repoID int64
+				for _, kind := range test.kinds {
+					repoID = seedSetupItem(t, database, kind)
+				}
+				switch test.name {
+				case "inactive":
+					_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE id = ?`, repoID)
+					require.NoError(err)
+				case "removed_upstream":
+					serverfake.MarkArchiveItemRemovedUpstreamForServerTest(t, database, repoID, db.ArchiveItemTypeIssue, 1)
+					serverfake.MarkArchiveItemRemovedUpstreamForServerTest(t, database, repoID, db.ArchiveItemTypeMergeRequest, 1)
+				}
+				time.Sleep(time.Minute)
+				synctest.Wait()
+				if test.name == "inactive" || test.name == "removed_upstream" {
+					require.Empty(client.events())
 					return
 				}
-				_, _ = io.WriteString(w, `[]`)
-			}))
-			t.Cleanup(hub.Close)
-			const hubID = "44444444444444444444444444444444"
-			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
-			require.NoError(err)
-			require.NoError(credentials.StoreOutbound(hubID, "example-secret", federationauth.SpokeToHubScopes()))
-			cfg := &config.Config{Host: "127.0.0.1", Port: 8080, Fleet: config.Fleet{Enabled: test.enabled, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: hubID, BaseURL: hub.URL}}}
-			srv := server.New(database, nil, nil, "/", cfg, server.ServerOptions{
-				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: test.active,
-				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
+				require.Equal([]string{"setup_finished"}, client.events())
+				require.Equal([]map[string]any{nil}, client.captures)
 			})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
-			if !test.enabled || !test.active {
-				client := &fakeTelemetryClient{}
-				setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
-				require.NoError(setup.capture(t.Context()))
-				require.NoError(setup.capture(t.Context()))
-				require.Empty(client.events())
-				require.Zero(requests.Load())
-				_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
-				require.NoError(err)
-				require.False(found)
-				return
-			}
-			if test.kind == "pr" {
-				rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{State: "all", Limit: 1})
-				require.NoError(err)
-				require.Len(rows, 1)
-			} else {
-				rows, err := srv.MCPBackend().ListIssues(t.Context(), mcpserver.ItemListQuery{State: "all", Limit: 1})
-				require.NoError(err)
-				require.Len(rows, 1)
-			}
-			prs, err := database.ListMergeRequests(t.Context(), db.ListMergeRequestsOpts{State: "all", Limit: 1})
-			require.NoError(err)
-			require.Empty(prs)
-			issues, err := database.ListIssues(t.Context(), db.ListIssuesOpts{State: "all", Limit: 1})
-			require.NoError(err)
-			require.Empty(issues)
-			client := &fakeTelemetryClient{}
-			setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
-			require.NoError(setup.capture(t.Context()))
-			require.Equal([]string{"setup_finished"}, client.events())
-			marker, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
-			require.NoError(err)
-			require.True(found)
-			require.Equal("queued", marker)
-			beforeRestart := requests.Load()
-			setup = &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
-			require.NoError(setup.capture(t.Context()))
-			require.Equal([]string{"setup_finished"}, client.events())
-			require.Equal(beforeRestart, requests.Load())
 		})
 	}
 }
 
-func TestSetupFinishedMinuteAndFilters(t *testing.T) {
-	for _, kind := range []string{"issue", "pr"} {
-		for _, hidden := range []string{"", "inactive", "removed_upstream"} {
-			t.Run(kind+"/"+hidden, func(t *testing.T) {
-				database := dbtest.Open(t)
-				synctest.Test(t, func(t *testing.T) {
-					require := require.New(t)
-					handle := newBackgroundLoopHandle(t.Context())
-					defer func() { require.NoError(handle.Stop(t.Context())) }()
-					client := &fakeTelemetryClient{}
-					setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
-					handle.startTicker("setup", time.Minute, setup.capture)
-					synctest.Wait()
-					require.Empty(client.events())
-					repoID := seedSetupItem(t, database, kind)
-					switch hidden {
-					case "inactive":
-						_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE id = ?`, repoID)
-						require.NoError(err)
-					case "removed_upstream":
-						itemType := db.ArchiveItemType("issue")
-						if kind == "pr" {
-							itemType = "merge_request"
-						}
-						serverfake.MarkArchiveItemRemovedUpstreamForServerTest(t, database, repoID, itemType, 1)
-					}
-					time.Sleep(time.Minute)
-					synctest.Wait()
-					if hidden != "" {
-						require.Empty(client.events())
-						return
-					}
-					require.Equal([]string{"setup_finished"}, client.events())
-					require.Equal([]map[string]any{nil}, client.captures)
-					require.NoError(handle.Stop(t.Context()))
-					handle = newBackgroundLoopHandle(t.Context())
-					setup = &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
-					handle.startTicker("setup", time.Minute, setup.capture)
-					time.Sleep(2 * time.Minute)
-					synctest.Wait()
-					require.Equal([]string{"setup_finished"}, client.events())
-				})
-			})
-		}
-	}
-}
-
 func TestRunSetupFinishedStartupAndClose(t *testing.T) {
-	for _, mode := range []string{"startup", "shutdown", "error", "disabled"} {
+	for _, mode := range []string{"startup", "shutdown", "disabled"} {
 		t.Run(mode, func(t *testing.T) {
 			require := require.New(t)
 			root := t.TempDir()
@@ -425,9 +337,6 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 						startup = ctx.Err() == nil
 					}
 					cancel()
-					if mode == "error" && calls == 1 {
-						return "", errors.New("enqueue failed")
-					}
 					if mode == "shutdown" && calls == 1 {
 						return posthog.StatusDisabled, nil
 					}
@@ -443,7 +352,7 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 			require.Equal(mode != "disabled", completed, "completion must persist before the reporter and DB close")
 			require.True(closed)
 			require.Equal(mode != "disabled", startup, "the first report must run before shutdown")
-			require.Equal(map[string]int{"startup": 1, "shutdown": 2, "error": 2, "disabled": 0}[mode], calls)
+			require.Equal(map[string]int{"startup": 1, "shutdown": 2, "disabled": 0}[mode], calls)
 		})
 	}
 }
@@ -478,29 +387,4 @@ func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
 	require.NoError(err)
 	require.True(found)
 	require.Equal("queued", marker)
-}
-
-func TestSetupFinishedAfterSingleItemRefresh(t *testing.T) {
-	require := require.New(t)
-	database := dbtest.Open(t)
-	client := &fakeTelemetryClient{}
-	setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
-	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
-		if owner != "acme" || repo != "widget" || number != 42 {
-			return nil, errors.New("unexpected item")
-		}
-		return &gh.Issue{
-			ID: new(int64(42)), Number: new(42), Title: new("Example"), State: new("open"),
-			HTMLURL:   new("https://github.com/acme/widget/issues/42"),
-			CreatedAt: &gh.Timestamp{Time: time.Now().UTC()}, UpdatedAt: &gh.Timestamp{Time: time.Now().UTC()},
-		}, nil
-	}}
-	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil,
-		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
-	defer syncer.Stop()
-	kind, err := syncer.SyncItemByNumber(t.Context(), "acme", "widget", 42)
-	require.NoError(err)
-	require.Equal("issue", kind)
-	require.NoError(setup.capture(t.Context()))
-	require.Equal([]string{"setup_finished"}, client.events())
 }

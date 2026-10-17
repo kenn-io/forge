@@ -34,8 +34,8 @@ func TestCaptureTelemetryEvent_RejectsMissingEvent(t *testing.T) {
 func TestCaptureTelemetryEvent_RejectsUnsupportedEvent(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 
-	// daemon_active is allowlisted for the daemon only, so the UI can't send it.
-	for _, event := range []string{"repo_opened", "daemon_active"} {
+	// Daemon events are allowlisted only for the daemon.
+	for _, event := range []string{"repo_opened", "daemon_active", "setup_finished"} {
 		t.Run(event, func(t *testing.T) {
 			assert := assert.New(t)
 			telemetry := &serverfake.FakeTelemetry{EnabledValue: true}

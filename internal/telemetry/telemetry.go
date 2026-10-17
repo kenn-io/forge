@@ -45,6 +45,7 @@ func SessionDuration(value any) (any, bool) {
 }
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"setup_finished": {},
 	"pr_viewed": {
 		"provider": posthog.AllowStringValues("github", "gitlab", "forgejo", "gitea", "bitbucket"),
 		"surface":  posthog.AllowStringValues("web"),
@@ -231,7 +232,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 }
 
 func sourceForEvent(event string) string {
-	if event == "daemon_active" {
+	if event == "daemon_active" || event == "setup_finished" {
 		return "daemon"
 	}
 	return "backend"

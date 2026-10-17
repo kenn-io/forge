@@ -653,7 +653,7 @@ func run(opts serve.Options) error {
 					if telemetryReporter == nil {
 						return nil
 					}
-					return telemetryReporter.Close()
+					return closeTelemetry(database, telemetryReporter, syncer != nil && telemetryReporter.Enabled())
 				},
 				CloseMCP: func() error {
 					if mcpSrv == nil {
@@ -843,6 +843,9 @@ func run(opts serve.Options) error {
 			slog.Warn("capture telemetry event", "err", err)
 		}
 		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
+		if syncer != nil {
+			startSetupFinishedLoop(backgroundLoops, database, telemetryReporter)
+		}
 	}
 
 	var devboxConnections *devbox.Connections

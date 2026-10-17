@@ -110,3 +110,18 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require.NoError(err)
 	assert.NotContains(properties, "surface")
 }
+
+func TestSetupFinishedKitAllowlist(t *testing.T) {
+	require := require.New(t)
+	t.Setenv(EnabledEnv, "0")
+	daemon, err := posthog.NewReporter(posthog.Options{}, KitAllowedEvents("daemon")...)
+	require.NoError(err)
+	require.True(daemon.EventAllowed("setup_finished"))
+	properties, err := daemon.SanitizeProperties("setup_finished", map[string]any{"repo": "acme/widget", "surface": "web"})
+	require.NoError(err)
+	require.NotContains(properties, "repo")
+	require.NotContains(properties, "surface")
+	backend, err := posthog.NewReporter(posthog.Options{}, KitAllowedEvents("backend")...)
+	require.NoError(err)
+	require.False(backend.EventAllowed("setup_finished"))
+}

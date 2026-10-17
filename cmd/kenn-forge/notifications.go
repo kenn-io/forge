@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -11,9 +12,79 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
+	"go.kenn.io/kit/telemetry/posthog"
 )
 
 const databaseOptimizeInterval = 24 * time.Hour
+
+const setupFinishedKey = "telemetry.setup_finished"
+
+func startSetupFinishedLoop(handle *backgroundLoopHandle, database *db.DB, reporter telemetry.Client) {
+	handle.start(func(ctx context.Context) {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			done, err := captureSetupFinished(ctx, database, reporter)
+			if err != nil && ctx.Err() == nil {
+				slog.Warn("capture setup finished", "err", err)
+			}
+			if done {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	})
+}
+
+func captureSetupFinished(ctx context.Context, database *db.DB, reporter telemetry.Client) (bool, error) {
+	lookupCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	if _, found, err := database.AppMetadataValue(lookupCtx, setupFinishedKey); err != nil || found {
+		return found, err
+	}
+	prs, err := database.ListMergeRequests(lookupCtx, db.ListMergeRequestsOpts{State: "all", Limit: 1})
+	if err != nil {
+		return false, err
+	}
+	if len(prs) == 0 {
+		issues, err := database.ListIssues(lookupCtx, db.ListIssuesOpts{State: "all", Limit: 1})
+		if err != nil || len(issues) == 0 {
+			return false, err
+		}
+	}
+	claimed := false
+	_, err = database.GetOrCreateAppMetadataValue(lookupCtx, setupFinishedKey, func() (string, error) {
+		claimed = true
+		return "queued", nil
+	})
+	if err != nil || !claimed {
+		return err == nil, err
+	}
+	cancel()
+	reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	status, err := reporter.Report(reportCtx, "setup_finished", nil)
+	reportCancel()
+	if err == nil && status == posthog.StatusQueued {
+		return true, nil
+	}
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 300*time.Millisecond)
+	defer cleanupCancel()
+	return false, errors.Join(err, database.DeleteAppMetadataValue(cleanupCtx, setupFinishedKey))
+}
+
+func closeTelemetry(database *db.DB, reporter telemetry.Client, checkSetup bool) error {
+	var err error
+	if checkSetup {
+		ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+		_, err = captureSetupFinished(ctx, database, reporter)
+		cancel()
+	}
+	return errors.Join(err, reporter.Close())
+}
 
 type backgroundLoopHandle struct {
 	ctx    context.Context

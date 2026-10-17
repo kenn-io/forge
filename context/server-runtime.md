@@ -1,5 +1,8 @@
 # Server Runtime
 
+- Setup completion must reflect persisted work: single-item refresh paths can store
+  the first item without a full sync pass
+  (`cmd/kenn-forge/notifications.go::captureSetupFinished`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).

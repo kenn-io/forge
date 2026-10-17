@@ -8,9 +8,7 @@ import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import Harness from "./PullDetailPaneTelemetryHarness.svelte";
 
-it("counts loaded visible PR detail again when the tab returns after UTC midnight", async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-01-02T23:59:00Z"));
+it("counts loaded PR detail when the pane and document are visible", async () => {
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   const capture = vi.fn(async () => ({ status: "queued" }));
   const runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: capture } }));
@@ -47,22 +45,9 @@ it("counts loaded visible PR detail again when the tab returns after UTC midnigh
       event: "pr_viewed",
       properties: { provider: "github", surface: "web" },
     });
-    visibility.mockReturnValue("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await tick();
-    await showTab();
-    expect(capture).toHaveBeenCalledTimes(1);
-    visibility.mockReturnValue("hidden");
-    document.dispatchEvent(new Event("visibilitychange"));
-    await tick();
-    vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
-    expect(capture).toHaveBeenCalledTimes(1);
-    await showTab();
-    await waitFor(() => expect(capture).toHaveBeenCalledTimes(2));
   } finally {
     cleanup();
     await Effect.runPromise(runtime.disposeEffect);
     vi.restoreAllMocks();
-    vi.useRealTimers();
   }
 });

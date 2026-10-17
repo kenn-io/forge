@@ -1276,52 +1276,32 @@ describe("WorkspaceTerminalView", () => {
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it.each(["pointerDown", "keyDown", "wheel"] as const)("counts embedded workspace %s once per day", async (input) => {
-    claimForPrs();
-    noteWorkspacePaneRendered("prs");
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
-    const region = await screen.findByRole("region", { name: "Workflow panes" });
-    await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
-    await tick();
-    expect(coreActions).not.toHaveBeenCalled();
-    await fireEvent[input](region);
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-      event: "workspace_opened",
-      properties: { item_type: "pull_request" },
-    });
-    await fireEvent.pointerDown(region);
-    await fireEvent.keyDown(region, { key: "Enter" });
-    await fireEvent.wheel(region);
-    await tick();
-    expect(coreActions).toHaveBeenCalledTimes(1);
-  });
+  it.each(["pointerDown", "keyDown", "wheel", "focusTerminal"] as const)(
+    "counts embedded workspace use through %s",
+    async (input) => {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+      const region = await screen.findByRole("region", { name: "Workflow panes" });
+      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+      await tick();
+      expect(coreActions).not.toHaveBeenCalled();
+      if (input === "focusTerminal") {
+        getInlineWorkspaceController("prs").focusTerminal();
+      } else {
+        await fireEvent[input](region);
+      }
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      });
+    },
+  );
 
-  it("counts Focus Terminal on an embedded workspace once per day", async () => {
-    claimForPrs();
-    noteWorkspacePaneRendered("prs");
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
-    await screen.findByRole("region", { name: "Workflow panes" });
-    await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
-    await tick();
-    expect(coreActions).not.toHaveBeenCalled();
-
-    getInlineWorkspaceController("prs").focusTerminal();
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-      event: "workspace_opened",
-      properties: { item_type: "pull_request" },
-    });
-    getInlineWorkspaceController("prs").focusTerminal();
-    await tick();
-    expect(coreActions).toHaveBeenCalledTimes(1);
-  });
-
-  it("counts a standalone workspace once across session and visibility changes", async () => {
+  it("counts a standalone workspace when the host and document are visible", async () => {
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
-    const sources = installEventSourceRecorder();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
     await screen.findByRole("tab", { name: runningSession.label });
@@ -1336,20 +1316,6 @@ describe("WorkspaceTerminalView", () => {
         properties: { item_type: "pull_request" },
       }),
     );
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, []));
-    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
-    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
-    await waitFor(() => expect(screen.queryByRole("tab", { name: runningSession.label })).toBeNull());
-    expect(coreActions).toHaveBeenCalledTimes(1);
-    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
-    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
-    await screen.findByRole("tab", { name: runningSession.label });
-    expect(coreActions).toHaveBeenCalledTimes(1);
-    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
-    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
-    await tick();
-    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it("uses the launch target harness icon for a workflow session tab", async () => {

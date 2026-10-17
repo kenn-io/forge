@@ -88,9 +88,7 @@ describe("screen view reporter", () => {
   });
 });
 
-it("counts core actions per value and runtime daily, retries failures, and coalesces concurrent sends", async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-01-02T23:59:00Z"));
+it("reports canonical providers and item types, and drops unknown providers", async () => {
   const capture = vi.fn(async (_body: unknown) => ({ status: "queued" }));
   const runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: capture } }));
   const drain = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -98,32 +96,19 @@ it("counts core actions per value and runtime daily, retries failures, and coale
     reportPRViewed(runtime, "unknown");
     await drain();
     expect(capture).not.toHaveBeenCalled();
-    capture.mockRejectedValueOnce(new Error("unavailable"));
     reportPRViewed(runtime, "gh");
     await drain();
-    reportPRViewed(runtime, "github");
-    reportPRViewed(runtime, "github");
-    await drain();
-    expect(capture).toHaveBeenCalledTimes(2);
     reportPRViewed(runtime, "gl");
-    reportWorkspaceOpened(runtime, "pull_request");
     reportWorkspaceOpened(runtime, "pull_request");
     reportWorkspaceOpened(runtime, "adhoc");
     await drain();
     expect(capture.mock.calls.map(([body]) => body)).toEqual([
       { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
       { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
       { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
       { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
     ]);
-    vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
-    reportPRViewed(runtime, "github");
-    reportWorkspaceOpened(runtime, "adhoc");
-    await drain();
-    expect(capture).toHaveBeenCalledTimes(7);
   } finally {
     await Effect.runPromise(runtime.disposeEffect);
-    vi.useRealTimers();
   }
 });

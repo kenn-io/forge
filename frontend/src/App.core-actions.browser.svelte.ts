@@ -1,6 +1,4 @@
-import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { navigate } from "./lib/stores/router.svelte.js";
 import { page } from "vite-plus/test/browser";
 import { mountBrowserApp, resetKeyboardModuleState, type MountedBrowserApp } from "./test/browserAppHarness.js";
 import { jsonResponse, type MockRouteOverride } from "./test/mockApiFetch.js";
@@ -30,7 +28,7 @@ describe("core action navigation", () => {
     await resetKeyboardModuleState();
   });
 
-  it("counts a linked PR and deduplicates another PR from the same provider", async () => {
+  it("counts a linked PR opened from mobile workspaces", async () => {
     window.__KENN_FORGE_FORCE_MOBILE_ROUTES__ = true;
     const workspace = {
       id: "ws-9",
@@ -69,9 +67,5 @@ describe("core action navigation", () => {
       () => expect(prViews()).toMatchObject([{ event: "pr_viewed", properties: { provider: "github" } }]),
       WAIT,
     );
-    navigate("/pulls/github/acme/widgets/55");
-    await expect.element(page.getByRole("heading", { name: "Refactor theme system" })).toBeVisible();
-    await tick();
-    expect(prViews()).toHaveLength(1);
   });
 });

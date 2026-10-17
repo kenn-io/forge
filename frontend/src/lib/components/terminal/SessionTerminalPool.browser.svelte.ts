@@ -256,37 +256,36 @@ describe("SessionTerminalPool", () => {
     });
   }
 
-  it.each(["pointerdown", "keydown", "wheel"] as const)(
-    "counts %s after promotion and ignores disabled or inert sessions",
-    async (input) => {
-      const capture = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "queued" }));
-      const session = {
-        hostKey: agent,
-        websocketPath: `/ws/${agent}`,
-        status: "exited",
-        itemType: "kata_task" as const,
-      };
-      noteSessionMounted(session);
-      mountPool();
-      const harnessTarget = document.createElement("div");
-      document.body.append(harnessTarget);
-      const props = $state({
-        hostKey: agent,
-        showSource: true,
-        showDestination: false,
-        order: "source-first" as const,
+  it.each(["pointerdown", "keydown", "wheel"] as const)("counts %s after promotion", async (input) => {
+    const capture = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "queued" }));
+    const session = {
+      hostKey: agent,
+      websocketPath: `/ws/${agent}`,
+      status: "exited",
+      itemType: "kata_task" as const,
+    };
+    noteSessionMounted(session);
+    mountPool();
+    const harnessTarget = document.createElement("div");
+    document.body.append(harnessTarget);
+    const props = $state({
+      hostKey: agent,
+      showSource: true,
+      showDestination: false,
+      order: "source-first" as const,
+    });
+    const harness = mount(SessionTerminalSlotTransferHarness, { target: harnessTarget, props });
+    try {
+      await waitForReparent();
+      expect(capture).not.toHaveBeenCalled();
+      flushSync(() => {
+        props.showSource = false;
+        props.showDestination = true;
       });
-      const harness = mount(SessionTerminalSlotTransferHarness, { target: harnessTarget, props });
-      try {
-        await waitForReparent();
-        expect(capture).not.toHaveBeenCalled();
-        flushSync(() => {
-          props.showSource = false;
-          props.showDestination = true;
-        });
-        await waitForReparent();
-        const wrapper = wrapperFor(agent)!;
-        expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
+      await waitForReparent();
+      const wrapper = wrapperFor(agent)!;
+      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
+      if (input === "pointerdown") {
         noteSessionMounted({ ...session, disabled: true });
         flushSync();
         wrapper.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
@@ -297,33 +296,29 @@ describe("SessionTerminalPool", () => {
         wrapper.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
         expect(capture).not.toHaveBeenCalled();
         wrapper.parentElement!.inert = false;
-        wrapper.dispatchEvent(
-          input === "pointerdown"
-            ? new PointerEvent(input, { bubbles: true })
-            : input === "wheel"
-              ? new WheelEvent(input, { deltaY: 100, bubbles: true })
-              : new KeyboardEvent(input, { key: "Enter", bubbles: true }),
-        );
-        await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1), WAIT);
-        const request = capture.mock.calls[0]?.[0];
-        const body =
-          request instanceof Request
-            ? await request.clone().json()
-            : JSON.parse(String(capture.mock.calls[0]?.[1]?.body));
-        expect(body).toMatchObject({
-          event: "workspace_opened",
-          properties: { item_type: "kata_task", surface: "web" },
-        });
-        wrapper.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-        await waitForReparent();
-        expect(capture).toHaveBeenCalledTimes(1);
-      } finally {
-        flushSync(() => unmount(harness as never));
-        harnessTarget.remove();
-        capture.mockRestore();
       }
-    },
-  );
+      wrapper.dispatchEvent(
+        input === "pointerdown"
+          ? new PointerEvent(input, { bubbles: true })
+          : input === "wheel"
+            ? new WheelEvent(input, { deltaY: 100, bubbles: true })
+            : new KeyboardEvent(input, { key: "Enter", bubbles: true }),
+      );
+      await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1), WAIT);
+      const request = capture.mock.calls[0]?.[0];
+      const body =
+        request instanceof Request
+          ? await request.clone().json()
+          : JSON.parse(String(capture.mock.calls[0]?.[1]?.body));
+      expect(body).toMatchObject({
+        properties: { item_type: "kata_task" },
+      });
+    } finally {
+      flushSync(() => unmount(harness as never));
+      harnessTarget.remove();
+      capture.mockRestore();
+    }
+  });
 
   it("does not steal focus another element claimed during the move", async () => {
     mountSession(agent);

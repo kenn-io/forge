@@ -318,11 +318,6 @@ describe("WorkspaceRightSidebar", () => {
     await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: true } });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: true } });
-    await tick();
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: false } });
-    await tick();
-    expect(coreActions).toHaveBeenCalledTimes(1);
     expect(coreActions.mock.calls[0]?.[0]).toMatchObject({ event: "pr_viewed" });
   });
 

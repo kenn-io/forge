@@ -1,9 +1,16 @@
 import { Effect, Exit } from "effect";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { makeAppRuntime } from "./runtime.js";
 import { makeGeneratedApiLayer } from "../api/generated-api.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { createScreenViewReporter, type ScreenName, visibleScreen } from "./telemetry.js";
+import {
+  createScreenViewReporter,
+  reportPRViewed,
+  reportWorkspaceOpened,
+  type ScreenName,
+  visibleScreen,
+} from "./telemetry.js";
 
 describe("visible screen names", () => {
   it.each([
@@ -62,8 +69,7 @@ describe("screen view reporter", () => {
 
   it("sends each screen once per UTC day", async () => {
     const { sent, clock, run } = setup();
-    await run("docs");
-    await run("docs");
+    await Promise.all([run("docs"), run("docs")]);
     await run("pulls");
     expect(sent).toEqual(["docs", "pulls"]);
     clock.now = new Date("2026-01-03T00:00:01Z");
@@ -80,4 +86,44 @@ describe("screen view reporter", () => {
     await run("docs");
     expect(sent).toEqual(["docs", "docs"]);
   });
+});
+
+it("counts core actions per value and runtime daily, retries failures, and coalesces concurrent sends", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-01-02T23:59:00Z"));
+  const capture = vi.fn(async (_body: unknown) => ({ status: "queued" }));
+  const runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: capture } }));
+  const drain = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+  try {
+    reportPRViewed(runtime, "unknown");
+    await drain();
+    expect(capture).not.toHaveBeenCalled();
+    capture.mockRejectedValueOnce(new Error("unavailable"));
+    reportPRViewed(runtime, "gh");
+    await drain();
+    reportPRViewed(runtime, "github");
+    reportPRViewed(runtime, "github");
+    await drain();
+    expect(capture).toHaveBeenCalledTimes(2);
+    reportPRViewed(runtime, "gl");
+    reportWorkspaceOpened(runtime, "pull_request");
+    reportWorkspaceOpened(runtime, "pull_request");
+    reportWorkspaceOpened(runtime, "adhoc");
+    await drain();
+    expect(capture.mock.calls.map(([body]) => body)).toEqual([
+      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+      { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
+      { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+      { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
+    ]);
+    vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
+    reportPRViewed(runtime, "github");
+    reportWorkspaceOpened(runtime, "adhoc");
+    await drain();
+    expect(capture).toHaveBeenCalledTimes(7);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    vi.useRealTimers();
+  }
 });

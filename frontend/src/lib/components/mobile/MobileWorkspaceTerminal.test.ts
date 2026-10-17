@@ -7,6 +7,8 @@ import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { navigate } from "../../stores/router.svelte.js";
 import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
+const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
+
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
     getWorkspace: vi.fn(),
@@ -95,6 +97,7 @@ const workspaceRef = { id: "ws-a", status: "ready" };
 
 describe("MobileWorkspaceTerminal", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     for (const mock of Object.values(mocks.runtimeClient)) mock.mockReset();
     mocks.runtimeClient.getWorkspace.mockResolvedValue(workspace);
     mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue(runtime);
@@ -103,6 +106,7 @@ describe("MobileWorkspaceTerminal", () => {
     events.subscribeWorkspaceEvents.mockReset().mockReturnValue(() => {});
     runtimeState.appRuntime = makeAppRuntime(
       makeGeneratedClient({
+        SystemService: { captureTelemetryEvent: coreActions },
         WorkspacesService: mocks.runtimeClient,
         FleetService: mocks.runtimeClient,
       }),
@@ -122,6 +126,16 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+  });
+
+  it("reports a ready mobile workspace's item type", async () => {
+    render(MobileWorkspaceTerminalTestHarness, { props });
+    await waitFor(() =>
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      }),
+    );
   });
 
   it.each([

@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -11,10 +13,12 @@ import type { StoreInstances } from "../../types.js";
 import WorkspaceRightSidebarTestHarness from "./WorkspaceRightSidebarTestHarness.svelte";
 import type { WorkspaceDiffGitState } from "./workspace-diff-default.js";
 
+const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 let runtime: OwnedAppRuntime;
 
 beforeEach(() => {
-  runtime = makeAppRuntime();
+  coreActions.mockClear();
+  runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: coreActions } }));
 });
 
 vi.mock("../kata/KataLinksPanel.svelte", async () => ({
@@ -23,6 +27,7 @@ vi.mock("../kata/KataLinksPanel.svelte", async () => ({
 
 function makeStores(): Pick<StoreInstances, "diff"> & Partial<StoreInstances> {
   return {
+    detail: createAppStores({ runtime }).stores.detail,
     diff: createDiffStore({ runtime }),
     roborevDaemon: {
       isAvailable: () => false,
@@ -284,6 +289,41 @@ describe("WorkspaceRightSidebar", () => {
     await view.rerender({ runtime, sidebarProps: { ...sidebarProps, viewedPR: null } });
     await screen.findByRole("heading", { name: "Add browser regression coverage" });
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
+  });
+
+  it("counts visible PR detail on the PR tab even while actions are disabled", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(createMockApiFetch().fetch);
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "diff" as "diff" | "pr",
+      workspaceID: "ws-1",
+      worktreePath: "",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      branch: "work",
+      roborevBaseUrl: "/api/roborev",
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    await tick();
+    expect(coreActions).not.toHaveBeenCalled();
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: true } });
+    await screen.findByRole("heading", { name: "Add browser regression coverage" });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: true } });
+    await tick();
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, activeTab: "pr", disabled: false } });
+    await tick();
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({ event: "pr_viewed" });
   });
 
   it.each([

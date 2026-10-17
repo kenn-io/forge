@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
-import { flushSync } from "svelte";
+import { flushSync, tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import type { QuickAction, RuntimeSession } from "../../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -31,6 +31,8 @@ import {
   quickActionLaunches,
 } from "../../stores/workspace-quick-actions.js";
 import { STORES_KEY } from "../../context.js";
+
+const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
@@ -155,6 +157,7 @@ vi.mock("../../context.js", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
+      detail: { getDetail: () => null },
       settings: {
         getTerminalSettings: () => ({
           font_family: "",
@@ -219,6 +222,7 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
     return result;
   };
   const client = makeGeneratedClient({
+    SystemService: { captureTelemetryEvent: coreActions },
     WorkspacesService: {
       listWorkspaceTargets: mocks.listWorkspaceTargets,
       getWorkspaceRuntime: ({ id }: { id: string }, params?: { viewing?: boolean }) => {
@@ -722,6 +726,7 @@ function fakeDataTransfer(): DataTransfer {
 
 describe("WorkspaceTerminalView", () => {
   beforeEach(() => {
+    coreActions.mockClear();
     mocks.mockOpen.mockImplementation((container: HTMLElement) => {
       const screen = document.createElement("div");
       screen.className = "xterm-screen";
@@ -1269,6 +1274,60 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("button", { name: /Claude review agent/i })).toBeNull();
     expect((screen.getByRole("button", { name: /Configured Agent/i }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("counts embedded workspace interaction once per day", async () => {
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    const region = await screen.findByRole("region", { name: "Workflow panes" });
+    await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+    await tick();
+    expect(coreActions).not.toHaveBeenCalled();
+    await fireEvent.pointerDown(region);
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+      event: "workspace_opened",
+      properties: { item_type: "pull_request" },
+    });
+    await fireEvent.pointerDown(region);
+    await fireEvent.keyDown(region, { key: "Enter" });
+    await tick();
+    expect(coreActions).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts a standalone workspace once across session and visibility changes", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    const sources = installEventSourceRecorder();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hostVisible: false } });
+    await screen.findByRole("tab", { name: runningSession.label });
+    expect(coreActions).not.toHaveBeenCalled();
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    expect(coreActions).not.toHaveBeenCalled();
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() =>
+      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request" },
+      }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, []));
+    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
+    await waitFor(() => expect(screen.queryByRole("tab", { name: runningSession.label })).toBeNull());
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    await waitFor(() => expect(latestWorkspaceEventListeners(sources)["reconnect.stale"]).toBeTypeOf("function"));
+    latestWorkspaceEventListeners(sources)["reconnect.stale"]!();
+    await screen.findByRole("tab", { name: runningSession.label });
+    expect(coreActions).toHaveBeenCalledTimes(1);
+    await view.rerender({ workspaceId: "ws-1", hostVisible: false });
+    await view.rerender({ workspaceId: "ws-1", hostVisible: true });
+    await tick();
+    expect(coreActions).toHaveBeenCalledTimes(1);
   });
 
   it("uses the launch target harness icon for a workflow session tab", async () => {
@@ -4942,6 +5001,7 @@ describe("WorkspaceTerminalView", () => {
         leaf: { type: "leaf", id: leafID, tabs: [anchor, existingPane], activeTabKey: existingPane },
       },
     });
+    expect(coreActions).not.toHaveBeenCalled();
     await fireEvent.click(await within(controls.container).findByRole("button", { name: "Launch session" }));
     await fireEvent.click(
       within(screen.getByRole("dialog", { name: "Launch a session" })).getByRole("button", {
@@ -4949,6 +5009,11 @@ describe("WorkspaceTerminalView", () => {
       }),
     );
 
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+      event: "workspace_opened",
+      properties: { item_type: "pull_request" },
+    });
     const newPane = sessionPaneKey("ws-1", undefined, "ws-1:codex");
     await waitFor(() => expect(layout.leafIDForTab(newPane)).toBe(leafID));
     expect(layout.isTabActive(newPane)).toBe(true);

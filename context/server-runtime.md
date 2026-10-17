@@ -6,6 +6,12 @@
 - Screen telemetry uses Kit's durable claims per installation and UTC day;
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).
+- Core action telemetry uses the same Kit daily claims: `pr_viewed` per provider
+  and `workspace_opened` per workspace type, once per installation and UTC day.
+  Both require `surface: web`. PR detail must be on screen in a visible browser
+  tab. A workspace counts on its own page or deliberate interaction with its
+  content, terminal, launchers, or quick actions; automatic embedded display
+  sends nothing. Visibility changes reevaluate the daily count after midnight.
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).

@@ -679,6 +679,14 @@ A hidden tab that the browser or phone closes without notice reports nothing.
 Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,
 workspaces, terminal, workspace-item, settings, project-intake, design-system,
 and onboarding. Screen counts persist across tabs and daemon restarts.
+Forge also sends `pr_viewed` with the provider when a PR's detail is on screen,
+and `workspace_opened` with its type when you open its own page, launch or run
+something in it, or click or type in its content or terminal. Automatic display
+beside a PR or issue sends nothing. Each event counts once per installation per
+UTC day for each provider or workspace type. Supported providers are GitHub,
+GitLab, Forgejo, Gitea, and Bitbucket. Workspace types are pull request, issue,
+Kata task, and ad hoc. These events send only `surface: web` and the provider
+or workspace type.
 An upgrade preserves prior screen counts in the private `telemetry-daily.json`
 file beside the database. Keep that file to retain daily counts across restarts.
 It does not send repository names, item content, tokens, usernames, hostnames,

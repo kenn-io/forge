@@ -44,7 +44,22 @@ func SessionDuration(value any) (any, bool) {
 	return durationFilter(value)
 }
 
+var requiredProperties = map[string]map[string]bool{
+	"screen_viewed":    {"screen": true},
+	"session_ended":    {"duration_bucket": true},
+	"pr_viewed":        {"surface": true},
+	"workspace_opened": {"surface": true},
+}
+
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"pr_viewed": {
+		"provider": posthog.AllowStringValues("github", "gitlab", "forgejo", "gitea", "bitbucket"),
+		"surface":  posthog.AllowStringValues("web"),
+	},
+	"workspace_opened": {
+		"item_type": posthog.AllowStringValues("pull_request", "issue", "kata_task", "adhoc"),
+		"surface":   posthog.AllowStringValues("web"),
+	},
 	"screen_viewed": {
 		"screen":  screenFilter,
 		"surface": posthog.AllowStringValues("web"),
@@ -144,7 +159,11 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 	backendOpts := base
 	backendOpts.Source = "backend"
-	backendOptions := append(kitAllowedEvents("backend"), posthog.WithDailyEvent("screen_viewed", "screen", posthog.NewDailyClaims(opts.DailyClaimsPath)))
+	claims := posthog.NewDailyClaims(opts.DailyClaimsPath)
+	backendOptions := append(kitAllowedEvents("backend"),
+		posthog.WithDailyEvent("screen_viewed", "screen", claims),
+		posthog.WithDailyEvent("pr_viewed", "provider", claims),
+		posthog.WithDailyEvent("workspace_opened", "item_type", claims))
 	backend, err := newKitReporter(backendOpts, backendOptions...)
 	if err != nil {
 		return nil, errors.Join(err, daemon.Close())
@@ -161,7 +180,7 @@ func kitAllowedEvents(source string) []posthog.Option {
 		}
 		allowed := make([]posthog.AllowedProperty, 0, len(properties))
 		for name, filter := range properties {
-			if name == "screen" || name == "duration_bucket" {
+			if requiredProperties[event][name] {
 				allowed = append(allowed, posthog.RequireProperty(name, filter))
 			} else {
 				allowed = append(allowed, posthog.AllowProperty(name, filter))

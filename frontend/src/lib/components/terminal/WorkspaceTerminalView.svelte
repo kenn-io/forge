@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
   import {
@@ -693,6 +695,15 @@
   const runtimeLive = $derived(
     runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
   );
+  function reportWorkspaceUse(): void {
+    if (workspaceLive && workspace?.status === "ready" && !actionsBlocked) reportWorkspaceOpened(appRuntime, workspace.item_type);
+  }
+  $effect(() => {
+    if (!embeddedWorkspace && hostVisible && documentVisible() && workspaceLive && workspace?.status === "ready") {
+      reportWorkspaceOpened(appRuntime, workspace.item_type);
+    }
+  });
+
   const workspaceDetailsReady = $derived(workspaceLive && (runtimeLive || runtimeError !== null));
 
   function hasAppliedRuntimeFor(
@@ -1848,6 +1859,7 @@
       if (restoredSessionKeys !== null && !restoredSessionKeys.has(hostKey)) continue;
       desired.set(hostKey, {
         hostKey,
+        itemType: workspace?.item_type,
         ...(workspaceHostKey === undefined ? {} : { fleetHostKey: workspaceHostKey }),
         websocketPath: workspaceSessionWebSocketPath(
           workspaceId,
@@ -2950,6 +2962,7 @@
     admissionRuntime?: WorkspaceRuntimeState,
   ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
+    reportWorkspaceUse();
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     launchingKey = targetKey;
@@ -3005,6 +3018,7 @@
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
+    reportWorkspaceUse();
     runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey, undefined, leaf);
   }
 
@@ -4513,6 +4527,8 @@
 
 <div
   class="terminal-view"
+  onpointerdowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
+  onkeydowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
   bind:this={workspaceRoot}
   {@attach attachWorkspaceItemReferences}
   tabindex="-1"

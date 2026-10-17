@@ -101,6 +101,7 @@ vi.mock("../../context.js", async (importOriginal) => {
   return {
     ...actual,
     getStores: () => ({
+      detail: { getDetail: () => null },
       events: {
         selectWorkspace: () => () => undefined,
         subscribeWorkspaceEvents: (subscriber: (event: unknown) => void) => {

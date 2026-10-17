@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -105,6 +107,11 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
+  $effect(() => {
+    if (visible && documentVisible() && workspace?.id === workspaceId && workspace.fleet_host_key === hostKey && workspace.status === "ready") {
+      reportWorkspaceOpened(appRuntime, workspace.item_type);
+    }
+  });
   let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
   let selectedSessionKey = $state<string | null>(null);

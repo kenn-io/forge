@@ -11,6 +11,9 @@
 </script>
 
 <script lang="ts">
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { reportPRViewed } from "../../app/telemetry.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import PullDetail from "./PullDetail.svelte";
   import DiffFilesLayout from "../diff/DiffFilesLayout.svelte";
   import { reviewThreadsFromEvents } from "../diff/review-thread-context.js";
@@ -61,6 +64,11 @@
     phonePresentation = false,
     phoneFilesLayout = false,
   }: Props = $props();
+
+  const appRuntime = getAppRuntime();
+  $effect(() => {
+    if (visible && detail && documentVisible()) reportPRViewed(appRuntime, pr.provider);
+  });
 
   // Provider capabilities are unknown until the detail lands. Assuming the
   // permissive set would render mutation controls a provider cannot honor, but

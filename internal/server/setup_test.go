@@ -217,3 +217,37 @@ func TestHasSetupWorkIndependentHubSources(t *testing.T) {
 		})
 	}
 }
+
+func TestHasSetupWorkWithoutWorkspaceSnapshots(t *testing.T) {
+	for _, kind := range []string{"pr", "issue"} {
+		t.Run(kind, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "org-a", "tracked"))
+			require.NoError(err)
+			if kind == "pr" {
+				serverfake.SeedPRForRepo(t, database, repoID, "github.com", "org-a", "tracked", 42)
+			} else {
+				serverfake.SeedIssueForRepo(t, database, repoID, "github.com", "org-a", "tracked", 42, "open", "Example issue")
+			}
+			require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+				ID: "creating-workspace", RepoID: repoID, RepoOwner: "org-a", RepoName: "tracked",
+				ItemType: db.WorkspaceItemTypeIssue, ItemNumber: 42, ItemKey: "42",
+				GitHeadRef: "main", WorktreePath: t.TempDir(), Status: "creating",
+			}))
+			cfg := &config.Config{Repos: []config.Repo{{Owner: "org-a", Name: "tracked"}}}
+			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}, database, nil, []ghclient.RepoRef{{Owner: "org-a", Name: "tracked"}}, time.Minute, nil, nil)
+			t.Cleanup(syncer.Stop)
+			srv := New(database, syncer, nil, "/", cfg, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			// Break snapshot-only metadata in the scratch DB, preserving workspaces and provider rows.
+			_, err = database.WriteDB().ExecContext(t.Context(), "DROP TABLE forge_workspace_launch_specs")
+			require.NoError(err)
+			_, err = srv.workspaceAPI.WorkspaceSubjectSnapshot(t.Context())
+			require.Error(err, "the real workspace snapshot must be unavailable")
+			readable, err := srv.HasSetupWork(t.Context())
+			require.NoError(err)
+			require.True(readable, "stored tracked work must qualify without a workspace snapshot")
+		})
+	}
+}

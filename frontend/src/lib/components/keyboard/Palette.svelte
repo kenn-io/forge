@@ -182,7 +182,7 @@
     count: grouped.commands.length + grouped.pulls.length + grouped.issues.length + modeDocRows.length,
     settled: ((parsed.scope !== "all" && parsed.scope !== "pr") || (!stores || (stores.pulls.hasLoaded() && !stores.pulls.isLoading() && !stores.pulls.getError()))) &&
       ((parsed.scope !== "all" && parsed.scope !== "issue") || (!stores || (stores.issues.hasIssuesLoaded() && !stores.issues.isIssuesLoading() && !stores.issues.getIssuesError()))) &&
-      (parsed.scope !== "all" || !docsSearch || (!modeLoading && docsResult?.ok === true)),
+      (parsed.scope !== "all" || !docsSearch || (!modeLoading && docsResult?.ok === true && !docsResult.warnings?.length)),
     failed: ((parsed.scope === "all" || parsed.scope === "pr") && !!stores?.pulls.getError()) ||
       ((parsed.scope === "all" || parsed.scope === "issue") && !!stores?.issues.getIssuesError()) ||
       (parsed.scope === "all" && docsResult?.ok === false),

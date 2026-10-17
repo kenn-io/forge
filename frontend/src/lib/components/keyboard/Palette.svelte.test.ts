@@ -111,7 +111,7 @@ describe("Palette", () => {
     await rerender({ docsSearch: async () => ({ hits: [], truncated: false, warnings: ["Folder unavailable"] }) });
     await fireEvent.input(input, { target: { value: "unmatched" } });
     await vi.advanceTimersByTimeAsync(350);
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(3);
     await rerender({ docsSearch: async () => ({ hits: [], truncated: false }) });
     await vi.advanceTimersByTimeAsync(350);
     expect(sent).toHaveLength(4);

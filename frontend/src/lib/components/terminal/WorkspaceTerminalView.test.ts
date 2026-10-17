@@ -4734,6 +4734,7 @@ describe("WorkspaceTerminalView", () => {
         runWorkspaceQuickAction(
           mocks.runtime,
           "ws-1",
+          "pull_request",
           { label: "Review", agent: "helper", prompt: "Review this change" },
           "devbox:box-1",
         );
@@ -6310,7 +6311,7 @@ describe("WorkspaceTerminalView", () => {
         sessions: [runningSession, runningShellSession, reviewerSession],
       };
       mocks.getWorkspaceRuntime.mockReturnValue(new Promise(() => {}));
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", {
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", {
         label: "Review",
         agent: "helper",
         prompt: "Review this change",
@@ -6414,7 +6415,7 @@ describe("WorkspaceTerminalView", () => {
         }),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", { label: "Review", agent: "codex", prompt: "Review this change" });
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", { label: "Review", agent: "codex", prompt: "Review this change" });
       const execution = runCommand.mock.results.at(-1)!.value;
       claimForPrs();
       render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
@@ -6451,7 +6452,7 @@ describe("WorkspaceTerminalView", () => {
           return originalFetch(input, init);
         }),
       );
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", {
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", {
         label: "Review",
         agent: "helper",
         prompt: "Review this change",
@@ -6488,7 +6489,7 @@ describe("WorkspaceTerminalView", () => {
       );
       mocks.quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", {
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", {
         label: "Review",
         agent: "helper",
         prompt: "Review this change",
@@ -7346,6 +7347,50 @@ describe("WorkspaceTerminalView", () => {
       expect(document.activeElement).not.toBe(document.querySelector(".terminal-view"));
       expect(focusTarget.isConnected).toBe(true);
     });
+
+    it.each(["New terminal", "Split terminal right", "Split terminal down"])(
+      "counts workspace use when %s launches from the external dock",
+      async (action) => {
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          JSON.stringify({
+            version: 1,
+            open: true,
+            dock: "bottom",
+            height: 300,
+            activeSessionKey: "ws-1_shell_a",
+            tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
+            sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
+          }),
+        );
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          launch_targets: [],
+          sessions: [runningSession, runningShellSession],
+        });
+        mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
+        claimForPrs();
+        noteWorkspacePaneRendered("prs");
+        promoteSession("prs", "ws-1:helper");
+        render(WorkspaceTerminalView, {
+          props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: false },
+        });
+        const dock = await screen.findByRole("region", { name: "Terminal panel" });
+        expect(dock.closest(".terminal-view")).toBeNull();
+        expect(coreActions).not.toHaveBeenCalled();
+
+        await fireEvent.click(within(dock).getByRole("button", { name: action }));
+
+        await waitFor(() =>
+          expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
+        );
+        await waitFor(() =>
+          expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+            { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+            expect.anything(),
+          ),
+        );
+      },
+    );
 
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(

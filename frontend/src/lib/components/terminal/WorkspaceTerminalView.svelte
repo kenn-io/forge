@@ -3024,9 +3024,8 @@
   );
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
-    if (!workspaceId || actionsBlocked) return;
-    reportWorkspaceUse();
-    runWorkspaceQuickAction(appRuntime, workspaceId, action, workspaceHostKey, undefined, leaf);
+    if (!workspaceId || !workspaceLive || workspace?.status !== "ready" || actionsBlocked) return;
+    runWorkspaceQuickAction(appRuntime, workspaceId, workspace.item_type, action, workspaceHostKey, undefined, leaf);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(
@@ -3131,6 +3130,7 @@
     placement: WorkspaceRuntimeLaunchPlacement = { _tag: "Terminal", insertIntoTree: true },
   ): void {
     if (!workspaceId || terminalLaunching || actionsBlocked) return;
+    reportWorkspaceUse();
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     terminalLaunching = true;

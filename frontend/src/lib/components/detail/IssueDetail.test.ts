@@ -978,12 +978,17 @@ describe("IssueDetail inline workspace handoff", () => {
 
   it("runs a quick action after creation and keeps it through a branch-conflict retry", async () => {
     const controller = createTestController("split");
+    const telemetry = vi.fn();
     const triage = { label: "Triage", agent: "codex", prompt: "/triage-pr\nquestion all assumptions" };
     const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
     let creates = 0;
     const apiClient = {
       GET: vi.fn(),
       POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/telemetry/events") {
+          telemetry(options?.body);
+          return { data: { status: "queued" } };
+        }
         posts.push({ path, options });
         if (path.endsWith("/workspace")) {
           creates += 1;
@@ -1011,6 +1016,12 @@ describe("IssueDetail inline workspace handoff", () => {
       body: { target_key: "codex", message: "/triage-pr\nquestion all assumptions" },
     });
     await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+        event: "workspace_opened",
+        properties: { item_type: "issue", surface: "web" },
+      }),
+    );
     expect(discardWorkspaceLaunch("ws-existing", undefined)).toBeNull();
   });
 

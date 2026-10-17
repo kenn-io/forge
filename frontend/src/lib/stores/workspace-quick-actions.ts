@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { reportWorkspaceOpened } from "../app/telemetry.js";
+import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { showFlash } from "./flash.svelte.js";
@@ -42,6 +44,7 @@ export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): 
 export function runWorkspaceQuickAction(
   runtime: AppRuntime,
   workspaceId: string,
+  itemType: WorkspaceDetail["item_type"],
   action: QuickAction,
   hostKey?: string,
   onLaunched?: (session: RuntimeSession) => void,
@@ -49,6 +52,7 @@ export function runWorkspaceQuickAction(
 ): void {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   if (quickActionLaunches.has(workspaceKey)) return;
+  reportWorkspaceOpened(runtime, itemType);
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
   quickActionLaunches.set(workspaceKey, launch);

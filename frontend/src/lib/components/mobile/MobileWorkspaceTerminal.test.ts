@@ -298,7 +298,7 @@ describe("MobileWorkspaceTerminal", () => {
     mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
     const appRuntime = runtimeState.appRuntime;
     if (!appRuntime) throw new Error("Missing test runtime");
-    runWorkspaceQuickAction(appRuntime, "ws-a", { label: "Review", agent: "chat", prompt: "Review this change" });
+    runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review this change" });
     render(MobileWorkspaceTerminal, { props });
     await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
     expect(screen.getByText("Starting chat…")).toBeTruthy();
@@ -328,7 +328,7 @@ describe("MobileWorkspaceTerminal", () => {
       mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
       const appRuntime = runtimeState.appRuntime;
       if (!appRuntime) throw new Error("Missing test runtime");
-      runWorkspaceQuickAction(appRuntime, "ws-a", { label: "Review", agent: "chat", prompt: "Review this change" });
+      runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review this change" });
       render(MobileWorkspaceTerminal, { props });
       await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
       if (state === "rejected") {

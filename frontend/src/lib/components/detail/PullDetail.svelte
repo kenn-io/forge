@@ -1888,7 +1888,7 @@
         Effect.sync(() => {
           if (data?.id && devboxTarget) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
-            if (quickAction) runWorkspaceQuickAction(runtime, data.id, quickAction, devboxTarget);
+            if (quickAction) runWorkspaceQuickAction(runtime, data.id, "pull_request", quickAction, devboxTarget);
             if (!responseIsStale()) {
               navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
             }
@@ -1905,7 +1905,7 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, quickAction);
+            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, "pull_request", quickAction);
           }
           if (responseIsStale() || !data?.id) return;
           if (inlineWorkspace) {

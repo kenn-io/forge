@@ -893,7 +893,7 @@
         Effect.sync(() => {
           if (data?.id && devboxTarget) {
             promoteWorkspaceCreateLaunch(requestIdentity, data.id, devboxTarget);
-            if (quickAction) runWorkspaceQuickAction(runtime, data.id, quickAction, devboxTarget);
+            if (quickAction) runWorkspaceQuickAction(runtime, data.id, "issue", quickAction, devboxTarget);
             if (!responseIsStale()) {
               navigate(`/terminal/fleet/${encodeURIComponent(devboxTarget)}/${encodeURIComponent(data.id)}`);
             }
@@ -909,7 +909,7 @@
             promoteWorkspaceCreateLaunch(requestIdentity, createdRef.id, undefined);
             recordWorkspaceCreated(requestIdentity, createdRef);
             inlineWorkspace?.recordCreated(requestIdentity, createdRef);
-            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, quickAction);
+            if (quickAction) runWorkspaceQuickAction(runtime, createdRef.id, "issue", quickAction);
           }
           if (responseIsStale()) return;
           pendingWorkspaceLaunchTarget = null;

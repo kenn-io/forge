@@ -3666,6 +3666,8 @@ describe("PullDetail inline workspace handoff", () => {
   });
 
   it("retains an ACP quick-action handoff for the workspace view after creation", async () => {
+    const controller = createTestController("split");
+    const telemetry = vi.fn();
     const rebase = { label: "Rebase", agent: "chat", prompt: "rebase this pull request onto main" };
     const session: RuntimeSession = {
       key: "runtime-1",
@@ -3682,6 +3684,10 @@ describe("PullDetail inline workspace handoff", () => {
     const apiClient = {
       GET: vi.fn(async () => ({ data: {} })),
       POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        if (path === "/telemetry/events") {
+          telemetry(options?.body);
+          return { data: { status: "queued" } };
+        }
         posts.push({ path, options });
         if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
         return handoff.promise;
@@ -3689,6 +3695,7 @@ describe("PullDetail inline workspace handoff", () => {
     };
     const { navigate, settings } = renderPullDetail(pullDetail(), undefined, apiClient, {
       hideWorkspaceAction: false,
+      inlineWorkspace: controller,
     });
     settings.setLaunchTargets([{ key: "chat", label: "Chat agent", kind: "acp", available: true }]);
     settings.setQuickActions([rebase]);
@@ -3704,7 +3711,14 @@ describe("PullDetail inline workspace handoff", () => {
       params: { path: { id: "ws-new" } },
       body: { target_key: "chat", message: "rebase this pull request onto main" },
     });
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/terminal/ws-new"));
+    await waitFor(() => expect(controller.recordCreated).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalledWith("/terminal/ws-new");
+    await waitFor(() =>
+      expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+        event: "workspace_opened",
+        properties: { item_type: "pull_request", surface: "web" },
+      }),
+    );
     // A quick action never queues a frontend launch; the server owns it.
     expect(discardWorkspaceLaunch("ws-new", undefined)).toBeNull();
     expect(quickActionLaunches.get("ws-new")).toMatchObject({ targetKey: "chat" });

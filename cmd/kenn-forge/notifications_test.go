@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -12,10 +12,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -142,6 +145,7 @@ func TestBackgroundLoopWaitsForFirstTickerInterval(t *testing.T) {
 
 type fakeTelemetryClient struct {
 	mu         sync.Mutex
+	disabled   bool
 	captures   []map[string]any
 	eventNames []string
 	report     func(context.Context) (posthog.Status, error)
@@ -162,7 +166,7 @@ func (f *fakeTelemetryClient) Close() error {
 	}
 	return nil
 }
-func (f *fakeTelemetryClient) Enabled() bool { return true }
+func (f *fakeTelemetryClient) Enabled() bool { return !f.disabled }
 
 func (f *fakeTelemetryClient) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
 	if err := f.Capture(event, properties); err != nil {
@@ -239,60 +243,55 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 
 func seedSetupItem(t *testing.T, database *db.DB, kind string) int64 {
 	t.Helper()
-	require := require.New(t)
 	repoID, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
+	require.NoError(t, err)
 	if kind == "issue" {
-		_, err = database.UpsertIssue(t.Context(), &db.Issue{RepoID: repoID, Number: 1, Title: "Example", State: "closed"})
+		serverfake.SeedIssueForRepo(t, database, repoID, "github.com", "acme", "widget", 1, "closed", "Example")
 	} else {
-		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, Number: 1, Title: "Example", State: "merged"})
+		serverfake.SeedPRForRepo(t, database, repoID, "github.com", "acme", "widget", 1)
 	}
-	require.NoError(err)
 	return repoID
 }
 
-func TestSetupFinishedStartupAndMinuteCheck(t *testing.T) {
+func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 	for _, kind := range []string{"issue", "pr"} {
-		for _, cached := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/cached=%t", kind, cached), func(t *testing.T) {
+		for _, hidden := range []string{"", "inactive", "removed_upstream"} {
+			t.Run(kind+"/"+hidden, func(t *testing.T) {
 				database := dbtest.Open(t)
 				synctest.Test(t, func(t *testing.T) {
 					require := require.New(t)
-					if cached {
-						seedSetupItem(t, database, kind)
-					} else {
-						_, err := reposeed.Seed(t.Context(), database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-						require.NoError(err)
-					}
 					handle := newBackgroundLoopHandle(t.Context())
+					defer func() { require.NoError(handle.Stop(t.Context())) }()
 					client := &fakeTelemetryClient{}
 					startSetupFinishedLoop(handle, database, client)
 					synctest.Wait()
-					if !cached {
+					require.Empty(client.events())
+					repoID := seedSetupItem(t, database, kind)
+					switch hidden {
+					case "inactive":
+						_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE id = ?`, repoID)
+						require.NoError(err)
+					case "removed_upstream":
+						itemType := "issue"
+						if kind == "pr" {
+							itemType = "merge_request"
+						}
+						_, err := database.WriteDB().ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (?, ?, 1, 'item-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'removed_upstream')`, repoID, itemType)
+						require.NoError(err)
+					}
+					time.Sleep(time.Minute)
+					synctest.Wait()
+					if hidden != "" {
 						require.Empty(client.events())
-						seedSetupItem(t, database, kind)
-						time.Sleep(time.Minute - time.Nanosecond)
-						synctest.Wait()
-						require.Empty(client.events())
-						time.Sleep(time.Nanosecond)
-						synctest.Wait()
+						return
 					}
 					require.Equal([]string{"setup_finished"}, client.events())
-					client.mu.Lock()
-					properties := slices.Clone(client.captures)
-					client.mu.Unlock()
-					require.Equal([]map[string]any{nil}, properties)
-					_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
-					require.NoError(err)
-					require.True(found)
+					require.Equal([]map[string]any{nil}, client.captures)
+					require.NoError(handle.Stop(t.Context()))
+					handle = newBackgroundLoopHandle(t.Context())
+					startSetupFinishedLoop(handle, database, client)
 					time.Sleep(2 * time.Minute)
 					synctest.Wait()
-					require.NoError(handle.Stop(t.Context()))
-					// A new process sees the durable marker and exits without reporting.
-					handle = newBackgroundLoopHandle(t.Context())
-					startSetupFinishedLoop(handle, database, client)
-					synctest.Wait()
-					require.NoError(handle.Stop(t.Context()))
 					require.Equal([]string{"setup_finished"}, client.events())
 				})
 			})
@@ -300,153 +299,49 @@ func TestSetupFinishedStartupAndMinuteCheck(t *testing.T) {
 	}
 }
 
-func TestSetupFinishedExcludesInvisibleItems(t *testing.T) {
-	for _, kind := range []string{"issue", "pr"} {
-		for _, hidden := range []string{"inactive", "removed_upstream"} {
-			t.Run(kind+"/"+hidden, func(t *testing.T) {
-				require := require.New(t)
-				database := dbtest.Open(t)
-				repoID := seedSetupItem(t, database, kind)
-				if hidden == "inactive" {
-					_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE id = ?`, repoID)
-					require.NoError(err)
-				} else {
-					itemType := "issue"
-					if kind == "pr" {
-						itemType = "merge_request"
-					}
-					_, err := database.WriteDB().ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (?, ?, 1, 'item-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'removed_upstream')`, repoID, itemType)
-					require.NoError(err)
+func TestRunSetupFinishedStartupAndClose(t *testing.T) {
+	for _, mode := range []string{"startup", "shutdown", "error", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			require := require.New(t)
+			root := t.TempDir()
+			cfgPath := filepath.Join(root, "config.toml")
+			writeMinimalConfig(t, cfgPath, filepath.Join(root, "data"), reserveFreePort(t))
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			calls, closed, startup := 0, false, false
+			err := runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath, DisableSync: true}, func(opts telemetry.Options) telemetry.Client {
+				seedSetupItem(t, opts.Database, "issue")
+				if mode == "disabled" {
+					cancel()
 				}
-				client := &fakeTelemetryClient{}
-				done, err := captureSetupFinished(t.Context(), database, client)
-				require.NoError(err)
-				require.False(done)
-				require.Empty(client.events())
-				_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
-				require.NoError(err)
-				require.False(found)
-			})
-		}
-	}
-}
-
-func TestSetupFinishedRetriesUnqueuedReports(t *testing.T) {
-	for _, outcome := range []string{"disabled", "error", "queued-with-error", "cancelled", "timeout"} {
-		t.Run(outcome, func(t *testing.T) {
-			database := dbtest.Open(t)
-			synctest.Test(t, func(t *testing.T) {
-				require := require.New(t)
-				seedSetupItem(t, database, "issue")
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				client := &fakeTelemetryClient{report: func(reportCtx context.Context) (posthog.Status, error) {
-					_, found, err := database.AppMetadataValue(reportCtx, setupFinishedKey)
+				return &fakeTelemetryClient{disabled: mode == "disabled", report: func(reportCtx context.Context) (posthog.Status, error) {
+					_, found, err := opts.Database.AppMetadataValue(reportCtx, setupFinishedKey)
 					require.NoError(err)
-					require.True(found, "claim must precede reporting")
-					switch outcome {
-					case "disabled":
-						return posthog.StatusDisabled, nil
-					case "cancelled":
-						cancel()
-						return "", reportCtx.Err()
-					case "timeout":
-						<-reportCtx.Done()
-						return "", reportCtx.Err()
-					case "queued-with-error":
-						return posthog.StatusQueued, errors.New("enqueue failed")
-					default:
+					require.False(found, "only accepted reports may persist completion")
+					calls++
+					if calls == 1 {
+						startup = ctx.Err() == nil
+					}
+					cancel()
+					if mode == "error" && calls == 1 {
 						return "", errors.New("enqueue failed")
 					}
-				}}
-				handle := newBackgroundLoopHandle(ctx)
-				startSetupFinishedLoop(handle, database, client)
-				synctest.Wait()
-				if outcome == "timeout" {
-					time.Sleep(300 * time.Millisecond)
-					synctest.Wait()
-				}
-				require.Equal([]string{"setup_finished"}, client.events())
-				_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
-				require.NoError(err)
-				require.False(found, "unqueued report must release the claim, even after cancellation")
-				client.mu.Lock()
-				client.report = nil
-				client.mu.Unlock()
-				if outcome == "cancelled" {
-					require.NoError(handle.Stop(t.Context()))
-					handle = newBackgroundLoopHandle(t.Context())
-					startSetupFinishedLoop(handle, database, client)
-				} else {
-					time.Sleep(time.Minute)
-				}
-				synctest.Wait()
-				require.NoError(handle.Stop(t.Context()))
-				require.Equal([]string{"setup_finished", "setup_finished"}, client.events())
-				_, found, err = database.AppMetadataValue(t.Context(), setupFinishedKey)
-				require.NoError(err)
-				require.True(found)
-			})
-		})
-	}
-}
-
-func TestSetupFinishedFinalTelemetryClose(t *testing.T) {
-	for _, outcome := range []string{"queued", "timeout", "disabled-at-start"} {
-		t.Run(outcome, func(t *testing.T) {
-			database := dbtest.Open(t)
-			synctest.Test(t, func(t *testing.T) {
-				require := require.New(t)
-				handle := newBackgroundLoopHandle(t.Context())
-				client := &fakeTelemetryClient{}
-				client.report = func(ctx context.Context) (posthog.Status, error) {
-					if outcome == "timeout" {
-						<-ctx.Done()
-						return "", ctx.Err()
+					if mode == "shutdown" && calls == 1 {
+						return posthog.StatusDisabled, nil
 					}
 					return posthog.StatusQueued, nil
-				}
-				startSetupFinishedLoop(handle, database, client)
-				synctest.Wait()
-				require.Empty(client.events())
-				closed := false
-				client.close = func() error {
-					_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+				}, close: func() error {
+					_, found, err := opts.Database.AppMetadataValue(t.Context(), setupFinishedKey)
 					require.NoError(err)
-					require.Equal(outcome == "queued", found)
-					// Each Kit reporter may take its full two-second close budget.
-					time.Sleep(2 * posthog.ShutdownTimeout)
+					require.Equal(mode != "disabled", found, "completion must persist before the reporter and DB close")
 					closed = true
 					return nil
-				}
-				started := time.Now()
-				errs := runMainShutdown(t.Context(), mainShutdownCallbacks{
-					StopBackgroundLoops: handle.Stop,
-					ShutdownPrimaryHTTP: func(context.Context) error {
-						seedSetupItem(t, database, "pr")
-						return nil
-					},
-					CloseTelemetry: func() error {
-						return closeTelemetry(database, client, outcome != "disabled-at-start")
-					},
-					CloseDatabase: func() error {
-						require.True(closed, "reporters close before the database")
-						return database.Close()
-					},
-				})
-				require.LessOrEqual(time.Since(started), 4900*time.Millisecond)
-				if outcome == "timeout" {
-					require.Len(errs, 1)
-					require.ErrorIs(errs[0].err, context.DeadlineExceeded)
-				} else {
-					require.Empty(errs)
-				}
-				if outcome == "disabled-at-start" {
-					require.Empty(client.events())
-				} else {
-					require.Equal([]string{"setup_finished"}, client.events())
-				}
+				}}
 			})
+			require.NoError(err)
+			require.True(closed)
+			require.Equal(mode != "disabled", startup, "the first report must run before shutdown")
+			require.Equal(map[string]int{"startup": 1, "shutdown": 2, "error": 2, "disabled": 0}[mode], calls)
 		})
 	}
 }

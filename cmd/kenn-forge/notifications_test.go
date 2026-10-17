@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -259,7 +263,7 @@ func localSetupWorkCheck(t *testing.T, database *db.DB) func(context.Context) (b
 	t.Helper()
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{DisableWorkspaceBackgroundMonitors: true})
 	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.Background())) })
-	return srv.HasReadableProviderWork
+	return srv.HasSetupWork
 }
 
 func TestSetupFinishedMinuteAndFilters(t *testing.T) {
@@ -338,7 +342,7 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 					}
 					cancel()
 					if mode == "shutdown" && calls == 1 {
-						return posthog.StatusDisabled, nil
+						return "", context.Canceled
 					}
 					return posthog.StatusQueued, nil
 				}, close: func() error {
@@ -387,4 +391,76 @@ func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
 	require.NoError(err)
 	require.True(found)
 	require.Equal("queued", marker)
+}
+
+func TestSetupFinishedDelayedSpoke(t *testing.T) {
+	for _, canceled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "queued", true: "canceled"}[canceled], func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			budget := 5 * time.Second
+			if canceled {
+				budget = 300 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), budget)
+			defer cancel()
+			hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				//nolint:kennlint // Simulate 200 ms of real hub HTTP latency per request.
+				time.Sleep(200 * time.Millisecond)
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/api/v1/issues" {
+					_, _ = io.WriteString(w, `[{"number":42,"title":"Example issue","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"org-a","name":"project-a"}}]`)
+				} else {
+					_, _ = io.WriteString(w, `[]`)
+				}
+			}))
+			t.Cleanup(hub.Close)
+			const hubID = "44444444444444444444444444444444"
+			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
+			require.NoError(err)
+			require.NoError(credentials.StoreOutbound(hubID, "example-secret", federationauth.SpokeToHubScopes()))
+			cfg := &config.Config{Host: "127.0.0.1", Port: 8080, Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: hubID, BaseURL: hub.URL}}}
+			srv := server.New(database, nil, nil, "/", cfg, server.ServerOptions{
+				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: true,
+				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
+			})
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			client := &fakeTelemetryClient{}
+			setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasSetupWork}
+			err = setup.capture(ctx)
+			if canceled {
+				require.Error(err)
+				require.ErrorIs(ctx.Err(), context.DeadlineExceeded)
+				require.Empty(client.events())
+			} else {
+				require.NoError(err)
+				require.Equal([]string{"setup_finished"}, client.events())
+			}
+			_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+			require.NoError(err)
+			require.Equal(!canceled, found)
+		})
+	}
+}
+
+func TestSetupFinishedNonqueuedStatusStopsChecks(t *testing.T) {
+	for _, status := range []posthog.Status{posthog.StatusDisabled, posthog.StatusSkipped} {
+		t.Run(string(status), func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			checks := 0
+			client := &fakeTelemetryClient{report: func(context.Context) (posthog.Status, error) { return status, nil }}
+			setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+				checks++
+				return true, nil
+			}}
+			require.NoError(setup.capture(t.Context()))
+			require.NoError(setup.capture(t.Context()))
+			require.Equal(1, checks)
+			require.Equal([]string{"setup_finished"}, client.events())
+			_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+			require.NoError(err)
+			require.False(found)
+		})
+	}
 }

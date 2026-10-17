@@ -115,6 +115,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 		wantBackend int
 	}{
 		{name: "daemon_active goes to daemon", event: "daemon_active", wantDaemon: 1},
+		{name: "setup_finished goes to daemon", event: "setup_finished", wantDaemon: 1},
 		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},
 		{name: "empty event", event: " "},
@@ -170,6 +171,7 @@ func TestUIEventAllowedAdmitsOnlyBackendEvents(t *testing.T) {
 	assert.True(UIEventAllowed(" app_opened "))
 	assert.True(UIEventAllowed("session_ended"))
 	assert.False(UIEventAllowed("daemon_active"))
+	assert.False(UIEventAllowed("setup_finished"))
 	assert.False(UIEventAllowed("app_loaded"))
 }
 

@@ -1,11 +1,14 @@
 # Server Runtime
 
-- Startup and daily daemon telemetry send tracked repository counts only in the
-  ranges documented in [Telemetry](../docs/configuration.md#telemetry)
-  (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
+- Setup completion must reflect persisted work: single-item refresh paths can store
+  the first item without a full sync pass
+  (`cmd/kenn-forge/notifications.go::captureSetupFinished`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
+- Startup and daily daemon telemetry send tracked repository counts only in the
+  ranges documented in [Telemetry](../docs/configuration.md#telemetry)
+  (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
 - Screen telemetry uses Kit's durable claims per installation and UTC day;
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).

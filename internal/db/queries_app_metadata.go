@@ -8,6 +8,17 @@ import (
 	"strings"
 )
 
+func (d *DB) DeleteAppMetadataValue(ctx context.Context, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("app metadata key is required")
+	}
+	if _, err := d.rwExecContext(ctx, `DELETE FROM forge_app_metadata WHERE key = ?`, key); err != nil {
+		return fmt.Errorf("delete app metadata: %w", err)
+	}
+	return nil
+}
+
 func (d *DB) AppMetadataValue(ctx context.Context, key string) (string, bool, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {

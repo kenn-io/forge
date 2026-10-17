@@ -7,9 +7,9 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
-  import ItemQuickActionMenu from "./ItemQuickActionMenu.svelte";
+  import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
-  import type { QuickActionItem } from "../../stores/bulk-quick-action.js";
+  import type { ListItemTarget } from "../../stores/item-actions.js";
   import { createRangeSelection } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import {
@@ -314,7 +314,7 @@
     },
   });
   let contextMenu = $state.raw<{
-    targets: QuickActionItem[];
+    targets: ListItemTarget[];
     anchor: MenuAnchorPoint;
     row: HTMLElement | undefined;
   } | null>(null);
@@ -335,6 +335,17 @@
       row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
     };
     contextMenuOpen = true;
+  }
+
+  // Menu actions change items on the provider; the open issue reloads too,
+  // in case it was one of them.
+  function reloadAfterItemAction(): void {
+    issues.loadIssues();
+    runtime.runCommand(issues.refreshActiveIssueDetailEffect(), {
+      operation: "refresh issue detail after list action",
+      safeContext: {},
+      onFailure: () => {},
+    });
   }
 
   function clearSelectionOnEscape(event: KeyboardEvent): void {
@@ -526,12 +537,12 @@
   </div>
 </div>
 
-<ItemQuickActionMenu
+<ItemActionsMenu
   bind:open={contextMenuOpen}
   anchor={contextMenu?.anchor}
   returnFocus={contextMenu?.row}
   targets={contextMenu?.targets ?? []}
-  noun="issues"
+  onChanged={reloadAfterItemAction}
   selectionActive={issueSelection.active}
   onClearSelection={() => issueSelection.clear()}
 />

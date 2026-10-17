@@ -78,6 +78,9 @@ Interactive surfaces must agree on which item is selected.
 - PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace instead of creating another, uses the saved default target, and reports failures together
   (`frontend/src/lib/stores/bulk-quick-action.ts::runQuickActionOnItems`).
+- PR and issue row menus apply each action to its eligible items only and gate it like the detail views,
+  with mutation availability read per repository because list rows omit it
+  (`frontend/src/lib/stores/item-actions.ts::actionEligibility`, `frontend/src/lib/stores/repo-operations.svelte.ts`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

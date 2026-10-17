@@ -1,11 +1,12 @@
 import { Effect, Result } from "effect";
-import type { Issue, PullRequest, QuickAction } from "../api/types.js";
+import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
 import type { WorkspaceItemIdentity } from "../workspace-inline.js";
 import { showFlash } from "./flash.svelte.js";
+import { listItemLabel, type ListItemTarget } from "./item-actions.js";
 import {
   beginWorkspaceCreate,
   endWorkspaceCreate,
@@ -15,15 +16,9 @@ import {
 import { runWorkspaceQuickAction } from "./workspace-quick-actions.js";
 import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
 
-export type QuickActionItem = { kind: "pull"; item: PullRequest } | { kind: "issue"; item: Issue };
-
 const CONCURRENCY = 4;
 
-export function quickActionItemLabel({ item }: QuickActionItem): string {
-  return `${item.repo.owner}/${item.repo.name}#${item.Number}`;
-}
-
-function itemIdentity({ kind, item }: QuickActionItem): WorkspaceItemIdentity {
+function itemIdentity({ kind, item }: ListItemTarget): WorkspaceItemIdentity {
   return {
     provider: item.repo.provider,
     platformHost: item.repo.platform_host,
@@ -35,7 +30,7 @@ function itemIdentity({ kind, item }: QuickActionItem): WorkspaceItemIdentity {
   };
 }
 
-function createItemWorkspace(target: QuickActionItem, devboxTarget: string | undefined) {
+function createItemWorkspace(target: ListItemTarget, devboxTarget: string | undefined) {
   const { kind, item } = target;
   const repo = item.repo;
   const repoKey = repositoryKeyToWire(repositoryKeyFromWire(repo));
@@ -90,7 +85,7 @@ function createItemWorkspace(target: QuickActionItem, devboxTarget: string | und
  * Creates (or reuses) a workspace for one item on the saved default target and
  * hands it the quick action. Failures become messages for the batch summary.
  */
-function runOnItem(runtime: AppRuntime, target: QuickActionItem, action: QuickAction, defaultTarget: string) {
+function runOnItem(runtime: AppRuntime, target: ListItemTarget, action: QuickAction, defaultTarget: string) {
   const identity = itemIdentity(target);
   const devboxTarget = defaultTarget.startsWith("devbox:") ? defaultTarget : undefined;
   if (isWorkspaceCreatePending(identity)) {
@@ -140,7 +135,7 @@ function runOnItem(runtime: AppRuntime, target: QuickActionItem, action: QuickAc
  */
 export function runQuickActionOnItems(
   runtime: AppRuntime,
-  targets: readonly QuickActionItem[],
+  targets: readonly ListItemTarget[],
   action: QuickAction,
   defaultTarget: string,
   onSettled?: () => void,
@@ -158,7 +153,7 @@ export function runQuickActionOnItems(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
           const failures = outcomes.flatMap(({ target, result }) =>
-            Result.isFailure(result) ? [`${quickActionItemLabel(target)}: ${result.failure}.`] : [],
+            Result.isFailure(result) ? [`${listItemLabel(target)}: ${result.failure}.`] : [],
           );
           const started = outcomes.length - failures.length;
           if (failures.length === 0) {

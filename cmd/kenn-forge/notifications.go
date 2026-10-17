@@ -19,7 +19,8 @@ const databaseOptimizeInterval = 24 * time.Hour
 const setupFinishedKey = "telemetry.setup_finished"
 
 type setupFinished struct {
-	mu       sync.Mutex
+	gateOnce sync.Once
+	gate     chan struct{}
 	database *db.DB
 	reporter telemetry.Client
 	hasWork  func(context.Context) (bool, error)
@@ -28,8 +29,13 @@ type setupFinished struct {
 }
 
 func (s *setupFinished) capture(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.gateOnce.Do(func() { s.gate = make(chan struct{}, 1) })
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	if err := ctx.Err(); err != nil || s.done {
 		return err
 	}

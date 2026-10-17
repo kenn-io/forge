@@ -29,6 +29,7 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
@@ -734,17 +735,7 @@ func newFederatedProviderNodeForTest(
 	httpClient *http.Client,
 ) (*Server, *db.DB) {
 	t.Helper()
-	credentials, err := federationauth.Open(t.TempDir() + "/credentials.json")
-	require.NoError(t, err)
-	require.NoError(t, credentials.StoreOutbound(
-		proxyTestHubID, "provider-spoke-secret", federationauth.SpokeToHubScopes(),
-	))
-	cfg := &config.Config{Fleet: config.Fleet{
-		Enabled: true, Role: config.FleetRoleSpoke,
-		Hub: &config.FleetHub{
-			NodeID: proxyTestHubID, BaseURL: hubURL,
-		},
-	}}
+	cfg, credentials := federationtest.ProviderSpoke(t, proxyTestHubID, hubURL, "provider-spoke-secret")
 	database := dbtest.Open(t)
 	server := New(database, nil, nil, "/", cfg, ServerOptions{
 		FederationSpokeID:                  nodeID,

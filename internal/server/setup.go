@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -24,10 +25,22 @@ func (s *Server) HasSetupWork(ctx context.Context) (bool, error) {
 	if s.providerSource != nil && (!s.options.FederationSpokeActive || !s.streamapi.FederationEnabled()) {
 		return false, nil
 	}
-	prs, err := s.pullAPI.ListService(ctx, pullapi.ListQuery{State: "all", Limit: 1})
-	if err != nil || len(prs) > 0 {
-		return len(prs) > 0, err
+	pullList := s.pullAPI.ListProviderService
+	issueList := s.issueAPI.ListProviderService
+	if s.providerSource != nil {
+		pullList = s.providerSource.ListPulls
+		issueList = s.providerSource.ListIssues
 	}
-	issues, err := s.issueAPI.ListService(ctx, issueapi.ListQuery{State: "all", Limit: 1})
-	return len(issues) > 0, err
+	prs, pullErr := pullList(ctx, pullapi.ListQuery{State: "all", Limit: 1})
+	if pullErr == nil && len(prs) > 0 {
+		return true, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, errors.Join(pullErr, err)
+	}
+	issues, issueErr := issueList(ctx, issueapi.ListQuery{State: "all", Limit: 1})
+	if issueErr == nil && len(issues) > 0 {
+		return true, nil
+	}
+	return false, errors.Join(pullErr, issueErr)
 }

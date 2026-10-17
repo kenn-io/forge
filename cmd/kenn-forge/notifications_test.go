@@ -19,10 +19,10 @@ import (
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/kit/telemetry/posthog"
@@ -394,8 +394,9 @@ func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
 }
 
 func TestSetupFinishedDelayedSpoke(t *testing.T) {
-	for _, canceled := range []bool{false, true} {
-		t.Run(map[bool]string{false: "queued", true: "canceled"}[canceled], func(t *testing.T) {
+	for _, mode := range []string{"queued", "canceled", "pull-failed"} {
+		canceled := mode == "canceled"
+		t.Run(mode, func(t *testing.T) {
 			require := require.New(t)
 			database := dbtest.Open(t)
 			budget := 5 * time.Second
@@ -407,6 +408,10 @@ func TestSetupFinishedDelayedSpoke(t *testing.T) {
 			hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				//nolint:kennlint // Simulate 200 ms of real hub HTTP latency per request.
 				time.Sleep(200 * time.Millisecond)
+				if mode == "pull-failed" && r.URL.Path == "/api/v1/pulls" {
+					http.Error(w, "pull source unavailable", http.StatusServiceUnavailable)
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/api/v1/issues" {
 					_, _ = io.WriteString(w, `[{"number":42,"title":"Example issue","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"org-a","name":"project-a"}}]`)
@@ -416,10 +421,8 @@ func TestSetupFinishedDelayedSpoke(t *testing.T) {
 			}))
 			t.Cleanup(hub.Close)
 			const hubID = "44444444444444444444444444444444"
-			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
-			require.NoError(err)
-			require.NoError(credentials.StoreOutbound(hubID, "example-secret", federationauth.SpokeToHubScopes()))
-			cfg := &config.Config{Host: "127.0.0.1", Port: 8080, Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: hubID, BaseURL: hub.URL}}}
+			cfg, credentials := federationtest.ProviderSpoke(t, hubID, hub.URL, "example-secret")
+			cfg.Host, cfg.Port = "127.0.0.1", 8080
 			srv := server.New(database, nil, nil, "/", cfg, server.ServerOptions{
 				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: true,
 				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
@@ -427,13 +430,16 @@ func TestSetupFinishedDelayedSpoke(t *testing.T) {
 			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
 			client := &fakeTelemetryClient{}
 			setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasSetupWork}
-			err = setup.capture(ctx)
+			err := setup.capture(ctx)
 			if canceled {
 				require.Error(err)
 				require.ErrorIs(ctx.Err(), context.DeadlineExceeded)
 				require.Empty(client.events())
 			} else {
 				require.NoError(err)
+				require.Equal([]string{"setup_finished"}, client.events())
+				restarted := &setupFinished{database: database, reporter: client, hasWork: srv.HasSetupWork}
+				require.NoError(restarted.capture(t.Context()))
 				require.Equal([]string{"setup_finished"}, client.events())
 			}
 			_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
@@ -463,4 +469,34 @@ func TestSetupFinishedNonqueuedStatusStopsChecks(t *testing.T) {
 			require.False(found)
 		})
 	}
+}
+
+func TestSetupFinishedGateHonorsCallerDeadline(t *testing.T) {
+	database := dbtest.Open(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	client := &fakeTelemetryClient{}
+	setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+		close(entered)
+		<-release
+		return true, nil
+	}}
+	first := make(chan error, 1)
+	go func() { first <- setup.capture(t.Context()) }()
+	<-entered
+	//nolint:kennlint // The deadline must expire while the first capture owns the gate.
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	second := make(chan error, 1)
+	go func() { second <- setup.capture(ctx) }()
+	select {
+	case err := <-second:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		close(release)
+		<-first
+		require.FailNow(t, "capture waited past its deadline for the setup gate")
+	}
+	close(release)
+	require.NoError(t, <-first)
+	require.Equal(t, []string{"setup_finished"}, client.events())
 }

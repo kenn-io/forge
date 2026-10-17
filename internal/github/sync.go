@@ -2061,6 +2061,9 @@ func (s *Syncer) reportFailedRepo(ctx context.Context, result RepoSyncResult) {
 }
 
 func (s *Syncer) completeFailedRepo(ctx context.Context, repo RepoRef, err error) {
+	if err == nil {
+		return
+	}
 	reason := syncFailureReason(err)
 	if reason == "" {
 		return

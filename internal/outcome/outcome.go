@@ -1,4 +1,5 @@
-package platform
+// Package outcome classifies failures for product event reporting.
+package outcome
 
 import (
 	"context"
@@ -8,11 +9,13 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucketsdk "github.com/ktrysmt/go-bitbucket"
+	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
-// OutcomeKind classifies provider failures without exposing their messages.
-// Preserve status from raw SDK and adapter errors at every reporting boundary.
-func OutcomeKind(err error, status int) string {
+// Kind classifies provider failures without exposing their messages.
+func Kind(err error) string {
+	status := 0
 	if err == nil {
 		return ""
 	}
@@ -35,11 +38,11 @@ func OutcomeKind(err error, status int) string {
 		status = response.HTTPStatus()
 	}
 	switch {
-	case errors.Is(err, ErrMissingToken), errors.Is(err, ErrPermissionDenied):
+	case errors.Is(err, tokenauth.ErrMissingToken), errors.Is(err, platform.ErrMissingToken), errors.Is(err, platform.ErrPermissionDenied):
 		return "auth"
-	case errors.Is(err, ErrRateLimited):
+	case errors.Is(err, platform.ErrRateLimited):
 		return "rate_limited"
-	case errors.Is(err, ErrNotFound):
+	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
 	}
 	switch status {
@@ -57,9 +60,9 @@ func OutcomeKind(err error, status int) string {
 		return "network"
 	}
 	if status == 0 {
-		if pe, ok := errors.AsType[*Error](err); ok {
+		if pe, ok := errors.AsType[*platform.Error](err); ok {
 			switch pe.Code {
-			case ErrCodeConflict, ErrCodeStaleState, ErrCodeUnsupportedCapability, ErrCodeUnsupportedMediaType, ErrCodeRangeNotSatisfiable, ErrCodeProviderNotConfigured, ErrCodeInvalidRepoRef, ErrCodeInvalidArgument:
+			case platform.ErrCodeConflict, platform.ErrCodeStaleState, platform.ErrCodeUnsupportedCapability, platform.ErrCodeUnsupportedMediaType, platform.ErrCodeRangeNotSatisfiable, platform.ErrCodeProviderNotConfigured, platform.ErrCodeInvalidRepoRef, platform.ErrCodeInvalidArgument:
 				return "other"
 			default:
 				return "provider"

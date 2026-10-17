@@ -2567,3 +2567,31 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		assert.Equal(t, test.want, string(detail.HeadRepoKind))
 	}
 }
+
+func TestResolveItemRetainsProviderOutcomeKind(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		status int
+		kind   string
+	}{{401, "auth"}, {429, "rate_limited"}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			mock := &serverfake.MockGH{
+				GetIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+					return &gh.Issue{ID: new(int64(5)), Number: new(5), Title: new("Issue"), State: new("open"), User: &gh.User{Login: new("alice")}}, nil
+				},
+				ListIssueCommentsFn: func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+					return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status, Header: http.Header{}}}
+				},
+			}
+			srv, database := servertest.SetupTestServerWithMock(t, mock)
+			_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(t, err)
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/repo/gh/acme/widget/resolve/5", nil)
+			require.Equal(t, 502, rr.Code, rr.Body.String())
+			var problem serverfake.RawProblemDetail
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(t, "upstreamError", problem.Code)
+			assert.Equal(t, tc.kind, problem.Details["kind"])
+		})
+	}
+}

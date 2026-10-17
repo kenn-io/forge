@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v92/github"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
@@ -110,4 +113,31 @@ func TestSpokeConvertsPendingGitHubRepositoriesThroughHub(t *testing.T) {
 	require.NoError(err)
 	require.Len(pending, 1, "a failed hub lookup leaves the row pending for the next connection")
 	assert.Equal(repoIDs["flaky"], pending[0].RepoID)
+}
+
+func TestFederationRepositoryResolutionRetainsProviderOutcomeKind(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		status int
+		kind   string
+	}{{401, "auth"}, {429, "rate_limited"}} {
+		t.Run(tc.kind, func(t *testing.T) {
+			database := dbtest.Open(t)
+			syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			transport := platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status, Header: http.Header{}}}
+			})
+			fetcher := ghclient.NewGraphQLFetcherWithClient(githubv4.NewClient(&http.Client{Transport: transport}), nil) //nolint:forbidigo // Inject SDK errors to test status preservation at the HTTP boundary.
+			syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{"github.com": fetcher})
+			t.Cleanup(syncer.Stop)
+			srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/federation/provider/github-repository-id", providerapi.GitHubRepositoryIDRequest{PlatformHost: "github.com", Owner: "team", Name: "project", NodeID: "R_node"})
+			require.Equal(t, 502, rr.Code, rr.Body.String())
+			var problem serverfake.RawProblemDetail
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&problem))
+			assert.Equal(t, "upstreamError", problem.Code)
+			assert.Equal(t, tc.kind, problem.Details["kind"])
+		})
+	}
 }

@@ -166,6 +166,28 @@ describe("Palette", () => {
     expect(sent).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
   });
 
+  it("counts a new empty search when the scope changes with unchanged text", async () => {
+    const { stores, sent } = listSearchStores();
+    stores.pulls.loadPulls();
+    stores.issues.loadIssues();
+    await waitFor(() => expect(stores.pulls.hasLoaded() && stores.issues.hasIssuesLoaded()).toBe(true));
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "pr: absent" } });
+    await fireEvent.change(input);
+    await waitFor(() => expect(sent).toEqual([{ event: "search_empty", properties: { surface: "web" } }]));
+    await fireEvent.input(input, { target: { value: "issue: absent" } });
+    await fireEvent.change(input);
+    await waitFor(() =>
+      expect(sent).toEqual([
+        { event: "search_empty", properties: { surface: "web" } },
+        { event: "search_empty", properties: { surface: "web" } },
+      ]),
+    );
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });

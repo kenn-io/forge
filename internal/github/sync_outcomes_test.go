@@ -60,13 +60,9 @@ func TestRepositoryFailuresCountEveryAttempt(t *testing.T) {
 	syncer.SetParallelism(1)
 	var reasons []string
 	var results []RepoSyncResult
+	syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 	syncer.SetOnSyncCompleted(func(batch []RepoSyncResult) {
 		results = batch
-		for _, result := range batch {
-			if result.FailureReason != "" {
-				reasons = append(reasons, result.FailureReason)
-			}
-		}
 	})
 	syncer.RunOnce(t.Context())
 	require.Len(t, results, 2)
@@ -107,12 +103,10 @@ func TestRelayRepositoryFailureOutcomes(t *testing.T) {
 			require.NoError(t, err)
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 			var reasons []string
+			completions := 0
+			syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 			syncer.SetOnSyncCompleted(func(batch []RepoSyncResult) {
-				for _, result := range batch {
-					if result.FailureReason != "" {
-						reasons = append(reasons, result.FailureReason)
-					}
-				}
+				completions++
 			})
 			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: 1002, Target: target}
 			for range 2 {
@@ -131,6 +125,7 @@ func TestRelayRepositoryFailureOutcomes(t *testing.T) {
 			syncer.routers = map[string]*HostRouter{"github.com": router}
 			require.Error(t, syncer.refreshRelayHint(WithSyncBudget(t.Context()), hint))
 			assert.Equal(t, []string{"auth", "auth", "auth"}, reasons)
+			assert.Zero(t, completions, "relay failures must not run full-sync completion consumers")
 		})
 	}
 }
@@ -143,13 +138,7 @@ func TestRepositoryFailureBeforeDispatch(t *testing.T) {
 	require.NoError(t, err)
 	syncer.routers = map[string]*HostRouter{"github.com": router}
 	var reasons []string
-	syncer.SetOnSyncCompleted(func(batch []RepoSyncResult) {
-		for _, result := range batch {
-			if result.FailureReason != "" {
-				reasons = append(reasons, result.FailureReason)
-			}
-		}
-	})
+	syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 	syncer.RunOnce(t.Context())
 	assert.Equal(t, []string{"auth"}, reasons)
 }
@@ -189,13 +178,7 @@ func TestNativeProviderServerFailuresReportProviderOutcome(t *testing.T) {
 			repo := RepoRef{Platform: provider.Platform(), PlatformHost: provider.Host(), Owner: "team", Name: "project"}
 			syncer := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
 			var reasons []string
-			syncer.SetOnSyncCompleted(func(batch []RepoSyncResult) {
-				for _, result := range batch {
-					if result.FailureReason != "" {
-						reasons = append(reasons, result.FailureReason)
-					}
-				}
-			})
+			syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 			err = syncer.SyncRepoOnProvider(t.Context(), provider.Platform(), provider.Host(), repo.Owner, repo.Name)
 			require.Error(t, err)
 			require.NotErrorIs(t, err, platform.ErrProviderContract)
@@ -210,16 +193,39 @@ func TestRepositoryCanceledAndSkippedOutcomes(t *testing.T) {
 		t.Run(failure.Error(), func(t *testing.T) {
 			syncer := NewSyncer(map[string]Client{"github.com": &mockClient{listOpenPRsErr: failure}}, openTestDB(t), nil, []RepoRef{{Owner: "team", Name: "project", PlatformHost: "github.com"}}, time.Minute, nil, nil)
 			var reasons []string
-			syncer.SetOnSyncCompleted(func(results []RepoSyncResult) {
-				for _, result := range results {
-					if result.FailureReason != "" {
-						reasons = append(reasons, result.FailureReason)
-					}
-				}
-			})
+			syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 			syncer.RunOnce(t.Context())
 			_ = syncer.SyncRepoOnProvider(t.Context(), platform.KindGitHub, "github.com", "team", "project")
 			assert.Empty(t, reasons)
 		})
 	}
+}
+
+func TestManualRepositoryFailureLeavesCompletionConsumersSilent(t *testing.T) {
+	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{listOpenPRsErr: platform.ErrPermissionDenied}}, openTestDB(t), nil, []RepoRef{{Owner: "team", Name: "project", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	completions := 0
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) { completions++ })
+	require.Error(t, syncer.SyncRepoOnProvider(t.Context(), platform.KindGitHub, "github.com", "team", "project"))
+	assert.Zero(t, completions, "manual failure must not run full-sync completion consumers")
+}
+
+func TestCompletedFailureSurvivesLaterRepositoryCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client := &mockClient{listOpenPRsFn: func(_ context.Context, _, repo string) ([]*gh.PullRequest, error) {
+		if repo == "failed" {
+			return nil, platform.ErrPermissionDenied
+		}
+		cancel()
+		return nil, context.Canceled
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{{Owner: "team", Name: "failed", PlatformHost: "github.com"}, {Owner: "team", Name: "canceled", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	syncer.SetParallelism(1)
+	var reasons []string
+	syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
+	completions := 0
+	syncer.SetOnSyncCompleted(func([]RepoSyncResult) { completions++ })
+	syncer.RunOnce(ctx)
+	assert.Zero(t, completions)
+	assert.Equal(t, []string{"auth"}, reasons, "a completed failed attempt survives cancellation of a later attempt")
 }

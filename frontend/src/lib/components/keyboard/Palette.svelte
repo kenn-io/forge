@@ -488,7 +488,7 @@
         autofocus
         oninput={(value) => {
           const next = parsePaletteQuery(value);
-          if (next.scope !== parsed.scope || next.query !== parsed.query) startSearchAttempt(next.query);
+          if (next.scope !== parsed.scope || next.query !== parsed.query) startSearchAttempt(next.query, next.scope);
           query = value;
         }}
         onchange={() => startSearchAttempt.commit()}

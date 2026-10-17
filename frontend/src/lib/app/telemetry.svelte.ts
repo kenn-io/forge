@@ -59,11 +59,12 @@ export function trackEmptySearch(
   runtime: Pick<OwnedAppRuntime, "runCommand">,
   search: () => { count: number; settled: boolean; failed: boolean; visible: boolean },
   local: () => boolean = () => false,
-): ((query: string) => void) & { commit: () => void } {
+): ((query: string, scope?: string) => void) & { commit: () => void } {
   const outcome = createSearchOutcome(runtime);
   let attempt = $state<number>();
   let committed = false;
   let normalized = "";
+  let attemptScope = "";
   $effect(() => {
     const state = search();
     const id = attempt;
@@ -75,8 +76,9 @@ export function trackEmptySearch(
     untrack(() => outcome.settle(id, state.count));
   });
   return Object.assign(
-    (query: string) => {
-      if (query.trim() === normalized) return;
+    (query: string, scope = "") => {
+      if (query.trim() === normalized && scope === attemptScope) return;
+      attemptScope = scope;
       normalized = query.trim();
       committed = false;
       outcome.start(query);

@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/testutil/tokenauthtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
@@ -592,7 +593,7 @@ func TestHumaNewErrorIsReplaced(t *testing.T) {
 
 // This fixture also crosses the generated browser client in PullDetail.test.ts.
 func TestProviderTransportFailureProblemWireContract(t *testing.T) {
-	client, err := bitbucketdc.NewClient("bitbucket.example.com", problemTestCredential("token"), platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", tokenauthtest.Source("token"), platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, &net.DNSError{Err: "no such host", Name: "bitbucket.example.com"}
 	}), nil)
 	require.NoError(t, err)
@@ -615,11 +616,6 @@ func TestProviderTransportFailureProblemWireContract(t *testing.T) {
 		})
 	}
 }
-
-type problemTestCredential string
-
-func (c problemTestCredential) Token(context.Context) (string, error) { return string(c), nil }
-func (problemTestCredential) Invalidate(string)                       {}
 
 func TestWrappedProviderNetworkOutcomeWireContract(t *testing.T) {
 	err := &platform.Error{Code: platform.ErrCodeProviderContract, Provider: platform.KindGitLab, PlatformHost: "gitlab.example.com", Err: &net.DNSError{Err: "offline"}}
@@ -657,7 +653,7 @@ func TestRawProviderOutcomeKindsAcrossAPIBoundaries(t *testing.T) {
 }
 
 func TestAdapterProviderFailureOutcome(t *testing.T) {
-	client, err := bitbucketdc.NewClient("bitbucket.example.com", problemTestCredential("token"), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", tokenauthtest.Source("token"), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 503, Status: "503 Service Unavailable", Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"message":"unavailable"}`)), Request: r}, nil
 	}), nil)
 	require.NoError(t, err)
@@ -666,4 +662,11 @@ func TestAdapterProviderFailureOutcome(t *testing.T) {
 	problem := ProviderCallProblemWithDetail(failure, "bitbucket", client.Host(), "unavailable").(*ProblemError)
 	assert.Equal(t, "provider", problem.Details["kind"])
 	assert.Equal(t, 502, problem.Status)
+}
+
+func TestMapPlatformErrorRetainsMissingTokenReason(t *testing.T) {
+	problem := MapPlatformError(fmt.Errorf("credentials: %w", tokenauth.ErrMissingToken)).(*ProblemError)
+	assert.Equal(t, http.StatusBadRequest, problem.Status)
+	assert.Equal(t, CodeBadRequest, problem.Code)
+	assert.Equal(t, "missing_token", problem.Details["reason"])
 }

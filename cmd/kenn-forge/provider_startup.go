@@ -37,6 +37,15 @@ func wireSyncStatus(syncer *github.Syncer, hub *syncevents.EventHub) {
 	hub.Broadcast(syncevents.Event{Type: "sync_status", Data: syncer.Status()})
 }
 
+func wireSyncFailureTelemetry(syncer *github.Syncer, reporter interface {
+	Capture(string, map[string]any) error
+},
+) {
+	syncer.SetOnRepoSyncFailed(func(result github.RepoSyncResult) {
+		_ = reporter.Capture("sync_failed", map[string]any{"reason": result.FailureReason})
+	})
+}
+
 type providerFactory func(context.Context, providerFactoryInput) (providerFactoryOutput, error)
 
 type providerFactoryInput struct {

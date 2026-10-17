@@ -904,6 +904,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if syncer != nil {
 		// Wire status callbacks only when this process owns a provider plane.
 		wireSyncStatus(syncer, srv.Hub())
+		wireSyncFailureTelemetry(syncer, telemetryReporter)
 		syncer.SetOnNotificationSyncComplete(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
@@ -911,11 +912,6 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
 		syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
-			for _, result := range results {
-				if result.FailureReason != "" {
-					_ = telemetryReporter.Capture("sync_failed", map[string]any{"reason": result.FailureReason})
-				}
-			}
 			fleetapi.WorktreeLinksSyncHook(
 				ctx, database, syncer,
 				srv.Fleet().NotifyWorktreeLinksChanged,

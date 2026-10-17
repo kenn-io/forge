@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/outcome"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -178,5 +179,5 @@ func syncFailureReason(err error) string {
 	if gitAccessFailureReason(err) != "" {
 		return "auth"
 	}
-	return platform.OutcomeKind(err, 0)
+	return outcome.Kind(err)
 }

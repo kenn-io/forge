@@ -29,6 +29,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/outcome"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -600,7 +601,7 @@ func ProviderCallProblemWithDetail(
 		detail = err.Error()
 	}
 	details := platformErrorDetails(provider, host)
-	details["kind"] = platform.OutcomeKind(err, 0)
+	details["kind"] = outcome.Kind(err)
 	return NewProblem(http.StatusBadGateway, CodeUpstreamError, detail, details)
 }
 
@@ -615,7 +616,7 @@ func MapPlatformError(err error) huma.StatusError {
 		if problem.Details == nil {
 			problem.Details = map[string]any{}
 		}
-		problem.Details["kind"] = platform.OutcomeKind(err, 0)
+		problem.Details["kind"] = outcome.Kind(err)
 	}
 	return mapped
 }
@@ -628,7 +629,7 @@ func mapPlatformError(err error) huma.StatusError {
 		return nil
 	}
 	if errors.Is(err, tokenauth.ErrMissingToken) {
-		return BadRequest(CodeBadRequest, err.Error(), nil)
+		return BadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "missing_token"})
 	}
 	if errors.Is(err, platform.ErrSyncDisabled) {
 		return ServiceUnavailable(err.Error())

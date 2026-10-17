@@ -894,10 +894,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)
-	if telemetryReporter.Enabled() {
-		setup = &setupFinished{database: database, reporter: telemetryReporter, hasWork: srv.HasSetupWork}
-		backgroundLoops.startTicker("capture setup finished", time.Minute, setup.capture)
-	}
+	setup = startSetupFinished(backgroundLoops, cfg.ExecutionWorker.Enabled, database, telemetryReporter, srv.HasSetupWork)
 	slog.Debug(
 		"server initialized",
 		"base_path", cfg.BasePath,

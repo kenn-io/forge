@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 )
@@ -25,21 +26,45 @@ func (s *Server) HasSetupWork(ctx context.Context) (bool, error) {
 	if s.providerSource != nil && (!s.options.FederationSpokeActive || !s.streamapi.FederationEnabled()) {
 		return false, nil
 	}
-	pullList := s.pullAPI.ListProviderService
-	issueList := s.issueAPI.ListProviderService
-	if s.providerSource != nil {
-		pullList = s.providerSource.ListPulls
-		issueList = s.providerSource.ListIssues
+	var allowedRepoIDs []int64
+	if s.providerSource == nil {
+		repos, err := s.db.ListRepos(ctx)
+		if err != nil {
+			return false, err
+		}
+		if s.cfg != nil {
+			repos = s.repoapi.FilterConfiguredRepos(repos)
+		}
+		allowedRepoIDs = make([]int64, 0, len(repos))
+		for _, repo := range repos {
+			allowedRepoIDs = append(allowedRepoIDs, repo.ID)
+		}
 	}
-	prs, pullErr := pullList(ctx, pullapi.ListQuery{State: "all", Limit: 1})
-	if pullErr == nil && len(prs) > 0 {
+	var hasPulls bool
+	var pullErr error
+	if s.providerSource != nil {
+		prs, err := s.providerSource.ListPulls(ctx, pullapi.ListQuery{State: "all", Limit: 1})
+		hasPulls, pullErr = len(prs) > 0, err
+	} else {
+		prs, err := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{State: "all", Limit: 1, AllowedRepoIDs: allowedRepoIDs})
+		hasPulls, pullErr = len(prs) > 0, err
+	}
+	if pullErr == nil && hasPulls {
 		return true, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return false, errors.Join(pullErr, err)
 	}
-	issues, issueErr := issueList(ctx, issueapi.ListQuery{State: "all", Limit: 1})
-	if issueErr == nil && len(issues) > 0 {
+	var hasIssues bool
+	var issueErr error
+	if s.providerSource != nil {
+		issues, err := s.providerSource.ListIssues(ctx, issueapi.ListQuery{State: "all", Limit: 1})
+		hasIssues, issueErr = len(issues) > 0, err
+	} else {
+		issues, err := s.db.ListIssues(ctx, db.ListIssuesOpts{State: "all", Limit: 1, AllowedRepoIDs: allowedRepoIDs})
+		hasIssues, issueErr = len(issues) > 0, err
+	}
+	if issueErr == nil && hasIssues {
 		return true, nil
 	}
 	return false, errors.Join(pullErr, issueErr)

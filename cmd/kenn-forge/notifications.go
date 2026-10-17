@@ -68,6 +68,15 @@ func (s *setupFinished) capture(ctx context.Context) error {
 	return err
 }
 
+func startSetupFinished(handle *backgroundLoopHandle, executionWorker bool, database *db.DB, reporter telemetry.Client, hasWork func(context.Context) (bool, error)) *setupFinished {
+	if executionWorker || !reporter.Enabled() {
+		return nil
+	}
+	setup := &setupFinished{database: database, reporter: reporter, hasWork: hasWork}
+	handle.startTicker("capture setup finished", time.Minute, setup.capture)
+	return setup
+}
+
 type backgroundLoopHandle struct {
 	ctx    context.Context
 	cancel context.CancelFunc

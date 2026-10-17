@@ -500,3 +500,30 @@ func TestSetupFinishedGateHonorsCallerDeadline(t *testing.T) {
 	require.NoError(t, <-first)
 	require.Equal(t, []string{"setup_finished"}, client.events())
 }
+
+func TestSetupLoopRegistrationSkipsExecutionWorkers(t *testing.T) {
+	for _, worker := range []bool{false, true} {
+		t.Run(map[bool]string{false: "daemon", true: "worker"}[worker], func(t *testing.T) {
+			database := dbtest.Open(t)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				client := &fakeTelemetryClient{}
+				handle := newBackgroundLoopHandle(t.Context())
+				checks := 0
+				setup := startSetupFinished(handle, worker, database, client, func(context.Context) (bool, error) {
+					checks++
+					return false, nil
+				})
+				synctest.Wait()
+				require.NoError(handle.Stop(t.Context()))
+				if worker {
+					require.Zero(checks, "workers must not start setup checks")
+					require.Nil(setup, "workers must not retain a shutdown capture")
+				} else {
+					require.Equal(1, checks, "the daemon must start its setup check")
+					require.NotNil(setup)
+				}
+			})
+		})
+	}
+}

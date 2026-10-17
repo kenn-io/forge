@@ -2,10 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,11 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
-	"go.kenn.io/forge/internal/server/issueapi"
-	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -78,18 +76,22 @@ func TestHasSetupWorkBehindUntrackedRepository(t *testing.T) {
 					t.Cleanup(hub.Close)
 					reader, _ = newFederatedProviderNodeForTest(t, "55555555555555555555555555555555", hub.URL, hub.Client())
 				}
-				// Hidden repositories still contribute work to item lists.
-				if kind == "pr" {
-					rows, err := reader.pullAPI.ListService(t.Context(), pullapi.ListQuery{State: "all", Limit: 1})
-					require.NoError(err)
-					require.Len(rows, 1)
-					require.Equal("tracked", rows[0].Repo.Name)
-				} else {
-					rows, err := reader.issueAPI.ListService(t.Context(), issueapi.ListQuery{State: "all", Limit: 1})
-					require.NoError(err)
-					require.Len(rows, 1)
-					require.Equal("tracked", rows[0].Repo.Name)
+				// Hidden repositories still contribute work to public item lists.
+				path := "/api/v1/pulls?state=all&limit=1"
+				if kind == "issue" {
+					path = "/api/v1/issues?state=all&limit=1"
 				}
+				response := httptest.NewRecorder()
+				reader.ServeHTTP(response, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1:8080"+path, nil))
+				require.Equal(http.StatusOK, response.Code)
+				var page []struct {
+					Repo struct {
+						Name string `json:"name"`
+					} `json:"repo"`
+				}
+				require.NoError(json.Unmarshal(response.Body.Bytes(), &page))
+				require.Len(page, 1)
+				require.Equal("tracked", page[0].Repo.Name)
 				readable, err := reader.HasSetupWork(t.Context())
 				require.NoError(err)
 				assert.True(t, readable, "the older tracked item remains readable behind newer retained untracked work")
@@ -148,10 +150,7 @@ func TestHasSetupWorkFromSpokeProviderSource(t *testing.T) {
 			}))
 			t.Cleanup(hub.Close)
 			const hubID = "44444444444444444444444444444444"
-			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
-			require.NoError(err)
-			require.NoError(credentials.StoreOutbound(hubID, "example-secret", federationauth.SpokeToHubScopes()))
-			cfg := &config.Config{Host: "127.0.0.1", Port: 8080, Fleet: config.Fleet{Enabled: true, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: hubID, BaseURL: hub.URL}}}
+			cfg, credentials := federationtest.ProviderSpoke(t, hubID, hub.URL, "example-secret")
 			srv := New(database, nil, nil, "/", cfg, ServerOptions{
 				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: test.active,
 				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
@@ -164,6 +163,56 @@ func TestHasSetupWorkFromSpokeProviderSource(t *testing.T) {
 				require.Positive(requests.Load())
 			} else {
 				require.Zero(requests.Load())
+			}
+		})
+	}
+}
+
+func TestHasSetupWorkIndependentHubSources(t *testing.T) {
+	for _, mode := range []string{"issue", "both-fail", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			require := require.New(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var issueRequests atomic.Int64
+			hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/pulls":
+					if mode == "canceled" {
+						cancel()
+					}
+					http.Error(w, "pull source unavailable", http.StatusServiceUnavailable)
+				case "/api/v1/issues":
+					issueRequests.Add(1)
+					if mode == "both-fail" {
+						http.Error(w, "issue source unavailable", http.StatusBadGateway)
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, `[{"number":42,"title":"Example issue","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"org-a","name":"project-a"}}]`)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(hub.Close)
+			srv, _ := newFederatedProviderNodeForTest(t, proxyTestNodeID, hub.URL, hub.Client())
+			readable, err := srv.HasSetupWork(ctx)
+			switch mode {
+			case "issue":
+				require.NoError(err)
+				require.True(readable)
+				require.Equal(int64(1), issueRequests.Load())
+			case "both-fail":
+				require.False(readable)
+				require.Error(err)
+				joined, ok := err.(interface{ Unwrap() []error })
+				require.True(ok)
+				require.Len(joined.Unwrap(), 2)
+				require.Equal(int64(1), issueRequests.Load())
+			case "canceled":
+				require.False(readable)
+				require.ErrorIs(err, context.Canceled)
+				require.Zero(issueRequests.Load())
 			}
 		})
 	}

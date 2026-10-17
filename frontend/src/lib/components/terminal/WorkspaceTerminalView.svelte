@@ -696,9 +696,18 @@
   const runtimeLive = $derived(
     runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
   );
+  let pendingWorkspaceUse = $state<string | null>(null);
   function reportWorkspaceUse(): void {
-    if (workspaceLive && workspace?.status === "ready" && !actionsBlocked) reportWorkspaceOpened(appRuntime, workspace.item_type);
+    if (workspaceLive && workspace?.status === "ready" && !actionsBlocked) {
+      pendingWorkspaceUse = null;
+      reportWorkspaceOpened(appRuntime, workspace.item_type);
+    } else if (embeddedWorkspace) pendingWorkspaceUse = viewWorkspaceKey;
   }
+  $effect(() => {
+    if (pendingWorkspaceUse === null) return;
+    if (pendingWorkspaceUse !== viewWorkspaceKey) pendingWorkspaceUse = null;
+    else if (workspaceLive && workspace?.status === "ready" && !actionsBlocked) untrack(reportWorkspaceUse);
+  });
   function reportWorkspaceInteraction(visible: boolean): void {
     if (embeddedWorkspace && visible && !modalOpen) reportWorkspaceUse();
   }

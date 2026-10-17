@@ -1276,29 +1276,52 @@ describe("WorkspaceTerminalView", () => {
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it.each(["pointerDown", "keyDown", "wheel", "focusTerminal"] as const)(
-    "counts embedded workspace use through %s",
-    async (input) => {
-      claimForPrs();
-      noteWorkspacePaneRendered("prs");
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
-      render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
-      const region = await screen.findByRole("region", { name: "Workflow panes" });
-      await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+  it.each([
+    "pointerDown",
+    "keyDown",
+    "wheel",
+    "focusTerminal",
+    "workspaceTabBeforeReady",
+    "focusTerminalBeforeReady",
+  ] as const)("counts embedded workspace use through %s", async (input) => {
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    const beforeReady = input === "workspaceTabBeforeReady" || input === "focusTerminalBeforeReady";
+    const detail = deferred<Response>();
+    if (beforeReady) {
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((input: Request | URL | string, init?: RequestInit) =>
+          fetchPath(input) === "/api/v1/workspaces/ws-1" ? detail.promise : originalFetch(input, init),
+        ),
+      );
+    }
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    if (beforeReady) {
       await tick();
+      const controller = getInlineWorkspaceController("prs");
+      if (input === "workspaceTabBeforeReady") controller.notePaneSelected("workspace");
+      else controller.focusTerminal();
       expect(coreActions).not.toHaveBeenCalled();
-      if (input === "focusTerminal") {
-        getInlineWorkspaceController("prs").focusTerminal();
-      } else {
-        await fireEvent[input](region);
-      }
-      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-        event: "workspace_opened",
-        properties: { item_type: "pull_request" },
-      });
-    },
-  );
+      detail.resolve(Response.json(workspaceResponse));
+    }
+    const region = await screen.findByRole("region", { name: "Workflow panes" });
+    await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+    await tick();
+    if (!beforeReady) expect(coreActions).not.toHaveBeenCalled();
+    if (input === "focusTerminal") {
+      getInlineWorkspaceController("prs").focusTerminal();
+    } else if (!beforeReady) {
+      await fireEvent[input](region);
+    }
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+      event: "workspace_opened",
+      properties: { item_type: "pull_request" },
+    });
+  });
 
   it("counts a standalone workspace when the host and document are visible", async () => {
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");

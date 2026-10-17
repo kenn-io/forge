@@ -8,12 +8,90 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/federationauth"
+	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/issueapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/serverfake"
 )
+
+func TestHasReadableProviderWorkBehindUntrackedRepository(t *testing.T) {
+	for _, source := range []string{"local", "spoke"} {
+		for _, kind := range []string{"pr", "issue"} {
+			t.Run(source+"/"+kind, func(t *testing.T) {
+				require := require.New(t)
+				database := dbtest.Open(t)
+				now := time.Now().UTC().Truncate(time.Second)
+				for i, name := range []string{"tracked", "retained"} {
+					repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "org-a", name))
+					require.NoError(err)
+					if name == "tracked" {
+						require.NoError(database.SetRepoHiddenFromUI(t.Context(), repoID, true))
+					}
+					activity := now.Add(time.Duration(i-1) * time.Hour)
+					if kind == "pr" {
+						serverfake.SeedPRForRepo(t, database, repoID, "github.com", "org-a", name, 42, serverfake.WithSeedPRTimes(activity, activity, activity))
+					} else {
+						serverfake.SeedIssueForRepo(t, database, repoID, "github.com", "org-a", name, 42, "open", "Example issue")
+						issue, err := database.GetIssueByRepoIDAndNumber(t.Context(), repoID, 42)
+						require.NoError(err)
+						require.NotNil(issue)
+						issue.CreatedAt, issue.UpdatedAt, issue.LastActivityAt = activity, activity, activity
+						_, err = database.UpsertIssue(t.Context(), issue)
+						require.NoError(err)
+					}
+				}
+				cfg := &config.Config{Repos: []config.Repo{{Owner: "org-a", Name: "tracked"}}}
+				syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}, database, nil, []ghclient.RepoRef{{Owner: "org-a", Name: "tracked"}}, time.Minute, nil, nil)
+				t.Cleanup(syncer.Stop)
+				srv := New(database, syncer, nil, "/", cfg, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+				t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+				reader := srv
+				if source == "spoke" {
+					hub := httptest.NewTLSServer(srv)
+					t.Cleanup(hub.Close)
+					reader, _ = newFederatedProviderNodeForTest(t, "55555555555555555555555555555555", hub.URL, hub.Client())
+				}
+				// Hidden repositories still contribute work to item lists.
+				if kind == "pr" {
+					rows, err := reader.pullAPI.ListService(t.Context(), pullapi.ListQuery{State: "all", Limit: 1})
+					require.NoError(err)
+					require.Len(rows, 1)
+					require.Equal("tracked", rows[0].Repo.Name)
+				} else {
+					rows, err := reader.issueAPI.ListService(t.Context(), issueapi.ListQuery{State: "all", Limit: 1})
+					require.NoError(err)
+					require.Len(rows, 1)
+					require.Equal("tracked", rows[0].Repo.Name)
+				}
+				readable, err := reader.HasReadableProviderWork(t.Context())
+				require.NoError(err)
+				assert.True(t, readable, "the older tracked item remains readable behind newer retained untracked work")
+			})
+		}
+	}
+}
+
+func TestHasReadableProviderWorkWithNoTrackedRepositories(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	serverfake.SeedPR(t, database, "org-a", "retained", 42)
+	serverfake.SeedIssue(t, database, "org-a", "retained", 43, "open")
+	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", &config.Config{}, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+	t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+	readable, err := srv.HasReadableProviderWork(t.Context())
+	require.NoError(err)
+	assert.False(t, readable)
+}
 
 func TestHasReadableProviderWorkFromExecutionWorker(t *testing.T) {
 	database := dbtest.Open(t)

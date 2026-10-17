@@ -122,10 +122,7 @@ func listActivityWithQueryer(
 		}
 	}
 	if opts.AllowedRepoIDs != nil {
-		cond := activityRepoIDCondition(opts.AllowedRepoIDs, &args)
-		if cond == "" {
-			cond = "0 = 1"
-		}
+		cond := repoIDCondition("repo_id", opts.AllowedRepoIDs, &args)
 		whereClauses = append(whereClauses, cond)
 	}
 
@@ -618,10 +615,7 @@ func listActivitySubjectsWithQueryer(
 		}
 	}
 	if opts.AllowedRepoIDs != nil {
-		cond := activityRepoIDCondition(opts.AllowedRepoIDs, &args)
-		if cond == "" {
-			cond = "0 = 1"
-		}
+		cond := repoIDCondition("repo_id", opts.AllowedRepoIDs, &args)
 		whereClauses = append(whereClauses, cond)
 	}
 	if len(opts.ItemTypes) > 0 {
@@ -815,10 +809,7 @@ func (d *DB) ListActivityAuthors(
 		}
 	}
 	if opts.AllowedRepoIDs != nil {
-		cond := activityRepoIDCondition(opts.AllowedRepoIDs, &args)
-		if cond == "" {
-			cond = "0 = 1"
-		}
+		cond := repoIDCondition("repo_id", opts.AllowedRepoIDs, &args)
 		whereClauses = append(whereClauses, cond)
 	}
 	if opts.Since != nil {
@@ -989,7 +980,10 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 	return "(" + strings.Join(groups, " OR ") + ")"
 }
 
-func activityRepoIDCondition(repoIDs []int64, args *[]any) string {
+func repoIDCondition(column string, repoIDs []int64, args *[]any) string {
+	if repoIDs == nil {
+		return ""
+	}
 	placeholders := make([]string, 0, len(repoIDs))
 	seen := make(map[int64]struct{}, len(repoIDs))
 	for _, repoID := range repoIDs {
@@ -1004,9 +998,9 @@ func activityRepoIDCondition(repoIDs []int64, args *[]any) string {
 		*args = append(*args, repoID)
 	}
 	if len(placeholders) == 0 {
-		return ""
+		return "0 = 1"
 	}
-	return "repo_id IN (" + strings.Join(placeholders, ",") + ")"
+	return column + " IN (" + strings.Join(placeholders, ",") + ")"
 }
 
 // activityNotificationRepoFilterCondition scopes the notification union to

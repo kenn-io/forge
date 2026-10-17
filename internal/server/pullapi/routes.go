@@ -435,7 +435,16 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 			}
 		}
 	}
+	repoByID, err := s.lookupRepoMap(ctx)
+	if err != nil {
+		return nil, httpapi.Internal("repo lookup failed")
+	}
+	allowedRepoIDs := make([]int64, 0, len(repoByID))
+	for id := range repoByID {
+		allowedRepoIDs = append(allowedRepoIDs, id)
+	}
 	opts := db.ListMergeRequestsOpts{
+		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
 		KanbanState:       input.Kanban,
 		Starred:           input.Starred,
@@ -475,11 +484,6 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
 	if err != nil {
 		return nil, httpapi.Internal("list pulls failed")
-	}
-
-	repoByID, err := s.lookupRepoMap(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("repo lookup failed")
 	}
 
 	mrIDs := make([]int64, len(mrs))

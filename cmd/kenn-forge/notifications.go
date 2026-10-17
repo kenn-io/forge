@@ -22,6 +22,7 @@ type setupFinished struct {
 	mu       sync.Mutex
 	database *db.DB
 	reporter telemetry.Client
+	hasWork  func(context.Context) (bool, error)
 	accepted bool
 	done     bool
 }
@@ -40,15 +41,9 @@ func (s *setupFinished) capture(ctx context.Context) error {
 			s.done = found
 			return err
 		}
-		prs, err := s.database.ListMergeRequests(lookupCtx, db.ListMergeRequestsOpts{State: "all", Limit: 1})
-		if err != nil {
+		ready, err := s.hasWork(lookupCtx)
+		if err != nil || !ready {
 			return err
-		}
-		if len(prs) == 0 {
-			issues, err := s.database.ListIssues(lookupCtx, db.ListIssuesOpts{State: "all", Limit: 1})
-			if err != nil || len(issues) == 0 {
-				return err
-			}
 		}
 		cancel()
 		reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)

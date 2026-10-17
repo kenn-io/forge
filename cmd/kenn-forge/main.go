@@ -857,8 +857,6 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			slog.Warn("capture telemetry event", "err", err)
 		}
 		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
-		setup = &setupFinished{database: database, reporter: telemetryReporter}
-		backgroundLoops.startTicker("capture setup finished", time.Minute, setup.capture)
 	}
 
 	var devboxConnections *devbox.Connections
@@ -896,6 +894,10 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)
+	if telemetryReporter.Enabled() {
+		setup = &setupFinished{database: database, reporter: telemetryReporter, hasWork: srv.HasReadableProviderWork}
+		backgroundLoops.startTicker("capture setup finished", time.Minute, setup.capture)
+	}
 	slog.Debug(
 		"server initialized",
 		"base_path", cfg.BasePath,

@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,7 +21,10 @@ import (
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -257,6 +263,92 @@ func seedSetupItem(t *testing.T, database *db.DB, kind string) int64 {
 	return repoID
 }
 
+func localSetupWorkCheck(t *testing.T, database *db.DB) func(context.Context) (bool, error) {
+	t.Helper()
+	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.Background())) })
+	return srv.HasReadableProviderWork
+}
+
+func TestSetupFinishedFromSpokeProviderSource(t *testing.T) {
+	for _, test := range []struct {
+		kind    string
+		enabled bool
+		active  bool
+	}{
+		{"pr", true, true},
+		{"issue", true, true},
+		{"disabled", false, true},
+		{"inactive", true, false},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			var requests atomic.Int64
+			hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				if test.kind == "pr" && r.URL.Path == "/api/v1/pulls" || test.kind == "issue" && r.URL.Path == "/api/v1/issues" {
+					_, _ = io.WriteString(w, `[{"number":42,"title":"Example","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"}}]`)
+					return
+				}
+				_, _ = io.WriteString(w, `[]`)
+			}))
+			t.Cleanup(hub.Close)
+			const hubID = "44444444444444444444444444444444"
+			credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
+			require.NoError(err)
+			require.NoError(credentials.StoreOutbound(hubID, "example-secret", federationauth.SpokeToHubScopes()))
+			cfg := &config.Config{Host: "127.0.0.1", Port: 8080, Fleet: config.Fleet{Enabled: test.enabled, Role: config.FleetRoleSpoke, Hub: &config.FleetHub{NodeID: hubID, BaseURL: hub.URL}}}
+			srv := server.New(database, nil, nil, "/", cfg, server.ServerOptions{
+				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: test.active,
+				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
+			})
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			if !test.enabled || !test.active {
+				client := &fakeTelemetryClient{}
+				setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
+				require.NoError(setup.capture(t.Context()))
+				require.NoError(setup.capture(t.Context()))
+				require.Empty(client.events())
+				require.Zero(requests.Load())
+				_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+				require.NoError(err)
+				require.False(found)
+				return
+			}
+			if test.kind == "pr" {
+				rows, err := srv.MCPBackend().ListPulls(t.Context(), mcpserver.ItemListQuery{State: "all", Limit: 1})
+				require.NoError(err)
+				require.Len(rows, 1)
+			} else {
+				rows, err := srv.MCPBackend().ListIssues(t.Context(), mcpserver.ItemListQuery{State: "all", Limit: 1})
+				require.NoError(err)
+				require.Len(rows, 1)
+			}
+			prs, err := database.ListMergeRequests(t.Context(), db.ListMergeRequestsOpts{State: "all", Limit: 1})
+			require.NoError(err)
+			require.Empty(prs)
+			issues, err := database.ListIssues(t.Context(), db.ListIssuesOpts{State: "all", Limit: 1})
+			require.NoError(err)
+			require.Empty(issues)
+			client := &fakeTelemetryClient{}
+			setup := &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
+			require.NoError(setup.capture(t.Context()))
+			require.Equal([]string{"setup_finished"}, client.events())
+			marker, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+			require.NoError(err)
+			require.True(found)
+			require.Equal("queued", marker)
+			beforeRestart := requests.Load()
+			setup = &setupFinished{database: database, reporter: client, hasWork: srv.HasReadableProviderWork}
+			require.NoError(setup.capture(t.Context()))
+			require.Equal([]string{"setup_finished"}, client.events())
+			require.Equal(beforeRestart, requests.Load())
+		})
+	}
+}
+
 func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 	for _, kind := range []string{"issue", "pr"} {
 		for _, hidden := range []string{"", "inactive", "removed_upstream"} {
@@ -267,7 +359,7 @@ func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 					handle := newBackgroundLoopHandle(t.Context())
 					defer func() { require.NoError(handle.Stop(t.Context())) }()
 					client := &fakeTelemetryClient{}
-					setup := &setupFinished{database: database, reporter: client}
+					setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
 					handle.startTicker("setup", time.Minute, setup.capture)
 					synctest.Wait()
 					require.Empty(client.events())
@@ -293,7 +385,7 @@ func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 					require.Equal([]map[string]any{nil}, client.captures)
 					require.NoError(handle.Stop(t.Context()))
 					handle = newBackgroundLoopHandle(t.Context())
-					setup = &setupFinished{database: database, reporter: client}
+					setup = &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
 					handle.startTicker("setup", time.Minute, setup.capture)
 					time.Sleep(2 * time.Minute)
 					synctest.Wait()
@@ -311,6 +403,9 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 			root := t.TempDir()
 			cfgPath := filepath.Join(root, "config.toml")
 			writeMinimalConfig(t, cfgPath, filepath.Join(root, "data"), reserveFreePort(t))
+			cfgBody, err := os.ReadFile(cfgPath)
+			require.NoError(err)
+			require.NoError(os.WriteFile(cfgPath, append(cfgBody, []byte("\n[[repos]]\nowner = \"acme\"\nname = \"widget\"\n")...), 0o600))
 			require.NoError(os.MkdirAll(filepath.Join(root, "data"), 0o700))
 			database := dbtest.OpenAt(t, filepath.Join(root, "data", "forge.db"))
 			seedSetupItem(t, database, "issue")
@@ -320,7 +415,7 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 			calls, closed, startup := 0, false, false
 			var observationErr error
 			var completed bool
-			err := runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath, DisableSync: true}, func(opts telemetry.Options) telemetry.Client {
+			err = runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath, DisableSync: true}, func(opts telemetry.Options) telemetry.Client {
 				if mode == "disabled" {
 					cancel()
 				}
@@ -368,7 +463,7 @@ func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
 			_ = tx.Rollback()
 		}
 	}()
-	setup := &setupFinished{database: database, reporter: client}
+	setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
 	err := setup.capture(t.Context())
 	require.NoError(lockErr)
 	require.ErrorIs(err, context.DeadlineExceeded)
@@ -389,7 +484,7 @@ func TestSetupFinishedAfterSingleItemRefresh(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	client := &fakeTelemetryClient{}
-	setup := &setupFinished{database: database, reporter: client}
+	setup := &setupFinished{database: database, reporter: client, hasWork: localSetupWorkCheck(t, database)}
 	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
 		if owner != "acme" || repo != "widget" || number != 42 {
 			return nil, errors.New("unexpected item")

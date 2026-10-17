@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import type { QuickAction, RuntimeSession } from "../api/types.js";
+import type { LaunchTarget, QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -9,6 +9,24 @@ import { showFlash } from "./flash.svelte.js";
 /** Quick actions ordered by label, ignoring case; ties keep their settings order. */
 export function sortQuickActionsByLabel(actions: readonly QuickAction[]): QuickAction[] {
   return actions.toSorted((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+}
+
+/** The agent target a quick action launches, when it is configured. */
+export function quickActionTarget(
+  action: QuickAction,
+  launchTargets: readonly LaunchTarget[],
+): LaunchTarget | undefined {
+  return launchTargets.find(
+    (target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"),
+  );
+}
+
+/** Why a quick action cannot run right now, or "" when it can. */
+export function quickActionDisabledReason(action: QuickAction, launchTargets: readonly LaunchTarget[]): string {
+  const target = quickActionTarget(action, launchTargets);
+  if (!target) return `Agent "${action.agent}" is not configured`;
+  if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;
+  return "";
 }
 
 // Choosing a quick action replaces the automatic session picker for this workspace.

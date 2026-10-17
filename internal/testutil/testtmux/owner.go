@@ -703,6 +703,13 @@ func reapStaleWithLookup(
 				continue
 			}
 			runDir := filepath.Join(root, entry.Name())
+			// Owner cleanup can finish after ReadDir captured this entry.
+			if _, err := os.Lstat(runDir); err != nil {
+				if !errors.Is(err, fs.ErrNotExist) {
+					cleanupErrors = append(cleanupErrors, err)
+				}
+				continue
+			}
 			if err := validateRunMarker(runDir, identity); err != nil {
 				cleanupErrors = append(cleanupErrors, err)
 			} else {

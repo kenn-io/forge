@@ -917,6 +917,52 @@ func TestReapStaleRemovesAdmissionWithoutRun(t *testing.T) {
 	require.NoDirExists(admissionDir)
 }
 
+func TestReapStaleRunWithoutAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		removeRun     bool
+		removeMarker  bool
+		wantErrorText string
+	}{
+		{name: "run removed after directory snapshot", removeRun: true},
+		{name: "retained run without marker", removeMarker: true, wantErrorText: "inspect stale tmux test owner"},
+		{name: "retained run without admission", wantErrorText: "without admission gate"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			root := filepath.Join(t.TempDir(), "root")
+			require.NoError(prepareRoot(root))
+			start := "dead-owner"
+			identity := processIdentity{pid: 999_999, startToken: tokenForStart(start)}
+			runName := fmt.Sprintf("run.%d.%s.abcdef", identity.pid, identity.startToken)
+			runDir, err := publishRun(root, runName, ownerMarker{
+				PID: identity.pid, ProcessStart: start, StartToken: identity.startToken,
+			}, os.Rename)
+			require.NoError(err)
+			if tc.removeMarker {
+				require.NoError(os.Remove(filepath.Join(runDir, "owner.json")))
+			}
+
+			err = reapStaleWithLookup(root, func(pid int) (string, error) {
+				require.Equal(identity.pid, pid)
+				// Owner cleanup does not hold the root lock and can finish
+				// after ReadDir captured this run but before the identity lookup.
+				if tc.removeRun {
+					require.NoError(os.RemoveAll(runDir))
+				}
+				return "", errProcessAbsent
+			})
+			if tc.wantErrorText != "" {
+				require.ErrorContains(err, tc.wantErrorText)
+				require.DirExists(runDir)
+				return
+			}
+			require.NoError(err)
+			require.NoDirExists(runDir)
+		})
+	}
+}
+
 func TestReapStalePreservesAdmissionWhenRunValidationFails(t *testing.T) {
 	require := require.New(t)
 	root := filepath.Join(t.TempDir(), "root")

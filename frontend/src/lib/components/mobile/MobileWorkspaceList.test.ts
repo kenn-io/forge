@@ -86,6 +86,57 @@ describe("MobileWorkspaceList", () => {
     cleanup();
     resetModalStack();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("waits for a Fleet peer to recover before reporting an empty search", async () => {
+    mockPost.mockResolvedValue({ data: { status: "queued" } });
+    const peer = {
+      configKey: "peer",
+      name: "Peer",
+      kind: "peer",
+      reachable: false,
+      error: "offline",
+      operationAvailability: {},
+    };
+    mockGet.mockResolvedValue({ data: { hosts: [peer], workspaces: [fixture] } });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    await waitFor(() => expect(workspaceEventListener).not.toBeNull());
+    vi.useFakeTimers();
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "absent" },
+    });
+    await fireEvent.change(screen.getByRole("searchbox", { name: "Filter workspaces" }));
+    await vi.advanceTimersByTimeAsync(450);
+    const outcomes = () => mockPost.mock.calls.filter(([path]) => path === "/telemetry/events");
+    expect(outcomes()).toHaveLength(0);
+    mockGet.mockResolvedValue({
+      data: { hosts: [{ ...peer, reachable: true, error: undefined }], workspaces: [fixture] },
+    });
+    workspaceEventListener?.(new MessageEvent("workspace_status"));
+    await vi.advanceTimersByTimeAsync(500);
+    expect(outcomes()).toHaveLength(1);
+  });
+
+  it("reports an empty mobile workspace search", async () => {
+    mockPost.mockResolvedValue({ data: { status: "queued" } });
+    mockGet.mockResolvedValue({ data: { hosts: [], workspaces: [fixture] } });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+    const outcomes = () =>
+      mockPost.mock.calls.filter(([path]) => path === "/telemetry/events").map(([, options]) => options.body);
+    vi.useFakeTimers();
+    const input = screen.getByRole("searchbox", { name: "Filter workspaces" });
+    await fireEvent.input(input, { target: { value: "absent" } });
+    await vi.advanceTimersByTimeAsync(399);
+    expect(outcomes()).toEqual([]);
+    await fireEvent.input(input, { target: { value: "absent more" } });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(outcomes()).toEqual([]);
+    await fireEvent.change(input);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outcomes()).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
   });
 
   it("filters rows and opens the selected workspace", async () => {

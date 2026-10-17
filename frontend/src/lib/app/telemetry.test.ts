@@ -1,3 +1,6 @@
+import providerNetworkProblem from "../../test/provider-network-problem.json";
+import type { ProblemBody } from "../api/problems.js";
+import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { waitFor } from "@testing-library/svelte";
 import { makeAppRuntime } from "./runtime.js";
 import { Effect, Exit } from "effect";
@@ -6,6 +9,7 @@ import { makeGeneratedApiLayer } from "../api/generated-api.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
 import {
+  outcomeErrorKind,
   createScreenViewReporter,
   createCoreActionVisitReporter,
   type CoreAction,
@@ -127,4 +131,38 @@ describe("core action visits", () => {
     ]);
     await Effect.runPromise(runtime.disposeEffect);
   });
+});
+
+it.each([
+  [new ApiProblemError({ operation: "read", problem: { code: "unauthorized", status: 401 } }), "auth"],
+  [
+    new ApiProblemError({
+      operation: "read",
+      problem: { code: "badRequest", status: 400, details: { reason: "missing_token" } },
+    }),
+    "auth",
+  ],
+  [new ApiProblemError({ operation: "read", problem: { code: "badRequest", status: 400 } }), "other"],
+  [new ApiProblemError({ operation: "read", problem: { code: "pullNotFound", status: 404 } }), "not_found"],
+  [new ApiProblemError({ operation: "read", problem: { code: "rateLimited", status: 429 } }), "rate_limited"],
+  [new ApiProblemError({ operation: "read", problem: { code: "upstreamError", status: 502 } }), "provider"],
+  [
+    new ApiProblemError({
+      operation: "read",
+      problem: { code: "upstreamError", status: 502, details: { kind: "provider" } },
+    }),
+    "provider",
+  ],
+  [new ApiProblemError({ operation: "read", problem: providerNetworkProblem as ProblemBody }), "network"],
+  [TransientTransportError.make({ operation: "read", cause: new TypeError("offline") }), "network"],
+  [
+    new ApiProblemError({
+      operation: "read",
+      problem: { code: "upstreamError", status: 502, details: { kind: "unknown" } },
+    }),
+    "other",
+  ],
+  [new Error("private detail"), "other"],
+])("classifies typed failures without reading messages", (failure, kind) => {
+  expect(outcomeErrorKind(failure)).toBe(kind);
 });

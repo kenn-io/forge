@@ -44,6 +44,7 @@ vi.mock("../context.js", () => ({
       setGroupingMode: vi.fn(),
     },
     issues: {
+      searchOutcome: { cancel: vi.fn() },
       getInvolvesMe: getIssueInvolvesMe,
       getUnassigned: getIssueUnassigned,
       getReferencedByPR: getIssueReferencedByPR,
@@ -76,6 +77,7 @@ vi.mock("../context.js", () => ({
       },
     },
     pulls: {
+      searchOutcome: { cancel: vi.fn() },
       getInvolvesMe: getPullInvolvesMe,
       getUnassigned: getPullUnassigned,
       getSearchQuery: getPullSearch,

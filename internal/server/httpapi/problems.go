@@ -400,18 +400,19 @@ func Internal(detail string) huma.StatusError {
 	return NewProblem(http.StatusInternalServerError, CodeInternalError, detail, nil)
 }
 
-// problemUpstream returns a 502 (provider API failure). The optional
+// Upstream returns a 502 for an upstream operation failure. The optional
 // provider/host are surfaced in details when non-empty.
 func Upstream(detail, provider, host string) huma.StatusError {
-	d := map[string]any{}
+	kind := "other"
+	if provider != "" {
+		kind = "provider"
+	}
+	d := map[string]any{"kind": kind}
 	if provider != "" {
 		d["provider"] = provider
 	}
 	if host != "" {
 		d["platformHost"] = host
-	}
-	if len(d) == 0 {
-		d = nil
 	}
 	return NewProblem(http.StatusBadGateway, CodeUpstreamError, detail, d)
 }
@@ -585,7 +586,7 @@ func ProviderCallProblemWithDetail(
 		if detail == "" {
 			detail = err.Error()
 		}
-		return BadRequest(CodeBadRequest, detail, nil)
+		return BadRequest(CodeBadRequest, detail, map[string]any{"reason": "missing_token"})
 	}
 	if errors.Is(err, platform.ErrSyncDisabled) {
 		return ServiceUnavailable(err.Error())
@@ -598,15 +599,28 @@ func ProviderCallProblemWithDetail(
 	if detail == "" {
 		detail = err.Error()
 	}
-	return Upstream(detail, provider, host)
+	details := platformErrorDetails(provider, host)
+	details["kind"] = platform.OutcomeKind(err, 0)
+	return NewProblem(http.StatusBadGateway, CodeUpstreamError, detail, details)
 }
 
-// mapPlatformError translates an error from internal/platform into a wire
+// MapPlatformError translates an error from internal/platform into a wire
 // problem. Returns nil for nil input or context cancellation so callers
 // can propagate those without altering control flow. Returns a generic
 // upstream problem with the error's text when no platform.Error is in
 // the chain.
 func MapPlatformError(err error) huma.StatusError {
+	mapped := mapPlatformError(err)
+	if problem, ok := mapped.(*ProblemError); ok && problem.Code == CodeUpstreamError {
+		if problem.Details == nil {
+			problem.Details = map[string]any{}
+		}
+		problem.Details["kind"] = platform.OutcomeKind(err, 0)
+	}
+	return mapped
+}
+
+func mapPlatformError(err error) huma.StatusError {
 	if err == nil {
 		return nil
 	}
@@ -725,8 +739,9 @@ func MapPlatformError(err error) huma.StatusError {
 			"The requested byte range is outside the media.",
 			platformErrorDetails(provider, host),
 		)
+	case platform.ErrCodeMissingToken:
+		return BadRequest(CodeBadRequest, err.Error(), map[string]any{"reason": "missing_token"})
 	case platform.ErrCodeProviderNotConfigured,
-		platform.ErrCodeMissingToken,
 		platform.ErrCodeInvalidRepoRef,
 		platform.ErrCodeInvalidArgument:
 		return BadRequest(CodeBadRequest, err.Error(), nil)

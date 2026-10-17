@@ -5,12 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	gh "github.com/google/go-github/v92/github"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/stretchr/testify/assert"
@@ -18,6 +23,7 @@ import (
 
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 )
 
 // structField is a tiny reflection helper for inspecting struct tags
@@ -208,13 +214,14 @@ func TestProblemHelpersSetStatusCodeAndDetails(t *testing.T) {
 			make:        func() huma.StatusError { return Upstream("boom", "gitlab", "gitlab.com") },
 			wantStatus:  http.StatusBadGateway,
 			wantCode:    CodeUpstreamError,
-			wantDetails: map[string]any{"provider": "gitlab", "platformHost": "gitlab.com"},
+			wantDetails: map[string]any{"provider": "gitlab", "platformHost": "gitlab.com", "kind": "provider"},
 		},
 		{
-			name:       "UpstreamWithoutContext",
-			make:       func() huma.StatusError { return Upstream("boom", "", "") },
-			wantStatus: http.StatusBadGateway,
-			wantCode:   CodeUpstreamError,
+			name:        "UpstreamWithoutContext",
+			make:        func() huma.StatusError { return Upstream("boom", "", "") },
+			wantStatus:  http.StatusBadGateway,
+			wantCode:    CodeUpstreamError,
+			wantDetails: map[string]any{"kind": "other"},
 		},
 		{
 			name:        "PayloadTooLarge",
@@ -423,10 +430,11 @@ func TestMapPlatformError(t *testing.T) {
 			wantCode:   CodeBadRequest,
 		},
 		{
-			name:       "MissingToken",
-			input:      &platform.Error{Code: platform.ErrCodeMissingToken},
-			wantStatus: http.StatusBadRequest,
-			wantCode:   CodeBadRequest,
+			name:        "MissingToken",
+			input:       &platform.Error{Code: platform.ErrCodeMissingToken},
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    CodeBadRequest,
+			wantDetails: map[string]any{"reason": "missing_token"},
 		},
 		{
 			name:       "RuntimeMissingToken",
@@ -474,6 +482,7 @@ func TestMapPlatformError(t *testing.T) {
 				"provider":     "gitlab",
 				"platformHost": "gitlab.example.com",
 				"field":        "archive_page",
+				"kind":         "provider",
 			},
 		},
 		{
@@ -520,21 +529,16 @@ func TestMapPlatformError(t *testing.T) {
 	}
 }
 
-func TestProviderCallProblemMapsRuntimeMissingToken(t *testing.T) {
+func TestProviderCallProblemMapsMissingToken(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-
-	got := ProviderCallProblem(
-		fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
-		"github",
-		"github.com",
-	)
-
+	got := ProviderCallProblem(fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken), "github", "github.com")
 	require.NotNil(got)
 	pe, ok := got.(*ProblemError)
 	require.True(ok, "want *ProblemError, got %T", got)
 	assert.Equal(http.StatusBadRequest, pe.Status)
 	assert.Equal(CodeBadRequest, pe.Code)
+	assert.Equal(map[string]any{"reason": "missing_token"}, pe.Details)
 }
 
 func TestProviderCallProblemDoesNotReturnNilForContextWrappedPlatformError(t *testing.T) {
@@ -584,4 +588,82 @@ func TestHumaNewErrorIsReplaced(t *testing.T) {
 	got = huma.Error502BadGateway("boom")
 	pe = got.(*ProblemError)
 	assert.Equal(CodeUpstreamError, pe.Code)
+}
+
+// This fixture also crosses the generated browser client in PullDetail.test.ts.
+func TestProviderTransportFailureProblemWireContract(t *testing.T) {
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", problemTestCredential("token"), platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &net.DNSError{Err: "no such host", Name: "bitbucket.example.com"}
+	}), nil)
+	require.NoError(t, err)
+	_, dnsErr := client.GetMergeRequest(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: client.Host(), Owner: "TEAM", Name: "project"}, 1)
+	require.Error(t, dnsErr)
+	fixture, err := os.ReadFile("../../../frontend/src/test/provider-network-problem.json")
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"dns", dnsErr},
+		{"deadline", fmt.Errorf("provider call: %w", context.DeadlineExceeded)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			problem := ProviderCallProblemWithDetail(tc.err, string(client.Platform()), client.Host(), "sync PR: provider unavailable")
+			encoded, err := json.Marshal(problem)
+			require.NoError(t, err)
+			assert.JSONEq(t, string(fixture), string(encoded))
+		})
+	}
+}
+
+type problemTestCredential string
+
+func (c problemTestCredential) Token(context.Context) (string, error) { return string(c), nil }
+func (problemTestCredential) Invalidate(string)                       {}
+
+func TestWrappedProviderNetworkOutcomeWireContract(t *testing.T) {
+	err := &platform.Error{Code: platform.ErrCodeProviderContract, Provider: platform.KindGitLab, PlatformHost: "gitlab.example.com", Err: &net.DNSError{Err: "offline"}}
+	problem := ProviderCallProblemWithDetail(fmt.Errorf("read PR: %w", err), "gitlab", "gitlab.example.com", "unavailable")
+	encoded, encodeErr := json.Marshal(problem)
+	require.NoError(t, encodeErr)
+	var body struct {
+		Status  int            `json:"status"`
+		Code    string         `json:"code"`
+		Details map[string]any `json:"details"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &body))
+	assert.Equal(t, 502, body.Status)
+	assert.Equal(t, "upstreamError", body.Code)
+	assert.Equal(t, "network", body.Details["kind"])
+	assert.Equal(t, "gitlab", body.Details["provider"])
+}
+
+func TestRawProviderOutcomeKindsAcrossAPIBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		kind   string
+	}{{401, "auth"}, {403, "auth"}, {404, "not_found"}, {429, "rate_limited"}, {503, "provider"}, {418, "other"}} {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			err := fmt.Errorf("provider read: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}})
+			for _, problem := range []huma.StatusError{MapPlatformError(err), ProviderCallProblemWithDetail(err, "github", "github.com", "unavailable")} {
+				p, ok := problem.(*ProblemError)
+				require.True(t, ok)
+				assert.Equal(t, 502, p.Status)
+				assert.Equal(t, CodeUpstreamError, p.Code)
+				assert.Equal(t, tc.kind, p.Details["kind"])
+			}
+		})
+	}
+}
+
+func TestAdapterProviderFailureOutcome(t *testing.T) {
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", problemTestCredential("token"), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 503, Status: "503 Service Unavailable", Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"message":"unavailable"}`)), Request: r}, nil
+	}), nil)
+	require.NoError(t, err)
+	_, failure := client.GetMergeRequest(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: client.Host(), Owner: "TEAM", Name: "project"}, 1)
+	require.Error(t, failure)
+	problem := ProviderCallProblemWithDetail(failure, "bitbucket", client.Host(), "unavailable").(*ProblemError)
+	assert.Equal(t, "provider", problem.Details["kind"])
+	assert.Equal(t, 502, problem.Status)
 }

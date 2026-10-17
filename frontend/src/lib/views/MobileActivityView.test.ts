@@ -126,6 +126,8 @@ vi.mock("../stores/flash.svelte.js", () => ({ showFlash }));
 vi.mock("../context.js", () => ({
   getStores: () => ({
     activity: {
+      getAcceptedSearchAttempt: () => undefined,
+      searchOutcome: { cancel: vi.fn(), settle: vi.fn() },
       initializeFromMount: vi.fn(),
       loadActivity,
       ensureActivityLoaded: loadActivity,

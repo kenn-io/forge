@@ -10,7 +10,8 @@
     gitEntries: readonly GitStatusEntry[];
     activePath: string | null;
     onSelect?: (path: string | null) => void;
-    onSearchChange?: (value: string | null) => void;
+    onSearchCommit?: () => void;
+    onSearchChange?: (value: string | null, matches: number) => void;
     // Called when the user finishes an inline rename (Enter / blur).
     // Should perform the actual filesystem rename and refresh the tree.
     onFileRename?: (from: string, to: string) => void;
@@ -22,6 +23,7 @@
     activePath,
     onSelect,
     onSearchChange,
+    onSearchCommit,
     onFileRename,
   }: Props = $props();
 
@@ -42,6 +44,7 @@
 
   $effect(() => {
     if (!host) return;
+    let active = true;
     const initialPaths = untrack(() => flattenTreePaths(tree));
     const initialGit = untrack(() => [...gitEntries]);
     const initialActive = untrack(() => activePath);
@@ -128,7 +131,10 @@
         }
         if (knownFiles.has(candidate)) onSelect?.(candidate);
       },
-      onSearchChange: (value) => onSearchChange?.(value),
+      onSearchChange: (value) => {
+        const matches = fileTree.getSearchMatchingPaths().length;
+        queueMicrotask(() => { if (active) onSearchChange?.(value, matches); });
+      },
     });
     fileTree.render({ fileTreeContainer: host });
     if (initialActive) {
@@ -139,8 +145,13 @@
         // Active path may not exist in the tree yet — ignore.
       }
     }
+    const searchRoot = host.shadowRoot ?? host;
+    const commitSearch = () => onSearchCommit?.();
+    searchRoot.addEventListener("change", commitSearch);
     instance = fileTree;
     return () => {
+      active = false;
+      searchRoot.removeEventListener("change", commitSearch);
       unmountMenuIcon();
       fileTree.unmount();
       fileTree.cleanUp();

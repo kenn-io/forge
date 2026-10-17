@@ -1,3 +1,4 @@
+import { createSearchOutcome } from "../app/telemetry.js";
 import { Effect } from "effect";
 import type { AppRuntime } from "../app/runtime.js";
 import type { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
@@ -168,6 +169,7 @@ interface OwnedActivityResponse {
 }
 
 interface ActivityReadResponse extends OwnedActivityResponse {
+  readonly searchAttempt: number | undefined;
   readonly scope: string;
   readonly repo: string | undefined;
   readonly filterScope: string;
@@ -188,6 +190,7 @@ type ActivityPollProjection =
   | { readonly mode: "replace"; readonly result: ActivityReadResponse };
 
 export interface ActivityStoreOptions {
+  getPage?: () => string;
   runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getBasePath?: () => string;
@@ -209,6 +212,10 @@ function readErrorMessage(
 
 export function createActivityStore(opts: ActivityStoreOptions) {
   const runtime = opts.runtime;
+  const searchOutcome = createSearchOutcome(
+    runtime,
+    () => !opts.getPage || ["activity", "mobile-activity"].includes(opts.getPage()),
+  );
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getBasePath = opts.getBasePath ?? (() => "/");
 
@@ -227,6 +234,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let failedThreadKeys = $state.raw<ReadonlySet<string>>(new Set());
   let threadLoadError = $state<string | null>(null);
   let filterTypes = $state<string[]>([]);
+  let acceptedSearchAttempt = $state<number | undefined>();
   let searchQuery = $state<string | undefined>(undefined);
   let authorFilter = $state<string | undefined>(undefined);
   let authorCandidates = $state.raw<string[] | null>(null);
@@ -394,6 +402,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     invalidatePagedActivityRequests();
   }
   function setActivitySearch(q: string | undefined): void {
+    q = q?.trim() || undefined;
+    if (q !== searchQuery) searchOutcome.start(q);
     searchQuery = q;
     invalidatePagedActivityRequests();
   }
@@ -530,6 +540,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function initializeFromMount(): void {
     const previousScope = pagedActivityScopeKey();
     syncFromURL();
+    if (!initialized) searchOutcome.start(searchQuery);
     if (previousScope !== pagedActivityScopeKey()) invalidatePagedActivityRequests();
     initialized = true;
     syncToURL();
@@ -722,13 +733,13 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     // display includes expanded children. Cache by the logical display scope.
     const { repo, ...unscopedParams } = buildParams();
     const filterScope = activityProjectionScope(unscopedParams);
-    return Effect.sync(() => ++activityLifecycleTick).pipe(
-      Effect.flatMap((startedAt) =>
+    return Effect.sync(() => ({ startedAt: ++activityLifecycleTick, searchAttempt: searchOutcome.current() })).pipe(
+      Effect.flatMap(({ startedAt, searchAttempt }) =>
         executeGeneratedApiRequest("GET /activity", (client, signal) =>
           client.ActivityService.listActivity(params, { signal }),
         ).pipe(
           retryIdempotentRead,
-          Effect.map((response) => ({ response, startedAt, scope, repo, filterScope })),
+          Effect.map((response) => ({ response, startedAt, scope, repo, filterScope, searchAttempt })),
         ),
       ),
     );
@@ -819,6 +830,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectActivitySnapshot(result: ActivityReadResponse, projection: ActivityParams["projection"]): void {
+    acceptedSearchAttempt = result.searchAttempt;
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
@@ -850,6 +862,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function projectAuthoritativeActivitySnapshot(result: ActivityReadResponse): void {
+    acceptedSearchAttempt = result.searchAttempt;
     snapshotScope = result.scope;
     snapshotFilterScope = result.filterScope;
     displayedRepo = result.repo;
@@ -975,7 +988,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const read = activityRead(params);
       const project = (result: ActivityReadResponse) =>
         Effect.sync(() => {
-          if (acceptsProjection()) projectActivitySnapshot(result, params.projection);
+          if (acceptsProjection()) {
+            projectActivitySnapshot(result, params.projection);
+          }
         });
       const clearLoading = Effect.sync(() => {
         if (acceptsProjection()) loading = false;
@@ -1504,6 +1519,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   return {
+    searchOutcome,
+    getAcceptedSearchAttempt: () => acceptedSearchAttempt,
     getActivityItems,
     getItemActivity,
     getWorkspaceActivity,

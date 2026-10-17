@@ -258,6 +258,84 @@ describe("WorkspaceListSidebar", () => {
     vi.useRealTimers();
   });
 
+  it("waits for an unreachable Fleet peer to recover before counting an empty query", async () => {
+    mockPost.mockResolvedValue({ data: { status: "queued" } });
+    const peer = {
+      configKey: "peer",
+      name: "Peer",
+      kind: "peer",
+      reachable: false,
+      error: "offline",
+      operationAvailability: {},
+    };
+    const workspaces = [
+      workspaceFixture({
+        id: "ws-search",
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        number: 7,
+        title: "Build workspace search",
+      }),
+    ];
+    mockGet.mockResolvedValue({ data: { hosts: [peer], workspaces } });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Build workspace search");
+    vi.useFakeTimers();
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspaces" }), {
+      target: { value: "absent" },
+    });
+    await fireEvent.change(screen.getByRole("searchbox", { name: "Filter workspaces" }));
+    await vi.advanceTimersByTimeAsync(450);
+    const outcomes = () => mockPost.mock.calls.filter(([path]) => path === "/telemetry/events");
+    expect(outcomes()).toHaveLength(0);
+    mockGet.mockResolvedValue({ data: { hosts: [{ ...peer, reachable: true, error: undefined }], workspaces } });
+    emitWorkspaceStatus();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(outcomes()).toHaveLength(1);
+  });
+
+  it("reports an empty workspace search when committed, using the displayed rows", async () => {
+    mockPost.mockResolvedValue({ data: { status: "queued" } });
+    mockGet.mockResolvedValue({
+      data: {
+        hosts: [],
+        workspaces: [
+          workspaceFixture({
+            id: "ws-search",
+            provider: "github",
+            platformHost: "github.com",
+            owner: "acme",
+            name: "widgets",
+            number: 7,
+            title: "Build workspace search",
+          }),
+        ],
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Build workspace search");
+    const outcomes = () =>
+      mockPost.mock.calls.filter(([path]) => path === "/telemetry/events").map(([, options]) => options.body);
+    vi.useFakeTimers();
+    const input = screen.getByRole("searchbox", { name: "Filter workspaces" });
+    for (const value of ["absent a", "absent b", "absent c"]) {
+      await fireEvent.input(input, { target: { value } });
+      expect(screen.getByText("No workspaces match.")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(outcomes()).toEqual([]);
+    }
+    await vi.advanceTimersByTimeAsync(500);
+    expect(outcomes()).toEqual([]);
+    await fireEvent.change(input);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(outcomes()).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
+    await fireEvent.input(input, { target: { value: "Build" } });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(outcomes()).toHaveLength(1);
+  });
+
   it("loads without secure-context crypto APIs", async () => {
     vi.stubGlobal("crypto", {});
     mockGet.mockResolvedValue({ data: { workspaces: [] } });

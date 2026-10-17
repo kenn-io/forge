@@ -115,6 +115,7 @@
 
 {#if tabKey === "conversation"}
   <PullDetail
+    interactionVisible={visible}
     owner={pr.owner}
     name={pr.name}
     number={pr.number}

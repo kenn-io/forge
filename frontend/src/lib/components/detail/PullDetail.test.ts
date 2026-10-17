@@ -8,7 +8,12 @@ import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { NAVIGATE_KEY, STORES_KEY } from "../../context.js";
 import { createDetailActivityViewStore } from "../../stores/detail-activity-view.svelte.js";
-import { createDetailStore } from "../../stores/detail.svelte.js";
+import {
+  createDetailStore,
+  type DetailSyncCallbacks,
+  type MergePullCallbacks,
+  type ProviderActionCallbacks,
+} from "../../stores/detail.svelte.js";
 import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { createWorkflowActionsStore } from "../../stores/workflow-actions.svelte.js";
@@ -18,10 +23,11 @@ import {
   nextWorkspaceLifecycleTick,
   resetWorkspaceCreatePendingForTest,
 } from "../../stores/workspace-create-pending.svelte.js";
+import { GeneratedProblemResponse } from "../../api/runtime.js";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
 import type { GeneratedClient } from "../../api/generated-api.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
-import type { DetailSyncCallbacks, MergePullCallbacks, ProviderActionCallbacks } from "../../stores/detail.svelte.js";
 import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../../workspace-inline.js";
 import { openLabelPickerFor } from "./labelPickerCommand.js";
 import { createTestController } from "../workspace/inlineWorkspaceTestController.svelte.js";
@@ -306,6 +312,7 @@ function renderPullDetail(
     isDetailFromCache: () => options.detailFromCache ?? false,
     isDetailLoading: () => options.detailLoading ?? false,
     getDetailError: () => null,
+    getDetailOutcome: () => ({ ref: null, kind: null }),
     isDetailSyncing: () => options.detailSyncing ?? false,
     isPullMerging: () => false,
     getDetailLoaded: () => true,
@@ -327,7 +334,7 @@ function renderPullDetail(
           pendingRefreshCallbacks = callbacks;
           return;
         }
-        if (options.refreshFailure) callbacks.onFailure?.(options.refreshFailure);
+        if (options.refreshFailure) callbacks.onFailure?.(options.refreshFailure, "provider");
         else callbacks.onSuccess?.(true);
         callbacks.onSettled?.();
       },
@@ -443,7 +450,7 @@ function renderPullDetail(
     },
     failRefresh: (message: string) => {
       options.detailSyncing = false;
-      pendingRefreshCallbacks?.onFailure?.(message);
+      pendingRefreshCallbacks?.onFailure?.(message, "provider");
       pendingRefreshCallbacks?.onSettled?.();
       pendingRefreshCallbacks = null;
     },
@@ -4286,4 +4293,176 @@ describe("PullDetail task body saves", () => {
       "- [x] ship the change",
     );
   });
+});
+
+function renderDetailOutcome(
+  services: Partial<GeneratedClient["PullRequestsService"]>,
+  interactionVisible = true,
+  detail = pullDetail(),
+  options: Parameters<typeof renderPullDetail>[3] = {},
+) {
+  const sent = vi.fn(async (_body: unknown) => ({ status: "queued" as const }));
+  const client = makeGeneratedClient({ SystemService: { captureTelemetryEvent: sent }, PullRequestsService: services });
+  detailRuntime = makeTestAppRuntime(client);
+  const store = createDetailStore({ runtime: detailRuntime });
+  const view = renderPullDetail(detail, undefined, undefined, {
+    ...options,
+    store,
+    detailProps: { autoSync: false, interactionVisible },
+  });
+  return { sent, view, store };
+}
+
+it("does not reuse a PR read category when comment deletion fails", async () => {
+  const detail = pullDetail();
+  detail.events.push({
+    ...detail.events[0]!,
+    ID: 9999,
+    EventType: "issue_comment",
+    PlatformID: 77,
+    Body: "Example comment",
+  });
+  let failedRead = false;
+  const problem = (status: number, title: string) =>
+    new GeneratedProblemResponse(
+      { code: status === 403 ? "forbidden" : "notFound", status, title },
+      Response.json({}, { status }),
+    );
+  const getPull = vi.fn(async () => {
+    if (failedRead) throw problem(403, "Read denied");
+    return detail;
+  });
+  const { sent, store } = renderDetailOutcome({
+    getPull,
+    deletePrComment: async () => {
+      throw problem(404, "Comment missing");
+    },
+  });
+  const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
+  store.loadDetail("acme", "widget", 1, ref);
+  await waitFor(() => expect(store.getDetail()).not.toBeNull());
+  await waitFor(() => expect(store.isDetailLoading()).toBe(false));
+  failedRead = true;
+  store.loadDetail("acme", "widget", 1, ref);
+  await waitFor(() => expect(getPull).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(store.getDetailError()).toBe("Read denied"));
+  await screen.findByTestId("detail-load-error");
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  const settled = Promise.withResolvers<void>();
+  store.deleteComment("acme", "widget", 1, 77, { onSettled: settled.resolve });
+  await settled.promise;
+  expect(screen.getByTestId("detail-load-error").textContent).toContain("Comment missing");
+  failedRead = false;
+  const refreshed = Promise.withResolvers<void>();
+  store.refreshDetailOnly("acme", "widget", 1, ref, { onSettled: refreshed.resolve });
+  await refreshed.promise;
+  expect(screen.getByTestId("detail-load-error").textContent).toContain("Comment missing");
+  await tick();
+  expect(sent).toHaveBeenCalledTimes(1);
+});
+
+it("counts restored read-error banners and stays silent when reopened during pending retries", async () => {
+  const detail = pullDetail();
+  addReviewSuggestionToDetail(detail);
+  detail.repo.capabilities.review_thread_resolution = true;
+  const denied = () => {
+    throw new GeneratedProblemResponse(
+      { code: "forbidden", status: 403, title: "Read denied" },
+      Response.json({}, { status: 403 }),
+    );
+  };
+  const getPull = vi.fn(async () => detail);
+  const draft = {
+    setRouteContext: vi.fn(),
+    isSubmitting: () => false,
+    setThreadResolved: (_id: string, _resolved: boolean, callbacks: { onSuccess?: () => void }) =>
+      callbacks.onSuccess?.(),
+  };
+  const { sent, view, store } = renderDetailOutcome({ getPull }, false, detail, {
+    diff: makeReviewSuggestionDiffStore(),
+    diffReviewDraft: draft,
+  });
+  const resolve = await screen.findByRole("button", { name: "Resolve", exact: true });
+  getPull.mockImplementation(denied);
+  await fireEvent.click(resolve);
+  await screen.findByTestId("detail-load-error");
+  expect(sent).not.toHaveBeenCalled();
+  await view.rerender({ interactionVisible: true });
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await tick();
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await tick();
+  expect(sent).toHaveBeenCalledTimes(1);
+  const retry = Promise.withResolvers<PullDetail>();
+  getPull.mockReturnValueOnce(retry.promise);
+  await fireEvent.click(resolve);
+  await waitFor(() => expect(store.isDetailLoading()).toBe(true));
+  expect(screen.queryByTestId("detail-load-error")).toBeNull();
+  await view.rerender({ interactionVisible: false });
+  await view.rerender({ interactionVisible: true });
+  await tick();
+  expect(sent).toHaveBeenCalledTimes(1);
+  retry.reject(
+    new GeneratedProblemResponse(
+      { code: "forbidden", status: 403, title: "Read denied" },
+      Response.json({}, { status: 403 }),
+    ),
+  );
+  await screen.findByTestId("detail-load-error");
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+
+  visibility.mockRestore();
+  view.unmount();
+});
+
+it("reports the Refresh failure banner by ID, including retries and hidden-tab dismissal", async () => {
+  let failed = true;
+  const detail = pullDetail();
+  const { sent, view } = renderDetailOutcome({
+    getPull: async () => detail,
+    syncPull: async () => {
+      if (failed)
+        throw new GeneratedProblemResponse(
+          { code: "badRequest", status: 400, title: "Refresh denied", details: { reason: "missing_token" } },
+          Response.json({}, { status: 400 }),
+        );
+      return detail;
+    },
+  });
+  const refresh = (await screen.findByRole("button", { name: "Refresh detail" })) as HTMLButtonElement;
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  await view.rerender({ interactionVisible: false });
+  await fireEvent.click(refresh);
+  await waitFor(() => expect(getFlashes()[0]?.message).toBe("Refresh denied"));
+  await waitFor(() =>
+    expect(sent.mock.calls[0]?.[0]).toEqual({ event: "error_shown", properties: { kind: "auth", surface: "web" } }),
+  );
+  await fireEvent.click(refresh);
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+  failed = false;
+  await fireEvent.click(refresh);
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  expect(sent).toHaveBeenCalledTimes(2);
+  dismissFlash();
+  failed = true;
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  document.dispatchEvent(new Event("visibilitychange"));
+  vi.useFakeTimers();
+  await fireEvent.click(refresh);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(getFlashes()).toHaveLength(1);
+  dismissFlash(getFlashes()[0]!.id);
+  expect(getFlashes()).toEqual([]);
+  visibility.mockReturnValue("visible");
+  document.dispatchEvent(new Event("visibilitychange"));
+  await tick();
+  expect(sent).toHaveBeenCalledTimes(2);
+  vi.useRealTimers();
+  visibility.mockRestore();
+  await fireEvent.click(refresh);
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(3));
+  view.unmount();
 });

@@ -1,10 +1,16 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { Effect } from "effect";
+import { makeAppRuntime } from "../../app/runtime.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { GeneratedClient } from "../../api/generated-api.js";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
 import type { KataLinksSubject } from "../../stores/kata-links.svelte.js";
 import KataLinkDialog from "./KataLinkDialog.svelte";
+
+let runtime: ReturnType<typeof makeAppRuntime>;
+const sent = vi.fn().mockResolvedValue({ status: "queued" });
+vi.mock("../../app/runtime-context.js", () => ({ getAppRuntime: () => runtime }));
 
 const subject: KataLinksSubject = { kind: "workspace", workspaceID: "workspace-1" };
 
@@ -33,10 +39,68 @@ function renderDialog(client: GeneratedClient, onlinked = vi.fn(), onclose = vi.
 }
 
 describe("KataLinkDialog", () => {
-  afterEach(() => {
+  beforeEach(() => {
+    sent.mockClear();
+    runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: sent } }));
+  });
+
+  afterEach(async () => {
     cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("reports only successful empty Kata searches, including recovery", async () => {
+    const listReferences = vi
+      .fn()
+      .mockResolvedValueOnce({
+        issues: [{ uid: "issue-1", qualified_id: "TASK-1", title: "Found", project_name: "Example", status: "open" }],
+      })
+      .mockRejectedValueOnce(new Error("Read failed"))
+      .mockResolvedValue({ issues: [] });
+    const view = renderDialog(
+      clientWith(
+        vi.fn().mockResolvedValue({ daemons: [{ id: "healthy", health: "connected", default: true }] }),
+        listReferences,
+      ),
+    );
+    const search = await screen.findByRole("searchbox", { name: "Search Kata issues" });
+    await waitFor(() => expect((search as HTMLInputElement).disabled).toBe(false));
+    vi.useFakeTimers();
+    await fireEvent.input(search, { target: { value: "found" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(screen.getByText("Found")).toBeTruthy();
+    expect(sent).not.toHaveBeenCalled();
+    await fireEvent.input(search, { target: { value: "absent" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(screen.getByRole("alert").textContent).toBe("Read failed");
+    expect(sent).not.toHaveBeenCalled();
+    await fireEvent.input(search, { target: { value: "absent" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(screen.getByText("No matching Kata issues.")).toBeTruthy();
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(sent.mock.calls[0]?.[0]).toEqual({ event: "search_empty", properties: { surface: "web" } });
+    expect(listReferences).toHaveBeenLastCalledWith(
+      { daemonId: "healthy" },
+      { q: "absent", limit: 50 },
+      { signal: expect.any(AbortSignal) },
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sent).toHaveBeenCalledTimes(1);
+
+    const replies: Array<(value: { issues: [] }) => void> = [];
+    listReferences.mockImplementation(() => new Promise<{ issues: [] }>((resolve) => replies.push(resolve)));
+    await fireEvent.input(search, { target: { value: "old" } });
+    await vi.advanceTimersByTimeAsync(250);
+    await fireEvent.input(search, { target: { value: "new" } });
+    replies[0]!({ issues: [] });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(sent).toHaveBeenCalledTimes(1);
+    view.unmount();
+    replies[1]!({ issues: [] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toHaveBeenCalledTimes(1);
   });
 
   it("uses the configured default initially and disables unhealthy daemons", async () => {

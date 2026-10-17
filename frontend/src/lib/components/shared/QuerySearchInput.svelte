@@ -15,6 +15,7 @@
     block?: boolean;
     ariaLabel?: string;
     oninput?: (value: string) => void;
+    onchange?: (value: string) => void;
   }
 
   let {
@@ -24,6 +25,7 @@
     block = false,
     ariaLabel = "Search",
     oninput = undefined,
+    onchange = undefined,
   }: Props = $props();
 
   let inputEl = $state<HTMLInputElement | undefined>(undefined);
@@ -89,6 +91,7 @@
   {block}
   {ariaLabel}
   oninput={(next) => oninput?.(next)}
+  onchange={(next) => onchange?.(next)}
   class={hasOperators ? "query-field query-field--operators" : "query-field"}
 />
 <!-- The #if keeps a comment anchor in this component's DOM range, so moving

@@ -158,9 +158,13 @@
     };
   });
 
-  onDestroy(() => searchExecution?.interrupt());
+  onDestroy(() => {
+    searchExecution?.interrupt();
+    (listType === "mrs" ? pulls : issues).searchOutcome.cancel();
+  });
 
   function onSearchInput(value: string): void {
+    if (value.trim() !== ((listType === "mrs" ? pulls.getSearchQuery() : issues.getIssueSearchQuery()) ?? "")) (listType === "mrs" ? pulls : issues).searchOutcome.cancel();
     searchInput = value;
 
     searchExecution?.interrupt();

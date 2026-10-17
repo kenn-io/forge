@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
   import MoreHorizontal from "@lucide/svelte/icons/more-horizontal";
@@ -101,6 +102,12 @@
   // listFolders() is in flight — an empty success should still be
   // reachable so the "No folders configured." menu state can render.
   let loadingFolders = $state(false);
+  let treeSearchCount = $state(0);
+  const startTreeSearch = trackEmptySearch(runtime, () => ({ count: treeSearchCount, settled: !loadingTree, failed: !!treeError, visible: true }), () => true);
+  function onTreeSearch(query: string | null, matches: number): void {
+    treeSearchCount = matches;
+    startTreeSearch(query ?? "");
+  }
   let tree: TreeNode | null = $state(null);
   let treeError: string | null = $state(null);
   let loadingTree = $state(false);
@@ -390,6 +397,7 @@
     const folderID = route.folder;
     if (folderID === lastFolderLoaded) return;
     lastFolderLoaded = folderID;
+    startTreeSearch("");
     // Drop the old folder's tree immediately so the README auto-open
     // effect doesn't try to land a doc from the previous folder while
     // the new tree is in flight.
@@ -1600,6 +1608,8 @@
           gitEntries={activeFolderGit}
           activePath={route.doc}
           onSelect={(path) => path && selectDoc(path)}
+          onSearchChange={onTreeSearch}
+          onSearchCommit={() => startTreeSearch.commit()}
           onFileRename={handleInlineRename}
         />
       {/if}

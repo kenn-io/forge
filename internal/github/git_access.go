@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"slices"
@@ -9,6 +10,7 @@ import (
 
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/platform"
 )
 
 // GitAccessReason classifies why clone-store Git cannot reach a repository.
@@ -166,4 +168,15 @@ func (s *Syncer) gitAccessProblems() []GitAccessProblem {
 		)
 	})
 	return problems
+}
+
+// syncFailureReason includes local credential routing failures.
+func syncFailureReason(err error) string {
+	if err == nil || errors.Is(err, context.Canceled) || syncBudgetWait(err) || errors.Is(err, platform.ErrArchiveAttemptBudget) || errors.Is(err, platform.ErrSyncDisabled) {
+		return ""
+	}
+	if gitAccessFailureReason(err) != "" {
+		return "auth"
+	}
+	return platform.OutcomeKind(err, 0)
 }

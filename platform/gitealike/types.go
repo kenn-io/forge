@@ -333,6 +333,8 @@ type HTTPError struct {
 	Err        error
 }
 
+func (e *HTTPError) HTTPStatus() int { return e.StatusCode }
+
 func (e *HTTPError) Error() string {
 	if e == nil {
 		return "<nil>"

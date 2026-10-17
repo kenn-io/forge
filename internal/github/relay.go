@@ -223,10 +223,13 @@ func (s *Syncer) drainRelayQueue(ctx context.Context, queue *relayQueue) {
 // refreshRelayHint performs one provider refresh. A hint that cannot be
 // served now, because budget, cooldown, or catalog state forbids it, is
 // dropped: ordinary syncing covers it later.
-func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) error {
+func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) (err error) {
 	repo, tracked := s.trackedRepoByProviderKey(platform.KindGitHub, hint.Host, platform.RepositoryIDKey(hint.RepositoryID))
 	if !tracked || repo.Archived {
 		return nil
+	}
+	if hint.Target == activityrelay.Repository || hint.Target == activityrelay.RepositoryRefs {
+		defer func() { s.completeFailedRepo(ctx, repo, err) }()
 	}
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {

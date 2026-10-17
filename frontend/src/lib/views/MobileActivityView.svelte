@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -132,6 +132,7 @@
   });
 
   onDestroy(() => {
+    activity.searchOutcome.cancel();
     unsubSync?.();
     searchExecution?.interrupt();
   });
@@ -192,6 +193,12 @@
     }
     return result;
   });
+  $effect(() => {
+    const attempt = activity.getAcceptedSearchAttempt();
+    const count = displayItems.length + visibleItemActivity.length + visibleWorkspaceActivity.length;
+    untrack(() => activity.searchOutcome.settle(attempt, count));
+  });
+
 
   const groups = $derived.by(() => {
     const map = new SvelteMap<string, ActivityItem[]>();
@@ -465,6 +472,7 @@
   }
 
   function handleSearchInput(value: string): void {
+    if (value.trim() !== (activity.getActivitySearch() ?? "")) activity.searchOutcome.cancel();
     searchInput = value;
     searchExecution?.interrupt();
     searchExecution = runtime.runCommand(

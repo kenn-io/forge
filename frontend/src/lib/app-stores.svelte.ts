@@ -36,6 +36,7 @@ import { beginRoborevSettingsHydration } from "./stores/roborev-settings-persist
 import { beginACPSettingsHydration } from "./stores/acp-settings-persistence.js";
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
+import { getRoute } from "./stores/router.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
 import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 
@@ -44,6 +45,7 @@ export interface AppStoreOptions {
   hostState?: HostStateAccessors;
   config?: UIConfig;
   getPage?: () => string;
+  getPullListUsesSidebar?: () => boolean;
   getActivitySelection?: () => RoutedItemRef | null;
   roborevBaseUrl?: string;
   onError?: (msg: string) => void;
@@ -88,7 +90,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     current?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
   } = {};
 
-  const pullsOpts: PullsStoreOptions = { runtime: appRuntime };
+  const pullsOpts: PullsStoreOptions = { runtime: appRuntime, getPage: gp };
+  if (options.getPullListUsesSidebar) pullsOpts.getListUsesSidebar = options.getPullListUsesSidebar;
   if (hs.getGlobalRepo) {
     pullsOpts.getGlobalRepo = hs.getGlobalRepo;
   }
@@ -103,9 +106,27 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const syncStore = createSyncStore({
     runtime: appRuntime,
     getPriorityRepos: hs.getGlobalRepo,
+    onManualRefresh: () => {
+      const page = gp();
+      const route = getRoute();
+      if (
+        page === "pulls" ||
+        page === "mobile-pulls" ||
+        (page === "focus" && route.page === "focus" && route.itemType === "mrs")
+      )
+        pullsStore.searchOutcome.start(pullsStore.getSearchQuery());
+      if (
+        page === "issues" ||
+        page === "mobile-issues" ||
+        (page === "focus" && route.page === "focus" && route.itemType === "issues")
+      )
+        issuesStore.searchOutcome.start(issuesStore.getIssueSearchQuery());
+      if (page === "activity" || page === "mobile-activity")
+        activityStore.searchOutcome.start(activityStore.getActivitySearch());
+    },
   });
 
-  const activityOpts: ActivityStoreOptions = { runtime: appRuntime };
+  const activityOpts: ActivityStoreOptions = { runtime: appRuntime, getPage: gp };
   if (hs.getGlobalRepo) {
     activityOpts.getGlobalRepo = hs.getGlobalRepo;
   }

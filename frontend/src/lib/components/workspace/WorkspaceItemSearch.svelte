@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SEARCH_DEBOUNCE_MS } from "../../app/telemetry.js";
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import { autoReposition, Checkbox, dismissable, floatingPopoverStyle, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onDestroy, untrack } from "svelte";
@@ -48,6 +50,9 @@
     const { pulls, issues } = searchStore.search(query);
     return [...pulls.map((pull) => searchOption("pr", pull)), ...issues.map((issue) => searchOption("issue", issue))];
   });
+  const startSearchAttempt = trackEmptySearch(runtime, () => ({
+    count: options.length, settled: !loading && !error, failed: !!error, visible: !disabled,
+  }), () => !includeClosed);
   let highlightIndex = $state(0);
   const listID = $props.id();
   const resetRows = $derived<SearchOption[]>([
@@ -106,7 +111,7 @@
     remoteOptions = [];
     const params = { state: "all", q: query.trim(), limit: 30 };
     searchExecution = runtime.runCommand(
-      Effect.sleep("150 millis").pipe(
+      Effect.sleep(`${SEARCH_DEBOUNCE_MS} millis`).pipe(
         Effect.andThen(Effect.all({
           pulls: executeGeneratedApiRequest("search workspace pull requests", (client, signal) =>
             client.PullRequestsService.listPulls(params, { signal }),
@@ -196,7 +201,8 @@
       ariaControls={listID}
       {...(!loading && rows[activeIndex] ? { ariaActivedescendant: `${listID}-${activeIndex}` } : {})}
       ariaAutocomplete="list"
-      oninput={searchItems}
+      oninput={(value) => { searchItems(value); startSearchAttempt(value); }}
+      onchange={() => startSearchAttempt.commit()}
       onkeydown={handleSearchKeydown}
     />
     <div class="item-search-filter">

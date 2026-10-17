@@ -598,11 +598,12 @@ func ExclusivePartialSyncFailure(err error) (*PartialSyncError, bool) {
 
 // RepoSyncResult holds the outcome of syncing a single repo.
 type RepoSyncResult struct {
-	Platform     platform.Kind
-	Owner        string
-	Name         string
-	PlatformHost string
-	Error        string // empty on success
+	Platform      platform.Kind
+	Owner         string
+	Name          string
+	PlatformHost  string
+	Error         string // empty on success
+	FailureReason string `json:"-"` // fixed telemetry category, empty for skips
 	// PartialFailure carries the failed item scopes when Error records a
 	// partial per-item failure; nil on success and on hard repository
 	// failures.
@@ -2039,6 +2040,17 @@ func (s *Syncer) SetOnSyncCompleted(
 	fn func(results []RepoSyncResult),
 ) {
 	s.onSyncCompleted = fn
+}
+
+// completeFailedRepo delivers failures outside a scheduled run through its completion hook.
+func (s *Syncer) completeFailedRepo(ctx context.Context, repo RepoRef, err error) {
+	reason := syncFailureReason(err)
+	if s.onSyncCompleted == nil || reason == "" || ctx.Err() != nil {
+		return
+	}
+	s.RunUnderStackProjection(func() {
+		s.onSyncCompleted([]RepoSyncResult{{Platform: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name, Error: err.Error(), FailureReason: reason}})
+	})
 }
 
 // SetOnWatchedMRSyncCompleted registers a callback invoked once after a
@@ -4289,6 +4301,7 @@ func (s *Syncer) runWorker(
 			errMessage := bucketErr.Error()
 			s.recordRunError(state, repo, bucketErr, errMessage)
 			state.results[item.index].Error = errMessage
+			state.results[item.index].FailureReason = syncFailureReason(bucketErr)
 			continue
 		}
 		// Provider reserve first: this credential's own GitHub pool. The
@@ -4355,6 +4368,7 @@ func (s *Syncer) runWorker(
 			// typing requires the whole error to be the partial failure:
 			// a partial joined with any other failure is hard.
 			state.results[item.index].Error = errStr
+			state.results[item.index].FailureReason = syncFailureReason(err)
 			if partial, ok := ExclusivePartialSyncFailure(err); ok {
 				state.results[item.index].PartialFailure = partial
 			}
@@ -4662,6 +4676,7 @@ dispatch:
 		bucket, err := s.bucketKeyForRepo(r, false)
 		if err != nil {
 			results[i].Error = err.Error()
+			results[i].FailureReason = syncFailureReason(err)
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
 			continue
@@ -10955,9 +10970,11 @@ func (s *Syncer) SyncRepoOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncRepo(withRepositoryFeatureCooldownBypass(
+	err := s.syncRepo(withRepositoryFeatureCooldownBypass(
 		ctx, s.featureCooldowns.currentGeneration(),
 	), repo)
+	s.completeFailedRepo(ctx, repo, err)
+	return err
 }
 
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.

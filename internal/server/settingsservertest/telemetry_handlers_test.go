@@ -160,6 +160,8 @@ func TestCaptureTelemetryEvent_CoreActions(t *testing.T) {
 	}{
 		{"pr_viewed", "provider", []string{"github", "gitlab", "forgejo", "gitea", "bitbucket"}},
 		{"workspace_opened", "item_type", []string{"pull_request", "issue", "kata_task", "adhoc"}},
+		{"search_empty", "surface", []string{"web"}},
+		{"error_shown", "kind", []string{"auth", "rate_limited", "not_found", "network", "provider", "other"}},
 	} {
 		t.Run(tc.event, func(t *testing.T) {
 			type capturedEvent struct {
@@ -186,9 +188,15 @@ func TestCaptureTelemetryEvent_CoreActions(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, reporter.Close()) })
 			srv := server.New(serverfake.OpenTestDB(t), nil, nil, "/", nil, server.ServerOptions{Telemetry: reporter})
 			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-			values := append(append([]string{}, tc.values...), "unknown")
+			var values []any
+			for _, value := range tc.values {
+				values = append(values, value)
+			}
+			if tc.event != "search_empty" {
+				values = append(values, "unknown", 23)
+			}
 			for _, value := range values {
-				payload, err := json.Marshal(map[string]any{"event": tc.event, "properties": map[string]any{tc.property: value, "surface": "web", "repo": "acme/widgets"}})
+				payload, err := json.Marshal(map[string]any{"event": tc.event, "properties": map[string]any{tc.property: value, "surface": "web", "repo": "acme/widgets", "query": "private query", "message": "private error", "path": "/private/path", "id": 42}})
 				require.NoError(t, err)
 				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(string(payload)))
 				req.Header.Set("Content-Type", "application/json")
@@ -207,8 +215,14 @@ func TestCaptureTelemetryEvent_CoreActions(t *testing.T) {
 					assert.Equal(t, tc.event, event.Event)
 					assert.Equal(t, "web", event.Properties["surface"])
 					assert.NotContains(t, event.Properties, "repo")
+					assert.NotContains(t, event.Properties, "query")
+					assert.NotContains(t, event.Properties, "message")
+					assert.NotContains(t, event.Properties, "path")
+					assert.NotContains(t, event.Properties, "id")
 					if i < len(tc.values) {
 						assert.Equal(t, tc.values[i], event.Properties[tc.property])
+					} else if tc.event == "error_shown" {
+						assert.Equal(t, "other", event.Properties[tc.property])
 					} else {
 						assert.NotContains(t, event.Properties, tc.property)
 					}
@@ -218,4 +232,16 @@ func TestCaptureTelemetryEvent_CoreActions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCaptureTelemetryEventRejectsDaemonOutcome(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	reporter := &serverfake.FakeTelemetry{EnabledValue: true}
+	srv := servertest.NewTelemetryTestServer(t, reporter)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", strings.NewReader(`{"event":"sync_failed","properties":{"reason":"auth"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Empty(t, reporter.Event)
 }

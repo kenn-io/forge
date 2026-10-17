@@ -2,6 +2,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { Effect } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { createAppStores } from "../../app-stores.svelte.js";
+import * as storeContext from "../../context.js";
+import * as keyboardContext from "../../stores/keyboard/context.svelte.js";
+
 import Palette from "./PaletteRuntimeHarness.svelte";
 import { dispatchKeydown as dispatchKeydownWithRuntime } from "../../stores/keyboard/dispatch.svelte.js";
 import { makeAppRuntime } from "../../app/runtime.js";
@@ -35,7 +39,133 @@ function action(id: string, label = id, scope: Action["scope"] = "global"): Acti
   };
 }
 
+function captureEvents(failedList?: "pulls" | "issues") {
+  const sent: unknown[] = [];
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, options?: RequestInit) => {
+    const request = new Request(input, options);
+    const path = new URL(request.url).pathname;
+    if (failedList && path === `/api/v1/${failedList}`)
+      return Response.json({ code: "forbidden", status: 403, title: "Unrelated list failed" }, { status: 403 });
+    if (path !== "/api/v1/telemetry/events") return Response.json([]);
+    sent.push(await request.json());
+    return Response.json({ status: "queued" });
+  });
+  return sent;
+}
+
 describe("Palette", () => {
+  it("counts empty text searches after docs settle, including successful retries", async () => {
+    const sent = captureEvents();
+    let fail = false;
+    const docsSearch = vi.fn(async (query: string) => {
+      if (fail) throw new Error("private failure");
+      return {
+        hits:
+          query === "guide"
+            ? [
+                {
+                  folder: "notes",
+                  folder_name: "Notes",
+                  name: "guide.md",
+                  rel_path: "guide.md",
+                  score: 1,
+                  hit_type: "filename" as const,
+                },
+              ]
+            : [],
+        truncated: false,
+      };
+    });
+    const props = { docsSearch };
+    const { rerender } = render(Palette, { props });
+    openPalette();
+    await rerender(props);
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    vi.useFakeTimers();
+    await fireEvent.input(input, { target: { value: "guide" } });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(screen.getAllByText("guide.md").length).toBeGreaterThan(0);
+    await fireEvent.input(input, { target: { value: "guide " } });
+    expect(screen.getAllByText("guide.md").length).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(350);
+    expect(docsSearch).toHaveBeenCalledTimes(1);
+    for (const value of ["z", "zz", "zzz"]) await fireEvent.input(input, { target: { value } });
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(screen.getByText("No results")).toBeTruthy();
+    expect(sent).toHaveLength(1);
+    fail = true;
+    await fireEvent.input(input, { target: { value: "failed search" } });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(screen.getByText("Docs search failed: private failure")).toBeTruthy();
+    expect(sent).toHaveLength(1);
+    fail = false;
+    await rerender({ docsSearch: async () => ({ hits: [], truncated: false }) });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(screen.queryByText("Docs search failed: private failure")).toBeNull();
+    expect(sent).toHaveLength(2);
+    await fireEvent.input(input, { target: { value: "" } });
+    await fireEvent.input(input, { target: { value: "failed search" } });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(sent).toEqual(Array.from({ length: 3 }, () => ({ event: "search_empty", properties: { surface: "web" } })));
+  });
+
+  it("counts a completed empty Docs result with warnings", async () => {
+    const sent = captureEvents();
+    const { rerender } = render(Palette, {
+      props: { docsSearch: async () => ({ hits: [], truncated: false, warnings: ["Folder unavailable"] }) },
+    });
+    openPalette();
+    await rerender({});
+    await fireEvent.input(screen.getByRole("textbox", { name: "Search command palette" }), {
+      target: { value: "unmatched" },
+    });
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await rerender({ docsSearch: async () => ({ hits: [], truncated: false }) });
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  function listSearchStores(failedList?: "pulls" | "issues") {
+    const sent = captureEvents(failedList);
+    const { stores } = createAppStores({ runtime: keyboardRuntime });
+    vi.spyOn(storeContext, "getStores").mockReturnValue(stores);
+    vi.spyOn(keyboardContext, "buildContext").mockReturnValue({} as Context);
+    return { stores, sent };
+  }
+
+  it.each(["pr", "issue", "command"])("counts a completed %s query rather than each input event", async (scope) => {
+    const { stores, sent } = listSearchStores(scope === "pr" ? "issues" : scope === "issue" ? "pulls" : undefined);
+    if (scope === "pr") {
+      stores.issues.loadIssues();
+      await waitFor(() => expect(stores.issues.getIssuesError()).toBeTruthy());
+    } else if (scope === "issue") {
+      stores.pulls.loadPulls();
+      await waitFor(() => expect(stores.pulls.getError()).toBeTruthy());
+    }
+    const { rerender } = render(Palette, { props: {} });
+    openPalette();
+    await rerender({});
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    vi.useFakeTimers();
+    for (const value of ["aaa", "bbb", "ccc"]) {
+      await fireEvent.input(input, { target: { value: scope === "command" ? `> ${value}` : `${scope}: ${value}` } });
+      expect(screen.getByText("No results")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(sent).toHaveLength(0);
+    }
+    await vi.advanceTimersByTimeAsync(500);
+    expect(sent).toEqual([]);
+    await fireEvent.change(input);
+    await vi.advanceTimersByTimeAsync(0);
+    if (scope !== "command") {
+      expect(sent).toEqual([]);
+      if (scope === "pr") stores.pulls.loadPulls();
+      else stores.issues.loadIssues();
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(sent).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
+  });
+
   beforeEach(() => {
     localStorage.clear();
   });
@@ -44,6 +174,7 @@ describe("Palette", () => {
     cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     resetPaletteState();
     resetModalStack();
     resetRegistry();

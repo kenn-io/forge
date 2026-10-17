@@ -669,10 +669,10 @@ open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
-The daemon reports `setup_finished` once per installation when it has a stored PR
-or issue in an active repository, including cached items and excluding items removed
-upstream. It checks at startup, each minute while Forge stays open, and before
-shutdown. Telemetry must be enabled when the process starts.
+The daemon queues `setup_finished` when it first has a readable stored PR or issue in an active repository, including cached items and excluding items removed upstream.
+It checks at startup, each minute while Forge stays open, and before shutdown. Telemetry must be enabled when the process starts.
+Queue acceptance records completion for the installation; delivery is best effort.
+A crash between queue acceptance and saving completion can repeat the event after restart.
 Showing a selected PR's matching detail in the PR list, focus route, Activity
 drawer, workspace sidebar or mobile linked-PR page reports `pr_viewed` once per visit. Keyboard
 selection, direct links and reloads qualify; tab changes and background refreshes

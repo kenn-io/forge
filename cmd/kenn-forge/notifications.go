@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -19,58 +18,52 @@ const databaseOptimizeInterval = 24 * time.Hour
 
 const setupFinishedKey = "telemetry.setup_finished"
 
-func startSetupFinishedLoop(handle *backgroundLoopHandle, database *db.DB, reporter telemetry.Client) {
-	handle.start(func(ctx context.Context) {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			done, err := captureSetupFinished(ctx, database, reporter)
-			if err != nil && ctx.Err() == nil {
-				slog.Warn("capture setup finished", "err", err)
-			}
-			if done {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
+type setupFinished struct {
+	mu       sync.Mutex
+	database *db.DB
+	reporter telemetry.Client
+	accepted bool
+	done     bool
+}
+
+func (s *setupFinished) capture(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil || s.done {
+		return err
+	}
+	if !s.accepted {
+		lookupCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		defer cancel()
+		_, found, err := s.database.AppMetadataValue(lookupCtx, setupFinishedKey)
+		if err != nil || found {
+			s.done = found
+			return err
+		}
+		prs, err := s.database.ListMergeRequests(lookupCtx, db.ListMergeRequestsOpts{State: "all", Limit: 1})
+		if err != nil {
+			return err
+		}
+		if len(prs) == 0 {
+			issues, err := s.database.ListIssues(lookupCtx, db.ListIssuesOpts{State: "all", Limit: 1})
+			if err != nil || len(issues) == 0 {
+				return err
 			}
 		}
-	})
-}
-
-func captureSetupFinished(ctx context.Context, database *db.DB, reporter telemetry.Client) (bool, error) {
-	lookupCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	defer cancel()
-	if _, found, err := database.AppMetadataValue(lookupCtx, setupFinishedKey); err != nil || found {
-		return found, err
-	}
-	found, err := database.HasStoredWork(lookupCtx)
-	if err != nil || !found {
-		return false, err
-	}
-	cancel()
-	reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
-	status, err := reporter.Report(reportCtx, "setup_finished", nil)
-	reportCancel()
-	if err != nil || status != posthog.StatusQueued {
-		return false, err
-	}
-	markerCtx, markerCancel := context.WithTimeout(context.WithoutCancel(ctx), 300*time.Millisecond)
-	defer markerCancel()
-	_, err = database.GetOrCreateAppMetadataValue(markerCtx, setupFinishedKey, func() (string, error) { return "queued", nil })
-	return err == nil, err
-}
-
-func closeTelemetry(database *db.DB, reporter telemetry.Client) error {
-	var err error
-	if reporter.Enabled() {
-		ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
-		_, err = captureSetupFinished(ctx, database, reporter)
 		cancel()
+		reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		status, err := s.reporter.Report(reportCtx, "setup_finished", nil)
+		reportCancel()
+		if err != nil || status != posthog.StatusQueued {
+			return err
+		}
+		s.accepted = true
 	}
-	return errors.Join(err, reporter.Close())
+	markerCtx, markerCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer markerCancel()
+	_, err := s.database.GetOrCreateAppMetadataValue(markerCtx, setupFinishedKey, func() (string, error) { return "queued", nil })
+	s.done = err == nil
+	return err
 }
 
 type backgroundLoopHandle struct {

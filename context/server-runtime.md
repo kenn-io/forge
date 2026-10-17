@@ -1,9 +1,9 @@
 # Server Runtime
 
-- Setup completion must reflect persisted work: single-item refresh paths can store
-  the first item without a full sync pass. Serialize checks and persist completion
-  only after queue acceptance
-  (`cmd/kenn-forge/notifications.go::captureSetupFinished`).
+- With telemetry enabled at startup, setup checks run at startup, each minute and shutdown; the first readable stored PR or issue counts, including cached work.
+  Serialize checks and remember queue acceptance while retrying the `telemetry.setup_finished` marker write; marker presence means accepted, not delivered.
+  Delivery is best effort; a crash between acceptance and marker persistence can repeat the event after restart
+  (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).

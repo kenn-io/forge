@@ -608,6 +608,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
 	var telemetryReporter telemetry.Client
+	var setup *setupFinished
 	var profilerSrv *profiler.Server
 	var backgroundLoops *backgroundLoopHandle
 	defer func() {
@@ -659,7 +660,14 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 					if telemetryReporter == nil {
 						return nil
 					}
-					return closeTelemetry(database, telemetryReporter)
+					if setup != nil {
+						ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+						if err := setup.capture(ctx); err != nil {
+							slog.Warn("capture setup finished", "err", err)
+						}
+						cancel()
+					}
+					return telemetryReporter.Close()
 				},
 				CloseMCP: func() error {
 					if mcpSrv == nil {
@@ -849,7 +857,8 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			slog.Warn("capture telemetry event", "err", err)
 		}
 		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
-		startSetupFinishedLoop(backgroundLoops, database, telemetryReporter)
+		setup = &setupFinished{database: database, reporter: telemetryReporter}
+		backgroundLoops.startTicker("capture setup finished", time.Minute, setup.capture)
 	}
 
 	var devboxConnections *devbox.Connections

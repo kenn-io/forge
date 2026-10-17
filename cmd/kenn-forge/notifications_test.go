@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -11,10 +13,12 @@ import (
 	"testing/synctest"
 	"time"
 
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -263,7 +267,8 @@ func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 					handle := newBackgroundLoopHandle(t.Context())
 					defer func() { require.NoError(handle.Stop(t.Context())) }()
 					client := &fakeTelemetryClient{}
-					startSetupFinishedLoop(handle, database, client)
+					setup := &setupFinished{database: database, reporter: client}
+					handle.startTicker("setup", time.Minute, setup.capture)
 					synctest.Wait()
 					require.Empty(client.events())
 					repoID := seedSetupItem(t, database, kind)
@@ -272,12 +277,11 @@ func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 						_, err := database.WriteDB().ExecContext(t.Context(), `UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE id = ?`, repoID)
 						require.NoError(err)
 					case "removed_upstream":
-						itemType := "issue"
+						itemType := db.ArchiveItemType("issue")
 						if kind == "pr" {
 							itemType = "merge_request"
 						}
-						_, err := database.WriteDB().ExecContext(t.Context(), `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) VALUES (?, ?, 1, 'item-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'removed_upstream')`, repoID, itemType)
-						require.NoError(err)
+						serverfake.MarkArchiveItemRemovedUpstreamForServerTest(t, database, repoID, itemType, 1)
 					}
 					time.Sleep(time.Minute)
 					synctest.Wait()
@@ -289,7 +293,8 @@ func TestSetupFinishedMinuteAndFilters(t *testing.T) {
 					require.Equal([]map[string]any{nil}, client.captures)
 					require.NoError(handle.Stop(t.Context()))
 					handle = newBackgroundLoopHandle(t.Context())
-					startSetupFinishedLoop(handle, database, client)
+					setup = &setupFinished{database: database, reporter: client}
+					handle.startTicker("setup", time.Minute, setup.capture)
 					time.Sleep(2 * time.Minute)
 					synctest.Wait()
 					require.Equal([]string{"setup_finished"}, client.events())
@@ -306,18 +311,20 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 			root := t.TempDir()
 			cfgPath := filepath.Join(root, "config.toml")
 			writeMinimalConfig(t, cfgPath, filepath.Join(root, "data"), reserveFreePort(t))
+			require.NoError(os.MkdirAll(filepath.Join(root, "data"), 0o700))
+			database := dbtest.OpenAt(t, filepath.Join(root, "data", "forge.db"))
+			seedSetupItem(t, database, "issue")
+			require.NoError(database.Close())
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			calls, closed, startup := 0, false, false
+			var observationErr error
+			var completed bool
 			err := runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath, DisableSync: true}, func(opts telemetry.Options) telemetry.Client {
-				seedSetupItem(t, opts.Database, "issue")
 				if mode == "disabled" {
 					cancel()
 				}
-				return &fakeTelemetryClient{disabled: mode == "disabled", report: func(reportCtx context.Context) (posthog.Status, error) {
-					_, found, err := opts.Database.AppMetadataValue(reportCtx, setupFinishedKey)
-					require.NoError(err)
-					require.False(found, "only accepted reports may persist completion")
+				return &fakeTelemetryClient{disabled: mode == "disabled", report: func(context.Context) (posthog.Status, error) {
 					calls++
 					if calls == 1 {
 						startup = ctx.Err() == nil
@@ -331,17 +338,74 @@ func TestRunSetupFinishedStartupAndClose(t *testing.T) {
 					}
 					return posthog.StatusQueued, nil
 				}, close: func() error {
-					_, found, err := opts.Database.AppMetadataValue(t.Context(), setupFinishedKey)
-					require.NoError(err)
-					require.Equal(mode != "disabled", found, "completion must persist before the reporter and DB close")
+					_, completed, observationErr = opts.Database.AppMetadataValue(t.Context(), setupFinishedKey)
 					closed = true
 					return nil
 				}}
 			})
 			require.NoError(err)
+			require.NoError(observationErr)
+			require.Equal(mode != "disabled", completed, "completion must persist before the reporter and DB close")
 			require.True(closed)
 			require.Equal(mode != "disabled", startup, "the first report must run before shutdown")
 			require.Equal(map[string]int{"startup": 1, "shutdown": 2, "error": 2, "disabled": 0}[mode], calls)
 		})
 	}
+}
+
+func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	seedSetupItem(t, database, "issue")
+	var tx *sql.Tx
+	var lockErr error
+	client := &fakeTelemetryClient{report: func(context.Context) (posthog.Status, error) {
+		tx, lockErr = database.WriteDB().BeginTx(t.Context(), nil)
+		return posthog.StatusQueued, nil
+	}}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	setup := &setupFinished{database: database, reporter: client}
+	err := setup.capture(t.Context())
+	require.NoError(lockErr)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+	require.NoError(err)
+	require.False(found)
+	require.NoError(tx.Rollback())
+	require.NoError(setup.capture(t.Context()))
+	require.NoError(setup.capture(t.Context()))
+	require.Equal([]string{"setup_finished"}, client.events())
+	marker, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+	require.NoError(err)
+	require.True(found)
+	require.Equal("queued", marker)
+}
+
+func TestSetupFinishedAfterSingleItemRefresh(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	client := &fakeTelemetryClient{}
+	setup := &setupFinished{database: database, reporter: client}
+	mock := &serverfake.MockGH{GetIssueFn: func(_ context.Context, owner, repo string, number int) (*gh.Issue, error) {
+		if owner != "acme" || repo != "widget" || number != 42 {
+			return nil, errors.New("unexpected item")
+		}
+		return &gh.Issue{
+			ID: new(int64(42)), Number: new(42), Title: new("Example"), State: new("open"),
+			HTMLURL:   new("https://github.com/acme/widget/issues/42"),
+			CreatedAt: &gh.Timestamp{Time: time.Now().UTC()}, UpdatedAt: &gh.Timestamp{Time: time.Now().UTC()},
+		}, nil
+	}}
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": mock}, database, nil,
+		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	defer syncer.Stop()
+	kind, err := syncer.SyncItemByNumber(t.Context(), "acme", "widget", 42)
+	require.NoError(err)
+	require.Equal("issue", kind)
+	require.NoError(setup.capture(t.Context()))
+	require.Equal([]string{"setup_finished"}, client.events())
 }

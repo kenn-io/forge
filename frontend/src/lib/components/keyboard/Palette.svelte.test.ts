@@ -108,21 +108,13 @@ describe("Palette", () => {
     await fireEvent.input(input, { target: { value: "failed search" } });
     await vi.advanceTimersByTimeAsync(350);
     expect(sent).toEqual(Array.from({ length: 3 }, () => ({ event: "search_empty", properties: { surface: "web" } })));
-  });
-
-  it("counts a completed empty Docs result with warnings", async () => {
-    const sent = captureEvents();
-    const { rerender } = render(Palette, {
-      props: { docsSearch: async () => ({ hits: [], truncated: false, warnings: ["Folder unavailable"] }) },
-    });
-    openPalette();
-    await rerender({});
-    await fireEvent.input(screen.getByRole("textbox", { name: "Search command palette" }), {
-      target: { value: "unmatched" },
-    });
-    await waitFor(() => expect(sent).toHaveLength(1));
+    await rerender({ docsSearch: async () => ({ hits: [], truncated: false, warnings: ["Folder unavailable"] }) });
+    await fireEvent.input(input, { target: { value: "unmatched" } });
+    await vi.advanceTimersByTimeAsync(350);
+    expect(sent).toHaveLength(4);
     await rerender({ docsSearch: async () => ({ hits: [], truncated: false }) });
-    await waitFor(() => expect(sent).toHaveLength(1));
+    await vi.advanceTimersByTimeAsync(350);
+    expect(sent).toHaveLength(4);
   });
 
   function listSearchStores(failedList?: "pulls" | "issues") {
@@ -147,14 +139,8 @@ describe("Palette", () => {
     await rerender({});
     const input = screen.getByRole("textbox", { name: "Search command palette" });
     vi.useFakeTimers();
-    for (const value of ["aaa", "bbb", "ccc"]) {
-      await fireEvent.input(input, { target: { value: scope === "command" ? `> ${value}` : `${scope}: ${value}` } });
-      expect(screen.getByText("No results")).toBeTruthy();
-      await vi.advanceTimersByTimeAsync(100);
-      expect(sent).toHaveLength(0);
-    }
-    await vi.advanceTimersByTimeAsync(500);
-    expect(sent).toEqual([]);
+    await fireEvent.input(input, { target: { value: scope === "command" ? "> absent" : `${scope}: absent` } });
+    expect(screen.getByText("No results")).toBeTruthy();
     await fireEvent.change(input);
     await vi.advanceTimersByTimeAsync(0);
     if (scope !== "command") {

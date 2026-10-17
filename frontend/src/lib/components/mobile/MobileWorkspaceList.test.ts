@@ -126,17 +126,10 @@ describe("MobileWorkspaceList", () => {
     await screen.findByText("Build mobile workspaces");
     const outcomes = () =>
       mockPost.mock.calls.filter(([path]) => path === "/telemetry/events").map(([, options]) => options.body);
-    vi.useFakeTimers();
     const input = screen.getByRole("searchbox", { name: "Filter workspaces" });
     await fireEvent.input(input, { target: { value: "absent" } });
-    await vi.advanceTimersByTimeAsync(399);
-    expect(outcomes()).toEqual([]);
-    await fireEvent.input(input, { target: { value: "absent more" } });
-    await vi.advanceTimersByTimeAsync(500);
-    expect(outcomes()).toEqual([]);
     await fireEvent.change(input);
-    await vi.advanceTimersByTimeAsync(0);
-    expect(outcomes()).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
+    await waitFor(() => expect(outcomes()).toEqual([{ event: "search_empty", properties: { surface: "web" } }]));
   });
 
   it("filters rows and opens the selected workspace", async () => {

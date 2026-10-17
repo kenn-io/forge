@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -21,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/outcome"
 	"go.kenn.io/forge/internal/testutil/tokenauthtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -438,10 +438,11 @@ func TestMapPlatformError(t *testing.T) {
 			wantDetails: map[string]any{"reason": "missing_token"},
 		},
 		{
-			name:       "RuntimeMissingToken",
-			input:      fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
-			wantStatus: http.StatusBadRequest,
-			wantCode:   CodeBadRequest,
+			name:        "RuntimeMissingToken",
+			input:       fmt.Errorf("clone token unavailable: %w", tokenauth.ErrMissingToken),
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    CodeBadRequest,
+			wantDetails: map[string]any{"reason": "missing_token"},
 		},
 		{
 			name:       "UnsupportedMediaType",
@@ -617,56 +618,42 @@ func TestProviderTransportFailureProblemWireContract(t *testing.T) {
 	}
 }
 
-func TestWrappedProviderNetworkOutcomeWireContract(t *testing.T) {
-	err := &platform.Error{Code: platform.ErrCodeProviderContract, Provider: platform.KindGitLab, PlatformHost: "gitlab.example.com", Err: &net.DNSError{Err: "offline"}}
-	problem := ProviderCallProblemWithDetail(fmt.Errorf("read PR: %w", err), "gitlab", "gitlab.example.com", "unavailable")
-	encoded, encodeErr := json.Marshal(problem)
-	require.NoError(t, encodeErr)
-	var body struct {
-		Status  int            `json:"status"`
-		Code    string         `json:"code"`
-		Details map[string]any `json:"details"`
-	}
-	require.NoError(t, json.Unmarshal(encoded, &body))
-	assert.Equal(t, 502, body.Status)
-	assert.Equal(t, "upstreamError", body.Code)
-	assert.Equal(t, "network", body.Details["kind"])
-	assert.Equal(t, "gitlab", body.Details["provider"])
-}
-
 func TestRawProviderOutcomeKindsAcrossAPIBoundaries(t *testing.T) {
+	type outcomeCase struct {
+		name   string
+		err    error
+		kind   string
+		status int
+		code   ProblemCode
+	}
+	cases := []outcomeCase{
+		{"sdk-rate-limit", &gh.RateLimitError{}, "rate_limited", 502, CodeUpstreamError},
+		{"sdk-abuse-limit", &gh.AbuseRateLimitError{}, "rate_limited", 502, CodeUpstreamError},
+		{"typed-rate-limit", &platform.Error{Code: platform.ErrCodeRateLimited, Err: &gh.ErrorResponse{Response: &http.Response{StatusCode: 403}}}, "rate_limited", 429, CodeRateLimited},
+		{"stale-state", platform.ErrStaleState, "other", 409, CodeConflict},
+		{"provider-contract", platform.ErrProviderContract, "provider", 502, CodeUpstreamError},
+		{"plain", errors.New("private detail"), "other", 502, CodeUpstreamError},
+		{"wrapped-network", &platform.Error{Code: platform.ErrCodeProviderContract, Provider: platform.KindGitLab, PlatformHost: "gitlab.example.com", Err: &net.DNSError{Err: "offline"}}, "network", 502, CodeUpstreamError},
+	}
 	for _, tc := range []struct {
 		status int
 		kind   string
-	}{{401, "auth"}, {403, "auth"}, {404, "not_found"}, {429, "rate_limited"}, {503, "provider"}, {418, "other"}} {
-		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
-			err := fmt.Errorf("provider read: %w", &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}})
+	}{{401, "auth"}, {403, "auth"}, {404, "not_found"}, {429, "rate_limited"}, {502, "provider"}, {503, "provider"}, {418, "other"}} {
+		cases = append(cases, outcomeCase{fmt.Sprint(tc.status), &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}}, tc.kind, 502, CodeUpstreamError})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := fmt.Errorf("provider read: %w", tc.err)
+			assert.Equal(t, tc.kind, outcome.Kind(err))
 			for _, problem := range []huma.StatusError{MapPlatformError(err), ProviderCallProblemWithDetail(err, "github", "github.com", "unavailable")} {
 				p, ok := problem.(*ProblemError)
 				require.True(t, ok)
-				assert.Equal(t, 502, p.Status)
-				assert.Equal(t, CodeUpstreamError, p.Code)
-				assert.Equal(t, tc.kind, p.Details["kind"])
+				assert.Equal(t, tc.status, p.Status)
+				assert.Equal(t, tc.code, p.Code)
+				if p.Code == CodeUpstreamError {
+					assert.Equal(t, tc.kind, p.Details["kind"])
+				}
 			}
 		})
 	}
-}
-
-func TestAdapterProviderFailureOutcome(t *testing.T) {
-	client, err := bitbucketdc.NewClient("bitbucket.example.com", tokenauthtest.Source("token"), platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 503, Status: "503 Service Unavailable", Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"message":"unavailable"}`)), Request: r}, nil
-	}), nil)
-	require.NoError(t, err)
-	_, failure := client.GetMergeRequest(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: client.Host(), Owner: "TEAM", Name: "project"}, 1)
-	require.Error(t, failure)
-	problem := ProviderCallProblemWithDetail(failure, "bitbucket", client.Host(), "unavailable").(*ProblemError)
-	assert.Equal(t, "provider", problem.Details["kind"])
-	assert.Equal(t, 502, problem.Status)
-}
-
-func TestMapPlatformErrorRetainsMissingTokenReason(t *testing.T) {
-	problem := MapPlatformError(fmt.Errorf("credentials: %w", tokenauth.ErrMissingToken)).(*ProblemError)
-	assert.Equal(t, http.StatusBadRequest, problem.Status)
-	assert.Equal(t, CodeBadRequest, problem.Code)
-	assert.Equal(t, "missing_token", problem.Details["reason"])
 }

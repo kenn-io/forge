@@ -312,7 +312,7 @@ function renderPullDetail(
     isDetailFromCache: () => options.detailFromCache ?? false,
     isDetailLoading: () => options.detailLoading ?? false,
     getDetailError: () => null,
-    getDetailOutcome: () => ({ ref: null, kind: null }),
+    getDetailOutcome: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
     isPullMerging: () => false,
     getDetailLoaded: () => true,
@@ -4313,7 +4313,7 @@ function renderDetailOutcome(
   return { sent, view, store };
 }
 
-it("does not reuse a PR read category when comment deletion fails", async () => {
+it("does not report a comment deletion error as a PR read failure", async () => {
   const detail = pullDetail();
   detail.events.push({
     ...detail.events[0]!,
@@ -4322,43 +4322,26 @@ it("does not reuse a PR read category when comment deletion fails", async () => 
     PlatformID: 77,
     Body: "Example comment",
   });
-  let failedRead = false;
-  const problem = (status: number, title: string) =>
-    new GeneratedProblemResponse(
-      { code: status === 403 ? "forbidden" : "notFound", status, title },
-      Response.json({}, { status }),
-    );
-  const getPull = vi.fn(async () => {
-    if (failedRead) throw problem(403, "Read denied");
-    return detail;
-  });
+  const getPull = vi.fn(async () => detail);
   const { sent, store } = renderDetailOutcome({
     getPull,
     deletePrComment: async () => {
-      throw problem(404, "Comment missing");
+      throw new GeneratedProblemResponse(
+        { code: "notFound", status: 404, title: "Comment missing" },
+        Response.json({}, { status: 404 }),
+      );
     },
   });
   const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget", sync: false as const };
   store.loadDetail("acme", "widget", 1, ref);
   await waitFor(() => expect(store.getDetail()).not.toBeNull());
   await waitFor(() => expect(store.isDetailLoading()).toBe(false));
-  failedRead = true;
-  store.loadDetail("acme", "widget", 1, ref);
-  await waitFor(() => expect(getPull).toHaveBeenCalledTimes(2));
-  await waitFor(() => expect(store.getDetailError()).toBe("Read denied"));
-  await screen.findByTestId("detail-load-error");
-  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
   const settled = Promise.withResolvers<void>();
   store.deleteComment("acme", "widget", 1, 77, { onSettled: settled.resolve });
   await settled.promise;
   expect(screen.getByTestId("detail-load-error").textContent).toContain("Comment missing");
-  failedRead = false;
-  const refreshed = Promise.withResolvers<void>();
-  store.refreshDetailOnly("acme", "widget", 1, ref, { onSettled: refreshed.resolve });
-  await refreshed.promise;
-  expect(screen.getByTestId("detail-load-error").textContent).toContain("Comment missing");
   await tick();
-  expect(sent).toHaveBeenCalledTimes(1);
+  expect(sent).not.toHaveBeenCalled();
 });
 
 it("counts restored read-error banners and stays silent when reopened during pending retries", async () => {

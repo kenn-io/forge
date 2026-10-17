@@ -2,7 +2,6 @@ package github
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,41 +16,12 @@ import (
 	"go.kenn.io/forge/internal/activityrelay"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucket"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/forgejo"
 	"go.kenn.io/forge/platform/gitea"
 )
-
-func TestSyncFailureReason(t *testing.T) {
-	for _, tc := range []struct {
-		err    error
-		reason string
-	}{
-		{nil, ""},
-		{tokenauth.ErrMissingToken, "auth"},
-		{&platform.Error{Code: platform.ErrCodeRateLimited, Err: &gh.ErrorResponse{Response: &http.Response{StatusCode: 403}}}, "rate_limited"},
-		{&gh.RateLimitError{}, "rate_limited"},
-		{&gh.AbuseRateLimitError{}, "rate_limited"},
-		{&gh.ErrorResponse{Response: &http.Response{StatusCode: 401}}, "auth"},
-		{&gh.ErrorResponse{Response: &http.Response{StatusCode: 404}}, "not_found"},
-		{&gh.ErrorResponse{Response: &http.Response{StatusCode: 502}}, "provider"},
-		{&gh.ErrorResponse{Response: &http.Response{StatusCode: 418}}, "other"},
-		{platform.ErrStaleState, "other"},
-		{platform.ErrProviderContract, "provider"},
-		{errors.New("private detail"), "other"},
-	} {
-		t.Run(tc.reason+fmt.Sprint(tc.err), func(t *testing.T) {
-			err := tc.err
-			if err != nil {
-				err = fmt.Errorf("sync: %w", err)
-			}
-			assert.Equal(t, tc.reason, syncFailureReason(err))
-		})
-	}
-}
 
 func TestRepositoryFailuresCountEveryAttempt(t *testing.T) {
 	client := &mockClient{listOpenPRsErr: platform.ErrPermissionDenied}
@@ -60,9 +30,11 @@ func TestRepositoryFailuresCountEveryAttempt(t *testing.T) {
 	syncer.SetParallelism(1)
 	var reasons []string
 	var results []RepoSyncResult
+	completions := 0
 	syncer.SetOnRepoSyncFailed(func(result RepoSyncResult) { reasons = append(reasons, result.FailureReason) })
 	syncer.SetOnSyncCompleted(func(batch []RepoSyncResult) {
 		results = batch
+		completions++
 	})
 	syncer.RunOnce(t.Context())
 	require.Len(t, results, 2)
@@ -71,9 +43,11 @@ func TestRepositoryFailuresCountEveryAttempt(t *testing.T) {
 	}
 	assert.Equal(t, []string{"auth", "auth"}, reasons)
 	syncer.RunOnce(t.Context())
+	completions = 0
 	require.Error(t, syncer.SyncRepoOnProvider(t.Context(), platform.KindGitHub, "github.com", "acme", "widgets"))
 	require.Error(t, syncer.SyncRepoOnProvider(t.Context(), platform.KindGitHub, "github.com", "acme", "untracked"))
 	assert.Equal(t, []string{"auth", "auth", "auth", "auth", "auth"}, reasons)
+	assert.Zero(t, completions, "manual attempts must not run full-sync completion consumers")
 }
 
 func TestRelayRepositoryFailureOutcomes(t *testing.T) {
@@ -199,14 +173,6 @@ func TestRepositoryCanceledAndSkippedOutcomes(t *testing.T) {
 			assert.Empty(t, reasons)
 		})
 	}
-}
-
-func TestManualRepositoryFailureLeavesCompletionConsumersSilent(t *testing.T) {
-	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{listOpenPRsErr: platform.ErrPermissionDenied}}, openTestDB(t), nil, []RepoRef{{Owner: "team", Name: "project", PlatformHost: "github.com"}}, time.Minute, nil, nil)
-	completions := 0
-	syncer.SetOnSyncCompleted(func([]RepoSyncResult) { completions++ })
-	require.Error(t, syncer.SyncRepoOnProvider(t.Context(), platform.KindGitHub, "github.com", "team", "project"))
-	assert.Zero(t, completions, "manual failure must not run full-sync completion consumers")
 }
 
 func TestCompletedFailureSurvivesLaterRepositoryCancellation(t *testing.T) {

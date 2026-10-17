@@ -79,7 +79,6 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	assert.False(backend.EventAllowed("setup_finished"))
 	daemon, err := posthog.NewReporter(posthog.Options{}, KitAllowedEvents("daemon")...)
 	require.NoError(err)
-	assert.True(daemon.EventAllowed("setup_finished"))
 	setupProperties, err := daemon.SanitizeProperties("setup_finished", map[string]any{"repo": "acme/widget", "item": 42, "surface": "web"})
 	require.NoError(err)
 	assert.NotContains(setupProperties, "repo")

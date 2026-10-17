@@ -46,39 +46,26 @@ func captureSetupFinished(ctx context.Context, database *db.DB, reporter telemet
 	if _, found, err := database.AppMetadataValue(lookupCtx, setupFinishedKey); err != nil || found {
 		return found, err
 	}
-	prs, err := database.ListMergeRequests(lookupCtx, db.ListMergeRequestsOpts{State: "all", Limit: 1})
-	if err != nil {
+	found, err := database.HasStoredWork(lookupCtx)
+	if err != nil || !found {
 		return false, err
-	}
-	if len(prs) == 0 {
-		issues, err := database.ListIssues(lookupCtx, db.ListIssuesOpts{State: "all", Limit: 1})
-		if err != nil || len(issues) == 0 {
-			return false, err
-		}
-	}
-	claimed := false
-	_, err = database.GetOrCreateAppMetadataValue(lookupCtx, setupFinishedKey, func() (string, error) {
-		claimed = true
-		return "queued", nil
-	})
-	if err != nil || !claimed {
-		return err == nil, err
 	}
 	cancel()
 	reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
 	status, err := reporter.Report(reportCtx, "setup_finished", nil)
 	reportCancel()
-	if err == nil && status == posthog.StatusQueued {
-		return true, nil
+	if err != nil || status != posthog.StatusQueued {
+		return false, err
 	}
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), 300*time.Millisecond)
-	defer cleanupCancel()
-	return false, errors.Join(err, database.DeleteAppMetadataValue(cleanupCtx, setupFinishedKey))
+	markerCtx, markerCancel := context.WithTimeout(context.WithoutCancel(ctx), 300*time.Millisecond)
+	defer markerCancel()
+	_, err = database.GetOrCreateAppMetadataValue(markerCtx, setupFinishedKey, func() (string, error) { return "queued", nil })
+	return err == nil, err
 }
 
-func closeTelemetry(database *db.DB, reporter telemetry.Client, checkSetup bool) error {
+func closeTelemetry(database *db.DB, reporter telemetry.Client) error {
 	var err error
-	if checkSetup {
+	if reporter.Enabled() {
 		ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
 		_, err = captureSetupFinished(ctx, database, reporter)
 		cancel()

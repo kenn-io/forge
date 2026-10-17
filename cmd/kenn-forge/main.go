@@ -363,6 +363,12 @@ func detachRuntimeSessionsForRestart(executionWorker bool) bool {
 }
 
 func run(opts serve.Options) error {
+	return runWithTelemetry(context.Background(), opts, func(opts telemetry.Options) telemetry.Client {
+		return telemetry.NewReporterOrDisabled(opts)
+	})
+}
+
+func runWithTelemetry(parent context.Context, opts serve.Options, newReporter func(telemetry.Options) telemetry.Client) error {
 	configPath := opts.ConfigPath
 	cfg, err := config.LoadOrCreateWithOverrides(configPath, opts.ConfigOverrides)
 	if err != nil {
@@ -410,7 +416,7 @@ func run(opts serve.Options) error {
 	}()
 
 	ctx, stopSignals := signal.NotifyContext(
-		context.Background(),
+		parent,
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
@@ -601,7 +607,7 @@ func run(opts serve.Options) error {
 	var srv *server.Server
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
-	var telemetryReporter *telemetry.Reporter
+	var telemetryReporter telemetry.Client
 	var profilerSrv *profiler.Server
 	var backgroundLoops *backgroundLoopHandle
 	defer func() {
@@ -653,7 +659,7 @@ func run(opts serve.Options) error {
 					if telemetryReporter == nil {
 						return nil
 					}
-					return closeTelemetry(database, telemetryReporter, syncer != nil && telemetryReporter.Enabled())
+					return closeTelemetry(database, telemetryReporter)
 				},
 				CloseMCP: func() error {
 					if mcpSrv == nil {
@@ -826,7 +832,7 @@ func run(opts serve.Options) error {
 		}
 	}
 
-	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
+	telemetryReporter = newReporter(telemetry.Options{
 		Database:        database,
 		DailyClaimsPath: filepath.Join(cfg.DataDir, "telemetry-daily.json"),
 		Version:         version,
@@ -843,9 +849,7 @@ func run(opts serve.Options) error {
 			slog.Warn("capture telemetry event", "err", err)
 		}
 		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
-		if syncer != nil {
-			startSetupFinishedLoop(backgroundLoops, database, telemetryReporter)
-		}
+		startSetupFinishedLoop(backgroundLoops, database, telemetryReporter)
 	}
 
 	var devboxConnections *devbox.Connections

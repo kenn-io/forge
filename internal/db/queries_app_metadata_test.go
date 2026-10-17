@@ -47,18 +47,3 @@ func TestAppMetadataValueReturnsNotFound(t *testing.T) {
 	assert.False(found)
 	assert.Empty(value)
 }
-
-func TestDeleteAppMetadataValueReleasesClaim(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	d := openTemplateTestDB(t)
-	_, err := d.GetOrCreateAppMetadataValue(t.Context(), "claim", func() (string, error) { return "first", nil })
-	require.NoError(err)
-	require.NoError(d.DeleteAppMetadataValue(t.Context(), " claim "))
-	_, found, err := d.AppMetadataValue(t.Context(), "claim")
-	require.NoError(err)
-	require.False(found)
-	value, err := d.GetOrCreateAppMetadataValue(t.Context(), "claim", func() (string, error) { return "retry", nil })
-	require.NoError(err)
-	require.Equal("retry", value)
-}

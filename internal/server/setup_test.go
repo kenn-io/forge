@@ -15,6 +15,18 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
+func TestHasReadableProviderWorkFromExecutionWorker(t *testing.T) {
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{
+		ExecutionWorker: true, DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.Background())) })
+
+	readable, err := srv.HasReadableProviderWork(t.Context())
+	require.NoError(t, err)
+	require.False(t, readable)
+}
+
 func TestHasReadableProviderWorkFromSpokeProviderSource(t *testing.T) {
 	for _, test := range []struct {
 		kind   string

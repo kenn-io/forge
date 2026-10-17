@@ -9,6 +9,9 @@ import (
 
 // HasReadableProviderWork checks the same provider source as the item lists.
 func (s *Server) HasReadableProviderWork(ctx context.Context) (bool, error) {
+	if s.options.ExecutionWorker {
+		return false, nil
+	}
 	if s.providerSource != nil && (!s.options.FederationSpokeActive || !s.streamapi.FederationEnabled()) {
 		return false, nil
 	}

@@ -7352,57 +7352,63 @@ describe("WorkspaceTerminalView", () => {
       expect(focusTarget.isConnected).toBe(true);
     });
 
-    it.each(["New terminal", "Split terminal right", "Split terminal down", "Select existing terminal", "Open terminal panel"])(
-      "counts workspace use for %s in the external dock",
-      async (action) => {
-        localStorage.setItem(
-          "kenn-forge-workspace-terminal-layout:ws-1",
-          JSON.stringify({
-            version: 1,
-            open: action !== "Open terminal panel",
-            dock: "bottom",
-            height: 300,
-            activeSessionKey: "ws-1_shell_a",
-            tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
-            sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
-          }),
-        );
-        mocks.getWorkspaceRuntime.mockResolvedValue({
-          launch_targets: [],
-          sessions: action === "Select existing terminal"
+    it.each([
+      "New terminal",
+      "Split terminal right",
+      "Split terminal down",
+      "Select existing terminal",
+      "Open terminal panel",
+    ])("counts workspace use for %s in the external dock", async (action) => {
+      localStorage.setItem(
+        "kenn-forge-workspace-terminal-layout:ws-1",
+        JSON.stringify({
+          version: 1,
+          open: action !== "Open terminal panel",
+          dock: "bottom",
+          height: 300,
+          activeSessionKey: "ws-1_shell_a",
+          tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
+          sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
+        }),
+      );
+      mocks.getWorkspaceRuntime.mockResolvedValue({
+        launch_targets: [],
+        sessions:
+          action === "Select existing terminal"
             ? [runningSession, runningShellSession, { ...relaunchedShellSession, label: "Shell 2" }]
             : [runningSession, runningShellSession],
-        });
-        mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
-        claimForPrs();
-        noteWorkspacePaneRendered("prs");
-        promoteSession("prs", "ws-1:helper");
-        render(WorkspaceTerminalView, {
-          props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: false },
-        });
-        const dock = await screen.findByRole("region", { name: "Terminal panel" });
-        expect(dock.closest(".terminal-view")).toBeNull();
-        expect(coreActions).not.toHaveBeenCalled();
+      });
+      mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      promoteSession("prs", "ws-1:helper");
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: false },
+      });
+      const dock = await screen.findByRole("region", { name: "Terminal panel" });
+      expect(dock.closest(".terminal-view")).toBeNull();
+      expect(coreActions).not.toHaveBeenCalled();
 
-        if (action === "Select existing terminal" || action === "Open terminal panel") {
-          const button = within(dock).getByRole("button", { name: action === "Select existing terminal" ? "Shell" : action });
-          await fireEvent.pointerDown(button);
-          await fireEvent.click(button);
-          expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
-        } else {
-          await fireEvent.click(within(dock).getByRole("button", { name: action }));
-          await waitFor(() =>
-            expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
-          );
-        }
+      if (action === "Select existing terminal" || action === "Open terminal panel") {
+        const button = within(dock).getByRole("button", {
+          name: action === "Select existing terminal" ? "Shell" : action,
+        });
+        await fireEvent.pointerDown(button);
+        await fireEvent.click(button);
+        expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+      } else {
+        await fireEvent.click(within(dock).getByRole("button", { name: action }));
         await waitFor(() =>
-          expect(coreActions).toHaveBeenCalledExactlyOnceWith(
-            { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-            expect.anything(),
-          ),
+          expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
         );
-      },
-    );
+      }
+      await waitFor(() =>
+        expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+          { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+          expect.anything(),
+        ),
+      );
+    });
 
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(

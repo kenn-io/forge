@@ -63,7 +63,8 @@ type CoreAction =
 
 function createDailyReporter(now: () => Date = () => new Date()) {
   const reportedDay = new Map<string, string>();
-  return Effect.fn("Telemetry.reportDaily")(function* (key: string, event: string, properties: Record<string, string>) {
+  const hasReportedToday = (key: string) => reportedDay.get(key) === now().toISOString().slice(0, 10);
+  const report = Effect.fn("Telemetry.reportDaily")(function* (key: string, event: string, properties: Record<string, string>) {
     const day = now().toISOString().slice(0, 10);
     if (reportedDay.get(key) === day) return;
     reportedDay.set(key, day);
@@ -78,11 +79,12 @@ function createDailyReporter(now: () => Date = () => new Date()) {
       ),
     );
   });
+  return { report, hasReportedToday };
 }
 
 /** Reports each screen at most once per UTC day per page; the daemon still dedupes across tabs. */
 export function createScreenViewReporter(now: () => Date = () => new Date()) {
-  const report = createDailyReporter(now);
+  const { report } = createDailyReporter(now);
   return (screen: ScreenName) => report(`screen_viewed:${screen}`, "screen_viewed", { screen });
 }
 
@@ -93,8 +95,12 @@ function reportCoreAction(runtime: AppRuntime, action: CoreAction): void {
     report = createDailyReporter();
     coreReporters.set(runtime, report);
   }
+  const key = action.event === "pr_viewed"
+    ? `pr_viewed:${action.properties.provider}`
+    : `workspace_opened:${action.properties.item_type}`;
+  if (report.hasReportedToday(key)) return;
   runtime.runCommand(
-    report(`${action.event}:${Object.values(action.properties)[0]}`, action.event, action.properties).pipe(
+    report.report(key, action.event, action.properties).pipe(
       Effect.ignore,
     ),
     {

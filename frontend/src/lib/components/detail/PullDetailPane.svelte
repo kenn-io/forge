@@ -67,7 +67,7 @@
 
   const appRuntime = getAppRuntime();
   $effect(() => {
-    if (visible && detail && documentVisible()) reportPRViewed(appRuntime, pr.provider);
+    if (visible && documentVisible() && (detail || tabKey === "files")) reportPRViewed(appRuntime, pr.provider);
   });
 
   // Provider capabilities are unknown until the detail lands. Assuming the

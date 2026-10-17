@@ -8,7 +8,11 @@ import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import Harness from "./PullDetailPaneTelemetryHarness.svelte";
 
-it("counts loaded PR detail when the pane and document are visible", async () => {
+vi.mock("../diff/DiffFilesLayout.svelte", async () => ({
+  default: (await import("../diff/DiffFilesLayoutTestView.svelte")).default,
+}));
+
+it.each(["detail", "files"])("counts PR %s when the pane and document are visible", async (content) => {
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   const capture = vi.fn(async () => ({ status: "queued" }));
   const runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: capture } }));
@@ -36,7 +40,10 @@ it("counts loaded PR detail when the pane and document are visible", async () =>
     await showTab();
     expect(capture).not.toHaveBeenCalled();
     visibility.mockReturnValue("hidden");
-    await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, detail } });
+    await view.rerender({
+      runtime,
+      paneProps: { ...paneProps, visible: true, tabKey: content === "files" ? "files" : "inactive", detail: content === "files" ? null : detail },
+    });
     await tick();
     expect(capture).not.toHaveBeenCalled();
     await showTab();

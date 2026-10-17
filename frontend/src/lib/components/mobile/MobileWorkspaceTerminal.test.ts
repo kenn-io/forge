@@ -131,17 +131,22 @@ describe("MobileWorkspaceTerminal", () => {
     vi.useRealTimers();
   });
 
-  it.each(["ready", "pending", "deleted"] as const)(
-    "reports mobile workspace use only when ready: %s",
+  it.each(["ready", "error", "creating", "pending", "deleted", "deleting", "deletion_failed"] as const)(
+    "reports mobile workspace use only when usable: %s",
     async (state) => {
       if (state === "pending") beginWorkspaceDeletion("ws-a", undefined);
       if (state === "deleted") markWorkspaceIdDeleted("ws-a");
+      mocks.runtimeClient.getWorkspace.mockResolvedValue({
+        ...workspace,
+        status: state === "pending" || state === "deleted" ? "ready" : state,
+      });
       render(MobileWorkspaceTerminalTestHarness, { props });
       const page = await screen.findByRole("region", { name: "Workspace terminal" });
-      await fireEvent.pointerDown(page);
-      if (state !== "ready") {
+      if (state === "pending" || state === "deleted" || state === "deleting" || state === "deletion_failed") {
+        await screen.findByTitle("acme/widgets · feature/test");
+        await fireEvent.pointerDown(page);
         expect(coreActions).not.toHaveBeenCalled();
-        if (state === "deleted") return;
+        if (state !== "pending") return;
         endWorkspaceDeletion("ws-a", undefined);
       }
       await waitFor(() =>
@@ -150,6 +155,8 @@ describe("MobileWorkspaceTerminal", () => {
           properties: { item_type: "pull_request" },
         }),
       );
+      await fireEvent.pointerDown(page);
+      expect(coreActions).toHaveBeenCalledTimes(1);
     },
   );
 

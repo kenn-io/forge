@@ -107,13 +107,15 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
-  const workspaceReady = $derived(
-    visible && documentVisible() && workspace?.id === workspaceId && workspace.fleet_host_key === hostKey && workspace.status === "ready" &&
-    !isWorkspaceDeletionPending(workspaceId, hostKey) && !(hostKey === undefined && isWorkspaceIdDeleted(workspaceId)),
+  const usableWorkspace = $derived(
+    workspace?.id === workspaceId && workspace.fleet_host_key === hostKey &&
+    workspace.status !== "deleting" && workspace.status !== "deletion_failed" &&
+    !isWorkspaceDeletionPending(workspaceId, hostKey) && !(hostKey === undefined && isWorkspaceIdDeleted(workspaceId))
+      ? workspace : null,
   );
   function reportWorkspaceUse(): void {
-    if (workspaceReady && workspace) {
-      reportWorkspaceOpened(appRuntime, workspace.item_type);
+    if (visible && documentVisible() && usableWorkspace) {
+      reportWorkspaceOpened(appRuntime, usableWorkspace.item_type);
     }
   }
   $effect(() => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import type { PullRequest } from "../../api/types.js";
   import { getStores, getHostState } from "../../context.js";
   import { formatRelativeTime } from "@kenn-io/kit-ui";
@@ -30,7 +31,10 @@
     selected: boolean;
     showRepo: boolean;
     repoLabel: string;
-    onclick: () => void;
+    /** Part of a shift/Cmd-click multi-row selection. */
+    multiSelected?: boolean;
+    onclick: (event: MouseEvent) => void;
+    oncontextmenu?: (event: MouseEvent) => void;
   }
 
   const {
@@ -38,7 +42,9 @@
     selected,
     showRepo,
     repoLabel,
+    multiSelected = false,
     onclick,
+    oncontextmenu,
   }: Props = $props();
 
   function handleStarClick(e: MouseEvent): void {
@@ -145,8 +151,12 @@
   class="pull-item pr-list-row"
   class:selected
   class:active-worktree={isActiveWorktree}
+  class:multi-selected={multiSelected}
+  aria-pressed={multiSelected || undefined}
   bind:this={el}
+  onmousedown={preventShiftTextSelection}
   onclick={onclick}
+  {oncontextmenu}
 >
   <p class="title">
     <span class="state-dot" style="background: {stateColors[prState]}"></span>
@@ -281,6 +291,11 @@
 
   .pull-item.selected:hover {
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  .pull-item.multi-selected,
+  .pull-item.multi-selected:hover {
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--sidebar-row-bg, var(--bg-surface)));
   }
 
   .pull-item:focus-visible {

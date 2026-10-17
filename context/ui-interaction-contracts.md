@@ -75,6 +75,9 @@ Interactive surfaces must agree on which item is selected.
 - Workspace list multi-selection never navigates and covers only on-screen rows (not collapsed or filtered);
   bulk delete never forces, so dirty worktrees survive and are reported
   (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmBulkDelete`).
+- PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
+  workspace instead of creating another, uses the saved default target, and reports failures together
+  (`frontend/src/lib/stores/bulk-quick-action.ts::runQuickActionOnItems`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

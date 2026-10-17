@@ -18,6 +18,10 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullItem from "./PullItem.svelte";
+  import ItemQuickActionMenu from "./ItemQuickActionMenu.svelte";
+  import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
+  import type { QuickActionItem } from "../../stores/bulk-quick-action.js";
+  import { createRangeSelection } from "../../utils/range-selection.svelte.js";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
@@ -477,6 +481,52 @@
     renderBudget = mountBudget + RENDER_BUDGET_STEP;
   }
 
+  // On-screen order: rows in collapsed groups or not yet mounted are not
+  // selectable, so a range never reaches PRs the user cannot see.
+  const renderedPulls = $derived(
+    renderedGroups === null
+      ? renderedFlatRows.map((row) => row.pr)
+      : renderedGroups.groups.flatMap((group) => (group.collapsed ? [] : group.items.map((row) => row.pr))),
+  );
+  const pullSelection = createRangeSelection<PullRequest>({
+    rows: () => renderedPulls,
+    key: (pr) => String(pr.ID),
+    openedKey: () => {
+      const opened = renderedPulls.find((pr) => isSelected(routeRefForPull(pr)));
+      return opened ? String(opened.ID) : null;
+    },
+  });
+  let contextMenu = $state.raw<{
+    targets: QuickActionItem[];
+    anchor: MenuAnchorPoint;
+    row: HTMLElement | undefined;
+  } | null>(null);
+  let contextMenuOpen = $state(false);
+
+  function handleRowClick(event: MouseEvent, pr: PullRequest): void {
+    if (pullSelection.activate(event, pr)) handleSelect(routeRefForPull(pr));
+  }
+
+  function openContextMenu(event: MouseEvent, pr: PullRequest): void {
+    event.preventDefault();
+    // Right-clicking outside the selection acts on that PR alone.
+    const multi = pullSelection.selected.length > 1 && pullSelection.has(pr);
+    if (!multi) pullSelection.clear();
+    contextMenu = {
+      targets: (multi ? pullSelection.selected : [pr]).map((item) => ({ kind: "pull", item })),
+      anchor: { x: event.clientX, y: event.clientY },
+      row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
+    };
+    contextMenuOpen = true;
+  }
+
+  function clearSelectionOnEscape(event: KeyboardEvent): void {
+    if (event.key === "Escape" && pullSelection.active) {
+      event.preventDefault();
+      pullSelection.clear();
+    }
+  }
+
   const isSelectedActiveWorktree = $derived.by(() => {
     const key = activeWorktreeKey;
     const pr = selectedVisiblePR;
@@ -510,7 +560,9 @@
           })}
           {showRepo}
           selected={prSelected}
-          onclick={() => handleSelect(prRef)}
+          multiSelected={pullSelection.has(pr)}
+          onclick={(event) => handleRowClick(event, pr)}
+          oncontextmenu={(event) => openContextMenu(event, pr)}
         />
         {#if showSelectedDiffSidebar && prSelected && _getDetailTab() === "files"}
           <div class="diff-files-wrap">
@@ -544,7 +596,8 @@
   {/each}
 {/snippet}
 
-<div class="pull-list">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="pull-list" onkeydown={clearSelectionOnEscape}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
       {visiblePulls.length} PRs
@@ -697,6 +750,16 @@
 
   </div>
 </div>
+
+<ItemQuickActionMenu
+  bind:open={contextMenuOpen}
+  anchor={contextMenu?.anchor}
+  returnFocus={contextMenu?.row}
+  targets={contextMenu?.targets ?? []}
+  noun="PRs"
+  selectionActive={pullSelection.active}
+  onClearSelection={() => pullSelection.clear()}
+/>
 
 <style>
   .stack-row {

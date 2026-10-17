@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import type { Issue } from "../../api/types.js";
   import { getStores } from "../../context.js";
   import { formatRelativeTime } from "@kenn-io/kit-ui";
@@ -18,10 +19,13 @@
     selected: boolean;
     showRepo: boolean;
     repoLabel: string;
-    onclick: () => void;
+    /** Part of a shift/Cmd-click multi-row selection. */
+    multiSelected?: boolean;
+    onclick: (event: MouseEvent) => void;
+    oncontextmenu?: (event: MouseEvent) => void;
   }
 
-  const { issue, selected, showRepo, repoLabel, onclick }: Props = $props();
+  const { issue, selected, showRepo, repoLabel, multiSelected = false, onclick, oncontextmenu }: Props = $props();
 
   let el = $state<HTMLButtonElement>();
 
@@ -62,7 +66,16 @@
   const ago = $derived(formatRelativeTime(activityTime.at));
 </script>
 
-<button class="issue-item" class:selected bind:this={el} onclick={onclick}>
+<button
+  class="issue-item"
+  class:selected
+  class:multi-selected={multiSelected}
+  aria-pressed={multiSelected || undefined}
+  bind:this={el}
+  onmousedown={preventShiftTextSelection}
+  onclick={onclick}
+  {oncontextmenu}
+>
   <p class="title">
     <span class="title-text">{issue.Title}</span>
     <LabelRow {labels} compact />
@@ -138,6 +151,11 @@
 
   .issue-item.selected:hover {
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  .issue-item.multi-selected,
+  .issue-item.multi-selected:hover {
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--sidebar-row-bg, var(--bg-surface)));
   }
 
   .issue-item:focus-visible {

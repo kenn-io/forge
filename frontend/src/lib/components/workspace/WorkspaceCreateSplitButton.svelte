@@ -20,7 +20,11 @@
   import type { LaunchTarget, QuickAction } from "../../api/types.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
+  import {
+    quickActionDisabledReason as quickActionUnavailableReason,
+    quickActionTarget as findQuickActionTarget,
+    sortQuickActionsByLabel,
+  } from "../../stores/workspace-quick-actions.js";
 
   interface Props {
     label: string;
@@ -74,14 +78,11 @@
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
-    return launchTargets.find((target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"));
+    return findQuickActionTarget(action, launchTargets);
   }
 
   function quickActionDisabledReason(action: QuickAction): string {
-    const target = quickActionTarget(action);
-    if (!target) return `Agent "${action.agent}" is not configured`;
-    if (!target.available) return target.disabled_reason || `Agent "${action.agent}" is not available`;
-    return "";
+    return quickActionUnavailableReason(action, launchTargets);
   }
 
   function enabledItems(): HTMLButtonElement[] {

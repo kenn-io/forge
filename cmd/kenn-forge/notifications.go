@@ -34,23 +34,24 @@ func (s *setupFinished) capture(ctx context.Context) error {
 		return err
 	}
 	if !s.accepted {
-		lookupCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
-		defer cancel()
-		_, found, err := s.database.AppMetadataValue(lookupCtx, setupFinishedKey)
+		_, found, err := s.database.AppMetadataValue(ctx, setupFinishedKey)
 		if err != nil || found {
 			s.done = found
 			return err
 		}
-		ready, err := s.hasWork(lookupCtx)
+		ready, err := s.hasWork(ctx)
 		if err != nil || !ready {
 			return err
 		}
-		cancel()
 		reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
 		status, err := s.reporter.Report(reportCtx, "setup_finished", nil)
 		reportCancel()
-		if err != nil || status != posthog.StatusQueued {
+		if err != nil {
 			return err
+		}
+		if status != posthog.StatusQueued {
+			s.done = true
+			return nil
 		}
 		s.accepted = true
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/issueapi"
@@ -22,7 +23,25 @@ import (
 	"go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func TestHasReadableProviderWorkBehindUntrackedRepository(t *testing.T) {
+func TestSetupWorkFromWorkspace(t *testing.T) {
+	for _, status := range []string{"ready", "creating", "error", "deleting", "deletion_failed"} {
+		t.Run(status, func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+				ID: "example-workspace", ItemKey: "example-work", RepoOwner: "org-a", RepoName: "project-a",
+				ItemType: db.WorkspaceItemTypeAdHoc, GitHeadRef: "main", WorktreePath: t.TempDir(), Status: status,
+			}))
+			srv := New(database, nil, nil, "/", nil, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			readable, err := srv.HasSetupWork(t.Context())
+			require.NoError(err)
+			assert.Equal(t, status == "ready", readable)
+		})
+	}
+}
+
+func TestHasSetupWorkBehindUntrackedRepository(t *testing.T) {
 	for _, source := range []string{"local", "spoke"} {
 		for _, kind := range []string{"pr", "issue"} {
 			t.Run(source+"/"+kind, func(t *testing.T) {
@@ -71,7 +90,7 @@ func TestHasReadableProviderWorkBehindUntrackedRepository(t *testing.T) {
 					require.Len(rows, 1)
 					require.Equal("tracked", rows[0].Repo.Name)
 				}
-				readable, err := reader.HasReadableProviderWork(t.Context())
+				readable, err := reader.HasSetupWork(t.Context())
 				require.NoError(err)
 				assert.True(t, readable, "the older tracked item remains readable behind newer retained untracked work")
 			})
@@ -79,7 +98,7 @@ func TestHasReadableProviderWorkBehindUntrackedRepository(t *testing.T) {
 	}
 }
 
-func TestHasReadableProviderWorkWithNoTrackedRepositories(t *testing.T) {
+func TestHasSetupWorkWithNoTrackedRepositories(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)
 	serverfake.SeedPR(t, database, "org-a", "retained", 42)
@@ -88,24 +107,24 @@ func TestHasReadableProviderWorkWithNoTrackedRepositories(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	srv := New(database, syncer, nil, "/", &config.Config{}, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
 	t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
-	readable, err := srv.HasReadableProviderWork(t.Context())
+	readable, err := srv.HasSetupWork(t.Context())
 	require.NoError(err)
 	assert.False(t, readable)
 }
 
-func TestHasReadableProviderWorkFromExecutionWorker(t *testing.T) {
+func TestHasSetupWorkFromExecutionWorker(t *testing.T) {
 	database := dbtest.Open(t)
 	srv := New(database, nil, nil, "/", nil, ServerOptions{
 		ExecutionWorker: true, DisableWorkspaceBackgroundMonitors: true,
 	})
 	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.Background())) })
 
-	readable, err := srv.HasReadableProviderWork(t.Context())
+	readable, err := srv.HasSetupWork(t.Context())
 	require.NoError(t, err)
 	require.False(t, readable)
 }
 
-func TestHasReadableProviderWorkFromSpokeProviderSource(t *testing.T) {
+func TestHasSetupWorkFromSpokeProviderSource(t *testing.T) {
 	for _, test := range []struct {
 		kind   string
 		active bool
@@ -138,7 +157,7 @@ func TestHasReadableProviderWorkFromSpokeProviderSource(t *testing.T) {
 				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
 			})
 			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
-			readable, err := srv.HasReadableProviderWork(t.Context())
+			readable, err := srv.HasSetupWork(t.Context())
 			require.NoError(err)
 			require.Equal(test.active, readable)
 			if test.active {

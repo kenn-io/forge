@@ -93,10 +93,7 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 	}
 	out := make([]IssueResponse, 0, len(issues))
 	for _, issue := range issues {
-		repo, ok := repos[issue.RepoID]
-		if !ok {
-			continue
-		}
+		repo := repos[issue.RepoID]
 		key := db.WorkspaceSubjectKey{RepoID: issue.RepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: issue.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if ref, ok := snapshot.OwnReferences[key]; ok {

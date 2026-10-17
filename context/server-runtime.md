@@ -1,7 +1,7 @@
 # Server Runtime
 
-- With telemetry enabled at startup, setup checks run at startup, each minute and shutdown; the first readable stored PR or issue counts, including cached work.
-  Use the server's effective provider source after construction; skip remote checks while spoke federation is inactive.
+- With telemetry enabled at startup, setup checks run at startup, each minute and shutdown; the first ready workspace or readable stored PR or issue counts, including cached work.
+  Use the server's effective provider source after construction; skip remote checks while spoke federation is inactive. Provider requests follow caller cancellation and the client's 15-second timeout; shutdown bounds the whole check to 900 ms.
   Serialize checks and remember queue acceptance while retrying the `telemetry.setup_finished` marker write; marker presence means accepted, not delivered.
   Delivery is best effort; a crash between acceptance and marker persistence can repeat the event after restart. A crash after saving the marker or a reporter shutdown timeout can still lose the event
   (`cmd/kenn-forge/notifications.go::setupFinished.capture`).

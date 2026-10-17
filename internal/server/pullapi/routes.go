@@ -509,10 +509,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 	linksByMR := indexWorktreeLinksByMR(links, s.selfFleetKey(""))
 	out := make([]MergeRequestResponse, 0, len(mrs))
 	for _, mr := range mrs {
-		rp, ok := repoByID[mr.RepoID]
-		if !ok {
-			continue
-		}
+		rp := repoByID[mr.RepoID]
 		wl := linksByMR[mr.ID]
 		if wl == nil {
 			wl = []worktreeLinkResponse{}

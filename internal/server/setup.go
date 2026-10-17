@@ -7,10 +7,19 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 )
 
-// HasReadableProviderWork checks the same provider source as the item lists.
-func (s *Server) HasReadableProviderWork(ctx context.Context) (bool, error) {
+// HasSetupWork checks for ready local workspaces and readable provider items.
+func (s *Server) HasSetupWork(ctx context.Context) (bool, error) {
 	if s.options.ExecutionWorker {
 		return false, nil
+	}
+	workspaces, err := s.db.ListWorkspaces(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, workspace := range workspaces {
+		if workspace.Status == "ready" {
+			return true, nil
+		}
 	}
 	if s.providerSource != nil && (!s.options.FederationSpokeActive || !s.streamapi.FederationEnabled()) {
 		return false, nil

@@ -669,7 +669,7 @@ open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
-The daemon queues `setup_finished` when it first has a readable PR or issue in an active repository, including cached items and excluding items removed upstream. Active spokes check the hub's provider data; other installations check local data. Spokes pause remote checks while federation is inactive.
+The daemon queues `setup_finished` when it first has a ready workspace or a readable PR or issue in a tracked repository, including cached items and excluding items removed upstream. Active spokes check the hub's provider data; other installations check local data. Spokes pause remote checks while federation is inactive. Provider requests follow the caller's deadline and the client's 15-second request timeout.
 It checks at startup, each minute while Forge stays open, and before shutdown. Telemetry must be enabled when the process starts.
 Queue acceptance records completion for the installation; delivery is best effort.
 A crash between queue acceptance and saving completion can repeat the event after restart.

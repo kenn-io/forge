@@ -11,9 +11,71 @@ import (
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
+	"go.kenn.io/kit/telemetry/posthog"
 )
 
 const databaseOptimizeInterval = 24 * time.Hour
+
+const setupFinishedKey = "telemetry.setup_finished"
+
+type setupFinished struct {
+	gateOnce sync.Once
+	gate     chan struct{}
+	database *db.DB
+	reporter telemetry.Client
+	hasWork  func(context.Context) (bool, error)
+	accepted bool
+	done     bool
+}
+
+func (s *setupFinished) capture(ctx context.Context) error {
+	s.gateOnce.Do(func() { s.gate = make(chan struct{}, 1) })
+	select {
+	case s.gate <- struct{}{}:
+		defer func() { <-s.gate }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if err := ctx.Err(); err != nil || s.done {
+		return err
+	}
+	if !s.accepted {
+		_, found, err := s.database.AppMetadataValue(ctx, setupFinishedKey)
+		if err != nil || found {
+			s.done = found
+			return err
+		}
+		ready, err := s.hasWork(ctx)
+		if err != nil || !ready {
+			return err
+		}
+		reportCtx, reportCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		status, err := s.reporter.Report(reportCtx, "setup_finished", nil)
+		reportCancel()
+		if err != nil {
+			return err
+		}
+		if status != posthog.StatusQueued {
+			s.done = true
+			return nil
+		}
+		s.accepted = true
+	}
+	markerCtx, markerCancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer markerCancel()
+	_, err := s.database.GetOrCreateAppMetadataValue(markerCtx, setupFinishedKey, func() (string, error) { return "queued", nil })
+	s.done = err == nil
+	return err
+}
+
+func startSetupFinished(handle *backgroundLoopHandle, executionWorker bool, database *db.DB, reporter telemetry.Client, hasWork func(context.Context) (bool, error)) *setupFinished {
+	if executionWorker || !reporter.Enabled() {
+		return nil
+	}
+	setup := &setupFinished{database: database, reporter: reporter, hasWork: hasWork}
+	handle.startTicker("capture setup finished", time.Minute, setup.capture)
+	return setup
+}
 
 type backgroundLoopHandle struct {
 	ctx    context.Context

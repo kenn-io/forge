@@ -900,6 +900,8 @@ type WorkflowStateListRow struct {
 }
 
 type ListMergeRequestsOpts struct {
+	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
+	AllowedRepoIDs    []int64
 	Label             string
 	RepoID            int64
 	PlatformHost      string
@@ -1017,6 +1019,8 @@ type CommentAutocompleteReference struct {
 }
 
 type ListIssuesOpts struct {
+	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
+	AllowedRepoIDs    []int64
 	PlatformHost      string
 	RepoOwner         string
 	RepoName          string

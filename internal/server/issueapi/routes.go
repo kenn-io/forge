@@ -62,8 +62,17 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 			}
 		}
 	}
+	repos, err := s.lookupRepoMap(ctx)
+	if err != nil {
+		return nil, httpapi.Internal("repo lookup failed")
+	}
+	allowedRepoIDs := make([]int64, 0, len(repos))
+	for id := range repos {
+		allowedRepoIDs = append(allowedRepoIDs, id)
+	}
 	opts := db.ListIssuesOpts{
-		State: input.State, Search: input.Q, Starred: input.Starred,
+		AllowedRepoIDs: allowedRepoIDs,
+		State:          input.State, Search: input.Q, Starred: input.Starred,
 		Unassigned: input.Unassigned, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
@@ -82,16 +91,9 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 	if err != nil {
 		return nil, httpapi.Internal("list issues failed")
 	}
-	repos, err := s.lookupRepoMap(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("repo lookup failed")
-	}
 	out := make([]IssueResponse, 0, len(issues))
 	for _, issue := range issues {
-		repo, ok := repos[issue.RepoID]
-		if !ok {
-			continue
-		}
+		repo := repos[issue.RepoID]
 		key := db.WorkspaceSubjectKey{RepoID: issue.RepoID, ItemType: db.WorkspaceItemTypeIssue, ItemNumber: issue.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if ref, ok := snapshot.OwnReferences[key]; ok {

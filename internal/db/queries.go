@@ -1712,6 +1712,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
+	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+		conds = append(conds, cond)
+	}
+
 	switch state {
 	case "all":
 		// no state filter
@@ -3051,6 +3055,10 @@ func (d *DB) ListIssues(
 		  AND ai.item_number = i.number
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
+
+	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+		conds = append(conds, cond)
+	}
 
 	switch state {
 	case "all":

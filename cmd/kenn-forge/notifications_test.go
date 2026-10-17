@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"os"
+	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -9,7 +13,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/telemetry"
+	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -135,24 +143,47 @@ func TestBackgroundLoopWaitsForFirstTickerInterval(t *testing.T) {
 }
 
 type fakeTelemetryClient struct {
-	mu       sync.Mutex
-	captures []map[string]any
+	mu         sync.Mutex
+	disabled   bool
+	captures   []map[string]any
+	eventNames []string
+	report     func(context.Context) (posthog.Status, error)
+	close      func() error
 }
 
 func (f *fakeTelemetryClient) Capture(event string, properties map[string]any) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if event == "daemon_active" {
-		f.captures = append(f.captures, properties)
-	}
+	f.eventNames = append(f.eventNames, event)
+	f.captures = append(f.captures, properties)
 	return nil
 }
 
-func (f *fakeTelemetryClient) Close() error  { return nil }
-func (f *fakeTelemetryClient) Enabled() bool { return true }
+func (f *fakeTelemetryClient) Close() error {
+	if f.close != nil {
+		return f.close()
+	}
+	return nil
+}
+func (f *fakeTelemetryClient) Enabled() bool { return !f.disabled }
 
-func (f *fakeTelemetryClient) Report(_ context.Context, event string, properties map[string]any) (posthog.Status, error) {
-	return posthog.StatusQueued, f.Capture(event, properties)
+func (f *fakeTelemetryClient) Report(ctx context.Context, event string, properties map[string]any) (posthog.Status, error) {
+	if err := f.Capture(event, properties); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	report := f.report
+	f.mu.Unlock()
+	if report != nil {
+		return report(ctx)
+	}
+	return posthog.StatusQueued, nil
+}
+
+func (f *fakeTelemetryClient) events() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.eventNames)
 }
 
 func (f *fakeTelemetryClient) repoCounts() []any {
@@ -207,4 +238,228 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require.Equal(30*time.Second, settings.syncInterval)
 	require.Equal(45*time.Second, settings.propagationInterval)
 	require.Equal(12, settings.batchSize)
+}
+
+func TestSetupFinishedMinute(t *testing.T) {
+	database := dbtest.Open(t)
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		handle := newBackgroundLoopHandle(t.Context())
+		defer func() { require.NoError(handle.Stop(t.Context())) }()
+		client := &fakeTelemetryClient{}
+		var ready atomic.Bool
+		checked := make(chan struct{}, 1)
+		setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+			work := ready.Load()
+			checked <- struct{}{}
+			return work, nil
+		}}
+		handle.startTicker("setup", time.Minute, setup.capture)
+		<-checked
+		synctest.Wait()
+		require.Empty(client.events())
+		ready.Store(true)
+		time.Sleep(59 * time.Second)
+		synctest.Wait()
+		require.Empty(client.events())
+		time.Sleep(time.Second)
+		synctest.Wait()
+		require.Equal([]string{"setup_finished"}, client.events())
+		require.Equal([]map[string]any{nil}, client.captures)
+	})
+}
+
+func TestRunSetupFinishedStartupAndClose(t *testing.T) {
+	for _, mode := range []string{"startup", "shutdown", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			require := require.New(t)
+			root := t.TempDir()
+			cfgPath := filepath.Join(root, "config.toml")
+			writeMinimalConfig(t, cfgPath, filepath.Join(root, "data"), reserveFreePort(t))
+			cfgBody, err := os.ReadFile(cfgPath)
+			require.NoError(err)
+			require.NoError(os.WriteFile(cfgPath, append(cfgBody, []byte("\n[[repos]]\nowner = \"acme\"\nname = \"widget\"\n")...), 0o600))
+			require.NoError(os.MkdirAll(filepath.Join(root, "data"), 0o700))
+			database := dbtest.OpenAt(t, filepath.Join(root, "data", "forge.db"))
+			serverfake.SeedIssue(t, database, "acme", "widget", 1, "closed")
+			require.NoError(database.Close())
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			calls, closed, startup := 0, false, false
+			var observationErr error
+			var completed bool
+			err = runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath, DisableSync: true}, func(opts telemetry.Options) telemetry.Client {
+				if mode == "disabled" {
+					cancel()
+				}
+				return &fakeTelemetryClient{disabled: mode == "disabled", report: func(context.Context) (posthog.Status, error) {
+					calls++
+					if calls == 1 {
+						startup = ctx.Err() == nil
+					}
+					cancel()
+					if mode == "shutdown" && calls == 1 {
+						return "", context.Canceled
+					}
+					return posthog.StatusQueued, nil
+				}, close: func() error {
+					_, completed, observationErr = opts.Database.AppMetadataValue(t.Context(), setupFinishedKey)
+					closed = true
+					return nil
+				}}
+			})
+			require.NoError(err)
+			require.NoError(observationErr)
+			require.Equal(mode != "disabled", completed, "completion must persist before the reporter and DB close")
+			require.True(closed)
+			require.Equal(mode != "disabled", startup, "the first report must run before shutdown")
+			require.Equal(map[string]int{"startup": 1, "shutdown": 2, "disabled": 0}[mode], calls)
+		})
+	}
+}
+
+func TestSetupFinishedRetriesMarkerAfterWriterContention(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	var tx *sql.Tx
+	var lockErr error
+	client := &fakeTelemetryClient{report: func(context.Context) (posthog.Status, error) {
+		tx, lockErr = database.WriteDB().BeginTx(t.Context(), nil)
+		return posthog.StatusQueued, nil
+	}}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) { return true, nil }}
+	err := setup.capture(t.Context())
+	require.NoError(lockErr)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+	require.NoError(err)
+	require.False(found)
+	require.NoError(tx.Rollback())
+	require.NoError(setup.capture(t.Context()))
+	require.NoError(setup.capture(t.Context()))
+	require.Equal([]string{"setup_finished"}, client.events())
+	marker, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+	require.NoError(err)
+	require.True(found)
+	require.Equal("queued", marker)
+}
+
+func TestSetupFinishedCheckAndRestart(t *testing.T) {
+	for _, mode := range []string{"queued", "canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			database := dbtest.Open(t)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+				defer cancel()
+				hasWork := func(ctx context.Context) (bool, error) {
+					if mode == "canceled" {
+						<-ctx.Done()
+						return false, ctx.Err()
+					}
+					return true, nil
+				}
+				client := &fakeTelemetryClient{}
+				setup := &setupFinished{database: database, reporter: client, hasWork: hasWork}
+				err := setup.capture(ctx)
+				if mode == "canceled" {
+					require.ErrorIs(err, context.DeadlineExceeded)
+					require.Empty(client.events())
+				} else {
+					require.NoError(err)
+					require.Equal([]string{"setup_finished"}, client.events())
+					restarted := &setupFinished{database: database, reporter: client, hasWork: hasWork}
+					require.NoError(restarted.capture(t.Context()))
+					require.Equal([]string{"setup_finished"}, client.events())
+				}
+				_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+				require.NoError(err)
+				require.Equal(mode == "queued", found)
+			})
+		})
+	}
+}
+
+func TestSetupFinishedNonqueuedStatusStopsChecks(t *testing.T) {
+	for _, status := range []posthog.Status{posthog.StatusDisabled, posthog.StatusSkipped} {
+		t.Run(string(status), func(t *testing.T) {
+			require := require.New(t)
+			database := dbtest.Open(t)
+			checks := 0
+			client := &fakeTelemetryClient{report: func(context.Context) (posthog.Status, error) { return status, nil }}
+			setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+				checks++
+				return true, nil
+			}}
+			require.NoError(setup.capture(t.Context()))
+			require.NoError(setup.capture(t.Context()))
+			require.Equal(1, checks)
+			require.Equal([]string{"setup_finished"}, client.events())
+			_, found, err := database.AppMetadataValue(t.Context(), setupFinishedKey)
+			require.NoError(err)
+			require.False(found)
+		})
+	}
+}
+
+func TestSetupFinishedGateHonorsCallerDeadline(t *testing.T) {
+	database := dbtest.Open(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	client := &fakeTelemetryClient{}
+	setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+		close(entered)
+		<-release
+		return true, nil
+	}}
+	first := make(chan error, 1)
+	go func() { first <- setup.capture(t.Context()) }()
+	<-entered
+	//nolint:kennlint // The deadline must expire while the first capture owns the gate.
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	second := make(chan error, 1)
+	go func() { second <- setup.capture(ctx) }()
+	select {
+	case err := <-second:
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	case <-time.After(5 * time.Second):
+		close(release)
+		<-first
+		require.FailNow(t, "capture waited past its deadline for the setup gate")
+	}
+	close(release)
+	require.NoError(t, <-first)
+	require.Equal(t, []string{"setup_finished"}, client.events())
+}
+
+func TestSetupLoopRegistrationSkipsExecutionWorkers(t *testing.T) {
+	for _, worker := range []bool{false, true} {
+		t.Run(map[bool]string{false: "daemon", true: "worker"}[worker], func(t *testing.T) {
+			database := dbtest.Open(t)
+			synctest.Test(t, func(t *testing.T) {
+				require := require.New(t)
+				client := &fakeTelemetryClient{}
+				handle := newBackgroundLoopHandle(t.Context())
+				checks := 0
+				setup := startSetupFinished(handle, worker, database, client, func(context.Context) (bool, error) {
+					checks++
+					return false, nil
+				})
+				synctest.Wait()
+				require.NoError(handle.Stop(t.Context()))
+				if worker {
+					require.Zero(checks, "workers must not start setup checks")
+					require.Nil(setup, "workers must not retain a shutdown capture")
+				} else {
+					require.Equal(1, checks, "the daemon must start its setup check")
+					require.NotNil(setup)
+				}
+			})
+		})
+	}
 }

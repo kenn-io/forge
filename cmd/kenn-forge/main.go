@@ -363,6 +363,12 @@ func detachRuntimeSessionsForRestart(executionWorker bool) bool {
 }
 
 func run(opts serve.Options) error {
+	return runWithTelemetry(context.Background(), opts, func(opts telemetry.Options) telemetry.Client {
+		return telemetry.NewReporterOrDisabled(opts)
+	})
+}
+
+func runWithTelemetry(parent context.Context, opts serve.Options, newReporter func(telemetry.Options) telemetry.Client) error {
 	configPath := opts.ConfigPath
 	cfg, err := config.LoadOrCreateWithOverrides(configPath, opts.ConfigOverrides)
 	if err != nil {
@@ -410,7 +416,7 @@ func run(opts serve.Options) error {
 	}()
 
 	ctx, stopSignals := signal.NotifyContext(
-		context.Background(),
+		parent,
 		syscall.SIGINT,
 		syscall.SIGTERM,
 	)
@@ -601,7 +607,8 @@ func run(opts serve.Options) error {
 	var srv *server.Server
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
-	var telemetryReporter *telemetry.Reporter
+	var telemetryReporter telemetry.Client
+	var setup *setupFinished
 	var profilerSrv *profiler.Server
 	var backgroundLoops *backgroundLoopHandle
 	defer func() {
@@ -652,6 +659,13 @@ func run(opts serve.Options) error {
 				CloseTelemetry: func() error {
 					if telemetryReporter == nil {
 						return nil
+					}
+					if setup != nil {
+						ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
+						if err := setup.capture(ctx); err != nil {
+							slog.Warn("capture setup finished", "err", err)
+						}
+						cancel()
 					}
 					return telemetryReporter.Close()
 				},
@@ -826,7 +840,7 @@ func run(opts serve.Options) error {
 		}
 	}
 
-	telemetryReporter = telemetry.NewReporterOrDisabled(telemetry.Options{
+	telemetryReporter = newReporter(telemetry.Options{
 		Database:        database,
 		DailyClaimsPath: filepath.Join(cfg.DataDir, "telemetry-daily.json"),
 		Version:         version,
@@ -880,6 +894,7 @@ func run(opts serve.Options) error {
 		},
 	)
 	srv.AttachHTTPServer(httpSrv, ln)
+	setup = startSetupFinished(backgroundLoops, cfg.ExecutionWorker.Enabled, database, telemetryReporter, srv.HasSetupWork)
 	slog.Debug(
 		"server initialized",
 		"base_path", cfg.BasePath,

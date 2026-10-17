@@ -1,5 +1,11 @@
 # Server Runtime
 
+- With telemetry enabled at startup, local and spoke daemons run setup checks at startup, each minute and shutdown; the first ready workspace or readable stored PR or issue counts, including cached work. A failed provider source must let the other source qualify
+  (`internal/server/setup.go::Server.HasSetupWork`).
+  Use tracked local DB rows without workspace snapshots, or the active spoke's hub provider source; skip remote checks while spoke federation is inactive. Provider requests follow caller cancellation and the client's 15-second timeout; shutdown bounds the whole check to 900 ms.
+  Honor caller cancellation while waiting for another check; remember queue acceptance while retrying the `telemetry.setup_finished` marker write; marker presence means accepted, not delivered.
+  Delivery is best effort; a crash between acceptance and marker persistence can repeat the event after restart. A crash after saving the marker or a reporter shutdown timeout can still lose the event
+  (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).

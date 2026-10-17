@@ -256,7 +256,11 @@ describe("SessionTerminalPool", () => {
     });
   }
 
-  it.each(["pointerdown", "keydown", "wheel"] as const)("counts %s after promotion", async (input) => {
+  it.each([
+    { input: "pointerdown", createEvent: () => new PointerEvent("pointerdown", { bubbles: true }) },
+    { input: "keydown", createEvent: () => new KeyboardEvent("keydown", { key: "Enter", bubbles: true }) },
+    { input: "wheel", createEvent: () => new WheelEvent("wheel", { deltaY: 100, bubbles: true }) },
+  ])("counts $input after promotion and ignores disabled or inert sessions", async ({ createEvent }) => {
     const capture = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "queued" }));
     const session = {
       hostKey: agent,
@@ -285,25 +289,17 @@ describe("SessionTerminalPool", () => {
       await waitForReparent();
       const wrapper = wrapperFor(agent)!;
       expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
-      if (input === "pointerdown") {
-        noteSessionMounted({ ...session, disabled: true });
-        flushSync();
-        wrapper.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
-        expect(capture).not.toHaveBeenCalled();
-        noteSessionMounted(session);
-        flushSync();
-        wrapper.parentElement!.inert = true;
-        wrapper.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-        expect(capture).not.toHaveBeenCalled();
-        wrapper.parentElement!.inert = false;
-      }
-      wrapper.dispatchEvent(
-        input === "pointerdown"
-          ? new PointerEvent(input, { bubbles: true })
-          : input === "wheel"
-            ? new WheelEvent(input, { deltaY: 100, bubbles: true })
-            : new KeyboardEvent(input, { key: "Enter", bubbles: true }),
-      );
+      noteSessionMounted({ ...session, disabled: true });
+      flushSync();
+      wrapper.dispatchEvent(createEvent());
+      expect(capture).not.toHaveBeenCalled();
+      noteSessionMounted(session);
+      flushSync();
+      wrapper.parentElement!.inert = true;
+      wrapper.dispatchEvent(createEvent());
+      expect(capture).not.toHaveBeenCalled();
+      wrapper.parentElement!.inert = false;
+      wrapper.dispatchEvent(createEvent());
       await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1), WAIT);
       const request = capture.mock.calls[0]?.[0];
       const body =

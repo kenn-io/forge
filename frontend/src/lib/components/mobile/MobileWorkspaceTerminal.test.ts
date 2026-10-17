@@ -126,6 +126,7 @@ describe("MobileWorkspaceTerminal", () => {
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
+    vi.useRealTimers();
   });
 
   it("reports a ready mobile workspace's item type", async () => {
@@ -136,6 +137,28 @@ describe("MobileWorkspaceTerminal", () => {
         properties: { item_type: "pull_request" },
       }),
     );
+  });
+
+  it.each(["pointerdown", "keydown", "wheel"])("reports mobile %s use again after the UTC day changes", async (input) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T23:59:59Z"));
+    render(MobileWorkspaceTerminalTestHarness, { props });
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    const composer = await screen.findByRole("button", { name: "Open terminal composer" });
+
+    await fireEvent(composer, new Event(input));
+    expect(coreActions).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
+    await fireEvent(composer, new Event(input));
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+    expect(coreActions.mock.calls[1]?.[0]).toEqual({
+      event: "workspace_opened",
+      properties: { item_type: "pull_request", surface: "web" },
+    });
+
+    await fireEvent(composer, new Event(input));
+    expect(coreActions).toHaveBeenCalledTimes(2);
   });
 
   it.each([

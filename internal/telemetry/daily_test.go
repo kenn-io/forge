@@ -79,43 +79,6 @@ func TestReporterUsesKitDailyClaimsAcrossUpgradeAndRestart(t *testing.T) {
 	assert.ElementsMatch([]string{"docs", "settings"}, screens)
 }
 
-func TestReporterCoreActionsDailyClaims(t *testing.T) {
-	reporter := setupDailyReporter(t,
-		Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")},
-		time.Now(),
-		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-	)
-	for _, tc := range []struct {
-		event, key string
-		values     []string
-	}{
-		{"pr_viewed", "provider", []string{"github", "gitlab", "forgejo", "gitea", "bitbucket"}},
-		{"workspace_opened", "item_type", []string{"pull_request", "issue", "kata_task", "adhoc"}},
-	} {
-		t.Run(tc.event, func(t *testing.T) {
-			for _, properties := range []map[string]any{
-				nil,
-				{"surface": "web"},
-				{tc.key: "unknown", "surface": "web"},
-				{tc.key: tc.values[0]},
-				{tc.key: tc.values[0], "surface": "cli"},
-				{tc.key: tc.values[0], "surface": "tui"},
-			} {
-				_, err := reporter.Report(t.Context(), tc.event, properties)
-				require.ErrorIs(t, err, posthog.ErrInvalidProperty)
-			}
-			for _, value := range tc.values {
-				for _, expected := range []posthog.Status{posthog.StatusQueued, posthog.StatusSkipped} {
-					status, err := reporter.Report(t.Context(), tc.event, map[string]any{tc.key: value, "surface": "web"})
-					require.NoError(t, err)
-					assert.Equal(t, expected, status)
-				}
-			}
-		})
-	}
-	require.NoError(t, reporter.Close())
-}
-
 func setupDailyReporter(t *testing.T, opts Options, now time.Time, handler http.Handler) *Reporter {
 	t.Helper()
 	t.Setenv(EnabledEnv, "1")

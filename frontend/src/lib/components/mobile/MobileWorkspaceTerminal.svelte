@@ -107,6 +107,12 @@
   let queuedLaunchRead: symbol | undefined;
 
   let workspace = $state.raw<WorkspaceDetail | null>(null);
+  function reportWorkspaceUse(): void {
+    if (visible && documentVisible() && workspace?.id === workspaceId && workspace.fleet_host_key === hostKey && workspace.status === "ready" &&
+      !isWorkspaceDeletionPending(workspaceId, hostKey) && !(hostKey === undefined && isWorkspaceIdDeleted(workspaceId))) {
+      reportWorkspaceOpened(appRuntime, workspace.item_type);
+    }
+  }
   $effect(() => {
     if (visible && documentVisible() && workspace?.id === workspaceId && workspace.fleet_host_key === hostKey && workspace.status === "ready") {
       reportWorkspaceOpened(appRuntime, workspace.item_type);
@@ -902,7 +908,13 @@
   });
 </script>
 
-<section class="mobile-workspace-terminal" aria-label="Workspace terminal">
+<section
+  class="mobile-workspace-terminal"
+  aria-label="Workspace terminal"
+  onpointerdowncapture={reportWorkspaceUse}
+  onkeydowncapture={reportWorkspaceUse}
+  onwheelcapture={reportWorkspaceUse}
+>
   <header class="mobile-workspace-terminal__toolbar">
     <small class="mobile-workspace-terminal__context" title={workspaceIdentity}>{workspaceIdentity}</small>
     <button type="button" class="mobile-workspace-terminal__back" aria-label="Back to workspaces" onclick={onBack}>

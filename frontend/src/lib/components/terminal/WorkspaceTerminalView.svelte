@@ -699,6 +699,9 @@
   function reportWorkspaceUse(): void {
     if (workspaceLive && workspace?.status === "ready" && !actionsBlocked) reportWorkspaceOpened(appRuntime, workspace.item_type);
   }
+  function reportWorkspaceInteraction(visible: boolean): void {
+    if (embeddedWorkspace && visible && !modalOpen) reportWorkspaceUse();
+  }
   $effect(() => {
     if (!embeddedWorkspace && hostVisible && documentVisible() && workspaceLive && workspace?.status === "ready") {
       reportWorkspaceOpened(appRuntime, workspace.item_type);
@@ -4534,9 +4537,9 @@
 
 <div
   class="terminal-view"
-  onpointerdowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
-  onkeydowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
-  onwheelcapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
+  onpointerdowncapture={() => reportWorkspaceInteraction(hostVisible)}
+  onkeydowncapture={() => reportWorkspaceInteraction(hostVisible)}
+  onwheelcapture={() => reportWorkspaceInteraction(hostVisible)}
   bind:this={workspaceRoot}
   {@attach attachWorkspaceItemReferences}
   tabindex="-1"
@@ -5380,7 +5383,12 @@
      retired. Its own visible placement, not the parked host wrapper, owns whether
      terminal slots may attach. -->
 {#snippet workspaceDockRow()}
-  <div class={["workspace-dock-launcher-host", terminalLayout.dock]}>
+  <div
+    class={["workspace-dock-launcher-host", terminalLayout.dock]}
+    onpointerdowncapture={() => reportWorkspaceInteraction(true)}
+    onkeydowncapture={() => reportWorkspaceInteraction(true)}
+    onwheelcapture={() => reportWorkspaceInteraction(true)}
+  >
     {@render workspaceDockRowBody(true, true)}
     {@render workspaceLauncher()}
   </div>

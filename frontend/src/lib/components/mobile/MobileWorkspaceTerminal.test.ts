@@ -137,8 +137,8 @@ describe("MobileWorkspaceTerminal", () => {
       if (state === "pending") beginWorkspaceDeletion("ws-a", undefined);
       if (state === "deleted") markWorkspaceIdDeleted("ws-a");
       render(MobileWorkspaceTerminalTestHarness, { props });
-      const composer = await screen.findByRole("button", { name: "Open terminal composer" });
-      await fireEvent.pointerDown(composer);
+      const page = await screen.findByRole("region", { name: "Workspace terminal" });
+      await fireEvent.pointerDown(page);
       if (state !== "ready") {
         expect(coreActions).not.toHaveBeenCalled();
         if (state === "deleted") return;

@@ -7352,14 +7352,14 @@ describe("WorkspaceTerminalView", () => {
       expect(focusTarget.isConnected).toBe(true);
     });
 
-    it.each(["New terminal", "Split terminal right", "Split terminal down"])(
-      "counts workspace use when %s launches from the external dock",
+    it.each(["New terminal", "Split terminal right", "Split terminal down", "Select existing terminal", "Open terminal panel"])(
+      "counts workspace use for %s in the external dock",
       async (action) => {
         localStorage.setItem(
           "kenn-forge-workspace-terminal-layout:ws-1",
           JSON.stringify({
             version: 1,
-            open: true,
+            open: action !== "Open terminal panel",
             dock: "bottom",
             height: 300,
             activeSessionKey: "ws-1_shell_a",
@@ -7369,7 +7369,9 @@ describe("WorkspaceTerminalView", () => {
         );
         mocks.getWorkspaceRuntime.mockResolvedValue({
           launch_targets: [],
-          sessions: [runningSession, runningShellSession],
+          sessions: action === "Select existing terminal"
+            ? [runningSession, runningShellSession, { ...relaunchedShellSession, label: "Shell 2" }]
+            : [runningSession, runningShellSession],
         });
         mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
         claimForPrs();
@@ -7382,11 +7384,17 @@ describe("WorkspaceTerminalView", () => {
         expect(dock.closest(".terminal-view")).toBeNull();
         expect(coreActions).not.toHaveBeenCalled();
 
-        await fireEvent.click(within(dock).getByRole("button", { name: action }));
-
-        await waitFor(() =>
-          expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
-        );
+        if (action === "Select existing terminal" || action === "Open terminal panel") {
+          const button = within(dock).getByRole("button", { name: action === "Select existing terminal" ? "Shell" : action });
+          await fireEvent.pointerDown(button);
+          await fireEvent.click(button);
+          expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+        } else {
+          await fireEvent.click(within(dock).getByRole("button", { name: action }));
+          await waitFor(() =>
+            expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
+          );
+        }
         await waitFor(() =>
           expect(coreActions).toHaveBeenCalledExactlyOnceWith(
             { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },

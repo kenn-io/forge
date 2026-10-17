@@ -62,6 +62,7 @@
     publishHostedSessions,
     registerWorkspaceControls,
     registerWorkspaceLauncher,
+    registerWorkspaceTerminalFocusReporter,
     setWorkspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
@@ -1082,8 +1083,14 @@
   // finds no session to focus. The registry belongs to embedded detail surfaces.
   $effect(() => {
     if (!embeddedWorkspace) return;
-    untrack(() => registerWorkspaceLauncher(openLauncher));
-    return () => untrack(() => registerWorkspaceLauncher(null));
+    untrack(() => {
+      registerWorkspaceLauncher(openLauncher);
+      registerWorkspaceTerminalFocusReporter(reportWorkspaceUse);
+    });
+    return () => untrack(() => {
+      registerWorkspaceLauncher(null);
+      registerWorkspaceTerminalFocusReporter(null);
+    });
   });
 
   $effect(() => {
@@ -4529,6 +4536,7 @@
   class="terminal-view"
   onpointerdowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
   onkeydowncapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
+  onwheelcapture={() => { if (embeddedWorkspace && hostVisible && !modalOpen) reportWorkspaceUse(); }}
   bind:this={workspaceRoot}
   {@attach attachWorkspaceItemReferences}
   tabindex="-1"

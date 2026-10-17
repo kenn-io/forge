@@ -256,7 +256,7 @@ describe("SessionTerminalPool", () => {
     });
   }
 
-  it.each(["pointerdown", "keydown"] as const)(
+  it.each(["pointerdown", "keydown", "wheel"] as const)(
     "counts %s after promotion and ignores disabled or inert sessions",
     async (input) => {
       const capture = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "queued" }));
@@ -300,7 +300,9 @@ describe("SessionTerminalPool", () => {
         wrapper.dispatchEvent(
           input === "pointerdown"
             ? new PointerEvent(input, { bubbles: true })
-            : new KeyboardEvent(input, { key: "Enter", bubbles: true }),
+            : input === "wheel"
+              ? new WheelEvent(input, { deltaY: 100, bubbles: true })
+              : new KeyboardEvent(input, { key: "Enter", bubbles: true }),
         );
         await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1), WAIT);
         const request = capture.mock.calls[0]?.[0];

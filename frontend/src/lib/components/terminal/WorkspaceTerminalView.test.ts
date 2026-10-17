@@ -1276,7 +1276,7 @@ describe("WorkspaceTerminalView", () => {
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("counts embedded workspace interaction once per day", async () => {
+  it.each(["pointerDown", "keyDown", "wheel"] as const)("counts embedded workspace %s once per day", async (input) => {
     claimForPrs();
     noteWorkspacePaneRendered("prs");
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
@@ -1285,7 +1285,7 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
     await tick();
     expect(coreActions).not.toHaveBeenCalled();
-    await fireEvent.pointerDown(region);
+    await fireEvent[input](region);
     await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
     expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
       event: "workspace_opened",
@@ -1293,6 +1293,28 @@ describe("WorkspaceTerminalView", () => {
     });
     await fireEvent.pointerDown(region);
     await fireEvent.keyDown(region, { key: "Enter" });
+    await fireEvent.wheel(region);
+    await tick();
+    expect(coreActions).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts Focus Terminal on an embedded workspace once per day", async () => {
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    await screen.findByRole("region", { name: "Workflow panes" });
+    await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+    await tick();
+    expect(coreActions).not.toHaveBeenCalled();
+
+    getInlineWorkspaceController("prs").focusTerminal();
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+      event: "workspace_opened",
+      properties: { item_type: "pull_request" },
+    });
+    getInlineWorkspaceController("prs").focusTerminal();
     await tick();
     expect(coreActions).toHaveBeenCalledTimes(1);
   });

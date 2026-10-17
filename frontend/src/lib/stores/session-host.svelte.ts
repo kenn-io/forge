@@ -193,6 +193,7 @@ export function noteSessionMounted(session: MountedSession): void {
       existing.status === session.status &&
       existing.kind === session.kind &&
       existing.label === session.label &&
+      existing.itemType === session.itemType &&
       (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {

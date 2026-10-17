@@ -218,6 +218,7 @@
   class="session-host-wrapper"
   onpointerdowncapture={reportInteraction}
   onkeydowncapture={reportInteraction}
+  onwheelcapture={reportInteraction}
   data-session-host={session.hostKey}
   bind:this={wrapper}
   tabindex="-1"

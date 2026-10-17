@@ -44,7 +44,7 @@ func TestHasReadableProviderWorkFromSpokeProviderSource(t *testing.T) {
 				requests.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				if test.kind == "pr" && r.URL.Path == "/api/v1/pulls" || test.kind == "issue" && r.URL.Path == "/api/v1/issues" {
-					_, _ = io.WriteString(w, `[{"number":42,"title":"Example","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widget"}}]`)
+					_, _ = io.WriteString(w, `[{"number":42,"title":"Example","state":"open","repo":{"provider":"github","platform_host":"github.com","owner":"user-a","name":"project-a"}}]`)
 					return
 				}
 				_, _ = io.WriteString(w, `[]`)

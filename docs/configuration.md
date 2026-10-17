@@ -666,7 +666,9 @@ stacks. Mid-stack merges stay blocked by default.
 
 Forge sends limited anonymous telemetry by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
-per installation per UTC day), version, commit, OS and architecture, and an
+per installation per UTC day), completed empty searches (`search_empty`), visible
+core-action errors (`error_shown`), failed repository sync attempts (`sync_failed`),
+version, commit, OS and architecture, and an
 anonymous install ID. The browser reports app opens to the daemon, never to the
 analytics service.
 The daemon queues `setup_finished` when it first has a ready workspace or a readable PR or issue in a tracked repository, including cached items and excluding items removed upstream. Active spokes check the hub's provider data; other installations check local data. A failed pull or issue read still lets the other source complete setup. Spokes pause remote checks while federation is inactive. Provider requests follow the caller's deadline and the client's 15-second request timeout.
@@ -684,6 +686,25 @@ with `item_type` set to `pull_request`, `issue`, `kata_task`, or `adhoc`.
 Session starts and restarts stay in the same visit. Leaving, hiding or selecting
 another workspace ends it; returning counts again.
 Both events carry `surface: web`; the agent-facing CLI sends neither event.
+Each completed search with nonblank text and no results reports `search_empty`
+with `surface: web`. Text-query changes and explicit retries or refreshes start attempts.
+State, starred, sort, author and display filters, navigation, pagination, reconciliation and polls don't start attempts.
+Failed, canceled, hidden and superseded searches report nothing. A failed read keeps its search pending until a successful result.
+Server searches settle on the matching complete response; local text filters settle when the changed field is committed.
+Workspace searches wait for complete snapshots and reachable hosts; Palette Docs searches count accepted results, including responses with warnings.
+PR detail-load, workspace-open and runtime errors report `error_shown` when visible.
+Its `kind` is `auth`, `not_found`, `rate_limited`, `provider`, `network`, or `other`,
+derived from typed failures. PR detail errors count each time their banner appears,
+including after an automatic retry. Pending detail retries hide the banner and report nothing.
+Workspace errors count once while their banner stays visible, including during a failed manual retry. Hiding and showing the pane or recovering and failing again starts another presentation. PR Refresh failures follow the displayed flash until dismissal or expiry. Workspace banners wait for their host to be shown, even when promoted controls are visible.
+Browser tabs defer reporting until visible.
+Search errors, comment mutations, editing errors, settings and warnings stay outside this event.
+Each failed repository sync attempt reports daemon-only `sync_failed` with
+`reason`: `auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`.
+Scheduled, relay and manual repository work count; budget skips, cancellation,
+and standalone item refreshes do not. Repeated failures each count.
+Unknown kinds and reasons use `other`. Queries, filters, error text and provider
+identity stay on the machine.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.

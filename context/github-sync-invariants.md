@@ -49,6 +49,10 @@ Rules:
 
 ## Freshness Rules
 
+- Repository failure outcomes count completed attempts independently of full-pass completion,
+  so later cancellation preserves earlier failures and manual/relay attempts cannot trigger
+  full-pass consumers. (`internal/github/sync.go::SetOnRepoSyncFailed`)
+
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).

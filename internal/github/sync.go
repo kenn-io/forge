@@ -598,11 +598,12 @@ func ExclusivePartialSyncFailure(err error) (*PartialSyncError, bool) {
 
 // RepoSyncResult holds the outcome of syncing a single repo.
 type RepoSyncResult struct {
-	Platform     platform.Kind
-	Owner        string
-	Name         string
-	PlatformHost string
-	Error        string // empty on success
+	Platform      platform.Kind
+	Owner         string
+	Name          string
+	PlatformHost  string
+	Error         string // empty on success
+	FailureReason string `json:"-"` // fixed telemetry category, empty for skips
 	// PartialFailure carries the failed item scopes when Error records a
 	// partial per-item failure; nil on success and on hard repository
 	// failures.
@@ -866,6 +867,8 @@ type Syncer struct {
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
+	onRepoSyncFailed func(RepoSyncResult)
+	repoFailureMu    sync.Mutex
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
@@ -2039,6 +2042,33 @@ func (s *Syncer) SetOnSyncCompleted(
 	fn func(results []RepoSyncResult),
 ) {
 	s.onSyncCompleted = fn
+}
+
+// SetOnRepoSyncFailed reports each completed failed repository attempt.
+// Calls are serialized across scheduled, manual, and relay workers. Register
+// before starting sync; canceled attempts and budget skips are excluded.
+func (s *Syncer) SetOnRepoSyncFailed(fn func(RepoSyncResult)) {
+	s.onRepoSyncFailed = fn
+}
+
+func (s *Syncer) reportFailedRepo(ctx context.Context, result RepoSyncResult) {
+	if s.onRepoSyncFailed == nil || result.FailureReason == "" || ctx.Err() != nil {
+		return
+	}
+	s.repoFailureMu.Lock()
+	defer s.repoFailureMu.Unlock()
+	s.onRepoSyncFailed(result)
+}
+
+func (s *Syncer) completeFailedRepo(ctx context.Context, repo RepoRef, err error) {
+	if err == nil {
+		return
+	}
+	reason := syncFailureReason(err)
+	if reason == "" {
+		return
+	}
+	s.reportFailedRepo(ctx, RepoSyncResult{Platform: repo.Platform, PlatformHost: repo.PlatformHost, Owner: repo.Owner, Name: repo.Name, Error: err.Error(), FailureReason: reason})
 }
 
 // SetOnWatchedMRSyncCompleted registers a callback invoked once after a
@@ -4289,6 +4319,8 @@ func (s *Syncer) runWorker(
 			errMessage := bucketErr.Error()
 			s.recordRunError(state, repo, bucketErr, errMessage)
 			state.results[item.index].Error = errMessage
+			state.results[item.index].FailureReason = syncFailureReason(bucketErr)
+			s.reportFailedRepo(ctx, state.results[item.index])
 			continue
 		}
 		// Provider reserve first: this credential's own GitHub pool. The
@@ -4355,6 +4387,7 @@ func (s *Syncer) runWorker(
 			// typing requires the whole error to be the partial failure:
 			// a partial joined with any other failure is hard.
 			state.results[item.index].Error = errStr
+			state.results[item.index].FailureReason = syncFailureReason(err)
 			if partial, ok := ExclusivePartialSyncFailure(err); ok {
 				state.results[item.index].PartialFailure = partial
 			}
@@ -4369,6 +4402,7 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
+		s.reportFailedRepo(ctx, state.results[item.index])
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}
@@ -4662,6 +4696,8 @@ dispatch:
 		bucket, err := s.bucketKeyForRepo(r, false)
 		if err != nil {
 			results[i].Error = err.Error()
+			results[i].FailureReason = syncFailureReason(err)
+			s.reportFailedRepo(ctx, results[i])
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
 			continue
@@ -10955,9 +10991,11 @@ func (s *Syncer) SyncRepoOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncRepo(withRepositoryFeatureCooldownBypass(
+	err := s.syncRepo(withRepositoryFeatureCooldownBypass(
 		ctx, s.featureCooldowns.currentGeneration(),
 	), repo)
+	s.completeFailedRepo(ctx, repo, err)
+	return err
 }
 
 // SyncMR fetches fresh data for a single MR from GitHub and updates the DB.

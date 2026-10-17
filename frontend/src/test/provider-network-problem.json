@@ -1,0 +1,11 @@
+{
+  "title": "Bad Gateway",
+  "status": 502,
+  "detail": "sync PR: provider unavailable",
+  "code": "upstreamError",
+  "details": {
+    "provider": "bitbucket",
+    "platformHost": "bitbucket.example.com",
+    "kind": "network"
+  }
+}

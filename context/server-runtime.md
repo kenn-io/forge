@@ -21,6 +21,20 @@
   Background browser tabs defer reporting until visible and preserve the selected visit
   (`frontend/src/lib/app/telemetry.svelte.ts::trackCoreActionVisit`).
 
+- `search_empty` requires complete, successful results for the visible text query; display controls start no attempt.
+  Requests settle on completion, local filters when the changed field is committed; partial and background updates leave it pending
+  (`frontend/src/lib/app/telemetry.svelte.ts::trackEmptySearch`).
+- Empty-search counts follow the active presentation; retained sidebar filters must
+  not hide rows from focus or mobile outcome counts
+  (`frontend/src/lib/stores/pulls.svelte.ts::createPullsStore`).
+- Workflow errors count each visible banner presentation. A retry that keeps the banner visible stays in the same presentation; tab backgrounding preserves it. PR detail retries hide the banner; restoring it counts another presentation.
+  Manual PR Refresh failures follow their global flash ID across pane and PR
+  changes until dismissal or expiry
+  (`frontend/src/lib/app/telemetry.svelte.ts::trackCoreActionError`).
+- Daemon-only `sync_failed` includes partial item failures in scheduled, relay and manual
+  repository attempts; exclude budget waits, cancellation and standalone item work
+  (`internal/github/sync.go::completeFailedRepo`).
+
 ## Package layout
 
 - `internal/server` keeps the `Server` type, its constructors, and route

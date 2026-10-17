@@ -9,6 +9,7 @@ import { SyncWorkflow, type SyncReadError } from "./sync-workflow.js";
 export interface SyncStoreOptions {
   runtime: AppRuntime;
   getPriorityRepos?: (() => string | undefined) | undefined;
+  onManualRefresh?: (() => void) | undefined;
 }
 
 function readErrorMessage(error: SyncReadError, fallback: string): string {
@@ -235,6 +236,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function triggerSync(): void {
+    opts.onManualRefresh?.();
     runtime.runCommand(triggerSyncEffect(), {
       operation: "trigger provider sync",
       safeContext: {},
@@ -243,6 +245,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
   }
 
   function triggerRepoSync(repo: string): void {
+    opts.onManualRefresh?.();
     runTriggeredSync(
       executeGeneratedApiRequest("POST /sync", (client) => client.SyncService.triggerSync({ only_repo: [repo] })),
     );

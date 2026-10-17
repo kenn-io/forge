@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import { workspaceAuthorOptions, workspaceMatchesAuthor } from "../terminal/workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -94,6 +95,16 @@
   const filtered = $derived(
     workspaces.filter((workspace) => workspaceMatchesAuthor(workspace, author) && workspaceMatchesMobileSearch(workspace, searchQuery)),
   );
+  let aggregateComplete = $state(false);
+  const startSearchAttempt = trackEmptySearch(appRuntime, () => ({
+    count: filtered.length, settled: listStatus === "loaded",
+    failed: fleetError !== null || !aggregateComplete || fleetHosts.some((host) => !host.reachable || !!host.error), visible: true,
+  }), () => true);
+  $effect(() => {
+    const query = searchQuery;
+    untrack(() => startSearchAttempt(query));
+  });
+
   const groups = $derived(groupMobileWorkspaces(filtered, displayOptions.showOrgNames));
   const flat = $derived(
     sortMode === "repo" ? [] : sortMobileWorkspaces(filtered, sortMode),
@@ -164,6 +175,7 @@
   }
 
   function applySnapshot(snapshot: WorkspaceListSnapshot): void {
+    aggregateComplete = snapshot.aggregateComplete;
     workspaces = snapshot.workspaces;
     fleetHosts = snapshot.hosts;
     peerErrors = Object.fromEntries(
@@ -516,6 +528,7 @@
       <MobileNavMenu />
     </div>
     <QuerySearchInput
+      onchange={() => startSearchAttempt.commit()}
       value={searchQuery}
       block
       placeholder="Filter workspaces"

@@ -145,6 +145,7 @@ function renderWithRealPullDetail(
     isDetailFromCache: () => false,
     isDetailLoading: () => false,
     getDetailError: () => null,
+    getDetailOutcome: () => null,
     isDetailSyncing: () => false,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,

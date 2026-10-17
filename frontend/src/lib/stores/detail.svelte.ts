@@ -1,3 +1,4 @@
+import { outcomeErrorKind, type ErrorKind } from "../app/telemetry.js";
 import { Effect, Result } from "effect";
 import { SvelteSet } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
@@ -125,7 +126,7 @@ export interface DetailRefreshCallbacks extends MutationCallbacks {}
 
 export interface DetailSyncCallbacks {
   readonly onSuccess?: (refreshed: boolean) => void;
-  readonly onFailure?: (message: string) => void;
+  readonly onFailure?: (message: string, kind: ErrorKind) => void;
   readonly onSettled?: () => void;
 }
 
@@ -250,7 +251,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
   let detailEnvelopeTick = $state(0);
   let loading = $state(false);
   let syncing = $state(false);
-  let storeError = $state<string | null>(null);
+  let storeError = $state.raw<{
+    message: string;
+    kind: ErrorKind;
+    source: "read" | "mutation";
+    ref: DetailRequestRef;
+  } | null>(null);
   let detailLoaded = $state(false);
   let discussionLoaded = $state(false);
   let syncGeneration = 0;
@@ -330,7 +336,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function getDetailError(): string | null {
-    return storeError;
+    return storeError?.message ?? null;
   }
 
   function getDetailLoaded(): boolean {
@@ -990,6 +996,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function applyRefreshedDetail(next: PullDetail): void {
+    if (storeError?.source === "read") storeError = null;
     applyDetailAvailability(next);
     if (detailContentUnchanged(next)) return;
     detail = next;
@@ -1128,6 +1135,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       return;
     }
 
+    storeError = null;
     const gen = ++syncGeneration;
     const currentLoad: {
       key: string;
@@ -1151,7 +1159,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // alongside `loading`.
     loading = true;
     syncing = false;
-    storeError = null;
     if (!isDetailShowingRef(requestRef)) detailLoaded = false;
     const envelopeTick = nextWorkspaceLifecycleTick();
     const read = executeGeneratedApiRequest("GET pull request", (client, signal) =>
@@ -1200,6 +1207,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       const applied = yield* rebasePullMutations(requestRef, data, () => {
         if (gen !== syncGeneration || activeSelectionKey !== key) return false;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
+          storeError = null;
           applyDetailAvailability(data);
           detail = withPreservedLocalBody(data);
         });
@@ -1237,7 +1245,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
       },
       onFailure: (failure) => {
         if (gen !== syncGeneration) return;
-        storeError = detailReadErrorMessage(failure);
+        storeError = {
+          message: detailReadErrorMessage(failure),
+          kind: outcomeErrorKind(failure),
+          source: "read",
+          ref: requestRef,
+        };
       },
     });
     currentLoad.execution = execution;
@@ -1504,7 +1517,11 @@ export function createDetailStore(opts: DetailStoreOptions) {
     runtime.runCommand(program, {
       operation: "synchronize pull request detail",
       safeContext: { owner, name, number },
-      onFailure: (failure) => invokeMutationFailure(callbacks.onFailure, detailReadErrorMessage(failure)),
+      onFailure: (failure) =>
+        invokeMutationFailure(
+          (message) => callbacks.onFailure?.(message, outcomeErrorKind(failure)),
+          detailReadErrorMessage(failure),
+        ),
     });
   }
 
@@ -2626,7 +2643,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
           return;
         }
         const message = providerMutationFailureMessage(failure, "failed to delete comment");
-        if (mutationRef !== undefined && isDetailShowingRef(mutationRef)) storeError = message;
+        if (mutationRef !== undefined && isDetailShowingRef(mutationRef))
+          storeError = { message, kind: outcomeErrorKind(failure), source: "mutation", ref: mutationRef };
         invokeMutationFailure(callbacks.onFailure, message);
       },
     });
@@ -2805,7 +2823,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               failClosedAfterApplySuggestionConflict(refreshReason);
             }
           }
-          storeError = message;
+          storeError = { message, kind: outcomeErrorKind(requestResult.failure), source: "mutation", ref };
           return false;
         }
         return yield* Effect.fail(requestResult.failure);
@@ -2843,6 +2861,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     isDetailLoading,
     isDetailSyncing,
     getDetailError,
+    getDetailOutcome: () => storeError,
     getDetailLoaded,
     getDiscussionLoaded,
     clearDetail,

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { trackCoreActionError } from "../../app/telemetry.svelte.js";
+  import { outcomeErrorKind, type ErrorKind } from "../../app/telemetry.js";
   import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
@@ -112,7 +114,10 @@
   let provisionalBaseSelection = false;
   let ownedHostKeys: SessionHostKey[] = [];
   let loadError = $state<string | null>(null);
+  let openFailure = $state<ErrorKind | null>(null);
   let runtimeError = $state<string | null>(null);
+  let runtimeFailure = $state<ErrorKind | null>(null);
+  trackCoreActionError(appRuntime, () => ({ key: JSON.stringify([hostKey, workspaceId]), kind: loadError ? openFailure : workspace?.status === "error" ? "other" : runtimeError ? runtimeFailure : null, visible }));
   let launchingTarget = $state<string | null>(null);
   let stoppingSession = $state<string | null>(null);
   let retryingSetup = $state(false);
@@ -304,6 +309,7 @@
       preferred,
     });
     runtimeError = null;
+    runtimeFailure = null;
     if (authoritative) {
       for (const session of next.sessions) {
         completeAcceptedWorkspaceLaunch(workspaceId, hostKey, session.key);
@@ -371,6 +377,7 @@
             handleWorkspaceMissing();
             return;
           }
+          runtimeFailure = outcomeErrorKind(failure);
           runtimeError = failureMessage(failure, "Runtime unavailable");
         }),
       ),
@@ -405,6 +412,7 @@
             return;
           }
           if (background && workspace?.id === id && workspace.fleet_host_key === activeHostKey) return;
+          openFailure = outcomeErrorKind(failure);
           loadError = failureMessage(failure, hostKey ? "Fleet workspace unavailable" : "Workspace unavailable");
         }),
       ),
@@ -469,6 +477,7 @@
         if (state.kind === "pending") {
           retryingSetup = true;
           runtimeError = null;
+          runtimeFailure = null;
         } else if (state.kind === "succeeded") {
           retryingSetup = false;
           applyWorkspace(state.workspace);
@@ -508,6 +517,7 @@
     if (!workspace || workspace.status !== "error" || retryingSetup) return;
     retryingSetup = true;
     runtimeError = null;
+    runtimeFailure = null;
     appRuntime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* WorkspaceRuntimeWorkflow;
@@ -802,6 +812,7 @@
     provisionalBaseSelection = false;
     loadError = null;
     runtimeError = null;
+    runtimeFailure = null;
     composedInput = "";
     inputError = null;
     composerOpen = false;
@@ -879,6 +890,7 @@
           operation: "run mobile workspace terminal",
           safeContext: { workspaceId: activeWorkspaceId, remote: Boolean(activeHostKey) },
           onFailure: (failure) => {
+            openFailure = outcomeErrorKind(failure);
             loadError = failureMessage(failure, "Workspace unavailable");
           },
         },
@@ -967,6 +979,7 @@
   {:else if !workspace}
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading workspace…</span></div>
   {:else if workspace.status !== "ready"}
+    {#if workspace.status === "error"}{/if}
     <div class="mobile-workspace-terminal__state" class:error={workspace.status === "error"}>
       <strong>{workspace.status === "creating"
         ? "Setting up workspace…"

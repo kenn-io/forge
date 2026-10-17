@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import ItemFilters from "../shared/ItemFilters.svelte";
   import { workspaceAuthorOptions, workspaceMatchesAuthor } from "./workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
@@ -30,7 +31,7 @@
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { Effect, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -262,6 +263,15 @@
     workspaceMatchesAuthor(ws, author) &&
     (!hasSearchQuery || workspaceMatchesSearch(ws, parsedSearchQuery)),
   ));
+
+  const startSearchAttempt = trackEmptySearch(runtime, () => ({
+    count: visibleWorkspaces.length, settled: workspaceListStatus === "loaded",
+    failed: !workspaceRepoCatalogComplete || fleetHosts.some((host) => !host.reachable || !!host.error), visible: hostVisible,
+  }), () => true);
+  $effect(() => {
+    const query = searchQuery;
+    untrack(() => startSearchAttempt(query));
+  });
 
   const pinnedWorkspaces = $derived(
     pinnedWorkspaceKeys.flatMap((key) =>
@@ -1302,6 +1312,7 @@
   </div>
   <div class="workspace-filter">
     <QuerySearchInput
+      onchange={() => startSearchAttempt.commit()}
       value={searchQuery}
       size="sm"
       block

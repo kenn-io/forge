@@ -904,19 +904,20 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if syncer != nil {
 		// Wire status callbacks only when this process owns a provider plane.
 		wireSyncStatus(syncer, srv.Hub())
+		wireSyncFailureTelemetry(syncer, telemetryReporter)
 		syncer.SetOnNotificationSyncComplete(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
 		syncer.SetOnWatchedMRSyncCompleted(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
-		syncer.SetOnSyncCompleted(
+		syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
 			fleetapi.WorktreeLinksSyncHook(
 				ctx, database, syncer,
 				srv.Fleet().NotifyWorktreeLinksChanged,
 				stacks.SyncCompletedHook(ctx, database, nil),
-			),
-		)
+			)(results)
+		})
 		if !opts.DisableSync && cfg.Relay.URL != "" {
 			backgroundLoops.start(func(runCtx context.Context) {
 				syncer.RunRelay(runCtx, ghclient.RelayOptions{URL: cfg.Relay.URL, Client: relayHTTPClient()})

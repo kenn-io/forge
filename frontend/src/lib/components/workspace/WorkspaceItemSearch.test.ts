@@ -1,19 +1,23 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
-import { afterEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { createAppStores } from "../../app-stores.svelte.js";
 import { makeAppRuntime } from "../../app/runtime.js";
 import { STORES_KEY } from "../../context.js";
 import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import WorkspaceItemSearch from "./WorkspaceItemSearch.svelte";
 
-const runtime = makeAppRuntime();
+let runtime: ReturnType<typeof makeAppRuntime>;
+beforeEach(() => {
+  runtime = makeAppRuntime();
+});
 vi.mock("../../app/runtime-context.js", () => ({ getAppRuntime: () => runtime }));
 
 afterEach(async () => {
   cleanup();
   await Effect.runPromise(runtime.disposeEffect);
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 it("reopens and filters the shared open-item list without waiting for requests", async () => {
@@ -69,4 +73,36 @@ it("reopens and filters the shared open-item list without waiting for requests",
   await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
   await screen.findByRole("option", { name: /#55.*Updated theme system/ });
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("counts an empty search when the filter is committed", async () => {
+  const events: unknown[] = [];
+  const api = createMockApiFetch([
+    ({ url, bodyText }) => {
+      if (url.pathname !== "/api/v1/telemetry/events") return undefined;
+      events.push(JSON.parse(bodyText));
+      return Response.json({ status: "queued" });
+    },
+  ]);
+  vi.stubGlobal("fetch", api.fetch);
+  const { stores } = createAppStores({ runtime });
+  render(WorkspaceItemSearch, {
+    props: {
+      workspaceID: "ws-search",
+      viewedPR: null,
+      viewedIssue: null,
+      hasLinkedPR: false,
+      hasLinkedIssue: false,
+      disabled: false,
+      searchAnchor: document.createElement("button"),
+      onSearchClose: vi.fn(),
+      onselect: vi.fn(),
+    },
+    context: new Map([[STORES_KEY, stores]]),
+  });
+  await screen.findByRole("option", { name: /#55.*Refactor theme system/ });
+  await fireEvent.input(screen.getByRole("combobox"), { target: { value: "absent" } });
+  expect(screen.queryByRole("option")).toBeNull();
+  await fireEvent.change(screen.getByRole("combobox"));
+  await waitFor(() => expect(events).toEqual([{ event: "search_empty", properties: { surface: "web" } }]));
 });

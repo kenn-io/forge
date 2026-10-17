@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { ProblemCodes } from "../api/problems.js";
+import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import type { ProviderRouteRef } from "../api/provider-routes.js";
 import { providerItemKey } from "../stores/provider-key.js";
@@ -72,6 +74,8 @@ export function createScreenViewReporter(now: () => Date = () => new Date()) {
 }
 
 export type CoreAction =
+  | { event: "search_empty"; properties: Record<string, never> }
+  | { event: "error_shown"; properties: { kind: ErrorKind } }
   | { event: "pr_viewed"; properties: { provider: "github" | "gitlab" | "forgejo" | "gitea" | "bitbucket" } }
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
@@ -90,11 +94,7 @@ export function createCoreActionVisitReporter(runtime: Pick<OwnedAppRuntime, "ru
     }
     if (key === null || reported || !action) return;
     reported = true;
-    runtime.runCommand(reportCoreAction(action), {
-      operation: "telemetry.coreAction",
-      safeContext: { surface: "web" },
-      onFailure: () => undefined,
-    });
+    reportOutcome(runtime, action);
   };
 }
 
@@ -106,3 +106,77 @@ const reportCoreAction = Effect.fn("Telemetry.reportCoreAction")(function* (acti
     ),
   ).pipe(Effect.timeout("8 seconds"));
 });
+
+export type ErrorKind = "auth" | "not_found" | "rate_limited" | "provider" | "network" | "other";
+
+export function outcomeErrorKind(failure: unknown): ErrorKind {
+  if (failure instanceof TransientTransportError) return "network";
+  if (failure instanceof ApiProblemError) {
+    if (failure.problem.code === ProblemCodes.badRequest && failure.problem.details?.reason === "missing_token")
+      return "auth";
+    if (failure.problem.code === ProblemCodes.upstreamError) {
+      const kind = failure.problem.details?.kind;
+      if (kind !== undefined)
+        return (
+          (["auth", "not_found", "rate_limited", "provider", "network", "other"] as const).find(
+            (value) => value === kind,
+          ) ?? "other"
+        );
+      return "provider";
+    }
+    switch (failure.problem.status) {
+      case 401:
+      case 403:
+        return "auth";
+      case 404:
+        return "not_found";
+      case 429:
+        return "rate_limited";
+      case 502:
+      case 503:
+      case 504:
+        return "provider";
+    }
+  }
+  return "other";
+}
+
+export function reportOutcome(runtime: Pick<OwnedAppRuntime, "runCommand">, action: CoreAction): void {
+  runtime.runCommand(reportCoreAction(action), {
+    operation:
+      action.event === "pr_viewed" || action.event === "workspace_opened"
+        ? "telemetry.coreAction"
+        : "telemetry.outcome",
+    safeContext: { surface: "web" },
+    onFailure: () => undefined,
+  });
+}
+
+export const SEARCH_DEBOUNCE_MS = 150;
+
+/** Only deliberate queries and retries start attempts. Accepted results consume them. */
+export function createSearchOutcome(runtime: Pick<OwnedAppRuntime, "runCommand">, visible = () => true) {
+  let sequence = 0;
+  let pending: { id: number } | undefined;
+  return {
+    start(query: string | undefined) {
+      pending = query?.trim() ? { id: ++sequence } : undefined;
+    },
+    cancel() {
+      pending = undefined;
+    },
+    reject(id: number | undefined) {
+      if (pending?.id === id) pending = undefined;
+    },
+    current() {
+      return pending?.id;
+    },
+    settle(id: number | undefined, count: number) {
+      if (!pending || id !== pending.id) return;
+      pending = undefined;
+      if (count === 0 && visible() && document.visibilityState === "visible") {
+        reportOutcome(runtime, { event: "search_empty", properties: {} });
+      }
+    },
+  };
+}

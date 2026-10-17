@@ -28,6 +28,7 @@
   import { devboxRepositoryUnavailableReason, workspaceTargetUnavailableReason } from "../../stores/workspace-target.svelte.js";
   import type { ProblemBody } from "../../api/problems.js";
   import type { AppExecution } from "../../app/runtime.js";
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { queueWorkspaceLaunch } from "../../stores/workspace-create-pending.svelte.js";
   import Modal from "../shared/Modal.svelte";
@@ -114,6 +115,13 @@
   let kataReferences = $state.raw<KataIssueReference[]>([]);
   let selectedKataReference = $state.raw<KataIssueReference | null>(null);
   let kataSearching = $state(false);
+  let kataSearchSettled = $state(false);
+  const startKataSearchAttempt = trackEmptySearch(runtime, () => ({
+    count: kataReferences.length,
+    settled: kataSearchSettled,
+    failed: error !== null,
+    visible: open && source === "kata_issue",
+  }));
   let kataRosterController: AbortController | null = null;
   let kataSearchController: AbortController | null = null;
   let kataSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -178,6 +186,8 @@
     kataRosterController = null;
     selectedDaemonID = "";
     kataQuery = "";
+    kataSearchSettled = false;
+    startKataSearchAttempt("");
     kataReferences = [];
     selectedKataReference = null;
     kataSearching = false;
@@ -444,6 +454,7 @@
     clearPendingLaunch();
     cancelKataSearch();
     const generation = ++kataSearchGeneration;
+    kataSearchSettled = false;
     kataReferences = [];
     selectedKataReference = null;
     error = null;
@@ -468,6 +479,7 @@
       const references = await searchKataReferences(daemonID, query, controller.signal);
       if (generation !== kataSearchGeneration || controller.signal.aborted) return;
       kataReferences = references;
+      kataSearchSettled = true;
     } catch (cause) {
       if (generation !== kataSearchGeneration || controller.signal.aborted) return;
       error = cause instanceof Error ? cause.message : "Unable to search Kata issues.";
@@ -782,7 +794,7 @@
           ariaLabel="Search Kata issues"
           placeholder="Search by reference or title"
           disabled={!selectedDaemonUsable || submitting}
-          oninput={scheduleKataSearch}
+          oninput={() => { startKataSearchAttempt(kataQuery); scheduleKataSearch(); }}
         />
       </div>
 

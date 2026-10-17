@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/tokenauthtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
@@ -306,4 +307,22 @@ func TestBitbucketFactorySelectsCloudAndDataCenterAPI(t *testing.T) {
 			assert.Equal(host, repo.Ref.Host)
 		})
 	}
+}
+
+func TestSyncFailureTelemetryCapturesLiteralOutcome(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(403)
+		_, _ = io.WriteString(w, `{"message":"permission denied"}`)
+	}))
+	t.Cleanup(provider.Close)
+	client, err := github.NewClient(tokenauthtest.Source("token"), "github.com", nil, nil, github.WithBaseURLForTesting(provider.URL))
+	require.NoError(t, err)
+	syncer := github.NewSyncer(map[string]github.Client{"github.com": client}, dbtest.Open(t), nil, []github.RepoRef{{Owner: "team", Name: "project", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	telemetry := &fakeTelemetryClient{}
+	wireSyncFailureTelemetry(syncer, telemetry)
+	syncer.RunOnce(t.Context())
+	assert.Equal(t, []string{"sync_failed"}, telemetry.events())
+	assert.Equal(t, []map[string]any{{"reason": "auth"}}, telemetry.captures)
 }

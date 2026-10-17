@@ -3,6 +3,8 @@
 </script>
 
 <script lang="ts">
+  import { trackCoreActionError } from "../../app/telemetry.svelte.js";
+  import { prVisitKey, type ErrorKind } from "../../app/telemetry.js";
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
@@ -28,7 +30,7 @@
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import type { ConflictReason } from "../../api/problems.js";
-  import { showFlash } from "../../stores/flash.svelte.js";
+  import { getFlash, getFlashes, showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import {
     getStores,
@@ -160,6 +162,7 @@
   const navigate = getNavigate();
   let manualRefreshPending = $state(false);
   let manualRefreshGeneration = 0;
+  let refreshFailure = $state.raw<{ flash: NonNullable<ReturnType<typeof getFlash>>; kind: ErrorKind } | null>(null);
 
   function isCurrentManualRefresh(
     requestGeneration: number,
@@ -187,9 +190,11 @@
       number,
       { provider, platformHost, repositoryKey, repoPath },
       {
-        onFailure: (message) => {
+        onFailure: (message, kind) => {
           if (isCurrentManualRefresh(requestGeneration, requestIdentity)) {
             showFlash(message, { tone: "danger" });
+            const flash = getFlash();
+            if (flash) refreshFailure = { flash, kind };
           }
         },
         onSettled: () => {
@@ -245,6 +250,7 @@
   }
 
   interface Props {
+    interactionVisible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -277,6 +283,7 @@
     platformHost,
     repositoryKey,
     repoPath,
+    interactionVisible = true,
     hideTabs = false,
     hideWorkspaceAction = false,
     phonePresentation = false,
@@ -298,6 +305,11 @@
     name,
     repoPath,
   });
+  const detailOutcome = $derived(detailStore.getDetailOutcome());
+  const detailErrorKind = $derived(detailOutcome?.source === "read" && prVisitKey({ ...routeRef, number }) === prVisitKey(detailOutcome.ref) ? detailOutcome.kind : null);
+  const shownRefreshFailure = $derived(refreshFailure && getFlashes().includes(refreshFailure.flash) ? refreshFailure : null);
+  trackCoreActionError(runtime, () => ({ key: prVisitKey({ ...routeRef, number }), kind: detailErrorKind, visible: interactionVisible && !detailStore.isDetailLoading() && detailStore.getDetailError() !== null }));
+  trackCoreActionError(runtime, () => ({ key: shownRefreshFailure ? `pr-refresh:${shownRefreshFailure.flash.id}` : null, kind: shownRefreshFailure?.kind ?? null, visible: true }));
   const labelPickerCommandRef = $derived({
     itemType: "pull" as const,
     provider,

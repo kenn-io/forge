@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Button, Modal, SearchInput, SelectDropdown } from "@kenn-io/kit-ui";
+  import { getAppRuntime } from "../../app/runtime-context.js";
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import { untrack } from "svelte";
 
   import type { KataDaemonResponse, KataIssueReference } from "../../api/generated/models/index.js";
@@ -31,6 +33,13 @@
   let selectedReference = $state.raw<KataReference | null>(null);
   let rosterLoading = $state(true);
   let searching = $state(false);
+  let searchSettled = $state(false);
+  const startSearchAttempt = trackEmptySearch(getAppRuntime(), () => ({
+    count: references.length,
+    settled: searchSettled,
+    failed: error !== null,
+    visible: true,
+  }));
   let submitting = $state(false);
   let error = $state<string | null>(null);
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,6 +81,7 @@
   function scheduleSearch(): void {
     cancelScheduledSearch();
     searchGeneration += 1;
+    searchSettled = false;
     references = [];
     selectedReference = null;
     error = null;
@@ -97,6 +107,7 @@
       const result = await apiClient.KataService.listKataReferences({ daemonId: daemonID }, { q: text, limit: 50 }, { signal: controller.signal });
       if (generation !== searchGeneration || controller.signal.aborted) return;
       references = result.issues;
+      searchSettled = true;
     } catch (cause) {
       if (controller.signal.aborted || generation !== searchGeneration) return;
       error = cause instanceof Error ? cause.message : "Unable to search Kata issues.";
@@ -195,7 +206,7 @@
         ariaLabel="Search Kata issues"
         placeholder="Search by reference or title"
         disabled={!selectedDaemonUsable}
-        oninput={() => scheduleSearch()}
+        oninput={() => { startSearchAttempt(query); scheduleSearch(); }}
       />
     </div>
 

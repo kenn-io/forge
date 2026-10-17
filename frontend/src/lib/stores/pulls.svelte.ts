@@ -1,3 +1,4 @@
+import { createSearchOutcome } from "../app/telemetry.js";
 import { untrack } from "svelte";
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
@@ -44,6 +45,8 @@ type PullIdentityRef = ProviderRouteRef;
 export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
 
 export interface PullsStoreOptions {
+  getPage?: () => string;
+  getListUsesSidebar?: () => boolean;
   runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
@@ -65,6 +68,10 @@ function readErrorMessage(error: ApiProblemError | TransientTransportError): str
 
 export function createPullsStore(opts: PullsStoreOptions) {
   const runtime = opts.runtime;
+  const searchOutcome = createSearchOutcome(
+    runtime,
+    () => !opts.getPage || ["pulls", "mobile-pulls", "focus"].includes(opts.getPage()),
+  );
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
 
@@ -121,6 +128,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   // List responses are only ever replaced, never mutated, so skip deep proxies.
   let pulls = $state.raw<PullRequest[]>([]);
   let loading = $state(false);
+  let listLoaded = $state(false);
   let listCapped = $state(false);
   let storeError = $state<string | null>(null);
   let filterKanban = $state<KanbanStatus | undefined>(undefined);
@@ -148,6 +156,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function getFilteredPulls(): PullRequest[] {
     return filteredPulls;
+  }
+
+  function hasLoaded(): boolean {
+    return listLoaded;
   }
 
   function isLoading(): boolean {
@@ -367,6 +379,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function setSearchQuery(q: string | undefined): void {
+    q = q?.trim() || undefined;
+    if (q !== searchQuery) searchOutcome.start(q);
     searchQuery = q;
   }
 
@@ -570,6 +584,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function loadPullsEffect(params: PullsParams | undefined = activeListParams) {
     const globalRepo = getGlobalRepo();
+    const attempt = searchOutcome.current();
     const query: PullsParams = {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
@@ -602,8 +617,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
+          listLoaded = true;
           pulls = reuseUnchanged(pulls, result, (item) => item.ID);
           listCapped = query.limit !== undefined && result.length === query.limit;
+          const usesSidebar =
+            opts.getListUsesSidebar?.() ?? !["focus", "mobile-pulls"].includes(opts.getPage?.() ?? "");
+          searchOutcome.settle(attempt, usesSidebar ? getFilteredPulls().length : getPulls().length);
           loading = false;
         }),
       ),
@@ -716,9 +735,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   return {
+    searchOutcome,
     getPulls,
     getFilteredPulls,
     isLoading,
+    hasLoaded,
     isListCapped,
     getError,
     getSelectedPR,

@@ -719,9 +719,8 @@ func (s *Handlers) ResolveItem(
 				return nil, httpapi.NotFound(httpapi.CodeNotFound,
 					"item not found: "+err.Error(), nil)
 			}
-			return nil, httpapi.Upstream(
-				"GitHub API error: "+err.Error(),
-				string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo),
+			return nil, httpapi.ProviderCallProblemWithDetail(
+				err, string(httpapi.ProviderKind(repo.Repo)), httpapi.ProviderHost(repo.Repo), "GitHub API error: "+err.Error(),
 			)
 		}
 		return nil, httpapi.Internal("resolve item: " + err.Error())

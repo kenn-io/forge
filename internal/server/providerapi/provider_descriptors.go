@@ -103,7 +103,7 @@ func (s *Handlers) federationResolveGitHubRepositoryID(
 		slog.Warn("resolve github repository id for spoke",
 			"host", request.PlatformHost, "repo", request.Owner+"/"+request.Name, "err", err,
 		)
-		return nil, httpapi.Upstream("resolve github repository id failed", "github", request.PlatformHost)
+		return nil, httpapi.ProviderCallProblemWithDetail(err, "github", request.PlatformHost, "resolve github repository id failed")
 	}
 	return &federationGitHubRepositoryIDOutput{
 		Body: GitHubRepositoryIDResponse{PlatformRepoID: id, Found: found},

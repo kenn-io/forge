@@ -3,6 +3,8 @@
 package telemetry
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -117,4 +119,21 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	properties, err = backend.SanitizeProperties("app_opened", map[string]any{"surface": "owner/repo"})
 	require.NoError(err)
 	assert.NotContains(properties, "surface")
+}
+
+func TestDaemonAllowsSyncFailureReason(t *testing.T) {
+	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	t.Cleanup(receiver.Close)
+	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
+		opts.Endpoint = receiver.URL
+		return posthog.NewReporter(opts, options...)
+	})
+	reporter, err := newReporter(Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}, time.Now())
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, reporter.Close()) })
+	status, err := reporter.Report(t.Context(), "sync_failed", map[string]any{"reason": "auth"})
+	require.NoError(t, err)
+	assert.Equal(t, posthog.StatusQueued, status)
 }

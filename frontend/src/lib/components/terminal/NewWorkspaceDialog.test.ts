@@ -13,6 +13,8 @@ import NewWorkspaceDialog from "./NewWorkspaceDialog.svelte";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
+const sent = vi.fn().mockResolvedValue({ status: "queued" });
+const listKataReferences = vi.fn();
 const mockNavigate = vi.fn();
 let preferredTarget = "";
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
@@ -36,6 +38,7 @@ vi.mock("../../api/generated/index.js", async (importOriginal) => {
     KataService: {
       ...actual.KataService,
       listKataDaemons: async () => (await mockGet("/kata/daemons")).data,
+      listKataReferences: (...args: unknown[]) => listKataReferences(...args),
     },
   };
 });
@@ -49,7 +52,13 @@ vi.mock("../../app/runtime.js", async (importOriginal) => {
   };
   return {
     ...actual,
-    makeAppRuntime: () => actual.makeAppRuntime(makeGeneratedClientFromRouteMocks(client)),
+    makeAppRuntime: () => {
+      const generated = makeGeneratedClientFromRouteMocks(client);
+      return actual.makeAppRuntime({
+        ...generated,
+        SystemService: { ...generated.SystemService, captureTelemetryEvent: sent },
+      });
+    },
   };
 });
 
@@ -132,6 +141,8 @@ describe("NewWorkspaceDialog", () => {
     configuredLaunchTargets = launchTargets;
     mockGet.mockReset();
     mockPost.mockReset();
+    sent.mockClear();
+    listKataReferences.mockReset();
     mockNavigate.mockReset();
     mockGet.mockResolvedValue({
       data: [repoFixture("acme", "widget", 1001), repoFixture("acme", "gadget", 1002)],
@@ -144,6 +155,7 @@ describe("NewWorkspaceDialog", () => {
     cleanup();
     if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
     runtimeCapture.current = undefined;
+    vi.useRealTimers();
   });
 
   it("creates a workspace for the selected repo with no branch when the field is empty", async () => {
@@ -568,6 +580,26 @@ describe("NewWorkspaceDialog", () => {
       expect(trigger.textContent).not.toContain("acme/gadget");
       expect((screen.getByRole("button", { name: "Create workspace" }) as HTMLButtonElement).disabled).toBe(true);
     });
+  });
+
+  it("reports an empty Kata issue search", async () => {
+    listKataReferences.mockResolvedValue({ issues: [] });
+    mockGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data:
+          path === "/kata/daemons"
+            ? { daemons: [{ id: "healthy", health: "connected", default: true }] }
+            : [repoFixture("acme", "widget", 1001)],
+      }),
+    );
+    await renderDialog();
+    await fireEvent.click(screen.getByRole("button", { name: "Kata issue" }));
+    const search = await screen.findByRole("searchbox", { name: "Search Kata issues" });
+    await waitFor(() => expect((search as HTMLInputElement).disabled).toBe(false));
+    vi.useFakeTimers();
+    await fireEvent.input(search, { target: { value: "absent" } });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(sent.mock.calls.map(([body]) => body)).toEqual([{ event: "search_empty", properties: { surface: "web" } }]);
   });
 
   it("accepts the current Kata API schema", async () => {

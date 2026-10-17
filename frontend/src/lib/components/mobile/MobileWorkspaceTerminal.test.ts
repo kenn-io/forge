@@ -1,3 +1,4 @@
+import { tick } from "svelte";
 import { saveMobileWorkspaceSession } from "./mobile-workspace-session.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -9,6 +10,8 @@ import { navigate } from "../../stores/router.svelte.js";
 import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
 const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
+const errors = () =>
+  coreActions.mock.calls.map(([body]) => body).filter((body) => (body as { event: string }).event === "error_shown");
 
 const mocks = vi.hoisted(() => ({
   runtimeClient: {
@@ -123,11 +126,49 @@ describe("MobileWorkspaceTerminal", () => {
 
   afterEach(async () => {
     cleanup();
+    vi.useRealTimers();
     if (runtimeState.appRuntime) await Effect.runPromise(runtimeState.appRuntime.disposeEffect);
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
     resetSessionHostForTest();
   });
+
+  it.each(["Reconnect", "Retry runtime sessions"])(
+    "keeps a visible runtime failure in one presentation through %s",
+    async (retryLabel) => {
+      const remote = retryLabel === "Reconnect";
+      const activeProps = { ...props, ...(remote ? { hostKey: "peer-a" } : {}) };
+      const detailRead = remote ? mocks.runtimeClient.getFleetWorkspace : mocks.runtimeClient.getWorkspace;
+      const runtimeRead = remote
+        ? mocks.runtimeClient.getFleetWorkspaceRuntime
+        : mocks.runtimeClient.getWorkspaceRuntime;
+      const detail = { ...workspace, ...(remote ? { fleet_host_key: "peer-a" } : {}) };
+      detailRead.mockResolvedValue(detail);
+      const failure = new GeneratedProblemResponse(
+        { code: "forbidden", status: 403, title: "Runtime denied" },
+        Response.json({}, { status: 403 }),
+      );
+      runtimeRead.mockRejectedValue(failure);
+      render(MobileWorkspaceTerminalTestHarness, { props: activeProps });
+      await screen.findByRole("button", { name: retryLabel });
+
+      await waitFor(() =>
+        expect(errors()).toEqual([{ event: "error_shown", properties: { kind: "auth", surface: "web" } }]),
+      );
+      const retried = Promise.withResolvers<typeof runtime>();
+      runtimeRead.mockReturnValueOnce(retried.promise);
+      const reads = runtimeRead.mock.calls.length;
+      await fireEvent.click(screen.getByRole("button", { name: retryLabel }));
+      await waitFor(() => expect(runtimeRead).toHaveBeenCalledTimes(reads + 1));
+      expect(screen.getByText("Runtime denied")).toBeTruthy();
+      expect(errors()).toHaveLength(1);
+      retried.reject(failure);
+      await waitFor(() => expect(screen.getByRole("button", { name: retryLabel })).toBeTruthy());
+      await tick();
+      expect(screen.getByText("Runtime denied")).toBeTruthy();
+      expect(errors()).toHaveLength(1);
+    },
+  );
 
   it("reports a ready mobile workspace's item type", async () => {
     render(MobileWorkspaceTerminalTestHarness, { props });

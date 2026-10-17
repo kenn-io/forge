@@ -4,7 +4,13 @@ import { canonicalProvider, type ProviderRouteRef } from "../api/provider-routes
 import type { PullDetail } from "../api/types.js";
 import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
 import type { OwnedAppRuntime } from "./runtime.js";
-import { createCoreActionVisitReporter, prVisitKey, type CoreAction } from "./telemetry.js";
+import {
+  createCoreActionVisitReporter,
+  createSearchOutcome,
+  prVisitKey,
+  type CoreAction,
+  type ErrorKind,
+} from "./telemetry.js";
 
 const subscribeVisibility = createSubscriber((update) => {
   document.addEventListener("visibilitychange", update);
@@ -44,6 +50,61 @@ export function trackPRVisit(
         visible && supported && pullDetailMatchesRef(detail, ref)
           ? { event: "pr_viewed", properties: { provider } }
           : undefined,
+    };
+  });
+}
+
+/** Request results settle when accepted; local fields settle when committed. */
+export function trackEmptySearch(
+  runtime: Pick<OwnedAppRuntime, "runCommand">,
+  search: () => { count: number; settled: boolean; failed: boolean; visible: boolean },
+  local: () => boolean = () => false,
+): ((query: string, scope?: string) => void) & { commit: () => void } {
+  const outcome = createSearchOutcome(runtime);
+  let attempt = $state<number>();
+  let committed = false;
+  let normalized = "";
+  let attemptScope = "";
+  $effect(() => {
+    const state = search();
+    const id = attempt;
+    if (!state.visible) {
+      outcome.reject(id);
+      return;
+    }
+    if (state.failed || !state.settled || (local() && !committed)) return;
+    untrack(() => outcome.settle(id, state.count));
+  });
+  return Object.assign(
+    (query: string, scope = "") => {
+      if (query.trim() === normalized && scope === attemptScope) return;
+      attemptScope = scope;
+      normalized = query.trim();
+      committed = false;
+      outcome.start(query);
+      attempt = outcome.current();
+    },
+    {
+      commit: () => {
+        committed = true;
+        const state = search();
+        if (state.visible && state.settled && !state.failed) outcome.settle(attempt, state.count);
+      },
+    },
+  );
+}
+
+/** Report each visible error presentation once per workflow. */
+export function trackCoreActionError(
+  runtime: Pick<OwnedAppRuntime, "runCommand">,
+  state: () => { key: string | null; kind: ErrorKind | null; visible: boolean },
+): void {
+  trackCoreActionVisit(runtime, () => {
+    const { key, kind, visible } = state();
+    const presenting = visible && key !== null && kind !== null;
+    return {
+      key: presenting ? key : null,
+      action: presenting ? { event: "error_shown", properties: { kind } } : undefined,
     };
   });
 }

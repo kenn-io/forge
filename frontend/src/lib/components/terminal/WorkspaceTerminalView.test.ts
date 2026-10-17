@@ -33,6 +33,8 @@ import {
 import { STORES_KEY } from "../../context.js";
 
 const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
+const errors = () =>
+  coreActions.mock.calls.map(([body]) => body).filter((body) => (body as { event: string }).event === "error_shown");
 
 const mocks = vi.hoisted(() => ({
   getWorkspaceRuntime: vi.fn(),
@@ -787,7 +789,7 @@ describe("WorkspaceTerminalView", () => {
             .json()
             .then((body) => mocks.mockUpdateSettings(body).then((settings) => Response.json(settings)));
         }
-        if (pathname.endsWith("/workspaces/ws-1")) {
+        if (pathname.endsWith("/workspaces/ws-1") || pathname.endsWith("/workspaces/ws-1/refresh")) {
           return Promise.resolve(Response.json(workspaceResponse));
         }
         if (pathname.endsWith("/api/v1/workspaces")) {
@@ -1274,6 +1276,97 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.queryByRole("button", { name: /Claude review agent/i })).toBeNull();
     expect((screen.getByRole("button", { name: /Configured Agent/i }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("reports visible runtime-read failures once across polling and again after recovery", async () => {
+    const failRuntime = () =>
+      Response.json({ code: "forbidden", status: 403, title: "Runtime denied" }, { status: 403 });
+    vi.useFakeTimers();
+    mocks.getWorkspaceRuntime.mockImplementation(async () => failRuntime());
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(screen.getByText("Runtime denied")).toBeTruthy();
+    await waitFor(() =>
+      expect(errors()).toEqual([{ event: "error_shown", properties: { kind: "auth", surface: "web" } }]),
+    );
+    const reads = mocks.getWorkspaceRuntime.mock.calls.length;
+    mocks.getWorkspaceRuntime.mockImplementation(async () =>
+      Response.json({ code: "upstreamError", status: 502, title: "Runtime timed out" }, { status: 502 }),
+    );
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(screen.getByText("Runtime timed out")).toBeTruthy();
+    expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads);
+    expect(errors()).toHaveLength(1);
+    const retried = deferred<Response>();
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(retried.promise);
+    await fireEvent.click(screen.getByRole("button", { name: "Refresh workspace details" }));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads + 1);
+    expect(errors()).toHaveLength(1);
+    expect(screen.getByText("Runtime timed out")).toBeTruthy();
+    retried.resolve(failRuntime());
+    await vi.advanceTimersByTimeAsync(1);
+    expect(errors()).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(errors()).toHaveLength(1);
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(screen.queryByText("Runtime denied")).toBeNull();
+    claimForPrs();
+    const paneKey = promoteSession("prs", "ws-1:helper");
+    getPaneLayoutStore("prs").notePaneRender({
+      activeInputTabKey: paneKey,
+      editableTabs: [paneKey, "workspace"],
+      onScreenTabs: [paneKey],
+      flattened: false,
+      soloChromeTabs: [],
+    });
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: false });
+    mocks.getWorkspaceRuntime.mockImplementation(async () => failRuntime());
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(screen.getByText("Runtime denied")).toBeTruthy();
+    expect(errors()).toHaveLength(1);
+    vi.useRealTimers();
+    await view.rerender({ workspaceId: "ws-1", paneSurface: "prs", hostVisible: true });
+    await waitFor(() => expect(errors()).toHaveLength(2));
+  });
+
+  it("reports workspace-open and setup error kinds through Retry", async () => {
+    const originalFetch = globalThis.fetch;
+    let failed = true;
+    let setupFailed = false;
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        if (new URL(request.url).pathname.endsWith("/workspaces/ws-1")) {
+          return failed
+            ? Response.json({ code: "forbidden", status: 403, title: "Forbidden" }, { status: 403 })
+            : Response.json(
+                setupFailed
+                  ? { ...workspaceResponse, status: "error", error_message: "Setup failed" }
+                  : workspaceResponse,
+              );
+        }
+        return originalFetch(input, init);
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByText("Forbidden");
+
+    await waitFor(() =>
+      expect(errors()).toEqual([{ event: "error_shown", properties: { kind: "auth", surface: "web" } }]),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(errors()).toHaveLength(2));
+    failed = false;
+    setupFailed = true;
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Setup failed");
+    await waitFor(() => expect(errors()).toHaveLength(3));
+    expect(errors()[2]).toEqual({ event: "error_shown", properties: { kind: "other", surface: "web" } });
   });
 
   it("counts one workspace visit across session loss and restart, then another after hiding", async () => {

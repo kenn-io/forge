@@ -183,6 +183,7 @@
       basePath: getBasePath(),
     },
     getPage,
+    getPullListUsesSidebar: () => !shouldUseFocusPresentation() && getPage() !== "mobile-pulls",
   });
   untrack(() => appComposition.stores.workflowActions.setEnabled(false));
   stores = appComposition.stores;

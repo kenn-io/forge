@@ -126,9 +126,10 @@
     };
   });
 
-  onDestroy(() => searchExecution?.interrupt());
+  onDestroy(() => { searchExecution?.interrupt(); pulls.searchOutcome.cancel(); });
 
   function onSearchInput(value: string): void {
+    if (value.trim() !== (pulls.getSearchQuery() ?? "")) pulls.searchOutcome.cancel();
     searchInput = value;
 
     searchExecution?.interrupt();

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { trackCoreActionError } from "../../app/telemetry.svelte.js";
+  import { outcomeErrorKind, type ErrorKind } from "../../app/telemetry.js";
   import { trackCoreActionVisit } from "../../app/telemetry.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -406,6 +408,7 @@
   let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
   const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>(100);
   let loadError = $state<string | null>(null);
+  let openFailure = $state<ErrorKind | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
   type DeletingWorkspaceTarget = {
@@ -471,6 +474,8 @@
     );
   });
   let runtimeError = $state<string | null>(null);
+  let runtimeFailure = $state<ErrorKind | null>(null);
+  trackCoreActionError(appRuntime, () => ({ key: JSON.stringify([workspaceHostKey, workspaceId]), kind: loadError && !workspaceLive ? openFailure : workspace?.status === "error" ? "other" : runtimeError ? runtimeFailure : null, visible: hostVisible }));
   let workspacePolling:
     | { key: string; interrupt: () => void }
     | null = null;
@@ -2497,6 +2502,7 @@
           if (failure._tag === "ApiProblemError" && failure.problem.status === 404) {
             handleWorkspaceGone(id, hostKey);
           }
+          openFailure = outcomeErrorKind(failure);
           loadError = workspaceReadFailureMessage(failure);
           return null;
         }),
@@ -2553,6 +2559,7 @@
           appliedRuntimeState?.fingerprint === fingerprint
         ) {
           runtimeError = null;
+          runtimeFailure = null;
           if (admission !== undefined) reconcileQueuedWorkspaceLaunch(data);
           return data;
         }
@@ -2561,6 +2568,7 @@
         runtimeForHostKey = hostKey;
         appliedRuntimeState = { workspaceId: id, hostKey, fingerprint };
         runtimeError = null;
+        runtimeFailure = null;
         terminalLayout = normalizeLayoutForSessions(data.sessions);
         const selectedSessionKey = sessionKeyFromWorkflowTab(activeTabKey);
         if (selectedSessionKey) {
@@ -2581,6 +2589,7 @@
             error: true,
           });
           if (!isCurrentWorkspace(id, hostKey)) return null;
+          runtimeFailure = outcomeErrorKind(failure);
           runtimeError = workspaceMutationFailureMessage(
             failure,
             "Runtime load failed",
@@ -4212,6 +4221,7 @@
     // bleed across — clear them but don't touch workspace/runtime.
     loadError = null;
     runtimeError = null;
+    runtimeFailure = null;
     // A 409 force-delete prompt is bound to the workspace that
     // produced it. Dismiss it on any route change so the user
     // can't confirm a destructive action targeting a workspace

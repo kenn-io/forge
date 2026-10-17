@@ -1,3 +1,4 @@
+import { createSearchOutcome } from "../app/telemetry.js";
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import type { AppRuntime } from "../app/runtime.js";
@@ -128,6 +129,10 @@ function isBotAuthor(issue: Issue): boolean {
 
 export function createIssuesStore(opts: IssuesStoreOptions) {
   const runtime = opts.runtime;
+  const searchOutcome = createSearchOutcome(
+    runtime,
+    () => !opts.getPage || ["issues", "mobile-issues", "focus"].includes(opts.getPage()),
+  );
   const getGlobalRepo = opts.getGlobalRepo ?? (() => undefined);
   const getGroupByRepo = opts.getGroupByRepo ?? (() => false);
   const getPage = opts.getPage ?? (() => "");
@@ -154,6 +159,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let confirmedHideBots = false;
   let hideBotsMutationGeneration = 0;
   let loading = $state(false);
+  let listLoaded = $state(false);
   let listCapped = $state(false);
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
@@ -220,6 +226,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function getHideBots(): boolean {
     return hideBots;
   }
+  function hasIssuesLoaded(): boolean {
+    return listLoaded;
+  }
+
   function isIssuesLoading(): boolean {
     return loading;
   }
@@ -371,6 +381,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     writeIssuePRReferenceFilter(value);
   }
   function setIssueSearchQuery(q: string | undefined): void {
+    q = q?.trim() || undefined;
+    if (q !== searchQuery) searchOutcome.start(q);
     searchQuery = q;
   }
   function getIssueFilterState(): string {
@@ -430,6 +442,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function loadIssuesEffect(params: IssuesParams | undefined = activeListParams) {
     const globalRepo = getGlobalRepo();
+    const attempt = searchOutcome.current();
     const query: IssuesParams = {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
@@ -458,8 +471,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
+          listLoaded = true;
           issues = reuseUnchanged(issues, result, (item) => item.ID);
           listCapped = query.limit !== undefined && result.length === query.limit;
+          searchOutcome.settle(attempt, getIssues().length);
           loading = false;
         }),
       ),
@@ -2028,9 +2043,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
 
   return {
+    searchOutcome,
     getIssues,
     getHideBots,
     isIssuesLoading,
+    hasIssuesLoaded,
     isIssueListCapped,
     getIssuesError,
     getSelectedIssue,

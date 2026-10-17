@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { SEARCH_DEBOUNCE_MS } from "../../app/telemetry.js";
+  import { trackEmptySearch } from "../../app/telemetry.svelte.js";
   import { Effect } from "effect";
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -39,7 +41,6 @@
 
   const RECENT_CAP = 8;
   const DOC_SEARCH_DISPLAY_LIMIT = 10;
-  const MODE_SEARCH_DEBOUNCE_MS = 150;
 
   interface DocResult {
     kind: "doc";
@@ -123,12 +124,12 @@
       (docsResult?.ok === false ? 1 : 0),
   );
 
+  const docsQuery = $derived(parsed.scope === "all" ? parsed.query : "");
   $effect(() => {
     const open = isPaletteOpen();
     const search = docsSearch;
-    const scope = parsed.scope;
-    const q = parsed.query;
-    if (!open || !search || scope !== "all" || q === "") {
+    const q = docsQuery;
+    if (!open || !search || q === "") {
       docsResult = null;
       modeLoading = false;
       return;
@@ -137,7 +138,7 @@
     docsResult = null;
     modeLoading = true;
     const execution = untrack(() => runtime.runCommand(
-      Effect.sleep(`${MODE_SEARCH_DEBOUNCE_MS} millis`).pipe(
+      Effect.sleep(`${SEARCH_DEBOUNCE_MS} millis`).pipe(
         Effect.andThen(
           Effect.tryPromise({
             try: (signal) => search(q, DOC_SEARCH_DISPLAY_LIMIT + 1, signal),
@@ -176,6 +177,17 @@
     ));
     return execution.interrupt;
   });
+
+  const startSearchAttempt = trackEmptySearch(runtime, () => ({
+    count: grouped.commands.length + grouped.pulls.length + grouped.issues.length + modeDocRows.length,
+    settled: ((parsed.scope !== "all" && parsed.scope !== "pr") || (!stores || (stores.pulls.hasLoaded() && !stores.pulls.isLoading() && !stores.pulls.getError()))) &&
+      ((parsed.scope !== "all" && parsed.scope !== "issue") || (!stores || (stores.issues.hasIssuesLoaded() && !stores.issues.isIssuesLoading() && !stores.issues.getIssuesError()))) &&
+      (parsed.scope !== "all" || !docsSearch || (!modeLoading && docsResult?.ok === true && !docsResult.warnings?.length)),
+    failed: ((parsed.scope === "all" || parsed.scope === "pr") && !!stores?.pulls.getError()) ||
+      ((parsed.scope === "all" || parsed.scope === "issue") && !!stores?.issues.getIssuesError()) ||
+      (parsed.scope === "all" && docsResult?.ok === false),
+    visible: isPaletteOpen(),
+  }), () => parsed.scope !== "all" || !docsSearch);
 
   type RecentResult =
     | { kind: "recent-pr"; ref: RoutedItemRef; lastSelectedAt: string }
@@ -474,7 +486,12 @@
         placeholder="Search PRs, issues, commands, docs..."
         ariaLabel="Search command palette"
         autofocus
-        oninput={(value) => (query = value)}
+        oninput={(value) => {
+          const next = parsePaletteQuery(value);
+          if (next.scope !== parsed.scope || next.query !== parsed.query) startSearchAttempt(next.query, next.scope);
+          query = value;
+        }}
+        onchange={() => startSearchAttempt.commit()}
         onkeydown={onPaletteKeyDown}
       />
     <div class="palette-body">

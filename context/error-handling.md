@@ -62,7 +62,7 @@ not an exhaustive enum.
 | `rateLimited` | 429 | Upstream provider quota is exhausted. Include `details.retryAfter` as a UTC RFC3339 timestamp when known. |
 | `internalError` | 500 | Generic kenn-forge bug or unexpected local failure. |
 | `mutationOutcomeUnknown` | 502 | A non-idempotent upstream mutation may have been applied despite transport failure. Clients fence related writes, reconcile fresh authority, and never replay the request automatically. |
-| `upstreamError` | 502 | Provider API, auth, network, or upstream service failure. Include provider identity when known. |
+| `upstreamError` | 502 | Provider API, auth, network, or upstream service failure. Include provider identity when known. Upstream `details.kind` uses the shared sync outcome taxonomy, including wrapped transport failures (`internal/outcome/outcome.go::Kind`). Direct `Upstream` failures without provider identity use `other`. |
 | `hubUnavailable` | 503 | A spoke cannot reach the federation's provider owner. It is retryable; provider reads and writes must not fall back to spoke-local provider tables. |
 | `serviceUnavailable` | 503 | Temporarily unavailable local service or health dependency. |
 
@@ -129,6 +129,10 @@ Translate `platform` typed errors at the server boundary:
 | `not_found` | `404 notFound`, or a more specific not-found code when the caller knows the resource type |
 | `provider_not_configured`, `missing_token`, `invalid_repo_ref`, `invalid_argument` | `400 badRequest` |
 | Unknown provider/platform failures | `502 upstreamError` |
+
+- Runtime missing-token failures retain `400 badRequest` with `details.reason = "missing_token"`
+  so clients can distinguish credential failures from invalid input
+  (`internal/server/httpapi/problems.go::ProviderCallProblemWithDetail`).
 
 Cancellation and deadline errors pass through only when the request context is
 done; a provider child-context deadline while the request remains active is a

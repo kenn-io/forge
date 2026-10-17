@@ -44,8 +44,22 @@ func SessionDuration(value any) (any, bool) {
 	return durationFilter(value)
 }
 
+// categoryFilter retains a closed vocabulary even for unknown or malformed input.
+func categoryFilter(values ...string) posthog.PropertyFilter {
+	filter := posthog.AllowStringValues(values...)
+	return func(value any) (any, bool) {
+		if normalized, ok := filter(value); ok {
+			return normalized, true
+		}
+		return "other", true
+	}
+}
+
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"setup_finished": {},
+	"search_empty":   {"surface": posthog.AllowStringValues("web")},
+	"error_shown":    {"surface": posthog.AllowStringValues("web"), "kind": categoryFilter("auth", "not_found", "rate_limited", "provider", "network", "other")},
+	"sync_failed":    {"reason": categoryFilter("auth", "not_found", "rate_limited", "provider", "network", "other")},
 	"pr_viewed": {
 		"provider": posthog.AllowStringValues("github", "gitlab", "forgejo", "gitea", "bitbucket"),
 		"surface":  posthog.AllowStringValues("web"),
@@ -170,7 +184,7 @@ func KitAllowedEvents(source string) []posthog.Option {
 		}
 		allowed := make([]posthog.AllowedProperty, 0, len(properties))
 		for name, filter := range properties {
-			if name == "screen" || name == "duration_bucket" {
+			if name == "screen" || name == "duration_bucket" || name == "kind" || name == "reason" {
 				allowed = append(allowed, posthog.RequireProperty(name, filter))
 			} else {
 				allowed = append(allowed, posthog.AllowProperty(name, filter))
@@ -232,7 +246,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 }
 
 func sourceForEvent(event string) string {
-	if event == "daemon_active" || event == "setup_finished" {
+	if event == "daemon_active" || event == "setup_finished" || event == "sync_failed" {
 		return "daemon"
 	}
 	return "backend"

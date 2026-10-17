@@ -1,10 +1,16 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
+import { GeneratedProblemResponse } from "../api/runtime.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
+import { createActivityStore, type ActivityStore } from "../stores/activity.svelte.js";
+import { makeGeneratedClient } from "../testing/generated-client.js";
 
-const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
+const runtimeCapture = vi.hoisted(() => ({
+  current: undefined as OwnedAppRuntime | undefined,
+  activity: undefined as ActivityStore | undefined,
+}));
 
 vi.mock("../app/runtime-context.js", () => ({
   getAppRuntime: () => {
@@ -18,6 +24,7 @@ import ActivityFeed from "./ActivityFeed.svelte";
 
 beforeEach(() => {
   runtimeCapture.current = makeAppRuntime();
+  runtimeCapture.activity = undefined;
   itemActivity.value = [];
   workspaceActivity.value = [];
   hideBots.value = false;
@@ -29,6 +36,7 @@ beforeEach(() => {
 afterEach(async () => {
   if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
   runtimeCapture.current = undefined;
+  history.replaceState(null, "", "/");
 });
 
 function activityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
@@ -142,7 +150,9 @@ const setActivityAuthor = vi.hoisted(() =>
 vi.mock("../context.js", () => ({
   getNavigate: () => vi.fn(),
   getStores: () => ({
-    activity: {
+    activity: runtimeCapture.activity ?? {
+      getAcceptedSearchAttempt: () => undefined,
+      searchOutcome: { cancel: vi.fn(), settle: vi.fn() },
       initializeFromMount: vi.fn(),
       loadActivity,
       ensureActivityLoaded: loadActivity,
@@ -266,6 +276,84 @@ describe("ActivityFeed compact mode", () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it("counts empty Flat searches from accepted snapshots", async () => {
+    history.replaceState(null, "", "/activity?search=missing");
+    const sent = vi.fn(async () => ({ status: "queued" as const }));
+    const subject = { ...workspaceSubject(), event_ledger_revision: "1" };
+    const snapshot = { items: [], item_activity: [subject], workspace_activity: [subject], capped: false };
+    const foreground = Promise.withResolvers<typeof snapshot>();
+    const list = vi.fn(async () => snapshot);
+    await Effect.runPromise(runtimeCapture.current!.disposeEffect);
+    runtimeCapture.current = makeAppRuntime(
+      makeGeneratedClient({
+        ActivityService: {
+          listActivity: list,
+          listActivityAuthors: async () => ({ authors: [] }),
+        },
+        SystemService: { captureTelemetryEvent: sent },
+      }),
+    );
+    runtimeCapture.activity = createActivityStore({ runtime: runtimeCapture.current });
+    const view = render(ActivityFeed, { props: { compact: true } });
+    await screen.findByText("No activity found");
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("missing");
+    view.unmount();
+    render(ActivityFeed, { props: { compact: true } });
+    await screen.findByText("No activity found");
+    expect(sent).toHaveBeenCalledTimes(1);
+    list.mockReturnValueOnce(foreground.promise);
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search activity" }), {
+      target: { value: "Workspace-only" },
+    });
+    await waitFor(() => expect(runtimeCapture.activity!.isActivityLoading()).toBe(true));
+    const reconcile = () =>
+      runtimeCapture.current!.runCommand(runtimeCapture.activity!.reconcileActivityEffect(), {
+        operation: "reconcile activity in test",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
+    await reconcile();
+    await waitFor(() =>
+      expect(sent).toHaveBeenCalledWith({ event: "search_empty", properties: { surface: "web" } }, expect.anything()),
+    );
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("No activity found")).toBeTruthy();
+    foreground.resolve(snapshot);
+    expect(sent).toHaveBeenCalledTimes(2);
+    const oldResult = Promise.withResolvers<typeof snapshot>();
+    list.mockReturnValueOnce(oldResult.promise);
+    const reads = list.mock.calls.length;
+    const oldReconciliation = reconcile();
+    await waitFor(() => expect(list).toHaveBeenCalledTimes(reads + 1));
+    const newResult = Promise.withResolvers<typeof snapshot>();
+    list.mockReturnValueOnce(newResult.promise);
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search activity" }), {
+      target: { value: "new query" },
+    });
+    await waitFor(() => expect(runtimeCapture.activity!.isActivityLoading()).toBe(true));
+    oldResult.resolve(snapshot);
+    await oldReconciliation;
+    expect(sent).toHaveBeenCalledTimes(2);
+    newResult.resolve(snapshot);
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(3));
+    list.mockRejectedValueOnce(
+      new GeneratedProblemResponse(
+        { code: "forbidden", status: 403, title: "Read denied" },
+        Response.json({}, { status: 403 }),
+      ),
+    );
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search activity" }), {
+      target: { value: "retry query" },
+    });
+    await waitFor(() => expect(runtimeCapture.activity!.getActivityError()).toBeTruthy());
+    expect(sent).toHaveBeenCalledTimes(3);
+    await reconcile();
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(4));
+    await reconcile();
+    expect(sent).toHaveBeenCalledTimes(4);
   });
 
   it("renders compact rows instead of the wide table", () => {

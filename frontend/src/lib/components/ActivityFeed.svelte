@@ -7,7 +7,7 @@
     type TypeaheadOption,
   } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, untrack } from "svelte";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -148,6 +148,7 @@
   });
 
   onDestroy(() => {
+    activity.searchOutcome.cancel();
     unsubSync?.();
     debounceExecution?.interrupt();
   });
@@ -210,6 +211,7 @@
   ];
 
   function handleSearchInput(val: string): void {
+    if (val.trim() !== (activity.getActivitySearch() ?? "")) activity.searchOutcome.cancel();
     searchInput = val;
     debounceExecution?.interrupt();
     debounceExecution = runtime.runCommand(
@@ -338,6 +340,13 @@
       result = result.filter((subject) => !isBot(subject.item_author ?? ""));
     }
     return result;
+  });
+  $effect(() => {
+    const attempt = activity.getAcceptedSearchAttempt();
+    const count = activity.getViewMode() === "flat"
+      ? flatRows.length
+      : displayItems.length + visibleItemActivity.length + visibleWorkspaceActivity.length;
+    untrack(() => activity.searchOutcome.settle(attempt, count));
   });
 
   const flatRows = $derived.by(() => collapseActivityRuns(displayItems, {

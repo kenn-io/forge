@@ -243,6 +243,7 @@ async function renderWorkflowDetail() {
     isDetailFromCache: () => false,
     isDetailLoading: () => state.loading,
     getDetailError: () => state.error,
+    getDetailOutcome: () => ({ ref: null, attempt: 0, kind: null }),
     isDetailSyncing: () => state.syncing,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,

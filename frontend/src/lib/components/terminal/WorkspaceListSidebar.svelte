@@ -31,7 +31,7 @@
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
   import { onMount, tick } from "svelte";
-  import { Effect, Stream } from "effect";
+  import { Effect, Result, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
   import ArrowUpIcon from "@lucide/svelte/icons/arrow-up";
@@ -198,10 +198,17 @@
     row: HTMLElement | undefined;
   } | null>(null);
   let contextMenuOpen = $state(false);
+  // Row keys picked with shift-click (range) or Cmd/Ctrl-click (toggle).
+  // Separate from the opened workspace, which stays route-owned.
+  let multiSelectedKeys = $state.raw<ReadonlySet<string>>(new Set());
+  let selectionAnchorKey = $state<string | null>(null);
   let deleteConfirmWorkspace = $state<Workspace | null>(null);
   let deleteConfirmForce = $state(false);
+  let bulkDeleteConfirm = $state.raw<Workspace[] | null>(null);
+  // A bulk delete holds one key per in-flight row; each finished row drops
+  // its key so the remaining rows keep their busy state.
   let workspaceAction = $state<{
-    workspaceKey: string;
+    workspaceKeys: readonly string[];
     action: "push" | "pull" | "reveal" | "delete";
   } | null>(null);
   // Row elements keyed by workspaceRowKey so the snippet-rendered rows can
@@ -243,6 +250,9 @@
   const deleteConfirmBusy = $derived(
     deleteConfirmWorkspace !== null &&
       workspaceActionMatches(deleteConfirmWorkspace, "delete"),
+  );
+  const bulkDeleteBusy = $derived(
+    bulkDeleteConfirm !== null && workspaceAction?.action === "delete",
   );
 
   const scopedWorkspaces = $derived.by(() => {
@@ -387,6 +397,21 @@
       (a, b) => stamp(b) - stamp(a) || a.id.localeCompare(b.id),
     );
   });
+
+  // Rows in on-screen order, skipping collapsed sections, so a shift-click
+  // range and bulk actions only ever cover rows the user can see.
+  const renderedWorkspaces = $derived.by<Workspace[]>(() => {
+    const rows = !hasSearchQuery && pinsCollapsed ? [] : [...pinnedWorkspaces];
+    if (sortMode !== "repo") return [...rows, ...sortedFlat];
+    for (const group of grouped) {
+      if (!hasSearchQuery && collapsedGroups.includes(group.key)) continue;
+      rows.push(...group.items);
+    }
+    return rows;
+  });
+  const multiSelectedWorkspaces = $derived(
+    renderedWorkspaces.filter((ws) => multiSelectedKeys.has(workspaceRowKey(ws))),
+  );
 
   function resetFilters(): void {
     author = "";
@@ -902,9 +927,65 @@
     return "";
   }
 
+  function clearMultiSelection(): void {
+    multiSelectedKeys = new Set();
+    selectionAnchorKey = null;
+  }
+
+  function isMultiSelected(ws: Workspace): boolean {
+    return multiSelectedKeys.has(workspaceRowKey(ws));
+  }
+
+  // The opened workspace starts a selection the way the focused file does in
+  // a file manager, so shift-click from it selects the range in between.
+  function openedRowKey(): string | null {
+    const opened = renderedWorkspaces.find(isSelectedWorkspace);
+    return opened ? workspaceRowKey(opened) : null;
+  }
+
+  function selectWorkspaceRange(ws: Workspace): void {
+    const keys = renderedWorkspaces.map(workspaceRowKey);
+    const clickedKey = workspaceRowKey(ws);
+    const anchorKey = [selectionAnchorKey, openedRowKey()].find(
+      (key) => key !== null && keys.includes(key),
+    ) ?? clickedKey;
+    const from = keys.indexOf(anchorKey);
+    const to = keys.indexOf(clickedKey);
+    multiSelectedKeys = new Set(keys.slice(Math.min(from, to), Math.max(from, to) + 1));
+    selectionAnchorKey = anchorKey;
+  }
+
+  function toggleWorkspaceSelection(ws: Workspace): void {
+    const key = workspaceRowKey(ws);
+    const next = new Set(multiSelectedWorkspaces.map(workspaceRowKey));
+    if (next.size === 0) {
+      const opened = openedRowKey();
+      if (opened !== null) next.add(opened);
+    }
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    multiSelectedKeys = next;
+    selectionAnchorKey = key;
+  }
+
+  // Shift extends a range and Cmd/Ctrl toggles a row; neither opens the
+  // workspace. A plain activation drops the selection and opens the row.
+  function activateRow(event: MouseEvent | KeyboardEvent, ws: Workspace): void {
+    if (event.shiftKey) {
+      selectWorkspaceRange(ws);
+    } else if (event.metaKey || event.ctrlKey) {
+      toggleWorkspaceSelection(ws);
+    } else {
+      clearMultiSelection();
+      openWorkspace(ws);
+    }
+  }
+
   function openContextMenu(event: MouseEvent, ws: Workspace): void {
     event.preventDefault();
     event.stopPropagation();
+    // Right-clicking outside the selection acts on that row alone.
+    if (!isMultiSelected(ws)) clearMultiSelection();
     contextMenu = {
       ws,
       anchor: { x: event.clientX, y: event.clientY },
@@ -958,7 +1039,8 @@
     action?: "push" | "pull" | "reveal" | "delete",
   ): boolean {
     return (
-      workspaceAction?.workspaceKey === workspaceRowKey(ws) &&
+      workspaceAction !== null &&
+      workspaceAction.workspaceKeys.includes(workspaceRowKey(ws)) &&
       (action === undefined || workspaceAction.action === action)
     );
   }
@@ -978,25 +1060,29 @@
     return "";
   }
 
+  function workspaceDeletable(ws: Workspace): boolean {
+    return ws.status !== "deleting" &&
+      workspaceOperationAvailable(ws, "workspaceWrite") &&
+      !(isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false);
+  }
+
   function startWorkspaceAction(
     ws: Workspace,
     action: "push" | "pull" | "reveal" | "delete",
   ): boolean {
-    const externallyDisabled = isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false;
-    const deletionDisabled = ws.status === "deleting" || externallyDisabled;
     if (
       workspaceAction !== null ||
-      !workspaceOperationAvailable(ws, "workspaceWrite") ||
-      (action === "delete" ? deletionDisabled : workspaceActionsDisabled(ws))
+      !(action === "delete" ? workspaceDeletable(ws) : !workspaceActionsDisabled(ws))
     ) return false;
-    workspaceAction = { workspaceKey: workspaceRowKey(ws), action };
+    workspaceAction = { workspaceKeys: [workspaceRowKey(ws)], action };
     return true;
   }
 
   function finishWorkspaceAction(ws: Workspace): void {
-    if (workspaceActionMatches(ws)) {
-      workspaceAction = null;
-    }
+    if (!workspaceAction || !workspaceActionMatches(ws)) return;
+    const key = workspaceRowKey(ws);
+    const remaining = workspaceAction.workspaceKeys.filter((candidate) => candidate !== key);
+    workspaceAction = remaining.length > 0 ? { ...workspaceAction, workspaceKeys: remaining } : null;
   }
 
   function syncWorkspaceBranch(ws: Workspace, action: "push" | "pull"): void {
@@ -1072,11 +1158,17 @@
     deleteConfirmForce = false;
   }
 
-  function confirmDeleteWorkspaceFromList(): void {
-    const ws = deleteConfirmWorkspace;
-    if (!ws || !startWorkspaceAction(ws, "delete")) return;
-    const force = deleteConfirmForce;
-    onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
+  function deleteFailureMessage(failure: unknown): string {
+    const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
+    const fallback = problem?.status === 409
+      ? "Workspace has uncommitted changes. Open it to force delete."
+      : "Delete failed.";
+    return failureMessage(failure, fallback);
+  }
+
+  // Deletes one workspace and evicts it from this list. Callers mark the
+  // workspace pending and reserve its action key before running this.
+  function deleteWorkspaceFromList(ws: Workspace, force: boolean) {
     const hostKey = ws.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest<unknown>("delete remote workspace", (generatedClient, signal) =>
@@ -1096,31 +1188,49 @@
             { signal },
           ),
         ).pipe(Effect.asVoid);
+    return command.pipe(
+      Effect.tap(() => removeWorkspaceListEntry(ws.id, hostKey)),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          workspaces = workspaces.filter(
+            (candidate) => candidate.id !== ws.id || candidate.fleet_host_key !== hostKey,
+          );
+          // Report the deletion regardless of selection so a hosting shell's
+          // inline claim cannot briefly reclaim a workspace this list destroyed.
+          onWorkspaceDeleted?.(
+            ws.id,
+            hostKey,
+            ws.repo
+              ? {
+                  provider: ws.repo.provider,
+                  platformHost: ws.repo.platform_host,
+                  owner: ws.repo.owner,
+                  name: ws.repo.name,
+                  repoPath: ws.repo.repo_path,
+                  number: ws.item_number,
+                  itemType: ws.item_type,
+                }
+              : undefined,
+          );
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          onWorkspaceDeletePendingChange?.(ws.id, hostKey, false);
+          finishWorkspaceAction(ws);
+        }),
+      ),
+    );
+  }
+
+  function confirmDeleteWorkspaceFromList(): void {
+    const ws = deleteConfirmWorkspace;
+    if (!ws || !startWorkspaceAction(ws, "delete")) return;
+    onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     runtime.runCommand(
-      command.pipe(
-        Effect.tap(() => removeWorkspaceListEntry(ws.id, hostKey)),
+      deleteWorkspaceFromList(ws, deleteConfirmForce).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
-            workspaces = workspaces.filter(
-              (candidate) => candidate.id !== ws.id || candidate.fleet_host_key !== hostKey,
-            );
-            // Report the deletion regardless of selection so a hosting shell's
-            // inline claim cannot briefly reclaim a workspace this list destroyed.
-            onWorkspaceDeleted?.(
-              ws.id,
-              hostKey,
-              ws.repo
-                ? {
-                    provider: ws.repo.provider,
-                    platformHost: ws.repo.platform_host,
-                    owner: ws.repo.owner,
-                    name: ws.repo.name,
-                    repoPath: ws.repo.repo_path,
-                    number: ws.item_number,
-                    itemType: ws.item_type,
-                  }
-                : undefined,
-            );
             requestApplicationWorkspaceRefresh();
             closeContextMenu();
             if (isSelectedWorkspace(ws)) navigate("/workspaces");
@@ -1128,8 +1238,6 @@
         ),
         Effect.ensuring(
           Effect.sync(() => {
-            onWorkspaceDeletePendingChange?.(ws.id, hostKey, false);
-            finishWorkspaceAction(ws);
             deleteConfirmWorkspace = null;
             deleteConfirmForce = false;
           }),
@@ -1137,14 +1245,67 @@
       ),
       {
         operation: "delete workspace",
-        safeContext: { workspaceId: ws.id, remote: Boolean(hostKey) },
-        onFailure: (failure) => {
-          const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
-          const fallback = problem?.status === 409
-            ? "Workspace has uncommitted changes. Open it to force delete."
-            : "Delete failed.";
-          showFlash(failureMessage(failure, fallback), { tone: "danger" });
-        },
+        safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
+        onFailure: (failure) => showFlash(deleteFailureMessage(failure), { tone: "danger" }),
+      },
+    );
+  }
+
+  function openBulkDeleteDialog(targets: Workspace[]): void {
+    bulkDeleteConfirm = targets;
+    closeContextMenu();
+  }
+
+  function closeBulkDeleteDialog(): void {
+    if (bulkDeleteBusy) return;
+    bulkDeleteConfirm = null;
+  }
+
+  function bulkDeleteMessage(targets: Workspace[]): string {
+    const names = targets.slice(0, 3).map((ws) => `"${displayName(ws)}"`);
+    const more = targets.length - names.length;
+    return `Delete ${names.join(", ")}${more > 0 ? ` and ${more} more` : ""}?`;
+  }
+
+  // Deletes without force, so the server keeps any workspace with
+  // uncommitted changes; those are reported rather than discarded.
+  function confirmBulkDelete(): void {
+    const targets = (bulkDeleteConfirm ?? []).filter(workspaceDeletable);
+    if (targets.length === 0 || workspaceAction !== null) return;
+    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "delete" };
+    for (const ws of targets) onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
+    runtime.runCommand(
+      Effect.forEach(
+        targets,
+        (ws) => Effect.result(deleteWorkspaceFromList(ws, false)).pipe(
+          Effect.map((result) => ({ ws, result })),
+        ),
+        { concurrency: 4 },
+      ).pipe(
+        Effect.flatMap((outcomes) =>
+          Effect.sync(() => {
+            requestApplicationWorkspaceRefresh();
+            clearMultiSelection();
+            const failures = outcomes.flatMap(({ ws, result }) =>
+              Result.isFailure(result) ? [`${displayName(ws)}: ${deleteFailureMessage(result.failure)}`] : [],
+            );
+            if (outcomes.some(({ ws, result }) => Result.isSuccess(result) && isSelectedWorkspace(ws))) {
+              navigate("/workspaces");
+            }
+            if (failures.length > 0) {
+              showFlash(
+                `Could not delete ${failures.length} of ${targets.length} workspaces. ${failures.join(" ")}`,
+                { tone: "danger" },
+              );
+            }
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => { bulkDeleteConfirm = null; })),
+      ),
+      {
+        operation: "delete workspaces",
+        safeContext: { count: targets.length },
+        onFailure: (failure) => showFlash(failureMessage(failure, "Delete failed."), { tone: "danger" }),
       },
     );
   }
@@ -1397,9 +1558,15 @@
           <div
             class={["ws-row", {
               selected: isSelectedWorkspace(ws),
+              "multi-selected": isMultiSelected(ws),
               "context-target": contextMenuOpen && contextMenu !== null && workspaceRowKey(contextMenu.ws) === workspaceRowKey(ws),
             }]}
             bind:this={rowEls[workspaceRowKey(ws)]}
+            aria-pressed={multiSelectedKeys.size > 0 ? isMultiSelected(ws) : undefined}
+            onmousedown={(e) => {
+              // Shift-click selects a range of rows, not the text between them.
+              if (e.shiftKey) e.preventDefault();
+            }}
             onclick={(e) => {
               // The PR/issue bubble is a focusable child button; let
               // its own click handler run without the row also
@@ -1409,7 +1576,7 @@
                 e.target.closest(".item-bubble")) {
                 return;
               }
-              openWorkspace(ws);
+              activateRow(e, ws);
             }}
             onkeydown={(e) => {
               // Ignore keydowns that originate inside a nested
@@ -1420,7 +1587,10 @@
               if (e.target !== e.currentTarget) return;
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                openWorkspace(ws);
+                activateRow(e, ws);
+              } else if (e.key === "Escape" && multiSelectedKeys.size > 0) {
+                e.preventDefault();
+                clearMultiSelection();
               }
             }}
             oncontextmenu={(e) => openContextMenu(e, ws)}
@@ -1606,7 +1776,24 @@
 
 <Menu bind:open={contextMenuOpen} anchor={contextMenu?.anchor} returnFocus={contextMenu?.row} class="workspace-context-menu-root">
   <MenuContent ariaLabel="Workspace actions" class="workspace-context-menu">
-    {#if contextMenu}
+    {#if contextMenu && multiSelectedWorkspaces.length > 1 && isMultiSelected(contextMenu.ws)}
+      {@const selectedCount = multiSelectedWorkspaces.length}
+      {@const deletable = multiSelectedWorkspaces.filter(workspaceDeletable)}
+      <MenuItem
+        disabled={workspaceAction !== null || deletable.length === 0}
+        tone="danger"
+        onselect={() => openBulkDeleteDialog(deletable)}
+      >
+        {#snippet icon()}<Trash2Icon size={14} />{/snippet}
+        {deletable.length === selectedCount
+          ? `Delete ${selectedCount} workspaces...`
+          : `Delete ${deletable.length} of ${selectedCount} workspaces...`}
+      </MenuItem>
+      <MenuSeparator />
+      <MenuItem onselect={() => { clearMultiSelection(); closeContextMenu(); }}>
+        Clear selection
+      </MenuItem>
+    {:else if contextMenu}
       {@const menuWorkspace = contextMenu.ws}
       {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
       {@const itemURL = providerItemURL(menuWorkspace)}
@@ -1707,6 +1894,20 @@
   frameId="workspace-sidebar-delete"
   onCancel={closeDeleteWorkspaceDialog}
   onConfirm={() => void confirmDeleteWorkspaceFromList()}
+/>
+
+<ConfirmDialog
+  open={bulkDeleteConfirm !== null && hostVisible}
+  title={`Delete ${bulkDeleteConfirm?.length ?? 0} workspaces?`}
+  message={bulkDeleteConfirm ? bulkDeleteMessage(bulkDeleteConfirm) : ""}
+  hint="This removes their managed worktrees and runtime sessions. Workspaces with uncommitted changes are kept."
+  confirmLabel={`Delete ${bulkDeleteConfirm?.length ?? 0} workspaces`}
+  pendingLabel="Deleting…"
+  busy={bulkDeleteBusy}
+  tone="danger"
+  frameId="workspace-sidebar-bulk-delete"
+  onCancel={closeBulkDeleteDialog}
+  onConfirm={() => void confirmBulkDelete()}
 />
 
 <style>
@@ -1852,6 +2053,11 @@
 
   .ws-row.selected:hover {
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  .ws-row.multi-selected,
+  .ws-row.multi-selected:hover {
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--sidebar-row-bg, var(--bg-surface)));
   }
 
   /* Marks the row a context menu acts on, as desktop file lists do. */

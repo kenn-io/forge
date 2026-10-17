@@ -7,6 +7,10 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar } from "../../context.js";
   import IssueItem from "./IssueItem.svelte";
+  import ItemActionsMenu from "./ItemActionsMenu.svelte";
+  import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
+  import type { ListItemTarget } from "../../stores/item-actions.js";
+  import { createRangeSelection } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import {
     Chip,
@@ -293,9 +297,67 @@
   function revealMoreRows(): void {
     renderBudget = mountBudget + RENDER_BUDGET_STEP;
   }
+
+  // On-screen order: issues in collapsed groups or not yet mounted are not
+  // selectable, so a range never reaches issues the user cannot see.
+  const renderedIssues = $derived(
+    renderedGroups === null
+      ? renderedFlatIssues
+      : renderedGroups.groups.flatMap((group) => (group.collapsed ? [] : group.items)),
+  );
+  const issueSelection = createRangeSelection<Issue>({
+    rows: () => renderedIssues,
+    key: (issue) => String(issue.ID),
+    openedKey: () => {
+      const opened = renderedIssues.find((issue) => isSelected(routeRefForIssue(issue)));
+      return opened ? String(opened.ID) : null;
+    },
+  });
+  let contextMenu = $state.raw<{
+    targets: ListItemTarget[];
+    anchor: MenuAnchorPoint;
+    row: HTMLElement | undefined;
+  } | null>(null);
+  let contextMenuOpen = $state(false);
+
+  function handleRowClick(event: MouseEvent, issue: Issue): void {
+    if (issueSelection.activate(event, issue)) handleSelect(routeRefForIssue(issue));
+  }
+
+  function openContextMenu(event: MouseEvent, issue: Issue): void {
+    event.preventDefault();
+    // Right-clicking outside the selection acts on that issue alone.
+    const multi = issueSelection.selected.length > 1 && issueSelection.has(issue);
+    if (!multi) issueSelection.clear();
+    contextMenu = {
+      targets: (multi ? issueSelection.selected : [issue]).map((item) => ({ kind: "issue", item })),
+      anchor: { x: event.clientX, y: event.clientY },
+      row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
+    };
+    contextMenuOpen = true;
+  }
+
+  // Menu actions change items on the provider; the open issue reloads too,
+  // in case it was one of them.
+  function reloadAfterItemAction(): void {
+    issues.loadIssues();
+    runtime.runCommand(issues.refreshActiveIssueDetailEffect(), {
+      operation: "refresh issue detail after list action",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
+  function clearSelectionOnEscape(event: KeyboardEvent): void {
+    if (event.key === "Escape" && issueSelection.active) {
+      event.preventDefault();
+      issueSelection.clear();
+    }
+  }
 </script>
 
-<div class="issue-list">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="issue-list" onkeydown={clearSelectionOnEscape}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
       {issues.getIssues().length} issues
@@ -432,7 +494,9 @@
                   })}
                   showRepo={false}
                   selected={isSelected(issueRef)}
-                  onclick={() => handleSelect(issueRef)}
+                  multiSelected={issueSelection.has(issue)}
+                  onclick={(event) => handleRowClick(event, issue)}
+                  oncontextmenu={(event) => openContextMenu(event, issue)}
                 />
               {/each}
           </GroupedSidebarSection>
@@ -451,7 +515,9 @@
             })}
             showRepo={true}
             selected={isSelected(issueRef)}
-            onclick={() => handleSelect(issueRef)}
+            multiSelected={issueSelection.has(issue)}
+            onclick={(event) => handleRowClick(event, issue)}
+            oncontextmenu={(event) => openContextMenu(event, issue)}
           />
         {/each}
       {/if}
@@ -470,6 +536,16 @@
 
   </div>
 </div>
+
+<ItemActionsMenu
+  bind:open={contextMenuOpen}
+  anchor={contextMenu?.anchor}
+  returnFocus={contextMenu?.row}
+  targets={contextMenu?.targets ?? []}
+  onChanged={reloadAfterItemAction}
+  selectionActive={issueSelection.active}
+  onClearSelection={() => issueSelection.clear()}
+/>
 
 <style>
   .render-sentinel {

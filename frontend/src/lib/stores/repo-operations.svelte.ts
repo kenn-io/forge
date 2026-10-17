@@ -1,0 +1,57 @@
+import { Effect } from "effect";
+import { SvelteMap } from "svelte/reactivity";
+import type { RepoOperations } from "../api/types.js";
+import type { RepoRefResponse } from "../api/generated/models/index.js";
+import type { AppRuntime } from "../app/runtime.js";
+import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
+
+// List rows carry provider capabilities but not mutation availability
+// (write credentials, rate limits, viewer permission), which only detail and
+// repository reads report. Sidebar menus read it from here, one request per
+// repository, so a blocked action is disabled with its reason instead of
+// failing after the click. An absent entry means "no verdict yet": callers
+// fall back to capability gating and the server stays authoritative.
+const operationsByRepo = new SvelteMap<string, RepoOperations>();
+const inFlight = new Set<string>();
+
+type RepoIdentity = Pick<RepoRefResponse, "provider" | "platform_host" | "owner" | "name" | "repo_path">;
+
+function repoKey(repo: RepoIdentity): string {
+  return `${repo.provider}\0${repo.platform_host}\0${repo.owner}/${repo.name}`;
+}
+
+export function repoOperations(repo: RepoIdentity): RepoOperations | undefined {
+  return operationsByRepo.get(repoKey(repo));
+}
+
+/** Refreshes availability for each repository; a failed read keeps the last verdict. */
+export function refreshRepoOperations(runtime: AppRuntime, repos: readonly RepoIdentity[]): void {
+  for (const repo of repos) {
+    const key = repoKey(repo);
+    if (inFlight.has(key)) continue;
+    inFlight.add(key);
+    const ref = {
+      provider: repo.provider,
+      platformHost: repo.platform_host,
+      owner: repo.owner,
+      name: repo.name,
+      repoPath: repo.repo_path,
+    };
+    runtime.runCommand(
+      executeGeneratedApiRequest("GET repository operations", (client, signal) =>
+        providerUsesHostRoute(ref)
+          ? client.RepositoriesService.getRepoOnHost(providerHostRouteParams(ref), { signal })
+          : client.RepositoriesService.getRepo(providerRouteParams(ref), { signal }),
+      ).pipe(
+        Effect.tap((response) => Effect.sync(() => operationsByRepo.set(key, response.operations))),
+        Effect.ensuring(Effect.sync(() => inFlight.delete(key))),
+      ),
+      {
+        operation: "load repository operations",
+        safeContext: { owner: repo.owner, name: repo.name },
+        onFailure: () => {},
+      },
+    );
+  }
+}

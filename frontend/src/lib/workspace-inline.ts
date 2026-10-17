@@ -94,6 +94,8 @@ export interface InlineWorkspaceController {
    * every focused pane; the host keeps only the ones that name a workspace.
    */
   notePaneFocused(tabKey: string): void;
+  /** Report an explicit user selection of a workspace or session pane tab. */
+  notePaneSelected(tabKey: string): void;
   /** Expand the dock and move focus into the terminal host. */
   focusTerminal(): void;
   /** Navigate to /terminal/{id} (the secondary "Open in Workspaces" action). */

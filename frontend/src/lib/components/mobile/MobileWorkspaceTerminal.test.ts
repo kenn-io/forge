@@ -57,6 +57,8 @@ import MobileWorkspaceTerminalTestHarness from "./MobileWorkspaceTerminalTestHar
 import type { WorkspaceEventsNotification } from "../../stores/events.svelte.js";
 import {
   markWorkspaceIdDeleted,
+  beginWorkspaceDeletion,
+  endWorkspaceDeletion,
   pendingWorkspaceLaunch,
   queueWorkspaceLaunch,
   resetWorkspaceCreatePendingForTest,
@@ -129,37 +131,52 @@ describe("MobileWorkspaceTerminal", () => {
     vi.useRealTimers();
   });
 
-  it("reports a ready mobile workspace's item type", async () => {
-    render(MobileWorkspaceTerminalTestHarness, { props });
-    await waitFor(() =>
-      expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+  it.each(["ready", "pending", "deleted"] as const)(
+    "reports mobile workspace use only when ready: %s",
+    async (state) => {
+      if (state === "pending") beginWorkspaceDeletion("ws-a", undefined);
+      if (state === "deleted") markWorkspaceIdDeleted("ws-a");
+      render(MobileWorkspaceTerminalTestHarness, { props });
+      const composer = await screen.findByRole("button", { name: "Open terminal composer" });
+      await fireEvent.pointerDown(composer);
+      if (state !== "ready") {
+        expect(coreActions).not.toHaveBeenCalled();
+        if (state === "deleted") return;
+        endWorkspaceDeletion("ws-a", undefined);
+      }
+      await waitFor(() =>
+        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+          event: "workspace_opened",
+          properties: { item_type: "pull_request" },
+        }),
+      );
+    },
+  );
+
+  it.each(["pointerdown", "keydown", "wheel"])(
+    "reports mobile %s use again after the UTC day changes",
+    async (input) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-10-17T23:59:59Z"));
+      render(MobileWorkspaceTerminalTestHarness, { props });
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
+      const composer = await screen.findByRole("button", { name: "Open terminal composer" });
+
+      await fireEvent(composer, new Event(input));
+      expect(coreActions).toHaveBeenCalledTimes(1);
+
+      vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
+      await fireEvent(composer, new Event(input));
+      await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+      expect(coreActions.mock.calls[1]?.[0]).toEqual({
         event: "workspace_opened",
-        properties: { item_type: "pull_request" },
-      }),
-    );
-  });
+        properties: { item_type: "pull_request", surface: "web" },
+      });
 
-  it.each(["pointerdown", "keydown", "wheel"])("reports mobile %s use again after the UTC day changes", async (input) => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-17T23:59:59Z"));
-    render(MobileWorkspaceTerminalTestHarness, { props });
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    const composer = await screen.findByRole("button", { name: "Open terminal composer" });
-
-    await fireEvent(composer, new Event(input));
-    expect(coreActions).toHaveBeenCalledTimes(1);
-
-    vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
-    await fireEvent(composer, new Event(input));
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
-    expect(coreActions.mock.calls[1]?.[0]).toEqual({
-      event: "workspace_opened",
-      properties: { item_type: "pull_request", surface: "web" },
-    });
-
-    await fireEvent(composer, new Event(input));
-    expect(coreActions).toHaveBeenCalledTimes(2);
-  });
+      await fireEvent(composer, new Event(input));
+      expect(coreActions).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it.each([
     [{ mr_state: "open" }, "var(--accent-green)"],
@@ -321,7 +338,11 @@ describe("MobileWorkspaceTerminal", () => {
     mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
     const appRuntime = runtimeState.appRuntime;
     if (!appRuntime) throw new Error("Missing test runtime");
-    runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review this change" });
+    runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", {
+      label: "Review",
+      agent: "chat",
+      prompt: "Review this change",
+    });
     render(MobileWorkspaceTerminal, { props });
     await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
     expect(screen.getByText("Starting chat…")).toBeTruthy();
@@ -351,7 +372,11 @@ describe("MobileWorkspaceTerminal", () => {
       mocks.runtimeClient.launchWorkspaceAgentHandoff.mockReturnValue(handoff.promise);
       const appRuntime = runtimeState.appRuntime;
       if (!appRuntime) throw new Error("Missing test runtime");
-      runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review this change" });
+      runWorkspaceQuickAction(appRuntime, "ws-a", "pull_request", {
+        label: "Review",
+        agent: "chat",
+        prompt: "Review this change",
+      });
       render(MobileWorkspaceTerminal, { props });
       await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledOnce());
       if (state === "rejected") {

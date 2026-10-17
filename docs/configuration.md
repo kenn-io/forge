@@ -666,9 +666,9 @@ stacks. Mid-stack merges stay blocked by default.
 
 Forge sends limited anonymous telemetry by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
-per installation per UTC day), version, commit, OS and architecture, and an
-anonymous install ID. The browser reports app opens to the daemon, never to the
-analytics service.
+per installation per UTC day), `pr_viewed`, `workspace_opened`, version, commit,
+OS and architecture, and an anonymous install ID. The browser reports app opens
+to the daemon, never to the analytics service.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.
@@ -679,16 +679,16 @@ A hidden tab that the browser or phone closes without notice reports nothing.
 Screen names are activity, actions, repos, repo-browser, pulls, issues, docs,
 workspaces, terminal, workspace-item, settings, project-intake, design-system,
 and onboarding. Screen counts persist across tabs and daemon restarts.
+An upgrade preserves prior screen counts in the private `telemetry-daily.json`
+file beside the database. Keep that file to retain daily counts across restarts.
 Forge also sends `pr_viewed` with the provider when a PR's detail is on screen,
 and `workspace_opened` with its type when you open its own page, launch or run
 something in it, or click or type in its content or terminal. Automatic display
-beside a PR or issue sends nothing. Each event counts once per installation per
-UTC day for each provider or workspace type. Supported providers are GitHub,
-GitLab, Forgejo, Gitea, and Bitbucket. Workspace types are pull request, issue,
-Kata task, and ad hoc. These events send only `surface: web` and the provider
-or workspace type.
-An upgrade preserves prior screen counts in the private `telemetry-daily.json`
-file beside the database. Keep that file to retain daily counts across restarts.
+beside a PR or issue, or creating a workspace without using it, sends nothing.
+Each event counts once per installation per UTC day for each provider or
+workspace type. Supported providers are GitHub, GitLab, Forgejo, Gitea, and
+Bitbucket. Workspace types are pull request, issue, Kata task, and ad hoc.
+These events send only `surface: web` and the provider or workspace type.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 

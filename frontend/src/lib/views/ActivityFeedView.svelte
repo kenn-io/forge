@@ -366,6 +366,7 @@
   });
 
   function handlePaneSelect(tabKey: string): void {
+    inlineWorkspace?.notePaneSelected(tabKey);
     // Only the PR's two panes are bound to the drawer's tab state; commit and
     // workspace have no equivalent.
     if (tabKey === "conversation" || tabKey === "files") handleDetailTabChange(tabKey);

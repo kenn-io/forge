@@ -932,6 +932,9 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       layout.clearZoom();
     },
     notePaneFocused: (tabKey) => notePaneFocused(surface, tabKey),
+    notePaneSelected: (tabKey) => {
+      if (desiredSlot() === surface && workspacePaneKeysFor(surface).includes(tabKey)) terminalFocusReporter?.();
+    },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.

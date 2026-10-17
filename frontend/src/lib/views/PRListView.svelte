@@ -141,6 +141,7 @@
   }
 
   function handlePaneSelect(tabKey: string): void {
+    inlineWorkspace?.notePaneSelected(tabKey);
     // The workspace pane has no route of its own; only the two route-bound panes
     // may move the URL.
     if (isRouteBoundPane(tabKey)) selectDetailTab(tabKey);

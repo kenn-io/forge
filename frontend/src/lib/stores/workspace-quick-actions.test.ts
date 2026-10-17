@@ -92,17 +92,30 @@ describe("quick-action launch serialization", () => {
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
   });
 
-  it("allows independent workspaces and hosts to launch concurrently", async () => {
-    launchHandoff.mockReturnValue(new Promise(() => {}));
-    launchDevboxHandoff.mockReturnValue(new Promise(() => {}));
-    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
-    runWorkspaceQuickAction(runtime, "ws-a", "pull_request", action);
-    runWorkspaceQuickAction(runtime, "ws-b", "pull_request", action);
-    runWorkspaceQuickAction(runtime, "ws-a", "pull_request", action, "devbox:peer-a");
-    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(launchDevboxHandoff).toHaveBeenCalledOnce());
-    expect(quickActionLaunches.has("ws-a")).toBe(true);
-    expect(quickActionLaunches.has("ws-b")).toBe(true);
-    expect(quickActionLaunches.has(quickActionWorkspaceKey("ws-a", "devbox:peer-a"))).toBe(true);
-  });
+  it.each([undefined, "pull_request"] as const)(
+    "launches independent workspaces and hosts with item type %s",
+    async (itemType) => {
+      launchHandoff.mockReturnValue(new Promise(() => {}));
+      launchDevboxHandoff.mockReturnValue(new Promise(() => {}));
+      const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+      runWorkspaceQuickAction(runtime, "ws-a", itemType, action);
+      runWorkspaceQuickAction(runtime, "ws-b", itemType, action);
+      runWorkspaceQuickAction(runtime, "ws-a", itemType, action, "devbox:peer-a");
+      await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(launchDevboxHandoff).toHaveBeenCalledOnce());
+      if (itemType === undefined) {
+        expect(telemetry).not.toHaveBeenCalled();
+      } else {
+        await vi.waitFor(() =>
+          expect(telemetry).toHaveBeenCalledWith(
+            { event: "workspace_opened", properties: { surface: "web", item_type: "pull_request" } },
+            expect.anything(),
+          ),
+        );
+      }
+      expect(quickActionLaunches.has("ws-a")).toBe(true);
+      expect(quickActionLaunches.has("ws-b")).toBe(true);
+      expect(quickActionLaunches.has(quickActionWorkspaceKey("ws-a", "devbox:peer-a"))).toBe(true);
+    },
+  );
 });

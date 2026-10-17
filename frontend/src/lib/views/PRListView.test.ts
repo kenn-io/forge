@@ -634,7 +634,7 @@ describe("PRListView promoted session panes", () => {
     expect(screen.getByRole("tab", { name: "Helper" })).toBeTruthy();
   });
 
-  it("reports a focused pane to the workspace host", () => {
+  it("reports focused panes and explicit tab selections to the workspace host", async () => {
     const layout = getPaneLayoutStore("prs");
     layout.promoteTab(AGENT_PANE, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
     const { controller } = createClaimTestController("prs", {
@@ -651,6 +651,11 @@ describe("PRListView promoted session panes", () => {
     // report has to happen before that filter or the host never hears about the
     // pane the user is actually working in.
     expect(controller.notePaneFocused).toHaveBeenCalledWith(AGENT_PANE);
+    expect(controller.notePaneSelected).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
+    expect(controller.notePaneSelected).toHaveBeenCalledWith(AGENT_PANE);
+    await fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
+    expect(controller.notePaneSelected).toHaveBeenCalledWith("workspace");
   });
 
   it("reports a promoted pane hidden while the route pane owns their shared leaf", () => {

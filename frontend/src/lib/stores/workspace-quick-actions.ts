@@ -44,7 +44,7 @@ export function quickActionWorkspaceKey(workspaceId: string, hostKey?: string): 
 export function runWorkspaceQuickAction(
   runtime: AppRuntime,
   workspaceId: string,
-  itemType: WorkspaceDetail["item_type"],
+  itemType: WorkspaceDetail["item_type"] | undefined,
   action: QuickAction,
   hostKey?: string,
   onLaunched?: (session: RuntimeSession) => void,
@@ -52,7 +52,7 @@ export function runWorkspaceQuickAction(
 ): void {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   if (quickActionLaunches.has(workspaceKey)) return;
-  reportWorkspaceOpened(runtime, itemType);
+  if (itemType !== undefined) reportWorkspaceOpened(runtime, itemType);
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
   quickActionLaunches.set(workspaceKey, launch);

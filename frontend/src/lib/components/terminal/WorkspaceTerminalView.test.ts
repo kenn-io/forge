@@ -6415,7 +6415,11 @@ describe("WorkspaceTerminalView", () => {
         }),
       );
       mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", { label: "Review", agent: "codex", prompt: "Review this change" });
+      runWorkspaceQuickAction(mocks.runtime, "ws-1", "pull_request", {
+        label: "Review",
+        agent: "codex",
+        prompt: "Review this change",
+      });
       const execution = runCommand.mock.results.at(-1)!.value;
       claimForPrs();
       render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });

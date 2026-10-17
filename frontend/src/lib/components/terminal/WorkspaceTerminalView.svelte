@@ -3024,8 +3024,8 @@
   );
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
-    if (!workspaceId || !workspaceLive || workspace?.status !== "ready" || actionsBlocked) return;
-    runWorkspaceQuickAction(appRuntime, workspaceId, workspace.item_type, action, workspaceHostKey, undefined, leaf);
+    if (!workspaceId || actionsBlocked) return;
+    runWorkspaceQuickAction(appRuntime, workspaceId, workspace?.item_type, action, workspaceHostKey, undefined, leaf);
   }
 
   function startAcceptedWorkspaceLaunchReconciliation(

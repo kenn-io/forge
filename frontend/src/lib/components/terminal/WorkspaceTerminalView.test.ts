@@ -1283,10 +1283,16 @@ describe("WorkspaceTerminalView", () => {
     "focusTerminal",
     "workspaceTabBeforeReady",
     "focusTerminalBeforeReady",
+    "paletteOpenAndDismiss",
+    "paletteOpenAndDismissBeforeReady",
   ] as const)("counts embedded workspace use through %s", async (input) => {
     claimForPrs();
     noteWorkspacePaneRendered("prs");
-    const beforeReady = input === "workspaceTabBeforeReady" || input === "focusTerminalBeforeReady";
+    const palette = input === "paletteOpenAndDismiss" || input === "paletteOpenAndDismissBeforeReady";
+    const beforeReady =
+      input === "workspaceTabBeforeReady" ||
+      input === "focusTerminalBeforeReady" ||
+      input === "paletteOpenAndDismissBeforeReady";
     const detail = deferred<Response>();
     if (beforeReady) {
       const originalFetch = globalThis.fetch;
@@ -1303,6 +1309,7 @@ describe("WorkspaceTerminalView", () => {
       await tick();
       const controller = getInlineWorkspaceController("prs");
       if (input === "workspaceTabBeforeReady") controller.notePaneSelected("workspace");
+      else if (palette) hostedWorkspaceLauncher("prs")!();
       else controller.focusTerminal();
       expect(coreActions).not.toHaveBeenCalled();
       detail.resolve(Response.json(workspaceResponse));
@@ -1311,7 +1318,12 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
     await tick();
     if (!beforeReady) expect(coreActions).not.toHaveBeenCalled();
-    if (input === "focusTerminal") {
+    if (palette) {
+      if (!beforeReady) hostedWorkspaceLauncher("prs")!();
+      await screen.findByRole("dialog", { name: "Launch a session" });
+      await fireEvent.keyDown(window, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
+    } else if (input === "focusTerminal") {
       getInlineWorkspaceController("prs").focusTerminal();
     } else if (!beforeReady) {
       await fireEvent[input](region);
@@ -6625,6 +6637,7 @@ describe("WorkspaceTerminalView", () => {
             .contains(screen.getByRole("dialog", { name: "Launch a session" })),
         ).toBe(true);
         expect(screen.queryByRole("tab", { name: "Home" })).toBeNull();
+        if (paneSurface === "prs") expect(coreActions).not.toHaveBeenCalled();
       },
     );
 

@@ -502,7 +502,10 @@
         surface="soft"
         tone="neutral"
         label={`Show ${tab.label}`}
-        onclick={() => layout.setHidden(tab.key, false)}
+        onclick={() => {
+          layout.setHidden(tab.key, false);
+          selectTab(tab.key);
+        }}
       >
         <ChevronsUpIcon size="14" strokeWidth="2.2" aria-hidden="true" />
       </Button>

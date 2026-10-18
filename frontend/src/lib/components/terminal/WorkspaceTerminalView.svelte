@@ -995,6 +995,7 @@
   let launcherShownFor = $state<string[]>([]);
 
   function openLauncher(leaf?: WorkspaceRuntimeLaunchLeaf): void {
+    reportWorkspaceUse();
     if (externalDockVisible && !terminalLayout.open) {
       terminalLayout = { ...terminalLayout, open: true };
     }

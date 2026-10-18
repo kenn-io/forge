@@ -671,8 +671,7 @@ OS and architecture, and an anonymous install ID. The browser reports app opens
 to the daemon, never to the analytics service.
 At startup and daily while running, the daemon reports the number of tracked
 repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
-Earlier events retain exact numeric values; newer events use string ranges, so
-insights must group newer `repo_count` values rather than sum or average them.
+Earlier events retain exact numeric values; newer events use string ranges.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.

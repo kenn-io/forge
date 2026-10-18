@@ -28,6 +28,24 @@ const (
 // HeartbeatInterval is how often a running daemon reports daemon_active.
 const HeartbeatInterval = 24 * time.Hour
 
+// RepoCountBucket groups tracked repository counts into fixed telemetry ranges.
+func RepoCountBucket(count int) string {
+	switch {
+	case count <= 0:
+		return "0"
+	case count == 1:
+		return "1"
+	case count <= 5:
+		return "2-5"
+	case count <= 20:
+		return "6-20"
+	case count <= 100:
+		return "21-100"
+	default:
+		return "over-100"
+	}
+}
+
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
 var screenNames = []string{
@@ -72,7 +90,7 @@ var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 		"duration_bucket": durationFilter,
 	},
 	"daemon_active": {
-		"repo_count": posthog.AllowNumber,
+		"repo_count": posthog.AllowStringValues("0", "1", "2-5", "6-20", "21-100", "over-100"),
 	},
 }
 

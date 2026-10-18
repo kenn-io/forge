@@ -60,7 +60,7 @@ func startTelemetryHeartbeat(handle *backgroundLoopHandle, reporter telemetry.Cl
 }
 
 func captureDaemonActive(reporter telemetry.Client, repoCount func() int) error {
-	return reporter.Capture("daemon_active", map[string]any{"repo_count": repoCount()})
+	return reporter.Capture("daemon_active", map[string]any{"repo_count": telemetry.RepoCountBucket(repoCount())})
 }
 
 func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Syncer, cfg *config.Config) {

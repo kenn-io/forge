@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -171,25 +173,46 @@ func TestTelemetryHeartbeatReportsDailyUntilStopped(t *testing.T) {
 		handle := newBackgroundLoopHandle(t.Context())
 		client := &fakeTelemetryClient{}
 		var repos atomic.Int64
-		repos.Store(3)
+		repos.Store(37)
 		startTelemetryHeartbeat(handle, client, func() int { return int(repos.Load()) })
 
 		synctest.Wait()
 		require.Empty(client.repoCounts())
 		time.Sleep(24 * time.Hour)
 		synctest.Wait()
-		require.Equal([]any{3}, client.repoCounts())
+		require.Equal([]any{"21-100"}, client.repoCounts())
 
-		repos.Store(5)
+		repos.Store(101)
 		time.Sleep(24 * time.Hour)
 		synctest.Wait()
-		require.Equal([]any{3, 5}, client.repoCounts())
+		require.Equal([]any{"21-100", "over-100"}, client.repoCounts())
 
 		require.NoError(handle.Stop(t.Context()))
 		time.Sleep(72 * time.Hour)
 		synctest.Wait()
-		require.Equal([]any{3, 5}, client.repoCounts())
+		require.Equal([]any{"21-100", "over-100"}, client.repoCounts())
 	})
+}
+
+func TestRepoCountBucket(t *testing.T) {
+	for _, tt := range []struct {
+		count int
+		want  string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{2, "2-5"},
+		{5, "2-5"},
+		{6, "6-20"},
+		{20, "6-20"},
+		{21, "21-100"},
+		{100, "21-100"},
+		{101, "over-100"},
+	} {
+		t.Run(tt.want+"/"+strconv.Itoa(tt.count), func(t *testing.T) {
+			require.Equal(t, tt.want, telemetry.RepoCountBucket(tt.count))
+		})
+	}
 }
 
 func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {

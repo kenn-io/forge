@@ -69,7 +69,14 @@ interface Recorded {
   mutations: { request: string; body: unknown }[];
 }
 
-async function mockQuickActions(page: Page, options: { operations?: Record<string, unknown> } = {}): Promise<Recorded> {
+async function mockQuickActions(
+  page: Page,
+  options: {
+    operations?: Record<string, unknown>;
+    /** Workspaces whose agent handoff is held until the returned release is called, then fails. */
+    failingHandoffs?: { workspaceIds: string[]; release: Promise<void> };
+  } = {},
+): Promise<Recorded> {
   const recorded: Recorded = { creates: [], handoffs: [], mutations: [] };
   await mockApi(page);
   await page.route("**/api/v1/repo/github/acme/widgets", async (route) => {
@@ -175,6 +182,16 @@ async function mockQuickActions(page: Page, options: { operations?: Record<strin
   await page.route("**/api/v1/workspaces/*/runtime/agent-handoffs", async (route) => {
     const workspaceId = new URL(route.request().url()).pathname.split("/")[4] ?? "";
     recorded.handoffs.push({ workspaceId, body: route.request().postDataJSON() as Record<string, unknown> });
+    const failing = options.failingHandoffs;
+    if (failing?.workspaceIds.includes(workspaceId)) {
+      await failing.release;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", code: "conflict", status: 409, detail: "agent is not installed" }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -233,6 +250,31 @@ test("runs a quick action on a shift-selected range of pull requests", async ({ 
   });
   expect(recorded.handoffs.map((handoff) => handoff.workspaceId).sort()).toEqual(["ws-21", "ws-22", "ws-23"]);
   expect(recorded.handoffs[0]?.body).toEqual({ target_key: "codex", message: fixCI.prompt });
+});
+
+test("reports bulk quick action launches once they have all finished", async ({ page }) => {
+  const release = Promise.withResolvers<void>();
+  await mockQuickActions(page, { failingHandoffs: { workspaceIds: ["ws-23"], release: release.promise } });
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Rename config loader" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Fix CI on 3 PRs/ }).click();
+  await page.getByRole("button", { name: "Run on 3 PRs" }).click();
+
+  // Launching continues in the background; nothing reports success early.
+  await expect(page.getByRole("dialog", { name: 'Run "Fix CI" on 3 PRs?' })).toHaveCount(0);
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+  await expect(page.locator(".kit-flash-stack", { hasText: "Fix CI" })).toHaveCount(0);
+  const flashes = page.locator(".kit-flash-stack");
+
+  release.resolve();
+  await expect(flashes).toContainText(
+    '"Fix CI" on 3 items: started 2, failed 1. acme/widgets#23: agent is not installed.',
+  );
+  await expect(flashes).not.toContainText('Started "Fix CI"');
 });
 
 test("Cmd/Ctrl-click toggles pull requests and Escape clears the selection", async ({ page }) => {

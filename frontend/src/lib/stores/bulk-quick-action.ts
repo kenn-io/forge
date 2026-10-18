@@ -1,7 +1,7 @@
-import { Effect, Result } from "effect";
+import { Effect } from "effect";
 import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
-import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
 import type { WorkspaceItemIdentity } from "../workspace-inline.js";
@@ -13,7 +13,7 @@ import {
   isWorkspaceCreatePending,
   recordWorkspaceCreated,
 } from "./workspace-create-pending.svelte.js";
-import { runWorkspaceQuickAction } from "./workspace-quick-actions.js";
+import { launchWorkspaceQuickAction, type QuickActionOutcome } from "./workspace-quick-actions.js";
 import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
 
 const CONCURRENCY = 4;
@@ -82,93 +82,112 @@ function createItemWorkspace(target: ListItemTarget, devboxTarget: string | unde
 }
 
 /**
- * Creates (or reuses) a workspace for one item on the saved default target and
- * hands it the quick action. Failures become messages for the batch summary.
+ * Creates (or reuses) a workspace for one item on the saved default target,
+ * then launches the quick action's agent there and waits for the outcome.
  */
-function runOnItem(runtime: AppRuntime, target: ListItemTarget, action: QuickAction, defaultTarget: string) {
+function runOnItem(
+  target: ListItemTarget,
+  action: QuickAction,
+  defaultTarget: string,
+): Effect.Effect<QuickActionOutcome, never, GeneratedApi> {
   const identity = itemIdentity(target);
   const devboxTarget = defaultTarget.startsWith("devbox:") ? defaultTarget : undefined;
-  if (isWorkspaceCreatePending(identity)) {
-    return Effect.fail("a workspace is already being created");
-  }
+  const failed = (reason: string): Effect.Effect<QuickActionOutcome> =>
+    Effect.succeed({ type: "failed", reason, message: reason });
+  if (isWorkspaceCreatePending(identity)) return failed("a workspace is already being created");
   // The item's existing local workspace takes the action; creating another
   // would conflict, and the server waits for it to be ready before launching.
   const existing = target.item.workspace;
   if (existing?.id) {
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
-      return Effect.fail("its workspace is being deleted");
+      return failed("its workspace is being deleted");
     }
-    if (existing.status === "error") return Effect.fail("its workspace failed to set up");
-    return Effect.sync(() => runWorkspaceQuickAction(runtime, existing.id, action));
+    if (existing.status === "error") return failed("its workspace failed to set up");
+    return launchWorkspaceQuickAction(existing.id, action);
   }
   if (devboxTarget) {
     const reason = devboxRepositoryUnavailableReason({
       provider: target.item.repo.provider,
       platformHost: target.item.repo.platform_host,
     });
-    if (reason) return Effect.fail(reason);
+    if (reason) return failed(reason);
   }
   return Effect.sync(() => beginWorkspaceCreate(identity)).pipe(
     Effect.andThen(createItemWorkspace(target, devboxTarget)),
-    Effect.flatMap((data) =>
+    Effect.tap((data) =>
       Effect.sync(() => {
-        if (!data?.id) return;
         // A local creation is published like the detail views do, so an open
         // detail for the same item shows the workspace without a refetch.
-        if (!devboxTarget) recordWorkspaceCreated(identity, { id: data.id, status: data.status ?? "provisioning" });
-        runWorkspaceQuickAction(runtime, data.id, action, devboxTarget);
+        if (data?.id && !devboxTarget) {
+          recordWorkspaceCreated(identity, { id: data.id, status: data.status ?? "provisioning" });
+        }
       }),
     ),
-    Effect.mapError((failure) =>
-      failure._tag === "ApiProblemError"
-        ? (failure.problem.detail ?? failure.problem.title ?? "failed to create workspace")
-        : "could not reach Kenn Forge",
-    ),
     Effect.ensuring(Effect.sync(() => endWorkspaceCreate(identity))),
+    Effect.matchEffect({
+      onFailure: (failure) =>
+        failed(
+          failure._tag === "ApiProblemError"
+            ? (failure.problem.detail ?? failure.problem.title ?? "failed to create workspace")
+            : "could not reach Kenn Forge",
+        ),
+      onSuccess: (data) => {
+        if (!data?.id) return failed("failed to create workspace");
+        return launchWorkspaceQuickAction(data.id, action, devboxTarget);
+      },
+    }),
   );
+}
+
+function summary(action: QuickAction, outcomes: readonly { target: ListItemTarget; outcome: QuickActionOutcome }[]) {
+  const started = outcomes.filter(({ outcome }) => outcome.type === "started").length;
+  const problems = outcomes.flatMap(({ target, outcome }) =>
+    outcome.type === "started" ? [] : [`${listItemLabel(target)}: ${outcome.reason}.`],
+  );
+  if (problems.length === 0) {
+    return {
+      message: `Started "${action.label}" in ${started} ${started === 1 ? "workspace" : "workspaces"}.`,
+      tone: "success" as const,
+    };
+  }
+  const failed = outcomes.filter(({ outcome }) => outcome.type === "failed").length;
+  const unconfirmed = problems.length - failed;
+  const counts = [
+    `started ${started}`,
+    ...(unconfirmed > 0 ? [`unconfirmed ${unconfirmed}`] : []),
+    ...(failed > 0 ? [`failed ${failed}`] : []),
+  ].join(", ");
+  return {
+    message: `"${action.label}" on ${outcomes.length} items: ${counts}. ${problems.join(" ")}`,
+    tone: failed === outcomes.length ? ("danger" as const) : ("warning" as const),
+  };
 }
 
 /**
  * Runs a quick action on several PRs or issues: each gets its workspace (new
- * or reused) and the action's agent with its prompt, a few at a time. Items
- * that fail are reported together; the rest keep running.
+ * or reused) and the action's agent with its prompt, a few at a time. One
+ * message reports how every launch ended; one item failing does not stop the
+ * rest.
  */
 export function runQuickActionOnItems(
   runtime: AppRuntime,
   targets: readonly ListItemTarget[],
   action: QuickAction,
   defaultTarget: string,
-  onSettled?: () => void,
 ): void {
   if (targets.length === 0) return;
   runtime.runCommand(
     Effect.forEach(
       targets,
-      (target) =>
-        Effect.result(runOnItem(runtime, target, action, defaultTarget)).pipe(
-          Effect.map((result) => ({ target, result })),
-        ),
+      (target) => runOnItem(target, action, defaultTarget).pipe(Effect.map((outcome) => ({ target, outcome }))),
       { concurrency: CONCURRENCY },
     ).pipe(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
-          const failures = outcomes.flatMap(({ target, result }) =>
-            Result.isFailure(result) ? [`${listItemLabel(target)}: ${result.failure}.`] : [],
-          );
-          const started = outcomes.length - failures.length;
-          if (failures.length === 0) {
-            showFlash(`Started "${action.label}" in ${started} ${started === 1 ? "workspace" : "workspaces"}.`, {
-              tone: "success",
-            });
-            return;
-          }
-          showFlash(
-            `"${action.label}" could not start for ${failures.length} of ${outcomes.length} items. ${failures.join(" ")}`,
-            { tone: started > 0 ? "warning" : "danger" },
-          );
+          const { message, tone } = summary(action, outcomes);
+          showFlash(message, { tone });
         }),
       ),
-      Effect.ensuring(Effect.sync(() => onSettled?.())),
     ),
     {
       operation: "run quick action on items",

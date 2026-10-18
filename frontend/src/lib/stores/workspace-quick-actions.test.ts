@@ -48,31 +48,32 @@ describe("quick-action launch serialization", () => {
     quickActionWorkspaces.clear();
   });
 
-  it("blocks another action until the acknowledged session is presented", async () => {
+  it("queues another action for the same workspace until the previous launch finishes", async () => {
     const handoff = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
-    launchHandoff.mockReturnValue(handoff.promise);
+    launchHandoff
+      .mockReturnValueOnce(handoff.promise)
+      .mockResolvedValue({ session: { ...session, key: "helper-1" }, initial_message: { state: "delivered" } });
     const acknowledged = vi.fn();
     const firstAction = { label: "Review", agent: "chat", prompt: "Review this change" };
     const secondAction = { label: "Fix", agent: "helper", prompt: "Fix this change" };
     runWorkspaceQuickAction(runtime, "ws-a", "pull_request", firstAction, undefined, acknowledged);
-    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledOnce());
-    const pendingLaunch = quickActionLaunches.get("ws-a");
-    if (!pendingLaunch) throw new Error("Missing pending launch");
-    pendingLaunch.explicitlyMovedSessionKeys = new Set([session.key]);
     runWorkspaceQuickAction(runtime, "ws-a", "pull_request", secondAction);
+    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(launchHandoff).toHaveBeenCalledOnce();
-    expect(quickActionLaunches.get("ws-a")).toBe(pendingLaunch);
 
     handoff.resolve({ session, initial_message: { state: "delivered" } });
-    await vi.waitFor(() => expect(acknowledged).toHaveBeenCalledWith(session));
-    runWorkspaceQuickAction(runtime, "ws-a", "pull_request", secondAction);
-    expect(launchHandoff).toHaveBeenCalledOnce();
-    expect(quickActionLaunches.get("ws-a")?.session).toEqual(session);
-    expect(quickActionLaunches.get("ws-a")?.explicitlyMovedSessionKeys?.has(session.key)).toBe(true);
-
-    quickActionLaunches.delete("ws-a");
-    runWorkspaceQuickAction(runtime, "ws-a", "pull_request", secondAction);
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
+    expect(acknowledged).toHaveBeenCalledWith(session);
+    expect(launchHandoff.mock.calls.map(([, body]) => body)).toEqual([
+      { target_key: "chat", message: "Review this change" },
+      { target_key: "helper", message: "Fix this change" },
+    ]);
+    await vi.waitFor(() => expect(quickActionLaunches.get("ws-a")?.session?.key).toBe("helper-1"));
+
+    // A finished launch never blocks a later one.
+    runWorkspaceQuickAction(runtime, "ws-a", "pull_request", firstAction);
+    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
   });
 
   it("allows another action after the previous request fails", async () => {

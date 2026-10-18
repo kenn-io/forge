@@ -194,13 +194,12 @@
     else confirmQuickAction = { action, targets: items };
   }
 
+  // Launches finish in the background, possibly after workspaces finish
+  // setting up; one message reports the outcome when they all have.
   function runQuick(action: QuickAction, items: readonly ListItemTarget[]): void {
-    running = true;
-    runQuickActionOnItems(runtime, items, action, settings.getWorkspaceSettings().default_execution_target ?? "", () => {
-      running = false;
-      confirmQuickAction = null;
-      onClearSelection();
-    });
+    confirmQuickAction = null;
+    onClearSelection();
+    runQuickActionOnItems(runtime, items, action, settings.getWorkspaceSettings().default_execution_target ?? "");
   }
 
   function agentLabel(action: QuickAction): string {
@@ -521,8 +520,6 @@
     ? `Each gets a workspace, reusing one that already exists, and ${agentLabel(confirmQuickAction.action)} starts with the action's prompt.`
     : undefined}
   confirmLabel={`Run on ${confirmQuickAction?.targets.length ?? 0} ${listItemNoun(kind, 2)}`}
-  pendingLabel="Starting…"
-  busy={running}
   frameId="item-quick-action-confirm"
   onCancel={() => { confirmQuickAction = null; }}
   onConfirm={() => { if (confirmQuickAction) runQuick(confirmQuickAction.action, confirmQuickAction.targets); }}

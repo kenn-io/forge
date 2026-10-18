@@ -3230,12 +3230,15 @@ describe("WorkspaceListSidebar", () => {
 
   it("bulk-deletes a shift-click range and keeps workspaces with uncommitted changes", async () => {
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
-    mockDelete.mockImplementation((_path: string, options: { params: { path: { id: string } } }) =>
-      Promise.resolve(
-        options.params.path.id === "ws-old"
-          ? { error: { detail: "workspace has uncommitted changes" }, response: new Response(null, { status: 409 }) }
-          : { response: { ok: true, status: 204 } },
-      ),
+    // Like the server, the fake refuses the dirty workspace only when the
+    // request does not force deletion.
+    mockDelete.mockImplementation(
+      (_path: string, options: { params: { path: { id: string }; query?: { force?: boolean } } }) =>
+        Promise.resolve(
+          options.params.path.id === "ws-old" && options.params.query?.force !== true
+            ? { error: { detail: "workspace has uncommitted changes" }, response: new Response(null, { status: 409 }) }
+            : { response: { ok: true, status: 204 } },
+        ),
     );
     const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
     const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
@@ -3256,6 +3259,8 @@ describe("WorkspaceListSidebar", () => {
 
     await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
     expect(mockDelete.mock.calls.map(([, options]) => options.params.path.id).sort()).toEqual(["ws-new", "ws-old"]);
+    // Bulk deletion never forces, so uncommitted changes are never discarded.
+    expect(mockDelete.mock.calls.filter(([, options]) => options.params.query?.force === true)).toEqual([]);
     expect(screen.getByText("Oldest without activity")).toBeTruthy();
     expect(screen.getByText("Most recently active")).toBeTruthy();
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");

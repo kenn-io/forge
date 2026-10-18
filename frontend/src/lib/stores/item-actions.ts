@@ -5,6 +5,8 @@ import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
 import { firstUnavailableGate, type OperationGate } from "../components/detail/operation-gates.js";
 import { showFlash } from "./flash.svelte.js";
+import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
+import { providerMutationKey } from "./provider-key.js";
 
 /** A PR or issue row from a sidebar list. */
 export type ListItemTarget = { kind: "pull"; item: PullRequest } | { kind: "issue"; item: Issue };
@@ -125,8 +127,52 @@ function starRequest(target: ListItemTarget) {
   };
 }
 
-/** Runs one action on one item; resolves without a request when nothing would change. */
-function applyAction(target: ListItemTarget, action: ListItemAction) {
+/**
+ * The mutation-queue family each action shares with the detail views, so
+ * edits to one item from the sidebar and its detail apply in order.
+ */
+const mutationFamily: Record<ListItemAction["type"], string> = {
+  close: "actions",
+  reopen: "actions",
+  draft: "actions",
+  ready: "actions",
+  star: "star",
+  kanban: "kanban",
+  labels: "labels",
+  assignees: "assignees",
+};
+
+/** Runs one action on one item through the shared provider mutation queue. */
+function submitAction(target: ListItemTarget, action: ListItemAction) {
+  const commit = actionRequest(target, action);
+  if (commit === null) return Effect.void;
+  const { item } = target;
+  return Effect.gen(function* () {
+    const mutations = yield* ProviderMutations;
+    yield* mutations.submit({
+      key: providerMutationKey(
+        target.kind,
+        {
+          provider: item.repo.provider,
+          platformHost: item.repo.platform_host,
+          owner: item.repo.owner,
+          name: item.repo.name,
+          number: item.Number,
+        },
+        mutationFamily[action.type],
+      ),
+      baseline: undefined,
+      optimistic: undefined,
+      apply: () => Effect.void,
+      commit,
+      // The lists and any open detail reload once the batch settles.
+      refreshOnStale: Effect.void,
+    });
+  });
+}
+
+/** The request for one action on one item, or null when nothing would change. */
+function actionRequest(target: ListItemTarget, action: ListItemAction) {
   const route = itemParams(target);
   const operation = `${action.type} ${target.kind}`;
   const isPull = target.kind === "pull";
@@ -159,7 +205,7 @@ function applyAction(target: ListItemTarget, action: ListItemAction) {
           : client.PullRequestsService.setKanbanState(route.params, { status: action.status }, { signal }),
       ).pipe(Effect.asVoid);
     case "star":
-      if (target.item.Starred === action.starred) return Effect.void;
+      if (target.item.Starred === action.starred) return null;
       return executeGeneratedApiRequest(operation, (client, signal) =>
         action.starred
           ? client.SettingsService.setStarred(starRequest(target), { signal })
@@ -171,7 +217,7 @@ function applyAction(target: ListItemTarget, action: ListItemAction) {
         action.add,
         action.remove,
       );
-      if (labels === null) return Effect.void;
+      if (labels === null) return null;
       return executeGeneratedApiRequest(operation, (client, signal) => {
         if (isPull) {
           return route.onHost
@@ -185,7 +231,7 @@ function applyAction(target: ListItemTarget, action: ListItemAction) {
     }
     case "assignees": {
       const assignees = nextNames(target.item.assignees ?? [], action.add, action.remove);
-      if (assignees === null) return Effect.void;
+      if (assignees === null) return null;
       return executeGeneratedApiRequest(operation, (client, signal) => {
         if (isPull) {
           return route.onHost
@@ -243,14 +289,16 @@ export function runListItemAction(
     Effect.forEach(
       targets,
       (target) =>
-        Effect.result(applyAction(target, resolve(target))).pipe(Effect.map((result) => ({ target, result }))),
+        Effect.result(submitAction(target, resolve(target))).pipe(Effect.map((result) => ({ target, result }))),
       { concurrency: CONCURRENCY },
     ).pipe(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
           options.afterChange?.();
           const failures = outcomes.flatMap(({ target, result }) =>
-            Result.isFailure(result) ? [`${listItemLabel(target)}: ${failureMessage(result.failure)}.`] : [],
+            Result.isFailure(result)
+              ? [`${listItemLabel(target)}: ${providerMutationFailureMessage(result.failure, "request failed")}.`]
+              : [],
           );
           const done = outcomes.length - failures.length;
           if (failures.length === 0) {
@@ -272,11 +320,4 @@ export function runListItemAction(
       onFailure: () => showFlash("The action could not run.", { tone: "danger" }),
     },
   );
-}
-
-function failureMessage(failure: { _tag: string; problem?: { detail?: string; title?: string } }): string {
-  if (failure._tag === "ApiProblemError") {
-    return failure.problem?.detail ?? failure.problem?.title ?? "request failed";
-  }
-  return "could not reach Kenn Forge";
 }

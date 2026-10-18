@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -11,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -192,27 +190,6 @@ func TestTelemetryHeartbeatReportsDailyUntilStopped(t *testing.T) {
 		synctest.Wait()
 		require.Equal([]any{"21-100", "over-100"}, client.repoCounts())
 	})
-}
-
-func TestRepoCountBucket(t *testing.T) {
-	for _, tt := range []struct {
-		count int
-		want  string
-	}{
-		{0, "0"},
-		{1, "1"},
-		{2, "2-5"},
-		{5, "2-5"},
-		{6, "6-20"},
-		{20, "6-20"},
-		{21, "21-100"},
-		{100, "21-100"},
-		{101, "over-100"},
-	} {
-		t.Run(tt.want+"/"+strconv.Itoa(tt.count), func(t *testing.T) {
-			require.Equal(t, tt.want, telemetry.RepoCountBucket(tt.count))
-		})
-	}
 }
 
 func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {

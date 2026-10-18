@@ -90,11 +90,6 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		assert.False(valid)
 	}
 	repoCountFilter := allowedEvents["daemon_active"]["repo_count"]
-	for _, bucket := range []string{"0", "1", "2-5", "6-20", "21-100", "over-100"} {
-		value, valid := repoCountFilter(bucket)
-		assert.True(valid)
-		assert.Equal(bucket, value)
-	}
 	for _, invalid := range []any{nil, 37, "37", ""} {
 		_, valid := repoCountFilter(invalid)
 		assert.False(valid)

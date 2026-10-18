@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -76,6 +77,31 @@ func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 	assert.Equal(first, stored)
 }
 
+func TestRepoCountBucket(t *testing.T) {
+	for _, tt := range []struct {
+		count int
+		want  string
+	}{
+		{0, "0"},
+		{1, "1"},
+		{2, "2-5"},
+		{5, "2-5"},
+		{6, "6-20"},
+		{20, "6-20"},
+		{21, "21-100"},
+		{100, "21-100"},
+		{101, "over-100"},
+	} {
+		t.Run(tt.want+"/"+strconv.Itoa(tt.count), func(t *testing.T) {
+			bucket := RepoCountBucket(tt.count)
+			require.Equal(t, tt.want, bucket)
+			value, valid := allowedEvents["daemon_active"]["repo_count"](bucket)
+			assert.True(t, valid)
+			assert.Equal(t, tt.want, value)
+		})
+	}
+}
+
 func TestReporterRoutesEventsBySource(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -97,7 +123,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 			backend := &fakeKitClient{}
 			reporter := &Reporter{daemon: daemon, backend: backend}
 
-			err := reporter.Capture(tt.event, map[string]any{"repo_count": 1})
+			err := reporter.Capture(tt.event, map[string]any{"repo_count": "1"})
 			switch {
 			case tt.wantErr != nil:
 				require.ErrorIs(t, err, tt.wantErr)

@@ -23,6 +23,9 @@
 
 ## Frontend assets
 
+- Probe the development frontend over HTTP; Vite's parent process can stay
+  alive after a config reload stops listening. Use the repository-local launcher
+  so updates use the installed project toolchain (`scripts/dev-stack-frontend.sh`).
 - Vite routes live at root even when the backend has a base path; login redirects
   must translate back to that namespace. The static dev-auth proxy check requires
   the tested helper (`frontend/src/lib/dev/authBootstrapProxy.ts::authBootstrapProxy`).

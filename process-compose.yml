@@ -54,4 +54,21 @@ processes:
     log_location: "tmp/logs/frontend-process-compose.log"
     environment:
       - KENN_FORGE_API_ERROR_DEBUG=1
-    command: "bun install ${BUN_INSTALL_FLAGS:-} && cd frontend && exec vp dev -- ${FRONTEND_ARGS:-}"
+    command: "exec sh ./scripts/dev-stack-frontend.sh"
+    availability:
+      restart: always
+      backoff_seconds: 5
+    shutdown:
+      signal: 2
+      timeout_seconds: 10
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        path: /
+        port: 5174
+      initial_delay_seconds: 5
+      period_seconds: 5
+      timeout_seconds: 3
+      success_threshold: 1
+      failure_threshold: 120

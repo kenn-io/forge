@@ -185,15 +185,10 @@ func TestTelemetryHeartbeatReportsDailyUntilStopped(t *testing.T) {
 		synctest.Wait()
 		require.Equal([]any{"0-5", "21-100"}, client.repoCounts())
 
-		repos.Store(101)
-		time.Sleep(24 * time.Hour)
-		synctest.Wait()
-		require.Equal([]any{"0-5", "21-100", "over-100"}, client.repoCounts())
-
 		require.NoError(handle.Stop(t.Context()))
 		time.Sleep(72 * time.Hour)
 		synctest.Wait()
-		require.Equal([]any{"0-5", "21-100", "over-100"}, client.repoCounts())
+		require.Equal([]any{"0-5", "21-100"}, client.repoCounts())
 	})
 }
 

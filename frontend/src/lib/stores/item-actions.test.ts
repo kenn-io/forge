@@ -16,11 +16,11 @@ const pull = {
 
 describe("sidebar item actions", () => {
   let runtime: OwnedAppRuntime;
-  const setPrLabels = vi.fn();
+  const updatePrLabels = vi.fn();
 
   beforeEach(() => {
-    setPrLabels.mockReset().mockResolvedValue({});
-    runtime = makeAppRuntime(makeGeneratedClient({ PullRequestsService: { setPrLabels } }));
+    updatePrLabels.mockReset().mockResolvedValue({});
+    runtime = makeAppRuntime(makeGeneratedClient({ PullRequestsService: { updatePrLabels } }));
   });
 
   afterEach(async () => {
@@ -59,12 +59,12 @@ describe("sidebar item actions", () => {
       { onSettled: settled },
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(setPrLabels).not.toHaveBeenCalled();
+    expect(updatePrLabels).not.toHaveBeenCalled();
 
     earlier.resolve();
     await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
     expect(earlierCommitted).toHaveBeenCalledOnce();
-    expect(setPrLabels).toHaveBeenCalledOnce();
-    expect(setPrLabels.mock.calls[0]?.[1]).toEqual({ labels: ["docs"] });
+    expect(updatePrLabels).toHaveBeenCalledOnce();
+    expect(updatePrLabels.mock.calls[0]?.[1]).toEqual({ add: ["docs"], remove: [] });
   });
 });

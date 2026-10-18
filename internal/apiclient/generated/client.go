@@ -4540,6 +4540,39 @@ func (o *EditIssueContentOnHostRequestOptions) GetHeader() (map[string]string, e
 	return nil, nil
 }
 
+// UpdateIssueAssigneesOnHostRequestOptions is the options needed to make a request to UpdateIssueAssigneesOnHost.
+type UpdateIssueAssigneesOnHostRequestOptions struct {
+	PathParams *UpdateIssueAssigneesOnHostPath
+	Body       *UpdateIssueAssigneesOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateIssueAssigneesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateIssueAssigneesOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateIssueAssigneesOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateIssueAssigneesOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetIssueAssigneesOnHostRequestOptions is the options needed to make a request to SetIssueAssigneesOnHost.
 type SetIssueAssigneesOnHostRequestOptions struct {
 	PathParams *SetIssueAssigneesOnHostPath
@@ -4801,6 +4834,39 @@ func (o *DeleteIssueKataLinkOnHostRequestOptions) GetHeader() (map[string]string
 	return nil, nil
 }
 
+// UpdateIssueLabelsOnHostRequestOptions is the options needed to make a request to UpdateIssueLabelsOnHost.
+type UpdateIssueLabelsOnHostRequestOptions struct {
+	PathParams *UpdateIssueLabelsOnHostPath
+	Body       *UpdateIssueLabelsOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateIssueLabelsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateIssueLabelsOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateIssueLabelsOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateIssueLabelsOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetIssueLabelsOnHostRequestOptions is the options needed to make a request to SetIssueLabelsOnHost.
 type SetIssueLabelsOnHostRequestOptions struct {
 	PathParams *SetIssueLabelsOnHostPath
@@ -5058,6 +5124,39 @@ func (o *ApprovePullWorkflowsOnHostRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *ApprovePullWorkflowsOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdatePrAssigneesOnHostRequestOptions is the options needed to make a request to UpdatePrAssigneesOnHost.
+type UpdatePrAssigneesOnHostRequestOptions struct {
+	PathParams *UpdatePrAssigneesOnHostPath
+	Body       *UpdatePrAssigneesOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePrAssigneesOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePrAssigneesOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePrAssigneesOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePrAssigneesOnHostRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -5645,6 +5744,39 @@ func (o *DeletePullRequestKataLinkOnHostRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *DeletePullRequestKataLinkOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdatePrLabelsOnHostRequestOptions is the options needed to make a request to UpdatePrLabelsOnHost.
+type UpdatePrLabelsOnHostRequestOptions struct {
+	PathParams *UpdatePrLabelsOnHostPath
+	Body       *UpdatePrLabelsOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePrLabelsOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePrLabelsOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePrLabelsOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePrLabelsOnHostRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -7045,6 +7177,39 @@ func (o *EditIssueContentRequestOptions) GetHeader() (map[string]string, error) 
 	return nil, nil
 }
 
+// UpdateIssueAssigneesRequestOptions is the options needed to make a request to UpdateIssueAssignees.
+type UpdateIssueAssigneesRequestOptions struct {
+	PathParams *UpdateIssueAssigneesPath
+	Body       *UpdateIssueAssigneesBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateIssueAssigneesRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateIssueAssigneesRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateIssueAssigneesRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateIssueAssigneesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetIssueAssigneesRequestOptions is the options needed to make a request to SetIssueAssignees.
 type SetIssueAssigneesRequestOptions struct {
 	PathParams *SetIssueAssigneesPath
@@ -7303,6 +7468,39 @@ func (o *DeleteIssueKataLinkRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *DeleteIssueKataLinkRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdateIssueLabelsRequestOptions is the options needed to make a request to UpdateIssueLabels.
+type UpdateIssueLabelsRequestOptions struct {
+	PathParams *UpdateIssueLabelsPath
+	Body       *UpdateIssueLabelsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdateIssueLabelsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdateIssueLabelsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdateIssueLabelsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdateIssueLabelsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -8586,6 +8784,39 @@ func (o *ApprovePullWorkflowsRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// UpdatePrAssigneesRequestOptions is the options needed to make a request to UpdatePrAssignees.
+type UpdatePrAssigneesRequestOptions struct {
+	PathParams *UpdatePrAssigneesPath
+	Body       *UpdatePrAssigneesBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePrAssigneesRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePrAssigneesRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePrAssigneesRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePrAssigneesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // SetPrAssigneesRequestOptions is the options needed to make a request to SetPrAssignees.
 type SetPrAssigneesRequestOptions struct {
 	PathParams *SetPrAssigneesPath
@@ -9170,6 +9401,39 @@ func (o *DeletePullRequestKataLinkRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *DeletePullRequestKataLinkRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UpdatePrLabelsRequestOptions is the options needed to make a request to UpdatePrLabels.
+type UpdatePrLabelsRequestOptions struct {
+	PathParams *UpdatePrLabelsPath
+	Body       *UpdatePrLabelsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePrLabelsRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePrLabelsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePrLabelsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePrLabelsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -12458,6 +12722,7 @@ type ClientInterface interface {
 	CreateIssueOnHostWithResponse(ctx context.Context, options *CreateIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueOnHostResp, error)
 	GetIssueOnHostWithResponse(ctx context.Context, options *GetIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetIssueOnHostResp, error)
 	EditIssueContentOnHostWithResponse(ctx context.Context, options *EditIssueContentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueContentOnHostResp, error)
+	UpdateIssueAssigneesOnHostWithResponse(ctx context.Context, options *UpdateIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueAssigneesOnHostResp, error)
 	SetIssueAssigneesOnHostWithResponse(ctx context.Context, options *SetIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesOnHostResp, error)
 	PostIssueCommentOnHostWithResponse(ctx context.Context, options *PostIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentOnHostResp, error)
 	DeleteIssueCommentOnHostWithResponse(ctx context.Context, options *DeleteIssueCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentOnHostResp, error)
@@ -12466,6 +12731,7 @@ type ClientInterface interface {
 	ListIssueKataLinksOnHostWithResponse(ctx context.Context, options *ListIssueKataLinksOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksOnHostResp, error)
 	CreateIssueKataLinkOnHostWithResponse(ctx context.Context, options *CreateIssueKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkOnHostResp, error)
 	DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, options *DeleteIssueKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueKataLinkOnHostResp, error)
+	UpdateIssueLabelsOnHostWithResponse(ctx context.Context, options *UpdateIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueLabelsOnHostResp, error)
 	SetIssueLabelsOnHostWithResponse(ctx context.Context, options *SetIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueLabelsOnHostResp, error)
 	SyncIssueOnHostWithResponse(ctx context.Context, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueOnHostResp, error)
 	EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options *EnqueueIssueSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueueIssueSyncOnHostResp, error)
@@ -12474,6 +12740,7 @@ type ClientInterface interface {
 	EditPrContentOnHostWithResponse(ctx context.Context, options *EditPrContentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentOnHostResp, error)
 	ApprovePullOnHostWithResponse(ctx context.Context, options *ApprovePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullOnHostResp, error)
 	ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, options *ApprovePullWorkflowsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullWorkflowsOnHostResp, error)
+	UpdatePrAssigneesOnHostWithResponse(ctx context.Context, options *UpdatePrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrAssigneesOnHostResp, error)
 	SetPrAssigneesOnHostWithResponse(ctx context.Context, options *SetPrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrAssigneesOnHostResp, error)
 	RefreshPullCiOnHostWithResponse(ctx context.Context, options *RefreshPullCiOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshPullCiOnHostResp, error)
 	PostPrCommentOnHostWithResponse(ctx context.Context, options *PostPrCommentOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentOnHostResp, error)
@@ -12492,6 +12759,7 @@ type ClientInterface interface {
 	ListPullRequestKataLinksOnHostWithResponse(ctx context.Context, options *ListPullRequestKataLinksOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullRequestKataLinksOnHostResp, error)
 	CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context, options *CreatePullRequestKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePullRequestKataLinkOnHostResp, error)
 	DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context, options *DeletePullRequestKataLinkOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePullRequestKataLinkOnHostResp, error)
+	UpdatePrLabelsOnHostWithResponse(ctx context.Context, options *UpdatePrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsOnHostResp, error)
 	SetPrLabelsOnHostWithResponse(ctx context.Context, options *SetPrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsOnHostResp, error)
 	MergePullOnHostWithResponse(ctx context.Context, options *MergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullOnHostResp, error)
 	DeferMergePullOnHostWithResponse(ctx context.Context, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullOnHostResp, error)
@@ -12535,6 +12803,7 @@ type ClientInterface interface {
 	CreateIssueWithResponse(ctx context.Context, options *CreateIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueResp, error)
 	GetIssueWithResponse(ctx context.Context, options *GetIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetIssueResp, error)
 	EditIssueContentWithResponse(ctx context.Context, options *EditIssueContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditIssueContentResp, error)
+	UpdateIssueAssigneesWithResponse(ctx context.Context, options *UpdateIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueAssigneesResp, error)
 	SetIssueAssigneesWithResponse(ctx context.Context, options *SetIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesResp, error)
 	PostIssueCommentWithResponse(ctx context.Context, options *PostIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostIssueCommentResp, error)
 	DeleteIssueCommentWithResponse(ctx context.Context, options *DeleteIssueCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueCommentResp, error)
@@ -12543,6 +12812,7 @@ type ClientInterface interface {
 	ListIssueKataLinksWithResponse(ctx context.Context, options *ListIssueKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListIssueKataLinksResp, error)
 	CreateIssueKataLinkWithResponse(ctx context.Context, options *CreateIssueKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateIssueKataLinkResp, error)
 	DeleteIssueKataLinkWithResponse(ctx context.Context, options *DeleteIssueKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteIssueKataLinkResp, error)
+	UpdateIssueLabelsWithResponse(ctx context.Context, options *UpdateIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueLabelsResp, error)
 	SetIssueLabelsWithResponse(ctx context.Context, options *SetIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueLabelsResp, error)
 	SyncIssueWithResponse(ctx context.Context, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueResp, error)
 	EnqueueIssueSyncWithResponse(ctx context.Context, options *EnqueueIssueSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueueIssueSyncResp, error)
@@ -12589,6 +12859,7 @@ type ClientInterface interface {
 	EditPrContentWithResponse(ctx context.Context, options *EditPrContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentResp, error)
 	ApprovePullWithResponse(ctx context.Context, options *ApprovePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullResp, error)
 	ApprovePullWorkflowsWithResponse(ctx context.Context, options *ApprovePullWorkflowsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullWorkflowsResp, error)
+	UpdatePrAssigneesWithResponse(ctx context.Context, options *UpdatePrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrAssigneesResp, error)
 	SetPrAssigneesWithResponse(ctx context.Context, options *SetPrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrAssigneesResp, error)
 	RefreshPullCiWithResponse(ctx context.Context, options *RefreshPullCiRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshPullCiResp, error)
 	PostPrCommentWithResponse(ctx context.Context, options *PostPrCommentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PostPrCommentResp, error)
@@ -12607,6 +12878,7 @@ type ClientInterface interface {
 	ListPullRequestKataLinksWithResponse(ctx context.Context, options *ListPullRequestKataLinksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullRequestKataLinksResp, error)
 	CreatePullRequestKataLinkWithResponse(ctx context.Context, options *CreatePullRequestKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreatePullRequestKataLinkResp, error)
 	DeletePullRequestKataLinkWithResponse(ctx context.Context, options *DeletePullRequestKataLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeletePullRequestKataLinkResp, error)
+	UpdatePrLabelsWithResponse(ctx context.Context, options *UpdatePrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsResp, error)
 	SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsResp, error)
 	MergePullWithResponse(ctx context.Context, options *MergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullResp, error)
 	DeferMergePullWithResponse(ctx context.Context, options *DeferMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullResp, error)
@@ -20338,6 +20610,63 @@ func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options
 	}
 }
 
+// UpdateIssueAssigneesOnHost Add and remove issue assignees
+func (c *Client) UpdateIssueAssigneesOnHostWithResponse(ctx context.Context, options *UpdateIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueAssigneesOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateIssueAssigneesOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateIssueAssigneesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateIssueAssigneesOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueAssigneesOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetIssueAssigneesOnHost Set issue assignees
 func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, options *SetIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesOnHostResp, error) {
 	var err error
@@ -20755,6 +21084,63 @@ func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 	}
 	switch resp.StatusCode {
 	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateIssueLabelsOnHost Add and remove issue labels
+func (c *Client) UpdateIssueLabelsOnHostWithResponse(ctx context.Context, options *UpdateIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueLabelsOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateIssueLabelsOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateIssueLabelsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateIssueLabelsOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueLabelsOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -21188,6 +21574,63 @@ func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, opt
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "ApprovePullWorkflowsOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdatePrAssigneesOnHost Add and remove pull request assignees
+func (c *Client) UpdatePrAssigneesOnHostWithResponse(ctx context.Context, options *UpdatePrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrAssigneesOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePrAssigneesOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePrAssigneesOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdatePrAssigneesOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrAssigneesOnHostResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -22188,6 +22631,63 @@ func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context
 	}
 	switch resp.StatusCode {
 	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdatePrLabelsOnHost Add and remove pull request labels
+func (c *Client) UpdatePrLabelsOnHostWithResponse(ctx context.Context, options *UpdatePrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePrLabelsOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePrLabelsOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdatePrLabelsOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrLabelsOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -24571,6 +25071,63 @@ func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *Edit
 	}
 }
 
+// UpdateIssueAssignees Add and remove issue assignees
+func (c *Client) UpdateIssueAssigneesWithResponse(ctx context.Context, options *UpdateIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueAssigneesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/issues/{provider}/{owner}/{name}/{number}/assignees")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateIssueAssigneesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateIssueAssigneesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateIssueAssigneesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueAssigneesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetIssueAssignees Set issue assignees
 func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *SetIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetIssueAssigneesResp, error) {
 	var err error
@@ -24988,6 +25545,63 @@ func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *D
 	}
 	switch resp.StatusCode {
 	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdateIssueLabels Add and remove issue labels
+func (c *Client) UpdateIssueLabelsWithResponse(ctx context.Context, options *UpdateIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateIssueLabelsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/issues/{provider}/{owner}/{name}/{number}/labels")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdateIssueLabelsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdateIssueLabelsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdateIssueLabelsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueLabelsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -27547,6 +28161,63 @@ func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *
 	}
 }
 
+// UpdatePrAssignees Add and remove pull request assignees
+func (c *Client) UpdatePrAssigneesWithResponse(ctx context.Context, options *UpdatePrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrAssigneesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/assignees")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePrAssigneesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePrAssigneesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdatePrAssigneesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrAssigneesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // SetPrAssignees Set pull request assignees
 func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrAssigneesResp, error) {
 	var err error
@@ -28534,6 +29205,63 @@ func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, opti
 	}
 	switch resp.StatusCode {
 	case 204:
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdatePrLabels Add and remove pull request labels
+func (c *Client) UpdatePrLabelsWithResponse(ctx context.Context, options *UpdatePrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/labels")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePrLabelsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePrLabelsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UpdatePrLabelsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrLabelsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
 		return out, nil
 	case 500:
 		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
@@ -37328,6 +38056,22 @@ func (c *Client) EditIssueContentOnHostRaw(ctx context.Context, httpClient *http
 	return httpClient.Do(req)
 }
 
+// UpdateIssueAssigneesOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateIssueAssigneesOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdateIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetIssueAssigneesOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SetIssueAssigneesOnHostRaw(ctx context.Context, httpClient *http.Client, options *SetIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -37453,6 +38197,22 @@ func (c *Client) DeleteIssueKataLinkOnHostRaw(ctx context.Context, httpClient *h
 	return httpClient.Do(req)
 }
 
+// UpdateIssueLabelsOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateIssueLabelsOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdateIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetIssueLabelsOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SetIssueLabelsOnHostRaw(ctx context.Context, httpClient *http.Client, options *SetIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -37569,6 +38329,22 @@ func (c *Client) ApprovePullWorkflowsOnHostRaw(ctx context.Context, httpClient *
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
 		Method:     "POST",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdatePrAssigneesOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePrAssigneesOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdatePrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -37868,6 +38644,22 @@ func (c *Client) DeletePullRequestKataLinkOnHostRaw(ctx context.Context, httpCli
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdatePrLabelsOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePrLabelsOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdatePrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -38622,6 +39414,22 @@ func (c *Client) EditIssueContentRaw(ctx context.Context, httpClient *http.Clien
 	return httpClient.Do(req)
 }
 
+// UpdateIssueAssigneesRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateIssueAssigneesRaw(ctx context.Context, httpClient *http.Client, options *UpdateIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetIssueAssigneesRaw returns an unread response. The caller must close its body.
 func (c *Client) SetIssueAssigneesRaw(ctx context.Context, httpClient *http.Client, options *SetIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -38739,6 +39547,22 @@ func (c *Client) DeleteIssueKataLinkRaw(ctx context.Context, httpClient *http.Cl
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdateIssueLabelsRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdateIssueLabelsRaw(ctx context.Context, httpClient *http.Client, options *UpdateIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -39493,6 +40317,22 @@ func (c *Client) ApprovePullWorkflowsRaw(ctx context.Context, httpClient *http.C
 	return httpClient.Do(req)
 }
 
+// UpdatePrAssigneesRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePrAssigneesRaw(ctx context.Context, httpClient *http.Client, options *UpdatePrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // SetPrAssigneesRaw returns an unread response. The caller must close its body.
 func (c *Client) SetPrAssigneesRaw(ctx context.Context, httpClient *http.Client, options *SetPrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -39784,6 +40624,22 @@ func (c *Client) DeletePullRequestKataLinkRaw(ctx context.Context, httpClient *h
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdatePrLabelsRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePrLabelsRaw(ctx context.Context, httpClient *http.Client, options *UpdatePrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -44374,6 +45230,23 @@ func NewEditIssueContentOnHostRequest(ctx context.Context, baseURL string, optio
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdateIssueAssigneesOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdateIssueAssigneesOnHostRequest(ctx context.Context, baseURL string, options *UpdateIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetIssueAssigneesOnHostRequest constructs a typed request for a caller-owned transport.
 func NewSetIssueAssigneesOnHostRequest(ctx context.Context, baseURL string, options *SetIssueAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -44507,6 +45380,23 @@ func NewDeleteIssueKataLinkOnHostRequest(ctx context.Context, baseURL string, op
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdateIssueLabelsOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdateIssueLabelsOnHostRequest(ctx context.Context, baseURL string, options *UpdateIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetIssueLabelsOnHostRequest constructs a typed request for a caller-owned transport.
 func NewSetIssueLabelsOnHostRequest(ctx context.Context, baseURL string, options *SetIssueLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -44635,6 +45525,23 @@ func NewApprovePullWorkflowsOnHostRequest(ctx context.Context, baseURL string, o
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/approve-workflows",
 		Method:     "POST",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdatePrAssigneesOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePrAssigneesOnHostRequest(ctx context.Context, baseURL string, options *UpdatePrAssigneesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -44952,6 +45859,23 @@ func NewDeletePullRequestKataLinkOnHostRequest(ctx context.Context, baseURL stri
 		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdatePrLabelsOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePrLabelsOnHostRequest(ctx context.Context, baseURL string, options *UpdatePrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -45745,6 +46669,23 @@ func NewEditIssueContentRequest(ctx context.Context, baseURL string, options *Ed
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdateIssueAssigneesRequest constructs a typed request for a caller-owned transport.
+func NewUpdateIssueAssigneesRequest(ctx context.Context, baseURL string, options *UpdateIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetIssueAssigneesRequest constructs a typed request for a caller-owned transport.
 func NewSetIssueAssigneesRequest(ctx context.Context, baseURL string, options *SetIssueAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -45874,6 +46815,23 @@ func NewDeleteIssueKataLinkRequest(ctx context.Context, baseURL string, options 
 		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdateIssueLabelsRequest constructs a typed request for a caller-owned transport.
+func NewUpdateIssueLabelsRequest(ctx context.Context, baseURL string, options *UpdateIssueLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -46670,6 +47628,23 @@ func NewApprovePullWorkflowsRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdatePrAssigneesRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePrAssigneesRequest(ctx context.Context, baseURL string, options *UpdatePrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/assignees",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewSetPrAssigneesRequest constructs a typed request for a caller-owned transport.
 func NewSetPrAssigneesRequest(ctx context.Context, baseURL string, options *SetPrAssigneesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -46983,6 +47958,23 @@ func NewDeletePullRequestKataLinkRequest(ctx context.Context, baseURL string, op
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/kata-links/{link_id}",
 		Method:     "DELETE",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdatePrLabelsRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePrLabelsRequest(ctx context.Context, baseURL string, options *UpdatePrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/labels",
+		Method:      "PATCH",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -50226,6 +51218,14 @@ type EditIssueContentOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
+type UpdateIssueAssigneesOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type SetIssueAssigneesOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -50293,6 +51293,14 @@ type DeleteIssueKataLinkOnHostPath struct {
 	LinkID       int64  `json:"link_id"`
 }
 
+type UpdateIssueLabelsOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type SetIssueLabelsOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -50350,6 +51358,14 @@ type ApprovePullOnHostPath struct {
 }
 
 type ApprovePullWorkflowsOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
+type UpdatePrAssigneesOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
 	Owner        string `json:"owner"`
@@ -50507,6 +51523,14 @@ type DeletePullRequestKataLinkOnHostPath struct {
 	Name         string `json:"name"`
 	Number       int64  `json:"number"`
 	LinkID       int64  `json:"link_id"`
+}
+
+type UpdatePrLabelsOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
 }
 
 type SetPrLabelsOnHostPath struct {
@@ -50828,6 +51852,13 @@ type EditIssueContentPath struct {
 	Number   int64  `json:"number"`
 }
 
+type UpdateIssueAssigneesPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
 type SetIssueAssigneesPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -50885,6 +51916,13 @@ type DeleteIssueKataLinkPath struct {
 	Name     string `json:"name"`
 	Number   int64  `json:"number"`
 	LinkID   int64  `json:"link_id"`
+}
+
+type UpdateIssueLabelsPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
 }
 
 type SetIssueLabelsPath struct {
@@ -51051,6 +52089,13 @@ type ApprovePullWorkflowsPath struct {
 	Number   int64  `json:"number"`
 }
 
+type UpdatePrAssigneesPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
 type SetPrAssigneesPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -51183,6 +52228,13 @@ type DeletePullRequestKataLinkPath struct {
 	Name     string `json:"name"`
 	Number   int64  `json:"number"`
 	LinkID   int64  `json:"link_id"`
+}
+
+type UpdatePrLabelsPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
 }
 
 type SetPrLabelsPath struct {
@@ -51726,6 +52778,8 @@ type CreateIssueOnHostBody = CreateIssueHostInputBody
 
 type EditIssueContentOnHostBody = EditIssueContentHostInputBody
 
+type UpdateIssueAssigneesOnHostBody = UpdateMembershipRequest
+
 type SetIssueAssigneesOnHostBody = SetAssigneesRequest
 
 type PostIssueCommentOnHostBody = PostIssueCommentHostInputBody
@@ -51736,6 +52790,8 @@ type SetIssueGithubStateOnHostBody = GithubStateHostInputBody
 
 type CreateIssueKataLinkOnHostBody = KataCreateLinkRequest
 
+type UpdateIssueLabelsOnHostBody = UpdateMembershipRequest
+
 type SetIssueLabelsOnHostBody = SetLabelsRequest
 
 type CreateIssueWorkspaceOnHostBody = CreateIssueWorkspaceHostInputBody
@@ -51743,6 +52799,8 @@ type CreateIssueWorkspaceOnHostBody = CreateIssueWorkspaceHostInputBody
 type EditPrContentOnHostBody = EditPRContentHostInputBody
 
 type ApprovePullOnHostBody = ApprovePRHostInputBody
+
+type UpdatePrAssigneesOnHostBody = UpdateMembershipRequest
 
 type SetPrAssigneesOnHostBody = SetAssigneesRequest
 
@@ -51759,6 +52817,8 @@ type RunPullExternalContextActionOnHostBody = ExternalContextActionRequest
 type SetPrGithubStateOnHostBody = GithubStateHostInputBody
 
 type CreatePullRequestKataLinkOnHostBody = KataCreateLinkRequest
+
+type UpdatePrLabelsOnHostBody = UpdateMembershipRequest
 
 type SetPrLabelsOnHostBody = SetLabelsRequest
 
@@ -51790,6 +52850,8 @@ type CreateIssueBody = CreateIssueInputBody
 
 type EditIssueContentBody = EditIssueContentInputBody
 
+type UpdateIssueAssigneesBody = UpdateMembershipRequest
+
 type SetIssueAssigneesBody = SetAssigneesRequest
 
 type PostIssueCommentBody = PostIssueCommentInputBody
@@ -51799,6 +52861,8 @@ type EditIssueCommentBody = EditIssueCommentInputBody
 type SetIssueGithubStateBody = GithubStateInputBody
 
 type CreateIssueKataLinkBody = KataCreateLinkRequest
+
+type UpdateIssueLabelsBody = UpdateMembershipRequest
 
 type SetIssueLabelsBody = SetLabelsRequest
 
@@ -51836,6 +52900,8 @@ type EditPrContentBody = EditPRContentInputBody
 
 type ApprovePullBody = ApprovePRInputBody
 
+type UpdatePrAssigneesBody = UpdateMembershipRequest
+
 type SetPrAssigneesBody = SetAssigneesRequest
 
 type PostPrCommentBody = PostCommentInputBody
@@ -51851,6 +52917,8 @@ type RunPullExternalContextActionBody = ExternalContextActionRequest
 type SetPrGithubStateBody = GithubStateInputBody
 
 type CreatePullRequestKataLinkBody = KataCreateLinkRequest
+
+type UpdatePrLabelsBody = UpdateMembershipRequest
 
 type SetPrLabelsBody = SetLabelsRequest
 
@@ -53196,6 +54264,10 @@ type EditIssueContentOnHostResponse = IssueDetailResponse
 
 type EditIssueContentOnHostErrorResponse = ProblemError
 
+type UpdateIssueAssigneesOnHostResponse = ItemAssigneesResponse
+
+type UpdateIssueAssigneesOnHostErrorResponse = ProblemError
+
 type SetIssueAssigneesOnHostResponse = ItemAssigneesResponse
 
 type SetIssueAssigneesOnHostErrorResponse = ProblemError
@@ -53223,6 +54295,10 @@ type CreateIssueKataLinkOnHostResponse = KataEffectiveLinksResponse
 type CreateIssueKataLinkOnHostErrorResponse = ProblemError
 
 type DeleteIssueKataLinkOnHostErrorResponse = ProblemError
+
+type UpdateIssueLabelsOnHostResponse = ItemLabelsResponse
+
+type UpdateIssueLabelsOnHostErrorResponse = ProblemError
 
 type SetIssueLabelsOnHostResponse = ItemLabelsResponse
 
@@ -53253,6 +54329,10 @@ type ApprovePullOnHostErrorResponse = ProblemError
 type ApprovePullWorkflowsOnHostResponse = ActionStatusBody
 
 type ApprovePullWorkflowsOnHostErrorResponse = ProblemError
+
+type UpdatePrAssigneesOnHostResponse = ItemAssigneesResponse
+
+type UpdatePrAssigneesOnHostErrorResponse = ProblemError
 
 type SetPrAssigneesOnHostResponse = ItemAssigneesResponse
 
@@ -53319,6 +54399,10 @@ type CreatePullRequestKataLinkOnHostResponse = KataEffectiveLinksResponse
 type CreatePullRequestKataLinkOnHostErrorResponse = ProblemError
 
 type DeletePullRequestKataLinkOnHostErrorResponse = ProblemError
+
+type UpdatePrLabelsOnHostResponse = ItemLabelsResponse
+
+type UpdatePrLabelsOnHostErrorResponse = ProblemError
 
 type SetPrLabelsOnHostResponse = ItemLabelsResponse
 
@@ -53478,6 +54562,10 @@ type EditIssueContentResponse = IssueDetailResponse
 
 type EditIssueContentErrorResponse = ProblemError
 
+type UpdateIssueAssigneesResponse = ItemAssigneesResponse
+
+type UpdateIssueAssigneesErrorResponse = ProblemError
+
 type SetIssueAssigneesResponse = ItemAssigneesResponse
 
 type SetIssueAssigneesErrorResponse = ProblemError
@@ -53505,6 +54593,10 @@ type CreateIssueKataLinkResponse = KataEffectiveLinksResponse
 type CreateIssueKataLinkErrorResponse = ProblemError
 
 type DeleteIssueKataLinkErrorResponse = ProblemError
+
+type UpdateIssueLabelsResponse = ItemLabelsResponse
+
+type UpdateIssueLabelsErrorResponse = ProblemError
 
 type SetIssueLabelsResponse = ItemLabelsResponse
 
@@ -53678,6 +54770,10 @@ type ApprovePullWorkflowsResponse = ActionStatusBody
 
 type ApprovePullWorkflowsErrorResponse = ProblemError
 
+type UpdatePrAssigneesResponse = ItemAssigneesResponse
+
+type UpdatePrAssigneesErrorResponse = ProblemError
+
 type SetPrAssigneesResponse = ItemAssigneesResponse
 
 type SetPrAssigneesErrorResponse = ProblemError
@@ -53743,6 +54839,10 @@ type CreatePullRequestKataLinkResponse = KataEffectiveLinksResponse
 type CreatePullRequestKataLinkErrorResponse = ProblemError
 
 type DeletePullRequestKataLinkErrorResponse = ProblemError
+
+type UpdatePrLabelsResponse = ItemLabelsResponse
+
+type UpdatePrLabelsErrorResponse = ProblemError
 
 type SetPrLabelsResponse = ItemLabelsResponse
 
@@ -55300,6 +56400,14 @@ type EditIssueContentOnHostResp struct {
 	JSON200      *EditIssueContentOnHostResponse
 }
 
+type UpdateIssueAssigneesOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateIssueAssigneesOnHostErrorResponse
+	JSON200      *UpdateIssueAssigneesOnHostResponse
+}
+
 type SetIssueAssigneesOnHostResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -55360,6 +56468,14 @@ type DeleteIssueKataLinkOnHostResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *DeleteIssueKataLinkOnHostErrorResponse
+}
+
+type UpdateIssueLabelsOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateIssueLabelsOnHostErrorResponse
+	JSON200      *UpdateIssueLabelsOnHostResponse
 }
 
 type SetIssueLabelsOnHostResp struct {
@@ -55423,6 +56539,14 @@ type ApprovePullWorkflowsOnHostResp struct {
 	StatusCode   int
 	Error        *ApprovePullWorkflowsOnHostErrorResponse
 	JSON200      *ApprovePullWorkflowsOnHostResponse
+}
+
+type UpdatePrAssigneesOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdatePrAssigneesOnHostErrorResponse
+	JSON200      *UpdatePrAssigneesOnHostResponse
 }
 
 type SetPrAssigneesOnHostResp struct {
@@ -55564,6 +56688,14 @@ type DeletePullRequestKataLinkOnHostResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *DeletePullRequestKataLinkOnHostErrorResponse
+}
+
+type UpdatePrLabelsOnHostResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdatePrLabelsOnHostErrorResponse
+	JSON200      *UpdatePrLabelsOnHostResponse
 }
 
 type SetPrLabelsOnHostResp struct {
@@ -55916,6 +57048,14 @@ type EditIssueContentResp struct {
 	JSON200      *EditIssueContentResponse
 }
 
+type UpdateIssueAssigneesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateIssueAssigneesErrorResponse
+	JSON200      *UpdateIssueAssigneesResponse
+}
+
 type SetIssueAssigneesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -55976,6 +57116,14 @@ type DeleteIssueKataLinkResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *DeleteIssueKataLinkErrorResponse
+}
+
+type UpdateIssueLabelsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdateIssueLabelsErrorResponse
+	JSON200      *UpdateIssueLabelsResponse
 }
 
 type SetIssueLabelsResp struct {
@@ -56345,6 +57493,14 @@ type ApprovePullWorkflowsResp struct {
 	JSON200      *ApprovePullWorkflowsResponse
 }
 
+type UpdatePrAssigneesResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdatePrAssigneesErrorResponse
+	JSON200      *UpdatePrAssigneesResponse
+}
+
 type SetPrAssigneesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -56484,6 +57640,14 @@ type DeletePullRequestKataLinkResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *DeletePullRequestKataLinkErrorResponse
+}
+
+type UpdatePrLabelsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UpdatePrLabelsErrorResponse
+	JSON200      *UpdatePrLabelsResponse
 }
 
 type SetPrLabelsResp struct {
@@ -61591,6 +62755,13 @@ type UpdateFleetSettingsInputBody struct {
 	Enabled     bool          `json:"enabled"`
 	PeerTimeout *string       `json:"peer_timeout,omitempty"`
 	Sessions    FleetSessions `json:"sessions"`
+}
+
+type UpdateMembershipRequest struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string  `json:"$schema,omitempty"`
+	Add    []string `json:"add"`
+	Remove []string `json:"remove"`
 }
 
 type UpdateRepoPresetInputBody struct {

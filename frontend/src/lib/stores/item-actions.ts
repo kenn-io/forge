@@ -107,14 +107,6 @@ export function actionEligibility(
   }
 }
 
-function nextNames(current: readonly string[], add: readonly string[], remove: readonly string[]): string[] | null {
-  const removed = new Set(remove);
-  const next = current.filter((name) => !removed.has(name));
-  for (const name of add) if (!next.includes(name)) next.push(name);
-  const unchanged = next.length === current.length && next.every((name) => current.includes(name));
-  return unchanged ? null : next;
-}
-
 function starRequest(target: ListItemTarget) {
   const ref = routeRef(target);
   return {
@@ -211,36 +203,35 @@ function actionRequest(target: ListItemTarget, action: ListItemAction) {
           ? client.SettingsService.setStarred(starRequest(target), { signal })
           : client.SettingsService.unsetStarred(starRequest(target), { signal }),
       ).pipe(Effect.asVoid);
+    // Only the requested additions and removals are sent; the server applies
+    // them to the item's current set, so labels and assignees this change
+    // does not mention are never touched, whatever the list row showed.
     case "labels": {
-      const labels = nextNames(
-        (target.item.labels ?? []).map((label) => label.name),
-        action.add,
-        action.remove,
-      );
-      if (labels === null) return null;
+      const change = { add: [...action.add], remove: [...action.remove] };
+      if (change.add.length === 0 && change.remove.length === 0) return null;
       return executeGeneratedApiRequest(operation, (client, signal) => {
         if (isPull) {
           return route.onHost
-            ? client.PullRequestsService.setPrLabelsOnHost(route.params, { labels }, { signal })
-            : client.PullRequestsService.setPrLabels(route.params, { labels }, { signal });
+            ? client.PullRequestsService.updatePrLabelsOnHost(route.params, change, { signal })
+            : client.PullRequestsService.updatePrLabels(route.params, change, { signal });
         }
         return route.onHost
-          ? client.IssuesService.setIssueLabelsOnHost(route.params, { labels }, { signal })
-          : client.IssuesService.setIssueLabels(route.params, { labels }, { signal });
+          ? client.IssuesService.updateIssueLabelsOnHost(route.params, change, { signal })
+          : client.IssuesService.updateIssueLabels(route.params, change, { signal });
       }).pipe(Effect.asVoid);
     }
     case "assignees": {
-      const assignees = nextNames(target.item.assignees ?? [], action.add, action.remove);
-      if (assignees === null) return null;
+      const change = { add: [...action.add], remove: [...action.remove] };
+      if (change.add.length === 0 && change.remove.length === 0) return null;
       return executeGeneratedApiRequest(operation, (client, signal) => {
         if (isPull) {
           return route.onHost
-            ? client.PullRequestsService.setPrAssigneesOnHost(route.params, { assignees }, { signal })
-            : client.PullRequestsService.setPrAssignees(route.params, { assignees }, { signal });
+            ? client.PullRequestsService.updatePrAssigneesOnHost(route.params, change, { signal })
+            : client.PullRequestsService.updatePrAssignees(route.params, change, { signal });
         }
         return route.onHost
-          ? client.IssuesService.setIssueAssigneesOnHost(route.params, { assignees }, { signal })
-          : client.IssuesService.setIssueAssignees(route.params, { assignees }, { signal });
+          ? client.IssuesService.updateIssueAssigneesOnHost(route.params, change, { signal })
+          : client.IssuesService.updateIssueAssignees(route.params, change, { signal });
       }).pipe(Effect.asVoid);
     }
   }

@@ -1,6 +1,10 @@
 package httpapi
 
-import "go.kenn.io/forge/internal/db"
+import (
+	"strings"
+
+	"go.kenn.io/forge/internal/db"
+)
 
 type SetLabelsRequest struct {
 	Labels *[]string `json:"labels" required:"true"`
@@ -30,4 +34,38 @@ type ItemAssigneesResponse struct {
 
 type GithubStateOutputBody struct {
 	State string `json:"state"`
+}
+
+// UpdateMembershipRequest adds and removes names on a set-valued item field
+// (labels, assignees). The server applies the change to the item's current
+// set, so a client never restates, and cannot undo, names it did not mention.
+type UpdateMembershipRequest struct {
+	Add    []string `json:"add" required:"true" nullable:"false"`
+	Remove []string `json:"remove" required:"true" nullable:"false"`
+}
+
+// ApplyMembership returns current without the removed names and with the
+// added names appended, keeping current order. same decides name equality.
+func ApplyMembership(current []string, req UpdateMembershipRequest, same func(a, b string) bool) []string {
+	contains := func(names []string, name string) bool {
+		for _, candidate := range names {
+			if same(candidate, name) {
+				return true
+			}
+		}
+		return false
+	}
+	next := make([]string, 0, len(current)+len(req.Add))
+	for _, name := range current {
+		if !contains(req.Remove, name) {
+			next = append(next, name)
+		}
+	}
+	for _, raw := range req.Add {
+		name := strings.TrimSpace(raw)
+		if name != "" && !contains(next, name) {
+			next = append(next, name)
+		}
+	}
+	return next
 }

@@ -277,6 +277,23 @@ test("reports bulk quick action launches once they have all finished", async ({ 
   await expect(flashes).not.toContainText('Started "Fix CI"');
 });
 
+test("a repeated quick action reuses the workspace the first run created", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  await page.goto("/pulls");
+  const row = page.locator(".pr-list-row").filter({ hasText: "Retry flaky upload" });
+
+  for (const run of [1, 2]) {
+    await row.click({ button: "right" });
+    await page.getByRole("menuitem", { name: /Fix CI/ }).click();
+    await expect.poll(() => recorded.handoffs.length).toBe(run);
+  }
+
+  // The list row still shows no workspace, but the second run queues in
+  // the one the first run created instead of creating another.
+  expect(recorded.creates.map((body) => body["mr_number"])).toEqual([21]);
+  expect(recorded.handoffs.map((handoff) => handoff.workspaceId)).toEqual(["ws-21", "ws-21"]);
+});
+
 test("Cmd/Ctrl-click toggles pull requests and Escape clears the selection", async ({ page }) => {
   await mockQuickActions(page);
   await page.goto("/pulls");
@@ -345,7 +362,7 @@ test("closes a selection of pull requests after one confirmation", async ({ page
   expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/24/github-state")).toEqual([]);
 });
 
-test("adds and removes labels across a selection, keeping other labels", async ({ page }) => {
+test("sends only the label changes for a selection", async ({ page }) => {
   const recorded = await mockQuickActions(page);
   await page.goto("/pulls");
   await selectFirstThreePulls(page);
@@ -367,13 +384,42 @@ test("adds and removes labels across a selection, keeping other labels", async (
   await dialog.getByRole("button", { name: "Apply" }).click();
 
   await expect(page.locator(".kit-flash-stack")).toContainText("Updated labels on 3 PRs.");
-  for (const number of [21, 22]) {
-    expect(mutation(recorded, `PUT /api/v1/pulls/github/acme/widgets/${number}/labels`)).toEqual([
-      { labels: ["docs"] },
+  // Only the change is sent; the server keeps labels it does not mention.
+  for (const number of [21, 22, 23]) {
+    expect(mutation(recorded, `PATCH /api/v1/pulls/github/acme/widgets/${number}/labels`)).toEqual([
+      { add: ["docs"], remove: ["bug"] },
     ]);
   }
-  expect(mutation(recorded, "PUT /api/v1/pulls/github/acme/widgets/23/labels")).toEqual([
-    { labels: ["infra", "docs"] },
+});
+
+test("only removes labels when the repository label list cannot load", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ type: "about:blank", code: "service_unavailable", status: 503, detail: "unavailable" }),
+    });
+  });
+  await page.goto("/pulls");
+  await selectFirstThreePulls(page);
+
+  await page.locator(".pr-list-row").filter({ hasText: "Retry flaky upload" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit labels..." }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Labels for 3 PRs" });
+  await expect(dialog).toContainText("Could not load repository labels, so labels can only be removed.");
+  const bugRow = dialog.getByRole("checkbox", { name: /bug/ });
+  await bugRow.click();
+  await expect(bugRow).toHaveAttribute("aria-checked", "false");
+  await bugRow.click();
+  await expect(bugRow).toHaveAttribute("aria-checked", "mixed");
+  await bugRow.click();
+  await dialog.getByRole("button", { name: "Apply" }).click();
+
+  await expect(page.locator(".kit-flash-stack")).toContainText("Updated labels on 3 PRs.");
+  expect(mutation(recorded, "PATCH /api/v1/pulls/github/acme/widgets/21/labels")).toEqual([
+    { add: [], remove: ["bug"] },
   ]);
 });
 
@@ -390,10 +436,11 @@ test("adds an assignee to every selected pull request", async ({ page }) => {
   await dialog.getByRole("button", { name: "Apply" }).click();
 
   await expect(page.locator(".kit-flash-stack")).toContainText("Updated assignees on 3 PRs.");
-  expect(mutation(recorded, "PUT /api/v1/pulls/github/acme/widgets/21/assignees")).toEqual([
-    { assignees: ["octo", "hubot"] },
-  ]);
-  expect(mutation(recorded, "PUT /api/v1/pulls/github/acme/widgets/22/assignees")).toEqual([{ assignees: ["hubot"] }]);
+  for (const number of [21, 22, 23]) {
+    expect(mutation(recorded, `PATCH /api/v1/pulls/github/acme/widgets/${number}/assignees`)).toEqual([
+      { add: ["hubot"], remove: [] },
+    ]);
+  }
 });
 
 test("sets the workflow status of a single pull request from its menu", async ({ page }) => {

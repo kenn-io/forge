@@ -301,7 +301,11 @@
         safeContext: { count: items.length },
         onFailure: () => {
           if (membership?.field === "labels") {
-            membership = { ...membership, loading: false, error: "Could not load repository labels." };
+            membership = {
+              ...membership,
+              loading: false,
+              error: "Could not load repository labels, so labels can only be removed.",
+            };
           }
         },
       },
@@ -386,7 +390,8 @@
       const catalog = edit.catalogs.get(listItemRepoKey(target));
       return {
         type: "labels",
-        add: catalog ? change.add.filter((name) => catalog.has(name)) : change.add,
+        // A label is only added where the repository has it.
+        add: catalog ? change.add.filter((name) => catalog.has(name)) : [],
         remove: change.remove,
       };
     };
@@ -537,6 +542,7 @@
     error={membership.error}
     emptyText={membership.field === "labels" ? "No labels found" : "No people found"}
     busy={running}
+    allowAdd={membership.field === "assignees" || membership.error === ""}
     frameId="item-membership-edit"
     onfilter={membership.field === "assignees" ? searchUsers : undefined}
     onCancel={closeMembership}

@@ -10842,6 +10842,28 @@ components:
         - enabled
         - sessions
       type: object
+    UpdateMembershipRequest:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateMembershipRequest.json
+          format: uri
+          readOnly: true
+          type: string
+        add:
+          items:
+            type: string
+          type: array
+        remove:
+          items:
+            type: string
+          type: array
+      required:
+        - add
+        - remove
+      type: object
     UpdateRepoPresetInputBody:
       additionalProperties: false
       properties:
@@ -17952,6 +17974,57 @@ paths:
       tags:
         - Issues
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/assignees:
+    patch:
+      operationId: update-issue-assignees-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove issue assignees
+      tags:
+        - Issues
     put:
       operationId: set-issue-assignees-on-host
       parameters:
@@ -18362,6 +18435,57 @@ paths:
       tags:
         - Kata
   /host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/labels:
+    patch:
+      operationId: update-issue-labels-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove issue labels
+      tags:
+        - Issues
     put:
       operationId: set-issue-labels-on-host
       parameters:
@@ -18749,6 +18873,57 @@ paths:
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/assignees:
+    patch:
+      operationId: update-pr-assignees-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove pull request assignees
+      tags:
+        - Pull Requests
     put:
       operationId: set-pr-assignees-on-host
       parameters:
@@ -19746,6 +19921,57 @@ paths:
       tags:
         - Kata
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/labels:
+    patch:
+      operationId: update-pr-labels-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove pull request labels
+      tags:
+        - Pull Requests
     put:
       operationId: set-pr-labels-on-host
       parameters:
@@ -22041,6 +22267,52 @@ paths:
       tags:
         - Issues
   /issues/{provider}/{owner}/{name}/{number}/assignees:
+    patch:
+      operationId: update-issue-assignees
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove issue assignees
+      tags:
+        - Issues
     put:
       operationId: set-issue-assignees
       parameters:
@@ -22411,6 +22683,52 @@ paths:
       tags:
         - Kata
   /issues/{provider}/{owner}/{name}/{number}/labels:
+    patch:
+      operationId: update-issue-labels
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove issue labels
+      tags:
+        - Issues
     put:
       operationId: set-issue-labels
       parameters:
@@ -23940,6 +24258,52 @@ paths:
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/assignees:
+    patch:
+      operationId: update-pr-assignees
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemAssigneesResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove pull request assignees
+      tags:
+        - Pull Requests
     put:
       operationId: set-pr-assignees
       parameters:
@@ -24847,6 +25211,52 @@ paths:
       tags:
         - Kata
   /pulls/{provider}/{owner}/{name}/{number}/labels:
+    patch:
+      operationId: update-pr-labels
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateMembershipRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ItemLabelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Add and remove pull request labels
+      tags:
+        - Pull Requests
     put:
       operationId: set-pr-labels
       parameters:

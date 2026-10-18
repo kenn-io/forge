@@ -61,6 +61,8 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	addPair("resolve-discussion", http.MethodPost, "/discussions/{discussion_id}/resolve", http.StatusOK)
 	addPair("set-pr-labels", http.MethodPut, "/labels", http.StatusOK)
 	addPair("set-pr-assignees", http.MethodPut, "/assignees", http.StatusOK)
+	addPair("update-pr-labels", http.MethodPatch, "/labels", http.StatusOK)
+	addPair("update-pr-assignees", http.MethodPatch, "/assignees", http.StatusOK)
 	addPair("get-pr-reviewer-accounts", http.MethodGet, "/reviewer-accounts", http.StatusOK)
 	addPair("set-pr-reviewers", http.MethodPut, "/reviewers", http.StatusOK)
 	addPair("approve-pull", http.MethodPost, "/approve", http.StatusOK)

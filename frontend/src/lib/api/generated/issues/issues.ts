@@ -47,6 +47,11 @@ import type {
   SetLabelsRequest,
   SyncIssueOnHostPathParameters,
   SyncIssuePathParameters,
+  UpdateIssueAssigneesOnHostPathParameters,
+  UpdateIssueAssigneesPathParameters,
+  UpdateIssueLabelsOnHostPathParameters,
+  UpdateIssueLabelsPathParameters,
+  UpdateMembershipRequest,
   WorkspaceResponse,
 } from "../models";
 
@@ -143,6 +148,41 @@ export const editIssueContentOnHost = async (
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
       body: JSON.stringify(editIssueContentHostInputBody),
+    },
+  );
+};
+
+export const getUpdateIssueAssigneesOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: UpdateIssueAssigneesOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
+};
+
+/**
+ * @summary Add and remove issue assignees
+ */
+export const updateIssueAssigneesOnHost = async (
+  { platformHost, provider, owner, name, number }: UpdateIssueAssigneesOnHostPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemAssigneesResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemAssigneesResponse>(
+    getUpdateIssueAssigneesOnHostUrl({ platformHost, provider, owner, name, number }),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+      body: JSON.stringify(updateMembershipRequest),
     },
   );
 };
@@ -305,6 +345,41 @@ export const setIssueGithubStateOnHost = async (
       method: "POST",
       headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
       body: JSON.stringify(githubStateHostInputBody),
+    },
+  );
+};
+
+export const getUpdateIssueLabelsOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: UpdateIssueLabelsOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/labels`;
+};
+
+/**
+ * @summary Add and remove issue labels
+ */
+export const updateIssueLabelsOnHost = async (
+  { platformHost, provider, owner, name, number }: UpdateIssueLabelsOnHostPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemLabelsResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemLabelsResponse>(
+    getUpdateIssueLabelsOnHostUrl({ platformHost, provider, owner, name, number }),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+      body: JSON.stringify(updateMembershipRequest),
     },
   );
 };
@@ -518,6 +593,32 @@ export const editIssueContent = async (
   });
 };
 
+export const getUpdateIssueAssigneesUrl = ({ provider, owner, name, number }: UpdateIssueAssigneesPathParameters) => {
+  return `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
+};
+
+/**
+ * @summary Add and remove issue assignees
+ */
+export const updateIssueAssignees = async (
+  { provider, owner, name, number }: UpdateIssueAssigneesPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemAssigneesResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemAssigneesResponse>(getUpdateIssueAssigneesUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMembershipRequest),
+  });
+};
+
 export const getSetIssueAssigneesUrl = ({ provider, owner, name, number }: SetIssueAssigneesPathParameters) => {
   return `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
 };
@@ -648,6 +749,32 @@ export const setIssueGithubState = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(githubStateInputBody),
+  });
+};
+
+export const getUpdateIssueLabelsUrl = ({ provider, owner, name, number }: UpdateIssueLabelsPathParameters) => {
+  return `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/labels`;
+};
+
+/**
+ * @summary Add and remove issue labels
+ */
+export const updateIssueLabels = async (
+  { provider, owner, name, number }: UpdateIssueLabelsPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemLabelsResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemLabelsResponse>(getUpdateIssueLabelsUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMembershipRequest),
   });
 };
 

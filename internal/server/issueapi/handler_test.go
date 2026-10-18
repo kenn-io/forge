@@ -51,6 +51,8 @@ func TestHandlerRegistersOnlyIssueRoutes(t *testing.T) {
 	addPair("delete-issue-comment", http.MethodDelete, "/comments/{comment_id}", http.StatusNoContent)
 	addPair("set-issue-labels", http.MethodPut, "/labels", http.StatusOK)
 	addPair("set-issue-assignees", http.MethodPut, "/assignees", http.StatusOK)
+	addPair("update-issue-labels", http.MethodPatch, "/labels", http.StatusOK)
+	addPair("update-issue-assignees", http.MethodPatch, "/assignees", http.StatusOK)
 	addPair("set-issue-github-state", http.MethodPost, "/github-state", http.StatusOK)
 
 	gotByID := make(map[string]*huma.Operation)

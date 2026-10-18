@@ -31,6 +31,8 @@
     error?: string;
     emptyText: string;
     busy?: boolean;
+    /** False limits changes to removals, for example when the valid options could not be loaded. */
+    allowAdd?: boolean;
     frameId: string;
     /** Called as the filter changes, for options that come from a server search. */
     onfilter?: ((query: string) => void) | undefined;
@@ -49,6 +51,7 @@
     error = "",
     emptyText,
     busy = false,
+    allowAdd = true,
     frameId,
     onfilter,
     onCancel,
@@ -77,11 +80,15 @@
   }
 
   // all -> none -> all; none -> all -> none; some -> all -> none -> some.
+  // Without adds: all or some -> none -> back to the current state.
   function cycle(key: string): void {
     const current = currentState(key);
     const shown = shownState(key);
     const next = new Map(chosen);
-    if (shown === "all") next.set(key, "none");
+    if (!allowAdd) {
+      if (shown === "none") next.delete(key);
+      else next.set(key, "none");
+    } else if (shown === "all") next.set(key, "none");
     else if (shown === "none" && current === "some") next.delete(key);
     else next.set(key, "all");
     if (next.get(key) === current) next.delete(key);
@@ -122,7 +129,7 @@
           class={["membership__row", { "membership__row--changed": chosen.has(option.key) }]}
           role="checkbox"
           aria-checked={state === "all" ? "true" : state === "some" ? "mixed" : "false"}
-          disabled={busy}
+          disabled={busy || (!allowAdd && currentState(option.key) === "none")}
           onclick={() => cycle(option.key)}
         >
           <span class="membership__box" aria-hidden="true">
@@ -153,7 +160,7 @@
 
   {#snippet footer()}
     <DialogButton disabled={busy} onclick={onCancel}>Cancel</DialogButton>
-    <DialogButton tone="primary" disabled={busy || changeCount === 0} onclick={() => onApply({ add, remove })}>
+    <DialogButton tone="primary" disabled={busy || loading || changeCount === 0} onclick={() => onApply({ add, remove })}>
       {busy ? "Applying…" : "Apply"}
     </DialogButton>
   {/snippet}

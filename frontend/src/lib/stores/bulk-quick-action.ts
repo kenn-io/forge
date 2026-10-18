@@ -12,6 +12,7 @@ import {
   endWorkspaceCreate,
   isWorkspaceCreatePending,
   recordWorkspaceCreated,
+  resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
 import { launchWorkspaceQuickAction, type QuickActionOutcome } from "./workspace-quick-actions.js";
 import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
@@ -97,7 +98,9 @@ function runOnItem(
   if (isWorkspaceCreatePending(identity)) return failed("a workspace is already being created");
   // The item's existing local workspace takes the action; creating another
   // would conflict, and the server waits for it to be ready before launching.
-  const existing = target.item.workspace;
+  // A workspace this session just created counts before the list row
+  // catches up, so a repeat run queues there instead of creating another.
+  const existing = resolveControllerlessWorkspaceRef(identity, target.item.workspace ?? null);
   if (existing?.id) {
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
       return failed("its workspace is being deleted");

@@ -118,6 +118,10 @@ func (s *Handler) Register(api huma.API) {
 	register(api, "set-issue-labels-on-host", http.MethodPut, hostIssue+"/labels", http.StatusOK, "Set issue labels", s.setIssueLabelsOnHost)
 	register(api, "set-issue-assignees", http.MethodPut, issue+"/assignees", http.StatusOK, "Set issue assignees", s.setIssueAssignees)
 	register(api, "set-issue-assignees-on-host", http.MethodPut, hostIssue+"/assignees", http.StatusOK, "Set issue assignees", s.setIssueAssigneesOnHost)
+	register(api, "update-issue-labels", http.MethodPatch, issue+"/labels", http.StatusOK, "Add and remove issue labels", s.updateIssueLabels)
+	register(api, "update-issue-labels-on-host", http.MethodPatch, hostIssue+"/labels", http.StatusOK, "Add and remove issue labels", s.updateIssueLabelsOnHost)
+	register(api, "update-issue-assignees", http.MethodPatch, issue+"/assignees", http.StatusOK, "Add and remove issue assignees", s.updateIssueAssignees)
+	register(api, "update-issue-assignees-on-host", http.MethodPatch, hostIssue+"/assignees", http.StatusOK, "Add and remove issue assignees", s.updateIssueAssigneesOnHost)
 	register(api, "set-issue-github-state", http.MethodPost, issue+"/github-state", http.StatusOK, "Set issue GitHub state", s.setIssueGitHubState)
 	register(api, "set-issue-github-state-on-host", http.MethodPost, hostIssue+"/github-state", http.StatusOK, "Set issue GitHub state", s.setIssueGitHubStateOnHost)
 }

@@ -133,6 +133,11 @@ import type {
   SyncPullPathParameters,
   UnresolvePrReviewThreadOnHostPathParameters,
   UnresolvePrReviewThreadPathParameters,
+  UpdateMembershipRequest,
+  UpdatePrAssigneesOnHostPathParameters,
+  UpdatePrAssigneesPathParameters,
+  UpdatePrLabelsOnHostPathParameters,
+  UpdatePrLabelsPathParameters,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -285,6 +290,41 @@ export const approvePullWorkflowsOnHost = async (
     {
       ...options,
       method: "POST",
+    },
+  );
+};
+
+export const getUpdatePrAssigneesOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: UpdatePrAssigneesOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
+};
+
+/**
+ * @summary Add and remove pull request assignees
+ */
+export const updatePrAssigneesOnHost = async (
+  { platformHost, provider, owner, name, number }: UpdatePrAssigneesOnHostPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemAssigneesResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemAssigneesResponse>(
+    getUpdatePrAssigneesOnHostUrl({ platformHost, provider, owner, name, number }),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+      body: JSON.stringify(updateMembershipRequest),
     },
   );
 };
@@ -691,6 +731,38 @@ export const getPullImportMetadataOnHost = async (
       method: "GET",
     },
   );
+};
+
+export const getUpdatePrLabelsOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: UpdatePrLabelsOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/labels`;
+};
+
+/**
+ * @summary Add and remove pull request labels
+ */
+export const updatePrLabelsOnHost = async (
+  { platformHost, provider, owner, name, number }: UpdatePrLabelsOnHostPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemLabelsResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemLabelsResponse>(getUpdatePrLabelsOnHostUrl({ platformHost, provider, owner, name, number }), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMembershipRequest),
+  });
 };
 
 export const getSetPrLabelsOnHostUrl = ({
@@ -1387,6 +1459,32 @@ export const approvePullWorkflows = async (
   });
 };
 
+export const getUpdatePrAssigneesUrl = ({ provider, owner, name, number }: UpdatePrAssigneesPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
+};
+
+/**
+ * @summary Add and remove pull request assignees
+ */
+export const updatePrAssignees = async (
+  { provider, owner, name, number }: UpdatePrAssigneesPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemAssigneesResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemAssigneesResponse>(getUpdatePrAssigneesUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMembershipRequest),
+  });
+};
+
 export const getSetPrAssigneesUrl = ({ provider, owner, name, number }: SetPrAssigneesPathParameters) => {
   return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/assignees`;
 };
@@ -1706,6 +1804,32 @@ export const getPullImportMetadata = async (
   return orvalFetch<MrImportMetadataResponse>(getGetPullImportMetadataUrl({ provider, owner, name, number }), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getUpdatePrLabelsUrl = ({ provider, owner, name, number }: UpdatePrLabelsPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/labels`;
+};
+
+/**
+ * @summary Add and remove pull request labels
+ */
+export const updatePrLabels = async (
+  { provider, owner, name, number }: UpdatePrLabelsPathParameters,
+  updateMembershipRequest: NonReadonly<UpdateMembershipRequest>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ItemLabelsResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<ItemLabelsResponse>(getUpdatePrLabelsUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateMembershipRequest),
   });
 };
 

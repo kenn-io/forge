@@ -263,6 +263,7 @@
     const loaded = new Map<string, Label[]>();
     // Repositories whose catalog is still loading or refreshing; Apply waits for them.
     const refreshing = new Set(repos.map(listItemRepoKey));
+    let refreshFailed = false;
     membership = {
       field: "labels",
       targets: items,
@@ -278,6 +279,7 @@
       membership = {
         ...membership,
         loading: refreshing.size > 0,
+        error: refreshFailed ? "Could not load repository labels, so labels can only be removed." : "",
         options: [...byName.values()]
           .map(labelOption)
           .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
@@ -304,12 +306,21 @@
                 labels: response.labels ?? [],
                 stale: response.stale ?? false,
                 syncing: response.syncing ?? false,
+                syncError: response.sync_error ?? "",
               })),
             ),
             onUpdate: (catalog) =>
               Effect.sync(() => {
-                loaded.set(repo, catalog.labels);
-                if (!catalog.stale && !catalog.syncing) refreshing.delete(repo);
+                const settled = !catalog.stale && !catalog.syncing;
+                if (settled) refreshing.delete(repo);
+                // A failed refresh still reports the list as current, with
+                // the error set; its labels are not trusted for additions.
+                if (settled && catalog.syncError) {
+                  loaded.delete(repo);
+                  refreshFailed = true;
+                } else {
+                  loaded.set(repo, catalog.labels);
+                }
                 publish();
               }),
           });

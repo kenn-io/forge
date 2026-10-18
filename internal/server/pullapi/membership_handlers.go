@@ -65,7 +65,7 @@ func (s *Handler) livePull(
 	}
 	// Held until the caller has written the new set, so concurrent changes to
 	// the same field cannot read the same starting set and drop each other.
-	release := s.membershipLocks.Lock(fmt.Sprintf("%d\x00%d\x00%s", repo.ID, input.Number, field))
+	release := s.membershipLocks.Lock(membershipLockKey(repo.ID, input.Number, field))
 	live, err := reader.GetMergeRequest(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
 		release()
@@ -94,7 +94,7 @@ func (s *Handler) updatePullLabels(
 		current = append(current, label.Name)
 	}
 	labels := httpapi.ApplyMembership(current, input.Body, func(a, b string) bool { return a == b })
-	return s.setPullLabels(ctx, &setPullLabelsInput{
+	return s.writePullLabels(ctx, &setPullLabelsInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -126,7 +126,7 @@ func (s *Handler) updatePullAssignees(
 	// A single-item provider read always carries assignees, so a missing list
 	// means nobody is assigned, never "unknown".
 	assignees := httpapi.ApplyMembership(live.Assignees, input.Body, strings.EqualFold)
-	return s.setPullAssignees(ctx, &setPullAssigneesInput{
+	return s.writePullAssignees(ctx, &setPullAssigneesInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
 		Owner:        input.Owner,
@@ -141,4 +141,37 @@ func (s *Handler) updatePullAssigneesOnHost(
 	input *updatePullMembershipHostInput,
 ) (*setAssigneesOutput, error) {
 	return s.updatePullAssignees(ctx, input.route())
+}
+
+// membershipLockKey identifies one field of one item for the membership lock.
+func membershipLockKey(repoID int64, number int, field string) string {
+	return fmt.Sprintf("%d\x00%d\x00%s", repoID, number, field)
+}
+
+// lockPullMembership takes the lock the PATCH handlers hold, so a full
+// replacement cannot land between a PATCH's provider read and its write. A
+// route that does not resolve takes no lock; the write reports the error.
+func (s *Handler) lockPullMembership(
+	ctx context.Context,
+	provider, platformHost, owner, name string,
+	number int,
+	field string,
+) func() {
+	active, err := s.lookupRepoByProviderRoute(ctx, provider, platformHost, owner, name)
+	if err != nil {
+		return func() {}
+	}
+	return s.membershipLocks.Lock(membershipLockKey(active.Row().ID, number, field))
+}
+
+// setPullLabels replaces the pull request's full labels set.
+func (s *Handler) setPullLabels(ctx context.Context, input *setPullLabelsInput) (*setLabelsOutput, error) {
+	defer s.lockPullMembership(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, "labels")()
+	return s.writePullLabels(ctx, input)
+}
+
+// setPullAssignees replaces the pull request's full assignees set.
+func (s *Handler) setPullAssignees(ctx context.Context, input *setPullAssigneesInput) (*setAssigneesOutput, error) {
+	defer s.lockPullMembership(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Number, "assignees")()
+	return s.writePullAssignees(ctx, input)
 }

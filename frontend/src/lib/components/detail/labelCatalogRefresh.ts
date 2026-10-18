@@ -5,6 +5,8 @@ export interface LabelCatalogLoadResult {
   labels: Label[];
   stale?: boolean;
   syncing?: boolean;
+  /** Why the last refresh failed; the labels are then the last good copy. */
+  syncError?: string;
 }
 
 export interface LabelCatalogRefreshOptions<LoadE, LoadR, UpdateE, UpdateR> {

@@ -170,7 +170,9 @@ func (s *Handler) requireVisibleIssue(
 	return issue, nil
 }
 
-func (s *Handler) setIssueLabels(ctx context.Context, input *setIssueLabelsInput) (*setLabelsOutput, error) {
+// writeIssueLabels replaces an issue's labels. Callers hold the item's labels
+// lock.
+func (s *Handler) writeIssueLabels(ctx context.Context, input *setIssueLabelsInput) (*setLabelsOutput, error) {
 	repo, issue, names, err := s.resolveRequestedLabelNames(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 		input.Number, input.Body.LabelNames(),
@@ -264,7 +266,9 @@ func (s *Handler) resolveRequestedLabelNames(
 	return repo.Row(), issue, resolved, nil
 }
 
-func (s *Handler) setIssueAssignees(ctx context.Context, input *setIssueAssigneesInput) (*setAssigneesOutput, error) {
+// writeIssueAssignees replaces an issue's assignees. Callers hold the item's
+// assignees lock.
+func (s *Handler) writeIssueAssignees(ctx context.Context, input *setIssueAssigneesInput) (*setAssigneesOutput, error) {
 	repo, names, err := s.resolveAssignees(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, input.Body.Assignees,
 	)

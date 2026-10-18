@@ -88,8 +88,9 @@ Interactive surfaces must agree on which item is selected.
   someone who never interacted with the repository is intentionally unsupported
   (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte::searchUsers`).
   Bulk label and assignee edits send only additions and removals, which the server applies to the provider's
-  live set read just before writing, under a per-item lock, never a full replacement list; label additions wait until every repository
-  label list is current and are dropped for repositories whose list did not load
+  live set read just before writing, under a per-item lock the full-replacement PUT routes also take, never a full
+  replacement list; label additions wait until every repository label list is current and are dropped for repositories
+  whose list did not load or reports a refresh `sync_error`
   (`internal/server/pullapi/membership_handlers.go::livePull`, `ItemActionsMenu.svelte::applyMembership`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository

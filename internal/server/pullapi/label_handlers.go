@@ -24,7 +24,9 @@ type setPullLabelsInput struct {
 	Body         httpapi.SetLabelsRequest
 }
 
-func (s *Handler) setPullLabels(
+// writePullLabels replaces a pull request's labels. Callers hold the item's
+// labels lock.
+func (s *Handler) writePullLabels(
 	ctx context.Context,
 	input *setPullLabelsInput,
 ) (*setLabelsOutput, error) {

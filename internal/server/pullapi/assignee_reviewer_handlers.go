@@ -41,8 +41,9 @@ type itemReviewersResponse struct {
 	Reviewers []string `json:"reviewers"`
 }
 
-// setPullAssignees replaces the full assignee set on a pull request.
-func (s *Handler) setPullAssignees(
+// writePullAssignees replaces the full assignee set on a pull request.
+// Callers hold the item's assignees lock.
+func (s *Handler) writePullAssignees(
 	ctx context.Context,
 	input *setPullAssigneesInput,
 ) (*setAssigneesOutput, error) {

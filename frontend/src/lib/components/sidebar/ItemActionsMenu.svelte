@@ -27,6 +27,7 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import { runQuickActionOnItems } from "../../stores/bulk-quick-action.js";
+  import { loadLabelCatalogWithRefresh } from "../detail/labelCatalogRefresh.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     actionEligibility,
@@ -258,6 +259,10 @@
     // Labels already on the items show while the catalogs load.
     const current = new Map<string, Label>();
     for (const target of items) for (const label of target.item.labels ?? []) current.set(label.name, label);
+    const repos = distinctRepos(items);
+    const loaded = new Map<string, Label[]>();
+    // Repositories whose catalog is still loading or refreshing; Apply waits for them.
+    const refreshing = new Set(repos.map(listItemRepoKey));
     membership = {
       field: "labels",
       targets: items,
@@ -266,35 +271,50 @@
       error: "",
       catalogs: new Map(),
     };
+    const publish = (): void => {
+      if (membership?.field !== "labels") return;
+      const byName = new Map(current);
+      for (const labels of loaded.values()) for (const label of labels) if (!byName.has(label.name)) byName.set(label.name, label);
+      membership = {
+        ...membership,
+        loading: refreshing.size > 0,
+        options: [...byName.values()]
+          .map(labelOption)
+          .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
+        catalogs: new Map([...loaded].map(([repo, labels]) => [repo, new Set(labels.map((label) => label.name))])),
+      };
+    };
     membershipLoad?.interrupt();
+    // A stale catalog refreshes in the background on the server; poll it
+    // like the detail label picker until it is current.
     membershipLoad = runtime.runCommand(
       Effect.forEach(
-        distinctRepos(items),
+        repos,
         (target) => {
           const route = repoRoute(target);
-          return executeGeneratedApiRequest("GET repository labels", (client, signal) =>
-            route.onHost
-              ? client.RepositoriesService.listRepoLabelsOnHost(route.params, { signal })
-              : client.RepositoriesService.listRepoLabels(route.params, { signal }),
-          ).pipe(Effect.map((response) => ({ repo: listItemRepoKey(target), labels: response.labels ?? [] })));
+          const repo = listItemRepoKey(target);
+          return loadLabelCatalogWithRefresh({
+            isActive: () => membership?.field === "labels",
+            loadOnce: executeGeneratedApiRequest("GET repository labels", (client, signal) =>
+              route.onHost
+                ? client.RepositoriesService.listRepoLabelsOnHost(route.params, { signal })
+                : client.RepositoriesService.listRepoLabels(route.params, { signal }),
+            ).pipe(
+              Effect.map((response) => ({
+                labels: response.labels ?? [],
+                stale: response.stale ?? false,
+                syncing: response.syncing ?? false,
+              })),
+            ),
+            onUpdate: (catalog) =>
+              Effect.sync(() => {
+                loaded.set(repo, catalog.labels);
+                if (!catalog.stale && !catalog.syncing) refreshing.delete(repo);
+                publish();
+              }),
+          });
         },
-        { concurrency: 4 },
-      ).pipe(
-        Effect.flatMap((catalogs) =>
-          Effect.sync(() => {
-            if (membership?.field !== "labels") return;
-            const byName = new Map(current);
-            for (const { labels } of catalogs) for (const label of labels) if (!byName.has(label.name)) byName.set(label.name, label);
-            membership = {
-              ...membership,
-              loading: false,
-              options: [...byName.values()]
-                .map(labelOption)
-                .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" })),
-              catalogs: new Map(catalogs.map(({ repo, labels }) => [repo, new Set(labels.map((label) => label.name))])),
-            };
-          }),
-        ),
+        { concurrency: 4, discard: true },
       ),
       {
         operation: "load label catalogs",

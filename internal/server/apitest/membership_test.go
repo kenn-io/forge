@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -24,28 +25,30 @@ func labelNamesOf(labels []db.Label) []string {
 	return names
 }
 
-func TestAPIUpdatePullLabelsKeepsLabelsTheRequestDoesNotMention(t *testing.T) {
+func TestAPIUpdatePullLabelsAppliesToProviderLabels(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupLabelTestServer(t)
 	seedPRWithLabels(t, database, "acme", "widget", 1, []db.Label{{Name: "bug", Color: "d73a4a"}})
 	repoID := seedRepoLabelCatalog(t, database, "acme", "widget")
+	// Someone added "triage" on the provider after Forge last synced.
+	providerClient.PRs["acme/widget"][0].Labels = []*gh.Label{{Name: "bug"}, {Name: "triage"}}
 	path := "/api/v1/pulls/github/acme/widget/1/labels"
 
-	rr := doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{"triage"}, Remove: []string{}})
+	rr := doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{}, Remove: []string{"bug"}})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	var body labelAPIResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.ElementsMatch([]string{"bug", "triage"}, labelNamesOf(body.Labels))
-	require.Len(providerClient.PRs["acme/widget"][0].Labels, 2)
+	assert.Equal([]string{"triage"}, labelNamesOf(body.Labels))
 
-	rr = doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{}, Remove: []string{"bug"}})
+	rr = doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{"bug"}, Remove: []string{}})
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
 	pr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
 	require.NoError(err)
 	require.NotNil(pr)
-	assert.Equal([]string{"triage"}, labelNamesOf(pr.Labels))
+	assert.ElementsMatch([]string{"triage", "bug"}, labelNamesOf(pr.Labels))
+	require.Len(providerClient.PRs["acme/widget"][0].Labels, 2)
 }
 
 func TestAPIUpdateIssueLabelsKeepsLabelsTheRequestDoesNotMention(t *testing.T) {
@@ -104,12 +107,14 @@ func TestAPIUpdatePullAssigneesKeepsAssigneesTheRequestDoesNotMention(t *testing
 	assert.Equal([]string{"bob"}, body.Assignees)
 }
 
-func TestAPIUpdateIssueAssigneesKeepsAssigneesTheRequestDoesNotMention(t *testing.T) {
+func TestAPIUpdateIssueAssigneesAppliesToProviderAssignees(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
 	srv, database, providerClient, _ := setupAssigneeTestServer(t)
 	seedIssue(t, database, "acme", "widget", 7, "open")
+	// Someone assigned "zed" on the provider after Forge last synced.
+	providerClient.Issues["acme/widget"][0].Assignees = []*gh.User{{Login: new("zed")}}
 	path := "/api/v1/issues/github/acme/widget/7/assignees"
 
 	rr := doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{"dana"}, Remove: []string{}})
@@ -119,9 +124,9 @@ func TestAPIUpdateIssueAssigneesKeepsAssigneesTheRequestDoesNotMention(t *testin
 
 	var body assigneesAPIResponse
 	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
-	assert.Equal([]string{"dana", "erin"}, body.Assignees)
+	assert.Equal([]string{"zed", "dana", "erin"}, body.Assignees)
 	providerIssue := providerClient.Issues["acme/widget"][0]
-	require.Len(providerIssue.Assignees, 2)
+	require.Len(providerIssue.Assignees, 3)
 }
 
 func TestAPIUpdatePullLabelsRequiresAddAndRemove(t *testing.T) {

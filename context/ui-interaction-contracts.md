@@ -87,10 +87,10 @@ Interactive surfaces must agree on which item is selected.
   Bulk assignees offer only people from the repository's synced history, with no typed-name entry: assigning
   someone who never interacted with the repository is intentionally unsupported
   (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte::searchUsers`).
-  Bulk label and assignee edits send only additions and removals, which the server applies to the item's stored
-  set, never a full replacement list; label additions wait for the repository label lists and are dropped for
-  repositories whose list did not load
-  (`internal/server/httpapi/item_mutation_types.go::ApplyMembership`, `ItemActionsMenu.svelte::applyMembership`).
+  Bulk label and assignee edits send only additions and removals, which the server applies to the provider's
+  live set read just before writing, never a full replacement list; label additions wait until every repository
+  label list is current and are dropped for repositories whose list did not load
+  (`internal/server/pullapi/membership_handlers.go::livePull`, `ItemActionsMenu.svelte::applyMembership`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

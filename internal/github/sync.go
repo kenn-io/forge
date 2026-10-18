@@ -2760,6 +2760,24 @@ func (s *Syncer) LabelMutator(
 	return s.directClients.LabelMutator(kind, canonicalRepoHost(host))
 }
 
+// MergeRequestReader reads merge requests for user-initiated requests that
+// need the provider's live state rather than the last sync.
+func (s *Syncer) MergeRequestReader(
+	kind platform.Kind,
+	host string,
+) (platform.MergeRequestReader, error) {
+	return s.directClients.MergeRequestReader(kind, canonicalRepoHost(host))
+}
+
+// IssueReader reads issues for user-initiated requests that need the
+// provider's live state rather than the last sync.
+func (s *Syncer) IssueReader(
+	kind platform.Kind,
+	host string,
+) (platform.IssueReader, error) {
+	return s.directClients.IssueReader(kind, canonicalRepoHost(host))
+}
+
 func (s *Syncer) ReviewMutator(
 	kind platform.Kind,
 	host string,

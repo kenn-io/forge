@@ -392,6 +392,43 @@ test("sends only the label changes for a selection", async ({ page }) => {
   }
 });
 
+test("waits for a refreshing label list before applying", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  let refreshed = false;
+  await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {
+    const done = refreshed;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(
+        done ? { labels: [bug, docs], stale: false, syncing: false } : { labels: [bug], stale: true, syncing: true },
+      ),
+    });
+  });
+  await page.goto("/pulls");
+  await selectFirstThreePulls(page);
+
+  await page.locator(".pr-list-row").filter({ hasText: "Retry flaky upload" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Edit labels..." }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Labels for 3 PRs" });
+  const bugRow = dialog.getByRole("checkbox", { name: /bug/ });
+  await bugRow.click();
+  await bugRow.click();
+  await expect(bugRow).toHaveAttribute("aria-checked", "false");
+  await expect(dialog.getByRole("checkbox", { name: /docs/ })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Apply" })).toBeDisabled();
+
+  refreshed = true;
+  await dialog.getByRole("checkbox", { name: /docs/ }).click();
+  await dialog.getByRole("button", { name: "Apply" }).click();
+
+  await expect(page.locator(".kit-flash-stack")).toContainText("Updated labels on 3 PRs.");
+  expect(mutation(recorded, "PATCH /api/v1/pulls/github/acme/widgets/21/labels")).toEqual([
+    { add: ["docs"], remove: ["bug"] },
+  ]);
+});
+
 test("only removes labels when the repository label list cannot load", async ({ page }) => {
   const recorded = await mockQuickActions(page);
   await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {

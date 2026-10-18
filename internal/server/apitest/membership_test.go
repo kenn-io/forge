@@ -138,3 +138,23 @@ func TestAPIUpdatePullLabelsRequiresAddAndRemove(t *testing.T) {
 		map[string][]string{"add": {"bug"}})
 	require.Equal(t, http.StatusUnprocessableEntity, rr.Code, rr.Body.String())
 }
+
+func TestAPIUpdateIssueAssigneesDoesNotRestoreUpstreamUnassignment(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, providerClient, _ := setupAssigneeTestServer(t)
+	seedIssue(t, database, "acme", "widget", 7, "open")
+	path := "/api/v1/issues/github/acme/widget/7/assignees"
+
+	rr := doLabelAPIRequest(t, srv, http.MethodPut, path, map[string][]string{"assignees": {"octo"}})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	// Someone unassigned "octo" on the provider; Forge still has the old set.
+	providerClient.Issues["acme/widget"][0].Assignees = nil
+
+	rr = doLabelAPIRequest(t, srv, http.MethodPatch, path, membershipChange{Add: []string{"dana"}, Remove: []string{}})
+	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+	var body assigneesAPIResponse
+	require.NoError(json.Unmarshal(rr.Body.Bytes(), &body))
+	assert.Equal([]string{"dana"}, body.Assignees)
+}

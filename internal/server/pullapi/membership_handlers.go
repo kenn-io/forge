@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
 )
@@ -46,32 +45,31 @@ func (s *Handler) livePull(
 	ctx context.Context,
 	input *updatePullMembershipInput,
 	capability string,
-) (*db.MergeRequest, platform.MergeRequest, error) {
+) (platform.MergeRequest, error) {
 	active, err := s.lookupRepoByProviderRoute(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name)
 	if err != nil {
-		return nil, platform.MergeRequest{}, providerRouteLookupError(err)
+		return platform.MergeRequest{}, providerRouteLookupError(err)
 	}
 	if s.syncer == nil || !capabilityEnabled(s.capabilitiesForRepo(active.Repo), capability) {
-		return nil, platform.MergeRequest{}, unsupportedCapabilityProblem(active.Repo, capability)
+		return platform.MergeRequest{}, unsupportedCapabilityProblem(active.Repo, capability)
 	}
 	repo := active.Row()
-	stored, err := s.requireVisibleMergeRequest(ctx, repo, input.Number)
-	if err != nil {
-		return nil, platform.MergeRequest{}, err
+	if _, err := s.requireVisibleMergeRequest(ctx, repo, input.Number); err != nil {
+		return platform.MergeRequest{}, err
 	}
 	reader, err := s.syncer.MergeRequestReader(repoProviderKind(*repo), repoProviderHost(*repo))
 	if err != nil {
-		return nil, platform.MergeRequest{}, unsupportedCapabilityProblem(*repo, capability)
+		return platform.MergeRequest{}, unsupportedCapabilityProblem(*repo, capability)
 	}
 	live, err := reader.GetMergeRequest(ctx, platformRepoRefFromDB(*repo), input.Number)
 	if err != nil {
-		return nil, platform.MergeRequest{}, httpapi.ProviderCallProblemWithDetail(
+		return platform.MergeRequest{}, httpapi.ProviderCallProblemWithDetail(
 			err,
 			string(repoProviderKind(*repo)), repoProviderHost(*repo),
 			"provider API error: "+err.Error(),
 		)
 	}
-	return stored, live, nil
+	return live, nil
 }
 
 // updatePullLabels adds and removes labels on a pull request, keeping every
@@ -80,7 +78,7 @@ func (s *Handler) updatePullLabels(
 	ctx context.Context,
 	input *updatePullMembershipInput,
 ) (*setLabelsOutput, error) {
-	_, live, err := s.livePull(ctx, input, capabilityLabelMutation)
+	live, err := s.livePull(ctx, input, capabilityLabelMutation)
 	if err != nil {
 		return nil, err
 	}
@@ -113,16 +111,13 @@ func (s *Handler) updatePullAssignees(
 	ctx context.Context,
 	input *updatePullMembershipInput,
 ) (*setAssigneesOutput, error) {
-	stored, live, err := s.livePull(ctx, input, capabilityAssigneeMutation)
+	live, err := s.livePull(ctx, input, capabilityAssigneeMutation)
 	if err != nil {
 		return nil, err
 	}
-	current := live.Assignees
-	if current == nil {
-		// The provider did not report assignees; the synced set is the best known.
-		current = db.ParseUserNamesJSON(stored.AssigneesJSON)
-	}
-	assignees := httpapi.ApplyMembership(current, input.Body, strings.EqualFold)
+	// A single-item provider read always carries assignees, so a missing list
+	// means nobody is assigned, never "unknown".
+	assignees := httpapi.ApplyMembership(live.Assignees, input.Body, strings.EqualFold)
 	return s.setPullAssignees(ctx, &setPullAssigneesInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,

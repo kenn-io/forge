@@ -1853,7 +1853,7 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if err != nil {
 		return mergePRBody{}, unsupportedCapabilityProblem(repo.Repo, capabilityMergeMutation)
 	}
-	release := s.mergeLocks.lock(deferredMergeKey(repo.Repo, number))
+	release := s.mergeLocks.Lock(deferredMergeKey(repo.Repo, number))
 	defer release()
 
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)

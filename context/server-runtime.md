@@ -1,7 +1,7 @@
 # Server Runtime
 
-- Startup and daily daemon telemetry send `repo_count` only as `0`, `1`, `2-5`,
-  `6-20`, `21-100`, or `over-100`; the allowlist rejects exact numeric counts
+- Startup and daily daemon telemetry send tracked repository counts only in the
+  ranges documented in [Telemetry](../docs/configuration.md#telemetry)
   (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full

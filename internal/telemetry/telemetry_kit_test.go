@@ -89,11 +89,6 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		_, valid := screenFilter(invalid)
 		assert.False(valid)
 	}
-	repoCountFilter := allowedEvents["daemon_active"]["repo_count"]
-	for _, invalid := range []any{nil, 37, "37", ""} {
-		_, valid := repoCountFilter(invalid)
-		assert.False(valid)
-	}
 	for _, duration := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
 		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
 		require.NoError(err)

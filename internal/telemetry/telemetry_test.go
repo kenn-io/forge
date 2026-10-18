@@ -82,13 +82,13 @@ func TestRepoCountBucket(t *testing.T) {
 		count int
 		want  string
 	}{
-		{0, "0"},
-		{1, "1"},
-		{2, "2-5"},
-		{5, "2-5"},
+		{0, "0-5"},
+		{1, "0-5"},
+		{5, "0-5"},
 		{6, "6-20"},
 		{20, "6-20"},
 		{21, "21-100"},
+		{37, "21-100"},
 		{100, "21-100"},
 		{101, "over-100"},
 	} {
@@ -99,6 +99,10 @@ func TestRepoCountBucket(t *testing.T) {
 			assert.True(t, valid)
 			assert.Equal(t, tt.want, value)
 		})
+	}
+	for _, invalid := range []any{nil, 37, "37", "", "0", "1", "2-5"} {
+		_, valid := allowedEvents["daemon_active"]["repo_count"](invalid)
+		assert.False(t, valid, "repo_count %v", invalid)
 	}
 }
 
@@ -123,7 +127,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 			backend := &fakeKitClient{}
 			reporter := &Reporter{daemon: daemon, backend: backend}
 
-			err := reporter.Capture(tt.event, map[string]any{"repo_count": "1"})
+			err := reporter.Capture(tt.event, map[string]any{"repo_count": "0-5"})
 			switch {
 			case tt.wantErr != nil:
 				require.ErrorIs(t, err, tt.wantErr)

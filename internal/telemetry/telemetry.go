@@ -28,21 +28,24 @@ const (
 // HeartbeatInterval is how often a running daemon reports daemon_active.
 const HeartbeatInterval = 24 * time.Hour
 
+const (
+	repoCount0To5    = "0-5"
+	repoCount6To20   = "6-20"
+	repoCount21To100 = "21-100"
+	repoCountOver100 = "over-100"
+)
+
 // RepoCountBucket groups tracked repository counts into fixed telemetry ranges.
 func RepoCountBucket(count int) string {
 	switch {
-	case count <= 0:
-		return "0"
-	case count == 1:
-		return "1"
 	case count <= 5:
-		return "2-5"
+		return repoCount0To5
 	case count <= 20:
-		return "6-20"
+		return repoCount6To20
 	case count <= 100:
-		return "21-100"
+		return repoCount21To100
 	default:
-		return "over-100"
+		return repoCountOver100
 	}
 }
 
@@ -90,7 +93,7 @@ var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 		"duration_bucket": durationFilter,
 	},
 	"daemon_active": {
-		"repo_count": posthog.AllowStringValues("0", "1", "2-5", "6-20", "21-100", "over-100"),
+		"repo_count": posthog.AllowStringValues(repoCount0To5, repoCount6To20, repoCount21To100, repoCountOver100),
 	},
 }
 

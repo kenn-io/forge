@@ -23,16 +23,47 @@ processes:
       done
 
   backend:
-    description: "Go backend with Air live reload on 127.0.0.1:8091"
+    description: "Go backend with live reload on 127.0.0.1:8091"
     namespace: dev
     log_location: "tmp/logs/backend-process-compose.log"
-    command: "make frontend && exec sh ./scripts/dev-stack-backend.sh"
+    command: |
+      mkdir -p tmp/logs
+      export KENN_FORGE_LOG_LEVEL="${KENN_FORGE_LOG_LEVEL:-debug}"
+      export KENN_FORGE_LOG_FILE="${KENN_FORGE_LOG_FILE:-tmp/logs/backend-dev.log}"
+      export KENN_FORGE_LOG_STDERR_LEVEL="${KENN_FORGE_LOG_STDERR_LEVEL:-info}"
+      export KENN_FORGE_DEV_RESTART=1
+      if ! make frontend || ! ./scripts/dev-backend-build.sh; then
+        [ -x ./tmp/kenn-forge ] || exit 1
+        printf 'Build failed; running the last successful backend build\n' >&2
+      fi
+      if [ -n "${KENN_FORGE_CONFIG:-}" ]; then
+        exec ./tmp/kenn-forge serve -config "$KENN_FORGE_CONFIG" ${BACKEND_ARGS:-}
+      else
+        exec ./tmp/kenn-forge serve ${BACKEND_ARGS:-}
+      fi
+    watch:
+      debounce: 1s
+      paths:
+        - path: ./cmd
+          include: ["*.go", "*.tpl", "*.tmpl", "*.html"]
+        - path: ./internal
+          include: ["*.go", "*.tpl", "*.tmpl", "*.html"]
+          exclude: ["web/dist/**", "apiclient/*/client.go"]
+        - path: ./githubapp
+          include: ["*.go"]
+        - path: ./landedwork
+          include: ["*.go"]
+        - path: ./platform
+          include: ["*.go"]
+        - path: ./go.mod
+        - path: ./go.sum
+        - path: ./scripts/dev-backend-build.sh
     availability:
       restart: always
       backoff_seconds: 5
     shutdown:
-      signal: 2
-      timeout_seconds: 160
+      signal: 15
+      timeout_seconds: 150
     # process-compose kills the backend when readiness exhausts its failures.
     # The first start after a pull runs the frontend build and a cold Go build
     # before the server listens, which can take several minutes.

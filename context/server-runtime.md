@@ -146,6 +146,10 @@ and the root event stream.
   (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`,
   `cmd/kenn-forge/main.go::run`).
 
+- Keep process-compose as the backend's only restart owner; nested Air rerun
+  loops can spawn competing servers while one holds the data-directory lock.
+  Watch inputs must exclude generated clients and assets (`process-compose.yml`).
+
 ## Startup Lock
 
 - Config identity must converge across relative, symlinked, and filesystem-equivalent

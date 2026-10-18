@@ -18,8 +18,6 @@ exclude_dir = [
 include_ext = ["go", "tpl", "tmpl", "html"]
 include_file = ["go.mod", "go.sum", "scripts/dev-backend-build.sh"]
 stop_on_error = false
-rerun = true
-rerun_delay = 2000
 send_interrupt = true
 kill_delay = "150s"
 

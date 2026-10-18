@@ -86,6 +86,9 @@ preserve full edit correspondence so partly applied sources keep their origin
 (`landedwork/edits.go::compareTreeEdits`).
 Synthesized merge objects belong only to the disposable view; caller objects
 are read-only alternates (`landedwork/git.go::openView`).
+Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base
+with synthesized commits, not `merge-tree --merge-base` (Git 2.40)
+(`landedwork/merge_tree.go::withMergeBase`).
 Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 Collection must preserve unfinished candidates and the exact prepared query;

@@ -490,6 +490,25 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+  # Landed-work proofs must run on the Git that Debian 12 and macOS ship (2.39),
+  # not only on the newer Git of the hosted runners.
+  landedwork-old-git:
+    name: Landed-work proofs (Git 2.39)
+    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    needs: detect_changes
+    if: needs.detect_changes.outputs.backend == 'true'
+    container:
+      image: golang:1.27-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run landed-work tests
+        run: |
+          git --version
+          go test ./landedwork/... -shuffle=on
+
   race:
     name: ${{ matrix.shard == 'all' && 'go test -race' || format('go test -race ({0})', matrix.shard) }}
     strategy:

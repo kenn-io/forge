@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
   import { Effect } from "effect";
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -27,12 +26,6 @@
 
   let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
   const appRuntime = getAppRuntime();
-
-  function reportInteraction(): void {
-    if (session.itemType && !session.disabled && active && attached && !wrapper?.closest("[inert]")) {
-      reportWorkspaceOpened(appRuntime, session.itemType);
-    }
-  }
 
   let wrapper = $state<HTMLElement | null>(null);
   let terminalPane = $state<TerminalPane | null>(null);
@@ -216,9 +209,6 @@
      this wrapper is the only node the store can reach for a pooled session. -->
 <div
   class="session-host-wrapper"
-  onpointerdowncapture={reportInteraction}
-  onkeydowncapture={reportInteraction}
-  onwheelcapture={reportInteraction}
   data-session-host={session.hostKey}
   bind:this={wrapper}
   tabindex="-1"

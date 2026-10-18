@@ -137,7 +137,6 @@ const collapsedPaneKeys = new Map<string, string[]>();
 // owns the overlay: a palette command or a Focus Terminal with nothing to focus can
 // only reach it through the store.
 let launcherOpener = $state<(() => void) | null>(null);
-let terminalFocusReporter: (() => void) | null = null;
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -660,10 +659,6 @@ export function registerWorkspaceLauncher(open: (() => void) | null): void {
   launcherOpener = open;
 }
 
-export function registerWorkspaceTerminalFocusReporter(report: (() => void) | null): void {
-  terminalFocusReporter = report;
-}
-
 /**
  * The hosted workspace's launcher, or null when this surface is not hosting one.
  *
@@ -932,14 +927,10 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       layout.clearZoom();
     },
     notePaneFocused: (tabKey) => notePaneFocused(surface, tabKey),
-    notePaneSelected: (tabKey) => {
-      if (desiredSlot() === surface && workspacePaneKeysFor(surface).includes(tabKey)) terminalFocusReporter?.();
-    },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
       if (getStackDepth() > 0) return;
-      terminalFocusReporter?.();
       // The inverse of the Collapse Terminal the user just pressed: the panes it hid
       // are the panes that come back. Revealing only the remembered one returns an
       // empty container whenever this workspace's terminals were promoted into panes
@@ -1033,7 +1024,6 @@ export function resetWorkspaceHostForTest(): void {
   hostedControls = null;
   hostedControlsBusy = null;
   launcherOpener = null;
-  terminalFocusReporter = null;
   lastFocusedWorkspacePane = {};
   collapsedPaneKeys.clear();
 }

@@ -141,10 +141,8 @@ describe("MobileWorkspaceTerminal", () => {
         status: state === "pending" || state === "deleted" ? "ready" : state,
       });
       render(MobileWorkspaceTerminalTestHarness, { props });
-      const page = await screen.findByRole("region", { name: "Workspace terminal" });
       if (state === "pending" || state === "deleted" || state === "deleting" || state === "deletion_failed") {
         await screen.findByTitle("acme/widgets · feature/test");
-        await fireEvent.pointerDown(page);
         expect(coreActions).not.toHaveBeenCalled();
         if (state !== "pending") return;
         endWorkspaceDeletion("ws-a", undefined);
@@ -155,35 +153,34 @@ describe("MobileWorkspaceTerminal", () => {
           properties: { item_type: "pull_request" },
         }),
       );
-      await fireEvent.pointerDown(page);
       expect(coreActions).toHaveBeenCalledTimes(1);
     },
   );
 
-  it.each(["pointerdown", "keydown", "wheel"])(
-    "reports mobile %s use again after the UTC day changes",
-    async (input) => {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date("2026-10-17T23:59:59Z"));
+  it("reports mobile workspace use again when the tab returns after the UTC day changes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T23:59:59Z"));
+    const visibility = vi.spyOn(document, "visibilityState", "get");
+    const setVisibility = (state: DocumentVisibilityState) => {
+      visibility.mockReturnValue(state);
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    try {
       render(MobileWorkspaceTerminalTestHarness, { props });
       await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-      const composer = await screen.findByRole("button", { name: "Open terminal composer" });
 
-      await fireEvent(composer, new Event(input));
-      expect(coreActions).toHaveBeenCalledTimes(1);
-
+      setVisibility("hidden");
       vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
-      await fireEvent(composer, new Event(input));
+      setVisibility("visible");
       await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
       expect(coreActions.mock.calls[1]?.[0]).toEqual({
         event: "workspace_opened",
         properties: { item_type: "pull_request", surface: "web" },
       });
-
-      await fireEvent(composer, new Event(input));
-      expect(coreActions).toHaveBeenCalledTimes(2);
-    },
-  );
+    } finally {
+      visibility.mockRestore();
+    }
+  });
 
   it.each([
     [{ mr_state: "open" }, "var(--accent-green)"],

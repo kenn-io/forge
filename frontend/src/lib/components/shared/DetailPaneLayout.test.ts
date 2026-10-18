@@ -250,13 +250,11 @@ describe("detail pane layout", () => {
     // cannot live inside the tree.
     const layout = store(splitTree());
     layout.setHidden("workspace", true);
-    const onSelectTab = vi.fn();
-    render(DetailPaneLayoutTestHarness, { layout, onSelectTab });
+    render(DetailPaneLayoutTestHarness, { layout });
 
     expect(screen.queryByTestId("pane-workspace")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Show Workspace" }));
     expect(layout.hiddenTabKeys()).not.toContain("workspace");
-    expect(onSelectTab).toHaveBeenCalledExactlyOnceWith("workspace");
   });
 
   it("does not offer a way back for a pane that is merely unavailable", () => {

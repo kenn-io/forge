@@ -167,7 +167,7 @@ describe("IssueListView inline workspace", () => {
     expect(localStorage.getItem("kenn-forge-pane-layout-v1:issues")).toBe(storedLayout);
   });
 
-  it("reports focused panes and explicit tab selections to the workspace host", async () => {
+  it("reports a focused pane to the workspace host", () => {
     const layout = getPaneLayoutStore("issues");
     const paneKey = sessionPaneKey("ws-1", undefined, "ws-1:helper");
     layout.promoteTab(paneKey, { kind: "tab", leafID: layout.leafIDForTab("workspace")! });
@@ -185,11 +185,6 @@ describe("IssueListView inline workspace", () => {
     // Focus is the host's only report of which pane the user is working in, and an
     // expand or a Focus Terminal has to act on that one rather than the container.
     expect(controller.notePaneFocused).toHaveBeenCalledWith(paneKey);
-    expect(controller.notePaneSelected).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole("tab", { name: "Helper" }));
-    expect(controller.notePaneSelected).toHaveBeenCalledWith(paneKey);
-    await fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
-    expect(controller.notePaneSelected).toHaveBeenCalledWith("workspace");
   });
 
   it("moves the active border only when focus moves between issue and workspace", async () => {

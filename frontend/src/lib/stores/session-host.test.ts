@@ -209,15 +209,6 @@ describe("session host registry", () => {
     expect(isSessionMounted(agentOnA)).toBe(false);
   });
 
-  it("updates a mounted session when its workspace item type becomes available", () => {
-    const session = mountedSession("ws-1", "agent");
-    noteSessionMounted(session);
-    noteSessionMounted({ ...session, itemType: "pull_request" });
-
-    expect(mountedSessions()).toHaveLength(1);
-    expect(mountedSessions()[0]?.itemType).toBe("pull_request");
-  });
-
   it("drops the slot of an unmounted session", () => {
     noteSessionMounted({ hostKey: agentOnA, websocketPath: "/ws/agent", status: "running" });
     registerSessionSlot(agentOnA, document.createElement("div"));

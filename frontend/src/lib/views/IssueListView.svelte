@@ -180,7 +180,6 @@
         leafLabel="Issue detail pane group"
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}
         onFocusPane={handlePaneFocus}
-        onSelectTab={(tabKey) => inlineWorkspace?.notePaneSelected(tabKey)}
       >
         {#snippet renderPane(tabKey, visible, _inputActive)}
           {#if tabKey === "conversation"}

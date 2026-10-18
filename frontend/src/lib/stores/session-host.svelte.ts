@@ -1,5 +1,4 @@
 import type { Attachment } from "svelte/attachments";
-import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import { DEFAULT_TERMINAL_SETTINGS } from "../api/types.js";
 import { schemaConstraints } from "../api/generated/schema-constraints.js";
 import type { TerminalKey } from "../components/terminal/terminal-key.js";
@@ -48,7 +47,6 @@ export function sessionHostPrefix(workspaceId: string, hostKey: string | undefin
 
 /** What the pool needs to render one session's terminal. */
 export interface MountedSession {
-  itemType?: WorkspaceDetail["item_type"] | undefined;
   kind?: string | undefined;
   label?: string;
   hostKey: SessionHostKey;
@@ -193,7 +191,6 @@ export function noteSessionMounted(session: MountedSession): void {
       existing.status === session.status &&
       existing.kind === session.kind &&
       existing.label === session.label &&
-      existing.itemType === session.itemType &&
       (existing.cursorWheelInput ?? false) === (session.cursorWheelInput ?? false) &&
       (existing.disabled ?? false) === (session.disabled ?? false)
     ) {

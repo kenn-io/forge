@@ -113,13 +113,10 @@
     !isWorkspaceDeletionPending(workspaceId, hostKey) && !(hostKey === undefined && isWorkspaceIdDeleted(workspaceId))
       ? workspace : null,
   );
-  function reportWorkspaceUse(): void {
+  $effect(() => {
     if (visible && documentVisible() && usableWorkspace) {
       reportWorkspaceOpened(appRuntime, usableWorkspace.item_type);
     }
-  }
-  $effect(() => {
-    reportWorkspaceUse();
   });
   let workspaceReadinessGeneration = 0;
   let runtime = $state.raw<WorkspaceRuntimeState | null>(null);
@@ -911,13 +908,7 @@
   });
 </script>
 
-<section
-  class="mobile-workspace-terminal"
-  aria-label="Workspace terminal"
-  onpointerdowncapture={reportWorkspaceUse}
-  onkeydowncapture={reportWorkspaceUse}
-  onwheelcapture={reportWorkspaceUse}
->
+<section class="mobile-workspace-terminal" aria-label="Workspace terminal">
   <header class="mobile-workspace-terminal__toolbar">
     <small class="mobile-workspace-terminal__context" title={workspaceIdentity}>{workspaceIdentity}</small>
     <button type="button" class="mobile-workspace-terminal__back" aria-label="Back to workspaces" onclick={onBack}>

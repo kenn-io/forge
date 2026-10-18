@@ -62,7 +62,6 @@
     publishHostedSessions,
     registerWorkspaceControls,
     registerWorkspaceLauncher,
-    registerWorkspaceTerminalFocusReporter,
     setWorkspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
@@ -696,20 +695,10 @@
   const runtimeLive = $derived(
     runtime !== null && runtimeForId === workspaceId && runtimeForHostKey === workspaceHostKey && workspaceLive,
   );
-  let pendingWorkspaceUse = $state<string | null>(null);
-  function reportWorkspaceUse(): void {
-    if (usableWorkspace) {
-      pendingWorkspaceUse = null;
-      reportWorkspaceOpened(appRuntime, usableWorkspace.item_type);
-    } else if (embeddedWorkspace) pendingWorkspaceUse = viewWorkspaceKey;
-  }
-  $effect(() => {
-    if (pendingWorkspaceUse === null) return;
-    if (pendingWorkspaceUse !== viewWorkspaceKey) pendingWorkspaceUse = null;
-    else if (usableWorkspace) untrack(reportWorkspaceUse);
-  });
-  function reportWorkspaceInteraction(visible: boolean): void {
-    if (embeddedWorkspace && visible && !modalOpen) reportWorkspaceUse();
+  // A workspace counts on its own visible page or when something launches in it;
+  // automatic display beside a PR or issue does not.
+  function reportWorkspaceLaunch(): void {
+    if (usableWorkspace) reportWorkspaceOpened(appRuntime, usableWorkspace.item_type);
   }
   $effect(() => {
     if (!embeddedWorkspace && hostVisible && documentVisible() && usableWorkspace) {
@@ -995,7 +984,6 @@
   let launcherShownFor = $state<string[]>([]);
 
   function openLauncher(leaf?: WorkspaceRuntimeLaunchLeaf): void {
-    reportWorkspaceUse();
     if (externalDockVisible && !terminalLayout.open) {
       terminalLayout = { ...terminalLayout, open: true };
     }
@@ -1096,14 +1084,8 @@
   // finds no session to focus. The registry belongs to embedded detail surfaces.
   $effect(() => {
     if (!embeddedWorkspace) return;
-    untrack(() => {
-      registerWorkspaceLauncher(openLauncher);
-      registerWorkspaceTerminalFocusReporter(reportWorkspaceUse);
-    });
-    return () => untrack(() => {
-      registerWorkspaceLauncher(null);
-      registerWorkspaceTerminalFocusReporter(null);
-    });
+    untrack(() => registerWorkspaceLauncher(openLauncher));
+    return () => untrack(() => registerWorkspaceLauncher(null));
   });
 
   $effect(() => {
@@ -1880,7 +1862,6 @@
       if (restoredSessionKeys !== null && !restoredSessionKeys.has(hostKey)) continue;
       desired.set(hostKey, {
         hostKey,
-        itemType: workspace?.item_type,
         ...(workspaceHostKey === undefined ? {} : { fleetHostKey: workspaceHostKey }),
         websocketPath: workspaceSessionWebSocketPath(
           workspaceId,
@@ -2983,7 +2964,7 @@
     admissionRuntime?: WorkspaceRuntimeState,
   ): void {
     if (!workspaceId || launchingKey || actionsBlocked) return;
-    reportWorkspaceUse();
+    reportWorkspaceLaunch();
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     launchingKey = targetKey;
@@ -3144,7 +3125,7 @@
     placement: WorkspaceRuntimeLaunchPlacement = { _tag: "Terminal", insertIntoTree: true },
   ): void {
     if (!workspaceId || terminalLaunching || actionsBlocked) return;
-    reportWorkspaceUse();
+    reportWorkspaceLaunch();
     const id = workspaceId;
     const hostKey = workspaceHostKey;
     terminalLaunching = true;
@@ -4548,9 +4529,6 @@
 
 <div
   class="terminal-view"
-  onpointerdowncapture={() => reportWorkspaceInteraction(hostVisible)}
-  onkeydowncapture={() => reportWorkspaceInteraction(hostVisible)}
-  onwheelcapture={() => reportWorkspaceInteraction(hostVisible)}
   bind:this={workspaceRoot}
   {@attach attachWorkspaceItemReferences}
   tabindex="-1"
@@ -5394,12 +5372,7 @@
      retired. Its own visible placement, not the parked host wrapper, owns whether
      terminal slots may attach. -->
 {#snippet workspaceDockRow()}
-  <div
-    class={["workspace-dock-launcher-host", terminalLayout.dock]}
-    onpointerdowncapture={() => reportWorkspaceInteraction(true)}
-    onkeydowncapture={() => reportWorkspaceInteraction(true)}
-    onwheelcapture={() => reportWorkspaceInteraction(true)}
-  >
+  <div class={["workspace-dock-launcher-host", terminalLayout.dock]}>
     {@render workspaceDockRowBody(true, true)}
     {@render workspaceLauncher()}
   </div>

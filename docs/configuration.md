@@ -682,9 +682,9 @@ and onboarding. Screen counts persist across tabs and daemon restarts.
 An upgrade preserves prior screen counts in the private `telemetry-daily.json`
 file beside the database. Keep that file to retain daily counts across restarts.
 Forge also sends `pr_viewed` with the provider when a PR's detail is on screen,
-and `workspace_opened` with its type when you open its own page, launch or run
-something in it, or click or type in its content or terminal. Automatic display
-beside a PR or issue, or creating a workspace without using it, sends nothing.
+and `workspace_opened` with its type when you open its own page or launch a
+session or quick action in it. Automatic display beside a PR or issue, or
+creating a workspace without launching anything, sends nothing.
 Each event counts once per installation per UTC day for each provider or
 workspace type. Supported providers are GitHub, GitLab, Forgejo, Gitea, and
 Bitbucket. Workspace types are pull request, issue, Kata task, and ad hoc.

@@ -1,6 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vite-plus/test";
 import { getPaneLayoutStore, promoteSessionBesideWorkspace } from "./paneLayout.svelte.js";
-import { sessionPaneKey } from "./session-pane-key.js";
 import { pushModalFrame } from "./keyboard/modal-stack.svelte.js";
 import {
   consumeSessionFocus,
@@ -28,7 +27,6 @@ import {
   publishHostedSessions,
   hostedWorkspaceLauncher,
   registerWorkspaceLauncher,
-  registerWorkspaceTerminalFocusReporter,
   hostedSessionRegistryKey,
   isHostVisible,
   notifyWorkspaceDeleted,
@@ -948,21 +946,9 @@ describe("a workspace spread across several panes", () => {
     expect(prs.getDockMode()).toBe("split");
   });
 
-  it("reports explicit workspace tab selections and maximizes the last-focused session", () => {
-    const report = vi.fn();
-    registerWorkspaceTerminalFocusReporter(report);
+  it("maximizes the pane holding the session the user was last in", () => {
     const { prs, layout } = hostWithPromoted([helperPane]);
     prs.notePaneFocused(helperPane);
-    expect(report).not.toHaveBeenCalled();
-    prs.notePaneSelected("conversation");
-    prs.notePaneSelected("files");
-    prs.notePaneSelected(sessionPaneKey("ws-other", undefined, "helper"));
-    getInlineWorkspaceController("issues").notePaneSelected("workspace");
-    expect(report).not.toHaveBeenCalled();
-    prs.notePaneSelected("workspace");
-    expect(report).toHaveBeenCalledTimes(1);
-    prs.notePaneSelected(helperPane);
-    expect(report).toHaveBeenCalledTimes(2);
 
     prs.setDockMode("expanded");
 

@@ -256,66 +256,6 @@ describe("SessionTerminalPool", () => {
     });
   }
 
-  it.each([
-    { input: "pointerdown", createEvent: () => new PointerEvent("pointerdown", { bubbles: true }) },
-    { input: "keydown", createEvent: () => new KeyboardEvent("keydown", { key: "Enter", bubbles: true }) },
-    { input: "wheel", createEvent: () => new WheelEvent("wheel", { deltaY: 100, bubbles: true }) },
-  ])("counts $input after promotion and ignores disabled or inert sessions", async ({ createEvent }) => {
-    const capture = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ status: "queued" }));
-    const session = {
-      hostKey: agent,
-      websocketPath: `/ws/${agent}`,
-      status: "exited",
-      itemType: "kata_task" as const,
-    };
-    noteSessionMounted(session);
-    mountPool();
-    const harnessTarget = document.createElement("div");
-    document.body.append(harnessTarget);
-    const props = $state({
-      hostKey: agent,
-      showSource: true,
-      showDestination: false,
-      order: "source-first" as const,
-    });
-    const harness = mount(SessionTerminalSlotTransferHarness, { target: harnessTarget, props });
-    try {
-      await waitForReparent();
-      expect(capture).not.toHaveBeenCalled();
-      flushSync(() => {
-        props.showSource = false;
-        props.showDestination = true;
-      });
-      await waitForReparent();
-      const wrapper = wrapperFor(agent)!;
-      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
-      noteSessionMounted({ ...session, disabled: true });
-      flushSync();
-      wrapper.dispatchEvent(createEvent());
-      expect(capture).not.toHaveBeenCalled();
-      noteSessionMounted(session);
-      flushSync();
-      wrapper.parentElement!.inert = true;
-      wrapper.dispatchEvent(createEvent());
-      expect(capture).not.toHaveBeenCalled();
-      wrapper.parentElement!.inert = false;
-      wrapper.dispatchEvent(createEvent());
-      await vi.waitFor(() => expect(capture).toHaveBeenCalledTimes(1), WAIT);
-      const request = capture.mock.calls[0]?.[0];
-      const body =
-        request instanceof Request
-          ? await request.clone().json()
-          : JSON.parse(String(capture.mock.calls[0]?.[1]?.body));
-      expect(body).toMatchObject({
-        properties: { item_type: "kata_task" },
-      });
-    } finally {
-      flushSync(() => unmount(harness as never));
-      harnessTarget.remove();
-      capture.mockRestore();
-    }
-  });
-
   it("does not steal focus another element claimed during the move", async () => {
     mountSession(agent);
     mountPool();

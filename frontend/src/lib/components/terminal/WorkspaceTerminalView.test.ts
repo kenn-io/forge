@@ -1276,63 +1276,19 @@ describe("WorkspaceTerminalView", () => {
     expect((screen.getByRole("button", { name: /Shell/i }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it.each([
-    "pointerDown",
-    "keyDown",
-    "wheel",
-    "focusTerminal",
-    "workspaceTabBeforeReady",
-    "focusTerminalBeforeReady",
-    "paletteOpenAndDismiss",
-    "paletteOpenAndDismissBeforeReady",
-  ] as const)("counts embedded workspace use through %s", async (input) => {
+  it("does not count an embedded workspace that is only displayed or touched", async () => {
     claimForPrs();
     noteWorkspacePaneRendered("prs");
-    const palette = input === "paletteOpenAndDismiss" || input === "paletteOpenAndDismissBeforeReady";
-    const beforeReady =
-      input === "workspaceTabBeforeReady" ||
-      input === "focusTerminalBeforeReady" ||
-      input === "paletteOpenAndDismissBeforeReady";
-    const detail = deferred<Response>();
-    if (beforeReady) {
-      const originalFetch = globalThis.fetch;
-      vi.stubGlobal(
-        "fetch",
-        vi.fn((input: Request | URL | string, init?: RequestInit) =>
-          fetchPath(input) === "/api/v1/workspaces/ws-1" ? detail.promise : originalFetch(input, init),
-        ),
-      );
-    }
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
     render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
-    if (beforeReady) {
-      await tick();
-      const controller = getInlineWorkspaceController("prs");
-      if (input === "workspaceTabBeforeReady") controller.notePaneSelected("workspace");
-      else if (palette) hostedWorkspaceLauncher("prs")!();
-      else controller.focusTerminal();
-      expect(coreActions).not.toHaveBeenCalled();
-      detail.resolve(Response.json(workspaceResponse));
-    }
     const region = await screen.findByRole("region", { name: "Workflow panes" });
     await waitFor(() => expect(screen.queryByText("Loading workspace runtime...")).toBeNull());
+    await fireEvent.pointerDown(region);
+    await fireEvent.keyDown(region, { key: "a" });
+    await fireEvent.wheel(region);
+    getInlineWorkspaceController("prs").focusTerminal();
     await tick();
-    if (!beforeReady) expect(coreActions).not.toHaveBeenCalled();
-    if (palette) {
-      if (!beforeReady) hostedWorkspaceLauncher("prs")!();
-      await screen.findByRole("dialog", { name: "Launch a session" });
-      await fireEvent.keyDown(window, { key: "Escape" });
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Launch a session" })).toBeNull());
-    } else if (input === "focusTerminal") {
-      getInlineWorkspaceController("prs").focusTerminal();
-    } else if (!beforeReady) {
-      await fireEvent[input](region);
-    }
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(1));
-    expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-      event: "workspace_opened",
-      properties: { item_type: "pull_request" },
-    });
+    expect(coreActions).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -7416,63 +7372,48 @@ describe("WorkspaceTerminalView", () => {
       expect(focusTarget.isConnected).toBe(true);
     });
 
-    it.each([
-      "New terminal",
-      "Split terminal right",
-      "Split terminal down",
-      "Select existing terminal",
-      "Open terminal panel",
-    ])("counts workspace use for %s in the external dock", async (action) => {
-      localStorage.setItem(
-        "kenn-forge-workspace-terminal-layout:ws-1",
-        JSON.stringify({
-          version: 1,
-          open: action !== "Open terminal panel",
-          dock: "bottom",
-          height: 300,
-          activeSessionKey: "ws-1_shell_a",
-          tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
-          sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
-        }),
-      );
-      mocks.getWorkspaceRuntime.mockResolvedValue({
-        launch_targets: [],
-        sessions:
-          action === "Select existing terminal"
-            ? [runningSession, runningShellSession, { ...relaunchedShellSession, label: "Shell 2" }]
-            : [runningSession, runningShellSession],
-      });
-      mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
-      claimForPrs();
-      noteWorkspacePaneRendered("prs");
-      promoteSession("prs", "ws-1:helper");
-      render(WorkspaceTerminalView, {
-        props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: false },
-      });
-      const dock = await screen.findByRole("region", { name: "Terminal panel" });
-      expect(dock.closest(".terminal-view")).toBeNull();
-      expect(coreActions).not.toHaveBeenCalled();
-
-      if (action === "Select existing terminal" || action === "Open terminal panel") {
-        const button = within(dock).getByRole("button", {
-          name: action === "Select existing terminal" ? "Shell" : action,
+    it.each(["New terminal", "Split terminal right", "Split terminal down"])(
+      "counts a %s launch from the external dock",
+      async (action) => {
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          JSON.stringify({
+            version: 1,
+            open: true,
+            dock: "bottom",
+            height: 300,
+            activeSessionKey: "ws-1_shell_a",
+            tree: { type: "leaf", id: "dock-leaf", sessionKey: "ws-1_shell_a" },
+            sessionRegions: { "ws-1:helper": "workflow", "ws-1_shell_a": "terminal" },
+          }),
+        );
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          launch_targets: [],
+          sessions: [runningSession, runningShellSession],
         });
-        await fireEvent.pointerDown(button);
-        await fireEvent.click(button);
-        expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
-      } else {
+        mocks.launchWorkspaceSession.mockResolvedValue(relaunchedShellSession);
+        claimForPrs();
+        noteWorkspacePaneRendered("prs");
+        promoteSession("prs", "ws-1:helper");
+        render(WorkspaceTerminalView, {
+          props: { workspaceId: "ws-1", paneSurface: "prs", hostVisible: false },
+        });
+        const dock = await screen.findByRole("region", { name: "Terminal panel" });
+        expect(dock.closest(".terminal-view")).toBeNull();
+        expect(coreActions).not.toHaveBeenCalled();
+
         await fireEvent.click(within(dock).getByRole("button", { name: action }));
         await waitFor(() =>
           expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "plain_shell", { region: "terminal" }),
         );
-      }
-      await waitFor(() =>
-        expect(coreActions).toHaveBeenCalledExactlyOnceWith(
-          { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-          expect.anything(),
-        ),
-      );
-    });
+        await waitFor(() =>
+          expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+            { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+            expect.anything(),
+          ),
+        );
+      },
+    );
 
     it("gives a parked row-only dock the sole workspace actions and live dialogs", async () => {
       localStorage.setItem(

@@ -47,8 +47,8 @@ func SessionDuration(value any) (any, bool) {
 var requiredProperties = map[string]map[string]bool{
 	"screen_viewed":    {"screen": true},
 	"session_ended":    {"duration_bucket": true},
-	"pr_viewed":        {"surface": true},
-	"workspace_opened": {"surface": true},
+	"pr_viewed":        {"provider": true, "surface": true},
+	"workspace_opened": {"item_type": true, "surface": true},
 }
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{

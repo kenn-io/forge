@@ -34,7 +34,6 @@ export function createTestController(
       mode = next;
     }),
     notePaneFocused: vi.fn(),
-    notePaneSelected: vi.fn(),
     focusTerminal: vi.fn(),
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: () => () => {},

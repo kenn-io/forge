@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/landedwork"
 	"go.kenn.io/forge/landedwork/collect"
@@ -164,7 +165,7 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 // even when a whole page of that list holds no merged entry.
 func TestGitHubForeignAssociationInventory(t *testing.T) {
 	assert, require := assert.New(t), require.New(t)
-	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r := gittest.NewRepo(t, gittest.Options{Dir: gitfixture.ScratchDir(t), InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
 	r.Runner = gitsafe.Runner()
 	base := r.CommitFile("work.txt", "old\n", "base")
 	r.Checkout("-b", "topic")

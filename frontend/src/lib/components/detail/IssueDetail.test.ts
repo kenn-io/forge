@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import type { ComponentProps } from "svelte";
@@ -1004,6 +1005,7 @@ describe("IssueDetail inline workspace handoff", () => {
       }),
     };
     renderIssueDetail(issueDetail(), undefined, { inlineWorkspace: controller, quickActions: [triage] }, apiClient);
+    startTestTelemetry(issueRuntime!, (event) => telemetry(event));
 
     await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
     await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));

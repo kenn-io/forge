@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -113,6 +114,7 @@ describe("MobileWorkspaceTerminal", () => {
         FleetService: mocks.runtimeClient,
       }),
     );
+    startTestTelemetry(runtimeState.appRuntime, coreActions);
     localStorage.clear();
     quickActionWorkspaces.clear();
     quickActionLaunches.clear();

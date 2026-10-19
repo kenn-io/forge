@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, render, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { tick } from "svelte";
@@ -16,6 +17,7 @@ it.each(["detail", "files"])("counts PR %s when the pane and document are visibl
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   const capture = vi.fn(async () => ({ status: "queued" }));
   const runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: capture } }));
+  startTestTelemetry(runtime, capture);
   const api = createMockApiFetch();
   const detail = (await (await api.fetch("/api/v1/pulls/github/acme/widgets/42")).json()) as PullDetail;
   const paneProps = {

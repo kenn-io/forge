@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
@@ -40,6 +41,7 @@ describe("quick-action launch serialization", () => {
         SystemService: { captureTelemetryEvent: telemetry },
       }),
     );
+    startTestTelemetry(runtime, telemetry);
   });
 
   afterEach(async () => {

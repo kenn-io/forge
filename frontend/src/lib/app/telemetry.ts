@@ -1,5 +1,8 @@
-import { Effect } from "effect";
-import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import {
+  startBrowserTelemetry,
+  type BrowserTelemetryOptions,
+  type VisitEvent,
+} from "@kenn-io/kit-ui/utils/browser-telemetry";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import { canonicalProvider } from "../api/provider-routes.js";
 import type { AppRuntime } from "./runtime.js";
@@ -61,54 +64,91 @@ type CoreAction =
   | { event: "pr_viewed"; properties: { provider: (typeof PR_PROVIDERS)[number] } }
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
-function createDailyReporter(now: () => Date = () => new Date()) {
-  const reportedDay = new Map<string, string>();
-  const hasReportedToday = (key: string) => reportedDay.get(key) === now().toISOString().slice(0, 10);
-  const report = Effect.fn("Telemetry.reportDaily")(function* (
-    key: string,
-    event: string,
-    properties: Record<string, string>,
-  ) {
-    const day = now().toISOString().slice(0, 10);
-    if (reportedDay.get(key) === day) return;
-    reportedDay.set(key, day);
-    yield* executeGeneratedApiRequest("report daily telemetry", (client, signal) =>
-      client.SystemService.captureTelemetryEvent({ event, properties: { ...properties, surface: "web" } }, { signal }),
-    ).pipe(
-      Effect.timeout("8 seconds"),
-      Effect.onExit((exit) =>
-        Effect.sync(() => {
-          if (exit._tag === "Failure" && reportedDay.get(key) === day) reportedDay.delete(key);
-        }),
-      ),
-    );
-  });
-  return { report, hasReportedToday };
-}
+const today = () => new Date().toISOString().slice(0, 10);
+const coreKey = (action: VisitEvent) =>
+  action.event === "pr_viewed"
+    ? `pr_viewed:${String(action.properties.provider)}`
+    : action.event === "workspace_opened"
+      ? `workspace_opened:${String(action.properties.item_type)}`
+      : undefined;
 
-/** Reports each screen at most once per UTC day per page; the daemon still dedupes across tabs. */
-export function createScreenViewReporter(now: () => Date = () => new Date()) {
-  const { report } = createDailyReporter(now);
-  return (screen: ScreenName) => report(`screen_viewed:${screen}`, "screen_viewed", { screen });
-}
-
-const coreReporters = new WeakMap<AppRuntime, ReturnType<typeof createDailyReporter>>();
-function reportCoreAction(runtime: AppRuntime, action: CoreAction): void {
-  let report = coreReporters.get(runtime);
-  if (!report) {
-    report = createDailyReporter();
-    coreReporters.set(runtime, report);
+const reporters = new WeakMap<
+  AppRuntime,
+  {
+    reportScreen: (screen: ScreenName) => void;
+    reportAction: (action: CoreAction) => void;
   }
-  const key =
-    action.event === "pr_viewed"
-      ? `pr_viewed:${action.properties.provider}`
-      : `workspace_opened:${action.properties.item_type}`;
-  if (report.hasReportedToday(key)) return;
-  runtime.runCommand(report.report(key, action.event, action.properties).pipe(Effect.ignore), {
-    operation: "report core action",
-    safeContext: {},
-    onFailure: () => {},
+>();
+
+export function startRuntimeTelemetry(runtime: AppRuntime, options: BrowserTelemetryOptions) {
+  const reportedDay = new Map<string, string>();
+  const pending = new Map<string, { action: CoreAction; day: string }>();
+  let quiet = true;
+  let disabled = false;
+  const reporter = startBrowserTelemetry({
+    ...options,
+    post: async (route, event, visitOptions) => {
+      const key = coreKey(event);
+      const day = today();
+      if (key) reportedDay.set(key, day);
+      const release = () => {
+        if (key && reportedDay.get(key) === day) reportedDay.delete(key);
+      };
+      try {
+        const response = await options.post(route, event, visitOptions);
+        if (response.status < 200 || response.status >= 300) release();
+        if (response.status !== 202) return response;
+        const data: unknown = "data" in response ? response.data : await response.json().catch(() => undefined);
+        if (data && typeof data === "object" && "status" in data && data.status === "disabled") {
+          disabled = true;
+          pending.clear();
+        }
+        return { status: response.status, data };
+      } catch (error) {
+        release();
+        throw error;
+      }
+    },
   });
+  const send = (action: CoreAction) => {
+    if (reportedDay.get(coreKey(action)!) === today()) return;
+    reporter.reportVisit({ event: action.event, properties: { ...action.properties, surface: "web" } });
+  };
+  const unsubscribe = reporter.onQuietChange((value) => {
+    quiet = value;
+    if (quiet) pending.clear();
+    else {
+      disabled = false;
+      const actions = [...pending.values()];
+      pending.clear();
+      for (const { action, day } of actions) if (day === today()) send(action);
+    }
+  });
+  reporters.set(runtime, {
+    reportScreen: (screen) => reporter.reportScreen(screen),
+    reportAction: (action) => {
+      if (disabled) return;
+      if (quiet) pending.set(coreKey(action)!, { action, day: today() });
+      else send(action);
+    },
+  });
+  return {
+    ...reporter,
+    stop: () => {
+      reporters.delete(runtime);
+      pending.clear();
+      unsubscribe();
+      reporter.stop();
+    },
+  };
+}
+
+export function reportScreen(runtime: AppRuntime, screen: ScreenName): void {
+  reporters.get(runtime)?.reportScreen(screen);
+}
+
+function reportCoreAction(runtime: AppRuntime, action: CoreAction): void {
+  reporters.get(runtime)?.reportAction(action);
 }
 
 export function reportPRViewed(runtime: AppRuntime, rawProvider: string): void {

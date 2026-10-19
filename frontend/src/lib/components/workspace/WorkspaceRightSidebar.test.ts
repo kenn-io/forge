@@ -1,6 +1,6 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { tick } from "svelte";
-import { makeGeneratedClient } from "../../testing/generated-client.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
@@ -18,7 +18,8 @@ let runtime: OwnedAppRuntime;
 
 beforeEach(() => {
   coreActions.mockClear();
-  runtime = makeAppRuntime(makeGeneratedClient({ SystemService: { captureTelemetryEvent: coreActions } }));
+  runtime = makeAppRuntime();
+  startTestTelemetry(runtime, coreActions);
 });
 
 vi.mock("../kata/KataLinksPanel.svelte", async () => ({

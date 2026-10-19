@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { flushSync, tick } from "svelte";
@@ -736,6 +737,7 @@ describe("WorkspaceTerminalView", () => {
     quickActionLaunches.clear();
     mocks.quickActions = [];
     mocks.runtime = makeAppRuntime();
+    startTestTelemetry(mocks.runtime, coreActions);
     delete window.__BASE_PATH__;
     localStorage.clear();
     resetSessionHostForTest();

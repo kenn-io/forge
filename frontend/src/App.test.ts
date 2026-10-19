@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Cause, Effect } from "effect";
 import { flushSync } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { reportScreen, reportPRViewed, reportWorkspaceOpened } from "./lib/app/telemetry.js";
 import { mountApplication } from "./lib/app/mount.js";
 import type { AppExecution, OwnedAppRuntime } from "./lib/app/runtime.js";
 import { makeTestAppRuntime } from "./lib/testing/effect-layers.js";
@@ -220,6 +221,7 @@ const appRuntime = makeTestAppRuntime(makeGeneratedClient());
 
 describe("App feature routes", () => {
   beforeEach(async () => {
+    localStorage.clear();
     vi.clearAllMocks();
     featureImports.docs = 0;
     featureImports.failDocsOnce = false;
@@ -496,7 +498,7 @@ describe("App feature routes", () => {
     [7_200_000, "30m_to_2h"],
     [7_200_001, "over_2h"],
   ])("reports %i visible milliseconds as %s through the daemon route", async (elapsed, bucket) => {
-    localStorage.removeItem("kit-ui.app-opened.web");
+    startup.autoReady = false;
     let now = 0;
     let hidden = true;
     vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -563,7 +565,7 @@ describe("App feature routes", () => {
       ...testAppRuntime(() => {}),
       disposeEffect: owner.disposeEffect,
       runCommand: (program, options) =>
-        options.operation === "report screen view"
+        options.operation === "report app opens"
           ? owner.runCommand(program, options)
           : testAppRuntime(() => {}).runCommand(program, options),
     };
@@ -575,26 +577,81 @@ describe("App feature routes", () => {
       window.dispatchEvent(new Event("focus"));
       startup.readyCallbacks[0]!();
       const event = (name: string) => ({ event: "screen_viewed", properties: { screen: name, surface: "web" } });
-      await waitFor(() => expect(posts).toEqual([event("docs")]));
+      const screens = () => posts.filter((post) => (post as { event: string }).event === "screen_viewed");
+      await waitFor(() => expect(screens()).toEqual([event("docs")]));
       navigate("/settings");
-      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings")]));
+      await waitFor(() => expect(screens()).toEqual([event("docs"), event("settings")]));
       window.history.replaceState(null, "", "/issues");
       window.dispatchEvent(new PopStateEvent("popstate"));
-      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings"), event("issues")]));
+      await waitFor(() => expect(screens()).toEqual([event("docs"), event("settings"), event("issues")]));
       window.dispatchEvent(new Event("focus"));
       navigate("/docs");
       flushSync();
       navigate("/repos");
-      await waitFor(() => expect(posts).toEqual([event("docs"), event("settings"), event("issues"), event("repos")]));
+      await waitFor(() =>
+        expect(screens()).toEqual([event("docs"), event("settings"), event("issues"), event("repos")]),
+      );
       vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
       window.dispatchEvent(new Event("focus"));
-      await waitFor(() => expect(posts).toHaveLength(5));
-      expect(posts[4]).toEqual(event("repos"));
+      await waitFor(() => expect(screens()).toHaveLength(5));
+      expect(screens()[4]).toEqual(event("repos"));
     } finally {
       await Effect.runPromise(mounted.dispose);
       vi.useRealTimers();
     }
   });
+
+  it.each(["disabled", "queued"])(
+    "keeps visits quiet after a %s start and later disabled receipt",
+    async (initialStatus) => {
+      startup.autoReady = false;
+      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+      vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
+      let hidden = false;
+      let now = 0;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+      let status = initialStatus;
+      const posts: unknown[] = [];
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+        posts.push(await new Request(input, init).json());
+        return Response.json({ status }, { status: 202 });
+      });
+      const owner = makeTestAppRuntime();
+      const runtime: OwnedAppRuntime = {
+        ...testAppRuntime(() => {}),
+        disposeEffect: owner.disposeEffect,
+        runCommand: (program, options) =>
+          options.operation === "report app opens"
+            ? owner.runCommand(program, options)
+            : testAppRuntime(() => {}).runCommand(program, options),
+      };
+      const mounted = mountApplication(createAppTarget(), runtime);
+      try {
+        await vi.waitFor(() =>
+          expect(
+            Object.keys(localStorage).some((key) => key.includes(initialStatus === "queued" ? "check" : "quiet")),
+          ).toBe(true),
+        );
+        now = 120_000;
+        hidden = true;
+        document.dispatchEvent(new Event("visibilitychange"));
+        status = "disabled";
+        reportScreen(runtime, "settings");
+        await vi.waitFor(() => expect(Object.keys(localStorage).some((key) => key.includes("quiet"))).toBe(true));
+        for (const screen of ["docs", "pulls", "issues", "repos", "workspaces"] as const) reportScreen(runtime, screen);
+        reportPRViewed(runtime, "github");
+        reportWorkspaceOpened(runtime, "adhoc");
+        window.dispatchEvent(new Event("pagehide"));
+        await vi.advanceTimersByTimeAsync(30 * 60_000);
+        expect(posts).toHaveLength(initialStatus === "queued" ? 2 : 1);
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        await Effect.runPromise(mounted.dispose);
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("reports a non-interruption root finalizer defect", async () => {
     const target = createAppTarget();

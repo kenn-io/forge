@@ -57,6 +57,8 @@ async function renderChat(width: number) {
         { role: "user", text: "Summarize the change", createdAt: "2026-09-28T21:09:00Z" },
         { role: "assistant", text: "The change adds a gutter.", createdAt: "2026-09-28T21:10:00Z" },
       ],
+      messageRevision: 0,
+      historyRevision: 0,
       messageOffset: 0,
       messageCount: 2,
       configOptions: [],
@@ -210,6 +212,8 @@ describe("ACPWorkspace notices and errors (browser)", () => {
     socket.options!.onMessage(
       JSON.stringify({
         messages: [],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 0,
         configOptions: [],
@@ -265,6 +269,8 @@ describe("ACPWorkspace image output (browser)", () => {
             text: `![Markdown image](data:image/svg+xml;base64,${data})\n\n![URL image](${imageURL})`,
           },
         ],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 3,
         configOptions: [],
@@ -299,6 +305,8 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     socket.options!.onMessage(
       JSON.stringify({
         messages: [],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 0,
         configOptions: [
@@ -357,6 +365,8 @@ describe("ACPWorkspace grouped activity (browser)", () => {
           { role: "thought", text: "Compare the available options." },
           { role: "assistant", text: "Here is the result.\n\n```js\nconst value = 1;\n```" },
         ],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 4,
         configOptions: [],
@@ -403,6 +413,8 @@ describe("ACPWorkspace grouped activity (browser)", () => {
           { role: "tool", text: "Check result", status: "failed", toolCallId: "check" },
           { role: "assistant", text: "Here is the result." },
         ],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 4,
         configOptions: [],
@@ -472,6 +484,8 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     socket.options!.onMessage(
       JSON.stringify({
         messages: range(200, 240),
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 200,
         messageCount: 240,
         configOptions: [],
@@ -505,7 +519,7 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     )!;
     const before = anchor.getBoundingClientRect().top;
 
-    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    socket.options!.onMessage(JSON.stringify({ history: { revision: 0, offset: 100, messages: range(100, 200) } }));
     await nextFrame();
     await nextFrame();
 
@@ -522,6 +536,8 @@ describe("ACPWorkspace queued coordinator prompts (browser)", () => {
     socket.options!.onMessage(
       JSON.stringify({
         messages: [],
+        messageRevision: 0,
+        historyRevision: 0,
         messageOffset: 0,
         messageCount: 0,
         configOptions: [],

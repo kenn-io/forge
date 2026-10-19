@@ -83,6 +83,42 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	assert.Empty(t, publishedACPState(t, agent).Plan, "each plan update replaces the plan")
 }
 
+func TestACPInvalidatesOlderToolResultsOutsideByteWindow(t *testing.T) {
+	for _, largeTool := range []string{"earlier", "later"} {
+		t.Run(largeTool, func(t *testing.T) {
+			agent := newDetachedACP(t)
+			for _, id := range []string{"earlier", "later"} {
+				acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+					ToolCallId: acpsdk.ToolCallId(id), Title: id, Status: acpsdk.ToolCallStatusInProgress,
+				}})
+			}
+			initial := publishedACPState(t, agent)
+			acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
+				ToolCallId: acpsdk.ToolCallId(largeTool), RawOutput: strings.Repeat("x", 300_000),
+			}})
+			completed := acpsdk.ToolCallStatusCompleted
+			acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
+				ToolCallId: "earlier", Status: &completed,
+			}})
+			state := publishedACPState(t, agent)
+			require.Equal(t, 1, state.MessageOffset)
+			assert.Greater(t, state.HistoryRevision, initial.MessageRevision)
+			assert.LessOrEqual(t, state.HistoryRevision, state.MessageRevision)
+			data, err := agent.History(state.MessageOffset, 100)
+			require.NoError(t, err)
+			var frame map[string]ACPHistory
+			require.NoError(t, json.Unmarshal(data, &frame))
+			page := frame["history"]
+			require.Len(t, page.Messages, 1)
+			assert.Equal(t, state.MessageRevision, page.Revision)
+			assert.Equal(t, "completed", page.Messages[0].Status)
+			if largeTool == "earlier" {
+				assert.Contains(t, page.Messages[0].RawOutput, strings.Repeat("x", 300_000))
+			}
+		})
+	}
+}
+
 func TestACPKeepsToolCallDetails(t *testing.T) {
 	agent := newDetachedACP(t)
 	line := 12

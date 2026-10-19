@@ -63,6 +63,9 @@ type ACP struct {
 	promptIndex     *int
 	recordPath      string
 	revision        uint64
+
+	// Revisions of edited transcript indices, retained for every attachment.
+	messageRevisions map[int]uint64
 	// turnCompleted records a finished prompt turn in this process. A loaded
 	// session starts idle so reopening it never announces a new completion.
 	turnCompleted bool
@@ -213,11 +216,15 @@ type ACPState struct {
 	Messages    []ACPMessage   `json:"messages"`
 	// MessageOffset is the transcript index of Messages[0] in a published
 	// update; MessageCount is the length of the whole transcript.
-	MessageOffset int              `json:"messageOffset"`
-	MessageCount  int              `json:"messageCount"`
-	Permissions   []ACPPermission  `json:"permissions"`
-	Elicitations  []ACPElicitation `json:"elicitations"`
-	Busy          bool             `json:"busy"`
+	MessageOffset int `json:"messageOffset"`
+	MessageCount  int `json:"messageCount"`
+	// HistoryRevision identifies the newest edit below MessageOffset. Clients
+	// compare it with their previous snapshot revision before retaining history.
+	MessageRevision uint64           `json:"messageRevision"`
+	HistoryRevision uint64           `json:"historyRevision"`
+	Permissions     []ACPPermission  `json:"permissions"`
+	Elicitations    []ACPElicitation `json:"elicitations"`
+	Busy            bool             `json:"busy"`
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
@@ -736,6 +743,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	a.state.Messages = append(a.state.Messages, ACPMessage{})
 	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
 	a.state.Messages[messageIndex] = message
+	a.invalidateMessagesLocked(messageIndex, len(a.state.Messages))
 	if submissionID != "" {
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}

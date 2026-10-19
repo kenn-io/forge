@@ -393,6 +393,7 @@ func (a *ACP) steerLocked(prompt ACPQueuedPrompt) error {
 	switch result.Outcome {
 	case "injected", "startedNewTurn":
 		a.state.Messages = slices.Insert(a.state.Messages, index, promptMessage(prompt))
+		a.invalidateMessagesLocked(index, len(a.state.Messages))
 		if result.Outcome == "startedNewTurn" {
 			// The agent owns this turn; it ends when the thread goes idle,
 			// whether or not the original prompt has completed yet. Until a

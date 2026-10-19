@@ -61853,8 +61853,10 @@ type WorkspaceChat struct {
 
 	// Exited The chat's agent has exited; no other field is present.
 	Exited            bool                   `json:"exited"`
+	HistoryRevision   *int64                 `json:"historyRevision,omitempty"`
 	MessageCount      *int64                 `json:"messageCount,omitempty"`
 	MessageOffset     *int64                 `json:"messageOffset,omitempty"`
+	MessageRevision   *int64                 `json:"messageRevision,omitempty"`
 	Messages          []WorkspaceChatMessage `json:"messages,omitempty"`
 	Notices           []string               `json:"notices,omitempty"`
 	Permissions       []ACPPermission        `json:"permissions,omitempty"`

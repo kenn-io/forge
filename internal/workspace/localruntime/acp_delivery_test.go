@@ -3,6 +3,7 @@ package localruntime
 import (
 	"context"
 	"encoding/json/v2"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +78,32 @@ func TestACPDismissErrorPreservesPausedConversation(t *testing.T) {
 
 	require.NoError(t, agent.Command(ACPCommand{Type: "dismiss_error"}))
 	before.Error, before.ErrorCode, before.ErrorData = "", nil, ""
-	assert.Equal(t, before, publishedACPState(t, agent))
+	after := publishedACPState(t, agent)
+	assert.Greater(t, after.MessageRevision, before.MessageRevision)
+	before.MessageRevision = after.MessageRevision
+	assert.Equal(t, before, after)
+}
+
+func TestACPReleasedTextInvalidatesHistoryAfterMetadataPublication(t *testing.T) {
+	agent := newDetachedACP(t)
+	acpText(t, agent, "Published.\n\n")
+	acpText(t, agent, "Held tail")
+	// Queue metadata publishes a snapshot while the unfinished tail is held.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", ID: "later", Text: "Next"}))
+	before := publishedACPState(t, agent)
+	require.Equal(t, "Published.\n\n", before.Messages[0].Text)
+	acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+		ToolCallId: "large", Title: "Output", RawOutput: strings.Repeat("x", 300_000),
+	}})
+	after := publishedACPState(t, agent)
+	require.Equal(t, 1, after.MessageOffset)
+	assert.Greater(t, after.HistoryRevision, before.MessageRevision)
+	data, err := agent.History(1, 100)
+	require.NoError(t, err)
+	var frame map[string]ACPHistory
+	require.NoError(t, json.Unmarshal(data, &frame))
+	require.Len(t, frame["history"].Messages, 1)
+	assert.Equal(t, "Published.\n\nHeld tail", frame["history"].Messages[0].Text)
 }
 
 // Streamed text is published in finished markdown blocks, not token by token.

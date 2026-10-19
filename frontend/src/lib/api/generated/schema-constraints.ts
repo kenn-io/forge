@@ -70,6 +70,10 @@ export const schemaConstraints = {
   WorkerWorkspaceTargetRequest: {
     number: { minimum: 1 },
   },
+  WorkspaceChat: {
+    historyRevision: { minimum: 0 },
+    messageRevision: { minimum: 0 },
+  },
   WorkspaceChatCommand: {
     generation: { minimum: 0 },
   },

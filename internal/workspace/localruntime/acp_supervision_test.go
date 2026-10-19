@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -384,6 +385,34 @@ func TestACPPromptsNameTheirSenderToTheAgent(t *testing.T) {
 		{"sender": "user", "submissionId": "ui"},
 		{"sender": "coordinator", "senderName": "planner", "submissionId": "c1"},
 	}, meta)
+}
+
+func TestACPSteeringInvalidatesIndicesBeforeOversizedOutput(t *testing.T) {
+	agent, peer := newScriptedACP(t)
+	agent.state.SteeringSupported = true
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first"}))
+	steered := make(chan error, 1)
+	go func() { steered <- agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "also", ID: "steer"}) }()
+	require.Eventually(t, func() bool { return len(peer.params(acpSteeringMethod)) == 1 }, time.Second, time.Millisecond)
+	acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+		ToolCallId: "large", Title: "Output", RawOutput: strings.Repeat("x", 300_000),
+	}})
+	before := publishedACPState(t, agent)
+	require.Equal(t, 1, before.MessageOffset)
+	peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
+	require.NoError(t, <-steered)
+	after := publishedACPState(t, agent)
+	require.Equal(t, 2, after.MessageOffset)
+	assert.Greater(t, after.HistoryRevision, before.MessageRevision)
+	data, err := agent.History(after.MessageOffset, 100)
+	require.NoError(t, err)
+	var frame map[string]ACPHistory
+	require.NoError(t, json.Unmarshal(data, &frame))
+	messages := append(frame["history"].Messages, after.Messages...)
+	require.Len(t, messages, 3)
+	assert.Equal(t, "first", messages[0].SubmissionID)
+	assert.Equal(t, "steer", messages[1].SubmissionID)
+	assert.Equal(t, "large", messages[2].ToolCallID)
 }
 
 func TestACPSteeringNamesThePersonToTheAgent(t *testing.T) {

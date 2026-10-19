@@ -36,6 +36,8 @@ vi.mock("../terminal/terminal-session.js", async () => {
 });
 
 const baseState = {
+  messageRevision: 0,
+  historyRevision: 0,
   messages: [],
   configOptions: [],
   configuring: false,
@@ -1199,7 +1201,7 @@ describe("ACPWorkspace transcript paging", () => {
     await fireEvent.scroll(conversation());
     expect(historyRequests()).toHaveLength(1);
 
-    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    socket.options!.onMessage(JSON.stringify({ history: { revision: 0, offset: 100, messages: range(100, 200) } }));
     await tick();
     expect(texts()).toHaveLength(102);
     expect(texts().slice(0, 2)).toEqual(["Message 100", "Message 101"]);
@@ -1254,7 +1256,7 @@ describe("ACPWorkspace transcript paging", () => {
   it("starts over from the new window after reconnecting", async () => {
     await openChat({ messages: range(200, 202), messageOffset: 200, messageCount: 202 });
     await fireEvent.click(screen.getByRole("button", { name: "Load earlier messages" }));
-    socket.options!.onMessage(JSON.stringify({ history: { offset: 100, messages: range(100, 200) } }));
+    socket.options!.onMessage(JSON.stringify({ history: { revision: 0, offset: 100, messages: range(100, 200) } }));
     await tick();
     expect(texts()).toHaveLength(102);
 

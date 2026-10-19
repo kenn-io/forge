@@ -9,7 +9,7 @@ import {
 } from "./chat-types.js";
 
 const HistoryFrameSchema = Schema.Struct({
-  history: Schema.Struct({ offset: Schema.Number, messages: Schema.Array(ChatMessageSchema) }),
+  history: Schema.Struct({ revision: Schema.Number, offset: Schema.Number, messages: Schema.Array(ChatMessageSchema) }),
 });
 const decodeFrame = Schema.decodeUnknownOption(
   Schema.fromJsonString(
@@ -81,6 +81,9 @@ export function makeChatSession(options: {
   let snapshot: ChatState | undefined;
   let transcript: Transcript = { start: 0, messages: [] };
   let historyLoading = false;
+  let historyLimit = 100;
+  let refreshStart: number | undefined;
+  let deferredHistory: typeof HistoryFrameSchema.Type.history | undefined;
   const setHistoryLoading = (loading: boolean) => {
     if (historyLoading === loading) return;
     historyLoading = loading;
@@ -91,6 +94,34 @@ export function makeChatSession(options: {
   const publish = () => {
     if (!snapshot) return;
     options.onState({ ...snapshot, messages: transcript.messages, messageOffset: transcript.start });
+  };
+  const requestHistory = (limit: number) => {
+    historyLimit = limit;
+    setHistoryLoading(true);
+    connection.send(JSON.stringify({ type: "history", before: transcript.start, limit } satisfies ChatCommand));
+  };
+  const continueRefresh = () => {
+    if (refreshStart === undefined) return;
+    if (transcript.start <= refreshStart) refreshStart = undefined;
+    else if (!historyLoading) requestHistory(100);
+  };
+  const receiveHistory = (history: typeof HistoryFrameSchema.Type.history) => {
+    if (!snapshot) return;
+    // A command reply can overtake the snapshot announcing its revision.
+    // Wait for that snapshot before mixing pages and absolute indices.
+    if (history.revision > snapshot.messageRevision) {
+      deferredHistory = history;
+      return;
+    }
+    deferredHistory = undefined;
+    if (history.revision < snapshot.historyRevision) {
+      requestHistory(historyLimit);
+      return;
+    }
+    transcript = prependPage(transcript, history.offset, history.messages);
+    setHistoryLoading(false);
+    publish();
+    continueRefresh();
   };
   const connection = makeTerminalSessionController({
     initialStatus: options.initialStatus,
@@ -105,10 +136,15 @@ export function makeChatSession(options: {
     onOpen: () => {
       snapshot = undefined;
       transcript = { start: 0, messages: [] };
+      refreshStart = undefined;
+      deferredHistory = undefined;
+      setHistoryLoading(false);
       options.onConnection(true);
     },
     onDisconnected: () => {
       setHistoryLoading(false);
+      refreshStart = undefined;
+      deferredHistory = undefined;
       options.onConnection(false);
     },
     onMessage: (data) => {
@@ -120,20 +156,32 @@ export function makeChatSession(options: {
       }
       const frame = decoded.value;
       if ("commandError" in frame) {
-        if (frame.command === "history") setHistoryLoading(false);
+        if (frame.command === "history") {
+          refreshStart = undefined;
+          deferredHistory = undefined;
+          setHistoryLoading(false);
+        }
         options.onError(frame.commandError, { command: frame.command, id: frame.id });
       } else if ("accepted" in frame) {
         options.onAccepted?.(frame.accepted);
       } else if ("history" in frame) {
-        transcript = prependPage(transcript, frame.history.offset, frame.history.messages);
-        setHistoryLoading(false);
-        publish();
+        receiveHistory(frame.history);
       } else {
+        if (snapshot && frame.historyRevision > snapshot.messageRevision && transcript.start < frame.messageOffset) {
+          refreshStart = Math.min(refreshStart ?? transcript.start, transcript.start);
+          // Cached indices may have shifted, so rebuild this range from the
+          // latest snapshot and byte-sized history pages.
+          transcript = { start: frame.messageOffset, messages: [] };
+        }
         transcript = mergeWindow(transcript, frame.messageOffset, frame.messages, frame.messageCount);
         snapshot = frame;
         publish();
-        if (!frame.connected) return "stop";
+        if (deferredHistory) receiveHistory(deferredHistory);
+        continueRefresh();
       }
+      // The host can still serve history after the agent exits. Complete a
+      // refresh of its final results before closing this attachment.
+      if (snapshot && !snapshot.connected && !historyLoading) return "stop";
       return "continue";
     },
   });
@@ -148,8 +196,7 @@ export function makeChatSession(options: {
     // flight at a time, and none once the transcript start is loaded.
     loadEarlier(limit = 100): boolean {
       if (historyLoading || !snapshot || transcript.start === 0 || !connection.isConnected()) return false;
-      connection.send(JSON.stringify({ type: "history", before: transcript.start, limit } satisfies ChatCommand));
-      setHistoryLoading(true);
+      requestHistory(limit);
       return true;
     },
   };

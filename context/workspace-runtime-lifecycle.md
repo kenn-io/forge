@@ -78,6 +78,10 @@ Rules:
 - Chat delivery batches target serialized bytes as well as message count; retain every
   message and allow one oversized message intact so paging always advances
   (`internal/workspace/localruntime/acp_delivery.go::acpMessageBatchSize`).
+- Snapshot revisions invalidate loaded history when older entries change or prompt
+  insertion shifts their indices. Reload that loaded range in byte-sized pages; reject
+  pages older than the invalidation and hold replies that precede their snapshot
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - A degraded but usable ACP start (no Forge tools, no session reload) is a `notices`
   entry, never `error`; the chat shows it only as a header warning icon with a tooltip,
   not a persistent alert (maintainer decision; `frontend/src/lib/components/acp/ACPWorkspace.svelte`).

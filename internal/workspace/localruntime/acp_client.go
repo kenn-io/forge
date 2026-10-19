@@ -232,6 +232,7 @@ func (a *ACP) updateToolLocked(update *acpsdk.SessionToolCallUpdate) {
 		if item.ParentToolCallID == "" {
 			item.ParentToolCallID = lineage.parent
 		}
+		a.invalidateMessagesLocked(i, i+1)
 		return
 	}
 }

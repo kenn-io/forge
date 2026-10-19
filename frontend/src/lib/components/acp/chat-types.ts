@@ -112,6 +112,8 @@ export const ChatStateSchema = Schema.Struct({
   // Snapshots carry only the latest window of the transcript.
   messageOffset: Schema.Number,
   messageCount: Schema.Number,
+  messageRevision: Schema.Number,
+  historyRevision: Schema.Number,
   permissions: Schema.Array(
     Schema.Struct({
       id: Schema.String,

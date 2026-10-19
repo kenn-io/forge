@@ -98,6 +98,7 @@ func (a *ACP) deliverTextLocked() {
 		return
 	}
 	a.heldBytes -= len(ready)
+	a.invalidateMessagesLocked(len(a.state.Messages)-1, len(a.state.Messages))
 	a.lastTextDelivery = time.Now()
 	a.publishProgressLocked()
 	if a.heldBytes > 0 {
@@ -140,6 +141,7 @@ func (a *ACP) releaseHeldTextLocked() {
 		return
 	}
 	a.heldBytes = 0
+	a.invalidateMessagesLocked(len(a.state.Messages)-1, len(a.state.Messages))
 	a.lastTextDelivery = time.Now()
 }
 
@@ -167,6 +169,17 @@ func (a *ACP) heldTextLocked() string {
 	return text[len(text)-a.heldBytes:]
 }
 
+// invalidateMessagesLocked marks edits and index shifts for the next publication.
+// Each attachment compares revisions independently; snapshots never consume them.
+func (a *ACP) invalidateMessagesLocked(start, end int) {
+	if a.messageRevisions == nil {
+		a.messageRevisions = make(map[int]uint64)
+	}
+	for i := start; i < end; i++ {
+		a.messageRevisions[i] = a.revision + 1
+	}
+}
+
 // publishedStateLocked is the state clients may see: held text is cut from
 // the last message, and a message that is entirely held is left out.
 func (a *ACP) publishedStateLocked() ACPState {
@@ -178,6 +191,13 @@ func (a *ACP) publishedStateLocked() ACPState {
 	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
 	state.MessageOffset = len(messages) - acpMessageBatchSize(messages[state.MessageOffset:], true)
 	state.Messages = messages[state.MessageOffset:]
+	state.MessageRevision = a.revision
+	state.HistoryRevision = 0
+	for index, revision := range a.messageRevisions {
+		if index < state.MessageOffset {
+			state.HistoryRevision = max(state.HistoryRevision, revision)
+		}
+	}
 	// Only the owner checks retried answers. A digest of a small form domain
 	// can be reversed, so the ledger never leaves the owner.
 	state.Answered = nil
@@ -246,6 +266,7 @@ func (a *ACP) publishedMessagesLocked() []ACPMessage {
 // ACPHistory is a page of earlier transcript messages starting at the
 // absolute transcript index Offset.
 type ACPHistory struct {
+	Revision uint64       `json:"revision"`
 	Offset   int          `json:"offset"`
 	Messages []ACPMessage `json:"messages"`
 }
@@ -260,7 +281,7 @@ func (a *ACP) historyLocked(before, limit int) ([]byte, error) {
 	}
 	start := max(0, before-limit)
 	start = before - acpMessageBatchSize(messages[start:before], true)
-	return json.Marshal(map[string]ACPHistory{"history": {Offset: start, Messages: messages[start:before]}}, json.Deterministic(true))
+	return json.Marshal(map[string]ACPHistory{"history": {Revision: a.revision, Offset: start, Messages: messages[start:before]}}, json.Deterministic(true))
 }
 
 // History returns a page of earlier messages as a client frame.

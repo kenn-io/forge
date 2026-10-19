@@ -66,8 +66,11 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	if capsErr != nil {
 		return
 	}
+	s.featureCooldowns.mu.Lock()
+	defer s.featureCooldowns.mu.Unlock()
 	for scope, source := range syncScopeSources {
-		if scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues {
+		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, source))
+		if !state.nextProbe.After(s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
 			s.observeSync(ctx, repo, source, err)
 		}
 	}
@@ -78,16 +81,19 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
 	}
-	live := make(map[string]bool, len(tracked))
-	for _, repo := range tracked {
-		if !repo.Archived {
-			live[mergeQueueRepoKey(repo)] = true
-		}
-	}
 	if s.syncFailures == nil {
 		s.syncFailures = make(map[string]map[string]string)
 	}
 	for _, source := range syncSources {
+		live := make(map[string]bool, len(tracked))
+		s.featureCooldowns.mu.Lock()
+		for _, repo := range tracked {
+			_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, source))
+			if !repo.Archived && !state.nextProbe.After(s.nowUTC()) {
+				live[mergeQueueRepoKey(repo)] = true
+			}
+		}
+		s.featureCooldowns.mu.Unlock()
 		failures := s.syncFailures[source]
 		if failures == nil {
 			failures = make(map[string]string)

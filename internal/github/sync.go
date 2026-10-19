@@ -8976,9 +8976,6 @@ func (s *Syncer) fetchIssueDetail(
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
 		ctx, client, repo, number,
 	)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "issues", err)
-	}
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -8987,6 +8984,9 @@ func (s *Syncer) fetchIssueDetail(
 		if outcomeErr := provider.IssueLookupOutcomeError(
 			ctx, platformRepoRef(repo), number, ghIssue, err,
 		); outcomeErr != nil {
+			if !errors.Is(outcomeErr, platform.ErrNotFound) {
+				s.observeSync(ctx, repo, "issues", outcomeErr)
+			}
 			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
 		}
 		if outcomeErr := provider.IssuePullRequestOutcomeError(
@@ -8995,6 +8995,7 @@ func (s *Syncer) fetchIssueDetail(
 			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
 		}
 	}
+	s.observeSync(ctx, repo, "issues", err)
 	if err == nil && ghIssue == nil {
 		if notModified {
 			if existing == nil {
@@ -10479,10 +10480,10 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "issues", err)
-	}
 	if outcomeErr := s.issueOnlyFetchOutcomeError(ctx, repo, number, ghIssue, err); outcomeErr != nil {
+		if !errors.Is(outcomeErr, platform.ErrNotFound) {
+			s.observeSync(ctx, repo, "issues", outcomeErr)
+		}
 		// A not_found without a destination is a true removal and gets a
 		// terminal local state. A transfer carries the destination and
 		// keeps failing the cycle so the maintainer sees the moved item
@@ -10493,6 +10494,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		}
 		return fmt.Errorf("get closed issue #%d: %w", number, outcomeErr)
 	}
+	s.observeSync(ctx, repo, "issues", err)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}

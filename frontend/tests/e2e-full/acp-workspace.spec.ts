@@ -286,6 +286,15 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
         await mobile.getByRole("option", { name: /Workspace Chat/ }).click();
       }
       await expect(mobileChat).toBeVisible();
+      // The oversized prompt separates the recent snapshot from the screenshot.
+      // Load its page, then the older messages, through the real history control.
+      await expect(mobileChat.getByRole("button", { name: "Load earlier messages" })).toBeVisible();
+      await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toHaveCount(0);
+      for (let pageIndex = 0; pageIndex < 2; pageIndex++) {
+        const messageCount = await mobileChat.locator(".message-body").count();
+        await mobileChat.getByRole("button", { name: "Load earlier messages" }).click();
+        await expect.poll(() => mobileChat.locator(".message-body").count()).toBeGreaterThan(messageCount);
+      }
       await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
       await expect(mobileChat.getByRole("button", { name: "Effort: High" })).toBeVisible();

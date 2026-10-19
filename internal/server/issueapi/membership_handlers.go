@@ -2,7 +2,6 @@ package issueapi
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -65,7 +64,7 @@ func (s *Handler) liveIssue(
 	}
 	// Held until the caller has written the new set, so concurrent changes to
 	// the same field cannot read the same starting set and drop each other.
-	release := s.membershipLocks.Lock(membershipLockKey(repo.ID, input.Number, field))
+	release := httpapi.LockItemMembership("issue", repo.ID, input.Number, field)
 	live, err := reader.GetIssue(ctx, httpapi.PlatformRepoRef(*repo), input.Number)
 	if err != nil {
 		release()
@@ -141,11 +140,6 @@ func (s *Handler) updateIssueAssigneesOnHost(
 	return s.updateIssueAssignees(ctx, input.route())
 }
 
-// membershipLockKey identifies one field of one item for the membership lock.
-func membershipLockKey(repoID int64, number int, field string) string {
-	return fmt.Sprintf("%d\x00%d\x00%s", repoID, number, field)
-}
-
 // lockIssueMembership takes the lock the PATCH handlers hold, so a full
 // replacement cannot land between a PATCH's provider read and its write. A
 // route that does not resolve takes no lock; the write reports the error.
@@ -159,7 +153,7 @@ func (s *Handler) lockIssueMembership(
 	if err != nil {
 		return func() {}
 	}
-	return s.membershipLocks.Lock(membershipLockKey(active.Row().ID, number, field))
+	return httpapi.LockItemMembership("issue", active.Row().ID, number, field)
 }
 
 // setIssueLabels replaces the issue's full labels set.

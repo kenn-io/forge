@@ -42,3 +42,28 @@ func isClosed(ch chan struct{}) bool {
 		return false
 	}
 }
+
+func TestLockItemMembershipKeepsPullsAndIssuesApart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := LockItemMembership("pull", 1, 5, "assignees")
+
+		samePull := make(chan struct{})
+		go func() {
+			defer LockItemMembership("pull", 1, 5, "assignees")()
+			close(samePull)
+		}()
+		issueSameNumber := make(chan struct{})
+		go func() {
+			defer LockItemMembership("issue", 1, 5, "assignees")()
+			close(issueSameNumber)
+		}()
+
+		synctest.Wait()
+		assert.False(t, isClosed(samePull), "same pull field acquired while held")
+		assert.True(t, isClosed(issueSameNumber), "issue waited on a pull request lock")
+
+		release()
+		synctest.Wait()
+		assert.True(t, isClosed(samePull), "same pull field not acquired after release")
+	})
+}

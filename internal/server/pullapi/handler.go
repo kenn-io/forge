@@ -93,7 +93,6 @@ type Handler struct {
 	deferredMergeMu       sync.Mutex
 	deferredMergeInFlight map[string]*deferredMergeHandle
 	mergeLocks            httpapi.KeyedLocks
-	membershipLocks       httpapi.KeyedLocks
 	deferredMergeMaxWait  time.Duration
 }
 

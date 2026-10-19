@@ -164,6 +164,9 @@ func (s *Handler) assignPullWorkspaceUser(
 	if err != nil {
 		return fmt.Errorf("resolve pull request reader: %w", err)
 	}
+	// Same lock as the assignee routes, so an assignee edit cannot land
+	// between this read and the write and be overwritten, or overwrite it.
+	defer httpapi.LockItemMembership("pull", repo.ID, number, "assignees")()
 	pull, err := reader.GetMergeRequest(ctx, ref, number)
 	if err != nil {
 		return fmt.Errorf("read pull request assignees: %w", err)
@@ -202,6 +205,9 @@ func (s *Handler) assignIssueWorkspaceUser(
 	if err != nil {
 		return fmt.Errorf("resolve issue reader: %w", err)
 	}
+	// Same lock as the assignee routes, so an assignee edit cannot land
+	// between this read and the write and be overwritten, or overwrite it.
+	defer httpapi.LockItemMembership("issue", repo.ID, number, "assignees")()
 	item, err := reader.GetIssue(ctx, ref, number)
 	if err != nil {
 		return fmt.Errorf("read issue assignees: %w", err)

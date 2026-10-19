@@ -47,7 +47,6 @@ type Handler struct {
 	db                *db.DB
 	resolver          *httpapi.RepositoryResolver
 	syncer            *ghclient.Syncer
-	membershipLocks   httpapi.KeyedLocks
 	now               func() time.Time
 	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	providerSource    ProviderSource

@@ -1,6 +1,9 @@
 package httpapi
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // KeyedLocks serializes work per key, such as one item's read-modify-write
 // mutations. The zero value is ready to use.
@@ -41,4 +44,16 @@ func (l *KeyedLocks) Lock(key string) func() {
 		}
 		l.mu.Unlock()
 	}
+}
+
+// membershipLocks is process-wide because several handlers read and rewrite
+// an item's labels or assignees: the PR and issue label and assignee routes
+// and workspace auto-assignment. They must all wait on the same lock.
+var membershipLocks KeyedLocks
+
+// LockItemMembership serializes read-modify-write changes to one field
+// ("labels" or "assignees") of one PR or issue and returns the release.
+// itemType keeps a pull request and an issue with the same number apart.
+func LockItemMembership(itemType string, repoID int64, number int, field string) func() {
+	return membershipLocks.Lock(fmt.Sprintf("%s\x00%d\x00%d\x00%s", itemType, repoID, number, field))
 }

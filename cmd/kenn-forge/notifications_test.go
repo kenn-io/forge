@@ -249,12 +249,11 @@ func TestSetupFinishedMinute(t *testing.T) {
 		client := &fakeTelemetryClient{}
 		var ready atomic.Bool
 		checked := make(chan struct{}, 1)
-		setup := &setupFinished{database: database, reporter: client, hasWork: func(context.Context) (bool, error) {
+		require.NotNil(startSetupFinished(handle, false, database, client, func(context.Context) (bool, error) {
 			work := ready.Load()
 			checked <- struct{}{}
 			return work, nil
-		}}
-		handle.startTicker("setup", time.Minute, setup.capture)
+		}))
 		<-checked
 		synctest.Wait()
 		require.Empty(client.events())

@@ -12,8 +12,8 @@
 - The `telemetry.setup_finished` marker is written only after the reporter
   queues the event, and acceptance is remembered while the marker write retries.
   The marker means accepted, not delivered. Migration 69 writes it without
-  reporting for databases that already held work, so upgrades do not count as
-  first-run setups (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
+  reporting for databases that already held work or a sealed spoke
+  preparation, so upgrades do not count as first-run setups (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
 - Startup liveness and ready health probes expose the same running build identity
   without a workspace bearer. Builds without VCS metadata must stamp the full
   commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).

@@ -39,6 +39,12 @@ func TestSetupFinishedMigrationMarksExistingInstalls(t *testing.T) {
 		) VALUES (20, 1, 9101, 9, datetime('now'), datetime('now'), datetime('now'));`, want: true},
 		{name: "ready workspace", seed: workspace("ready"), want: true},
 		{name: "creating workspace", seed: workspace("creating")},
+		{name: "sealed spoke", seed: `UPDATE forge_spoke_preparation
+			SET phase = 'sealed', enrollment_id = 'enrollment-a', hub_node_id = 'hub-a'
+			WHERE singleton_id = 1;`, want: true},
+		{name: "preparing spoke", seed: `UPDATE forge_spoke_preparation
+			SET phase = 'quiescing', enrollment_id = 'enrollment-a', hub_node_id = 'hub-a'
+			WHERE singleton_id = 1;`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()

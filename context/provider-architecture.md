@@ -78,12 +78,13 @@ Git's commit-graph can outlive commit objects; verify required commits physicall
 including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
 Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
 empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
-Nonlinear squash sources require complete ancestry, a unique merge base, full
-net-edit correspondence, and an exact three-way tree match; rewritten ranges
-still require a linear source (`landedwork/single_parent.go::squashCorrespondence`).
-Across different bases, repeated text needs an exact three-way location witness;
-preserve full edit correspondence so partly applied sources keep their origin
+Nonlinear squash sources require complete ancestry, a unique merge base, and an
+exact three-way tree match; rewritten ranges still require a linear source (`landedwork/single_parent.go::squashCorrespondence`).
+Across different bases, repeated text needs an exact three-way location witness
 (`landedwork/edits.go::compareTreeEdits`).
+A squash onto a target already carrying some source edits needs an exact
+three-way tree witness and must exclude a longer rebase: the terminal and its
+parent must not replay source commits in order (`landedwork/squash_witness.go::witnessedSquash`).
 Synthesized merge objects belong only to the disposable view; caller objects
 are read-only alternates (`landedwork/git.go::openView`).
 Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base

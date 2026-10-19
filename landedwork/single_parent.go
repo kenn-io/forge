@@ -82,7 +82,8 @@ func proveSquash(ctx context.Context, v *objectView, c Candidate, before string)
 // not evidence against this alternative and must prevent choosing another one.
 func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string) (bool, Gap) {
 	g := Gap{CandidateID: c.ID}
-	if sourceBefore == "" {
+	linear := sourceBefore != ""
+	if !linear {
 		// Nonlinear sources must contain every source-side commit, including
 		// merged side branches. Target ancestors may be listed as context.
 		_, err := sourceCorrespondence(ctx, v, c, before)
@@ -100,8 +101,8 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 			return false, Gap{}
 		}
 		// A tree match alone can consume only part of the source edits when
-		// the target already contains a cherry-pick under another commit ID.
-		// Compare the full net edits since the shared branch-update boundary.
+		// the target already contains some of them. Compare the full net edits
+		// since the shared branch-update boundary before the weaker witness.
 		sourceBefore, err = v.mergeBase(ctx, before, c.SourceHead)
 		if err != nil {
 			return false, Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: editReason(err)}
@@ -109,7 +110,7 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 	}
 	_, err := v.compareTreeEdits(ctx, sourceBefore, c.SourceHead, before, c.Terminal)
 	if errors.Is(err, errCorrespondence) {
-		return false, Gap{}
+		return witnessedSquash(ctx, v, c, sourceBefore, before, linear)
 	}
 	if err != nil {
 		g.ObjectID, g.Reason = c.Terminal, editReason(err)

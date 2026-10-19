@@ -40,6 +40,9 @@ export function senderLabel(sender: ChatSender | null | undefined): string {
   return sender.name ? `Coordinator ${sender.name}` : "Coordinator";
 }
 export const ChatMessageSchema = Schema.Struct({
+  id: Schema.String,
+  previousId: Schema.String,
+  version: Schema.Number,
   role: Schema.Literals(["user", "assistant", "thought", "tool"]),
   sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
   text: Schema.String,
@@ -112,8 +115,8 @@ export const ChatStateSchema = Schema.Struct({
   // Snapshots carry only the latest window of the transcript.
   messageOffset: Schema.Number,
   messageCount: Schema.Number,
-  messageRevision: Schema.Number,
-  historyRevision: Schema.Number,
+  messageCursor: Schema.Number,
+  lastMessageId: Schema.String,
   permissions: Schema.Array(
     Schema.Struct({
       id: Schema.String,
@@ -168,7 +171,7 @@ export type ChatCommand =
   | { type: "move"; id: string; index: number }
   | { type: "resume" }
   | { type: "dismiss_error" }
-  | { type: "history"; before: number; limit: number }
+  | { type: "history"; beforeId: string; limit: number }
   | { type: "cancel" }
   | { type: "takeover" }
   | { type: "config"; id: string; value: string }

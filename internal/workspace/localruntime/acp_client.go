@@ -52,7 +52,7 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 			status = string(acpsdk.ToolCallStatusPending)
 		}
 		lineage := toolCallLineage(call.Meta, call.RawInput)
-		a.state.Messages = append(a.state.Messages, ACPMessage{
+		a.insertMessageLocked(len(a.state.Messages), ACPMessage{
 			Role: "tool", Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
 			Subagent: lineage.subagent, ParentToolCallID: lineage.parent, Kind: string(call.Kind),
 			ToolContent: applyTerminalMeta(acpToolContent(call.Content), call.Meta), Locations: acpToolLocations(call.Locations),
@@ -135,7 +135,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 	text, content := acpContent(block)
 	if content != nil {
 		a.releaseHeldTextLocked()
-		a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 		return true
 	}
 	if text == "" {
@@ -158,7 +158,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 	}
-	a.state.Messages = append(a.state.Messages, ACPMessage{Role: role, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	a.holdTextLocked(true, text)
 	return false
 }
@@ -232,7 +232,7 @@ func (a *ACP) updateToolLocked(update *acpsdk.SessionToolCallUpdate) {
 		if item.ParentToolCallID == "" {
 			item.ParentToolCallID = lineage.parent
 		}
-		a.invalidateMessagesLocked(i, i+1)
+		a.publishMessageLocked(i)
 		return
 	}
 }

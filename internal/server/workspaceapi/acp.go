@@ -117,7 +117,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				}
 			case "history":
 				// Older transcript pages go only to the client that asked.
-				data, err := agent.History(command.Before, command.Limit)
+				data, err := agent.History(command.BeforeID, command.Limit)
 				if err != nil {
 					data, _ = json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type})
 				}
@@ -135,14 +135,40 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 	})
 	defer readers.Wait()
 	defer cancel()
+	initialized := false
+	var cursor uint64
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-changes:
-			data, err := agent.Snapshot()
-			if err != nil || conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
-				return
+			if !initialized {
+				data, err := agent.Snapshot()
+				if err != nil {
+					return
+				}
+				var state struct {
+					MessageCursor uint64 `json:"messageCursor"`
+				}
+				if json.Unmarshal(data, &state) != nil || conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
+					return
+				}
+				cursor = state.MessageCursor
+				initialized = true
+				continue
+			}
+			for {
+				batch, err := agent.Updates(cursor)
+				if err != nil {
+					return
+				}
+				if conn.Write(ctx, websocket.MessageText, acpImagePreviews(batch.Data)) != nil {
+					return
+				}
+				cursor = batch.MessageCursor
+				if !batch.More {
+					break
+				}
 			}
 		}
 	}

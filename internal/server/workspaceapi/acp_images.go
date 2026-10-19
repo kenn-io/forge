@@ -1,6 +1,7 @@
 package workspaceapi
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -30,6 +31,13 @@ func acpImagePreviews(data []byte) []byte {
 				frame["messages"] = encoded
 				changed = true
 			}
+		}
+	}
+	if raw, ok := frame["updates"]; ok {
+		updated := acpImagePreviews(raw)
+		if !bytes.Equal(raw, updated) {
+			frame["updates"] = updated
+			changed = true
 		}
 	}
 	if raw, ok := frame["history"]; ok {

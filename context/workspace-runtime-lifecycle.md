@@ -68,25 +68,23 @@ Rules:
   after a daemon restart, opening the workspace reloads a kept chat like any chat whose owner
   died while no daemon was attached. Unsupervised chats are forgotten as before
   (`internal/server/workspaceapi/lifecycle.go::Handler.keepsExitedChat`).
-- The ACP owner keeps the whole transcript and never deletes messages. A prompt start or a
-  steer inserts its user message where sending began, before output that arrived during the
-  send, so later transcript indexes can shift by one; appending would put the reply before
-  the message it answers (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`). State
-  updates carry only the latest message window with its absolute offset and total
-  count; clients page earlier messages in with `history` requests answered to the
-  asking connection (`internal/workspace/localruntime/acp_delivery.go::ACP.publishedStateLocked`).
+- The ACP owner keeps the whole transcript. Prompts and steering insert their user message
+  where sending began, before output received during the send
+  (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`).
+- Forge entry IDs, not optional or reused agent IDs, own transcript identity. Predecessor
+  IDs preserve ordering through insertion; versions prevent stale history replacing updates
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- Connect with a recent window, then send changed entries in batches bounded by serialized bytes. History
+  loads only at the reader's request; updates never invalidate and reload loaded history
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Chat delivery batches target serialized bytes as well as message count; retain every
   message and allow one oversized message intact so paging always advances
   (`internal/workspace/localruntime/acp_delivery.go::acpMessageBatchSize`).
-- Snapshot revisions invalidate loaded history when older entries change or prompt
-  insertion shifts their indices. Reload that loaded range in byte-sized pages; reject
-  pages older than the invalidation and hold replies that precede their snapshot
-  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
-- Keep displayed history and tool expansion intact while replacement pages load; publish
-  the refreshed range together (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
-- Natural agent exit must leave transcript reads available until existing viewers finish
-  their final refresh and detach; only then release the owner
-  (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- Entry updates must preserve expanded details and the reader's anchor; interaction state
+  remains usable while a batch finishes (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- Natural agent exit must leave the attachment discoverable and readable until existing
+  viewers finish receiving final updates and detach; only then release the owner
+  (`internal/workspace/localruntime/acp_owner_rpc.go::acpAttachment.watch`).
 - A degraded but usable ACP start (no Forge tools, no session reload) is a `notices`
   entry, never `error`; the chat shows it only as a header warning icon with a tooltip,
   not a persistent alert (maintainer decision; `frontend/src/lib/components/acp/ACPWorkspace.svelte`).

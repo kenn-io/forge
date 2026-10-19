@@ -2,6 +2,7 @@ package localruntime
 
 import (
 	"encoding/json/v2"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -98,7 +99,7 @@ func (a *ACP) deliverTextLocked() {
 		return
 	}
 	a.heldBytes -= len(ready)
-	a.invalidateMessagesLocked(len(a.state.Messages)-1, len(a.state.Messages))
+	a.publishMessageLocked(len(a.state.Messages) - 1)
 	a.lastTextDelivery = time.Now()
 	a.publishProgressLocked()
 	if a.heldBytes > 0 {
@@ -141,7 +142,7 @@ func (a *ACP) releaseHeldTextLocked() {
 		return
 	}
 	a.heldBytes = 0
-	a.invalidateMessagesLocked(len(a.state.Messages)-1, len(a.state.Messages))
+	a.publishMessageLocked(len(a.state.Messages) - 1)
 	a.lastTextDelivery = time.Now()
 }
 
@@ -169,47 +170,38 @@ func (a *ACP) heldTextLocked() string {
 	return text[len(text)-a.heldBytes:]
 }
 
-// invalidateMessagesLocked marks edits and index shifts for the next publication.
-// Each attachment compares revisions independently; snapshots never consume them.
-func (a *ACP) invalidateMessagesLocked(start, end int) {
-	if a.messageRevisions == nil {
-		a.messageRevisions = make(map[int]uint64)
-	}
-	for i := start; i < end; i++ {
-		a.messageRevisions[i] = a.revision + 1
-	}
-}
-
-func (a *ACP) historyRevisionLocked(before int) uint64 {
-	var newest uint64
-	for index, revision := range a.messageRevisions {
-		if index < before {
-			newest = max(newest, revision)
-		}
-	}
-	return newest
-}
-
-// publishedStateLocked is the state clients may see: held text is cut from
-// the last message, and a message that is entirely held is left out.
-func (a *ACP) publishedStateLocked() ACPState {
+// publishedMetadataLocked describes the transcript without scanning or copying
+// its entries. A last message that is entirely held is left out.
+func (a *ACP) publishedMetadataLocked() ACPState {
+	a.initializeMessagesLocked()
 	state := a.state
-	messages := a.publishedMessagesLocked()
-	// The owner keeps the whole transcript; each update carries only the
-	// recent window, and clients page older messages in with History.
-	state.MessageCount = len(messages)
-	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
-	state.MessageOffset = len(messages) - acpMessageBatchSize(messages[state.MessageOffset:], true)
-	state.Messages = messages[state.MessageOffset:]
-	state.MessageRevision = a.revision
-	state.HistoryRevision = a.historyRevisionLocked(state.MessageOffset)
-	// Only the owner checks retried answers. A digest of a small form domain
-	// can be reversed, so the ledger never leaves the owner.
+	state.Messages = nil
+	state.MessageOffset = 0
+	state.MessageCount = len(a.state.Messages)
+	held := len(a.heldTextLocked())
+	if held > 0 && held == len(a.state.Messages[state.MessageCount-1].Text) {
+		state.MessageCount--
+	}
+	state.MessageCursor = a.messageCursor
+	state.LastMessageID = ""
+	if state.MessageCount > 0 {
+		state.LastMessageID = a.state.Messages[state.MessageCount-1].ID
+	}
 	state.Answered = nil
 	return state
 }
 
-// acpMessageWindow is how many recent messages each state update carries.
+func (a *ACP) publishedStateLocked() ACPState {
+	state := a.publishedMetadataLocked()
+	start := max(0, state.MessageCount-acpMessageWindow)
+	messages := a.publishedMessagesLocked(start, state.MessageCount)
+	size := acpMessageBatchSize(messages, true)
+	state.MessageOffset = state.MessageCount - size
+	state.Messages = messages[len(messages)-size:]
+	return state
+}
+
+// acpMessageWindow caps recent messages in the initial snapshot.
 const acpMessageWindow = 200
 
 // acpHistoryPage is the page size when a history request names none.
@@ -250,50 +242,59 @@ func acpMessageBatchSize(messages []ACPMessage, newestFirst bool) int {
 	return count
 }
 
-// publishedMessagesLocked is the full transcript as clients may see it.
-func (a *ACP) publishedMessagesLocked() []ACPMessage {
-	messages := a.state.Messages
-	held := len(a.heldTextLocked())
-	if held == 0 {
-		return messages
+// publishedMessageLocked hides the unpublished suffix of one entry.
+func (a *ACP) publishedMessageLocked(index int) ACPMessage {
+	message := a.state.Messages[index]
+	if index == len(a.state.Messages)-1 {
+		message.Text = message.Text[:len(message.Text)-len(a.heldTextLocked())]
 	}
-	last := len(messages) - 1
-	messages = append([]ACPMessage(nil), messages...)
-	message := messages[last]
-	message.Text = message.Text[:len(message.Text)-held]
-	if message.Text == "" {
-		return messages[:last]
+	return message
+}
+
+func (a *ACP) publishedMessagesLocked(start, end int) []ACPMessage {
+	messages := a.state.Messages[start:end]
+	if end == len(a.state.Messages) && end > start && a.heldBytes > 0 {
+		messages = append([]ACPMessage(nil), messages...)
+		messages[len(messages)-1] = a.publishedMessageLocked(end - 1)
 	}
-	messages[last] = message
 	return messages
 }
 
 // ACPHistory is a page of earlier transcript messages starting at the
 // absolute transcript index Offset.
 type ACPHistory struct {
-	Revision uint64       `json:"revision"`
+	BeforeID string       `json:"beforeId"`
 	Offset   int          `json:"offset"`
 	Messages []ACPMessage `json:"messages"`
 }
 
 // historyLocked returns messages [before-limit, before) of the published
 // transcript, as the {"history": ...} frame a client receives.
-func (a *ACP) historyLocked(before, limit int) ([]byte, error) {
-	messages := a.publishedMessagesLocked()
-	before = min(max(before, 0), len(messages))
+func (a *ACP) historyLocked(beforeID string, limit int) ([]byte, error) {
+	state := a.publishedMetadataLocked()
+	before := state.MessageCount
+	if beforeID != "" {
+		entry := a.messageIndex[beforeID]
+		if entry == nil {
+			return nil, fmt.Errorf("unknown chat message %q", beforeID)
+		}
+		before = min(entry.Value.(*acpMessagePosition).index, state.MessageCount)
+	}
 	if limit <= 0 {
 		limit = acpHistoryPage
 	}
 	start := max(0, before-limit)
-	start = before - acpMessageBatchSize(messages[start:before], true)
-	return json.Marshal(map[string]ACPHistory{"history": {Revision: a.revision, Offset: start, Messages: messages[start:before]}}, json.Deterministic(true))
+	messages := a.publishedMessagesLocked(start, before)
+	size := acpMessageBatchSize(messages, true)
+	start = before - size
+	return json.Marshal(map[string]ACPHistory{"history": {BeforeID: beforeID, Offset: start, Messages: messages[len(messages)-size:]}}, json.Deterministic(true))
 }
 
 // History returns a page of earlier messages as a client frame.
-func (a *ACP) History(before, limit int) ([]byte, error) {
+func (a *ACP) History(beforeID string, limit int) ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.historyLocked(before, limit)
+	return a.historyLocked(beforeID, limit)
 }
 
 // Page returns the published state with Messages holding transcript messages
@@ -303,16 +304,15 @@ func (a *ACP) History(before, limit int) ([]byte, error) {
 func (a *ACP) Page(after, limit int) ([]byte, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	state := a.publishedStateLocked()
-	messages := a.publishedMessagesLocked()
+	state := a.publishedMetadataLocked()
 	if limit <= 0 {
 		limit = acpHistoryPage
 	}
-	start := min(max(after, 0), len(messages))
-	end := start + min(limit, len(messages)-start)
-	end = start + acpMessageBatchSize(messages[start:end], false)
+	start := min(max(after, 0), state.MessageCount)
+	end := start + min(limit, state.MessageCount-start)
+	messages := a.publishedMessagesLocked(start, end)
+	size := acpMessageBatchSize(messages, false)
 	state.MessageOffset = start
-	state.HistoryRevision = a.historyRevisionLocked(start)
-	state.Messages = messages[start:end]
+	state.Messages = messages[:size]
 	return json.Marshal(state, json.Deterministic(true))
 }

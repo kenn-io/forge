@@ -387,7 +387,7 @@ func TestACPPromptsNameTheirSenderToTheAgent(t *testing.T) {
 	}, meta)
 }
 
-func TestACPSteeringInvalidatesIndicesBeforeOversizedOutput(t *testing.T) {
+func TestACPSteeringPreservesIDsBeforeOversizedOutput(t *testing.T) {
 	agent, peer := newScriptedACP(t)
 	agent.state.SteeringSupported = true
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "work", ID: "first"}))
@@ -403,8 +403,17 @@ func TestACPSteeringInvalidatesIndicesBeforeOversizedOutput(t *testing.T) {
 	require.NoError(t, <-steered)
 	after := publishedACPState(t, agent)
 	require.Equal(t, 2, after.MessageOffset)
-	assert.Greater(t, after.HistoryRevision, before.MessageRevision)
-	data, err := agent.History(after.MessageOffset, 100)
+	changes, err := decodedACPUpdates(t, agent, before.MessageCursor)
+	require.NoError(t, err)
+	require.Len(t, changes.Messages, 1)
+	assert.Equal(t, "steer", changes.Messages[0].SubmissionID)
+	assert.True(t, changes.More)
+	tail, err := decodedACPUpdates(t, agent, changes.MessageCursor)
+	require.NoError(t, err)
+	require.Len(t, tail.Messages, 1)
+	assert.Equal(t, before.Messages[0].ID, tail.Messages[0].ID)
+	assert.Equal(t, changes.Messages[0].ID, tail.Messages[0].PreviousID)
+	data, err := agent.History(after.Messages[0].ID, 100)
 	require.NoError(t, err)
 	var frame map[string]ACPHistory
 	require.NoError(t, json.Unmarshal(data, &frame))

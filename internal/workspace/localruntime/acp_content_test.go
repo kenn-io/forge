@@ -59,7 +59,7 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	state := publishedACPState(t, agent)
 	require.Len(t, state.Messages, 1, "large media is delivered alone")
 	require.Equal(t, 3, state.MessageOffset)
-	data, err := agent.History(state.MessageOffset, 100)
+	data, err := agent.History(state.Messages[0].ID, 100)
 	require.NoError(t, err)
 	var history map[string]ACPHistory
 	require.NoError(t, json.Unmarshal(data, &history))
@@ -83,7 +83,7 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	assert.Empty(t, publishedACPState(t, agent).Plan, "each plan update replaces the plan")
 }
 
-func TestACPInvalidatesOlderToolResultsOutsideByteWindow(t *testing.T) {
+func TestACPDeliversOlderToolResultsOutsideByteWindow(t *testing.T) {
 	for _, largeTool := range []string{"earlier", "later"} {
 		t.Run(largeTool, func(t *testing.T) {
 			agent := newDetachedACP(t)
@@ -102,15 +102,23 @@ func TestACPInvalidatesOlderToolResultsOutsideByteWindow(t *testing.T) {
 			}})
 			state := publishedACPState(t, agent)
 			require.Equal(t, 1, state.MessageOffset)
-			assert.Greater(t, state.HistoryRevision, initial.MessageRevision)
-			assert.LessOrEqual(t, state.HistoryRevision, state.MessageRevision)
-			data, err := agent.History(state.MessageOffset, 100)
+			changes, err := decodedACPUpdates(t, agent, initial.MessageCursor)
+			require.NoError(t, err)
+			require.NotEmpty(t, changes.Messages)
+			for changes.More {
+				next, err := decodedACPUpdates(t, agent, changes.MessageCursor)
+				require.NoError(t, err)
+				changes.Messages = append(changes.Messages, next.Messages...)
+				changes.MessageCursor, changes.More = next.MessageCursor, next.More
+			}
+			assert.Equal(t, initial.Messages[0].ID, changes.Messages[len(changes.Messages)-1].ID)
+			data, err := agent.History(state.Messages[0].ID, 100)
 			require.NoError(t, err)
 			var frame map[string]ACPHistory
 			require.NoError(t, json.Unmarshal(data, &frame))
 			page := frame["history"]
 			require.Len(t, page.Messages, 1)
-			assert.Equal(t, state.MessageRevision, page.Revision)
+			assert.Greater(t, page.Messages[0].Version, initial.Messages[0].Version)
 			assert.Equal(t, "completed", page.Messages[0].Status)
 			if largeTool == "earlier" {
 				assert.Contains(t, page.Messages[0].RawOutput, strings.Repeat("x", 300_000))

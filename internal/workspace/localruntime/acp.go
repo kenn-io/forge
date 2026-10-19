@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"container/list"
 	"context"
 	"crypto/rand"
 	"encoding/json/jsontext"
@@ -25,7 +26,8 @@ type ACPChat interface {
 	Snapshot() ([]byte, error)
 	// History returns earlier transcript messages [before-limit, before) as
 	// a {"history": ...} client frame.
-	History(before, limit int) ([]byte, error)
+	History(beforeID string, limit int) ([]byte, error)
+	Updates(after uint64) (ACPBatch, error)
 	// Page returns the published state with transcript messages
 	// [after, after+limit) in place of the recent window.
 	Page(after, limit int) ([]byte, error)
@@ -64,8 +66,10 @@ type ACP struct {
 	recordPath      string
 	revision        uint64
 
-	// Revisions of edited transcript indices, retained for every attachment.
-	messageRevisions map[int]uint64
+	// Latest published version of each entry, ordered by change time.
+	messageChanges list.List
+	messageIndex   map[string]*list.Element
+	messageCursor  uint64
 	// turnCompleted records a finished prompt turn in this process. A loaded
 	// session starts idle so reopening it never announces a new completion.
 	turnCompleted bool
@@ -133,6 +137,9 @@ var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
 type ACPMessage struct {
+	ID           string `json:"id"`
+	PreviousID   string `json:"previousId"`
+	Version      uint64 `json:"version"`
 	SubmissionID string `json:"submissionId,omitempty"`
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
@@ -216,15 +223,13 @@ type ACPState struct {
 	Messages    []ACPMessage   `json:"messages"`
 	// MessageOffset is the transcript index of Messages[0] in a published
 	// update; MessageCount is the length of the whole transcript.
-	MessageOffset int `json:"messageOffset"`
-	MessageCount  int `json:"messageCount"`
-	// HistoryRevision identifies the newest edit below MessageOffset. Clients
-	// compare it with their previous snapshot revision before retaining history.
-	MessageRevision uint64           `json:"messageRevision"`
-	HistoryRevision uint64           `json:"historyRevision"`
-	Permissions     []ACPPermission  `json:"permissions"`
-	Elicitations    []ACPElicitation `json:"elicitations"`
-	Busy            bool             `json:"busy"`
+	MessageOffset int              `json:"messageOffset"`
+	MessageCount  int              `json:"messageCount"`
+	MessageCursor uint64           `json:"messageCursor"`
+	LastMessageID string           `json:"lastMessageId"`
+	Permissions   []ACPPermission  `json:"permissions"`
+	Elicitations  []ACPElicitation `json:"elicitations"`
+	Busy          bool             `json:"busy"`
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
@@ -316,9 +321,9 @@ type ACPCommand struct {
 	ID       string       `json:"id,omitempty"`
 	OptionID string       `json:"optionId,omitempty"`
 	Value    string       `json:"value,omitempty"`
-	// Before and Limit select a history page.
-	Before int `json:"before,omitempty"`
-	Limit  int `json:"limit,omitempty"`
+	// BeforeID and Limit select a history page.
+	BeforeID string `json:"beforeId,omitempty"`
+	Limit    int    `json:"limit,omitempty"`
 	// Action and Content answer an elicitation. Content is the accepted form
 	// values as a JSON object; it stays raw so the owner RPC can carry it.
 	Action  string         `json:"action,omitempty"`
@@ -740,10 +745,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	a.promptIndex = nil
 	// The agent's reply can arrive before the write returns. The prompt goes
 	// before it, so the indexes of those messages shift up by one.
-	a.state.Messages = append(a.state.Messages, ACPMessage{})
-	copy(a.state.Messages[messageIndex+1:], a.state.Messages[messageIndex:])
-	a.state.Messages[messageIndex] = message
-	a.invalidateMessagesLocked(messageIndex, len(a.state.Messages))
+	a.insertMessageLocked(messageIndex, message)
 	if submissionID != "" {
 		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == submissionID })
 	}

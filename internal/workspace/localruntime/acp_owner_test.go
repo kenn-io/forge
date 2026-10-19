@@ -66,11 +66,13 @@ func TestACPAttachmentReadsFinalTranscriptUntilSubscribersDetach(t *testing.T) {
 	require.NoError(err)
 	defer process.Release()
 	require.NoError(process.Kill())
+	c.awaitState(func(state ACPState) bool { return !state.Connected })
 	select {
 	case <-c.chat.Done():
-	case <-time.After(5 * time.Second):
-		require.FailNow("agent exit was not reported")
+		require.FailNow("discovery removed the chat before final delivery")
+	default:
 	}
+	assert.NotEmpty(c.manager.ListSessions("workspace"), "runtime polls retain the draining chat")
 	unsubscribeSecond()
 	data, err := c.chat.Snapshot()
 	require.NoError(err)
@@ -78,7 +80,12 @@ func TestACPAttachmentReadsFinalTranscriptUntilSubscribersDetach(t *testing.T) {
 	require.NoError(json.Unmarshal(data, &state))
 	assert.False(state.Connected)
 	assert.Equal(before.Messages, state.Messages)
-	data, err = c.chat.History(state.MessageCount, 1)
+	changes, err := decodedACPUpdates(t, c.chat, 0)
+	require.NoError(err)
+	assert.False(changes.Connected)
+	assert.False(changes.More)
+	assert.Equal(before.Messages, changes.Messages)
+	data, err = c.chat.History("", 1)
 	require.NoError(err)
 	var history map[string]ACPHistory
 	require.NoError(json.Unmarshal(data, &history))

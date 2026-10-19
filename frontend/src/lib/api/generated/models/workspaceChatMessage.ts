@@ -9,6 +9,7 @@ import type { ACPToolLocation } from "./aCPToolLocation.ts";
 export interface WorkspaceChatMessage {
   content?: ACPContent;
   createdAt: string;
+  id: string;
   images?: ACPContent[];
   /** Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId. */
   index: number;
@@ -16,6 +17,7 @@ export interface WorkspaceChatMessage {
   locations?: ACPToolLocation[];
   messageId?: string;
   parentToolCallId?: string;
+  previousId: string;
   rawInput?: string;
   rawOutput?: string;
   role: string;
@@ -26,4 +28,6 @@ export interface WorkspaceChatMessage {
   text: string;
   toolCallId?: string;
   toolContent?: ACPToolContent[];
+  /** @minimum 0 */
+  version: number;
 }

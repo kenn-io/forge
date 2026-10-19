@@ -79,13 +79,15 @@ func TestACPDismissErrorPreservesPausedConversation(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "dismiss_error"}))
 	before.Error, before.ErrorCode, before.ErrorData = "", nil, ""
 	after := publishedACPState(t, agent)
-	assert.Greater(t, after.MessageRevision, before.MessageRevision)
-	before.MessageRevision = after.MessageRevision
 	assert.Equal(t, before, after)
 }
 
-func TestACPReleasedTextInvalidatesHistoryAfterMetadataPublication(t *testing.T) {
+func TestACPReleasedTextUpdatesAfterMetadataPublication(t *testing.T) {
 	agent := newDetachedACP(t)
+	// Streaming occurs during an active turn; queued work must wait for it.
+	agent.mu.Lock()
+	agent.state.Busy = true
+	agent.mu.Unlock()
 	acpText(t, agent, "Published.\n\n")
 	acpText(t, agent, "Held tail")
 	// Queue metadata publishes a snapshot while the unfinished tail is held.
@@ -97,8 +99,11 @@ func TestACPReleasedTextInvalidatesHistoryAfterMetadataPublication(t *testing.T)
 	}})
 	after := publishedACPState(t, agent)
 	require.Equal(t, 1, after.MessageOffset)
-	assert.Greater(t, after.HistoryRevision, before.MessageRevision)
-	data, err := agent.History(1, 100)
+	changes, err := decodedACPUpdates(t, agent, before.MessageCursor)
+	require.NoError(t, err)
+	require.NotEmpty(t, changes.Messages)
+	assert.Equal(t, "Published.\n\nHeld tail", changes.Messages[0].Text)
+	data, err := agent.History(after.Messages[0].ID, 100)
 	require.NoError(t, err)
 	var frame map[string]ACPHistory
 	require.NoError(t, json.Unmarshal(data, &frame))

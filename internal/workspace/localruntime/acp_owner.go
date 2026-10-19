@@ -75,6 +75,7 @@ func (a *ACP) persistLocked() error {
 	if a.recordPath == "" {
 		return nil
 	}
+	a.initializeMessagesLocked()
 	data, err := json.Marshal(acpSavedSession{SessionID: a.sessionID, State: a.state, LoadSession: a.loadSession}, json.Deterministic(true))
 	if err != nil {
 		return err
@@ -119,6 +120,10 @@ func (a *ACP) restoreSendersLocked() {
 // its own.
 func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	a.state.Messages = saved.Messages
+	a.messageIndex = nil
+	a.messageChanges.Init()
+	a.messageCursor = 0
+	a.initializeMessagesLocked()
 	a.state.Queue = saved.Queue
 	a.restoreSubmissionsLocked(saved)
 	a.restoreSendersLocked()

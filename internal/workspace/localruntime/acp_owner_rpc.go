@@ -122,12 +122,21 @@ func acpCodeError(code string) error {
 	return nil
 }
 
-// ACPHistoryRequest selects transcript messages [Before-Limit, Before).
-type ACPHistoryRequest struct{ Before, Limit int }
+// ACPHistoryRequest selects messages preceding a stable transcript entry ID.
+type ACPHistoryRequest struct {
+	BeforeID string
+	Limit    int
+}
 
 func (o *acpOwnerRPC) History(request ACPHistoryRequest, reply *[]byte) error {
-	data, err := o.agent.History(request.Before, request.Limit)
+	data, err := o.agent.History(request.BeforeID, request.Limit)
 	*reply = data
+	return err
+}
+
+func (o *acpOwnerRPC) Updates(after uint64, reply *ACPBatch) error {
+	changes, err := o.agent.Updates(after)
+	*reply = changes
 	return err
 }
 
@@ -181,6 +190,7 @@ type acpAttachment struct {
 	key         string
 	client      *rpc.Client
 	done        chan struct{}
+	doneOnce    sync.Once
 	mu          sync.Mutex
 	exitCode    int
 	exited      bool
@@ -227,9 +237,15 @@ func (a *acpAttachment) Command(command ACPCommand) error {
 	return nil
 }
 
-func (a *acpAttachment) History(before, limit int) ([]byte, error) {
+func (a *acpAttachment) History(beforeID string, limit int) ([]byte, error) {
 	var reply []byte
-	err := a.client.Call("ACP.History", ACPHistoryRequest{Before: before, Limit: limit}, &reply)
+	err := a.client.Call("ACP.History", ACPHistoryRequest{BeforeID: beforeID, Limit: limit}, &reply)
+	return reply, err
+}
+
+func (a *acpAttachment) Updates(after uint64) (ACPBatch, error) {
+	var reply ACPBatch
+	err := a.client.Call("ACP.Updates", after, &reply)
 	return reply, err
 }
 
@@ -244,7 +260,12 @@ func (a *acpAttachment) Prompt(text string, sender ACPSender) error {
 }
 func (a *acpAttachment) Done() <-chan struct{} { return a.done }
 func (a *acpAttachment) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }
-func (a *acpAttachment) Detach()               { _ = a.client.Close() }
+
+func (a *acpAttachment) Detach() {
+	_ = a.client.Close()
+	a.doneOnce.Do(func() { close(a.done) })
+}
+
 func (a *acpAttachment) Stop(ctx context.Context) error {
 	// The watch connection can close when the agent exits. Use an independent
 	// request connection so that cannot discard the stop acknowledgement.
@@ -271,12 +292,12 @@ func (a *acpAttachment) Subscribe() (<-chan struct{}, func()) {
 		delete(a.subscribers, ch)
 		if a.exited && len(a.subscribers) == 0 {
 			_ = a.client.Close()
+			a.doneOnce.Do(func() { close(a.done) })
 		}
 	}
 }
 
 func (a *acpAttachment) watch() {
-	defer close(a.done)
 	var revision uint64
 	for {
 		var reply ACPUpdate
@@ -292,10 +313,11 @@ func (a *acpAttachment) watch() {
 				}
 			}
 		}
-		// Final snapshots can invalidate loaded history. Existing viewers keep
-		// the read connection until they finish paging and unsubscribe.
+		// Final updates may need several batches. Existing viewers keep the
+		// read connection until they finish draining updates and unsubscribe.
 		if err != nil || (reply.Exited && len(a.subscribers) == 0) {
 			_ = a.client.Close()
+			a.doneOnce.Do(func() { close(a.done) })
 		}
 		a.mu.Unlock()
 		if err != nil || reply.Exited {

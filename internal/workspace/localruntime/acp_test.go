@@ -967,8 +967,8 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 	return manager
 }
 
-// The owner keeps the whole transcript. Updates carry the recent window, and
-// earlier messages page in by absolute index.
+// The owner keeps the whole transcript. The initial snapshot carries a recent
+// window, and earlier messages page in before stable entry IDs.
 func TestACPSnapshotWindowsAndHistoryPagesTheWholeTranscript(t *testing.T) {
 	messages := make([]ACPMessage, 250)
 	for i := range messages {
@@ -989,7 +989,11 @@ func TestACPSnapshotWindowsAndHistoryPagesTheWholeTranscript(t *testing.T) {
 
 	page := func(before, limit int) ACPHistory {
 		t.Helper()
-		data, err := agent.History(before, limit)
+		beforeID := ""
+		if before >= 0 && before < len(agent.state.Messages) {
+			beforeID = agent.state.Messages[before].ID
+		}
+		data, err := agent.History(beforeID, limit)
 		require.NoError(t, err)
 		var frame map[string]ACPHistory
 		require.NoError(t, json.Unmarshal(data, &frame))
@@ -1007,7 +1011,7 @@ func TestACPSnapshotWindowsAndHistoryPagesTheWholeTranscript(t *testing.T) {
 	assert.Equal(t, "m170", middle.Messages[0].Text)
 
 	assert.Equal(t, 250-acpHistoryPage, page(1000, 0).Offset, "a past-the-end cursor pages from the end")
-	assert.Empty(t, page(-5, 10).Messages)
+	assert.Empty(t, page(0, 10).Messages)
 }
 
 // A message that is still entirely held is not part of the published
@@ -1022,7 +1026,7 @@ func TestACPWindowCountsOnlyPublishedMessages(t *testing.T) {
 	assert.Equal(t, 0, state.MessageOffset)
 	require.Len(t, state.Messages, 1)
 
-	data, err = agent.History(5, 10)
+	data, err = agent.History("", 10)
 	require.NoError(t, err)
 	var frame map[string]ACPHistory
 	require.NoError(t, json.Unmarshal(data, &frame))

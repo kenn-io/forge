@@ -66,14 +66,14 @@ type getWorkspaceChatInput struct {
 type getWorkspaceChatOutput struct{ Body WorkspaceChat }
 
 // WorkspaceChatCommand is a chat command. Content answers an elicitation with
-// its form values. History paging belongs to the websocket, so Before and
+// its form values. History paging belongs to the websocket, so BeforeID and
 // Limit are not part of this body.
 type WorkspaceChatCommand struct {
 	localruntime.ACPCommand
-	Type    string         `json:"type" enum:"supervise,takeover,config,prompt,unqueue,move,resume,cancel,permission,elicitation"`
-	Content map[string]any `json:"content,omitempty"`
-	Before  struct{}       `json:"-"`
-	Limit   struct{}       `json:"-"`
+	Type     string         `json:"type" enum:"supervise,takeover,config,prompt,unqueue,move,resume,cancel,permission,elicitation"`
+	Content  map[string]any `json:"content,omitempty"`
+	BeforeID struct{}       `json:"-"`
+	Limit    struct{}       `json:"-"`
 }
 
 func (c WorkspaceChatCommand) acpCommand() (localruntime.ACPCommand, error) {

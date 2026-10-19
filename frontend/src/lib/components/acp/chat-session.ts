@@ -9,62 +9,22 @@ import {
 } from "./chat-types.js";
 
 const HistoryFrameSchema = Schema.Struct({
-  history: Schema.Struct({ revision: Schema.Number, offset: Schema.Number, messages: Schema.Array(ChatMessageSchema) }),
+  history: Schema.Struct({ beforeId: Schema.String, offset: Schema.Number, messages: Schema.Array(ChatMessageSchema) }),
+});
+const UpdateFrameSchema = Schema.Struct({
+  updates: Schema.Struct({ ...ChatStateSchema.fields, more: Schema.Boolean }),
 });
 const decodeFrame = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Union([
       ChatStateSchema,
+      UpdateFrameSchema,
       HistoryFrameSchema,
-      // A failed command names itself so only that request is settled.
       Schema.Struct({ commandError: Schema.String, command: Schema.String, id: Schema.String }),
       Schema.Struct({ accepted: Schema.Struct({ command: Schema.String, id: Schema.String }) }),
     ]),
   ),
 );
-
-// Structural equality for decoded JSON values (messages nest content blocks,
-// tool content, and locations).
-function sameValue(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (typeof left !== "object" || typeof right !== "object" || left === null || right === null) return false;
-  if (Array.isArray(left) !== Array.isArray(right)) return false;
-  const a = left as Record<string, unknown>;
-  const b = right as Record<string, unknown>;
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  return [...keys].every((key) => sameValue(a[key], b[key]));
-}
-
-// The loaded part of the transcript: messages[i] is transcript index start + i,
-// always running contiguously to the end of the transcript. Snapshots carry
-// only the latest window; older pages arrive as history replies. The host never
-// drops messages, so pages that slide out of the window stay loaded.
-type Transcript = { start: number; messages: ChatMessage[] };
-
-// Writes a window at its absolute offset, keeping loaded messages below it and
-// the previous object for every unchanged message, so finished messages are
-// not re-rendered per frame.
-function mergeWindow(loaded: Transcript, offset: number, window: readonly ChatMessage[], count: number): Transcript {
-  const end = loaded.start + loaded.messages.length;
-  // A window that does not touch what is loaded (first frame, or the view
-  // fell behind) replaces it.
-  if (loaded.messages.length === 0 || offset > end || offset < loaded.start) {
-    return { start: offset, messages: [...window] };
-  }
-  const kept = loaded.messages.slice(0, offset - loaded.start);
-  const merged = window.map((message, index) => {
-    const prior = loaded.messages[offset - loaded.start + index];
-    return prior && sameValue(prior, message) ? prior : message;
-  });
-  return { start: loaded.start, messages: [...kept, ...merged].slice(0, count - loaded.start) };
-}
-
-function prependPage(loaded: Transcript, offset: number, page: readonly ChatMessage[]): Transcript {
-  // Only a page that reaches the loaded range extends it; a stale reply for a
-  // transcript that has since been reset is dropped.
-  if (offset >= loaded.start || offset + page.length < loaded.start) return loaded;
-  return { start: offset, messages: [...page.slice(0, loaded.start - offset), ...loaded.messages] };
-}
 
 export function makeChatSession(options: {
   path: string;
@@ -79,58 +39,61 @@ export function makeChatSession(options: {
   onHistoryLoading?: (loading: boolean) => void;
 }) {
   let snapshot: ChatState | undefined;
-  let transcript: Transcript = { start: 0, messages: [] };
-  let displayed: Transcript = transcript;
-  let historyLoading = false;
-  let historyLimit = 100;
-  let refreshStart: number | undefined;
-  let deferredHistory: typeof HistoryFrameSchema.Type.history | undefined;
-  const setHistoryLoading = (loading: boolean) => {
-    if (historyLoading === loading) return;
-    historyLoading = loading;
-    options.onHistoryLoading?.(loading);
+  const messages = new Map<string, ChatMessage>();
+  let displayed: ChatMessage[] = [];
+  let displayedOffset = 0;
+  let displayedConnected = false;
+  // Do not load older entries merely because an agent updates them. This is
+  // the predecessor of the range the reader has explicitly loaded.
+  let boundary = "";
+  let historyBefore: string | undefined;
+  let batching = false;
+  const setHistoryLoading = (beforeId: string | undefined) => {
+    const wasLoading = historyBefore !== undefined;
+    historyBefore = beforeId;
+    if (wasLoading !== (beforeId !== undefined)) options.onHistoryLoading?.(beforeId !== undefined);
   };
-  // Consumers see the whole loaded range; messageOffset is the transcript
-  // index of messages[0].
+  const upsert = (entries: readonly ChatMessage[]) => {
+    for (const entry of entries) {
+      const prior = messages.get(entry.id);
+      if (!prior || entry.version > prior.version) messages.set(entry.id, entry);
+    }
+  };
   const publish = () => {
-    if (!snapshot || refreshStart !== undefined) return;
-    transcript = {
-      ...transcript,
-      messages: transcript.messages.map((message, index) => {
-        const prior = displayed.messages[transcript.start + index - displayed.start];
-        return prior && sameValue(prior, message) ? prior : message;
-      }),
-    };
-    displayed = transcript;
-    options.onState({ ...snapshot, messages: transcript.messages, messageOffset: transcript.start });
-  };
-  const requestHistory = (limit: number) => {
-    historyLimit = limit;
-    setHistoryLoading(true);
-    connection.send(JSON.stringify({ type: "history", before: transcript.start, limit } satisfies ChatCommand));
-  };
-  const continueRefresh = () => {
-    if (refreshStart === undefined) return;
-    if (transcript.start <= refreshStart) refreshStart = undefined;
-    else if (!historyLoading) requestHistory(100);
-  };
-  const receiveHistory = (history: typeof HistoryFrameSchema.Type.history) => {
     if (!snapshot) return;
-    // A command reply can overtake the snapshot announcing its revision.
-    // Wait for that snapshot before mixing pages and absolute indices.
-    if (history.revision > snapshot.messageRevision) {
-      deferredHistory = history;
+    if (batching) {
+      options.onState({
+        ...snapshot,
+        messages: displayed,
+        messageOffset: displayedOffset,
+        connected: displayedConnected,
+      });
       return;
     }
-    deferredHistory = undefined;
-    if (history.revision < snapshot.historyRevision) {
-      requestHistory(historyLimit);
-      return;
+    const ordered: ChatMessage[] = [];
+    const seen = new Set<string>();
+    let id = snapshot.lastMessageId;
+    while (id && id !== boundary && !seen.has(id)) {
+      const entry = messages.get(id);
+      if (!entry) break;
+      seen.add(id);
+      ordered.push(entry);
+      id = entry.previousId;
     }
-    transcript = prependPage(transcript, history.offset, history.messages);
-    setHistoryLoading(false);
-    continueRefresh();
-    publish();
+    displayed = ordered.reverse();
+    // Retain updates to unloaded entries while a page is in flight so a late
+    // older page cannot overwrite them. Otherwise only the visible range stays.
+    if (historyBefore === undefined) {
+      for (const key of messages.keys()) if (!seen.has(key)) messages.delete(key);
+    }
+    displayedOffset = snapshot.messageCount - displayed.length;
+    displayedConnected = snapshot.connected || historyBefore !== undefined;
+    options.onState({
+      ...snapshot,
+      messages: displayed,
+      messageOffset: displayedOffset,
+      connected: displayedConnected,
+    });
   };
   const connection = makeTerminalSessionController({
     initialStatus: options.initialStatus,
@@ -144,17 +107,17 @@ export function makeChatSession(options: {
     // loaded over the previous one.
     onOpen: () => {
       snapshot = undefined;
-      transcript = { start: 0, messages: [] };
-      displayed = transcript;
-      refreshStart = undefined;
-      deferredHistory = undefined;
-      setHistoryLoading(false);
+      messages.clear();
+      displayed = [];
+      displayedOffset = 0;
+      displayedConnected = false;
+      boundary = "";
+      batching = false;
+      setHistoryLoading(undefined);
       options.onConnection(true);
     },
     onDisconnected: () => {
-      setHistoryLoading(false);
-      refreshStart = undefined;
-      deferredHistory = undefined;
+      setHistoryLoading(undefined);
       options.onConnection(false);
     },
     onMessage: (data) => {
@@ -167,32 +130,34 @@ export function makeChatSession(options: {
       const frame = decoded.value;
       if ("commandError" in frame) {
         if (frame.command === "history") {
-          refreshStart = undefined;
-          deferredHistory = undefined;
-          setHistoryLoading(false);
+          setHistoryLoading(undefined);
           publish();
         }
         options.onError(frame.commandError, { command: frame.command, id: frame.id });
       } else if ("accepted" in frame) {
         options.onAccepted?.(frame.accepted);
       } else if ("history" in frame) {
-        receiveHistory(frame.history);
-      } else {
-        if (snapshot && frame.historyRevision > snapshot.messageRevision && transcript.start < frame.messageOffset) {
-          refreshStart = Math.min(refreshStart ?? transcript.start, transcript.start);
-          // Rebuild separately while the last published rows remain visible.
-          // Cached indices may have shifted after a steering insertion.
-          transcript = { start: frame.messageOffset, messages: [] };
+        if (frame.history.beforeId === historyBefore) {
+          upsert(frame.history.messages);
+          const first = frame.history.messages[0];
+          if (first) boundary = messages.get(first.id)!.previousId;
+          setHistoryLoading(undefined);
+          publish();
         }
-        transcript = mergeWindow(transcript, frame.messageOffset, frame.messages, frame.messageCount);
+      } else if ("updates" in frame) {
+        upsert(frame.updates.messages);
+        snapshot = frame.updates;
+        batching = frame.updates.more;
+        publish();
+      } else {
+        messages.clear();
+        upsert(frame.messages);
+        boundary = frame.messages[0]?.previousId ?? "";
         snapshot = frame;
-        if (deferredHistory) receiveHistory(deferredHistory);
-        continueRefresh();
+        batching = false;
         publish();
       }
-      // The host can still serve history after the agent exits. Complete a
-      // refresh of its final results before closing this attachment.
-      if (snapshot && !snapshot.connected && !historyLoading) return "stop";
+      if (snapshot && !snapshot.connected && !batching && historyBefore === undefined) return "stop";
       return "continue";
     },
   });
@@ -203,11 +168,12 @@ export function makeChatSession(options: {
       connection.send(JSON.stringify(command));
       return true;
     },
-    // Asks for the page before the earliest loaded message. One request is in
-    // flight at a time, and none once the transcript start is loaded.
+    // History is loaded only on the reader's request, never to recover an update.
     loadEarlier(limit = 100): boolean {
-      if (historyLoading || !snapshot || transcript.start === 0 || !connection.isConnected()) return false;
-      requestHistory(limit);
+      const first = displayed[0];
+      if (historyBefore !== undefined || !first?.previousId || !connection.isConnected()) return false;
+      setHistoryLoading(first.id);
+      connection.send(JSON.stringify({ type: "history", beforeId: first.id, limit } satisfies ChatCommand));
       return true;
     },
   };

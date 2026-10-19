@@ -248,14 +248,19 @@ type imageReferenceChat struct {
 	stallingChat
 	snapshot []byte
 	history  []byte
+	changes  chan struct{}
+	batches  map[uint64]localruntime.ACPBatch
 }
 
-func (c *imageReferenceChat) Snapshot() ([]byte, error)        { return c.snapshot, nil }
-func (c *imageReferenceChat) History(int, int) ([]byte, error) { return c.history, nil }
+func (c *imageReferenceChat) Snapshot() ([]byte, error)           { return c.snapshot, nil }
+func (c *imageReferenceChat) History(string, int) ([]byte, error) { return c.history, nil }
 func (c *imageReferenceChat) Subscribe() (<-chan struct{}, func()) {
-	changes := make(chan struct{}, 1)
-	changes <- struct{}{}
-	return changes, func() {}
+	c.changes <- struct{}{}
+	return c.changes, func() {}
+}
+
+func (c *imageReferenceChat) Updates(after uint64) (localruntime.ACPBatch, error) {
+	return c.batches[after], nil
 }
 
 func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
@@ -274,7 +279,14 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 	message.ToolContent[0].Content = &localruntime.ACPContent{Type: "resource_link", URI: (&url.URL{Scheme: "file", Path: path}).String(), Name: "screenshot.svg"}
 	history, err := json.Marshal(map[string]localruntime.ACPHistory{"history": {Offset: 3, Messages: []localruntime.ACPMessage{message}}})
 	require.NoError(err)
-	chat := &imageReferenceChat{snapshot: snapshot, history: history}
+	batches := make(map[uint64]localruntime.ACPBatch)
+	for cursor := range uint64(2) {
+		message.Version = cursor + 1
+		data, err := json.Marshal(map[string]localruntime.ACPChanges{"updates": {ACPState: localruntime.ACPState{Messages: []localruntime.ACPMessage{message}, MessageCursor: cursor + 1}, More: cursor == 0}})
+		require.NoError(err)
+		batches[cursor] = localruntime.ACPBatch{Data: data, MessageCursor: cursor + 1, More: cursor == 0}
+	}
+	chat := &imageReferenceChat{snapshot: snapshot, history: history, changes: make(chan struct{}, 1), batches: batches}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
 	for range 2 {
@@ -292,7 +304,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 		assert.Equal(base64.StdEncoding.EncodeToString(image), content.Data)
 		assert.Equal(path, content.URI)
 		assert.True(state.Connected)
-		require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"history","before":4,"limit":1}`)))
+		require.NoError(conn.Write(ctx, websocket.MessageText, []byte(`{"type":"history","beforeId":"message-4","limit":1}`)))
 		_, data, readErr = conn.Read(ctx)
 		require.NoError(readErr)
 		var page map[string]localruntime.ACPHistory
@@ -300,14 +312,30 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 		assert.Equal(3, page["history"].Offset)
 		require.Len(page["history"].Messages, 1)
 		assert.Equal(base64.StdEncoding.EncodeToString(image), page["history"].Messages[0].ToolContent[0].Content.Data)
+		chat.changes <- struct{}{}
+		for version := uint64(1); version <= 2; version++ {
+			_, data, readErr = conn.Read(ctx)
+			require.NoError(readErr)
+			var updates map[string]localruntime.ACPChanges
+			require.NoError(json.Unmarshal(data, &updates))
+			change := updates["updates"]
+			require.Len(change.Messages, 1)
+			assert.Equal(version, change.MessageCursor)
+			assert.Equal(version, change.Messages[0].Version)
+			assert.Equal(version == 1, change.More)
+			assert.Equal(base64.StdEncoding.EncodeToString(image), change.Messages[0].ToolContent[0].Content.Data)
+		}
 		cancel()
 		require.NoError(conn.CloseNow())
 	}
 }
 
-func (c *stallingChat) Snapshot() ([]byte, error)        { return []byte(`{}`), nil }
-func (c *stallingChat) History(int, int) ([]byte, error) { return []byte(`{}`), nil }
-func (c *stallingChat) Page(int, int) ([]byte, error)    { return []byte(`{}`), nil }
+func (c *stallingChat) Updates(uint64) (localruntime.ACPBatch, error) {
+	return localruntime.ACPBatch{}, nil
+}
+func (c *stallingChat) Snapshot() ([]byte, error)           { return []byte(`{}`), nil }
+func (c *stallingChat) History(string, int) ([]byte, error) { return []byte(`{}`), nil }
+func (c *stallingChat) Page(int, int) ([]byte, error)       { return []byte(`{}`), nil }
 func (c *stallingChat) Subscribe() (<-chan struct{}, func()) {
 	return make(chan struct{}), func() {}
 }
@@ -354,31 +382,31 @@ func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {
 // historyChat records history requests and answers them with a page frame.
 type historyChat struct {
 	stallingChat
-	requests chan [2]int
+	requests chan localruntime.ACPHistoryRequest
 }
 
-func (c *historyChat) History(before, limit int) ([]byte, error) {
-	c.requests <- [2]int{before, limit}
+func (c *historyChat) History(beforeID string, limit int) ([]byte, error) {
+	c.requests <- localruntime.ACPHistoryRequest{BeforeID: beforeID, Limit: limit}
 	return []byte(`{"history":{"offset":3,"messages":[]}}`), nil
 }
 
 // Earlier transcript pages are answered on the connection that asked.
 func TestACPChatAnswersHistoryRequests(t *testing.T) {
 	t.Parallel()
-	chat := &historyChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}, make(chan [2]int, 1)}
+	chat := &historyChat{stallingChat{release: make(chan struct{}), cancelled: make(chan struct{}), done: make(chan struct{})}, make(chan localruntime.ACPHistoryRequest, 1)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
 	conn, _, err := websocket.Dial(t.Context(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	require.NoError(t, err)
 	defer conn.CloseNow()
 
-	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"history","before":13,"limit":10}`)))
+	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"history","beforeId":"message-13","limit":10}`)))
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 	_, data, err := conn.Read(ctx)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"history":{"offset":3,"messages":[]}}`, string(data))
-	assert.Equal(t, [2]int{13, 10}, <-chat.requests)
+	assert.Equal(t, localruntime.ACPHistoryRequest{BeforeID: "message-13", Limit: 10}, <-chat.requests)
 }
 
 // failingChat refuses every command.

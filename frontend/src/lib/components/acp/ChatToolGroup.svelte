@@ -7,7 +7,6 @@
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { isImageContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
-  import { messageKeys } from "./chat-timeline.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
@@ -23,7 +22,7 @@
   } = $props()
   const id = $props.id()
   let open = $state(false)
-  let expanded = $state<Record<string | number, boolean>>({})
+  let expanded = $state<Record<string, boolean>>({})
   function hasDetails(message: ChatMessage): boolean {
     return !!(
       message.kind ||
@@ -34,7 +33,6 @@
     )
   }
 
-  const keys = $derived(messageKeys(messages))
   const tools = $derived(messages.filter((message) => message.role === "tool"))
   const thoughts = $derived(messages.length - tools.length)
   const failed = $derived(
@@ -84,8 +82,8 @@
   </button>
   {#if open}
     <ul id={`${id}-list`} class="list">
-      {#each messages as message, index (keys[index] ?? index)}
-        {@const key = keys[index] ?? index}
+      {#each messages as message, index (message.id)}
+        {@const key = message.id}
         {#if message.role === "thought"}
           <li class="thought-row"><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
         {:else}
@@ -143,7 +141,7 @@
       {/each}
     </ul>
   {/if}
-  {#each messages as message, messageIndex (messageIndex)}
+  {#each messages as message (message.id)}
     {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
       {#if item.content && (isImageContent(item.content) || decodeAppDescriptor(item.content))}
         <ChatContentBlock content={item.content} />

@@ -71,11 +71,13 @@ export const schemaConstraints = {
     number: { minimum: 1 },
   },
   WorkspaceChat: {
-    historyRevision: { minimum: 0 },
-    messageRevision: { minimum: 0 },
+    messageCursor: { minimum: 0 },
   },
   WorkspaceChatCommand: {
     generation: { minimum: 0 },
+  },
+  WorkspaceChatMessage: {
+    version: { minimum: 0 },
   },
   WorkspaceLaunchPull: {
     snapshot_revision: { minimum: 1 },

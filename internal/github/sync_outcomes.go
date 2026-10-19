@@ -33,7 +33,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		//nolint:errorlint // Inspect immediate causes so disabled nodes cannot hide sibling failures.
 		switch wrapped := err.(type) {
 		case *platform.Error:
-			if wrapped.Code != platform.ErrCodeRepositoryFeatureDisabled && wrapped.Err != nil {
+			if wrapped != nil && wrapped.Code != platform.ErrCodeRepositoryFeatureDisabled && wrapped.Err != nil {
 				p.observe(repo, source, wrapped.Err)
 			}
 		case interface{ Unwrap() []error }:

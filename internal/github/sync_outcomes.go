@@ -12,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
@@ -158,6 +159,8 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return "not_found"
+	case errors.Is(err, procutil.ErrProcessLimitReached):
+		return "other"
 	case errors.Is(err, context.DeadlineExceeded), networkError:
 		return "network"
 	case status >= 400 && status < 500:

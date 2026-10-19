@@ -22,6 +22,7 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -220,6 +221,7 @@ func TestSyncFailureReason(t *testing.T) {
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
+		{"process capacity", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), "other"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"unknown", errors.New("private error details"), "other"},
@@ -397,6 +399,7 @@ func TestSyncFailedRefsClassification(t *testing.T) {
 		{"unclassified Git failure", errors.New("git exited with status 128"), "other"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"network", context.DeadlineExceeded, "network"},
+		{"process capacity", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), "other"},
 		{"local path", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: fs.ErrPermission}), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

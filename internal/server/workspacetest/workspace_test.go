@@ -149,7 +149,10 @@ exec "$@"
 		if readErr == nil {
 			continue
 		}
-		require.Equal(websocket.StatusNormalClosure, websocket.CloseStatus(readErr))
+		// Canceling the bridge's pending output can close the transport before
+		// the close frame arrives. Require a disconnect before our deadline,
+		// then verify below that the following input never reached the shell.
+		require.NoError(readCtx.Err(), "terminal did not disconnect after failed claim: %v", readErr)
 		break
 	}
 	_, err = os.Stat(inputMarker)

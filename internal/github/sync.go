@@ -867,7 +867,7 @@ type Syncer struct {
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	onSyncFailed     func(source, reason string)
-	syncFailures     map[string]map[string]string
+	syncFailures     map[string]map[string]bool
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
@@ -5092,8 +5092,9 @@ func (s *Syncer) syncRepoIdentity(
 		}
 		return db.RepoIdentity{}, nil, err
 	}
-	// Identity reads share the list fetches' essential reserve and follow
-	// renames by provider ID when available.
+	// A refused identity resolve aborts the whole repo sync before the
+	// list fetches, so it shares their essential budget reserve. A ref
+	// that already carries its ID resolves by ID, following renames.
 	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), platformRepoRef(repo))
 	if err != nil {
 		s.observeRepoFailure(ctx, repo, err)
@@ -8342,9 +8343,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
 		ctx, client, repo, number,
 	)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "merge_requests", err)
-	}
+	s.observeSyncItem(ctx, repo, "merge_requests", err)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -8690,9 +8689,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	requestedAt := s.nowUTC()
 	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "merge_requests", err)
-	}
+	s.observeSyncItem(ctx, repo, "merge_requests", err)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -8859,7 +8856,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return calls, pending, nil
 	}
-	s.observeSync(ctx, repo, "checks", err)
+	s.observeSyncItem(ctx, repo, "checks", err)
 	if err != nil {
 		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
@@ -8984,9 +8981,7 @@ func (s *Syncer) fetchIssueDetail(
 		if outcomeErr := provider.IssueLookupOutcomeError(
 			ctx, platformRepoRef(repo), number, ghIssue, err,
 		); outcomeErr != nil {
-			if !errors.Is(outcomeErr, platform.ErrNotFound) {
-				s.observeSync(ctx, repo, "issues", outcomeErr)
-			}
+			s.observeSyncItem(ctx, repo, "issues", outcomeErr)
 			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
 		}
 		if outcomeErr := provider.IssuePullRequestOutcomeError(
@@ -9165,9 +9160,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "issues", err)
-	}
+	s.observeSyncItem(ctx, repo, "issues", err)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number,
@@ -9535,7 +9528,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 	requestedAt := s.nowUTC()
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSync(ctx, repo, "checks", err)
+		s.observeSyncItem(ctx, repo, "checks", err)
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9546,7 +9539,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSync(ctx, repo, "checks", err)
+		s.observeSyncItem(ctx, repo, "checks", err)
 		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -10480,10 +10473,11 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 	ghIssue, err := client.GetIssue(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
 	if outcomeErr := s.issueOnlyFetchOutcomeError(ctx, repo, number, ghIssue, err); outcomeErr != nil {
-		if !errors.Is(outcomeErr, platform.ErrNotFound) {
-			s.observeSync(ctx, repo, "issues", outcomeErr)
-		}
+		s.observeSyncItem(ctx, repo, "issues", outcomeErr)
 		// A not_found without a destination is a true removal and gets a
 		// terminal local state. A transfer carries the destination and
 		// keeps failing the cycle so the maintainer sees the moved item
@@ -10587,11 +10581,12 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 		return fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "issues", err)
-	}
+	s.observeSyncItem(ctx, repo, "issues", err)
 	if err != nil {
-		// Ambiguous absence retains the local row for a later retry.
+		// No tombstone here: a bare provider 404 is ambiguous on the
+		// neutral path (GitLab hides inaccessible items behind 404), so
+		// the row is retained and the failure surfaces as partial. Only
+		// GitHub's classified lookup can distinguish a true removal.
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}
 	normalized := platformdb.DBIssue(repoID, issue)
@@ -10799,12 +10794,12 @@ func (s *Syncer) drainDetailQueue(
 				itemCtx, repo, repoID, qi.Number,
 			)
 		}
-		disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 		if providerCalls > 0 {
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
 
 		if err != nil {
+			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 			disabled := disabledErr != nil &&
 				s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
 			if providerCalls > 0 {
@@ -12298,9 +12293,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	}
 	requestedAt := s.nowUTC()
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "merge_requests", err)
-	}
+	s.observeSyncItem(ctx, repo, "merge_requests", err)
+	// Route fetch failures and detected transfers through the canonical
+	// lookup classification so removed, inaccessible, and moved items
+	// surface typed outcomes instead of generic upstream failures.
 	if outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, ghPR, err); outcomeErr != nil {
 		if errors.Is(outcomeErr, platform.ErrLookupNotPresent) &&
 			errors.Is(outcomeErr, platform.ErrNotFound) && lookupDestination(outcomeErr) == nil {
@@ -12494,11 +12490,13 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 		return s.fetchAndUpdateClosed(ctx, repo, repoID, number, cloneFetchOK)
 	}
 
-	requestedAt := s.nowUTC()
-	mr, err := reader.GetMergeRequest(ctx, platformRepoRef(repo), number)
-	if syncFailureReason(err) != "not_found" {
-		s.observeSync(ctx, repo, "merge_requests", err)
+	mrReader, err := s.mergeRequestReaderFor(repo)
+	if err != nil {
+		return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
+	requestedAt := s.nowUTC()
+	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+	s.observeSyncItem(ctx, repo, "merge_requests", err)
 	if err != nil {
 		return fmt.Errorf("get closed MR #%d: %w", number, err)
 	}

@@ -54,10 +54,13 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 
 func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, err error) {
 	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
-		if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
-			err = disabled
-		}
 		pass.observe(repo, source, err)
+	}
+}
+
+func (s *Syncer) observeSyncItem(ctx context.Context, repo RepoRef, source string, err error) {
+	if syncFailureReason(err) != "not_found" {
+		s.observeSync(ctx, repo, source, err)
 	}
 }
 
@@ -82,7 +85,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		return
 	}
 	if s.syncFailures == nil {
-		s.syncFailures = make(map[string]map[string]string)
+		s.syncFailures = make(map[string]map[string]bool)
 	}
 	for _, source := range syncSources {
 		live := make(map[string]bool, len(tracked))
@@ -96,7 +99,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		s.featureCooldowns.mu.Unlock()
 		failures := s.syncFailures[source]
 		if failures == nil {
-			failures = make(map[string]string)
+			failures = make(map[string]bool)
 			s.syncFailures[source] = failures
 		}
 		for key := range failures {
@@ -104,6 +107,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			}
 		}
+		wasFailing := len(failures) > 0
 		var reasons []string
 		for key, reason := range pass.results[source] {
 			if !live[key] {
@@ -112,13 +116,11 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			if reason == "" {
 				delete(failures, key)
 			} else {
-				if failures[key] == "" {
-					reasons = append(reasons, reason)
-				}
-				failures[key] = reason
+				reasons = append(reasons, reason)
+				failures[key] = true
 			}
 		}
-		if s.onSyncFailed != nil {
+		if !wasFailing && s.onSyncFailed != nil {
 			for _, reason := range syncReasons {
 				if slices.Contains(reasons, reason) {
 					s.onSyncFailed(source, reason)

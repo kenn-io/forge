@@ -46,8 +46,8 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		wantNow   int
 		wantLater int
 	}{
-		{"recovery overlaps new failure", a, []observation{{a, nil}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
-		{"persistent failure overlaps new failure", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
+		{"recovery overlaps new failure", a, []observation{{a, nil}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
+		{"persistent failure overlaps new failure", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
 		{"cadence skipped", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"disabled", a, []observation{{a, platform.ErrRepositoryFeatureDisabled}}, []RepoRef{a, b}, a, 1, 2},
@@ -134,17 +134,55 @@ func TestSyncFailedPassEligibility(t *testing.T) {
 }
 
 func TestSyncFailedRefsAndChecks(t *testing.T) {
-	s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
-		p.checksErr = platform.ErrPermissionDenied
-	})
-	seedObservedMR(t, d, repoID, "")
-	bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
-	require.NoError(t, err)
-	s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
+	for _, failure := range []error{platform.ErrPermissionDenied, platform.ErrNotFound} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
+				p.checksErr = failure
+			})
+			seedObservedMR(t, d, repoID, "")
+			bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
+			require.NoError(t, err)
+			s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			if errors.Is(failure, platform.ErrNotFound) {
+				assert.Empty(t, events)
+			} else {
+				assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
+			}
+		})
+	}
+}
+
+func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
+	for _, endpoint := range []string{"check runs", "combined status"} {
+		t.Run(endpoint, func(t *testing.T) {
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			client := &mockClient{}
+			var events [][2]string
+			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			for i, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable, http.StatusNotFound, http.StatusServiceUnavailable} {
+				failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
+				if endpoint == "check runs" {
+					client.checkRunsErr = failure
+				} else {
+					client.ciStatusErr = failure
+				}
+				pass := &syncPass{}
+				ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+				_, err := s.fetchGitHubCIStatus(ctx, repo, 7, "head")
+				require.NoError(t, err)
+				s.finishSyncPass(pass, []RepoRef{repo})
+				if i == 0 {
+					assert.Empty(t, events)
+				} else {
+					assert.Equal(t, [][2]string{{"checks", "provider"}}, events)
+				}
+			}
+		})
+	}
 }
 
 func TestSyncFailureReason(t *testing.T) {

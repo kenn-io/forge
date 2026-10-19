@@ -675,7 +675,9 @@ show. Installations that already had work when they upgraded are not reported.
 At startup and daily while running, the daemon reports the number of tracked
 repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
-A full sync pass reports `sync_failed` when a source starts failing. It sends
+A full sync pass reports `sync_failed` when a source goes from no retained
+repository failures to failing. Further repository failures during that outage
+produce no additional event. It sends
 only `sync_source` (`merge_requests`, `issues`, `checks`, or `refs`) and `reason`
 (`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`), with
 unlisted values sent as `other`. Primary list, detail, CI, and clone

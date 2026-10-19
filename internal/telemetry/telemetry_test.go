@@ -130,9 +130,6 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 			reporter := &Reporter{daemon: daemon, backend: backend}
 
 			properties := map[string]any{"repo_count": "0-5"}
-			if tt.event == "sync_failed" {
-				properties = map[string]any{"sync_source": "issues", "reason": "auth"}
-			}
 			err := reporter.Capture(tt.event, properties)
 			switch {
 			case tt.wantErr != nil:

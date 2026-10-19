@@ -39,7 +39,7 @@ func TestSetupWorkFromWorkspace(t *testing.T) {
 	}
 }
 
-func TestHasSetupWorkBehindUntrackedRepository(t *testing.T) {
+func TestItemListsPaginateTrackedRepositories(t *testing.T) {
 	for _, kind := range []string{"pr", "issue"} {
 		t.Run(kind, func(t *testing.T) {
 			require := require.New(t)

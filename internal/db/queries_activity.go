@@ -980,27 +980,28 @@ func activityRepoFilterCondition(filters []RepoFilter, args *[]any) string {
 	return "(" + strings.Join(groups, " OR ") + ")"
 }
 
+// repoIDCondition binds the repository IDs as one JSON array so a large
+// tracked set cannot exceed SQLite's bound-variable limit.
 func repoIDCondition(column string, repoIDs []int64, args *[]any) string {
 	if repoIDs == nil {
 		return ""
 	}
-	placeholders := make([]string, 0, len(repoIDs))
-	seen := make(map[int64]struct{}, len(repoIDs))
+	ids := make([]byte, 0, len(repoIDs)*8+2)
+	ids = append(ids, '[')
 	for _, repoID := range repoIDs {
 		if repoID <= 0 {
 			continue
 		}
-		if _, ok := seen[repoID]; ok {
-			continue
+		if len(ids) > 1 {
+			ids = append(ids, ',')
 		}
-		seen[repoID] = struct{}{}
-		placeholders = append(placeholders, "?")
-		*args = append(*args, repoID)
+		ids = strconv.AppendInt(ids, repoID, 10)
 	}
-	if len(placeholders) == 0 {
+	if len(ids) == 1 {
 		return "0 = 1"
 	}
-	return column + " IN (" + strings.Join(placeholders, ",") + ")"
+	*args = append(*args, string(append(ids, ']')))
+	return column + " IN (SELECT value FROM json_each(?))"
 }
 
 // activityNotificationRepoFilterCondition scopes the notification union to

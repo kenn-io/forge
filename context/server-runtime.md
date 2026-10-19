@@ -1,17 +1,22 @@
 # Server Runtime
 
-- With telemetry enabled at startup, local and spoke daemons run setup checks at startup, each minute and shutdown; the first ready workspace or readable stored PR or issue counts, including cached work. A failed provider source must let the other source qualify
-  (`internal/server/setup.go::Server.HasSetupWork`).
-  Use tracked local DB rows without workspace snapshots, or the active spoke's hub provider source; skip remote checks while spoke federation is inactive. Provider requests follow caller cancellation and the client's 15-second timeout; shutdown bounds the whole check to 900 ms.
-  Honor caller cancellation while waiting for another check; remember queue acceptance while retrying the `telemetry.setup_finished` marker write; marker presence means accepted, not delivered.
-  Delivery is best effort; a crash between acceptance and marker persistence can repeat the event after restart. A crash after saving the marker or a reporter shutdown timeout can still lose the event
-  (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
-- Startup liveness and ready health probes expose the same running build identity
-  without a workspace bearer. Builds without VCS metadata must stamp the full
-  commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)
   (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
+- Setup checks run on non-worker daemons with telemetry enabled at startup:
+  at startup, each minute, and at shutdown (bounded to 900 ms). A ready
+  workspace or a readable PR or issue qualifies: tracked local DB rows without
+  workspace snapshots, or the active spoke's hub provider source. Either pull or
+  issue source alone qualifies; inactive spokes skip remote checks
+  (`internal/server/setup.go::Server.HasSetupWork`).
+- The `telemetry.setup_finished` marker is written only after the reporter
+  queues the event, and acceptance is remembered while the marker write retries.
+  The marker means accepted, not delivered. Migration 69 writes it without
+  reporting for databases that already held work, so upgrades do not count as
+  first-run setups (`cmd/kenn-forge/notifications.go::setupFinished.capture`).
+- Startup liveness and ready health probes expose the same running build identity
+  without a workspace bearer. Builds without VCS metadata must stamp the full
+  commit (`internal/server/routepolicy/health_routes.go::HealthyResponse`).
 - Screen telemetry uses Kit's durable claims per installation and UTC day;
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).

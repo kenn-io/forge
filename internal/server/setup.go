@@ -9,6 +9,15 @@ import (
 	"go.kenn.io/forge/internal/server/pullapi"
 )
 
+// filterTrackedRepos limits stored repositories to those the pull and issue
+// lists show, so setup counts the same work the UI can read.
+func (s *Server) filterTrackedRepos(repos []db.Repo) []db.Repo {
+	if s.cfg == nil {
+		return repos
+	}
+	return s.repoapi.FilterConfiguredRepos(repos)
+}
+
 // HasSetupWork checks for ready local workspaces and readable provider items.
 func (s *Server) HasSetupWork(ctx context.Context) (bool, error) {
 	workspaces, err := s.db.ListWorkspaces(ctx)
@@ -29,9 +38,7 @@ func (s *Server) HasSetupWork(ctx context.Context) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		if s.cfg != nil {
-			repos = s.repoapi.FilterConfiguredRepos(repos)
-		}
+		repos = s.filterTrackedRepos(repos)
 		allowedRepoIDs = make([]int64, 0, len(repos))
 		for _, repo := range repos {
 			allowedRepoIDs = append(allowedRepoIDs, repo.ID)

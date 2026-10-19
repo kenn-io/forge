@@ -663,7 +663,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 					if setup != nil {
 						ctx, cancel := context.WithTimeout(context.Background(), 900*time.Millisecond)
 						if err := setup.capture(ctx); err != nil {
-							slog.Warn("capture setup finished", "err", err)
+							slog.Debug("capture setup finished", "err", err)
 						}
 						cancel()
 					}

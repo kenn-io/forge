@@ -973,17 +973,12 @@ func newServer(
 				}
 				return s.fleetAPI.RequestWorkspaceCleanup(ctx, hostKey, workspaceID)
 			},
-			WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
-			ViewerLogins:      s.authapi.ResolveAuthenticatedViewerLogins,
-			ProviderSource:    pullProviderSource,
-			ProviderWriteGate: s.providerWriteGate,
-			FleetSelfKey:      s.fleetAPI.SelfKey,
-			FilterRepos: func(repos []db.Repo) []db.Repo {
-				if s.cfg == nil {
-					return repos
-				}
-				return s.repoapi.FilterConfiguredRepos(repos)
-			},
+			WorkspaceSubjects:             s.workspaceAPI.WorkspaceSubjectSnapshot,
+			ViewerLogins:                  s.authapi.ResolveAuthenticatedViewerLogins,
+			ProviderSource:                pullProviderSource,
+			ProviderWriteGate:             s.providerWriteGate,
+			FleetSelfKey:                  s.fleetAPI.SelfKey,
+			FilterRepos:                   s.filterTrackedRepos,
 			RepoOperations:                s.operationapi.RepoOperations,
 			RepoOperationsForMergeRequest: s.operationapi.RepoOperationsForMergeRequest,
 			EnqueueDetailSyncOrRerun:      s.syncevents.EnqueueDetailSyncOrRerun,
@@ -993,20 +988,15 @@ func newServer(
 			MarkClosedLinkedNotificationsDone: s.notificationapi.MarkClosedLinkedNotificationsDone,
 		})
 		s.issueAPI = issueapi.New(issueapi.Deps{
-			DB:                database,
-			Resolver:          repoResolver,
-			Syncer:            syncer,
-			Now:               func() time.Time { return s.now() },
-			Config:            streamapi.IssueConfigSnapshot(cfg),
-			WorkspaceSubjects: s.workspaceAPI.WorkspaceSubjectSnapshot,
-			ViewerLogins:      s.authapi.ResolveAuthenticatedViewerLogins,
-			ProviderSource:    issueProviderSource,
-			FilterRepos: func(repos []db.Repo) []db.Repo {
-				if s.cfg == nil {
-					return repos
-				}
-				return s.repoapi.FilterConfiguredRepos(repos)
-			},
+			DB:                                database,
+			Resolver:                          repoResolver,
+			Syncer:                            syncer,
+			Now:                               func() time.Time { return s.now() },
+			Config:                            streamapi.IssueConfigSnapshot(cfg),
+			WorkspaceSubjects:                 s.workspaceAPI.WorkspaceSubjectSnapshot,
+			ViewerLogins:                      s.authapi.ResolveAuthenticatedViewerLogins,
+			ProviderSource:                    issueProviderSource,
+			FilterRepos:                       s.filterTrackedRepos,
 			RepoOperations:                    s.operationapi.RepoOperations,
 			MarkClosedLinkedNotificationsDone: s.notificationapi.MarkClosedLinkedNotificationsDone,
 		})

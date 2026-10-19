@@ -73,7 +73,13 @@ func startSetupFinished(handle *backgroundLoopHandle, executionWorker bool, data
 		return nil
 	}
 	setup := &setupFinished{database: database, reporter: reporter, hasWork: hasWork}
-	handle.startTicker("capture setup finished", time.Minute, setup.capture)
+	// Setup telemetry is best effort, and spokes retry an unreachable hub every minute.
+	handle.startTicker("capture setup finished", time.Minute, func(ctx context.Context) error {
+		if err := setup.capture(ctx); err != nil && ctx.Err() == nil {
+			slog.Debug("capture setup finished", "err", err)
+		}
+		return nil
+	})
 	return setup
 }
 

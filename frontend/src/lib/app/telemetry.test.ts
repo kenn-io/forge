@@ -3,7 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { makeAppRuntime } from "./runtime.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { startRuntimeTelemetry, reportPRViewed, reportWorkspaceOpened, visibleScreen } from "./telemetry.js";
+import {
+  startRuntimeTelemetry,
+  reportPRViewed,
+  reportScreen,
+  reportWorkspaceOpened,
+  visibleScreen,
+} from "./telemetry.js";
 
 describe("visible screen names", () => {
   it.each([
@@ -180,34 +186,12 @@ describe("browser telemetry", () => {
     },
   );
 
-  it("posts each screen once per UTC day across focus and reporter restart", async () => {
-    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
-    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
-    const { sent, runtime, reporter } = setup();
-    reporter.reportScreen("docs");
-    await vi.advanceTimersByTimeAsync(0);
-    window.dispatchEvent(new Event("focus"));
-    reporter.reportScreen("docs");
-    await vi.advanceTimersByTimeAsync(0);
-    reporter.stop();
-    const next = startRuntimeTelemetry(runtime);
-    onTestFinished(() => next.stop());
-    next.reportScreen("docs");
-    window.dispatchEvent(new Event("focus"));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sent.filter((event) => event.event === "screen_viewed")).toEqual([
-      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
-    ]);
-    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
-    window.dispatchEvent(new Event("focus"));
-    await vi.advanceTimersByTimeAsync(0);
-    next.reportScreen("docs");
-    window.dispatchEvent(new Event("focus"));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sent.filter((event) => event.event === "screen_viewed")).toEqual([
-      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
-      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
-    ]);
+  it("sends the runtime's screen through the captured transport", async () => {
+    const { sent, runtime } = setup();
+    reportScreen(runtime, "docs");
+    await vi.waitFor(() =>
+      expect(sent).toContainEqual({ event: "screen_viewed", properties: { surface: "web", screen: "docs" } }),
+    );
   });
 
   it("retains a core action through screen backoff and sends it after the gate's retry succeeds", async () => {

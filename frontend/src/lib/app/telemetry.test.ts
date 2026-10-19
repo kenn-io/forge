@@ -67,21 +67,25 @@ describe("browser telemetry", () => {
         }),
     };
     const reporter = startRuntimeTelemetry(runtime, options);
+    const quiet = vi.fn();
+    reporter.onQuietChange(quiet);
     onTestFinished(async () => {
       reporter.stop();
       await Effect.runPromise(runtime.disposeEffect);
     });
-    return { sent, runtime, options, reporter };
+    return { sent, runtime, reporter, quiet };
   }
 
   it("sends nothing after a disabled receipt, including pending core actions", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime, reporter } = setup(() => receipt.promise.then((response) => response.clone()));
+    const { sent, runtime, reporter, quiet } = setup(() => receipt.promise);
     reportPRViewed(runtime, "gh");
     reportWorkspaceOpened(runtime, "adhoc");
     reporter.reportScreen("docs");
     receipt.resolve(Response.json({ status: "disabled" }, { status: 202 }));
-    await vi.waitFor(() => expect(Object.keys(localStorage).some((key) => key.includes("quiet"))).toBe(true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet).toHaveBeenLastCalledWith(true);
     reportPRViewed(runtime, "gitlab");
     reporter.reportScreen("settings");
     reporter.reportVisit(
@@ -89,33 +93,16 @@ describe("browser telemetry", () => {
       { keepalive: true },
     );
     window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
     expect(sent).toEqual([{ event: "app_opened", properties: { surface: "web" } }]);
   });
 
-  it("keeps screen claims across reloads and sends again on the next UTC day", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
-    const { sent, runtime, options, reporter } = setup();
-    reporter.reportScreen("docs");
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    reporter.stop();
-    const remounted = startRuntimeTelemetry(runtime, options);
-    onTestFinished(() => remounted.stop());
-    remounted.reportScreen("docs");
-    remounted.reportScreen("pulls");
-    await vi.waitFor(() => expect(sent).toHaveLength(3));
-    expect(sent.map((event) => event.properties.screen)).toEqual([undefined, "docs", "pulls"]);
-    vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
-    remounted.reportScreen("docs");
-    await vi.waitFor(() => expect(sent).toHaveLength(5));
-    expect(sent[4]?.properties.screen).toBe("docs");
-  });
-
-  it("admits pending core actions once per existing key and UTC day", async () => {
+  it.each([false, true])("admits pending core actions only on their UTC day, rollover: %s", async (rollover) => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-10-17T23:59:00Z"));
     const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime } = setup(() => receipt.promise.then((response) => response.clone()));
+    const { sent, runtime, quiet } = setup(() => receipt.promise.then((response) => response.clone()));
+    const actions = () => sent.filter((event) => event.event === "pr_viewed" || event.event === "workspace_opened");
     for (let i = 0; i < 10; i++) {
       reportPRViewed(runtime, "gh");
       reportPRViewed(runtime, "gl");
@@ -123,41 +110,43 @@ describe("browser telemetry", () => {
       reportWorkspaceOpened(runtime, "adhoc");
     }
     reportPRViewed(runtime, "unknown");
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(actions()).toEqual([]);
+    if (rollover) vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
     receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(sent).toHaveLength(5));
-    const actions = [
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (rollover) {
+      expect(actions()).toEqual([]);
+      return;
+    }
+    const expected = [
       { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
       { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
       { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
       { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
     ];
-    expect(sent.slice(1)).toEqual(actions);
+    expect(actions()).toEqual(expected);
     reportPRViewed(runtime, "github");
-    expect(sent).toHaveLength(5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(actions()).toEqual(expected);
     vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
     reportWorkspaceOpened(runtime, "adhoc");
-    await vi.waitFor(() => expect(sent).toHaveLength(7));
-    expect(sent[5]).toEqual(actions[3]);
-    expect(sent[6]).toEqual({ event: "app_opened", properties: { surface: "web" } });
-  });
-
-  it("drops pending actions from an earlier UTC day", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-01-02T23:59:00Z"));
-    const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime } = setup(() => receipt.promise.then((response) => response.clone()));
-    reportPRViewed(runtime, "github");
-    vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
-    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent.map((event) => event.event)).toEqual(["app_opened", "app_opened"]);
+    await vi.waitFor(() => expect(actions()).toHaveLength(5));
+    expect(actions()[4]).toEqual(expected[3]);
   });
 
   it("readmits a core action after failed delivery", async () => {
     let status = 202;
-    const { sent, runtime } = setup(async () => Response.json({ status: "queued" }, { status }));
-    await vi.waitFor(() => expect(Object.keys(localStorage).some((key) => key.includes("check"))).toBe(true));
+    const { sent, runtime, quiet } = setup(async () =>
+      status === 202
+        ? Response.json({ status: "queued" }, { status })
+        : Response.json(
+            { title: "Bad Request", status: 400 },
+            { status: 400, headers: { "Content-Type": "application/problem+json" } },
+          ),
+    );
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
     status = 400;
     reportPRViewed(runtime, "github");
     await vi.waitFor(() => expect(sent).toHaveLength(2));

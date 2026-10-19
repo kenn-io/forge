@@ -38,7 +38,6 @@ describe("quick-action launch serialization", () => {
       makeGeneratedClient({
         WorkspacesService: { launchWorkspaceAgentHandoff: launchHandoff },
         DevboxesService: { launchDevboxHandoff },
-        SystemService: { captureTelemetryEvent: telemetry },
       }),
     );
     startTestTelemetry(runtime, telemetry);

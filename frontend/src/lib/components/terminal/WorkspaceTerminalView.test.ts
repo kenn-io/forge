@@ -223,7 +223,6 @@ vi.mock("../../api/generated-api.js", async (importOriginal) => {
     return result;
   };
   const client = makeGeneratedClient({
-    SystemService: { captureTelemetryEvent: coreActions },
     WorkspacesService: {
       listWorkspaceTargets: mocks.listWorkspaceTargets,
       getWorkspaceRuntime: ({ id }: { id: string }, params?: { viewing?: boolean }) => {
@@ -726,7 +725,7 @@ function fakeDataTransfer(): DataTransfer {
 }
 
 describe("WorkspaceTerminalView", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     coreActions.mockClear();
     mocks.mockOpen.mockImplementation((container: HTMLElement) => {
       const screen = document.createElement("div");
@@ -737,9 +736,9 @@ describe("WorkspaceTerminalView", () => {
     quickActionLaunches.clear();
     mocks.quickActions = [];
     mocks.runtime = makeAppRuntime();
-    startTestTelemetry(mocks.runtime, coreActions);
     delete window.__BASE_PATH__;
     localStorage.clear();
+    await startTestTelemetry(mocks.runtime, coreActions).ready;
     resetSessionHostForTest();
     resetPaneLayoutStoresForTest();
     resetWorkspaceHostForTest();

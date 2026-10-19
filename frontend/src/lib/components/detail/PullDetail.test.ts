@@ -3685,10 +3685,6 @@ describe("PullDetail inline workspace handoff", () => {
     const apiClient = {
       GET: vi.fn(async () => ({ data: {} })),
       POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
-        if (path === "/telemetry/events") {
-          telemetry(options?.body);
-          return { data: { status: "queued" } };
-        }
         posts.push({ path, options });
         if (path === "/workspaces") return { data: { id: "ws-new", status: "creating", created: true } };
         return handoff.promise;

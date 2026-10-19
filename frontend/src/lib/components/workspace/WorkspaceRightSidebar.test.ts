@@ -16,10 +16,10 @@ import type { WorkspaceDiffGitState } from "./workspace-diff-default.js";
 const coreActions = vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" }));
 let runtime: OwnedAppRuntime;
 
-beforeEach(() => {
+beforeEach(async () => {
   coreActions.mockClear();
   runtime = makeAppRuntime();
-  startTestTelemetry(runtime, coreActions);
+  await startTestTelemetry(runtime, coreActions).ready;
 });
 
 vi.mock("../kata/KataLinksPanel.svelte", async () => ({

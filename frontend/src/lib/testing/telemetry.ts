@@ -15,5 +15,10 @@ export function startTestTelemetry(runtime: AppRuntime, capture: (event: VisitEv
     },
   });
   onTestFinished(() => reporter.stop());
-  return reporter;
+  const ready = new Promise<void>((resolve) => {
+    reporter.onQuietChange((quiet) => {
+      if (!quiet) resolve();
+    });
+  });
+  return { ...reporter, ready };
 }

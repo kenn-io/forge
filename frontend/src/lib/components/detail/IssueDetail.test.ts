@@ -986,10 +986,6 @@ describe("IssueDetail inline workspace handoff", () => {
     const apiClient = {
       GET: vi.fn(),
       POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
-        if (path === "/telemetry/events") {
-          telemetry(options?.body);
-          return { data: { status: "queued" } };
-        }
         posts.push({ path, options });
         if (path.endsWith("/workspace")) {
           creates += 1;

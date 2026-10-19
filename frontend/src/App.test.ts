@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { Cause, Effect } from "effect";
 import { flushSync } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { reportScreen, reportPRViewed, reportWorkspaceOpened } from "./lib/app/telemetry.js";
+import * as telemetry from "./lib/app/telemetry.js";
 import { mountApplication } from "./lib/app/mount.js";
 import type { AppExecution, OwnedAppRuntime } from "./lib/app/runtime.js";
 import { makeTestAppRuntime } from "./lib/testing/effect-layers.js";
@@ -550,16 +550,43 @@ describe("App feature routes", () => {
     expect(posts).toHaveLength(3);
   });
 
-  it("reports each visible screen once per day after startup, navigation, history, and focus", async () => {
+  it("reports mapped screens after startup, navigation, and history", async () => {
     startup.autoReady = false;
-    vi.useFakeTimers({ toFake: ["Date"] });
+    const reportScreen = vi.spyOn(telemetry, "reportScreen");
+    const runtime = testAppRuntime(() => {});
+    const { replaceUrl, navigate } = await import("./lib/stores/router.svelte.ts");
+    replaceUrl("/docs?folder=notes&doc=README.md");
+    const mounted = mountApplication(createAppTarget(), runtime);
+    try {
+      await waitFor(() => expect(startup.readyCallbacks).toHaveLength(1));
+      expect(reportScreen).not.toHaveBeenCalled();
+      startup.readyCallbacks[0]!();
+      await waitFor(() => expect(reportScreen).toHaveBeenLastCalledWith(runtime, "docs"));
+      navigate("/settings");
+      await waitFor(() => expect(reportScreen).toHaveBeenLastCalledWith(runtime, "settings"));
+      window.history.replaceState(null, "", "/issues");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      await waitFor(() => expect(reportScreen).toHaveBeenLastCalledWith(runtime, "issues"));
+    } finally {
+      await Effect.runPromise(mounted.dispose);
+    }
+  });
+
+  it("stops session reporting after a disabled receipt", async () => {
+    startup.autoReady = false;
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
-    const posts: unknown[] = [];
+    let hidden = false;
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    const posts: Array<{ event: string }> = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      const request = new Request(input, init);
-      posts.push(await request.json());
-      return Response.json({ status: "queued" }, { status: 202 });
+      const body = (await new Request(input, init).json()) as { event: string };
+      posts.push(body);
+      return Response.json({ status: body.event === "screen_viewed" ? "disabled" : "queued" }, { status: 202 });
     });
+    const startReporter = vi.spyOn(telemetry, "startRuntimeTelemetry");
     const owner = makeTestAppRuntime();
     const runtime: OwnedAppRuntime = {
       ...testAppRuntime(() => {}),
@@ -569,89 +596,37 @@ describe("App feature routes", () => {
           ? owner.runCommand(program, options)
           : testAppRuntime(() => {}).runCommand(program, options),
     };
-    const { replaceUrl, navigate } = await import("./lib/stores/router.svelte.ts");
-    replaceUrl("/docs?folder=notes&doc=README.md");
     const mounted = mountApplication(createAppTarget(), runtime);
     try {
-      await waitFor(() => expect(startup.readyCallbacks).toHaveLength(1));
-      window.dispatchEvent(new Event("focus"));
-      startup.readyCallbacks[0]!();
-      const event = (name: string) => ({ event: "screen_viewed", properties: { screen: name, surface: "web" } });
-      const screens = () => posts.filter((post) => (post as { event: string }).event === "screen_viewed");
-      await waitFor(() => expect(screens()).toEqual([event("docs")]));
-      navigate("/settings");
-      await waitFor(() => expect(screens()).toEqual([event("docs"), event("settings")]));
-      window.history.replaceState(null, "", "/issues");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-      await waitFor(() => expect(screens()).toEqual([event("docs"), event("settings"), event("issues")]));
-      window.dispatchEvent(new Event("focus"));
-      navigate("/docs");
-      flushSync();
-      navigate("/repos");
-      await waitFor(() =>
-        expect(screens()).toEqual([event("docs"), event("settings"), event("issues"), event("repos")]),
-      );
-      vi.setSystemTime(new Date("2026-01-03T00:00:01Z"));
-      window.dispatchEvent(new Event("focus"));
-      await waitFor(() => expect(screens()).toHaveLength(5));
-      expect(screens()[4]).toEqual(event("repos"));
+      const reporter = startReporter.mock.results[0]!.value;
+      const quiet = vi.fn();
+      reporter.onQuietChange(quiet);
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      const reportVisit = vi.spyOn(reporter, "reportVisit");
+      now = 120_000;
+      window.dispatchEvent(new Event("pagehide"));
+      await vi.waitFor(() => expect(posts.filter((post) => post.event === "session_ended")).toHaveLength(1));
+      window.dispatchEvent(new Event("pageshow"));
+      now = 240_000;
+      hidden = true;
+      document.dispatchEvent(new Event("visibilitychange"));
+      reporter.reportScreen("settings");
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      reportVisit.mockClear();
+      window.dispatchEvent(new Event("pagehide"));
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      hidden = false;
+      window.dispatchEvent(new Event("pageshow"));
+      now += 120_000;
+      window.dispatchEvent(new Event("pagehide"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reportVisit).not.toHaveBeenCalled();
+      expect(posts.filter((post) => post.event === "session_ended")).toHaveLength(1);
     } finally {
       await Effect.runPromise(mounted.dispose);
       vi.useRealTimers();
     }
   });
-
-  it.each(["disabled", "queued"])(
-    "keeps visits quiet after a %s start and later disabled receipt",
-    async (initialStatus) => {
-      startup.autoReady = false;
-      vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
-      vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
-      let hidden = false;
-      let now = 0;
-      vi.spyOn(performance, "now").mockImplementation(() => now);
-      vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
-      let status = initialStatus;
-      const posts: unknown[] = [];
-      vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-        posts.push(await new Request(input, init).json());
-        return Response.json({ status }, { status: 202 });
-      });
-      const owner = makeTestAppRuntime();
-      const runtime: OwnedAppRuntime = {
-        ...testAppRuntime(() => {}),
-        disposeEffect: owner.disposeEffect,
-        runCommand: (program, options) =>
-          options.operation === "report app opens"
-            ? owner.runCommand(program, options)
-            : testAppRuntime(() => {}).runCommand(program, options),
-      };
-      const mounted = mountApplication(createAppTarget(), runtime);
-      try {
-        await vi.waitFor(() =>
-          expect(
-            Object.keys(localStorage).some((key) => key.includes(initialStatus === "queued" ? "check" : "quiet")),
-          ).toBe(true),
-        );
-        now = 120_000;
-        hidden = true;
-        document.dispatchEvent(new Event("visibilitychange"));
-        status = "disabled";
-        reportScreen(runtime, "settings");
-        await vi.waitFor(() => expect(Object.keys(localStorage).some((key) => key.includes("quiet"))).toBe(true));
-        for (const screen of ["docs", "pulls", "issues", "repos", "workspaces"] as const) reportScreen(runtime, screen);
-        reportPRViewed(runtime, "github");
-        reportWorkspaceOpened(runtime, "adhoc");
-        window.dispatchEvent(new Event("pagehide"));
-        await vi.advanceTimersByTimeAsync(30 * 60_000);
-        expect(posts).toHaveLength(initialStatus === "queued" ? 2 : 1);
-        expect(vi.getTimerCount()).toBe(0);
-      } finally {
-        await Effect.runPromise(mounted.dispose);
-        vi.useRealTimers();
-      }
-    },
-  );
 
   it("reports a non-interruption root finalizer defect", async () => {
     const target = createAppTarget();

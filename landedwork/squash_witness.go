@@ -18,14 +18,14 @@ import (
 //
 // An empty terminal, whose tree equals the squash parent's, is witnessed the
 // same way when the target already carried every source edit. Every source
-// commit counts as a replay onto an empty terminal, so the rebase check rarely
-// clears one. A rebase drops merge commits, though, so a source with at most
-// one single-parent commit cannot rebase into more than the terminal.
+// commit counts as a replay onto an empty terminal, so only a one-commit
+// source, a declared parent, or a parent that replays no source commit clears
+// the longer rebase.
 //
 // False with no gap is a mismatch: a missing witness keeps the earlier
 // conclusive edit mismatch, so it cannot block another alternative.
 func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, ordered bool, declared map[string]string) (bool, Gap) {
-	matched, empty, err := v.exactMerge(ctx, sourceBefore, before, c.SourceHead, c.Terminal)
+	matched, _, err := v.exactMerge(ctx, sourceBefore, before, c.SourceHead, c.Terminal)
 	if _, ok := errors.AsType[editProofError](err); ok {
 		return false, Gap{}
 	}
@@ -34,15 +34,6 @@ func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefo
 	}
 	if !matched {
 		return false, Gap{}
-	}
-	if empty {
-		rewritable, err := rewritableCommits(ctx, v, c)
-		if err != nil {
-			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: graphReason(err)}
-		}
-		if rewritable <= 1 {
-			return true, Gap{}
-		}
 	}
 	rebased, err := rebaseReplayPossible(ctx, v, c, before, ordered, declared)
 	if err != nil {
@@ -119,20 +110,4 @@ func (v *objectView) replays(ctx context.Context, commit, parent, source string)
 		return true, nil
 	}
 	return matched, err
-}
-
-// rewritableCommits counts the source's single-parent commits, the most commits
-// a rebase of the source can create.
-func rewritableCommits(ctx context.Context, v *objectView, c Candidate) (int, error) {
-	n := 0
-	for _, id := range c.Source {
-		parents, err := v.parents(ctx, id)
-		if err != nil {
-			return 0, err
-		}
-		if len(parents) == 1 {
-			n++
-		}
-	}
-	return n, nil
 }

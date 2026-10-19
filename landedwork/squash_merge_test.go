@@ -184,7 +184,7 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 		proofs       []string
 	}
 	for _, method := range []string{"squash", "automatic"} {
-		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly", "replayed parent"} {
+		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly", "replayed parent", "replayed merge"} {
 			if method == "automatic" && mode == "partly pushed directly" {
 				// The automatic rewritten-range alternative explains this shape.
 				continue
@@ -242,6 +242,11 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					r.Run("commit", "--allow-empty", "-m", "squash fix")
 					candidates = append(candidates, squashCandidate(f, "7", r.Head(), fix, update))
 					want = append(want, landing{"7", r.Head(), []string{"squash"}})
+					if mode == "pushed directly" {
+						// The pushed commit replays the source's first commit, so
+						// with the empty terminal the pair could be a rebase.
+						reason = "empty_tree_edits"
+					}
 				case "replayed parent":
 					// The parent replays the first source commit and the empty
 					// terminal could replay the second, so the pair could be a
@@ -256,6 +261,23 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					r.Run("commit", "--allow-empty", "-m", "squash undo")
 					candidates = append(candidates, squashCandidate(f, "7", r.Head(), edit, undo))
 					reason = "empty_tree_edits"
+				case "replayed merge":
+					// The second source commit merges a target update and adds
+					// its own edit. The target holds a replay of the first commit
+					// and a first-parent pick of the merge, so the empty terminal
+					// could end a rewritten range over both.
+					update := r.CommitFile("other.txt", "update\n", "target update")
+					r.Checkout("-b", "work", f.base)
+					edit := r.CommitFile("work.txt", "new\nkeep\n", "edit")
+					r.Run("merge", "--no-ff", "--no-commit", update)
+					merge := r.CommitFile("extra.txt", "extra\n", "update branch with extra")
+					r.Checkout("target")
+					r.Run("cherry-pick", edit)
+					r.Run("cherry-pick", "-m", "1", merge)
+					r.Run("merge", "--squash", "work")
+					r.Run("commit", "--allow-empty", "-m", "squash work")
+					candidates = append(candidates, squashCandidate(f, "7", r.Head(), edit, merge))
+					reason = "source_correspondence_unproven"
 				case "stacked", "partly pushed directly":
 					// The second change was stacked on the first, so its source
 					// repeats the first change's commit.
@@ -298,6 +320,7 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					assert.False(res.Coverage.Complete)
 					require.Len(t, res.Coverage.Gaps, 1)
 					assert.Equal(reason, res.Coverage.Gaps[0].Reason)
+					assert.Empty(res.DirectPushes)
 					return
 				}
 				assert.Empty(res.Coverage.Gaps)

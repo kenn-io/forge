@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -344,6 +345,24 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSyncFailedIgnoresLocalCloneFailure(t *testing.T) {
+	parent := t.TempDir()
+	require.NoError(t, os.Chmod(parent, 0o500))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parent, 0o700)) })
+	clones := gitclone.New(parent, nil)
+	t.Cleanup(clones.Wait)
+	repo := RepoRef{Owner: "acme", Name: "widget"}
+	s := NewSyncer(nil, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	pass := &syncPass{}
+	err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+	require.ErrorIs(t, err, os.ErrPermission)
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Empty(t, events)
+	assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
 }
 
 func TestSyncFailedGitCloneErrors(t *testing.T) {

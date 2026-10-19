@@ -352,10 +352,9 @@ func TestSyncFailedClosureReads(t *testing.T) {
 				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
 				require.NoError(t, err)
 				var failure error
-				switch kind {
-				case platform.KindGitHub:
+				if kind == platform.KindGitHub {
 					failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
-				case platform.KindGitLab:
+				} else {
 					failure = &gitlab.ErrorResponse{StatusCode: status}
 				}
 				var s *Syncer

@@ -85,9 +85,6 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 
 func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, err error) {
 	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
-		if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
-			err = disabled
-		}
 		pass.observe(repo, source, err)
 	}
 }
@@ -97,11 +94,14 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	if capsErr != nil {
 		return
 	}
-	if caps.ReadMergeRequests {
-		s.observeSync(ctx, repo, "merge_requests", err)
-	}
-	if caps.ReadIssues {
-		s.observeSync(ctx, repo, "issues", err)
+	for source, supported := range map[string]bool{"merge_requests": caps.ReadMergeRequests, "issues": caps.ReadIssues} {
+		if supported {
+			cause := err
+			if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
+				cause = disabled
+			}
+			s.observeSync(ctx, repo, source, cause)
+		}
 	}
 }
 
@@ -195,12 +195,4 @@ func syncFailureReason(err error) string {
 	default:
 		return "other"
 	}
-}
-
-// A conditional read that returns unchanged still establishes source health.
-func syncReadError(err error) error {
-	if platformgithub.IsNotModified(err) {
-		return nil
-	}
-	return err
 }

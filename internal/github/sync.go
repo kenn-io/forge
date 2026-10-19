@@ -6265,22 +6265,21 @@ func (s *Syncer) indexSyncRepo(
 	// spend to an already-exhausted window.
 	var budgetRefusedScope failScope
 	var partialCause error
-	scopeCauses := make(map[failScope]error)
 	retain := func(scope failScope, err error) {
-		if scope&failMR != 0 {
-			s.observeSync(ctx, repo, "merge_requests", err)
-		}
-		if scope&failIssues != 0 {
-			s.observeSync(ctx, repo, "issues", err)
+		for bit, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
+			if scope&bit != 0 {
+				cause := err
+				if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
+					cause = disabled
+				}
+				s.observeSync(ctx, repo, source, cause)
+			}
 		}
 		partialCause = retainSyncFailureCause(partialCause, err)
-		scopeCauses[scope] = retainSyncFailureCause(scopeCauses[scope], err)
 	}
 	defer func() {
 		for scope, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
-			if cause := scopeCauses[scope]; cause != nil {
-				s.observeSync(ctx, repo, source, cause)
-			} else if disabledScope&scope != 0 {
+			if disabledScope&scope != 0 {
 				s.observeSync(ctx, repo, source, platform.ErrRepositoryFeatureDisabled)
 			} else if attemptedScope&scope != 0 && (failedScope|disabledScope)&scope == 0 {
 				s.observeSync(ctx, repo, source, nil)
@@ -6489,7 +6488,7 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
-			scopeCauses[failIssues] = err
+			s.observeSync(ctx, repo, "issues", err)
 			return joinPartialFailureCause(
 				partialCause,
 				fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err),
@@ -7437,16 +7436,18 @@ func (s *Syncer) refreshPRCommentsForItem(
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, pr.Number, pr.CommentCount,
 	)
-	s.observeSync(ctx, repo, "merge_requests", syncReadError(err))
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
+			s.observeSync(ctx, repo, "merge_requests", nil)
 			return true, false
 		}
-		if s.recordGitHubRepositoryFeatureDisabled(
+		if disabled := repositoryFeatureDisabledError(
 			repo, platform.RepositoryFeatureMergeRequests, err,
-		) {
+		); disabled != nil && s.recordRepositoryFeatureDisabled(repo, platform.RepositoryFeatureMergeRequests, disabled) {
+			s.observeSync(ctx, repo, "merge_requests", disabled)
 			return true, true
 		}
+		s.observeSync(ctx, repo, "merge_requests", err)
 		slog.Warn("comment refresh: list PR comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
@@ -7454,6 +7455,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 		)
 		return true, false
 	}
+	s.observeSync(ctx, repo, "merge_requests", nil)
 	if err := s.persistPRComments(ctx, repo, pr, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist PR comments failed",
@@ -7483,16 +7485,18 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, issue.Number, issue.CommentCount,
 	)
-	s.observeSync(ctx, repo, "issues", syncReadError(err))
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
+			s.observeSync(ctx, repo, "issues", nil)
 			return true, false
 		}
-		if s.recordGitHubRepositoryFeatureDisabled(
+		if disabled := repositoryFeatureDisabledError(
 			repo, platform.RepositoryFeatureIssues, err,
-		) {
+		); disabled != nil && s.recordRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, disabled) {
+			s.observeSync(ctx, repo, "issues", disabled)
 			return true, true
 		}
+		s.observeSync(ctx, repo, "issues", err)
 		slog.Warn("comment refresh: list issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
@@ -7500,6 +7504,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		)
 		return true, false
 	}
+	s.observeSync(ctx, repo, "issues", nil)
 	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist issue comments failed",
@@ -10812,13 +10817,17 @@ func (s *Syncer) drainDetailQueue(
 				itemCtx, repo, repoID, qi.Number,
 			)
 		}
+		disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 		if providerCalls > 0 {
-			s.observeSync(itemCtx, repo, feature, err)
+			cause := err
+			if disabledErr != nil {
+				cause = disabledErr
+			}
+			s.observeSync(itemCtx, repo, feature, cause)
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
 
 		if err != nil {
-			disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 			disabled := disabledErr != nil &&
 				s.recordRepositoryFeatureDisabled(repo, feature, disabledErr)
 			if providerCalls > 0 {

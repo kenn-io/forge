@@ -866,6 +866,8 @@ type Syncer struct {
 	onMRSynced       func(owner, name string, mr *db.MergeRequest)
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
+	onSyncFailed     func(source, reason string)
+	syncFailures     map[string]map[string]string
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
@@ -2027,6 +2029,11 @@ func (s *Syncer) SetOnMRSynced(
 	s.onMRSynced = fn
 }
 
+// SetOnSyncFailed registers a callback for sources that start failing in a full pass.
+func (s *Syncer) SetOnSyncFailed(fn func(source, reason string)) {
+	s.onSyncFailed = fn
+}
+
 // SetOnSyncCompleted registers a callback invoked at the end
 // of each RunOnce pass with per-repo sync results.
 //
@@ -2569,6 +2576,7 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 		cloneRemoteURL(repo),
 		nil,
 	)
+	s.observeSync(ctx, repo, "refs", err)
 	return s.recordGitAccess(repo, err)
 }
 
@@ -4304,6 +4312,7 @@ func (s *Syncer) runWorker(
 		}
 		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
 		if bucketErr != nil {
+			s.observeRepoFailure(ctx, repo, bucketErr)
 			errMessage := bucketErr.Error()
 			s.recordRunError(state, repo, bucketErr, errMessage)
 			state.results[item.index].Error = errMessage
@@ -4580,6 +4589,11 @@ func (s *Syncer) runOnceWithSlot(
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
 	ctx = WithSyncBudget(ctx)
+	var pass *syncPass
+	if onlyRepos == nil {
+		pass = &syncPass{}
+		ctx = context.WithValue(ctx, syncPassKey{}, pass)
+	}
 	s.convertPendingGitHubRepositories(ctx)
 
 	s.reposMu.Lock()
@@ -4679,6 +4693,7 @@ dispatch:
 	for i, r := range repos {
 		bucket, err := s.bucketKeyForRepo(r, false)
 		if err != nil {
+			s.observeRepoFailure(ctx, r, err)
 			results[i].Error = err.Error()
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
@@ -4737,6 +4752,9 @@ dispatch:
 		// just ran may have invalidated.
 		s.revokeExhaustedBuckets(eligibleBuckets, state, activeRepos)
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
+	}
+	if !canceled.Load() && ctx.Err() == nil {
+		s.finishSyncPass(pass, s.TrackedRepos())
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
@@ -5374,6 +5392,7 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
+		s.observeRepoFailure(ctx, repo, err)
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
@@ -5393,6 +5412,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 
 	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, repo)
 	if err != nil {
+		s.observeRepoFailure(ctx, repo, err)
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	repo = resolvedRef
@@ -5414,6 +5434,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		err = fmt.Errorf(
 			"refresh repo settings for %s/%s: %w", repo.Owner, repo.Name, err,
 		)
+		s.observeRepoFailure(ctx, repo, err)
 		s.recordAbortedRepoSync(ctx, repo, repoID, err)
 		return err
 	}
@@ -6244,6 +6265,20 @@ func (s *Syncer) indexSyncRepo(
 	// spend to an already-exhausted window.
 	var budgetRefusedScope failScope
 	var partialCause error
+	scopeCauses := make(map[failScope]error)
+	retain := func(scope failScope, err error) {
+		partialCause = retainSyncFailureCause(partialCause, err)
+		scopeCauses[scope] = retainSyncFailureCause(scopeCauses[scope], err)
+	}
+	defer func() {
+		for scope, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
+			if cause := scopeCauses[scope]; cause != nil {
+				s.observeSync(ctx, repo, source, cause)
+			} else if attemptedScope&scope != 0 && (failedScope|disabledScope)&scope == 0 {
+				s.observeSync(ctx, repo, source, nil)
+			}
+		}
+	}()
 
 	preferNativeStacks := s.preferGitHubNativeStacks.Load() &&
 		repoPlatform(repo) == platform.KindGitHub
@@ -6269,6 +6304,7 @@ func (s *Syncer) indexSyncRepo(
 		attemptedScope |= failMR
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
+			retain(failMR, err)
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 		mrProviderAttempted = true
@@ -6301,6 +6337,7 @@ func (s *Syncer) indexSyncRepo(
 				// correct. Marking the repo failed would evict them and
 				// force an unconditional refetch next cycle — extra
 				// spend exactly when the budget is already exhausted.
+				retain(failMR, err)
 				return fmt.Errorf("list open PRs: %w", err)
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6312,6 +6349,7 @@ func (s *Syncer) indexSyncRepo(
 				// The queue read does not depend on the pull list, so a
 				// failing list must not freeze queue state.
 				s.refreshQueuedPullRequests(ctx, repo, repoID)
+				retain(failMR, err)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
@@ -6368,7 +6406,7 @@ func (s *Syncer) indexSyncRepo(
 								failedScope |= failMR
 							}
 							if failedScope&failMR != 0 {
-								partialCause = retainSyncFailureCause(partialCause, err)
+								retain(failMR, err)
 							}
 						}
 						graphQLDone = true
@@ -6393,7 +6431,7 @@ func (s *Syncer) indexSyncRepo(
 						failedScope |= failMR
 					}
 					if failedScope&failMR != 0 {
-						partialCause = retainSyncFailureCause(partialCause, err)
+						retain(failMR, err)
 					}
 				}
 			}
@@ -6443,6 +6481,7 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
+			scopeCauses[failIssues] = err
 			return joinPartialFailureCause(
 				partialCause,
 				fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err),
@@ -6475,7 +6514,7 @@ func (s *Syncer) indexSyncRepo(
 			} else if errors.Is(issueListErr, platform.ErrSyncBudgetExhausted) {
 				failedScope |= failIssues
 				budgetRefusedScope |= failIssues
-				partialCause = retainSyncFailureCause(partialCause, issueListErr)
+				retain(failIssues, issueListErr)
 			} else if s.recordRepositoryFeatureDisabled(
 				repo, platform.RepositoryFeatureIssues, issueListErr,
 			) {
@@ -6486,7 +6525,7 @@ func (s *Syncer) indexSyncRepo(
 					"err", issueListErr,
 				)
 				failedScope |= failIssues
-				partialCause = retainSyncFailureCause(partialCause, issueListErr)
+				retain(failIssues, issueListErr)
 			}
 		} else {
 			graphQLIssuesDone := false
@@ -6521,7 +6560,7 @@ func (s *Syncer) indexSyncRepo(
 								failedScope |= failIssues
 							}
 							if failedScope&failIssues != 0 {
-								partialCause = retainSyncFailureCause(partialCause, err)
+								retain(failIssues, err)
 							}
 						}
 						graphQLIssuesDone = true
@@ -6547,7 +6586,7 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
-							partialCause = retainSyncFailureCause(partialCause, err)
+							retain(failIssues, err)
 						}
 					}
 				} else {
@@ -6567,7 +6606,7 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
-							partialCause = retainSyncFailureCause(partialCause, err)
+							retain(failIssues, err)
 						}
 					}
 				}
@@ -8830,6 +8869,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return calls, pending, nil
 	}
+	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
 		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
@@ -9498,6 +9538,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 	requestedAt := s.nowUTC()
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
+		s.observeSync(ctx, repo, "checks", err)
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9508,6 +9549,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
+		s.observeSync(ctx, repo, "checks", err)
 		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9516,6 +9558,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
+	s.observeSync(ctx, repo, "checks", nil)
 	return ciStatusFetchResult{
 		Status:      DeriveOverallCIStatus(checkRuns, combined),
 		ChecksJSON:  NormalizeCIChecks(checkRuns, combined),

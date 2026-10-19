@@ -115,6 +115,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 		wantBackend int
 	}{
 		{name: "daemon_active goes to daemon", event: "daemon_active", wantDaemon: 1},
+		{name: "sync_failed goes to daemon", event: "sync_failed", wantDaemon: 1},
 		{name: "setup_finished goes to daemon", event: "setup_finished", wantDaemon: 1},
 		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},

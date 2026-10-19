@@ -131,6 +131,14 @@ func captureDaemonActive(reporter telemetry.Client, repoCount func() int) error 
 	return reporter.Capture("daemon_active", map[string]any{"repo_count": telemetry.RepoCountBucket(repoCount())})
 }
 
+func captureSyncFailed(reporter telemetry.Client) func(source, reason string) {
+	return func(source, reason string) {
+		if err := reporter.Capture("sync_failed", map[string]any{"sync_source": source, "reason": reason}); err != nil {
+			slog.Warn("capture telemetry event", "err", err)
+		}
+	}
+}
+
 func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Syncer, cfg *config.Config) {
 	settings := notificationLoopSettingsFromConfig(cfg)
 	handle.startTicker("notification sync", settings.syncInterval, func(runCtx context.Context) error {

@@ -675,6 +675,12 @@ show. Installations that already had work when they upgraded are not reported.
 At startup and daily while running, the daemon reports the number of tracked
 repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
+A full sync pass reports `sync_failed` when a source starts failing. It sends
+only `sync_source` (`merge_requests`, `issues`, `checks`, or `refs`) and `reason`
+(`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`), with
+unlisted values sent as `other`. Repeated failures count once until recovery;
+a skipped read keeps the source's prior state. State stays in memory, so a
+restart can count one outage twice. These properties identify no repository.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.

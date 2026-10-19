@@ -118,3 +118,28 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	require.NoError(err)
 	assert.NotContains(properties, "surface")
 }
+
+func TestSyncFailedProperties(t *testing.T) {
+	t.Setenv(EnabledEnv, "0")
+	daemon, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("daemon")...)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, daemon.Close()) })
+	for _, tc := range []struct{ source, reason, wantSource, wantReason string }{
+		{"issues", "provider", "issues", "provider"},
+		{"acme/widget", "private provider message", "other", "other"},
+	} {
+		properties, err := daemon.SanitizeProperties("sync_failed", map[string]any{
+			"sync_source": tc.source, "reason": tc.reason, "repo": "acme/widget", "error": "private details",
+		})
+		require.NoError(t, err)
+		assert := assert.New(t)
+		assert.Equal(tc.wantSource, properties["sync_source"])
+		assert.Equal(tc.wantReason, properties["reason"])
+		assert.NotContains(properties, "repo")
+		assert.NotContains(properties, "error")
+	}
+	for _, properties := range []map[string]any{nil, {"reason": "auth"}, {"sync_source": "refs"}} {
+		_, err := daemon.SanitizeProperties("sync_failed", properties)
+		require.ErrorIs(t, err, posthog.ErrInvalidProperty)
+	}
+}

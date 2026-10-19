@@ -240,6 +240,13 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require.Equal(12, settings.batchSize)
 }
 
+func TestCaptureSyncFailed(t *testing.T) {
+	client := &fakeTelemetryClient{}
+	captureSyncFailed(client)("issues", "provider")
+	require.Equal(t, []string{"sync_failed"}, client.eventNames)
+	require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "provider"}}, client.captures)
+}
+
 func TestSetupFinishedMinute(t *testing.T) {
 	database := dbtest.Open(t)
 	synctest.Test(t, func(t *testing.T) {

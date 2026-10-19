@@ -66,13 +66,28 @@ func SessionDuration(value any) (any, bool) {
 }
 
 var requiredProperties = map[string]map[string]bool{
+	"sync_failed":      {"sync_source": true, "reason": true},
 	"screen_viewed":    {"screen": true},
 	"session_ended":    {"duration_bucket": true},
 	"pr_viewed":        {"provider": true, "surface": true},
 	"workspace_opened": {"item_type": true, "surface": true},
 }
 
+func stringValuesOrOther(values ...string) posthog.PropertyFilter {
+	filter := posthog.AllowStringValues(values...)
+	return func(value any) (any, bool) {
+		if allowed, ok := filter(value); ok {
+			return allowed, true
+		}
+		return "other", true
+	}
+}
+
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"sync_failed": {
+		"sync_source": stringValuesOrOther("merge_requests", "issues", "checks", "refs"),
+		"reason":      stringValuesOrOther("auth", "rate_limited", "not_found", "network", "provider", "other"),
+	},
 	"setup_finished": {},
 	"pr_viewed": {
 		"provider": posthog.AllowStringValues("github", "gitlab", "forgejo", "gitea", "bitbucket"),
@@ -264,7 +279,7 @@ func (r *Reporter) Report(ctx context.Context, event string, properties map[stri
 }
 
 func sourceForEvent(event string) string {
-	if event == "daemon_active" || event == "setup_finished" {
+	if event == "daemon_active" || event == "sync_failed" || event == "setup_finished" {
 		return "daemon"
 	}
 	return "backend"

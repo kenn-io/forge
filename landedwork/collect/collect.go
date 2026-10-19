@@ -95,6 +95,7 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 		return c.result, nil
 	}
 	c.sweep(ctx, query.Commits)
+	local := c.establishLocalAbsence(ctx, query.Bounds.Repository.ID)
 	ids := make([]int64, 0, len(c.refs))
 	for id := range c.refs {
 		ids = append(ids, id)
@@ -104,10 +105,13 @@ func Collect(ctx context.Context, reader platform.LandingEvidenceReader, route p
 		ref := c.refs[id]
 		observation := Observation{Change: platform.LandingChange{Ref: ref, TargetID: ref.TargetID}}
 		if ref.TargetID > 0 && strconv.FormatInt(ref.TargetID, 10) != query.Bounds.Repository.ID {
-			// Network-wide associations do not establish local PR absence.
+			// Network-wide associations do not establish local PR absence; only
+			// a complete list of the repository's merged changes does.
 			observation.Reason, observation.FailureStage = "foreign_repository", "association"
 			c.result.Observations = append(c.result.Observations, observation)
-			c.stop("ambiguous_absence", "", "")
+			if !local {
+				c.stop("ambiguous_absence", "", "")
+			}
 			continue
 		}
 		if ref.TargetID <= 0 {
@@ -166,6 +170,56 @@ func (c *collector) sweep(ctx context.Context, commits []string) {
 			}
 			cursor = page.NextCursor
 		}
+	}
+}
+
+// establishLocalAbsence adds every merged change of the repository when an
+// association named a change in another repository. It reports whether that
+// list completed; a failed list stops collection with its reason.
+func (c *collector) establishLocalAbsence(ctx context.Context, repository string) bool {
+	foreign := false
+	for _, ref := range c.refs {
+		foreign = foreign || ref.TargetID > 0 && strconv.FormatInt(ref.TargetID, 10) != repository
+	}
+	inventory, ok := c.reader.(platform.LandingInventoryReader)
+	if !foreign || !ok || c.result.Evidence.Inventory.Reason != "" {
+		return false
+	}
+	cursor := ""
+	seen := make(map[string]bool)
+	for {
+		if !c.call() {
+			c.stop("exhausted_limits", "", "")
+			return false
+		}
+		page, err := inventory.ListMergedLandingChanges(ctx, c.route, cursor)
+		if err != nil {
+			c.stop(c.reason(err), "", "")
+			return false
+		}
+		if r := checkPage(c.reader, cursor, page, seen); r != "" {
+			c.stop(r, "", "")
+			return false
+		}
+		if !c.records(1 + int64(len(page.Items))*3) {
+			c.stop("exhausted_limits", "", "")
+			return false
+		}
+		for _, ref := range page.Items {
+			if ref.ID <= 0 || ref.Number <= 0 || strconv.FormatInt(ref.TargetID, 10) != repository {
+				c.stop("invalid_observation", "", "")
+				return false
+			}
+			if old, ok := c.refs[ref.ID]; ok && old != ref {
+				c.stop("changed_observation", "", "")
+				return false
+			}
+			c.refs[ref.ID] = ref
+		}
+		if page.Exhausted {
+			return true
+		}
+		cursor = page.NextCursor
 	}
 }
 

@@ -115,8 +115,9 @@ Reject an over-budget query without a result; never trim commits or gaps to fit.
 Even incomplete preparation and unsupported discovery retain query records that
 must be charged (`landedwork/collect/limits.go::validate`).
 GitHub associations can name upstream PRs when querying a fork. Preserve their
-target identity without fetching that PR number locally; foreign associations
-do not prove local absence (`landedwork/collect/collect.go::Collect`).
+target identity without fetching that PR number locally. Foreign associations
+prove local absence only after the complete list of the repository's own merged
+changes becomes candidates (`landedwork/collect/collect.go::collector.establishLocalAbsence`).
 A change above its list cap is complete only through its reported base's
 three-dot range at the reported count and head; GitHub ranges cap at 10,000
 (`landedwork/collect/candidates.go::observe`, `platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).

@@ -52,6 +52,12 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 				switch {
 				case req.URL.Path == "/repos/example/project":
 					body = `{"id":12,"name":"project","owner":{"login":"example"}}`
+				case req.URL.Path == "/repos/example/project/pulls":
+					// Only foreign associations ask for the repository's own list.
+					require.Equal("foreign association", mode)
+					q := req.URL.Query()
+					require.Equal([]string{"all", "created", "asc"}, []string{q.Get("state"), q.Get("sort"), q.Get("direction")})
+					body = `[{"id":9,"number":4,"state":"closed","merged_at":null,"base":{"repo":{"id":12}}},{"id":10,"number":5,"state":"open","base":{"repo":{"id":12}}}]`
 				case strings.HasSuffix(req.URL.Path, "/pulls"):
 					body = `[{"id":7,"number":3,"base":{"repo":{"id":12}}}]`
 					if mode == "foreign association" {
@@ -103,7 +109,8 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 				assert.Empty(collected.Evidence.Candidates)
 				require.Len(collected.Observations, 1)
 				assert.Equal("foreign_repository", collected.Observations[0].Reason)
-				assert.Equal("ambiguous_absence", collected.Evidence.Inventory.Reason)
+				// No local pull request merged, so the foreign one cannot hide one.
+				assert.True(collected.Evidence.Inventory.Complete)
 			}
 			if mode == "missing base" || strings.HasPrefix(mode, "malformed ") {
 				require.Len(collected.Evidence.Candidates, 1)
@@ -139,7 +146,7 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 					assert.Equal([]string{"rebase", "squash"}, analysis.Landings[0].Proofs)
 					assert.Equal([]string{head}, analysis.Landings[0].Spine)
 				}
-			case "no associations":
+			case "no associations", "foreign association":
 				assert.True(analysis.Coverage.Complete)
 				require.Len(analysis.DirectPushes, 1)
 				assert.Equal(head, analysis.DirectPushes[0].Terminal)

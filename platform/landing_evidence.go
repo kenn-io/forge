@@ -95,6 +95,14 @@ type LandingEvidenceReader interface {
 	ListLandingSourceRange(ctx context.Context, repo RepoRef, change LandingChangeRef, base, head, cursor string) (Page[string], error)
 }
 
+// LandingInventoryReader lists every merged change that targets the repository,
+// as complete pages in a stable order. Commit associations that name only
+// changes in another repository of the same network do not show that no local
+// change exists; this list does.
+type LandingInventoryReader interface {
+	ListMergedLandingChanges(ctx context.Context, repo RepoRef, cursor string) (Page[LandingChangeRef], error)
+}
+
 var (
 	ErrLandingAbsenceAmbiguous = errors.New("landing association absence unconfirmed")
 	ErrLandingTransportLimit   = errors.New("landing transport limit exhausted")

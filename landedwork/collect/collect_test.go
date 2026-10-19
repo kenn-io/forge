@@ -518,3 +518,76 @@ func observedRepository(id int64) platform.Repository {
 	ref.Key = platform.RepositoryIDKey(id)
 	return platform.Repository{Ref: ref}
 }
+
+// inventoryScript also lists every merged change that targets the repository.
+type inventoryScript struct{ *script }
+
+func (s inventoryScript) ListMergedLandingChanges(_ context.Context, r platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error) {
+	require.Equal(s.t, route, r)
+	v, err := s.next("inventory/" + cursor)
+	if err != nil {
+		return platform.Page[platform.LandingChangeRef]{}, err
+	}
+	return v.(platform.Page[platform.LandingChangeRef]), nil
+}
+
+// Commit associations can name only changes in another repository of the same
+// network. A complete list of the repository's own merged changes establishes
+// local absence instead, so the foreign changes need not block collection.
+func TestCollectForeignAssociations(t *testing.T) {
+	foreign := platform.LandingChangeRef{ID: 8, Number: 3, TargetID: 99}
+	local := platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}
+	detail := platform.LandingChange{Ref: local, TargetID: 12, TargetBranch: "main", Merged: new(true), MergeSHA: new(head), SourceHead: new(source), SourceCount: new(int64(1)), Terminal: head, TerminalEvidence: "merged_commit_sha"}
+	for _, mode := range []string{"no inventory", "local change", "no local changes", "failed inventory", "foreign inventory"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			s := &script{t: t, policy: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250}, steps: []step{
+				{key: "repository", value: observedRepository(12)},
+				{key: "association/" + head + "/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{foreign}, Exhausted: true}},
+				{key: "association/" + source + "/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
+			}}
+			var reader platform.LandingEvidenceReader = inventoryScript{s}
+			reason := ""
+			switch mode {
+			case "no inventory":
+				reader, reason = s, "ambiguous_absence"
+			case "local change":
+				s.steps = append(s.steps,
+					step{key: "inventory/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{local}, NextCursor: "next"}},
+					step{key: "inventory/next", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}},
+					step{key: "detail", value: detail},
+					step{key: "source/", value: platform.Page[string]{Items: []string{source}, Exhausted: true}},
+					step{key: "detail", value: detail})
+			case "no local changes":
+				s.steps = append(s.steps, step{key: "inventory/", value: platform.Page[platform.LandingChangeRef]{Exhausted: true}})
+			case "failed inventory":
+				s.steps = append(s.steps, step{key: "inventory/", err: errors.New("unavailable")})
+				reason = "request_failed"
+			case "foreign inventory":
+				s.steps = append(s.steps, step{key: "inventory/", value: platform.Page[platform.LandingChangeRef]{Items: []platform.LandingChangeRef{foreign}, Exhausted: true}})
+				reason = "invalid_observation"
+			}
+			got, err := collect.Collect(ctx, reader, route, query, limits)
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(s.steps)
+			assert.Equal(reason, got.Evidence.Inventory.Reason)
+			assert.Equal(reason == "", got.Evidence.Inventory.Complete)
+			var ids []string
+			for _, c := range got.Evidence.Candidates {
+				ids = append(ids, c.ID)
+			}
+			if mode == "local change" {
+				require.Equal(t, []string{"7"}, ids)
+				assert.True(got.Evidence.Candidates[0].SourceComplete)
+			} else {
+				assert.Empty(ids, "a foreign change is never a local candidate")
+			}
+			require.NotEmpty(t, got.Observations)
+			last := got.Observations[len(got.Observations)-1]
+			assert.Equal(int64(8), last.Change.Ref.ID)
+			assert.Equal("foreign_repository", last.Reason)
+		})
+	}
+}

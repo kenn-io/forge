@@ -60,6 +60,18 @@ func (p *Provider) ListLandingAssociations(ctx context.Context, ref platform.Rep
 	return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
 }
 
+// landingInventoryAPI is the optional client surface for the merged-change list.
+type landingInventoryAPI interface {
+	ListMergedLandingChanges(ctx context.Context, repo platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error)
+}
+
+func (p *Provider) ListMergedLandingChanges(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error) {
+	if c, ok := p.client.(landingInventoryAPI); ok {
+		return c.ListMergedLandingChanges(ctx, ref, cursor)
+	}
+	return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_inventory")
+}
+
 func (p *Provider) GetLandingChange(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error) {
 	if c, ok := p.client.(LandingAPI); ok {
 		return c.GetLandingChange(ctx, ref, change)
@@ -147,6 +159,32 @@ func (c *Client) ListLandingAssociations(ctx context.Context, ref platform.RepoR
 	items := make([]platform.LandingChangeRef, 0, len(prs))
 	for _, pr := range prs {
 		items = append(items, platform.LandingChangeRef{ID: pr.GetID(), Number: pr.GetNumber(), TargetID: pr.GetBase().GetRepo().GetID()})
+	}
+	return landingPageResult(items, resp, state)
+}
+
+// ListMergedLandingChanges pages through every pull request in creation order.
+// Including open and closed ones keeps pages stable: a state change never moves
+// a pull request between pages, and new ones only append. A pull request that
+// merges during the listing lands after the commits already collected.
+func (c *Client) ListMergedLandingChanges(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error) {
+	state, err := c.landingPage(ref, "inventory", cursor)
+	if err != nil {
+		return platform.Page[platform.LandingChangeRef]{}, err
+	}
+	ctx = c.authContext(WithUnconditionalRead(ctx), ref.Owner, false)
+	prs, resp, err := c.gh.PullRequests.List(ctx, ref.Owner, ref.Name, &gh.PullRequestListOptions{
+		State: "all", Sort: "created", Direction: "asc", Page: state.Page, PerPage: 100,
+	})
+	c.trackRate(resp)
+	if err != nil {
+		return platform.Page[platform.LandingChangeRef]{}, err
+	}
+	items := make([]platform.LandingChangeRef, 0, len(prs))
+	for _, pr := range prs {
+		if pr.MergedAt != nil {
+			items = append(items, platform.LandingChangeRef{ID: pr.GetID(), Number: pr.GetNumber(), TargetID: pr.GetBase().GetRepo().GetID()})
+		}
 	}
 	return landingPageResult(items, resp, state)
 }

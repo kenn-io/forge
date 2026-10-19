@@ -68,6 +68,9 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 
 func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, err error) {
 	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
+		if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
+			err = disabled
+		}
 		pass.observe(repo, source, err)
 	}
 }

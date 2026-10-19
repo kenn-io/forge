@@ -264,48 +264,99 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 }
 
 func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
-	for _, kind := range []string{"issue detail", "PR detail", "issue comments", "PR comments"} {
-		t.Run(kind, func(t *testing.T) {
-			d := openTestDB(t)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-			require.NoError(t, err)
-			now := time.Now().UTC()
-			var fetched *time.Time
-			if kind == "issue comments" || kind == "PR comments" {
-				fetched = &now
+	for _, scenario := range []string{"provider failure", "disabled healthy", "disabled failing"} {
+		t.Run(scenario, func(t *testing.T) {
+			for _, kind := range []string{"issue detail", "PR detail", "issue comments", "PR comments"} {
+				t.Run(kind, func(t *testing.T) {
+					d := openTestDB(t)
+					repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+					repo.Key = platform.RepositoryIDKey(testRepoID(repo.Owner, repo.Name))
+					id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+					require.NoError(t, err)
+					now := time.Now().UTC()
+					var fetched *time.Time
+					if kind == "issue comments" || kind == "PR comments" {
+						fetched = &now
+					}
+					client := &partialFailureMock{issuesCached: true, prsCached: true}
+					failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
+					if scenario != "provider failure" {
+						failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusGone}, Message: "Issues are disabled for this repo"}
+					}
+					called := false
+					source := "issues"
+					if kind == "PR detail" || kind == "PR comments" {
+						source = "merge_requests"
+						if scenario != "provider failure" {
+							failure.Message = "Pull Requests are disabled for this repo"
+						}
+						_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100, MergeableState: "clean"})
+					} else {
+						_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100})
+					}
+					require.NoError(t, err)
+					switch kind {
+					case "issue detail":
+						client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { called = true; return nil, failure }
+					case "PR detail":
+						client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+							called = true
+							return nil, failure
+						}
+					default:
+						client.listIssueCommentsFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+							called = true
+							return nil, failure
+						}
+					}
+					s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+					var events [][2]string
+					s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+					if scenario == "disabled failing" {
+						prior := &syncPass{}
+						prior.observe(repo, source, platform.ErrPermissionDenied)
+						s.finishSyncPass(prior, []RepoRef{repo})
+						// Exercise refresh observations without a healthy index read recovering the source.
+						pass := &syncPass{}
+						ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+						if fetched == nil {
+							s.drainDetailQueue(ctx, map[string]bool{"github.com": true}, []RepoRef{repo})
+						} else {
+							if kind == "PR comments" {
+								s.queuePRCommentSync(repo, id, 7, fetched)
+							} else {
+								s.queueIssueCommentSync(repo, id, 7, fetched)
+							}
+							s.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
+						}
+						s.finishSyncPass(pass, []RepoRef{repo})
+					} else {
+						s.RunOnce(t.Context())
+					}
+					require.True(t, called, "the refresh must reach the failing read")
+					if scenario == "provider failure" {
+						assert.Equal(t, [][2]string{{source, "provider"}}, events)
+						return
+					}
+					var want [][2]string
+					if scenario == "disabled failing" {
+						want = [][2]string{{source, "auth"}}
+						assert.Equal(t, map[string]string{mergeQueueRepoKey(repo): "auth"}, s.syncFailures[source])
+					} else {
+						assert.Empty(t, s.syncFailures[source])
+					}
+					assert.Equal(t, want, events)
+					// Disabling one repository must leave genuine failures in another observable.
+					other := RepoRef{Owner: "acme", Name: "other", PlatformHost: "github.com"}
+					later := &syncPass{}
+					later.observe(other, source, platform.ErrNotFound)
+					s.finishSyncPass(later, []RepoRef{repo, other})
+					if scenario == "disabled healthy" {
+						want = [][2]string{{source, "not_found"}}
+					}
+					assert.Equal(t, want, events)
+				})
 			}
-			client := &partialFailureMock{issuesCached: true, prsCached: true}
-			failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
-			called := false
-			source := "issues"
-			if kind == "PR detail" || kind == "PR comments" {
-				source = "merge_requests"
-				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100, MergeableState: "clean"})
-			} else {
-				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100})
-			}
-			require.NoError(t, err)
-			switch kind {
-			case "issue detail":
-				client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { called = true; return nil, failure }
-			case "PR detail":
-				client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-					called = true
-					return nil, failure
-				}
-			default:
-				client.listIssueCommentsFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
-					called = true
-					return nil, failure
-				}
-			}
-			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.RunOnce(t.Context())
-			require.True(t, called, "the full pass must reach the failing read")
-			assert.Equal(t, [][2]string{{source, "provider"}}, events)
 		})
 	}
 }

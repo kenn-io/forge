@@ -85,8 +85,8 @@ Across different bases, repeated text needs an exact three-way location witness
 A squash onto a target already carrying some source edits needs an exact
 three-way tree witness and must exclude a longer rebase: the terminal and its
 parent must not replay source commits in order (`landedwork/squash_witness.go::witnessedSquash`).
-An empty squash may instead exclude it by a one-commit source or a parent that is
-another change's declared terminal (`landedwork/single_parent.go::ownsOnlyTerminal`).
+A parent that is another change's declared terminal is never a replay. An empty
+squash also excludes it when the source has at most one single-parent commit (`landedwork/squash_witness.go::rewritableCommits`).
 A rewritten range cannot contain another change's declared terminal (outside that
 change's source) or an ancestor of its own source head (`landedwork/range.go::rangeCorrespondence`).
 A terminal outside the interval with a complete source owns none of it unless its

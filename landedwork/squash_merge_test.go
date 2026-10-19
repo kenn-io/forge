@@ -184,7 +184,7 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 		proofs       []string
 	}
 	for _, method := range []string{"squash", "automatic"} {
-		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly"} {
+		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly", "replayed parent"} {
 			if method == "automatic" && mode == "partly pushed directly" {
 				// The automatic rewritten-range alternative explains this shape.
 				continue
@@ -242,6 +242,20 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					r.Run("commit", "--allow-empty", "-m", "squash fix")
 					candidates = append(candidates, squashCandidate(f, "7", r.Head(), fix, update))
 					want = append(want, landing{"7", r.Head(), []string{"squash"}})
+				case "replayed parent":
+					// The parent replays the first source commit and the empty
+					// terminal could replay the second, so the pair could be a
+					// rebase of the source rather than a squash. A rebase may
+					// drop the second commit's edits only if it was empty.
+					r.Checkout("-b", "undo", f.base)
+					edit := r.CommitFile("work.txt", "new\nkeep\n", "edit")
+					undo := r.CommitFile("work.txt", "old\nkeep\n", "undo")
+					r.Checkout("target")
+					direct = append(direct, r.CommitFile("work.txt", "new\nkeep\n", "edit pushed"))
+					r.Run("merge", "--squash", "undo")
+					r.Run("commit", "--allow-empty", "-m", "squash undo")
+					candidates = append(candidates, squashCandidate(f, "7", r.Head(), edit, undo))
+					reason = "empty_tree_edits"
 				case "stacked", "partly pushed directly":
 					// The second change was stacked on the first, so its source
 					// repeats the first change's commit.

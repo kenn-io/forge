@@ -17,13 +17,14 @@ import (
 // previous one. The squash stays unproven unless that is disproved.
 //
 // An empty terminal, whose tree equals the squash parent's, is witnessed the
-// same way when the target already carried every source edit. For it alone,
-// onlyTerminal also excludes the longer rebase: the source has at most one
-// commit to rewrite, or the parent was created by another change's landing.
+// same way when the target already carried every source edit. Every source
+// commit counts as a replay onto an empty terminal, so the rebase check rarely
+// clears one. A rebase drops merge commits, though, so a source with at most
+// one single-parent commit cannot rebase into more than the terminal.
 //
 // False with no gap is a mismatch: a missing witness keeps the earlier
 // conclusive edit mismatch, so it cannot block another alternative.
-func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, ordered, onlyTerminal bool) (bool, Gap) {
+func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, ordered bool, declared map[string]string) (bool, Gap) {
 	matched, empty, err := v.exactMerge(ctx, sourceBefore, before, c.SourceHead, c.Terminal)
 	if _, ok := errors.AsType[editProofError](err); ok {
 		return false, Gap{}
@@ -34,10 +35,16 @@ func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefo
 	if !matched {
 		return false, Gap{}
 	}
-	if empty && onlyTerminal {
-		return true, Gap{}
+	if empty {
+		rewritable, err := rewritableCommits(ctx, v, c)
+		if err != nil {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: graphReason(err)}
+		}
+		if rewritable <= 1 {
+			return true, Gap{}
+		}
 	}
-	rebased, err := rebaseReplayPossible(ctx, v, c, before, ordered)
+	rebased, err := rebaseReplayPossible(ctx, v, c, before, ordered, declared)
 	if err != nil {
 		return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: editReason(err)}
 	}
@@ -48,9 +55,10 @@ func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefo
 // source commit onto before, and before a replay of an earlier one onto its
 // own parent. Disproving either half leaves the terminal as the only possible
 // landing commit. Linear sources fix the order; otherwise any distinct pair
-// counts.
-func rebaseReplayPossible(ctx context.Context, v *objectView, c Candidate, before string, ordered bool) (bool, error) {
-	if len(c.Source) < 2 {
+// counts. A parent that another change declared as its terminal was created by
+// that landing, so it is never a replay from this one.
+func rebaseReplayPossible(ctx context.Context, v *objectView, c Candidate, before string, ordered bool, declared map[string]string) (bool, error) {
+	if len(c.Source) < 2 || declaredByOther(declared, c, before) {
 		return false, nil
 	}
 	// Only the latest replayed position matters in order; without an order,
@@ -111,4 +119,20 @@ func (v *objectView) replays(ctx context.Context, commit, parent, source string)
 		return true, nil
 	}
 	return matched, err
+}
+
+// rewritableCommits counts the source's single-parent commits, the most commits
+// a rebase of the source can create.
+func rewritableCommits(ctx context.Context, v *objectView, c Candidate) (int, error) {
+	n := 0
+	for _, id := range c.Source {
+		parents, err := v.parents(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		if len(parents) == 1 {
+			n++
+		}
+	}
+	return n, nil
 }

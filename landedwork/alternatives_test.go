@@ -173,21 +173,14 @@ func TestAutomaticAggregateCancellation(t *testing.T) {
 		require.NoError(t, err)
 		assert := assert.New(t)
 		assert.Empty(r.DirectPushes)
-		if empty {
-			// The empty terminal could be the last commit of a rewritten range
-			// over the earlier source commits: nothing before it rules that out.
-			assert.Empty(r.Landings)
-			assert.False(r.Coverage.Complete)
-			assert.Equal(f.base, r.Coverage.CertifiedHead)
-			require.Len(t, r.Coverage.Gaps, 1)
-			assert.Equal("empty_tree_edits", r.Coverage.Gaps[0].Reason)
-		} else {
-			require.Len(t, r.Landings, 1)
-			assert.Equal([]string{"squash"}, r.Landings[0].Proofs)
-			assert.Equal([]string{f.head}, r.Landings[0].Spine)
-			assert.True(r.Coverage.Complete)
-			assert.Equal(f.head, r.Coverage.CertifiedHead)
-		}
+		// Even the empty terminal is not the end of a longer rebase: its
+		// parent is the base the source was written on, not a replay of a
+		// source commit.
+		require.Len(t, r.Landings, 1)
+		assert.Equal([]string{"squash"}, r.Landings[0].Proofs)
+		assert.Equal([]string{f.head}, r.Landings[0].Spine)
+		assert.True(r.Coverage.Complete)
+		assert.Equal(f.head, r.Coverage.CertifiedHead)
 	}
 }
 

@@ -158,7 +158,7 @@ func reachesInterval(ctx context.Context, v *objectView, p *Interval, c Candidat
 			}
 			earlier, err := v.ancestor(ctx, id, c.SourceHead)
 			if err != nil {
-				return false, Gap{CandidateID: c.ID, ObjectID: id, Reason: graphReason(err)}
+				return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: graphReason(err)}
 			}
 			return !earlier, Gap{}
 		}

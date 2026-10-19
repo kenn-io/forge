@@ -265,7 +265,7 @@ func TestBlockedSpan(t *testing.T) {
 }
 
 func TestTerminalOutsideInterval(t *testing.T) {
-	for _, variant := range []string{"other branch", "rewritten away", "far after head", "inside range", "range cut back", "source kept", "missing terminal", "incomplete source"} {
+	for _, variant := range []string{"other branch", "rewritten away", "far after head", "inside range", "range cut back", "source kept", "missing terminal", "incomplete source", "missing source head"} {
 		t.Run(variant, func(t *testing.T) {
 			f := buildFixture(t, true)
 			f.head = ""
@@ -314,7 +314,7 @@ func TestTerminalOutsideInterval(t *testing.T) {
 				terminal = r.Head()
 				r.Run("reset", "--hard", one)
 				reason = "method_unproven"
-			case "far after head", "inside range", "range cut back", "incomplete source":
+			case "far after head", "inside range", "range cut back", "incomplete source", "missing source head":
 				r.Checkout("-b", "change", f.base)
 				one := r.CommitFile("work.txt", "new\nkeep\n", "one")
 				two := r.CommitFile("work.txt", "new\nkeep\ntwo\n", "two")
@@ -337,6 +337,12 @@ func TestTerminalOutsideInterval(t *testing.T) {
 					// A rewritten range ending at the terminal can own the head.
 					f.head, reason = rewritten, "method_unproven"
 				}
+				if variant == "missing source head" {
+					// The interval reaches the rewritten range, but whether
+					// the change was written on top of it needs the source
+					// head, which is not fetched yet.
+					f.head, reason = rewritten, "objects_unavailable"
+				}
 				if variant == "range cut back" {
 					// The target dropped the terminal but kept the earlier
 					// rewritten commit, which the change can still own.
@@ -348,8 +354,12 @@ func TestTerminalOutsideInterval(t *testing.T) {
 				r.Checkout("target")
 				f.head = r.CommitFile("target.txt", "two\n", "second push")
 			}
-			if variant == "missing terminal" {
+			switch variant {
+			case "missing terminal":
 				require.NoError(t, os.Remove(filepath.Join(r.GitDir, "objects", terminal[:2], terminal[2:])))
+			case "missing source head":
+				head := source[len(source)-1]
+				require.NoError(t, os.Remove(filepath.Join(r.GitDir, "objects", head[:2], head[2:])))
 			}
 			ctx, p := f.prepare(t)
 			e := fixtureEvidence(f, p, "")
@@ -367,6 +377,9 @@ func TestTerminalOutsideInterval(t *testing.T) {
 				assert.False(res.Coverage.Complete)
 				require.Len(t, res.Coverage.Gaps, 1)
 				assert.Equal(reason, res.Coverage.Gaps[0].Reason)
+				// Naming the terminal lets a caller extend its next interval
+				// to where the change can be proven.
+				assert.Equal(terminal, res.Coverage.Gaps[0].ObjectID)
 				assert.Equal(landedwork.Span{Before: f.base, Through: f.head}, res.Coverage.Gaps[0].Span)
 				assert.Empty(res.DirectPushes)
 				return

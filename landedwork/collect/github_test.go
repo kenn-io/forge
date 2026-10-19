@@ -158,3 +158,80 @@ func TestGitHubCollectionAnalysis(t *testing.T) {
 		})
 	}
 }
+
+// A fork's commits can be associated only with upstream pull requests. The
+// fork's own merged pull request must then come from its full pull request list,
+// even when a whole page of that list holds no merged entry.
+func TestGitHubForeignAssociationInventory(t *testing.T) {
+	assert, require := assert.New(t), require.New(t)
+	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r.Runner = gitsafe.Runner()
+	base := r.CommitFile("work.txt", "old\n", "base")
+	r.Checkout("-b", "topic")
+	source := r.CommitFile("work.txt", "new\n", "change")
+	r.Checkout("main")
+	r.Run("merge", "--no-ff", "topic", "-m", "merge")
+	head := r.Head()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	analysisLimits := landedwork.Limits{Records: 1000, Nodes: 1000, InputBytes: 1 << 20, OutputBytes: 1 << 20}
+	prepared, err := landedwork.Prepare(ctx, r.Root, landedwork.Bounds{Repository: query.Bounds.Repository, Base: base, Head: head}, analysisLimits)
+	require.NoError(err)
+	var pages []string
+	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := ""
+		header := make(http.Header)
+		switch req.URL.Path {
+		case "/repos/example/project":
+			body = `{"id":12,"name":"project","owner":{"login":"example"}}`
+		case "/repos/example/project/commits/" + head + "/pulls":
+			body = `[{"id":8,"number":3,"base":{"repo":{"id":99}}}]`
+		case "/repos/example/project/commits/" + source + "/pulls":
+			body = `[]`
+		case "/repos/example/project/pulls":
+			q := req.URL.Query()
+			require.Equal([]string{"all", "created", "asc"}, []string{q.Get("state"), q.Get("sort"), q.Get("direction")})
+			pages = append(pages, q.Get("page"))
+			if q.Get("page") == "2" {
+				body = `[{"id":7,"number":5,"state":"closed","merged_at":"2026-01-02T03:04:05Z","base":{"repo":{"id":12}}},{"id":10,"number":6,"state":"closed","merged_at":null,"base":{"repo":{"id":12}}}]`
+			} else {
+				header.Set("Link", `<https://api.github.com/repos/example/project/pulls?page=2>; rel="next"`)
+				body = `[{"id":9,"number":4,"state":"closed","merged_at":null,"base":{"repo":{"id":12}}}]`
+			}
+		case "/repos/example/project/pulls/5":
+			body = fmt.Sprintf(`{"id":7,"number":5,"merged":true,"merge_commit_sha":%q,"commits":1,"base":{"ref":"main","repo":{"id":12}},"head":{"sha":%q,"repo":{"id":12}}}`, head, source)
+		case "/repos/example/project/pulls/5/commits":
+			body = fmt.Sprintf(`[{"sha":%q}]`, source)
+		default:
+			require.Fail("unexpected request", req.URL.String())
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: header, Body: io.NopCloser(strings.NewReader(body)), Request: req}, nil
+	})}
+	client, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
+	require.NoError(err)
+	reader, err := github.NewProvider(github.ProviderConfig{Host: "github.com", Client: client, Clock: time.Now})
+	require.NoError(err)
+	collected, err := collect.Collect(ctx, reader, route, prepared.Query(), limits)
+	require.NoError(err)
+	assert.Equal([]string{"1", "2"}, pages, "an all-unmerged page must not end the list")
+	assert.True(collected.Evidence.Inventory.Complete)
+	require.Len(collected.Evidence.Candidates, 1)
+	candidate := collected.Evidence.Candidates[0]
+	assert.Equal("7", candidate.ID)
+	assert.True(candidate.SourceComplete)
+	assert.Equal(head, candidate.Terminal)
+	var local []platform.LandingChangeRef
+	for _, o := range collected.Observations {
+		if o.Reason == "" {
+			local = append(local, o.Change.Ref)
+		}
+	}
+	assert.Equal([]platform.LandingChangeRef{{ID: 7, Number: 5, TargetID: 12}}, local)
+	analysis, err := landedwork.Analyze(ctx, prepared, collected.Evidence, analysisLimits)
+	require.NoError(err)
+	assert.True(analysis.Coverage.Complete)
+	assert.Empty(analysis.DirectPushes)
+	require.Len(analysis.Landings, 1)
+	assert.Equal("7", analysis.Landings[0].CandidateID)
+	assert.Equal(head, analysis.Landings[0].Terminal)
+}

@@ -174,6 +174,8 @@ func TestAutomaticAggregateCancellation(t *testing.T) {
 		assert := assert.New(t)
 		assert.Empty(r.DirectPushes)
 		if empty {
+			// The empty terminal could be the last commit of a rewritten range
+			// over the earlier source commits: nothing before it rules that out.
 			assert.Empty(r.Landings)
 			assert.False(r.Coverage.Complete)
 			assert.Equal(f.base, r.Coverage.CertifiedHead)
@@ -186,5 +188,55 @@ func TestAutomaticAggregateCancellation(t *testing.T) {
 			assert.True(r.Coverage.Complete)
 			assert.Equal(f.head, r.Coverage.CertifiedHead)
 		}
+	}
+}
+
+func TestAutomaticRangeThroughEarlierCommit(t *testing.T) {
+	for _, variant := range []string{"declared in interval", "before interval"} {
+		t.Run(variant, func(t *testing.T) {
+			f := buildFixture(t, true)
+			r := f.repo
+			// Repeated lines leave no unique insertion context, so the
+			// rewritten-range pairs compared across different bases stay
+			// inconclusive.
+			r.Checkout("-b", "target", f.base)
+			base := r.CommitFile("rules", "rule\nrule\nrule\nrule\nrule\nrule\n", "rules")
+			r.Checkout("-b", "other", base)
+			other := r.CommitFile("rules", "rule\nother\nrule\nrule\nrule\nrule\nrule\n", "other rule")
+			r.Checkout("target")
+			r.Run("merge", "--squash", "other")
+			r.Run("commit", "-m", "squash other")
+			previous := r.Head()
+			r.Checkout("-b", "stacked", previous)
+			first := r.CommitFile("rules", "rule\nother\nrule\nrule\nfirst\nrule\nrule\nrule\n", "first rule")
+			second := r.CommitFile("rules", "rule\nother\nrule\nrule\nfirst\nrule\nrule\nsecond\nrule\n", "second rule")
+			r.Checkout("target")
+			r.Run("merge", "--squash", "stacked")
+			r.Run("commit", "-m", "squash stacked")
+			f.base, f.head = base, r.Head()
+			if variant == "before interval" {
+				// An earlier interval already covered the other change.
+				f.base = previous
+			}
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "")
+			e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
+			// The source was written on top of the earlier commit, so that
+			// commit cannot be one this change created when it landed.
+			e.Candidates = []landedwork.Candidate{squashCandidate(f, "7", f.head, first, second)}
+			if variant == "declared in interval" {
+				e.Candidates = append(e.Candidates, squashCandidate(f, "8", previous, other))
+			}
+			res, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(res.Coverage.Gaps)
+			require.NotEmpty(t, res.Landings)
+			assert.Equal(landedwork.Landing{
+				CandidateID: "7", Proofs: []string{"squash"}, Before: previous, Terminal: f.head,
+				Spine: []string{f.head}, Source: []string{first, second}, Introduced: []string{f.head},
+			}, res.Landings[len(res.Landings)-1])
+			assert.True(res.Coverage.Complete)
+		})
 	}
 }

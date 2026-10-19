@@ -53,8 +53,28 @@ func blockedSpine(r *Result, p *Interval) map[string]bool {
 	return blocked
 }
 
+// declaredTerminals maps each provider-declared terminal that is not one of its
+// own change's source commits to that change. Such a commit was created when the
+// change landed, so it cannot be a commit another change created by landing.
+func declaredTerminals(candidates []Candidate, terminals, ids map[string]int) map[string]string {
+	declared := make(map[string]string)
+	for _, c := range candidates {
+		if c.Terminal != "" && c.TerminalEvidence != "" && c.SourceComplete && terminals[c.Terminal] == 1 && ids[c.ID] == 1 && !slices.Contains(c.Source, c.Terminal) {
+			declared[c.Terminal] = c.ID
+		}
+	}
+	return declared
+}
+
+// declaredByOther reports whether id was created by another change's landing.
+func declaredByOther(declared map[string]string, c Candidate, id string) bool {
+	owner, ok := declared[id]
+	return ok && owner != c.ID && !slices.Contains(c.Source, id)
+}
+
 func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates []Candidate, caps Capabilities, r *Result) error {
 	terminals, ids := candidateCounts(candidates)
+	declared := declaredTerminals(candidates, terminals, ids)
 	candidates = slices.Clone(candidates)
 	slices.SortFunc(candidates, func(a, b Candidate) int { return cmp.Compare(a.ID, b.ID) })
 	var offSpine []Candidate
@@ -70,7 +90,7 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 			offSpine = append(offSpine, c)
 			continue
 		}
-		l, g := proveAt(ctx, v, p, c, caps)
+		l, g := proveAt(ctx, v, p, c, caps, declared)
 		if g.Reason != "" {
 			r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
 		} else {
@@ -82,11 +102,28 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 	}
 	rejectOverlaps(r)
 	if !v.meter.failed {
+		introduced := make(map[string]bool, len(p.query.Commits))
+		for _, id := range p.query.Commits {
+			introduced[id] = true
+		}
 		for _, c := range offSpine {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			through, g := integratedThrough(ctx, v, p, c, caps, r.Landings)
+			// An incomplete source does not bound a rewritten range's length.
+			if !introduced[c.Terminal] && c.SourceComplete {
+				reaches, g := reachesInterval(ctx, v, p, c)
+				if g.Reason != "" {
+					r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
+				}
+				if v.meter.failed {
+					break
+				}
+				if !reaches {
+					continue
+				}
+			}
+			through, g := integratedThrough(ctx, v, p, c, caps, r.Landings, declared)
 			if g.Reason != "" {
 				r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
 			} else {
@@ -103,12 +140,38 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 	return ctx.Err()
 }
 
-func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities, outers []Landing) (string, Gap) {
+// reachesInterval reports whether a change whose terminal this interval does not
+// introduce could still own part of it. A landing owns its terminal and, as a
+// rewritten range, at most one first-parent commit before it per source commit.
+// Unless this interval's head is one of those commits, the terminal is on
+// another branch, was rewritten away, or lands too far after the interval to
+// own any of it.
+func reachesInterval(ctx context.Context, v *objectView, p *Interval, c Candidate) (bool, Gap) {
+	id := c.Terminal
+	for i := 1; ; i++ {
+		if id == p.query.Bounds.Head {
+			return true, Gap{}
+		}
+		if i >= max(1, len(c.Source)) {
+			return false, Gap{}
+		}
+		parents, err := v.parents(ctx, id)
+		if err != nil {
+			return false, Gap{CandidateID: c.ID, ObjectID: id, Reason: graphReason(err)}
+		}
+		if len(parents) == 0 {
+			return false, Gap{}
+		}
+		id = parents[0]
+	}
+}
+
+func integratedThrough(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities, outers []Landing, declared map[string]string) (string, Gap) {
 	g := Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "terminal_outside_spine"}
 	if c.Method != "merge" && c.Method != "" {
 		return "", g
 	}
-	inner, failed := proveAt(ctx, v, p, c, caps)
+	inner, failed := proveAt(ctx, v, p, c, caps, declared)
 	if failed.Reason != "" {
 		return "", failed
 	}

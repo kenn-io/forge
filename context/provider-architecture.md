@@ -85,6 +85,12 @@ Across different bases, repeated text needs an exact three-way location witness
 A squash onto a target already carrying some source edits needs an exact
 three-way tree witness and must exclude a longer rebase: the terminal and its
 parent must not replay source commits in order (`landedwork/squash_witness.go::witnessedSquash`).
+An empty squash may instead exclude it by a one-commit source or a parent that is
+another change's declared terminal (`landedwork/single_parent.go::ownsOnlyTerminal`).
+A rewritten range cannot contain another change's declared terminal (outside that
+change's source) or an ancestor of its own source head (`landedwork/range.go::rangeCorrespondence`).
+A terminal outside the interval with a complete source owns none of it unless the
+head is among its first max(1, source length) first parents (`landedwork/origins.go::reachesInterval`).
 Synthesized merge objects belong only to the disposable view; caller objects
 are read-only alternates (`landedwork/git.go::openView`).
 Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base

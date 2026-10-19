@@ -29,7 +29,7 @@ func TestRangeStopsAtConclusiveMismatch(t *testing.T) {
 	v, err := openView(ctx, r.Root, m)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, v.close()) })
-	_, _, object, err := rangeCorrespondence(ctx, v, Candidate{Method: "rebase", Source: sources, Terminal: landed[1]}, base, landed[0])
+	_, _, object, err := rangeCorrespondence(ctx, v, Candidate{Method: "rebase", Source: sources, Terminal: landed[1]}, base, landed[0], nil)
 	require.ErrorIs(t, err, errCorrespondence)
 	assert.Equal(t, sources[1], object)
 }

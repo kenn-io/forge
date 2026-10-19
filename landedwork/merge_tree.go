@@ -35,11 +35,21 @@ func (v *objectView) mergeBase(ctx context.Context, before, source string) (stri
 // or exhausted budget remains inconclusive, even if Git prints a tree ID.
 // merge-tree --write-tree needs Git 2.38; an older Git is a named gap.
 func (v *objectView) mergeTreeMatches(ctx context.Context, base, before, source, after string) (bool, error) {
+	matched, empty, err := v.exactMerge(ctx, base, before, source, after)
+	if err == nil && empty {
+		return false, editProofError("empty_tree_edits")
+	}
+	return matched, err
+}
+
+// exactMerge reports whether after holds the three-way merge tree of source
+// onto before, and whether after holds the same tree as before.
+func (v *objectView) exactMerge(ctx context.Context, base, before, source, after string) (bool, bool, error) {
 	ours, theirs := before, source
 	if base != "" {
 		var err error
 		if ours, theirs, err = v.withMergeBase(ctx, base, before, source); err != nil {
-			return false, err
+			return false, false, err
 		}
 	}
 	raw, err := v.run(ctx, "merge-tree", "--write-tree", "--no-messages", ours, theirs)
@@ -47,30 +57,27 @@ func (v *objectView) mergeTreeMatches(ctx context.Context, base, before, source,
 		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
 			switch exit.ExitCode() {
 			case 1:
-				return false, editProofError("merge_conflict")
+				return false, false, editProofError("merge_conflict")
 			case 129:
 				// Git rejects --write-tree as an unknown option before 2.38.
-				return false, editProofError("merge_tree_unsupported")
+				return false, false, editProofError("merge_tree_unsupported")
 			}
 		}
-		return false, err
+		return false, false, err
 	}
 	tree := strings.TrimSpace(string(raw))
 	if !objectID(tree) {
-		return false, editProofError("merge_tree_invalid")
+		return false, false, editProofError("merge_tree_invalid")
 	}
 	actual, err := v.run(ctx, "rev-parse", after+"^{tree}")
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	prior, err := v.run(ctx, "rev-parse", before+"^{tree}")
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	if string(actual) == string(prior) {
-		return false, editProofError("empty_tree_edits")
-	}
-	return tree == strings.TrimSpace(string(actual)), nil
+	return tree == strings.TrimSpace(string(actual)), string(actual) == string(prior), nil
 }
 
 // withMergeBase stands in for merge-tree --merge-base, which needs Git 2.40.

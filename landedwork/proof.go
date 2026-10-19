@@ -7,7 +7,8 @@ import (
 )
 
 // proveAt checks the method independently of its admission to the target spine.
-func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities) (Landing, Gap) {
+// declared maps provider-declared terminals to the changes that created them.
+func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps Capabilities, declared map[string]string) (Landing, Gap) {
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}
 	reject := func(reason string) (Landing, Gap) { gap.Reason = reason; return Landing{}, gap }
 	if (c.Method == "rebase" && !caps.Rebase) || (c.Method == "fast_forward" && !caps.FastForward) {
@@ -23,7 +24,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 		return reject("source_incomplete")
 	}
 	if c.Method == "rebase" || c.Method == "fast_forward" {
-		return proveRange(ctx, v, p, c)
+		return proveRange(ctx, v, p, c, declared)
 	}
 	parents, err := v.parents(ctx, c.Terminal)
 	if err != nil {
@@ -31,7 +32,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 	}
 	method := c.Method
 	if method == "" && len(parents) == 1 && caps.SingleParentCorrespondence && slices.Contains(p.spine, c.Terminal) {
-		return proveSingleParent(ctx, v, p, c, parents[0])
+		return proveSingleParent(ctx, v, p, c, parents[0], declared)
 	}
 	if method == "" && len(parents) == 2 {
 		method = "merge"
@@ -49,7 +50,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 		return reject("source_head_mismatch")
 	}
 	if method == "squash" {
-		return proveSquash(ctx, v, c, parents[0])
+		return proveSquash(ctx, v, c, parents[0], declared)
 	}
 	if reason, object := checkSources(ctx, v, c); reason != "" {
 		gap.ObjectID = object

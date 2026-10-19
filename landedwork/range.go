@@ -6,7 +6,7 @@ import (
 	"slices"
 )
 
-func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (Landing, Gap) {
+func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate, declared map[string]string) (Landing, Gap) {
 	gap := Gap{CandidateID: c.ID, ObjectID: c.Terminal}
 	reject := func(reason string) (Landing, Gap) { gap.Reason = reason; return Landing{}, gap }
 	end := slices.Index(p.spine, c.Terminal) + 1
@@ -24,7 +24,7 @@ func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (L
 	if len(parents) != 1 {
 		return reject("topology_unproven")
 	}
-	attempts := rangeAlternatives(ctx, v, p, c, sourceBefore, parents[0])
+	attempts := rangeAlternatives(ctx, v, p, c, sourceBefore, parents[0], declared)
 	a := attempts[0]
 	if c.Method == "fast_forward" {
 		a = attempts[1]
@@ -36,9 +36,12 @@ func proveRange(ctx context.Context, v *objectView, p *Interval, c Candidate) (L
 }
 
 // Compare the fixed range from its terminal backward. Any unequal pair rejects
-// the range, even if another pair was ambiguous. A successful proof still reads
-// every required commit and its boundary; it never shortens the owned range.
-func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string) (r firstParentRange, identical bool, object string, err error) {
+// the range, even if another pair was ambiguous. A rewritten commit is created
+// when the change lands, so one that another change declares as its terminal,
+// or that the change's own source already descends from, is an unequal pair
+// too. A successful proof still reads every required commit and its boundary;
+// it never shortens the owned range.
+func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, declared map[string]string) (r firstParentRange, identical bool, object string, err error) {
 	identical = true
 	var rewritten [][]fileEdit
 	var pending error
@@ -60,10 +63,19 @@ func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, source
 			continue
 		}
 		identical = false
-		if c.Method == "fast_forward" {
+		if c.Method == "fast_forward" || declaredByOther(declared, c, pair.id) {
 			return r, identical, source, errCorrespondence
 		}
 		edits, compareErr := v.compareTreeEdits(ctx, parent, source, pair.before, pair.id)
+		if compareErr == nil || errors.Is(compareErr, errEdits) {
+			earlier, err := v.ancestor(ctx, pair.id, c.SourceHead)
+			if err != nil {
+				return r, identical, source, err
+			}
+			if earlier {
+				return r, identical, source, errCorrespondence
+			}
+		}
 		if compareErr == nil {
 			for _, previous := range rewritten {
 				if sameEdits(previous, edits) {
@@ -87,8 +99,8 @@ func rangeCorrespondence(ctx context.Context, v *objectView, c Candidate, source
 	return r, identical, pendingObject, pending
 }
 
-func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore, before string) [2]proofAttempt {
-	r, identical, object, err := rangeCorrespondence(ctx, v, c, sourceBefore, before)
+func rangeAlternatives(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore, before string, declared map[string]string) [2]proofAttempt {
+	r, identical, object, err := rangeCorrespondence(ctx, v, c, sourceBefore, before, declared)
 	if errors.Is(err, errCorrespondence) {
 		return [2]proofAttempt{{state: attemptMismatch}, {state: attemptMismatch}}
 	}

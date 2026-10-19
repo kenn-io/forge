@@ -16,10 +16,15 @@ import (
 // replays source commits in source order, each a clean cherry-pick onto the
 // previous one. The squash stays unproven unless that is disproved.
 //
+// An empty terminal, whose tree equals the squash parent's, is witnessed the
+// same way when the target already carried every source edit. For it alone,
+// onlyTerminal also excludes the longer rebase: the source has at most one
+// commit to rewrite, or the parent was created by another change's landing.
+//
 // False with no gap is a mismatch: a missing witness keeps the earlier
 // conclusive edit mismatch, so it cannot block another alternative.
-func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, ordered bool) (bool, Gap) {
-	matched, err := v.mergeTreeMatches(ctx, sourceBefore, before, c.SourceHead, c.Terminal)
+func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, ordered, onlyTerminal bool) (bool, Gap) {
+	matched, empty, err := v.exactMerge(ctx, sourceBefore, before, c.SourceHead, c.Terminal)
 	if _, ok := errors.AsType[editProofError](err); ok {
 		return false, Gap{}
 	}
@@ -28,6 +33,9 @@ func witnessedSquash(ctx context.Context, v *objectView, c Candidate, sourceBefo
 	}
 	if !matched {
 		return false, Gap{}
+	}
+	if empty && onlyTerminal {
+		return true, Gap{}
 	}
 	rebased, err := rebaseReplayPossible(ctx, v, c, before, ordered)
 	if err != nil {

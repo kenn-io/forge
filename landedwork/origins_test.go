@@ -263,3 +263,102 @@ func TestBlockedSpan(t *testing.T) {
 		assert.Equal(f.base, r.Coverage.CertifiedHead)
 	}
 }
+
+func TestTerminalOutsideInterval(t *testing.T) {
+	for _, variant := range []string{"other branch", "rewritten away", "far after head", "inside range", "missing terminal", "incomplete source"} {
+		t.Run(variant, func(t *testing.T) {
+			f := buildFixture(t, true)
+			f.head = ""
+			r := f.repo
+			r.Checkout("-b", "target", f.base)
+			first := r.CommitFile("target.txt", "one\n", "first push")
+			var terminal string
+			var source []string
+			reason := ""
+			switch variant {
+			case "other branch", "missing terminal":
+				// The change merged into another branch. Its source includes
+				// a target commit because it started from the target.
+				r.Checkout("-b", "release", f.base)
+				r.CommitFile("release.txt", "release\n", "release starts")
+				r.Checkout("-b", "feature", first)
+				work := r.CommitFile("feature.txt", "feature\n", "feature")
+				r.Checkout("release")
+				r.Run("merge", "--no-ff", "feature", "-m", "merge feature into release")
+				terminal, source = r.Head(), []string{first, work}
+				if variant == "missing terminal" {
+					reason = "objects_unavailable"
+				}
+			case "rewritten away":
+				// The change was squashed, then the target was reset to the
+				// change's own commits.
+				r.Checkout("-b", "change", first)
+				one := r.CommitFile("work.txt", "new\nkeep\n", "one")
+				two := r.CommitFile("work.txt", "new\nkeep\ntwo\n", "two")
+				r.Checkout("target")
+				r.Run("merge", "--squash", "change")
+				r.Run("commit", "-m", "squash change")
+				terminal, source = r.Head(), []string{one, two}
+				r.Run("reset", "--hard", two)
+			case "far after head", "inside range", "incomplete source":
+				r.Checkout("-b", "change", f.base)
+				one := r.CommitFile("work.txt", "new\nkeep\n", "one")
+				two := r.CommitFile("work.txt", "new\nkeep\ntwo\n", "two")
+				source = []string{one, two}
+				r.Checkout("target")
+				if variant == "far after head" {
+					r.CommitFile("later.txt", "later\n", "later push")
+				}
+				r.Run("cherry-pick", one)
+				rewritten := r.Head()
+				r.Run("cherry-pick", two)
+				terminal = r.Head()
+				// The interval ends before the change's rewritten range lands.
+				f.head = first
+				if variant == "incomplete source" {
+					// Without every source commit, the range length is unknown.
+					f.head, reason = rewritten, "source_incomplete"
+				}
+				if variant == "inside range" {
+					// A rewritten range ending at the terminal can own the head.
+					f.head, reason = rewritten, "method_unproven"
+				}
+			}
+			if f.head == "" {
+				r.Checkout("target")
+				f.head = r.CommitFile("target.txt", "two\n", "second push")
+			}
+			if variant == "missing terminal" {
+				require.NoError(t, os.Remove(filepath.Join(r.GitDir, "objects", terminal[:2], terminal[2:])))
+			}
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "")
+			e.Capabilities = landedwork.Capabilities{Merge: true, SingleParentCorrespondence: true}
+			e.Candidates = []landedwork.Candidate{squashCandidate(f, "7", terminal, source...)}
+			if variant == "incomplete source" {
+				e.Candidates[0].Source, e.Candidates[0].SourceComplete = source[1:], false
+			}
+			res, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(res.Landings)
+			assert.Empty(res.Integrated)
+			if reason != "" {
+				assert.False(res.Coverage.Complete)
+				require.Len(t, res.Coverage.Gaps, 1)
+				assert.Equal(reason, res.Coverage.Gaps[0].Reason)
+				assert.Equal(landedwork.Span{Before: f.base, Through: f.head}, res.Coverage.Gaps[0].Span)
+				assert.Empty(res.DirectPushes)
+				return
+			}
+			assert.Empty(res.Coverage.Gaps)
+			assert.True(res.Coverage.Complete)
+			var terminals []string
+			for _, d := range res.DirectPushes {
+				terminals = append(terminals, d.Terminal)
+			}
+			spine := strings.Fields(r.Run("rev-list", "--first-parent", "--reverse", f.head, "^"+f.base))
+			assert.Equal(spine, terminals)
+		})
+	}
+}

@@ -6,31 +6,37 @@ import (
 	"slices"
 )
 
-func sourceShape(ctx context.Context, v *objectView, c Candidate) (string, bool, Gap) {
+// sourceShape also counts the source's single-parent commits: an upper bound on
+// the commits any rewritten landing of the source can create.
+func sourceShape(ctx context.Context, v *objectView, c Candidate) (string, bool, int, Gap) {
 	g := Gap{CandidateID: c.ID, ObjectID: c.SourceHead}
 	if c.Source[len(c.Source)-1] != c.SourceHead {
 		g.Reason = "source_head_mismatch"
-		return "", false, g
+		return "", false, 0, g
 	}
 	before := ""
 	linear := true
+	commits := 0
 	var orderGap Gap
 	seen := make(map[string]bool, len(c.Source))
 	for i, id := range c.Source {
 		g.ObjectID = id
 		if id == "" || seen[id] {
 			g.Reason = "source_invalid"
-			return "", false, g
+			return "", false, 0, g
 		}
 		seen[id] = true
 		parents, err := v.parents(ctx, id)
 		if err != nil {
 			g.Reason = graphReason(err)
-			return "", false, g
+			return "", false, 0, g
 		}
 		if len(parents) == 0 {
 			g.Reason = "topology_unproven"
-			return "", false, g
+			return "", false, 0, g
+		}
+		if len(parents) == 1 {
+			commits++
 		}
 		linear = linear && len(parents) == 1
 		if i == 0 {
@@ -40,35 +46,42 @@ func sourceShape(ctx context.Context, v *objectView, c Candidate) (string, bool,
 		}
 	}
 	if !linear {
-		return "", false, Gap{}
+		return "", false, commits, Gap{}
 	}
 	if orderGap.Reason != "" {
-		return "", false, orderGap
+		return "", false, 0, orderGap
 	}
 	if _, err := v.parents(ctx, before); err != nil {
 		g.ObjectID, g.Reason = before, graphReason(err)
-		return "", false, g
+		return "", false, 0, g
 	}
-	return before, true, Gap{}
+	return before, true, commits, Gap{}
 }
 
 func sourceBoundary(ctx context.Context, v *objectView, c Candidate) (string, Gap) {
-	before, linear, g := sourceShape(ctx, v, c)
+	before, linear, _, g := sourceShape(ctx, v, c)
 	if g.Reason == "" && !linear {
 		g = Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: "topology_unproven"}
 	}
 	return before, g
 }
 
-func proveSquash(ctx context.Context, v *objectView, c Candidate, before string) (Landing, Gap) {
-	sourceBefore, _, g := sourceShape(ctx, v, c)
+// ownsOnlyTerminal reports whether no landing of c ending at a terminal with
+// first parent before can own more than that terminal: the source has at most
+// one commit to rewrite, or before was created by another change's landing.
+func ownsOnlyTerminal(c Candidate, commits int, before string, declared map[string]string) bool {
+	return commits <= 1 || declaredByOther(declared, c, before)
+}
+
+func proveSquash(ctx context.Context, v *objectView, c Candidate, before string, declared map[string]string) (Landing, Gap) {
+	sourceBefore, _, commits, g := sourceShape(ctx, v, c)
 	if g.Reason != "" {
 		return Landing{}, g
 	}
 	if _, err := v.parents(ctx, before); err != nil {
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: before, Reason: graphReason(err)}
 	}
-	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before)
+	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before, ownsOnlyTerminal(c, commits, before, declared))
 	if g.Reason != "" {
 		return Landing{}, g
 	}
@@ -80,7 +93,9 @@ func proveSquash(ctx context.Context, v *objectView, c Candidate, before string)
 
 // False with no gap is a conclusive mismatch. Unreadable or ambiguous edits are
 // not evidence against this alternative and must prevent choosing another one.
-func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string) (bool, Gap) {
+// onlyTerminal reports that no landing of the source can own more than the
+// terminal; see witnessedSquash.
+func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourceBefore, before string, onlyTerminal bool) (bool, Gap) {
 	g := Gap{CandidateID: c.ID}
 	linear := sourceBefore != ""
 	if !linear {
@@ -93,9 +108,12 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 		if err != nil {
 			return false, Gap{CandidateID: c.ID, ObjectID: c.SourceHead, Reason: editReason(err)}
 		}
-		matched, err := v.mergeTreeMatches(ctx, "", before, c.SourceHead, c.Terminal)
+		matched, empty, err := v.exactMerge(ctx, "", before, c.SourceHead, c.Terminal)
 		if err != nil {
 			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: editReason(err)}
+		}
+		if empty && !matched {
+			return false, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "empty_tree_edits"}
 		}
 		if !matched {
 			return false, Gap{}
@@ -110,7 +128,14 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 	}
 	_, err := v.compareTreeEdits(ctx, sourceBefore, c.SourceHead, before, c.Terminal)
 	if errors.Is(err, errCorrespondence) {
-		return witnessedSquash(ctx, v, c, sourceBefore, before, linear)
+		return witnessedSquash(ctx, v, c, sourceBefore, before, linear, onlyTerminal)
+	}
+	if errors.Is(err, editProofError("empty_tree_edits")) {
+		// Without the witness, an empty terminal could be the last commit of a
+		// rewritten range, so it stays unproven rather than a mismatch.
+		if matched, g := witnessedSquash(ctx, v, c, sourceBefore, before, linear, onlyTerminal); matched || g.Reason != "" {
+			return matched, g
+		}
 	}
 	if err != nil {
 		g.ObjectID, g.Reason = c.Terminal, editReason(err)
@@ -126,15 +151,15 @@ func editReason(err error) string {
 	return graphReason(err)
 }
 
-func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candidate, before string) (Landing, Gap) {
-	sourceBefore, linear, g := sourceShape(ctx, v, c)
+func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candidate, before string, declared map[string]string) (Landing, Gap) {
+	sourceBefore, linear, commits, g := sourceShape(ctx, v, c)
 	if g.Reason != "" {
 		return Landing{}, g
 	}
 	if _, err := v.parents(ctx, before); err != nil {
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: before, Reason: graphReason(err)}
 	}
-	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before)
+	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before, ownsOnlyTerminal(c, commits, before, declared))
 	squash := proofAttempt{state: attemptMismatch}
 	if g.Reason != "" {
 		squash = proofAttempt{gap: g}
@@ -145,7 +170,7 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 	// source chain required by either rewritten-range alternative.
 	ranges := [2]proofAttempt{{state: attemptMismatch}, {state: attemptMismatch}}
 	if linear {
-		ranges = rangeAlternatives(ctx, v, p, c, sourceBefore, before)
+		ranges = rangeAlternatives(ctx, v, p, c, sourceBefore, before, declared)
 	}
 	return resolveAlternatives(c, []proofAttempt{squash, ranges[0], ranges[1]}, v.meter.failed)
 }

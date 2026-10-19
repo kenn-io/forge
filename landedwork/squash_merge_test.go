@@ -167,3 +167,138 @@ func TestRepeatedTextReplayedFromDifferentAncestry(t *testing.T) {
 	assert.Equal(t, []string{f.head}, r.Landings[0].Spine)
 	assert.True(t, r.Coverage.Complete)
 }
+
+// squashCandidate describes a squash landing declared by the provider. Its
+// terminal is not one of its source commits: the landing created it.
+func squashCandidate(f fixture, id, terminal string, source ...string) landedwork.Candidate {
+	return landedwork.Candidate{
+		Repository: f.bounds().Repository, ID: id, Terminal: terminal,
+		SourceHead: source[len(source)-1], Source: source, SourceComplete: true,
+		TerminalEvidence: "fixture-terminal",
+	}
+}
+
+func TestSquashOfAlreadyPresentEdits(t *testing.T) {
+	type landing struct {
+		id, terminal string
+		proofs       []string
+	}
+	for _, method := range []string{"squash", "automatic"} {
+		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly"} {
+			if method == "automatic" && mode == "partly pushed directly" {
+				// The automatic rewritten-range alternative explains this shape.
+				continue
+			}
+			t.Run(method+"/"+mode, func(t *testing.T) {
+				f := buildFixture(t, true)
+				r := f.repo
+				r.Checkout("-b", "target", f.base)
+				var candidates []landedwork.Candidate
+				var want []landing
+				var direct []string
+				reason := ""
+				switch mode {
+				case "cancelled":
+					// The source edits cancel out, so the squash has no edits.
+					r.Checkout("-b", "other", f.base)
+					other := r.CommitFile("other.txt", "other\n", "other change")
+					r.Checkout("-b", "cancel", f.base)
+					first := r.CommitFile("work.txt", "temporary\nkeep\n", "try")
+					last := r.CommitFile("work.txt", "old\nkeep\n", "undo")
+					r.Checkout("target")
+					r.Run("merge", "--squash", "other")
+					r.Run("commit", "-m", "squash other")
+					previous := r.Head()
+					r.Run("merge", "--squash", "cancel")
+					r.Run("commit", "--allow-empty", "-m", "squash cancelled")
+					candidates = []landedwork.Candidate{
+						squashCandidate(f, "8", previous, other),
+						squashCandidate(f, "7", r.Head(), first, last),
+					}
+					want = []landing{{"8", previous, nil}, {"7", r.Head(), []string{"squash"}}}
+				case "landed by another", "pushed directly":
+					// Another landing already contains the source edit by the
+					// time the branch is updated and squashed.
+					r.Checkout("-b", "fix", f.base)
+					fix := r.CommitFile("work.txt", "new\nkeep\n", "fix")
+					r.Checkout("target")
+					if mode == "pushed directly" {
+						direct = append(direct, r.CommitFile("work.txt", "new\nkeep\n", "same fix pushed"))
+					} else {
+						r.Checkout("-b", "other", f.base)
+						same := r.CommitFile("work.txt", "new\nkeep\n", "same fix")
+						extra := r.CommitFile("other.txt", "other\n", "other change")
+						r.Checkout("target")
+						r.Run("merge", "--squash", "other")
+						r.Run("commit", "-m", "squash other")
+						candidates = append(candidates, squashCandidate(f, "8", r.Head(), same, extra))
+						want = append(want, landing{"8", r.Head(), nil})
+					}
+					r.Checkout("fix")
+					r.Run("merge", "--no-ff", "target", "-m", "update branch")
+					update := r.Head()
+					r.Checkout("target")
+					r.Run("merge", "--squash", "fix")
+					r.Run("commit", "--allow-empty", "-m", "squash fix")
+					candidates = append(candidates, squashCandidate(f, "7", r.Head(), fix, update))
+					want = append(want, landing{"7", r.Head(), []string{"squash"}})
+				case "stacked", "partly pushed directly":
+					// The second change was stacked on the first, so its source
+					// repeats the first change's commit.
+					r.Checkout("-b", "first", f.base)
+					first := r.CommitFile("work.txt", "new\nkeep\n", "first")
+					r.Checkout("-b", "second", first)
+					second := r.CommitFile("other.txt", "other\n", "second")
+					r.Checkout("target")
+					if mode == "stacked" {
+						r.Run("merge", "--squash", "first")
+						r.Run("commit", "-m", "squash first")
+						candidates = append(candidates, squashCandidate(f, "8", r.Head(), first))
+						want = append(want, landing{"8", r.Head(), nil})
+					} else {
+						direct = append(direct, r.CommitFile("work.txt", "new\nkeep\n", "first pushed"))
+						reason = "source_correspondence_unproven"
+					}
+					r.Run("merge", "--squash", "second")
+					r.Run("commit", "-m", "squash second")
+					candidates = append(candidates, squashCandidate(f, "7", r.Head(), first, second))
+					want = append(want, landing{"7", r.Head(), []string{"squash"}})
+				}
+				f.head = r.Head()
+				ctx, p := f.prepare(t)
+				e := fixtureEvidence(f, p, "")
+				e.Candidates = candidates
+				for i := range e.Candidates {
+					if method == "squash" {
+						e.Candidates[i].Method, e.Candidates[i].MethodEvidence = "squash", "fixture-method"
+					}
+				}
+				if method == "automatic" {
+					e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
+				}
+				res, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+				require.NoError(t, err)
+				assert := assert.New(t)
+				if reason != "" {
+					assert.Empty(res.Landings)
+					assert.False(res.Coverage.Complete)
+					require.Len(t, res.Coverage.Gaps, 1)
+					assert.Equal(reason, res.Coverage.Gaps[0].Reason)
+					return
+				}
+				assert.Empty(res.Coverage.Gaps)
+				require.Len(t, res.Landings, len(want))
+				for i, l := range want {
+					assert.Equal(l.id, res.Landings[i].CandidateID)
+					assert.Equal([]string{l.terminal}, res.Landings[i].Spine)
+					if l.proofs != nil {
+						assert.Equal(l.proofs, res.Landings[i].Proofs)
+					}
+				}
+				assert.Len(res.DirectPushes, len(direct))
+				assert.True(res.Coverage.Complete)
+				assert.Equal(f.head, res.Coverage.CertifiedHead)
+			})
+		}
+	}
+}

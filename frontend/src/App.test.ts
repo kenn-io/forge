@@ -1,6 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Cause, Effect } from "effect";
-import { flushSync } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as telemetry from "./lib/app/telemetry.js";
 import { mountApplication } from "./lib/app/mount.js";

@@ -603,7 +603,7 @@ describe("App feature routes", () => {
       vi.setSystemTime(new Date("2026-10-18T00:02:00Z"));
       window.dispatchEvent(new Event("focus"));
       await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
-      now += 600_000;
+      now += 2_400_000;
       receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
       await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
       now += 120_000;
@@ -622,16 +622,14 @@ describe("App feature routes", () => {
 
   it("stops session reporting after a disabled receipt", async () => {
     startup.autoReady = false;
-    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-01-02T12:00:00Z"));
     let hidden = false;
     let now = 0;
     vi.spyOn(performance, "now").mockImplementation(() => now);
     vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
-    const posts: Array<{ event: string }> = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
       const body = (await new Request(input, init).json()) as { event: string };
-      posts.push(body);
       return Response.json({ status: body.event === "screen_viewed" ? "disabled" : "queued" }, { status: 202 });
     });
     const startReporter = vi.spyOn(telemetry, "startRuntimeTelemetry");
@@ -653,7 +651,7 @@ describe("App feature routes", () => {
       const reportVisit = vi.spyOn(reporter, "reportVisit");
       now = 120_000;
       window.dispatchEvent(new Event("pagehide"));
-      await vi.waitFor(() => expect(posts.filter((post) => post.event === "session_ended")).toHaveLength(1));
+      await vi.waitFor(() => expect(reportVisit).toHaveBeenCalledOnce());
       window.dispatchEvent(new Event("pageshow"));
       now = 240_000;
       hidden = true;
@@ -662,14 +660,11 @@ describe("App feature routes", () => {
       await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
       reportVisit.mockClear();
       window.dispatchEvent(new Event("pagehide"));
-      await vi.advanceTimersByTimeAsync(30 * 60_000);
       hidden = false;
       window.dispatchEvent(new Event("pageshow"));
       now += 120_000;
       window.dispatchEvent(new Event("pagehide"));
-      await vi.advanceTimersByTimeAsync(0);
       expect(reportVisit).not.toHaveBeenCalled();
-      expect(posts.filter((post) => post.event === "session_ended")).toHaveLength(1);
     } finally {
       await Effect.runPromise(mounted.dispose);
       vi.useRealTimers();

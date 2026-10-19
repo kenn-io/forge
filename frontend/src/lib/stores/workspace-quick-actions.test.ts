@@ -28,7 +28,7 @@ describe("quick-action launch serialization", () => {
   const launchDevboxHandoff = vi.fn();
   const telemetry = vi.fn(async () => ({ status: "queued" }));
 
-  beforeEach(() => {
+  beforeEach(async () => {
     quickActionLaunches.clear();
     quickActionWorkspaces.clear();
     launchHandoff.mockReset();
@@ -40,7 +40,7 @@ describe("quick-action launch serialization", () => {
         DevboxesService: { launchDevboxHandoff },
       }),
     );
-    startTestTelemetry(runtime, telemetry);
+    await startTestTelemetry(runtime, telemetry).ready;
   });
 
   afterEach(async () => {

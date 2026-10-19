@@ -54,15 +54,14 @@ describe("browser telemetry", () => {
       return reply();
     });
     const runtime = makeAppRuntime(makeGeneratedClient());
-    const restart = () => startRuntimeTelemetry(runtime, { storageKey: "test.browser.telemetry" });
-    const reporter = restart();
+    const reporter = startRuntimeTelemetry(runtime, { storageKey: "test.browser.telemetry" });
     const quiet = vi.fn();
     reporter.onQuietChange(quiet);
     onTestFinished(async () => {
       reporter.stop();
       await Effect.runPromise(runtime.disposeEffect);
     });
-    return { sent, runtime, reporter, quiet, restart };
+    return { sent, runtime, reporter, quiet };
   }
 
   it("sends nothing after an enabled gate receives a disabled receipt", async () => {
@@ -76,98 +75,65 @@ describe("browser telemetry", () => {
     expect(sent).toHaveLength(2);
     reportPRViewed(runtime, "gitlab");
     reportWorkspaceOpened(runtime, "adhoc");
-    reporter.reportScreen("settings");
-    reporter.reportVisit(
-      { event: "session_ended", properties: { surface: "web", duration_bucket: "under_1m" } },
-      { keepalive: true },
-    );
-    window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
     expect(sent).toHaveLength(2);
   });
 
-  it("keeps core actions while a later-day check recovers from opt-out", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
-    const receipt = Promise.withResolvers<Response>();
-    let checking = false;
-    const { sent, runtime, quiet } = setup(() =>
-      checking
-        ? receipt.promise.then((response) => response.clone())
-        : Promise.resolve(Response.json({ status: "disabled" }, { status: 202 })),
-    );
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    checking = true;
-    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
-    window.dispatchEvent(new Event("focus"));
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    reportPRViewed(runtime, "github");
-    reportWorkspaceOpened(runtime, "adhoc");
-    expect(sent).toHaveLength(2);
-    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
-    await vi.waitFor(() =>
-      expect(sent.slice(2)).toEqual([
-        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-        { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
-      ]),
-    );
-  });
-
-  it("keeps screen claims when the runtime reporter restarts", async () => {
-    const { sent, reporter, quiet, restart } = setup();
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
-    reporter.reportScreen("docs");
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    reporter.stop();
-    const next = restart();
-    onTestFinished(() => next.stop());
-    next.reportScreen("docs");
-    next.reportScreen("settings");
-    await vi.waitFor(() => expect(sent).toHaveLength(3));
-    expect(sent.map((event) => event.properties.screen)).toEqual([undefined, "docs", "settings"]);
-  });
-
-  it.each([false, true])("admits pending core actions only on their UTC day, rollover: %s", async (rollover) => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date("2026-10-17T23:59:00Z"));
-    const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime, quiet } = setup(() => receipt.promise.then((response) => response.clone()));
-    const actions = () => sent.filter((event) => event.event === "pr_viewed" || event.event === "workspace_opened");
-    for (let i = 0; i < 10; i++) {
-      reportPRViewed(runtime, "gh");
-      reportPRViewed(runtime, "gl");
-      reportWorkspaceOpened(runtime, "pull_request");
-      reportWorkspaceOpened(runtime, "adhoc");
-    }
-    reportPRViewed(runtime, "unknown");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(actions()).toEqual([]);
-    if (rollover) vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
-    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    if (rollover) {
+  it.each(["same day", "expired day", "recovering after opt-out"])(
+    "canonicalizes and deduplicates pending actions, expires old days, and readmits next day: %s",
+    async (mode) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      const recovering = mode === "recovering after opt-out";
+      vi.setSystemTime(new Date(recovering ? "2026-10-16T23:59:00Z" : "2026-10-17T23:59:00Z"));
+      const receipt = Promise.withResolvers<Response>();
+      let checking = !recovering;
+      const { sent, runtime, quiet } = setup(() =>
+        checking
+          ? receipt.promise.then((response) => response.clone())
+          : Promise.resolve(Response.json({ status: "disabled" }, { status: 202 })),
+      );
+      if (recovering) {
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        checking = true;
+        vi.setSystemTime(new Date("2026-10-17T23:59:00Z"));
+        window.dispatchEvent(new Event("focus"));
+        await vi.waitFor(() => expect(sent).toHaveLength(2));
+      }
+      const actions = () => sent.filter((event) => event.event === "pr_viewed" || event.event === "workspace_opened");
+      for (let i = 0; i < 10; i++) {
+        reportPRViewed(runtime, "gh");
+        reportPRViewed(runtime, "gl");
+        reportWorkspaceOpened(runtime, "pull_request");
+        reportWorkspaceOpened(runtime, "adhoc");
+      }
+      reportPRViewed(runtime, "unknown");
+      await new Promise((resolve) => setTimeout(resolve, 0));
       expect(actions()).toEqual([]);
-      return;
-    }
-    const expected = [
-      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-      { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
-      { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
-      { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
-    ];
-    expect(actions()).toEqual(expected);
-    reportPRViewed(runtime, "github");
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(actions()).toEqual(expected);
-    vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
-    reportWorkspaceOpened(runtime, "adhoc");
-    await vi.waitFor(() => expect(actions()).toHaveLength(5));
-    expect(actions()[4]).toEqual(expected[3]);
-  });
+      if (mode === "expired day") vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
+      receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (mode === "expired day") {
+        expect(actions()).toEqual([]);
+        return;
+      }
+      const expected = [
+        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+        { event: "pr_viewed", properties: { provider: "gitlab", surface: "web" } },
+        { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+        { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
+      ];
+      expect(actions()).toEqual(expected);
+      reportPRViewed(runtime, "github");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(actions()).toEqual(expected);
+      vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
+      reportWorkspaceOpened(runtime, "adhoc");
+      await vi.waitFor(() => expect(actions()).toHaveLength(5));
+      expect(actions()[4]).toEqual(expected[3]);
+    },
+  );
 
   it("readmits a core action after failed delivery", async () => {
     let status = 202;

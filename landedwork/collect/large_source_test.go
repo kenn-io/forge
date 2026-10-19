@@ -14,6 +14,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/landedwork"
 	"go.kenn.io/forge/landedwork/collect"
@@ -42,7 +43,7 @@ func commitTree(r *gittest.Repo, msg string, parents ...string) string {
 
 func newLargePullRequest(t *testing.T, before, after int) largePullRequest {
 	t.Helper()
-	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r := gittest.NewRepo(t, gittest.Options{Dir: gitfixture.ScratchDir(t), InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
 	r.Runner = gitsafe.Runner()
 	pr := largePullRequest{repo: r}
 	pr.base = r.CommitFile("work.txt", "old\n", "base")

@@ -49,6 +49,15 @@ func NewRepository(t *testing.T, withUpstream bool) *Repository {
 	return repo
 }
 
+// ScratchDir returns an empty temporary directory that Git confirms is outside
+// every repository and worktree, for fixtures built with other helpers.
+func ScratchDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	require.NoError(t, outsideRepositories(t.Context(), dir))
+	return dir
+}
+
 // outsideRepositories refuses fixture directories inside an existing repository
 // or worktree, where Git would act on the enclosing checkout, such as when
 // TMPDIR points into one.

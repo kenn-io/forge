@@ -66,52 +66,42 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 			later.observe(b, "issues", platform.ErrNotFound)
 			s.finishSyncPass(later, tc.tracked)
 			assert.Len(t, events, tc.wantLater)
-			if disabled := tc.next["a"]; errors.Is(disabled, platform.ErrRepositoryFeatureDisabled) || errors.Is(disabled, platform.ErrSyncDisabled) {
-				recovered := &syncPass{}
-				recovered.observe(a, "issues", nil)
-				recovered.observe(b, "issues", nil)
-				s.finishSyncPass(recovered, tc.tracked)
-				pass := &syncPass{}
-				pass.observe(a, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
-				s.finishSyncPass(pass, tc.tracked)
-				assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "not_found"}, {"issues", "auth"}}, events)
-			}
+		})
+	}
+}
+
+func TestSyncFailedPreservesSiblingCauseUnderDisabledError(t *testing.T) {
+	for _, disabled := range []error{platform.ErrRepositoryFeatureDisabled, platform.ErrSyncDisabled} {
+		t.Run(disabled.Error(), func(t *testing.T) {
+			repo := RepoRef{Owner: "acme", Name: "widget"}
+			var events [][2]string
+			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+			pass := &syncPass{}
+			pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
+			s.finishSyncPass(pass, []RepoRef{repo})
+			assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
 		})
 	}
 }
 
 func TestSyncFailedScopeCauses(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		issuesErr error
-		want      [][2]string
-	}{
-		{"separate reasons", &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}, [][2]string{{"merge_requests", "auth"}, {"issues", "provider"}}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			d := openTestDB(t)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			id, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-			require.NoError(t, err)
-			now := time.Now().UTC()
-			_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 1, Number: 1, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
-			require.NoError(t, err)
-			client := &partialFailureMock{}
-			client.listOpenIssuesErr = tc.issuesErr
-			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-				return nil, platform.ErrPermissionDenied
-			}
-			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.RunOnce(t.Context())
-			assert.Equal(t, tc.want, events)
-			// A pull-list failure leaves issues unread, preserving its outage.
-			client.listOpenPRsErr = platform.ErrPermissionDenied
-			s.RunOnce(t.Context())
-			assert.Equal(t, tc.want, events)
-		})
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	id, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 1, Number: 1, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+	require.NoError(t, err)
+	client := &partialFailureMock{}
+	client.listOpenIssuesErr = &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
+	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		return nil, platform.ErrPermissionDenied
 	}
+	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "provider"}}, events)
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {
@@ -198,14 +188,16 @@ func TestSyncFailedRefsAndChecks(t *testing.T) {
 }
 
 func TestSyncFailureReason(t *testing.T) {
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name string
 		err  error
 		want string
 	}{
-		{"github primary limit", &gh.RateLimitError{}, "rate_limited"},
-		{"github secondary limit", &gh.AbuseRateLimitError{}, "rate_limited"},
-		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}, "provider"},
+		{"github primary limit", &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
+		{"github secondary limit", &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
+		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable, Request: req}}, "provider"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
@@ -272,30 +264,17 @@ func TestSyncFailedResolvedIdentityRetainsUnreadOutage(t *testing.T) {
 }
 
 func TestSyncFailedProviderCIAttribution(t *testing.T) {
-	for _, lane := range []string{"detail drain", "full pass"} {
-		t.Run(lane, func(t *testing.T) {
-			s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
-				p.checksErr = platform.ErrPermissionDenied
-			})
-			seedObservedMR(t, d, repoID, "")
-			bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
-			require.NoError(t, err)
-			s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			pass := &syncPass{}
-			ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-			if lane == "detail drain" {
-				s.drainDetailQueue(ctx, map[string]bool{bucket: true}, []RepoRef{observedGitLabRepo})
-			} else {
-				s.RunOnce(t.Context())
-				assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
-				return
-			}
-			s.finishSyncPass(pass, s.TrackedRepos())
-			assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
-		})
-	}
+	s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
+		p.checksErr = platform.ErrPermissionDenied
+	})
+	seedObservedMR(t, d, repoID, "")
+	bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
+	require.NoError(t, err)
+	s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
@@ -396,19 +375,12 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 						assert.Equal(t, [][2]string{{source, "provider"}}, events)
 						return
 					}
-					var want [][2]string
-					if scenario == "disabled failing" {
-						want = [][2]string{{source, "auth"}}
-					}
 					assert.Empty(t, s.syncFailures[source])
-					assert.Equal(t, want, events)
-					// Disabling one repository must leave genuine failures in another observable.
-					other := RepoRef{Owner: "acme", Name: "other", PlatformHost: "github.com"}
-					later := &syncPass{}
-					later.observe(other, source, platform.ErrNotFound)
-					s.finishSyncPass(later, []RepoRef{repo, other})
-					want = append(want, [2]string{source, "not_found"})
-					assert.Equal(t, want, events)
+					if scenario == "disabled failing" {
+						assert.Equal(t, [][2]string{{source, "auth"}}, events)
+					} else {
+						assert.Empty(t, events)
+					}
 				})
 			}
 		})

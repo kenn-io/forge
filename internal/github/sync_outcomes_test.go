@@ -534,6 +534,34 @@ func TestSyncFailedRawIssueReads(t *testing.T) {
 	}
 }
 
+func TestSyncFailedGitProcessCapacity(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	clones := gitclone.New(t.TempDir(), nil)
+	clones.SetAllowInsecureHTTP("gitlab", host, true)
+	t.Cleanup(clones.Wait)
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
+	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	limiter := procutil.NewLimiterWithAcquireTimeout(1, time.Second)
+	release, err := limiter.TryAcquire(t.Context(), "hold capacity")
+	require.NoError(t, err)
+	t.Cleanup(release)
+	t.Cleanup(procutil.SetDefaultLimiterForTest(limiter))
+	s.RunOnce(t.Context())
+	assert.Zero(t, calls.Load())
+	assert.Empty(t, events)
+}
+
 func TestSyncFailedGitCloneErrors(t *testing.T) {
 	for _, scenario := range []string{"remote clone failure", "local credential failure"} {
 		t.Run(scenario, func(t *testing.T) {

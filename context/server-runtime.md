@@ -1,7 +1,7 @@
 # Server Runtime
 
 - Full sync passes report at most one `sync_failed` per source when it goes from no retained repository failures to failing, with fixed `sync_source` and `reason`, without repository identifiers.
-  Primary list, detail, and CI reads count; clone failures count when Git reports an authentication or network failure. Missing individual items, local filesystem failures, and process capacity limits leave the source unread.
+  Primary list, detail, and CI reads count; clone and fetch failures count when Git reports an authentication failure or a timeout. Other Git failures, such as DNS, local disk, or permission errors, leave the source unread, as do missing individual items and process capacity limits.
   Unread repositories retain state; recovery or disablement clears it, and archived or untracked repositories drop out. Counts stay in memory; restarts or identity changes can count an outage twice
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the

@@ -46,7 +46,6 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		{"cadence skipped", map[string]error{"b": nil}, []RepoRef{a, b}, 1},
 		{"budget refused", map[string]error{"a": platform.ErrSyncBudgetExhausted, "b": nil}, []RepoRef{a, b}, 1},
 		{"disabled", map[string]error{"a": platform.ErrRepositoryFeatureDisabled}, []RepoRef{a, b}, 2},
-		{"sync disabled", map[string]error{"a": platform.ErrSyncDisabled}, []RepoRef{a, b}, 2},
 		{"untracked", map[string]error{"b": nil}, []RepoRef{b}, 2},
 		{"archived", map[string]error{"b": nil}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, 2},
 	} {
@@ -71,16 +70,67 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 }
 
 func TestSyncFailedPreservesSiblingCauseUnderDisabledError(t *testing.T) {
-	for _, disabled := range []error{platform.ErrRepositoryFeatureDisabled, platform.ErrSyncDisabled} {
-		t.Run(disabled.Error(), func(t *testing.T) {
-			repo := RepoRef{Owner: "acme", Name: "widget"}
+	repo := RepoRef{Owner: "acme", Name: "widget"}
+	var events [][2]string
+	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+	pass := &syncPass{}
+	pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, platform.ErrRepositoryFeatureDisabled, platform.ErrPermissionDenied))
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
+}
+
+func TestSyncFailedLookupDuringFeatureCooldown(t *testing.T) {
+	for _, source := range []string{"issues", "merge_requests"} {
+		t.Run(source, func(t *testing.T) {
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			other := RepoRef{Owner: "acme", Name: "other", PlatformHost: "github.com"}
+			client := &partialFailureMock{}
+			disabled := platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", source, errors.New("feature disabled"))
+			if source == "issues" {
+				client.listOpenIssuesErr = disabled
+			} else {
+				client.listOpenPRsErr = disabled
+			}
+			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
 			var events [][2]string
-			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-			pass := &syncPass{}
-			pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			require.Empty(t, events)
+			client.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+				return nil, platform.ErrPermissionDenied
+			}
+			s.RunOnce(t.Context())
+			otherSource := "merge_requests"
+			if source == otherSource {
+				otherSource = "issues"
+			}
+			require.Equal(t, [][2]string{{otherSource, "auth"}}, events)
+			client.getRepositoryFn = nil
+			s.RunOnce(t.Context())
+			s.RunOnce(t.Context())
+			if source == "issues" {
+				client.listOpenIssuesErr = platform.ErrPermissionDenied
+			} else {
+				client.listOpenPRsErr = platform.ErrPermissionDenied
+			}
+			s.SetRepos(append(s.TrackedRepos(), other))
+			s.RunOnce(t.Context())
+			assert.Equal(t, [][2]string{{otherSource, "auth"}, {source, "auth"}}, events)
 		})
+	}
+}
+
+func TestSyncFailedResolvedIdentityFailureOverridesSuccess(t *testing.T) {
+	for range 100 {
+		repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+		var events [][2]string
+		s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+		pass := &syncPass{}
+		pass.observe(repo, "issues", platform.ErrPermissionDenied)
+		repo.Key = platform.RepositoryIDKey(42)
+		pass.observe(repo, "issues", nil)
+		s.finishSyncPass(pass, []RepoRef{repo})
+		require.Equal(t, [][2]string{{"issues", "auth"}}, events)
 	}
 }
 

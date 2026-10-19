@@ -95,7 +95,7 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 		return
 	}
 	for source, supported := range map[string]bool{"merge_requests": caps.ReadMergeRequests, "issues": caps.ReadIssues} {
-		if supported {
+		if supported && !s.featureCooldowns.coolingDown(repo, source, s.now().UTC()) {
 			cause := err
 			if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
 				cause = disabled
@@ -138,10 +138,18 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			}
 		}
+		// A route and its resolved identity can both be observed in one pass.
+		// Combine them before applying recovery so failures always win.
+		observed := make(map[string]string, len(pass.results[source]))
 		for key, reason := range pass.results[source] {
 			if resolved := live[key]; resolved != "" {
 				key = resolved
 			}
+			if observed[key] == "" {
+				observed[key] = reason
+			}
+		}
+		for key, reason := range observed {
 			if reason == "" {
 				delete(failures, key)
 			} else {

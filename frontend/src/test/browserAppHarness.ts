@@ -113,7 +113,7 @@ export async function mountBrowserApp(path: string, options: MountBrowserAppOpti
   const telemetry = startRuntimeTelemetry(runtime, {
     route: getCaptureTelemetryEventUrl(),
     surface: "web",
-    storageKey: "kit-ui.app-opened.web",
+    storageKey: `test.telemetry.${crypto.randomUUID()}`,
     post: (route, event, options) =>
       orvalRequest(route, {
         method: "POST",

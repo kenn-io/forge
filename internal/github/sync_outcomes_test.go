@@ -11,11 +11,13 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"uuid"
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -369,33 +371,160 @@ func TestSyncFailedRepositoryLookup(t *testing.T) {
 }
 
 func TestSyncFailedGitCloneErrors(t *testing.T) {
-	for _, tc := range []struct {
-		name, want string
-		status     int
-	}{
-		{"server", "other", http.StatusServiceUnavailable},
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
+	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	clones := gitclone.New(t.TempDir(), nil)
+	clones.SetAllowInsecureHTTP("gitlab", host, true)
+	t.Cleanup(clones.Wait)
+	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Positive(t, calls.Load())
+	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+}
+
+// The list excludes the seeded item, so its read comes from closure reconciliation.
+type closureFailureProvider struct {
+	*syncTestReadProvider
+	failure error
+}
+
+func (p *closureFailureProvider) GetMergeRequest(_ context.Context, _ platform.RepoRef, _ int) (platform.MergeRequest, error) {
+	p.getMRCalls.Add(1)
+	return platform.MergeRequest{}, p.failure
+}
+
+func TestSyncFailedClosureReads(t *testing.T) {
+	for _, providerRef := range []RepoRef{
+		{Platform: platform.KindGitHub, PlatformHost: "github.com"},
+		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com"},
+		{Platform: platform.KindForgejo, PlatformHost: "forgejo.example.com"},
+		{Platform: platform.KindGitea, PlatformHost: "gitea.example.com"},
+		{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.org", Key: platform.RepositoryUUIDKey(uuid.MustParse("11111111-1111-4111-8111-111111111111"))},
+		{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.example.com"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				w.WriteHeader(tc.status)
-			}))
-			t.Cleanup(server.Close)
-			host := strings.TrimPrefix(server.URL, "http://")
-			repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
-			provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
-			registry, err := platform.NewRegistry(provider)
+		for _, status := range []int{404, 503} {
+			t.Run(fmt.Sprintf("%s/%d", providerRef.PlatformHost, status), func(t *testing.T) {
+				d := openTestDB(t)
+				repo := providerRef
+				repo.Owner, repo.Name = "acme", "widget"
+				kind := repo.Platform
+				id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+				require.NoError(t, err)
+				now := time.Now().UTC()
+				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+				require.NoError(t, err)
+				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+				require.NoError(t, err)
+				var failure error
+				switch kind {
+				case platform.KindGitHub:
+					failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
+				case platform.KindGitLab:
+					failure = &gitlab.ErrorResponse{StatusCode: status}
+				case platform.KindForgejo, platform.KindGitea:
+					failure = &gitealike.HTTPError{StatusCode: status}
+				case platform.KindBitbucket:
+					if repo.PlatformHost == "bitbucket.org" {
+						failure = &bitbucket.UnexpectedResponseStatusError{StatusCode: status}
+					} else {
+						failure = &bitbucketdc.HTTPError{StatusCode: status}
+					}
+				}
+				var s *Syncer
+				var issueCalls, mrCalls atomic.Int32
+				provider := &closureFailureProvider{syncTestReadProvider: &syncTestReadProvider{kind: kind, host: repo.PlatformHost, getIssueErr: failure}, failure: failure}
+				if kind == platform.KindGitHub {
+					client := &partialFailureMock{}
+					client.getIssueFn = func(_ context.Context, owner, name string, number int) (*gh.Issue, error) {
+						assert.Equal(t, "acme/widget/7", fmt.Sprintf("%s/%s/%d", owner, name, number))
+						issueCalls.Add(1)
+						return nil, failure
+					}
+					client.getPullRequestFn = func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+						assert.Equal(t, "acme/widget/8", fmt.Sprintf("%s/%s/%d", owner, name, number))
+						mrCalls.Add(1)
+						return nil, failure
+					}
+					s = NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+				} else {
+					registry, registryErr := platform.NewRegistry(provider)
+					require.NoError(t, registryErr)
+					s = NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+				}
+				var events [][2]string
+				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+				s.RunOnce(t.Context())
+				if kind == platform.KindGitHub {
+					require.Positive(t, issueCalls.Load())
+					require.Positive(t, mrCalls.Load())
+				} else {
+					require.Positive(t, provider.getIssueCalls.Load())
+					require.Positive(t, provider.getMRCalls.Load())
+				}
+				if status == 404 {
+					assert.Empty(t, events)
+				} else {
+					assert.Equal(t, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}, events)
+				}
+			})
+		}
+	}
+}
+
+func TestSyncFailedPersistenceIsLocal(t *testing.T) {
+	for _, target := range []string{"settings", "identity", "issues", "merge_requests"} {
+		t.Run(target, func(t *testing.T) {
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
 			require.NoError(t, err)
-			clones := gitclone.New(t.TempDir(), nil)
-			clones.SetAllowInsecureHTTP("gitlab", host, true)
-			t.Cleanup(clones.Wait)
-			s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+			triggers := map[string]string{
+				"settings":       `CREATE TRIGGER reject_write BEFORE UPDATE OF web_url ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject settings'); END`,
+				"identity":       `CREATE TRIGGER reject_write BEFORE INSERT ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject identity'); END`,
+				"issues":         `CREATE TRIGGER reject_write BEFORE INSERT ON forge_issues BEGIN SELECT RAISE(ABORT, 'reject issues'); END`,
+				"merge_requests": `CREATE TRIGGER reject_write BEFORE INSERT ON forge_merge_requests BEGIN SELECT RAISE(ABORT, 'reject merge_requests'); END`,
+			}
+			_, err = d.WriteDB().ExecContext(t.Context(), triggers[target])
+			require.NoError(t, err)
+			now := time.Now().UTC()
+			client := &mockClient{openPRs: []*gh.PullRequest{buildOpenPR(8, now)}, openIssues: []*gh.Issue{{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Example"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}}}
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			var results []RepoSyncResult
+			s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
 			s.RunOnce(t.Context())
-			require.Positive(t, calls.Load())
-			assert.Equal(t, [][2]string{{"refs", tc.want}}, events)
+			require.Len(t, results, 1)
+			require.Contains(t, results[0].Error, "reject "+target)
+			assert.Empty(t, events)
 		})
+	}
+}
+
+func TestSyncFailedKeylessCredentialRoute(t *testing.T) {
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "unrouted", Name: "widget", PlatformHost: "github.com"}
+	_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	s := NewSyncer(map[string]Client{"github.com": &mockClient{}}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	router, err := NewHostRouter("github.com", nil)
+	require.NoError(t, err)
+	s.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	for range 2 {
+		s.RunOnce(t.Context())
+		assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 	}
 }

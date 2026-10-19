@@ -35,7 +35,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		return
 	}
 	reason := ""
-	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
 	p.mu.Lock()

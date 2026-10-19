@@ -60,7 +60,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 		gap.ObjectID = parents[0]
 		return reject(graphReason(err))
 	}
-	if _, err := v.run(ctx, "cat-file", "-e", parents[0]+"^{commit}"); err != nil {
+	if err := v.hasCommit(ctx, parents[0]); err != nil {
 		gap.ObjectID = parents[0]
 		return reject(graphReason(err))
 	}

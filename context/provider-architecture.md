@@ -87,6 +87,8 @@ three-way tree witness and must exclude a longer rebase: the terminal and its
 parent must not replay source commits in order (`landedwork/squash_witness.go::witnessedSquash`).
 Synthesized merge objects belong only to the disposable view; caller objects
 are read-only alternates (`landedwork/git.go::openView`).
+Read blobs and commit checks through the view's one `cat-file --batch` process,
+charging the meter as the per-object commands did (`landedwork/objects.go::objectBatch`).
 Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base
 with synthesized commits, not `merge-tree --merge-base` (Git 2.40)
 (`landedwork/merge_tree.go::withMergeBase`).

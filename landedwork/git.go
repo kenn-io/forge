@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -17,9 +18,12 @@ import (
 )
 
 type objectView struct {
-	dir    string
-	runner gitcmd.Runner
-	meter  *meter
+	dir     string
+	runner  gitcmd.Runner
+	meter   *meter
+	objects *objectBatch
+	// Parents of physically verified commits; objects are immutable by ID.
+	verified map[string][]string
 }
 
 func (v *objectView) command(ctx context.Context, args ...string) *exec.Cmd {
@@ -78,7 +82,7 @@ func openView(ctx context.Context, path string, m *meter) (_ *objectView, err er
 	if err != nil {
 		return nil, err
 	}
-	v := &objectView{dir: dir, runner: runner, meter: m}
+	v := &objectView{dir: dir, runner: runner, meter: m, objects: &objectBatch{}, verified: map[string][]string{}}
 	defer func() {
 		if err != nil {
 			err = errors.Join(err, os.RemoveAll(dir))
@@ -114,14 +118,22 @@ func (v *objectView) requireRepositoryRoot(ctx context.Context) error {
 	return err
 }
 
-func (v *objectView) close() error { return os.RemoveAll(v.dir) }
+func (v *objectView) close() error {
+	if v.objects != nil {
+		v.objects.close()
+	}
+	return os.RemoveAll(v.dir)
+}
 
 func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 	if err := v.meter.node(); err != nil {
 		return nil, err
 	}
+	if parents, ok := v.verified[id]; ok {
+		return slices.Clone(parents), nil
+	}
 	// rev-list can serve cached ancestry even after the commit object disappears.
-	if _, err := v.run(ctx, "cat-file", "-e", id+"^{commit}"); err != nil {
+	if err := v.hasCommit(ctx, id); err != nil {
 		return nil, err
 	}
 	data, err := v.run(ctx, "rev-list", "--parents", "-n", "1", id, "--")
@@ -137,6 +149,7 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 			return nil, errors.New("invalid parent object ID")
 		}
 	}
+	v.verified[id] = slices.Clone(ids[1:])
 	return ids[1:], nil
 }
 

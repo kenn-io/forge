@@ -168,7 +168,7 @@ func (v *objectView) fileEdits(ctx context.Context, before, after string, f *fil
 			f.binary = true
 			continue
 		}
-		blob, err := v.run(ctx, "cat-file", "blob", side.id)
+		blob, err := v.blob(ctx, side.id)
 		if err != nil {
 			return err
 		}

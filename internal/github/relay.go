@@ -292,7 +292,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		} else {
 			err = s.syncIssueForRepo(platformgithub.WithUnconditionalRead(ctx), repo, hint.Number, &providerAttempted)
 		}
-		_, disabled := s.recordGitHubRepositoryFeatureDisabled(repo, feature, err)
+		disabled := err != nil && s.recordGitHubRepositoryFeatureDisabled(repo, feature, err)
 		if providerAttempted {
 			probe.release()
 		} else {

@@ -11,9 +11,7 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
-	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -47,28 +45,11 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		// other source failed.
 		err = nil
 	}
-	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
-		p.observe(repo, source, nil)
-		//nolint:errorlint // Inspect immediate causes so disabled nodes cannot hide sibling failures.
-		switch wrapped := err.(type) {
-		case *platform.Error:
-			if wrapped != nil && wrapped.Code != platform.ErrCodeRepositoryFeatureDisabled && wrapped.Err != nil {
-				p.observe(repo, source, wrapped.Err)
-			}
-		case interface{ Unwrap() []error }:
-			for _, cause := range wrapped.Unwrap() {
-				p.observe(repo, source, cause)
-			}
-		case interface{ Unwrap() error }:
-			p.observe(repo, source, wrapped.Unwrap())
-		}
-		return
-	}
 	if syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	reason := ""
-	if err != nil {
+	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 		reason = syncFailureReason(err)
 	}
 	p.mu.Lock()
@@ -97,7 +78,7 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 		return
 	}
 	for source, supported := range map[string]bool{"merge_requests": caps.ReadMergeRequests, "issues": caps.ReadIssues} {
-		if supported && !s.featureCooldowns.coolingDown(repo, source, s.now().UTC()) {
+		if supported {
 			cause := err
 			if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
 				cause = disabled
@@ -112,12 +93,10 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
 	}
-	live := make(map[string]string, len(tracked))
+	live := make(map[string]bool, len(tracked))
 	for _, repo := range tracked {
 		if !repo.Archived {
-			key := mergeQueueRepoKey(repo)
-			live[key] = key
-			live[repoFailKey(repo)] = key
+			live[mergeQueueRepoKey(repo)] = true
 		}
 	}
 	if s.syncFailures == nil {
@@ -129,36 +108,16 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			failures = make(map[string]string)
 			s.syncFailures[source] = failures
 		}
-		// Repository lookup can resolve a route to its stable identity while
-		// leaving a failing source unread.
-		for key, reason := range failures {
-			if resolved := live[key]; resolved != "" && resolved != key {
-				if _, exists := failures[resolved]; !exists {
-					failures[resolved] = reason
-				}
-				delete(failures, key)
-			}
-		}
 		for key := range failures {
-			if live[key] == "" {
+			if !live[key] {
 				delete(failures, key)
 			}
 		}
 		wasFailing := len(failures) > 0
-		// A route and its resolved identity can both be observed in one pass.
-		// Combine them before applying recovery so failures always win.
-		observed := make(map[string]string, len(pass.results[source]))
 		for key, reason := range pass.results[source] {
-			resolved := live[key]
-			if resolved == "" {
+			if !live[key] {
 				continue
 			}
-			key = resolved
-			if observed[key] == "" {
-				observed[key] = reason
-			}
-		}
-		for key, reason := range observed {
 			if reason == "" {
 				delete(failures, key)
 			} else {
@@ -190,9 +149,6 @@ func syncFailureReason(err error) string {
 	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
 		status = response.StatusCode
 	}
-	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
-		status = response.StatusCode
-	}
 	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	_, networkError := errors.AsType[net.Error](err)
@@ -203,11 +159,11 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError, gitclone.IsNetworkFailure(err):
+	case errors.Is(err, context.DeadlineExceeded), networkError:
 		return "network"
 	case status >= 400 && status < 500:
 		return "other"
-	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600, gitclone.IsProviderFailure(err):
+	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600:
 		return "provider"
 	default:
 		return "other"

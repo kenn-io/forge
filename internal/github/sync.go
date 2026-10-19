@@ -7442,10 +7442,10 @@ func (s *Syncer) refreshPRCommentsForItem(
 			s.observeSync(ctx, repo, "merge_requests", nil)
 			return true, false
 		}
-		if disabled, recorded := s.recordGitHubRepositoryFeatureDisabled(
+		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureMergeRequests, err,
-		); recorded {
-			s.observeSync(ctx, repo, "merge_requests", disabled)
+		) {
+			s.observeSync(ctx, repo, "merge_requests", platform.ErrRepositoryFeatureDisabled)
 			return true, true
 		}
 		s.observeSync(ctx, repo, "merge_requests", err)
@@ -7491,10 +7491,10 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			s.observeSync(ctx, repo, "issues", nil)
 			return true, false
 		}
-		if disabled, recorded := s.recordGitHubRepositoryFeatureDisabled(
+		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureIssues, err,
-		); recorded {
-			s.observeSync(ctx, repo, "issues", disabled)
+		) {
+			s.observeSync(ctx, repo, "issues", platform.ErrRepositoryFeatureDisabled)
 			return true, true
 		}
 		s.observeSync(ctx, repo, "issues", err)
@@ -9325,7 +9325,6 @@ func (s *Syncer) refreshTimeline(
 			"number", number,
 			"err", err,
 		)
-		s.observeSync(ctx, repo, "merge_requests", err)
 		timelineEvents = nil
 	}
 
@@ -9641,7 +9640,6 @@ func (s *Syncer) refreshWorkflowApproval(
 	}
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
-	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
 		slog.Warn("list workflow runs for approval refresh failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -9789,7 +9787,6 @@ func (s *Syncer) currentPRCommentVisibility(
 	visibility, err := fetcher.FetchPullRequestCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
-	s.observeSync(ctx, repo, "merge_requests", err)
 	if err != nil {
 		slog.Warn("current PR comment visibility fetch failed; preserving stored state",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -9813,7 +9810,6 @@ func (s *Syncer) currentIssueCommentVisibility(
 	visibility, err := fetcher.FetchIssueCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
-	s.observeSync(ctx, repo, "issues", err)
 	if err != nil {
 		slog.Warn("current issue comment visibility fetch failed; preserving stored state",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -10348,7 +10344,6 @@ func (s *Syncer) refreshIssueTimeline(
 				"number", number,
 				"err", err,
 			)
-			s.observeSync(ctx, repo, "issues", err)
 		} else {
 			otherEvents = normalizeIssueTimelineEvents(issueID, timelineEvents)
 		}
@@ -11880,7 +11875,6 @@ func (s *Syncer) syncProviderMRDiff(
 			sourceBranch = ""
 		}
 		fetchErr := s.clones.FetchBitbucketMergeRequestHead(ctx, host, repo.Owner, repo.Name, number, normalized.HeadRepoCloneURL, sourceBranch, normalized.PlatformHeadSHA)
-		s.observeSync(ctx, repo, "refs", fetchErr)
 		if fetchErr != nil {
 			err = fmt.Errorf("fetch source head: %w", fetchErr)
 		} else {

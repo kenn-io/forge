@@ -255,7 +255,6 @@ func (s *Syncer) refreshPullRequestMergeQueue(
 	if errors.Is(err, errNoMergeQueueFetcher) || errors.Is(err, errMergeQueueUnsupported) {
 		return false, false
 	}
-	s.observeSync(ctx, repo, "merge_requests", err)
 	if err != nil {
 		slog.Warn("merge queue read failed",
 			"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)

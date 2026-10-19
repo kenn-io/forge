@@ -17,14 +17,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// HTTPError preserves an unclassified HTTP failure without assigning a platform error code.
-type HTTPError struct {
-	StatusCode int
-	Status     string
-}
-
-func (e *HTTPError) Error() string { return "bitbucket data center: " + e.Status }
-
 type Client struct {
 	host                 string
 	baseURL              string
@@ -120,7 +112,7 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 		case 429:
 			code = platform.ErrCodeRateLimited
 		default:
-			return result, &HTTPError{StatusCode: resp.StatusCode, Status: resp.Status}
+			return result, errors.New("bitbucket data center: " + resp.Status)
 		}
 		return result, &platform.Error{Code: code, Provider: c.Platform(), PlatformHost: c.host, Err: errors.New(resp.Status)}
 	}

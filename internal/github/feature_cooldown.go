@@ -201,13 +201,6 @@ func (c *repositoryFeatureCooldowns) currentGeneration() uint64 {
 	return c.nextGeneration
 }
 
-func (c *repositoryFeatureCooldowns) coolingDown(repo RepoRef, feature string, now time.Time) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, state, ok := c.lookupState(repositoryFeatureKeys(repo, feature))
-	return ok && state.nextProbe.After(now)
-}
-
 func (c *repositoryFeatureCooldowns) deferUntil(repo RepoRef, feature string, nextProbe time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -339,12 +332,12 @@ func (s *Syncer) recordGitHubRepositoryFeatureDisabled(
 	repo RepoRef,
 	feature string,
 	err error,
-) (error, bool) {
+) bool {
 	classified := repositoryFeatureDisabledError(repo, feature, err)
 	if classified == nil {
-		return nil, false
+		return false
 	}
-	return classified, s.recordRepositoryFeatureDisabled(repo, feature, classified)
+	return s.recordRepositoryFeatureDisabled(repo, feature, classified)
 }
 
 func repositoryFeatureDisabledError(repo RepoRef, feature string, err error) error {

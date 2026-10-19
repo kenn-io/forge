@@ -22,6 +22,18 @@ import (
 )
 
 func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
+	t.Run("PR list budget refused", func(t *testing.T) {
+		repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+		client := &partialFailureMock{}
+		s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+		var events [][2]string
+		s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+		for _, err := range []error{platform.ErrPermissionDenied, platform.ErrSyncBudgetExhausted, platform.ErrPermissionDenied} {
+			client.listOpenPRsErr = err
+			s.RunOnce(t.Context())
+			assert.Equal(t, [][2]string{{"merge_requests", "auth"}}, events)
+		}
+	})
 	a := RepoRef{Owner: "acme", Name: "a"}
 	b := RepoRef{Owner: "acme", Name: "b"}
 	for _, tc := range []struct {

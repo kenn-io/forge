@@ -6266,6 +6266,7 @@ func (s *Syncer) indexSyncRepo(
 	var budgetRefusedScope failScope
 	var partialCause error
 	retain := func(scope failScope, err error) {
+		failedScope |= scope
 		for bit, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
 			if scope&bit != 0 {
 				cause := err

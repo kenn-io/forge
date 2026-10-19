@@ -11,18 +11,27 @@
 
   let {
     messages,
+    anchorId,
+    openEntries,
+    expanded,
+    onToggleGroup,
+    onToggleTool,
     childCounts = {},
     streaming = false,
   }: {
     messages: ChatMessage[]
+    anchorId: string
+    openEntries: Readonly<Record<string, boolean>>
+    expanded: Readonly<Record<string, boolean>>
+    onToggleGroup: (messages: readonly ChatMessage[], open: boolean) => void
+    onToggleTool: (id: string) => void
     /** Tool calls made inside each sub-agent, keyed by its toolCallId. */
     childCounts?: Readonly<Record<string, number>>
     /** The group's last message is still receiving chunks. */
     streaming?: boolean
   } = $props()
   const id = $props.id()
-  let open = $state(false)
-  let expanded = $state<Record<string, boolean>>({})
+  const open = $derived(messages.some((message) => openEntries[message.id]))
   function hasDetails(message: ChatMessage): boolean {
     return !!(
       message.kind ||
@@ -61,14 +70,14 @@
   )
 </script>
 
-<div class="tool-group">
+<div class="tool-group" data-activity-group={anchorId}>
   <button
     type="button"
     class="chip kit-control-states"
     class:failed={failed > 0}
     aria-expanded={open}
     aria-controls={`${id}-list`}
-    onclick={() => (open = !open)}
+    onclick={() => onToggleGroup(messages, !open)}
   >
     {#if running}<Spinner size={12} label="Tools running" />{:else if subagents}<Bot
         size={12}
@@ -85,11 +94,11 @@
       {#each messages as message, index (message.id)}
         {@const key = message.id}
         {#if message.role === "thought"}
-          <li class="thought-row"><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
+          <li class="thought-row" data-message-id={message.id}><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
         {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}
-        <li class={`status-${status}`}>
+        <li class={`status-${status}`} data-message-id={message.id}>
           {#snippet row()}
           <span class="icon" aria-hidden="true">
             {#if status === "failed"}<X size={12} />
@@ -126,7 +135,7 @@
               class="row row--button"
               aria-expanded={!!expanded[key]}
               aria-controls={`${id}-tool-${index}`}
-              onclick={() => (expanded[key] = !expanded[key])}
+              onclick={() => onToggleTool(key)}
             >
               {@render row()}
             </button>

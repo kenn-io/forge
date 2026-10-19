@@ -80,10 +80,11 @@ Rules:
 - Chat delivery batches target serialized bytes as well as message count; retain every
   message and allow one oversized message intact so paging always advances
   (`internal/workspace/localruntime/acp_delivery.go::acpMessageBatchSize`).
-- Entry updates must preserve expanded details and the reader's anchor; interaction state
-  remains usable while a batch finishes (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- Entry updates and history paging must preserve expanded details and the reader's anchor;
+  results and controls keep advancing during continuous batches
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 - Natural agent exit must leave the attachment discoverable and readable until existing
-  viewers finish receiving final updates and detach; only then release the owner
+  viewers finish receiving final updates and detach; explicit stop must still clean up
   (`internal/workspace/localruntime/acp_owner_rpc.go::acpAttachment.watch`).
 - A degraded but usable ACP start (no Forge tools, no session reload) is a `notices`
   entry, never `error`; the chat shows it only as a header warning icon with a tooltip,

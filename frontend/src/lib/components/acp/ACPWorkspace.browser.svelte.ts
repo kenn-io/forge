@@ -654,6 +654,84 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     },
   );
 
+  it.each(["prepend", "split"])(
+    "keeps expanded tools and the reading position when activity groups %s",
+    async (change) => {
+      const { host } = await renderChat(900);
+      const tool = (index: number) => ({
+        id: `entry-${index}`,
+        previousId: `entry-${index - 1}`,
+        version: 1,
+        role: "tool",
+        toolCallId: `call-${index}`,
+        text: `Inspect ${index}`,
+        status: "completed",
+        toolContent: [{ type: "terminal", output: `Output ${index}\n${"line of output\n".repeat(35)}` }],
+      });
+      const initial = {
+        messages: [tool(10), tool(11), ...range(12, 40)],
+        messageOffset: 10,
+        messageCount: 40,
+        messageCursor: 1,
+        lastMessageId: "entry-39",
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      };
+      socket.options!.onMessage(encodeFixture(initial));
+      await page.getByRole("button", { name: "2 tools", exact: true }).click();
+      await page.getByRole("button", { name: /Inspect 10/ }).click();
+      await page.getByRole("button", { name: /Inspect 11/ }).click();
+      const conversation = host.querySelector<HTMLElement>(".conversation")!;
+      conversation.style.overflowAnchor = "none";
+      const readingRow = [...host.querySelectorAll<HTMLElement>(".tool-group li")].find((row) =>
+        row.textContent?.includes("Inspect 11"),
+      )!;
+      conversation.scrollTop += readingRow.getBoundingClientRect().top - conversation.getBoundingClientRect().top + 2;
+      conversation.dispatchEvent(new Event("scroll"));
+      await nextFrame();
+      const before = readingRow.getBoundingClientRect().top;
+      const originalGroup = readingRow.closest(".tool-group");
+      if (change === "prepend") {
+        host
+          .querySelector<HTMLButtonElement>(".earlier button")!
+          .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await expect
+          .poll(() => socket.sent.map((frame) => JSON.parse(frame)))
+          .toContainEqual({ type: "history", beforeId: "entry-10", limit: 100 });
+        socket.options!.onMessage(encodeFixture({ history: { beforeId: "entry-10", offset: 9, messages: [tool(9)] } }));
+      } else {
+        socket.options!.onMessage(
+          encodeFixture({
+            updates: {
+              ...initial,
+              messageCount: 41,
+              messageCursor: 2,
+              more: false,
+              messages: [
+                { id: "steer", previousId: "entry-10", version: 2, role: "user", text: "Focus on the second file" },
+                { ...tool(11), previousId: "steer", version: 2 },
+              ],
+            },
+          }),
+        );
+      }
+      await expect.element(page.getByRole("button", { name: /Inspect 11/ })).toHaveAttribute("aria-expanded", "true");
+      await nextFrame();
+      await nextFrame();
+      const restoredRow = [...host.querySelectorAll<HTMLElement>(".tool-group li")].find((row) =>
+        row.textContent?.includes("Inspect 11"),
+      )!;
+      expect(restoredRow.textContent).toContain("Output 11");
+      expect(Math.abs(restoredRow.getBoundingClientRect().top - before)).toBeLessThan(2);
+      if (change === "prepend") expect(restoredRow.closest(".tool-group")).toBe(originalGroup);
+      else expect(restoredRow.closest(".tool-group")).not.toBe(originalGroup);
+    },
+  );
+
   it("keeps the reader's place when earlier messages load above", async () => {
     const host = document.createElement("div");
     host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";

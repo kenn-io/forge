@@ -388,7 +388,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 
 func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
 	client := rpc.NewClient(conn)
-	remote := &acpAttachment{address: conn.RemoteAddr().String(), client: client, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), workspaceID: info.WorkspaceID, key: info.Key}
+	remote := &acpAttachment{client: client, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), workspaceID: info.WorkspaceID, key: info.Key}
 	var reply struct{}
 	if err := remote.call(ctx, "ACP.Bind", ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}, &reply); err != nil {
 		_ = client.Close()
@@ -483,6 +483,22 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	case <-service.stop:
 	}
 	err = agent.Stop(context.Background())
+	// Close the listener, which removes the socket, before acknowledging a
+	// stop, so a caller that sees the reply finds no socket left to dial.
+	_ = listener.Close()
+	<-accepted
+	drained := make(chan struct{})
+	go func() { clients.Wait(); close(drained) }()
+	if naturalExit {
+		// Existing viewers drain final updates over their open connections.
+		// An explicit stop still removes saved state before acknowledging it.
+		select {
+		case <-drained:
+			return err
+		case <-ctx.Done():
+		case <-service.stop:
+		}
+	}
 	select {
 	case <-service.stop:
 		if service.park {
@@ -494,23 +510,8 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	default:
 	}
 	service.stopErr = err
-	// Close the listener, which removes the socket, before acknowledging a
-	// stop, so a caller that sees the reply finds no socket left to dial.
-	_ = listener.Close()
 	close(service.stopped)
-	<-accepted
-	drained := make(chan struct{})
-	go func() { clients.Wait(); close(drained) }()
-	if naturalExit {
-		// Existing viewers may need byte-sized history pages after the final
-		// snapshot. Their attachments close once the last viewer unsubscribes.
-		select {
-		case <-drained:
-			return err
-		case <-ctx.Done():
-		case <-service.stop:
-		}
-	}
+
 	select {
 	case <-drained:
 	case <-time.After(2 * time.Second):

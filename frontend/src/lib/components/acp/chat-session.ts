@@ -42,7 +42,6 @@ export function makeChatSession(options: {
   const messages = new Map<string, ChatMessage>();
   let displayed: ChatMessage[] = [];
   let displayedOffset = 0;
-  let displayedConnected = false;
   // Do not load older entries merely because an agent updates them. This is
   // the predecessor of the range the reader has explicitly loaded.
   let boundary = "";
@@ -61,15 +60,6 @@ export function makeChatSession(options: {
   };
   const publish = () => {
     if (!snapshot) return;
-    if (batching) {
-      options.onState({
-        ...snapshot,
-        messages: displayed,
-        messageOffset: displayedOffset,
-        connected: displayedConnected,
-      });
-      return;
-    }
     const ordered: ChatMessage[] = [];
     const seen = new Set<string>();
     let id = snapshot.lastMessageId;
@@ -80,14 +70,22 @@ export function makeChatSession(options: {
       ordered.push(entry);
       id = entry.previousId;
     }
-    displayed = ordered.reverse();
+    // Publish complete chains as they arrive, even while more changes remain.
+    // A missing predecessor can belong to a later batch (for example steering).
+    // Keep the prior ordering in that case, but still show updated tool output.
+    const complete = id === boundary || !id;
+    if (complete) {
+      displayed = ordered.reverse();
+      displayedOffset = snapshot.messageCount - displayed.length;
+    } else {
+      displayed = displayed.map((entry) => messages.get(entry.id) ?? entry);
+    }
     // Retain updates to unloaded entries while a page is in flight so a late
     // older page cannot overwrite them. Otherwise only the visible range stays.
-    if (historyBefore === undefined) {
+    if (complete && !batching && historyBefore === undefined) {
       for (const key of messages.keys()) if (!seen.has(key)) messages.delete(key);
     }
-    displayedOffset = snapshot.messageCount - displayed.length;
-    displayedConnected = snapshot.connected || historyBefore !== undefined;
+    const displayedConnected = snapshot.connected || batching || historyBefore !== undefined;
     options.onState({
       ...snapshot,
       messages: displayed,
@@ -110,7 +108,6 @@ export function makeChatSession(options: {
       messages.clear();
       displayed = [];
       displayedOffset = 0;
-      displayedConnected = false;
       boundary = "";
       batching = false;
       setHistoryLoading(undefined);

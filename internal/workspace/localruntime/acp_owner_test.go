@@ -100,6 +100,40 @@ func TestACPAttachmentReadsFinalTranscriptUntilSubscribersDetach(t *testing.T) {
 		"the owner exits once its final viewer detaches")
 }
 
+func TestACPStopDuringFinalDrainRemovesSavedSession(t *testing.T) {
+	require := require.New(t)
+	c := launchRequestChat(t)
+	_, unsubscribe := c.chat.Subscribe()
+	t.Cleanup(unsubscribe)
+	require.NoError(c.chat.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "final-stop"}))
+	c.awaitIdle()
+	pidText, err := os.ReadFile(filepath.Join(c.dir, "pid"))
+	require.NoError(err)
+	pid, err := strconv.Atoi(string(pidText))
+	require.NoError(err)
+	process, err := os.FindProcess(pid)
+	require.NoError(err)
+	defer process.Release()
+	require.NoError(process.Kill())
+	c.awaitState(func(state ACPState) bool { return !state.Connected })
+	paths, err := ptyowner.NewSessionPaths(c.manager.acpSessionsDir, c.info.Key)
+	require.NoError(err)
+	require.Eventually(func() bool { _, err := os.Stat(paths.Socket); return errors.Is(err, os.ErrNotExist) }, 5*time.Second, time.Millisecond)
+	require.FileExists(c.manager.acpSessionPath(c.info.Key))
+	require.NotEmpty(c.manager.ListSessions("workspace"))
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	require.NoError(c.manager.Stop(ctx, "workspace", c.info.Key))
+	require.Empty(c.manager.ListSessions("workspace"))
+	require.NoFileExists(c.manager.acpSessionPath(c.info.Key))
+	select {
+	case <-c.chat.Done():
+	default:
+		require.FailNow("stop left the attachment alive")
+	}
+	require.Eventually(func() bool { return !c.owner.HasState(c.info.Key) }, 10*time.Second, 10*time.Millisecond)
+}
+
 func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 	for _, backend := range []string{"ptyowner", "tmux"} {
 		t.Run(backend, func(t *testing.T) {

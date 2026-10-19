@@ -20,11 +20,11 @@
   import ChatCommandMenu from "./ChatCommandMenu.svelte";
   import ChatDockRail from "./ChatDockRail.svelte";
   import { insertCommand, matchCommands, pendingInputHint, slashToken } from "./chat-commands.js";
-  import { chatRows } from "./chat-timeline.js";
+  import { chatRows, type ChatRow } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
   import { makeChatSession } from "./chat-session.js";
   import { mediaDataURL } from "./chat-content.js";
-  import type { AgentCommand, ChatContent, ChatState, PromptMode } from "./chat-types.js";
+  import type { AgentCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
@@ -75,7 +75,12 @@
   // Transcript index of the first loaded message; earlier pages load on demand.
   const firstLoaded = $derived(chatState?.messageOffset ?? 0);
   const lastIndex = $derived(firstLoaded + (chatState?.messages.length ?? 0) - 1);
-  const rows = $derived(chatRows(chatState?.messages ?? [], firstLoaded));
+  let rows = $state.raw<ChatRow[]>([]);
+  let activityOpen = $state<Record<string, boolean>>({});
+  let expandedTools = $state<Record<string, boolean>>({});
+  function setActivityOpen(messages: readonly ChatMessage[], open: boolean) {
+    for (const message of messages) activityOpen[message.id] = open;
+  }
   // A running turn never blocks the composer: prompts sent while busy steer
   // the turn or queue behind it on the host.
   const canSend = $derived(connected && chatState?.connected && !pending && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
@@ -104,6 +109,14 @@
         path, initialStatus,
         onState: (next) => {
           if (scroll && chatState && (!follow || (next.messageOffset ?? 0) < firstLoaded)) keepReadingPosition(scroll);
+          // Carry an open group's choice to newly appended entries before a
+          // later update can split them into another component.
+          for (const row of rows) {
+            if (row.kind === "tools" && row.messages.some((message) => activityOpen[message.id])) {
+              setActivityOpen(row.messages, true);
+            }
+          }
+          rows = chatRows(next.messages, next.messageOffset, rows);
           const exited = !next.connected && chatState?.connected !== false;
           chatState = next;
           settingPending = false;
@@ -152,13 +165,22 @@
   // Safari has no scroll anchoring.
   function keepReadingPosition(element: HTMLDivElement) {
     const top = element.getBoundingClientRect().top;
-    const anchor = [...element.querySelectorAll<HTMLElement>(".messages > :not(.earlier)")].find(
+    const row = [...element.querySelectorAll<HTMLElement>(".messages > :not(.earlier)")].find(
       (row) => row.getBoundingClientRect().bottom > top,
     );
-    if (!anchor) return;
+    if (!row) return;
+    const chip = row.querySelector<HTMLElement>(".chip");
+    const anchor = chip && chip.getBoundingClientRect().bottom <= top
+      ? [...row.querySelectorAll<HTMLElement>("li[data-message-id]")].find((entry) => entry.getBoundingClientRect().bottom > top) ?? row
+      : row;
+    const messageId = anchor.dataset.messageId;
+    const groupId = anchor.dataset.activityGroup;
     const offset = anchor.getBoundingClientRect().top;
     const restore = () => {
-      if (anchor.isConnected) element.scrollTop += anchor.getBoundingClientRect().top - offset;
+      // A steering prompt may move this entry into a new activity component.
+      const current = messageId ? element.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(messageId)}"]`)
+        : groupId ? element.querySelector<HTMLElement>(`[data-activity-group="${CSS.escape(groupId)}"]`) : anchor;
+      if (current?.isConnected) element.scrollTop += current.getBoundingClientRect().top - offset;
     };
     void tick().then(() => {
       restore();
@@ -337,7 +359,7 @@
       {/if}
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
-        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
+        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Questions read as part of the conversation, in the reply column,

@@ -99,6 +99,7 @@
 {/snippet}
 
 <article
+  data-message-id={message.id}
   class:user
   aria-label={user ? senderLabel(message.sender) : thought ? "Assistant thinking" : "Assistant"}
 >

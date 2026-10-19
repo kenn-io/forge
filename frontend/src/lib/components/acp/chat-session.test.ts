@@ -117,7 +117,7 @@ describe("makeChatSession ID upserts", () => {
     expect(commands()).toEqual([]);
   });
 
-  it("publishes a large final update only after its last batch and then stops", () => {
+  it("publishes final results progressively and stops only after the last batch", () => {
     const first = message("first", "");
     const second = message("second", "first");
     const initial = state([first, second]);
@@ -127,7 +127,7 @@ describe("makeChatSession ID upserts", () => {
     expect(
       send({ updates: { ...initial, messages: [changedFirst], messageCursor: 1, connected: false, more: true } }),
     ).toBe("continue");
-    expect(states.at(-1)!.messages).toEqual([first, second]);
+    expect(states.at(-1)!.messages).toEqual([changedFirst, second]);
     expect(states.at(-1)!.connected).toBe(true);
     expect(
       send({ updates: { ...initial, messages: [changedSecond], messageCursor: 2, connected: false, more: false } }),
@@ -145,9 +145,52 @@ describe("makeChatSession ID upserts", () => {
     const tool = message("tool", "", { version: 2, text: "New result" });
     send({ updates: { ...initial, messages: [tool], more: true } });
     send({ history: { beforeId: "output", offset: 0, messages: [{ ...tool, version: 1, text: "Old result" }] } });
-    expect(states.at(-1)!.messages).toEqual([output]);
+    expect(states.at(-1)!.messages).toEqual([tool, output]);
     send({ updates: { ...initial, messages: [], messageCursor: 2, more: false } });
     expect(states.at(-1)!.messages).toEqual([tool, output]);
+  });
+
+  it("advances tool results and new entries while updates keep arriving between batches", () => {
+    const first = message("first", "", { role: "tool", rawOutput: "Initial first".repeat(15_000) });
+    const second = message("second", "first", { role: "tool", rawOutput: "Initial second".repeat(15_000) });
+    const initial = state([first, second]);
+    const { states, send, commands } = open(initial);
+    for (const version of [2, 3, 4]) {
+      send({
+        updates: {
+          ...initial,
+          messages: [{ ...first, version, rawOutput: `First ${version}`.repeat(30_000) }],
+          more: true,
+        },
+      });
+      expect(states.at(-1)!.messages[0]!.rawOutput).toBe(`First ${version}`.repeat(30_000));
+      send({
+        updates: {
+          ...initial,
+          messages: [{ ...second, version, rawOutput: `Second ${version}`.repeat(30_000) }],
+          more: true,
+        },
+      });
+      expect(states.at(-1)!.messages[1]!.rawOutput).toBe(`Second ${version}`.repeat(30_000));
+    }
+    const next = message("next", "second", { text: "More output" });
+    send({ updates: { ...initial, messages: [next], lastMessageId: "next", messageCount: 3, more: true } });
+    expect(states.at(-1)!.messages.map((entry) => entry.id)).toEqual(["first", "second", "next"]);
+    expect(commands()).toEqual([]);
+  });
+
+  it("keeps visible output advancing while a steering predecessor waits in another batch", () => {
+    const first = message("first", "", { role: "user" });
+    const tool = message("tool", "first", { role: "tool", rawOutput: "Before" });
+    const initial = state([first, tool]);
+    const { states, send } = open(initial);
+    const changed = { ...tool, previousId: "steer", version: 2, rawOutput: "After" };
+    send({ updates: { ...initial, messages: [changed], messageCount: 3, more: true } });
+    expect(states.at(-1)!.messages.map((entry) => entry.id)).toEqual(["first", "tool"]);
+    expect(states.at(-1)!.messages[1]!.rawOutput).toBe("After");
+    const steer = message("steer", "first", { role: "user" });
+    send({ updates: { ...initial, messages: [steer], messageCount: 3, more: true } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, changed]);
   });
 
   it("settles a requested history page before closing after the final update", () => {

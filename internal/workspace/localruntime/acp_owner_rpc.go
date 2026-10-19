@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/rpc"
 	"sync"
 	"time"
@@ -184,7 +183,6 @@ func (o *acpOwnerRPC) shutdown(park bool) error {
 }
 
 type acpAttachment struct {
-	address string
 	// workspaceID and key name the chat in the daemon log.
 	workspaceID string
 	key         string
@@ -194,6 +192,7 @@ type acpAttachment struct {
 	mu          sync.Mutex
 	exitCode    int
 	exited      bool
+	stopping    bool
 	subscribers map[chan struct{}]struct{}
 }
 
@@ -267,15 +266,12 @@ func (a *acpAttachment) Detach() {
 }
 
 func (a *acpAttachment) Stop(ctx context.Context) error {
-	// The watch connection can close when the agent exits. Use an independent
-	// request connection so that cannot discard the stop acknowledgement.
-	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", a.address)
-	if err != nil {
-		return err
-	}
-	request := &acpAttachment{client: rpc.NewClient(conn)}
-	defer request.client.Close()
-	err = request.call(ctx, "ACP.Stop", struct{}{}, &struct{}{})
+	// Keep the existing connection through the stop acknowledgement: after
+	// natural exit the listener is closed while this viewer drains final updates.
+	a.mu.Lock()
+	a.stopping = true
+	a.mu.Unlock()
+	err := a.call(ctx, "ACP.Stop", struct{}{}, &struct{}{})
 	a.Detach()
 	return err
 }
@@ -290,7 +286,7 @@ func (a *acpAttachment) Subscribe() (<-chan struct{}, func()) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		delete(a.subscribers, ch)
-		if a.exited && len(a.subscribers) == 0 {
+		if a.exited && !a.stopping && len(a.subscribers) == 0 {
 			_ = a.client.Close()
 			a.doneOnce.Do(func() { close(a.done) })
 		}
@@ -315,7 +311,7 @@ func (a *acpAttachment) watch() {
 		}
 		// Final updates may need several batches. Existing viewers keep the
 		// read connection until they finish draining updates and unsubscribe.
-		if err != nil || (reply.Exited && len(a.subscribers) == 0) {
+		if err != nil || (reply.Exited && !a.stopping && len(a.subscribers) == 0) {
 			_ = a.client.Close()
 			a.doneOnce.Do(func() { close(a.done) })
 		}

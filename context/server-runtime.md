@@ -1,6 +1,7 @@
 # Server Runtime
 
 - Full sync passes report at most one `sync_failed` per source when any repository newly fails it, with fixed `sync_source` and `reason`, without repository identifiers.
+  Only primary list, detail, CI, and clone reads count; missing individual items are ignored.
   Unread repositories retain state; recovery or disablement clears it, and archived or untracked repositories drop out. Counts stay in memory; restarts or identity changes can count an outage twice
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the

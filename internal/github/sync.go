@@ -7435,16 +7435,13 @@ func (s *Syncer) refreshPRCommentsForItem(
 	)
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
-			s.observeSync(ctx, repo, "merge_requests", nil)
 			return true, false
 		}
 		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureMergeRequests, err,
 		) {
-			s.observeSync(ctx, repo, "merge_requests", platform.ErrRepositoryFeatureDisabled)
 			return true, true
 		}
-		s.observeSync(ctx, repo, "merge_requests", err)
 		slog.Warn("comment refresh: list PR comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
@@ -7452,7 +7449,6 @@ func (s *Syncer) refreshPRCommentsForItem(
 		)
 		return true, false
 	}
-	s.observeSync(ctx, repo, "merge_requests", nil)
 	if err := s.persistPRComments(ctx, repo, pr, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist PR comments failed",
@@ -7484,16 +7480,13 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	)
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
-			s.observeSync(ctx, repo, "issues", nil)
 			return true, false
 		}
 		if s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureIssues, err,
 		) {
-			s.observeSync(ctx, repo, "issues", platform.ErrRepositoryFeatureDisabled)
 			return true, true
 		}
-		s.observeSync(ctx, repo, "issues", err)
 		slog.Warn("comment refresh: list issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
@@ -7501,7 +7494,6 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		)
 		return true, false
 	}
-	s.observeSync(ctx, repo, "issues", nil)
 	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist issue comments failed",
@@ -8371,7 +8363,9 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
 		ctx, client, repo, number,
 	)
-	s.observeSync(ctx, repo, "merge_requests", err)
+	if syncFailureReason(err) != "not_found" {
+		s.observeSync(ctx, repo, "merge_requests", err)
+	}
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -8717,7 +8711,9 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	requestedAt := s.nowUTC()
 	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
-	s.observeSync(ctx, repo, "merge_requests", err)
+	if syncFailureReason(err) != "not_found" {
+		s.observeSync(ctx, repo, "merge_requests", err)
+	}
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -8886,7 +8882,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	}
 	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
-		return calls, false, &syncSourceError{source: "checks", err: fmt.Errorf("list CI checks for MR #%d: %w", number, err)}
+		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
 	dbChecks := platformdb.DBCIChecks(checks)
 	if dbChecks == nil {
@@ -9001,7 +8997,9 @@ func (s *Syncer) fetchIssueDetail(
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
 		ctx, client, repo, number,
 	)
-	s.observeSync(ctx, repo, "issues", err)
+	if syncFailureReason(err) != "not_found" {
+		s.observeSync(ctx, repo, "issues", err)
+	}
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -9187,7 +9185,9 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
-	s.observeSync(ctx, repo, "issues", err)
+	if syncFailureReason(err) != "not_found" {
+		s.observeSync(ctx, repo, "issues", err)
+	}
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number,

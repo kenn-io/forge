@@ -24,16 +24,6 @@ var (
 
 type syncPassKey struct{}
 
-// syncSourceError keeps a failed read attributed to its source through callers
-// that also refresh other sources. Unwrap preserves their retry behavior.
-type syncSourceError struct {
-	source string
-	err    error
-}
-
-func (e *syncSourceError) Error() string { return e.err.Error() }
-func (e *syncSourceError) Unwrap() error { return e.err }
-
 // A missing result means no read; an empty reason means a successful read.
 type syncPass struct {
 	mu      sync.Mutex
@@ -41,11 +31,6 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	if failure, ok := errors.AsType[*syncSourceError](err); ok && failure.source != source {
-		// The enclosing refresh reached this source successfully before the
-		// other source failed.
-		err = nil
-	}
 	if syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}

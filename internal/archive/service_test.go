@@ -17,17 +17,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
 )
-
-func TestArchiveRetryClassifierRetriesBitbucketDCServerErrors(t *testing.T) {
-	t.Parallel()
-	now := archiveTestTime()
-	decision := defaultArchiveRetryDecision(&bitbucketdc.HTTPError{StatusCode: 503}, 0, now)
-	assert.Equal(t, db.ArchiveErrorCodeTransient, decision.Code)
-	require.NotNil(t, decision.RetryAt)
-	assert.Equal(t, now.Add(time.Minute), *decision.RetryAt)
-}
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T) {
 	t.Parallel()

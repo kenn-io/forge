@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -31,7 +32,9 @@ type Client struct {
 
 type HTTPError struct{ StatusCode int }
 
-func (e *HTTPError) Error() string { return "bitbucket data center: " + http.StatusText(e.StatusCode) }
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("bitbucket data center: %d %s", e.StatusCode, http.StatusText(e.StatusCode))
+}
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {
 	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: "project", Name: "repo"}

@@ -678,7 +678,7 @@ Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass reports `sync_failed` when a source starts failing. It sends
 only `sync_source` (`merge_requests`, `issues`, `checks`, or `refs`) and `reason`
 (`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`), with
-unlisted values sent as `other`. Primary list, detail, comment, CI, and clone
+unlisted values sent as `other`. Primary list, detail, CI, and clone
 reads contribute to the count. Skipped reads keep prior state; observed recovery
 or disablement clears it, and archived or untracked repositories drop out.
 Counts are approximate: state stays in memory, and a restart or repository

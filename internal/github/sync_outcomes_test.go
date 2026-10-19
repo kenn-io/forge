@@ -95,7 +95,7 @@ func TestSyncFailedBitbucketDCServerError(t *testing.T) {
 	}), nil)
 	require.NoError(t, err)
 	_, failure := client.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: client.Host(), Owner: "PROJECT", Name: "widget"})
-	require.Error(t, failure)
+	require.EqualError(t, failure, "bitbucket data center: 503 Service Unavailable")
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	s := NewSyncer(map[string]Client{"github.com": &partialFailureMock{listOpenPRsErr: failure}}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
 	var events [][2]string
@@ -283,10 +283,10 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
 }
 
-func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
-	for _, scenario := range []string{"provider failure", "disabled failing"} {
+func TestSyncFailedFullPassDetail(t *testing.T) {
+	for _, scenario := range []string{"provider failure", "disabled failing", "missing item"} {
 		t.Run(scenario, func(t *testing.T) {
-			for _, kind := range []string{"issue detail", "PR detail", "issue comments", "PR comments"} {
+			for _, kind := range []string{"issue detail", "PR detail"} {
 				t.Run(kind, func(t *testing.T) {
 					d := openTestDB(t)
 					repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -294,25 +294,24 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 					id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
 					require.NoError(t, err)
 					now := time.Now().UTC()
-					var fetched *time.Time
-					if kind == "issue comments" || kind == "PR comments" {
-						fetched = &now
-					}
 					client := &partialFailureMock{issuesCached: true, prsCached: true}
 					failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
-					if scenario != "provider failure" {
+					if scenario == "disabled failing" {
 						failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusGone}, Message: "Issues are disabled for this repo"}
+					}
+					if scenario == "missing item" {
+						failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}
 					}
 					called := false
 					source := "issues"
-					if kind == "PR detail" || kind == "PR comments" {
+					if kind == "PR detail" {
 						source = "merge_requests"
-						if scenario != "provider failure" {
+						if scenario == "disabled failing" {
 							failure.Message = "Pull Requests are disabled for this repo"
 						}
-						_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100, MergeableState: "clean"})
+						_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100, MergeableState: "clean"})
 					} else {
-						_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100})
+						_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100})
 					}
 					require.NoError(t, err)
 					switch kind {
@@ -320,11 +319,6 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 						client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { called = true; return nil, failure }
 					case "PR detail":
 						client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-							called = true
-							return nil, failure
-						}
-					default:
-						client.listIssueCommentsFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
 							called = true
 							return nil, failure
 						}
@@ -339,16 +333,7 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 						// Exercise refresh observations without a healthy index read recovering the source.
 						pass := &syncPass{}
 						ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-						if fetched == nil {
-							s.drainDetailQueue(ctx, map[string]bool{"github.com": true}, []RepoRef{repo})
-						} else {
-							if kind == "PR comments" {
-								s.queuePRCommentSync(repo, id, 7, fetched)
-							} else {
-								s.queueIssueCommentSync(repo, id, 7, fetched)
-							}
-							s.drainPendingCommentSyncs(ctx, map[string]bool{"github.com": true})
-						}
+						s.drainDetailQueue(ctx, map[string]bool{"github.com": true}, []RepoRef{repo})
 						s.finishSyncPass(pass, []RepoRef{repo})
 					} else {
 						s.RunOnce(t.Context())
@@ -356,6 +341,10 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 					require.True(t, called, "the refresh must reach the failing read")
 					if scenario == "provider failure" {
 						assert.Equal(t, [][2]string{{source, "provider"}}, events)
+						return
+					}
+					if scenario == "missing item" {
+						assert.Empty(t, events)
 						return
 					}
 					assert.Empty(t, s.syncFailures[source])

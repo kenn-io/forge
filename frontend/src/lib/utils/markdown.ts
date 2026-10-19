@@ -260,6 +260,19 @@ const DRAG_HANDLE_SVG =
   `<circle cx="9" cy="13" r="1.2"/>` +
   `</svg>`;
 
+// Lucide's video and chevron-down icons for the header above each player.
+const VIDEO_ICON_SVG =
+  `<svg class="markdown-video-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ` +
+  `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+  `<path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/>` +
+  `<rect x="2" y="6" width="14" height="12" rx="2"/>` +
+  `</svg>`;
+const CHEVRON_DOWN_SVG =
+  `<svg class="markdown-video-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ` +
+  `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+  `<path d="m6 9 6 6 6-6"/>` +
+  `</svg>`;
+
 const SHIKI_LIGHT_THEME = "github-light-default";
 const SHIKI_DARK_THEME = "github-dark-default";
 const SHIKI_THEMES = {
@@ -530,7 +543,7 @@ function normalizeMarkdownVideos(root: HTMLElement): void {
     const generated = video.getAttribute(MEDIA_GENERATED_ATTR) === renderState.shikiNonce;
     video.removeAttribute(MEDIA_GENERATED_ATTR);
     if (!repo) {
-      normalizePlayer(video);
+      normalizePlayer(video, videoFileName(firstVideoSource(video)));
       continue;
     }
     if (!generated && provider !== "github" && provider !== "gitea" && provider !== "forgejo") {
@@ -538,7 +551,9 @@ function normalizeMarkdownVideos(root: HTMLElement): void {
       continue;
     }
     const sources = [video, ...video.querySelectorAll("source")];
-    let playable = 0;
+    // The header names the file from the source as written, before the
+    // media route replaces it.
+    let playableSource: string | null = null;
     for (const element of sources) {
       const src = element.getAttribute("src");
       if (src === null) continue;
@@ -549,13 +564,13 @@ function normalizeMarkdownVideos(root: HTMLElement): void {
         continue;
       }
       element.setAttribute("src", resolved);
-      playable++;
+      playableSource ??= src;
     }
-    if (playable === 0) {
+    if (playableSource === null) {
       video.remove();
       continue;
     }
-    normalizePlayer(video);
+    normalizePlayer(video, videoFileName(playableSource));
   }
 }
 
@@ -578,7 +593,25 @@ function resolvedMarkdownVideoSource(
   return generated && provider === "gitlab" ? src : null;
 }
 
-function normalizePlayer(video: HTMLVideoElement): void {
+function firstVideoSource(video: HTMLVideoElement): string | null {
+  return video.getAttribute("src") ?? video.querySelector("source[src]")?.getAttribute("src") ?? null;
+}
+
+// The last path segment when it reads as a file name. GitHub attachment
+// addresses end in an opaque id, so their header keeps the generic label.
+function videoFileName(source: string | null): string | null {
+  if (source === null) return null;
+  let segment: string;
+  try {
+    segment = new URL(source, "https://markdown.invalid/").pathname.split("/").pop() ?? "";
+    segment = decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+  return /^[^.].*\.[a-z0-9]{2,5}$/i.test(segment) ? segment : null;
+}
+
+function normalizePlayer(video: HTMLVideoElement, fileName: string | null): void {
   video.removeAttribute("autoplay");
   video.setAttribute("controls", "");
   // An idle player must not fetch: Firefox keeps reading ahead on each one,
@@ -588,10 +621,28 @@ function normalizePlayer(video: HTMLVideoElement): void {
   // The frame gives the load-failure notice a stable parent to swap the
   // player in (markdown-video-fallback.ts). A span stays valid inside a
   // paragraph.
-  const frame = video.ownerDocument.createElement("span");
+  const doc = video.ownerDocument;
+  const frame = doc.createElement("span");
   frame.className = "markdown-video-frame";
   video.replaceWith(frame);
-  frame.append(video);
+  frame.append(markdownVideoHeader(doc, fileName), video);
+}
+
+// Collapses and expands the player; markdown-video-toggle.ts handles clicks.
+// A button rather than <details>: a block-level <details> would split the
+// paragraph a GitLab inline video sits in when the HTML is parsed again.
+function markdownVideoHeader(doc: Document, fileName: string | null): HTMLButtonElement {
+  const header = doc.createElement("button");
+  header.type = "button";
+  header.className = "markdown-video-header";
+  header.setAttribute("aria-expanded", "true");
+  const name = doc.createElement("span");
+  name.className = "markdown-video-name";
+  name.textContent = fileName ?? "Video";
+  header.innerHTML = VIDEO_ICON_SVG;
+  header.append(name);
+  header.insertAdjacentHTML("beforeend", CHEVRON_DOWN_SVG);
+  return header;
 }
 
 function sanitizeMarkdownHtml(html: string): string {

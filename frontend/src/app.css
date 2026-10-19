@@ -343,11 +343,63 @@ a:hover {
 }
 .markdown-body .markdown-video-frame {
   display: block;
+  margin: 8px 0;
+  overflow: hidden;
+  border: var(--border-width) solid var(--border-muted);
+  border-radius: var(--radius-md);
+}
+.markdown-body .markdown-video-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 0;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.markdown-body .markdown-video-header:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+.markdown-body .markdown-video-header:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+.markdown-body .markdown-video-header svg {
+  flex: none;
+}
+.markdown-body .markdown-video-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.markdown-body .markdown-video-chevron {
+  transition: transform var(--transition-fast) var(--transition-ease, ease);
+}
+.markdown-body .markdown-video-header[aria-expanded="false"] .markdown-video-chevron {
+  transform: rotate(180deg);
+}
+.markdown-body .markdown-video-header[aria-expanded="false"] ~ * {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body .markdown-video-chevron {
+    transition: none;
+  }
 }
 .markdown-body .markdown-video-error {
   display: block;
-  margin: 8px 0;
+  padding: var(--space-4);
   color: var(--text-muted);
+  border-top: var(--border-width) solid var(--border-muted);
 }
 /* An idle player does not preload, so it has no intrinsic size; a fixed
    frame keeps it from resizing on first play. */
@@ -358,8 +410,7 @@ a:hover {
   max-height: 640px;
   height: auto;
   object-fit: contain;
-  margin: 8px 0;
-  border-radius: var(--radius-sm);
+  border-top: var(--border-width) solid var(--border-muted);
   background: var(--bg-inset);
 }
 .markdown-body img {

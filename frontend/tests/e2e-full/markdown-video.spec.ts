@@ -152,3 +152,43 @@ test("replaces a player that cannot load with a link to the original", async ({ 
   await expect(body.getByRole("link", { name: "Open the original" })).toHaveAttribute("href", missing);
   await expect(body.locator("video")).toHaveCount(0);
 });
+
+test("collapses and expands a player from its header", async ({ page }) => {
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const frame = page.locator(".markdown-body .markdown-video-frame").first();
+  const header = frame.getByRole("button", { name: "Video" });
+  const video = frame.locator("video.markdown-video");
+  const chevron = header.locator(".markdown-video-chevron");
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  await expect(video).toBeVisible();
+  await startPlayback(video);
+
+  await header.click();
+
+  await expect(header).toHaveAttribute("aria-expanded", "false");
+  await expect(video).toBeHidden();
+  expect(await video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true);
+  // A half-turn matrix once the quick rotation settles.
+  await expect
+    .poll(() => chevron.evaluate((svg) => getComputedStyle(svg).transform))
+    .toBe("matrix(-1, 0, 0, -1, 0, 0)");
+
+  await header.focus();
+  await page.keyboard.press("Enter");
+
+  await expect(header).toHaveAttribute("aria-expanded", "true");
+  await expect(video).toBeVisible();
+  await expect.poll(() => chevron.evaluate((svg) => getComputedStyle(svg).transform)).toBe("none");
+});
+
+test("turns the header chevron without animation for reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const header = page.locator(".markdown-body .markdown-video-header").first();
+  const chevron = header.locator(".markdown-video-chevron");
+  await expect(header).toBeVisible();
+
+  expect(await chevron.evaluate((svg) => getComputedStyle(svg).transitionDuration)).toBe("0s");
+  await header.click();
+  expect(await chevron.evaluate((svg) => getComputedStyle(svg).transform)).toBe("matrix(-1, 0, 0, -1, 0, 0)");
+});

@@ -688,6 +688,49 @@ describe("markdown video", () => {
     ).toEqual([attachment, ownRepoAsset]);
   });
 
+  function headers(html: string): HTMLButtonElement[] {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    return [...container.querySelectorAll<HTMLButtonElement>(".markdown-video-frame > button.markdown-video-header")];
+  }
+
+  it("heads each player with an expanded toggle named after the video file", () => {
+    const html = renderMarkdownSync('<video src="https://cdn.example.com/clips/sidebar%20demo.webm"></video>');
+
+    const [header, ...rest] = headers(html);
+    expect(rest).toHaveLength(0);
+    expect(header?.textContent).toBe("sidebar demo.webm");
+    expect(header?.getAttribute("type")).toBe("button");
+    expect(header?.getAttribute("aria-expanded")).toBe("true");
+    expect(header?.nextElementSibling?.tagName).toBe("VIDEO");
+  });
+
+  it("labels a GitHub attachment player generically because its address has no file name", () => {
+    const html = renderMarkdownSync(attachment, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
+
+    expect(headers(html).map((header) => header.textContent)).toEqual(["Video"]);
+  });
+
+  it("names a GitLab video from the upload path rather than the media route", () => {
+    const html = renderMarkdownSync("Before ![demo](/uploads/abc/DEMO.MOV) after", gitlabRepo);
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    const header = container.querySelector(".markdown-video-header");
+    expect(header?.textContent).toBe("DEMO.MOV");
+    // Parsed again, the header must stay inside the paragraph with its text.
+    expect(header?.closest("p")?.textContent).toMatch(/^Before DEMO\.MOV\s+after$/);
+  });
+
+  it("names a raw video with source children from its first playable source", () => {
+    const html = renderMarkdownSync(
+      `<video controls><source src="https://cdn.example.com/skip.mp4"><source src="${attachment}"></video>`,
+      githubRepo,
+    );
+
+    expect(headers(html).map((header) => header.textContent)).toEqual(["Video"]);
+  });
+
   it("plays GitLab image syntax that names a video upload", () => {
     const upload = "https://gitlab.com/group/project/uploads/abc/DEMO.MOV";
     const html = renderMarkdownSync("![demo](/uploads/abc/DEMO.MOV)", gitlabRepo);

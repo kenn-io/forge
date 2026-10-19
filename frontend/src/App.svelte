@@ -71,6 +71,7 @@
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
   import { initItemRefHandler } from "./lib/utils/itemRefHandler.js";
   import { initMarkdownVideoFallback } from "./lib/utils/markdown-video-fallback.js";
+  import { initMarkdownVideoToggle } from "./lib/utils/markdown-video-toggle.js";
   import { isPhoneLikeViewport as isPhoneLikePresentation } from "./lib/utils/phone-presentation.js";
   import { globalRepoForSelectedRoute } from "./lib/utils/repoSelectionSync.js";
   import { runAppStartup } from "./lib/utils/appStartup.js";
@@ -453,6 +454,7 @@
       }))
     );
     const cleanupVideoFallback = initMarkdownVideoFallback(document);
+    const cleanupVideoToggle = initMarkdownVideoToggle(document);
     const cancelStartup = runAppStartup(runtime, {
       stores: startupStores,
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
@@ -468,6 +470,7 @@
       cleanupContainer();
       cleanupItemRefs();
       cleanupVideoFallback();
+      cleanupVideoToggle();
     };
   }
 

@@ -585,6 +585,12 @@ linking to the original attachment; without preload, that happens only after
 the reader presses play. Each player sits in its own frame element so the
 swap never disturbs the nodes the markdown host inserted
 (`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
+The frame opens with a `<button aria-expanded>` header that collapses the
+player; it names the file from the source as written, before the media route
+rewrites it, or says "Video". Frame content stays phrasing-level: a block
+element such as `<details>` splits the paragraph an inline GitLab video sits
+in when `{@html}` parses it again
+(`frontend/src/lib/utils/markdown-video-toggle.ts::initMarkdownVideoToggle`).
 
 - GitHub and GitLab declare `read_markdown_media`; their video loads through
   `GET .../markdown-media?source=` on default and host routes with the

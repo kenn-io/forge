@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -437,6 +439,137 @@ func TestSyncFailedFullPassTimelines(t *testing.T) {
 					require.NotEmpty(t, storedEvents)
 					assert.Equal(t, "retained comment", storedEvents[0].Body)
 				}
+			}
+		})
+	}
+}
+
+func TestSyncFailedFullPassSuppressedReads(t *testing.T) {
+	for _, tc := range []struct{ kind, source, reason string }{
+		{"PR visibility", "merge_requests", "other"},
+		{"issue visibility", "issues", "other"},
+		{"workflow approval", "checks", "provider"},
+		{"merge queue", "merge_requests", "other"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testRepoID("acme", "widget"))}
+			repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
+			now := time.Now().UTC()
+			pr := buildOpenPR(7, now)
+			issue := buildOpenIssue(7, now)
+			client := &issueTimelineMockClient{}
+			client.singlePR = pr
+			client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
+			client.comments = []*gh.IssueComment{{ID: new(int64(123)), Body: new("retained comment"), User: &gh.User{Login: new("reviewer")}, CreatedAt: makeTimestamp(now)}}
+			if tc.source == "issues" {
+				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: repoID, PlatformID: 7000, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+			} else {
+				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: repoID, PlatformID: 7000, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, HeadBranch: "feature-branch", BaseBranch: "main", PlatformHeadSHA: pr.GetHead().GetSHA()})
+			}
+			require.NoError(t, err)
+			var failing atomic.Bool
+			var calls atomic.Int32
+			client.listWorkflowRunsFn = func(_ context.Context, owner, name, sha string) ([]*gh.WorkflowRun, error) {
+				if tc.kind == "workflow approval" {
+					calls.Add(1)
+					assert.Equal("acme", owner)
+					assert.Equal("widget", name)
+					assert.Equal(pr.GetHead().GetSHA(), sha)
+					if failing.Load() {
+						return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}}
+					}
+				}
+				return []*gh.WorkflowRun{{ID: new(int64(1)), HeadSHA: new(pr.GetHead().GetSHA()), PullRequests: []*gh.PullRequest{{Number: new(7)}}}}, nil
+			}
+			queue := newPRQueueGraphQL(queuedPR7)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, readErr := io.ReadAll(r.Body)
+				if !assert.NoError(readErr) {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				query := string(body)
+				for _, collection := range []string{"pullRequests", "issues"} {
+					if strings.Contains(query, collection+"(") {
+						_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, collection)
+						return
+					}
+				}
+				visibility := strings.Contains(query, "isMinimized") && (strings.Contains(query, "pullRequest(number:") || strings.Contains(query, "issue(number:"))
+				queueRead := strings.Contains(query, "isMergeQueueEnabled")
+				if visibility && strings.Contains(tc.kind, "visibility") || queueRead && tc.kind == "merge queue" {
+					calls.Add(1)
+					if failing.Load() {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+				}
+				if visibility {
+					item := "pullRequest"
+					if tc.source == "issues" {
+						item = "issue"
+					}
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"comments":{"nodes":[{"databaseId":123,"isMinimized":true,"minimizedReason":"ABUSE"}],"pageInfo":{"hasNextPage":false}}}}}}`, item)
+					return
+				}
+				r.Body = io.NopCloser(strings.NewReader(query))
+				queue.ServeHTTP(w, r)
+			}))
+			t.Cleanup(server.Close)
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+			s.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(server.URL, server.Client()), nil)})
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			for i, fail := range []bool{false, true, true, false, true} {
+				failing.Store(fail)
+				before := calls.Load()
+				s.RunOnce(t.Context())
+				require.Greater(t, calls.Load(), before, "pass %d must attempt the source read", i)
+				want := [][2]string(nil)
+				if i > 0 {
+					want = append(want, [2]string{tc.source, tc.reason})
+				}
+				if i == 4 {
+					want = append(want, [2]string{tc.source, tc.reason})
+				}
+				assert.Equal(want, events, "pass %d", i)
+				var commentsMetadata string
+				if tc.source == "issues" {
+					stored, err := d.GetIssue(t.Context(), "github", "github.com", repo.Owner, repo.Name, 7)
+					require.NoError(t, err)
+					require.NotNil(t, stored)
+					comments, err := d.ListIssueEvents(t.Context(), stored.ID)
+					require.NoError(t, err)
+					require.Len(t, comments, 1)
+					commentsMetadata = comments[0].MetadataJSON
+					_, err = d.ClearIssueDetailFetchedSnapshot(t.Context(), stored.ID, stored.SnapshotRevision)
+					require.NoError(t, err)
+				} else {
+					stored, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+					require.NoError(t, err)
+					require.NotNil(t, stored)
+					comments, err := d.ListMREvents(t.Context(), stored.ID)
+					require.NoError(t, err)
+					require.Len(t, comments, 1)
+					commentsMetadata = comments[0].MetadataJSON
+					if tc.kind == "workflow approval" {
+						assert.True(stored.WorkflowApprovalRequired)
+						assert.Equal(1, stored.WorkflowApprovalCount)
+					}
+					if tc.kind == "merge queue" {
+						state, err := d.GetMergeQueueState(t.Context(), repoID, 7)
+						require.NoError(t, err)
+						require.NotNil(t, state)
+						assert.True(state.Queued)
+						assert.Equal(1, state.Position)
+					}
+					_, err = d.ClearMRDetailFetchedSnapshot(t.Context(), stored.ID, stored.SnapshotRevision)
+					require.NoError(t, err)
+				}
+				assert.JSONEq(`{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`, commentsMetadata)
 			}
 		})
 	}

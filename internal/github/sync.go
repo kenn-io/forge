@@ -9641,6 +9641,7 @@ func (s *Syncer) refreshWorkflowApproval(
 	}
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
 		slog.Warn("list workflow runs for approval refresh failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -9788,6 +9789,7 @@ func (s *Syncer) currentPRCommentVisibility(
 	visibility, err := fetcher.FetchPullRequestCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	s.observeSync(ctx, repo, "merge_requests", err)
 	if err != nil {
 		slog.Warn("current PR comment visibility fetch failed; preserving stored state",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -9811,6 +9813,7 @@ func (s *Syncer) currentIssueCommentVisibility(
 	visibility, err := fetcher.FetchIssueCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
+	s.observeSync(ctx, repo, "issues", err)
 	if err != nil {
 		slog.Warn("current issue comment visibility fetch failed; preserving stored state",
 			"repo", repo.Owner+"/"+repo.Name,

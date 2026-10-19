@@ -4590,7 +4590,7 @@ func (s *Syncer) runOnceWithSlot(
 	// handler paths do not carry this key and are not counted.
 	ctx = WithSyncBudget(ctx)
 	var pass *syncPass
-	if onlyRepos == nil {
+	if onlyRepos == nil && s.onSyncFailed != nil {
 		pass = &syncPass{}
 		ctx = context.WithValue(ctx, syncPassKey{}, pass)
 	}
@@ -6267,6 +6267,12 @@ func (s *Syncer) indexSyncRepo(
 	var partialCause error
 	scopeCauses := make(map[failScope]error)
 	retain := func(scope failScope, err error) {
+		if scope&failMR != 0 {
+			s.observeSync(ctx, repo, "merge_requests", err)
+		}
+		if scope&failIssues != 0 {
+			s.observeSync(ctx, repo, "issues", err)
+		}
 		partialCause = retainSyncFailureCause(partialCause, err)
 		scopeCauses[scope] = retainSyncFailureCause(scopeCauses[scope], err)
 	}
@@ -6274,6 +6280,8 @@ func (s *Syncer) indexSyncRepo(
 		for scope, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
 			if cause := scopeCauses[scope]; cause != nil {
 				s.observeSync(ctx, repo, source, cause)
+			} else if disabledScope&scope != 0 {
+				s.observeSync(ctx, repo, source, platform.ErrRepositoryFeatureDisabled)
 			} else if attemptedScope&scope != 0 && (failedScope|disabledScope)&scope == 0 {
 				s.observeSync(ctx, repo, source, nil)
 			}
@@ -8874,7 +8882,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	}
 	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
-		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
+		return calls, false, &syncSourceError{source: "checks", err: fmt.Errorf("list CI checks for MR #%d: %w", number, err)}
 	}
 	dbChecks := platformdb.DBCIChecks(checks)
 	if dbChecks == nil {

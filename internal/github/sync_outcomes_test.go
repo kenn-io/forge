@@ -13,7 +13,6 @@ import (
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -34,8 +33,8 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		{"recovery overlaps new failure", map[string]error{"a": nil, "b": platform.ErrNotFound}, []RepoRef{a, b}, 1},
 		{"cadence skipped", map[string]error{"b": nil}, []RepoRef{a, b}, 1},
 		{"budget refused", map[string]error{"a": platform.ErrSyncBudgetExhausted, "b": nil}, []RepoRef{a, b}, 1},
-		{"disabled", map[string]error{"a": platform.ErrRepositoryFeatureDisabled}, []RepoRef{a, b}, 1},
-		{"sync disabled", map[string]error{"a": platform.ErrSyncDisabled}, []RepoRef{a, b}, 1},
+		{"disabled", map[string]error{"a": platform.ErrRepositoryFeatureDisabled}, []RepoRef{a, b}, 2},
+		{"sync disabled", map[string]error{"a": platform.ErrSyncDisabled}, []RepoRef{a, b}, 2},
 		{"untracked", map[string]error{"b": nil}, []RepoRef{b}, 2},
 		{"archived", map[string]error{"b": nil}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, 2},
 	} {
@@ -63,7 +62,7 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 				pass := &syncPass{}
 				pass.observe(a, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
 				s.finishSyncPass(pass, tc.tracked)
-				assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "auth"}}, events)
+				assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "not_found"}, {"issues", "auth"}}, events)
 			}
 		})
 	}
@@ -195,7 +194,6 @@ func TestSyncFailureReason(t *testing.T) {
 		{"github primary limit", &gh.RateLimitError{}, "rate_limited"},
 		{"github secondary limit", &gh.AbuseRateLimitError{}, "rate_limited"},
 		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}, "provider"},
-		{"gitlab", &gitlab.ErrorResponse{StatusCode: 401}, "auth"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
@@ -238,6 +236,54 @@ func TestSyncFailedRenameRetainsOutage(t *testing.T) {
 		s.finishSyncPass(pass, []RepoRef{repo})
 	}
 	assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
+}
+
+func TestSyncFailedResolvedIdentityRetainsUnreadOutage(t *testing.T) {
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &partialFailureMock{}
+	client.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+		return nil, platform.ErrPermissionDenied
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
+	client.getRepositoryFn = nil
+	client.listOpenPRsErr = platform.ErrPermissionDenied
+	s.RunOnce(t.Context())
+	require.False(t, s.TrackedRepos()[0].Key.IsZero())
+	client.listOpenPRsErr = nil
+	client.listOpenIssuesErr = platform.ErrPermissionDenied
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
+}
+
+func TestSyncFailedProviderCIAttribution(t *testing.T) {
+	for _, lane := range []string{"detail drain", "full pass"} {
+		t.Run(lane, func(t *testing.T) {
+			s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
+				p.checksErr = platform.ErrPermissionDenied
+			})
+			seedObservedMR(t, d, repoID, "")
+			bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
+			require.NoError(t, err)
+			s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			pass := &syncPass{}
+			ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+			if lane == "detail drain" {
+				s.drainDetailQueue(ctx, map[string]bool{bucket: true}, []RepoRef{observedGitLabRepo})
+			} else {
+				s.RunOnce(t.Context())
+				assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
+				return
+			}
+			s.finishSyncPass(pass, s.TrackedRepos())
+			assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
+		})
+	}
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
@@ -341,19 +387,15 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 					var want [][2]string
 					if scenario == "disabled failing" {
 						want = [][2]string{{source, "auth"}}
-						assert.Equal(t, map[string]string{mergeQueueRepoKey(repo): "auth"}, s.syncFailures[source])
-					} else {
-						assert.Empty(t, s.syncFailures[source])
 					}
+					assert.Empty(t, s.syncFailures[source])
 					assert.Equal(t, want, events)
 					// Disabling one repository must leave genuine failures in another observable.
 					other := RepoRef{Owner: "acme", Name: "other", PlatformHost: "github.com"}
 					later := &syncPass{}
 					later.observe(other, source, platform.ErrNotFound)
 					s.finishSyncPass(later, []RepoRef{repo, other})
-					if scenario == "disabled healthy" {
-						want = [][2]string{{source, "not_found"}}
-					}
+					want = append(want, [2]string{source, "not_found"})
 					assert.Equal(t, want, events)
 				})
 			}

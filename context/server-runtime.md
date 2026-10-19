@@ -1,7 +1,7 @@
 # Server Runtime
 
 - Full sync passes report `sync_failed` once per source outage with fixed `sync_source` and `reason`, without repository identifiers.
-  Unread repositories retain in-memory state; archived and untracked ones release it. Restarts can count an outage twice
+  Unread repositories retain in-memory state across identity resolution; disabled features, archived repositories, and untracked ones release it. Restarts can count an outage twice
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

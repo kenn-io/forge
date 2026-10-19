@@ -3,12 +3,13 @@ package github
 import (
 	"context"
 	"errors"
+	"maps"
 	"net"
+	"slices"
 	"sync"
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
-	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
@@ -22,6 +23,16 @@ var (
 
 type syncPassKey struct{}
 
+// syncSourceError keeps a failed read attributed to its source through callers
+// that also refresh other sources. Unwrap preserves their retry behavior.
+type syncSourceError struct {
+	source string
+	err    error
+}
+
+func (e *syncSourceError) Error() string { return e.err.Error() }
+func (e *syncSourceError) Unwrap() error { return e.err }
+
 // A missing result means no read; an empty reason means a successful read.
 type syncPass struct {
 	mu      sync.Mutex
@@ -29,7 +40,13 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
+	if failure, ok := errors.AsType[*syncSourceError](err); ok && failure.source != source {
+		// The enclosing refresh reached this source successfully before the
+		// other source failed.
+		err = nil
+	}
 	if errors.Is(err, platform.ErrSyncDisabled) || errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		p.observe(repo, source, nil)
 		//nolint:errorlint // Inspect immediate causes so disabled nodes cannot hide sibling failures.
 		switch wrapped := err.(type) {
 		case *platform.Error:
@@ -93,10 +110,12 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
 	}
-	live := make(map[string]bool, len(tracked))
+	live := make(map[string]string, len(tracked))
 	for _, repo := range tracked {
 		if !repo.Archived {
-			live[mergeQueueRepoKey(repo)] = true
+			key := mergeQueueRepoKey(repo)
+			live[key] = key
+			live[repoFailKey(repo)] = key
 		}
 	}
 	if s.syncFailures == nil {
@@ -109,7 +128,20 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			failures = make(map[string]string)
 			s.syncFailures[source] = failures
 		}
+		// Repository lookup can resolve a route to its stable identity while
+		// leaving a failing source unread.
+		for key, reason := range failures {
+			if resolved := live[key]; resolved != "" && resolved != key {
+				if _, exists := failures[resolved]; !exists {
+					failures[resolved] = reason
+				}
+				delete(failures, key)
+			}
+		}
 		for key, reason := range pass.results[source] {
+			if resolved := live[key]; resolved != "" {
+				key = resolved
+			}
 			if reason == "" {
 				delete(failures, key)
 			} else {
@@ -117,17 +149,16 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			}
 		}
 		for key := range failures {
-			if !live[key] {
+			if live[key] == "" {
 				delete(failures, key)
 			}
 		}
 		if !wasFailing && len(failures) > 0 && s.onSyncFailed != nil {
+			reasons := slices.Collect(maps.Values(failures))
+			// Prefer rate limits, then auth, missing resources, network,
+			// provider, and other failures when repositories disagree.
 			for _, reason := range syncReasons {
-				found := false
-				for _, failure := range failures {
-					found = found || failure == reason
-				}
-				if found {
+				if slices.Contains(reasons, reason) {
 					s.onSyncFailed(source, reason)
 					break
 				}
@@ -138,9 +169,6 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 
 func syncFailureReason(err error) string {
 	status := platformgithub.StatusCode(err)
-	if response, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
-		status = response.StatusCode
-	}
 	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
 		status = response.StatusCode
 	}

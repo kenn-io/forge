@@ -10,6 +10,7 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
+	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
@@ -124,7 +125,6 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	}
 	for _, source := range syncSources {
 		failures := s.syncFailures[source]
-		wasFailing := len(failures) > 0
 		if failures == nil {
 			failures = make(map[string]string)
 			s.syncFailures[source] = failures
@@ -139,13 +139,21 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			}
 		}
+		for key := range failures {
+			if live[key] == "" {
+				delete(failures, key)
+			}
+		}
+		wasFailing := len(failures) > 0
 		// A route and its resolved identity can both be observed in one pass.
 		// Combine them before applying recovery so failures always win.
 		observed := make(map[string]string, len(pass.results[source]))
 		for key, reason := range pass.results[source] {
-			if resolved := live[key]; resolved != "" {
-				key = resolved
+			resolved := live[key]
+			if resolved == "" {
+				continue
 			}
+			key = resolved
 			if observed[key] == "" {
 				observed[key] = reason
 			}
@@ -155,11 +163,6 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			} else {
 				failures[key] = reason
-			}
-		}
-		for key := range failures {
-			if live[key] == "" {
-				delete(failures, key)
 			}
 		}
 		if !wasFailing && len(failures) > 0 && s.onSyncFailed != nil {
@@ -178,6 +181,9 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 
 func syncFailureReason(err error) string {
 	status := platformgithub.StatusCode(err)
+	if response, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
+		status = response.StatusCode
+	}
 	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
 		status = response.StatusCode
 	}
@@ -199,6 +205,8 @@ func syncFailureReason(err error) string {
 		return "not_found"
 	case errors.Is(err, context.DeadlineExceeded), networkError, gitclone.IsNetworkFailure(err):
 		return "network"
+	case status >= 400 && status < 500:
+		return "other"
 	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600, gitclone.IsProviderFailure(err):
 		return "provider"
 	default:

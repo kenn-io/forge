@@ -24,6 +24,7 @@ import (
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
+	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
@@ -45,14 +46,17 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		name      string
 		next      map[string]error
 		tracked   []RepoRef
+		wantNow   int
 		wantLater int
 	}{
-		{"recovery overlaps new failure", map[string]error{"a": nil, "b": platform.ErrNotFound}, []RepoRef{a, b}, 1},
-		{"cadence skipped", map[string]error{"b": nil}, []RepoRef{a, b}, 1},
-		{"budget refused", map[string]error{"a": platform.ErrSyncBudgetExhausted, "b": nil}, []RepoRef{a, b}, 1},
-		{"disabled", map[string]error{"a": platform.ErrRepositoryFeatureDisabled}, []RepoRef{a, b}, 2},
-		{"untracked", map[string]error{"b": nil}, []RepoRef{b}, 2},
-		{"archived", map[string]error{"b": nil}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, 2},
+		{"recovery overlaps new failure", map[string]error{"a": nil, "b": platform.ErrNotFound}, []RepoRef{a, b}, 1, 1},
+		{"cadence skipped", map[string]error{"b": nil}, []RepoRef{a, b}, 1, 1},
+		{"budget refused", map[string]error{"a": platform.ErrSyncBudgetExhausted, "b": nil}, []RepoRef{a, b}, 1, 1},
+		{"disabled", map[string]error{"a": platform.ErrRepositoryFeatureDisabled}, []RepoRef{a, b}, 1, 2},
+		{"untracked", map[string]error{"b": nil}, []RepoRef{b}, 1, 2},
+		{"archived", map[string]error{"b": nil}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, 1, 2},
+		{"untracked as another fails", map[string]error{"b": platform.ErrNotFound}, []RepoRef{b}, 2, 2},
+		{"archived as another fails", map[string]error{"b": platform.ErrNotFound}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, 2, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var events [][2]string
@@ -65,7 +69,7 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 				second.observe(RepoRef{Owner: "acme", Name: name}, "issues", err)
 			}
 			s.finishSyncPass(second, tc.tracked)
-			require.Len(t, events, 1)
+			require.Len(t, events, tc.wantNow)
 			later := &syncPass{}
 			later.observe(b, "issues", platform.ErrNotFound)
 			s.finishSyncPass(later, tc.tracked)
@@ -253,6 +257,29 @@ func TestSyncFailedRefsAndChecks(t *testing.T) {
 }
 
 func TestSyncFailureReason(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{400, "other"},
+		{401, "auth"},
+		{403, "auth"},
+		{404, "not_found"},
+		{409, "other"},
+		{422, "other"},
+		{429, "rate_limited"},
+		{503, "provider"},
+	} {
+		t.Run(fmt.Sprintf("gitlab %d", tc.status), func(t *testing.T) {
+			client, err := platformgitlab.NewClient("gitlab.example.com", testTokenSource("test-token"), platformgitlab.WithoutRetriesForTesting(), platformgitlab.WithTransport(platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+			})))
+			require.NoError(t, err)
+			_, err = client.GetRepository(t.Context(), platform.RepoRef{Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42)})
+			require.Error(t, err)
+			assert.Equal(t, tc.want, syncFailureReason(err))
+		})
+	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
 	require.NoError(t, err)
 	for _, tc := range []struct {
@@ -351,6 +378,68 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 		s.finishSyncPass(pass, []RepoRef{repo})
 	}
 	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
+}
+
+func TestSyncFailedFullPassTimelines(t *testing.T) {
+	for _, source := range []string{"issues", "merge_requests"} {
+		t.Run(source, func(t *testing.T) {
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			now := time.Now().UTC()
+			issue := buildOpenIssue(7, now)
+			pr := buildOpenPR(7, now)
+			client := &issueTimelineMockClient{}
+			client.comments = []*gh.IssueComment{{ID: new(int64(123)), Body: new("retained comment"), User: &gh.User{Login: new("reviewer")}, CreatedAt: makeTimestamp(now)}}
+			if source == "issues" {
+				client.openIssues = []*gh.Issue{issue}
+				client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
+			} else {
+				client.openPRs = []*gh.PullRequest{pr}
+				client.singlePR = pr
+			}
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			for i, failing := range []bool{false, true, true, false, true} {
+				client.issueTimelineErr = nil
+				client.timelineEventsErr = nil
+				if failing {
+					failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}}
+					client.issueTimelineErr = failure
+					client.timelineEventsErr = failure
+				}
+				updated := now.Add(time.Duration(i) * time.Minute)
+				issue.UpdatedAt = makeTimestamp(updated)
+				pr.UpdatedAt = makeTimestamp(updated)
+				s.RunOnce(t.Context())
+				want := [][2]string(nil)
+				if i > 0 {
+					want = append(want, [2]string{source, "provider"})
+				}
+				if i == 4 {
+					want = append(want, [2]string{source, "provider"})
+				}
+				assert.Equal(t, want, events)
+				if source == "issues" {
+					stored, err := d.GetIssue(t.Context(), "github", "github.com", repo.Owner, repo.Name, 7)
+					require.NoError(t, err)
+					require.NotNil(t, stored)
+					storedEvents, err := d.ListIssueEvents(t.Context(), stored.ID)
+					require.NoError(t, err)
+					require.NotEmpty(t, storedEvents)
+					assert.Equal(t, "retained comment", storedEvents[0].Body)
+				} else {
+					stored, err := d.GetMergeRequest(t.Context(), "github", "github.com", repo.Owner, repo.Name, 7)
+					require.NoError(t, err)
+					require.NotNil(t, stored)
+					storedEvents, err := d.ListMREvents(t.Context(), stored.ID)
+					require.NoError(t, err)
+					require.NotEmpty(t, storedEvents)
+					assert.Equal(t, "retained comment", storedEvents[0].Body)
+				}
+			}
+		})
+	}
 }
 
 func TestSyncFailedFullPassDetailAndComments(t *testing.T) {

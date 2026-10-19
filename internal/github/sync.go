@@ -9325,6 +9325,7 @@ func (s *Syncer) refreshTimeline(
 			"number", number,
 			"err", err,
 		)
+		s.observeSync(ctx, repo, "merge_requests", err)
 		timelineEvents = nil
 	}
 
@@ -10344,6 +10345,7 @@ func (s *Syncer) refreshIssueTimeline(
 				"number", number,
 				"err", err,
 			)
+			s.observeSync(ctx, repo, "issues", err)
 		} else {
 			otherEvents = normalizeIssueTimelineEvents(issueID, timelineEvents)
 		}

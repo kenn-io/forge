@@ -1,6 +1,7 @@
 package landedwork_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,29 @@ import (
 // A blob missing from the object store leaves its landing unproven without
 // affecting a later landing that reads other objects.
 func TestMissingBlobLeavesLaterLandingsProvable(t *testing.T) {
+	assertDamagedBlobLeavesLaterLandingProvable(t, func(path string) {
+		require.NoError(t, os.Remove(path))
+	})
+}
+
+// Git stops partway through a corrupt blob's content. The broken read leaves
+// its landing unproven without affecting a later landing.
+func TestCorruptBlobLeavesLaterLandingsProvable(t *testing.T) {
+	assertDamagedBlobLeavesLaterLandingProvable(t, func(path string) {
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		// Keep the zlib header and object header readable so Git reports the
+		// object before inflating the damaged content.
+		for i := len(data) / 2; i < len(data)-4; i++ {
+			data[i] ^= 0x55
+		}
+		require.NoError(t, os.Chmod(path, 0o600))
+		require.NoError(t, os.WriteFile(path, data, 0o600))
+	})
+}
+
+func assertDamagedBlobLeavesLaterLandingProvable(t *testing.T, damage func(path string)) {
+	t.Helper()
 	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
 	r.Runner = gitsafe.Runner()
 	base := r.CommitFile("seed.txt", "seed\n", "seed")
@@ -27,10 +51,14 @@ func TestMissingBlobLeavesLaterLandingsProvable(t *testing.T) {
 		r.Run("commit", "-m", "squash "+branch)
 		return source, r.Head()
 	}
-	firstSource, first := squash("first", "a.txt", "only in the first change\n")
+	var first strings.Builder
+	for i := range 2000 {
+		fmt.Fprintf(&first, "line %d only in the first change\n", i)
+	}
+	firstSource, firstHead := squash("first", "a.txt", first.String())
 	secondSource, second := squash("second", "b.txt", "second change\n")
-	blob := strings.TrimSpace(r.Run("rev-parse", first+":a.txt"))
-	require.NoError(t, os.Remove(filepath.Join(r.GitDir, "objects", blob[:2], blob[2:])))
+	blob := strings.TrimSpace(r.Run("rev-parse", firstHead+":a.txt"))
+	damage(filepath.Join(r.GitDir, "objects", blob[:2], blob[2:]))
 
 	f := fixture{repo: r, base: base, head: second}
 	ctx, p := f.prepare(t)
@@ -43,7 +71,7 @@ func TestMissingBlobLeavesLaterLandingsProvable(t *testing.T) {
 	e := landedwork.Evidence{
 		Query: p.Query(), Inventory: landedwork.Inventory{Supported: true, Complete: true},
 		Capabilities: landedwork.Capabilities{SingleParentCorrespondence: true},
-		Candidates:   []landedwork.Candidate{candidate("7", firstSource, first), candidate("8", secondSource, second)},
+		Candidates:   []landedwork.Candidate{candidate("7", firstSource, firstHead), candidate("8", secondSource, second)},
 	}
 	res, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
 	require.NoError(t, err)

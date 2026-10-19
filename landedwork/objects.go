@@ -19,11 +19,10 @@ import (
 // Reads charge the meter exactly as the per-object commands did: a blob read
 // charges its content, an existence check charges nothing.
 type objectBatch struct {
-	mu     sync.Mutex
-	cmd    *exec.Cmd
-	in     io.WriteCloser
-	out    *bufio.Reader
-	broken error
+	mu  sync.Mutex
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	out *bufio.Reader
 }
 
 var errObjectUnavailable = errors.New("object unavailable")
@@ -84,20 +83,17 @@ func (b *objectBatch) start(ctx context.Context, v *objectView) error {
 }
 
 func (b *objectBatch) read(ctx context.Context, v *objectView, name, kind string, charge bool) ([]byte, error) {
-	if b.broken != nil {
-		return nil, b.broken
-	}
 	if b.cmd == nil {
 		if err := b.start(ctx, v); err != nil {
-			b.broken = err
 			return nil, err
 		}
 	}
 	data, err := b.exchange(v, name, kind, charge)
 	if err != nil && !errors.Is(err, errObjectUnavailable) {
-		// The stream position is unknown; never reuse it.
-		b.broken = err
-		b.stop()
+		// The stream position is unknown; never reuse it. Like the per-object
+		// command, the failure stays with this object: the next read starts a
+		// fresh process.
+		b.stop(true)
 	}
 	return data, err
 }
@@ -143,12 +139,12 @@ func (b *objectBatch) exchange(v *objectView, name, kind string, charge bool) ([
 	return data[:size], nil
 }
 
-func (b *objectBatch) stop() {
+func (b *objectBatch) stop(kill bool) {
 	if b.cmd == nil {
 		return
 	}
 	_ = b.in.Close()
-	if b.broken != nil && b.cmd.Process != nil {
+	if kill && b.cmd.Process != nil {
 		_ = b.cmd.Process.Kill()
 	}
 	// Every returned object was fully read and checked; exit status adds nothing.
@@ -159,5 +155,5 @@ func (b *objectBatch) stop() {
 func (b *objectBatch) close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.stop()
+	b.stop(false)
 }

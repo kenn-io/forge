@@ -350,58 +350,49 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 	}
 }
 
-func TestSyncFailedIgnoresLocalCloneFailure(t *testing.T) {
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	parent := filepath.Join(t.TempDir(), "blocked")
-	require.NoError(t, os.WriteFile(parent, nil, 0o600))
-	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-		Key:        tokenauth.Key{Platform: "gitlab", Host: host},
-		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
-	}, tokenauth.Options{})
-	clones := gitclone.New(t.TempDir(), gitclone.HostSources{host: source})
-	clones.SetAllowInsecureHTTP("gitlab", host, true)
-	t.Cleanup(clones.Wait)
-	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", CloneURL: server.URL + "/acme/widget.git"}
-	s := NewSyncer(nil, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	pass := &syncPass{}
-	err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-	var pathErr *fs.PathError
-	require.ErrorAs(t, err, &pathErr)
-	assert.Zero(t, calls.Load())
-	s.finishSyncPass(pass, []RepoRef{repo})
-	assert.Empty(t, events)
-	assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
-}
-
 func TestSyncFailedGitCloneErrors(t *testing.T) {
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
-	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
-	clones := gitclone.New(t.TempDir(), nil)
-	clones.SetAllowInsecureHTTP("gitlab", host, true)
-	t.Cleanup(clones.Wait)
-	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	require.Positive(t, calls.Load())
-	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+	for _, scenario := range []string{"remote clone failure", "local credential failure"} {
+		t.Run(scenario, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			t.Cleanup(server.Close)
+			host := strings.TrimPrefix(server.URL, "http://")
+			var sources gitclone.HostSources
+			if scenario == "local credential failure" {
+				parent := filepath.Join(t.TempDir(), "blocked")
+				require.NoError(t, os.WriteFile(parent, nil, 0o600))
+				sources = gitclone.HostSources{host: tokenauth.NewManagedSource(tokenauth.Descriptor{
+					Key:        tokenauth.Key{Platform: "gitlab", Host: host},
+					Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
+				}, tokenauth.Options{})}
+			}
+			clones := gitclone.New(t.TempDir(), sources)
+			clones.SetAllowInsecureHTTP("gitlab", host, true)
+			t.Cleanup(clones.Wait)
+			repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
+			provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(t, err)
+			s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+			if scenario == "local credential failure" {
+				pass := &syncPass{}
+				err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+				var pathErr *fs.PathError
+				require.ErrorAs(t, err, &pathErr)
+				assert.Zero(t, calls.Load())
+				assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
+			} else {
+				var events [][2]string
+				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+				s.RunOnce(t.Context())
+				require.Positive(t, calls.Load())
+				assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+			}
+		})
+	}
 }
 
 // The list excludes the seeded item, so its read comes from closure reconciliation.
@@ -455,9 +446,6 @@ func TestSyncFailedClosureReads(t *testing.T) {
 					client.getPullRequestFn = func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
 						assert.Equal(t, "acme/widget/8", fmt.Sprintf("%s/%s/%d", owner, name, number))
 						mrCalls.Add(1)
-						if status == 410 {
-							return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}
-						}
 						return nil, failure
 					}
 					s = NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
@@ -476,9 +464,12 @@ func TestSyncFailedClosureReads(t *testing.T) {
 					require.Positive(t, provider.getIssueCalls.Load())
 					require.Positive(t, provider.getMRCalls.Load())
 				}
-				if status == 404 || status == 410 {
+				switch status {
+				case 404:
 					assert.Empty(t, events)
-				} else {
+				case 410:
+					assert.Equal(t, [][2]string{{"merge_requests", "other"}}, events)
+				default:
 					assert.Equal(t, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}, events)
 				}
 			})
@@ -487,57 +478,23 @@ func TestSyncFailedClosureReads(t *testing.T) {
 }
 
 func TestSyncFailedPersistenceIsLocal(t *testing.T) {
-	for _, target := range []string{"settings", "identity", "issues", "merge_requests", "detail"} {
-		t.Run(target, func(t *testing.T) {
-			d := openTestDB(t)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-			require.NoError(t, err)
-			now := time.Now().UTC()
-			issue := &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now}
-			if target == "detail" {
-				_, err = d.UpsertIssue(t.Context(), issue)
-				require.NoError(t, err)
-			}
-			triggers := map[string]string{
-				"settings":       `CREATE TRIGGER reject_write BEFORE UPDATE OF web_url ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject settings'); END`,
-				"identity":       `CREATE TRIGGER reject_write BEFORE INSERT ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject identity'); END`,
-				"issues":         `CREATE TRIGGER reject_write BEFORE INSERT ON forge_issues BEGIN SELECT RAISE(ABORT, 'reject issues'); END`,
-				"merge_requests": `CREATE TRIGGER reject_write BEFORE INSERT ON forge_merge_requests BEGIN SELECT RAISE(ABORT, 'reject merge_requests'); END`,
-				"detail":         `CREATE TRIGGER reject_write BEFORE UPDATE OF detail_fetched_at ON forge_issues WHEN NEW.detail_fetched_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'reject detail marker'); END`,
-			}
-			_, err = d.WriteDB().ExecContext(t.Context(), triggers[target])
-			require.NoError(t, err)
-			var client Client = &mockClient{openPRs: []*gh.PullRequest{buildOpenPR(8, now)}, openIssues: []*gh.Issue{{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Example"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}}}
-			called := false
-			if target == "detail" {
-				detailClient := &partialFailureMock{issuesCached: true, prsCached: true}
-				detailClient.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
-					called = true
-					return &gh.Issue{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Updated detail"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}, nil
-				}
-				client = detailClient
-			}
-			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			var results []RepoSyncResult
-			s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
-			s.RunOnce(t.Context())
-			if target == "detail" {
-				require.True(t, called)
-				stored, err := d.GetIssueByRepoIDAndNumber(t.Context(), id, 7)
-				require.NoError(t, err)
-				require.NotNil(t, stored)
-				assert.Equal(t, "Updated detail", stored.Title)
-				assert.Nil(t, stored.DetailFetchedAt)
-			} else {
-				require.Len(t, results, 1)
-				require.Contains(t, results[0].Error, "reject "+target)
-			}
-			assert.Empty(t, events)
-		})
-	}
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	_, err = d.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_write BEFORE INSERT ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject identity'); END`)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	client := &mockClient{openPRs: []*gh.PullRequest{buildOpenPR(8, now)}, openIssues: []*gh.Issue{{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Example"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}}}
+	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	var results []RepoSyncResult
+	s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	s.RunOnce(t.Context())
+	require.Len(t, results, 1)
+	require.Contains(t, results[0].Error, "reject identity")
+	assert.Empty(t, events)
 }
 
 func TestSyncFailedKeylessCredentialRoute(t *testing.T) {

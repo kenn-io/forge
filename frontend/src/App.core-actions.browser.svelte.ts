@@ -9,7 +9,7 @@ let captures: unknown[] = [];
 const capture: MockRouteOverride = (request) => {
   if (request.method === "POST" && request.url.pathname === "/api/v1/telemetry/events") {
     captures.push(JSON.parse(request.bodyText));
-    return jsonResponse({ status: "queued" });
+    return jsonResponse({ status: "queued" }, 202);
   }
   return null;
 };

@@ -20,6 +20,9 @@ import { Effect } from "effect";
 import "../app.css";
 import { createMockApiFetch, type MockApiHandle, type MockRouteOverride } from "./mockApiFetch.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../lib/app/runtime.js";
+import { startRuntimeTelemetry } from "../lib/app/telemetry.js";
+import { getCaptureTelemetryEventUrl } from "../lib/api/generated/system/system.js";
+import { orvalRequest } from "../lib/api/runtime.js";
 
 let previousRuntimeDisposal = Promise.resolve();
 
@@ -107,6 +110,18 @@ export async function mountBrowserApp(path: string, options: MountBrowserAppOpti
   const runtime = makeAppRuntime();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = api.fetch;
+  const telemetry = startRuntimeTelemetry(runtime, {
+    route: getCaptureTelemetryEventUrl(),
+    surface: "web",
+    storageKey: "kit-ui.app-opened.web",
+    post: (route, event, options) =>
+      orvalRequest(route, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+        keepalive: options?.keepalive ?? false,
+      }),
+  });
 
   const originalEventSource = globalThis.EventSource;
   globalThis.EventSource = NoopEventSource as unknown as typeof EventSource;
@@ -135,6 +150,7 @@ export async function mountBrowserApp(path: string, options: MountBrowserAppOpti
     runtime,
     target,
     unmount: () => {
+      telemetry.stop();
       unmount();
       target.remove();
       globalThis.fetch = originalFetch;

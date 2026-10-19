@@ -184,7 +184,7 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 		proofs       []string
 	}
 	for _, method := range []string{"squash", "automatic"} {
-		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly", "replayed parent", "replayed merge"} {
+		for _, mode := range []string{"cancelled", "landed by another", "pushed directly", "stacked", "partly pushed directly", "replayed parent", "replayed merge", "empty boundary"} {
 			if method == "automatic" && mode == "partly pushed directly" {
 				// The automatic rewritten-range alternative explains this shape.
 				continue
@@ -242,11 +242,9 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					r.Run("commit", "--allow-empty", "-m", "squash fix")
 					candidates = append(candidates, squashCandidate(f, "7", r.Head(), fix, update))
 					want = append(want, landing{"7", r.Head(), []string{"squash"}})
-					if mode == "pushed directly" {
-						// The pushed commit replays the source's first commit, so
-						// with the empty terminal the pair could be a rebase.
-						reason = "empty_tree_edits"
-					}
+					// In "pushed directly", the pushed commit replays the first
+					// source commit, but the branch update merged it into the
+					// source, so this change's landing did not create it.
 				case "replayed parent":
 					// The parent replays the first source commit and the empty
 					// terminal could replay the second, so the pair could be a
@@ -278,6 +276,21 @@ func TestSquashOfAlreadyPresentEdits(t *testing.T) {
 					r.Run("commit", "--allow-empty", "-m", "squash work")
 					candidates = append(candidates, squashCandidate(f, "7", r.Head(), edit, merge))
 					reason = "source_correspondence_unproven"
+				case "empty boundary":
+					// The source starts at an empty target commit, which would
+					// replay any source commit. The source was written on top of
+					// it, so it is not a commit this change created by landing.
+					r.Run("commit", "--allow-empty", "-m", "empty push")
+					boundary := r.Head()
+					direct = append(direct, boundary)
+					r.Checkout("-b", "undo", boundary)
+					edit := r.CommitFile("work.txt", "new\nkeep\n", "edit")
+					undo := r.CommitFile("work.txt", "old\nkeep\n", "undo")
+					r.Checkout("target")
+					r.Run("merge", "--squash", "undo")
+					r.Run("commit", "--allow-empty", "-m", "squash undo")
+					candidates = append(candidates, squashCandidate(f, "7", r.Head(), edit, undo))
+					want = append(want, landing{"7", r.Head(), []string{"squash"}})
 				case "stacked", "partly pushed directly":
 					// The second change was stacked on the first, so its source
 					// repeats the first change's commit.

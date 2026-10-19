@@ -3,6 +3,7 @@ package landedwork
 import (
 	"context"
 	"errors"
+	"slices"
 )
 
 // witnessedSquash proves a squash whose full net edits differ from the
@@ -74,6 +75,14 @@ func rebaseReplayPossible(ctx context.Context, v *objectView, c Candidate, befor
 	if len(parents) != 1 {
 		// A merge or root commit is never a rebase replay.
 		return false, nil
+	}
+	if !slices.Contains(c.Source, before) {
+		// The source was written on top of before, so its landing did not
+		// create it. This matters when before is empty and so replays anything.
+		earlier, err := v.ancestor(ctx, before, c.SourceHead)
+		if err != nil || earlier {
+			return false, err
+		}
 	}
 	for i, id := range c.Source {
 		if ordered && i >= terminal[0] {

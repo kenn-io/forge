@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"encoding/json/v2"
 	"strings"
 	"testing"
 
@@ -56,6 +57,14 @@ func TestACPKeepsThoughtsImagesAndPlans(t *testing.T) {
 	}}})
 
 	state := publishedACPState(t, agent)
+	require.Len(t, state.Messages, 1, "large media is delivered alone")
+	require.Equal(t, 3, state.MessageOffset)
+	data, err := agent.History(state.MessageOffset, 100)
+	require.NoError(t, err)
+	var history map[string]ACPHistory
+	require.NoError(t, json.Unmarshal(data, &history))
+	require.Zero(t, history["history"].Offset)
+	state.Messages = append(history["history"].Messages, state.Messages...)
 	require.Len(t, state.Messages, 4)
 	assert.Equal(t, "thought", state.Messages[0].Role, "reasoning stays apart from the reply")
 	assert.Equal(t, "Considering the options.\n\n", state.Messages[0].Text)

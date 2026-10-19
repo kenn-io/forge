@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,72 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 )
+
+func TestACPByteSizedBatchesPreserveTheTranscript(t *testing.T) {
+	assert := assert.New(t)
+	messages := make([]ACPMessage, 12)
+	for i := range messages {
+		// JSON escaping and multibyte text must count toward the wire size.
+		messages[i] = ACPMessage{Role: "tool", Text: fmt.Sprintf("tool %d", i), RawOutput: strings.Repeat("\"\n界", 20_000)}
+	}
+	agent := &ACP{state: ACPState{Messages: messages, Connected: true}}
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	state := decodePage(t, data)
+	assert.Less(len(data), 270_000)
+	assert.Positive(state.MessageOffset)
+	assert.Equal(12, state.MessageCount)
+	assert.Equal(messages[state.MessageOffset:], state.Messages)
+
+	// Repeated backward pages reach every older message without gaps.
+	loaded := state.Messages
+	for before := state.MessageOffset; before > 0; {
+		data, err = agent.History(before, 100)
+		require.NoError(t, err)
+		var frame map[string]ACPHistory
+		require.NoError(t, json.Unmarshal(data, &frame))
+		page := frame["history"]
+		require.Less(t, page.Offset, before)
+		assert.Less(len(data), 270_000)
+		assert.Equal(before, page.Offset+len(page.Messages))
+		loaded = append(page.Messages, loaded...)
+		before = page.Offset
+	}
+	assert.Equal(messages, loaded)
+
+	// Forward pages used by coordinators also make complete progress.
+	loaded = nil
+	for after := 0; after < len(messages); {
+		data, err = agent.Page(after, 100)
+		require.NoError(t, err)
+		page := decodePage(t, data)
+		require.NotEmpty(t, page.Messages)
+		assert.Less(len(data), 270_000)
+		assert.Equal(after, page.MessageOffset)
+		loaded = append(loaded, page.Messages...)
+		after += len(page.Messages)
+	}
+	assert.Equal(messages, loaded)
+	assert.Equal(messages, agent.state.Messages)
+}
+
+func TestACPBatchKeepsAnOversizedMessageWhole(t *testing.T) {
+	assert := assert.New(t)
+	large := ACPMessage{Role: "tool", Text: "result", RawOutput: strings.Repeat("x", 2<<20)}
+	agent := &ACP{state: ACPState{Messages: []ACPMessage{{Role: "user", Text: "question"}, large}}}
+	state := publishedACPState(t, agent)
+	assert.Equal(1, state.MessageOffset)
+	assert.Equal([]ACPMessage{large}, state.Messages)
+	data, err := agent.History(2, 100)
+	require.NoError(t, err)
+	var frame map[string]ACPHistory
+	require.NoError(t, json.Unmarshal(data, &frame))
+	assert.Equal(1, frame["history"].Offset)
+	assert.Equal([]ACPMessage{large}, frame["history"].Messages)
+	data, err = agent.Page(1, 100)
+	require.NoError(t, err)
+	assert.Equal([]ACPMessage{large}, decodePage(t, data).Messages)
+}
 
 func decodePage(t *testing.T, data []byte) ACPState {
 	t.Helper()

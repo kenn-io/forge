@@ -176,6 +176,7 @@ func (a *ACP) publishedStateLocked() ACPState {
 	// recent window, and clients page older messages in with History.
 	state.MessageCount = len(messages)
 	state.MessageOffset = max(0, len(messages)-acpMessageWindow)
+	state.MessageOffset = len(messages) - acpMessageBatchSize(messages[state.MessageOffset:], true)
 	state.Messages = messages[state.MessageOffset:]
 	// Only the owner checks retried answers. A digest of a small form domain
 	// can be reversed, so the ledger never leaves the owner.
@@ -188,6 +189,41 @@ const acpMessageWindow = 200
 
 // acpHistoryPage is the page size when a history request names none.
 const acpHistoryPage = 100
+
+// acpMessageBatchBytes is a delivery target, not a content limit. Keep at
+// least one whole message so an oversized tool result remains readable and
+// every nonempty history page advances its cursor. Metadata is additional.
+const acpMessageBatchBytes = 256 << 10
+
+// acpMessageBatchSize counts a contiguous prefix or suffix by its JSON size,
+// including escaping, attachments, and tool output, rather than text length.
+func acpMessageBatchSize(messages []ACPMessage, newestFirst bool) int {
+	bytes, count := 2, 0 // JSON array brackets
+	for n := range messages {
+		i := n
+		if newestFirst {
+			i = len(messages) - 1 - n
+		}
+		data, err := json.Marshal(messages[i])
+		if err != nil {
+			// Include the invalid message so the caller's marshal reports it.
+			return count + 1
+		}
+		size := len(data)
+		if count > 0 {
+			size++ // comma
+			if bytes+size > acpMessageBatchBytes {
+				break
+			}
+		}
+		bytes += size
+		count++
+		if bytes >= acpMessageBatchBytes {
+			break
+		}
+	}
+	return count
+}
 
 // publishedMessagesLocked is the full transcript as clients may see it.
 func (a *ACP) publishedMessagesLocked() []ACPMessage {
@@ -223,6 +259,7 @@ func (a *ACP) historyLocked(before, limit int) ([]byte, error) {
 		limit = acpHistoryPage
 	}
 	start := max(0, before-limit)
+	start = before - acpMessageBatchSize(messages[start:before], true)
 	return json.Marshal(map[string]ACPHistory{"history": {Offset: start, Messages: messages[start:before]}}, json.Deterministic(true))
 }
 
@@ -247,6 +284,7 @@ func (a *ACP) Page(after, limit int) ([]byte, error) {
 	}
 	start := min(max(after, 0), len(messages))
 	end := start + min(limit, len(messages)-start)
+	end = start + acpMessageBatchSize(messages[start:end], false)
 	state.MessageOffset = start
 	state.Messages = messages[start:end]
 	return json.Marshal(state, json.Deterministic(true))

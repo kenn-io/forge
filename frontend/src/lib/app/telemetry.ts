@@ -88,15 +88,25 @@ export function startRuntimeTelemetry(
 ) {
   const reportedDay = new Map<string, string>();
   const pending = new Map<string, { action: CoreAction; day: string }>();
+  let quiet = true;
   const post: BrowserTelemetryOptions["post"] =
     options.post ??
-    ((route, event, visitOptions) =>
-      orvalRequest(route, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(event),
-        keepalive: visitOptions?.keepalive ?? false,
-      }));
+    (async (route, event, visitOptions) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8_000);
+      try {
+        const response = await orvalRequest(route, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(event),
+          keepalive: visitOptions?.keepalive ?? false,
+          signal: controller.signal,
+        });
+        return response.status === 202 ? { status: response.status, data: await response.json() } : response;
+      } finally {
+        clearTimeout(timeout);
+      }
+    });
   const reporter = startBrowserTelemetry({
     route: getCaptureTelemetryEventUrl(),
     surface: "web",
@@ -127,6 +137,7 @@ export function startRuntimeTelemetry(
     reporter.reportVisit({ event: action.event, properties: { ...action.properties, surface: "web" } });
   };
   const unsubscribe = reporter.onQuietChange((value) => {
+    quiet = value;
     if (!value) {
       const actions = [...pending.values()];
       pending.clear();
@@ -136,7 +147,7 @@ export function startRuntimeTelemetry(
   reporters.set(runtime, {
     reportScreen: (screen) => reporter.reportScreen(screen),
     reportAction: (action) => {
-      pending.set(coreKey(action)!, { action, day: today() });
+      if (quiet) pending.set(coreKey(action)!, { action, day: today() });
       send(action);
     },
   });

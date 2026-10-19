@@ -47,14 +47,17 @@ describe("browser telemetry", () => {
     vi.useRealTimers();
   });
 
-  function setup(reply: () => Promise<Response> = async () => Response.json({ status: "queued" }, { status: 202 })) {
+  function setup(
+    reply: (request: Request) => Promise<Response> = async () => Response.json({ status: "queued" }, { status: 202 }),
+  ) {
     const sent: Array<{ event: string; properties: Record<string, string> }> = [];
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-      sent.push(await new Request(input, init).json());
-      return reply();
+      const request = new Request(input, init);
+      sent.push(await request.json());
+      return reply(request);
     });
     const runtime = makeAppRuntime(makeGeneratedClient());
-    const reporter = startRuntimeTelemetry(runtime, { storageKey: "test.browser.telemetry" });
+    const reporter = startRuntimeTelemetry(runtime);
     const quiet = vi.fn();
     reporter.onQuietChange(quiet);
     onTestFinished(async () => {
@@ -134,6 +137,75 @@ describe("browser telemetry", () => {
       expect(actions()[4]).toEqual(expected[3]);
     },
   );
+
+  it.each(["fetch", "receipt body"])(
+    "bounds a hanging initial %s and retries queued same-day actions",
+    async (stage) => {
+      vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+      vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+      let signal: AbortSignal | undefined;
+      const { sent, runtime, quiet } = setup(async (request) => {
+        if (signal) return Response.json({ status: "queued" }, { status: 202 });
+        signal = request.signal;
+        if (stage === "fetch")
+          return new Promise<Response>((_resolve, reject) => {
+            request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true });
+          });
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              request.signal.addEventListener("abort", () => controller.error(request.signal.reason), { once: true });
+            },
+          }),
+          { status: 202 },
+        );
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      reportPRViewed(runtime, "github");
+      await vi.advanceTimersByTimeAsync(7_999);
+      expect(signal?.aborted).toBe(false);
+      expect(sent.map((event) => event.event)).toEqual(["app_opened"]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(quiet).toHaveBeenLastCalledWith(false);
+      expect(sent).toEqual([
+        { event: "app_opened", properties: { surface: "web" } },
+        { event: "app_opened", properties: { surface: "web" } },
+        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+      ]);
+    },
+  );
+
+  it("posts each screen once per UTC day across focus and reporter restart", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    const { sent, runtime, reporter } = setup();
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    window.dispatchEvent(new Event("focus"));
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    reporter.stop();
+    const next = startRuntimeTelemetry(runtime);
+    onTestFinished(() => next.stop());
+    next.reportScreen("docs");
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.filter((event) => event.event === "screen_viewed")).toEqual([
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+    ]);
+    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    next.reportScreen("docs");
+    window.dispatchEvent(new Event("focus"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.filter((event) => event.event === "screen_viewed")).toEqual([
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+    ]);
+  });
 
   it("readmits a core action after failed delivery", async () => {
     let status = 202;

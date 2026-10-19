@@ -102,9 +102,23 @@ export function startRuntimeTelemetry(
           keepalive: visitOptions?.keepalive ?? false,
           signal: controller.signal,
         });
-        return response.status === 202 ? { status: response.status, data: await response.json() } : response;
-      } finally {
+        if (response.status !== 202) {
+          clearTimeout(timeout);
+          return response;
+        }
+        return {
+          status: response.status,
+          json: async () => {
+            try {
+              return await response.json();
+            } finally {
+              clearTimeout(timeout);
+            }
+          },
+        };
+      } catch (error) {
         clearTimeout(timeout);
+        throw error;
       }
     });
   const reporter = startBrowserTelemetry({

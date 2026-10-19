@@ -144,7 +144,7 @@ describe("browser telemetry", () => {
       vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
       vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
       let signal: AbortSignal | undefined;
-      const { sent, runtime, quiet } = setup(async (request) => {
+      const { sent, runtime, reporter, quiet } = setup(async (request) => {
         if (signal) return Response.json({ status: "queued" }, { status: 202 });
         signal = request.signal;
         if (stage === "fetch")
@@ -161,6 +161,7 @@ describe("browser telemetry", () => {
         );
       });
       await vi.advanceTimersByTimeAsync(0);
+      if (stage === "receipt body") reporter.reportScreen("docs");
       reportPRViewed(runtime, "github");
       await vi.advanceTimersByTimeAsync(7_999);
       expect(signal?.aborted).toBe(false);
@@ -171,7 +172,9 @@ describe("browser telemetry", () => {
       expect(quiet).toHaveBeenLastCalledWith(false);
       expect(sent).toEqual([
         { event: "app_opened", properties: { surface: "web" } },
-        { event: "app_opened", properties: { surface: "web" } },
+        stage === "fetch"
+          ? { event: "app_opened", properties: { surface: "web" } }
+          : { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
         { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
       ]);
     },
@@ -204,6 +207,25 @@ describe("browser telemetry", () => {
     expect(sent.filter((event) => event.event === "screen_viewed")).toEqual([
       { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
       { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+    ]);
+  });
+
+  it("keeps a same-day core action claimed after a malformed enabled 202 receipt", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+    let malformed = false;
+    const { sent, runtime, quiet } = setup(async () =>
+      malformed ? new Response("{", { status: 202 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet).toHaveBeenLastCalledWith(false);
+    malformed = true;
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(1_000);
+    malformed = false;
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.filter((event) => event.event === "pr_viewed")).toEqual([
+      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
     ]);
   });
 

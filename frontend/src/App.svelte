@@ -1201,7 +1201,7 @@
   });
 </script>
 
-<svelte:window onresize={updateViewportState} onfocus={reportVisibleScreen} />
+<svelte:window onresize={updateViewportState} />
 
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}

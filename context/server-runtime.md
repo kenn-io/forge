@@ -84,6 +84,10 @@ and the root event stream.
 - The Linux GitHub broker follows App installation access, without a separate repository list,
   and checks each enrolled developer's current permission before returning a single-repository
   token. (`internal/devbox/broker.go::Broker.Credential`)
+- Service accounts skip the developer checks, so their configured write and read repository IDs
+  are their only admission: an unlisted repository is refused, and a service account without a
+  writable repository fails broker startup. Compare IDs after the identity check, never names.
+  (`internal/devbox/broker.go::validateRepositoryGrants`)
 - Repository names can be reused; stale broker token scope gets one refresh with full admission
   checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)
 - The broker authenticates Unix peer UIDs and keeps personal GitHub credentials off workers.

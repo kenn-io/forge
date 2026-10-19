@@ -29,6 +29,11 @@ type Account struct {
 	// Its GitHubUserID is the bot user ID, and it skips the human membership
 	// and repository permission checks.
 	Service bool `toml:"service" json:"service"`
+	// WriteRepositoryIDs and ReadRepositoryIDs are a service account's only
+	// repositories, by GitHub repository ID. Write admits every profile; read
+	// admits only fetches. Developers' GitHub permissions decide their access.
+	WriteRepositoryIDs []int64 `toml:"write_repository_ids" json:"write_repository_ids"`
+	ReadRepositoryIDs  []int64 `toml:"read_repository_ids" json:"read_repository_ids"`
 }
 
 type BrokerConfig struct {
@@ -84,6 +89,9 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 			return nil, errors.New("broker accounts require unique non-root UIDs and GitHub user IDs")
 		}
 		uids[account.UID], users[account.GitHubUserID] = true, true
+		if err := validateRepositoryGrants(account); err != nil {
+			return nil, err
+		}
 	}
 	pem, err := os.ReadFile(cfg.PrivateKeyFile)
 	if err != nil {
@@ -99,6 +107,28 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 		client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: refuseRedirect},
 		cache:  make(map[brokerCacheKey]*githubapp.InstallationToken),
 	}, nil
+}
+
+// validateRepositoryGrants requires each service account to name at least one
+// writable repository, so a missing list cannot mean the whole installation.
+func validateRepositoryGrants(account Account) error {
+	if !account.Service {
+		if len(account.WriteRepositoryIDs) != 0 || len(account.ReadRepositoryIDs) != 0 {
+			return errors.New("broker repository lists apply only to service accounts")
+		}
+		return nil
+	}
+	if len(account.WriteRepositoryIDs) == 0 {
+		return errors.New("broker service accounts require write_repository_ids")
+	}
+	seen := make(map[int64]bool)
+	for _, id := range slices.Concat(account.WriteRepositoryIDs, account.ReadRepositoryIDs) {
+		if id <= 0 || seen[id] {
+			return errors.New("broker service account repository IDs must be positive and listed once")
+		}
+		seen[id] = true
+	}
+	return nil
 }
 
 func refuseRedirect(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
@@ -199,8 +229,16 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	if repo.GetID() != repoID {
 		return refresh(errors.New("GitHub repository identity differs from the installation token"))
 	}
-	writable := true
-	if !account.Service {
+	var writable bool
+	if account.Service {
+		writable = slices.Contains(account.WriteRepositoryIDs, repoID)
+		if !writable && !slices.Contains(account.ReadRepositoryIDs, repoID) {
+			return nil, errors.New("repository is not admitted for this service account")
+		}
+		if request.Profile != "git" && !writable {
+			return nil, errors.New("service account has read-only access to this GitHub repository")
+		}
+	} else {
 		writable, err = b.humanAccess(ctx, api, owner, name, account)
 		if err != nil {
 			return nil, err

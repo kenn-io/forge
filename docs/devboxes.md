@@ -301,9 +301,10 @@ The broker verifies each Unix UID's rostered GitHub ID, current organization
 membership, repository identity and repository permission before issuing a
 short-lived installation token for one repository. Read-only collaborators get
 read-only Git access. Token caching does not skip those admission checks.
-The App installation controls which repositories are available; the broker
-has no separate repository list. Adding a repository to the installation
-needs no broker configuration change or restart.
+The App installation controls which repositories are available to developers;
+the broker has no separate repository list for them. Adding a repository to the
+installation needs no broker configuration change or restart.
+[Service accounts](#service-accounts) instead list their repositories.
 
 #### Protect the default branch
 
@@ -382,22 +383,36 @@ A service account is a non-SSH Linux account for an unattended coordinator
 rather than a developer. Set `service = true` and use the App's bot user ID as
 `github_user_id`; find it with `gh api /users/example-app%5Bbot%5D --jq .id`.
 
+List the repositories it may use by GitHub repository ID, found with
+`gh api /repos/example-org/project-a --jq .id`:
+
 ```toml
 [[accounts]]
 uid = 1002
 github_user_id = 5555
 login = "example-app[bot]"
 service = true
+write_repository_ids = [42]
+read_repository_ids = [43]
 ```
 
 The broker still verifies the installation, organization and repository
 identity, but skips the user, organization membership and repository permission
-checks that apply to developers. A service account is writable for every
-repository the App installation can access, and the `git`, `push` and `pr`
-profiles receive the same permissions as a writable developer. The broker does
-not keep it away from protected branches; the rulesets in
-[Protect the default branch](#protect-the-default-branch) do. The installation's
-repository access is the only limit on what a coordinator can change.
+checks that apply to developers. Instead, it admits only the listed
+repositories:
+
+- A repository in `write_repository_ids` gets the `git`, `push` and `pr`
+  profiles with the same permissions as a writable developer.
+- A repository in `read_repository_ids` gets read-only `git` access, for
+  example to fetch a private dependency. `push` and `pr` are refused.
+- Every other repository is refused, even when the App installation can reach
+  it.
+
+A service account needs at least one writable repository; the broker refuses
+to start without one. IDs survive repository renames, and a reused name does
+not inherit another repository's access. The broker does not keep a service
+account away from protected branches of its writable repositories; the rulesets
+in [Protect the default branch](#protect-the-default-branch) do.
 
 ### Per-account worker
 

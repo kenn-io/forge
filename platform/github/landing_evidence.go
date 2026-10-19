@@ -20,7 +20,20 @@ type LandingAPI interface {
 	ListLandingAssociations(ctx context.Context, repo platform.RepoRef, commit, cursor string) (platform.Page[platform.LandingChangeRef], error)
 	GetLandingChange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error)
 	ListLandingSource(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error)
+	ListLandingSourceRange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef, base, head, cursor string) (platform.Page[string], error)
 }
+
+// The pull request commit list stops at 250 commits (it returns the newest
+// 250), as does GraphQL's PullRequest.commits. The paginated three-dot
+// comparison from the pull request's base.sha to its head.sha lists the same
+// commits in the same order past that cap; read-only probes on 2026-10-19
+// matched it to the pull request list for ordinary and branch-updated pull
+// requests. The comparison's total_commits saturates at 10,000 and later pages
+// are empty, so a count of 10,000 cannot be told apart from a truncated range.
+const (
+	pullRequestCommitListCap = 250
+	compareCommitCeiling     = 10000
+)
 
 func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
 	// REST 2022-11-28 is the pinned SDK's default. Its commit association
@@ -36,7 +49,7 @@ func (p *Provider) LandingEvidenceSupport() platform.LandingEvidenceSupport {
 	}
 	return platform.LandingEvidenceSupport{
 		Inventory: true, OrdinaryMerge: true, SingleParentCorrespondence: true,
-		Sources: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 250},
+		Sources: platform.LandingSourcePolicy{RequireCount: true, MaxCommits: pullRequestCommitListCap, RangeMaxCommits: compareCommitCeiling - 1},
 	}
 }
 
@@ -57,6 +70,13 @@ func (p *Provider) GetLandingChange(ctx context.Context, ref platform.RepoRef, c
 func (p *Provider) ListLandingSource(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef, cursor string) (platform.Page[string], error) {
 	if c, ok := p.client.(LandingAPI); ok {
 		return c.ListLandingSource(ctx, ref, change, cursor)
+	}
+	return platform.Page[string]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
+}
+
+func (p *Provider) ListLandingSourceRange(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef, base, head, cursor string) (platform.Page[string], error) {
+	if c, ok := p.client.(LandingAPI); ok {
+		return c.ListLandingSourceRange(ctx, ref, change, base, head, cursor)
 	}
 	return platform.Page[string]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
 }
@@ -151,6 +171,9 @@ func (c *Client) GetLandingChange(ctx context.Context, ref platform.RepoRef, cha
 	if pr.Head != nil {
 		d.SourceHead = pr.Head.SHA
 	}
+	if pr.Base != nil {
+		d.SourceBase = pr.Base.SHA
+	}
 	if pr.Commits != nil {
 		d.SourceCount = new(int64(*pr.Commits))
 	}
@@ -215,4 +238,39 @@ func (c *Client) ListLandingSource(ctx context.Context, ref platform.RepoRef, ch
 		items = append(items, commit.GetSHA())
 	}
 	return landingPageResult(items, resp, state)
+}
+
+// ListLandingSourceRange pages GitHub's three-dot comparison. base and head
+// must be object IDs: they are path segments, never branch names.
+func (c *Client) ListLandingSourceRange(ctx context.Context, ref platform.RepoRef, change platform.LandingChangeRef, base, head, cursor string) (platform.Page[string], error) {
+	if !landingObjectID(base) || !landingObjectID(head) {
+		return platform.Page[string]{}, errors.New("landing source range requires object IDs")
+	}
+	state, err := c.landingPage(ref, fmt.Sprintf("range/%d/%d/%s/%s", change.ID, change.Number, base, head), cursor)
+	if err != nil {
+		return platform.Page[string]{}, err
+	}
+	ctx = c.authContext(WithUnconditionalRead(ctx), ref.Owner, false)
+	comparison, resp, err := c.gh.Repositories.CompareCommits(ctx, ref.Owner, ref.Name, base, head, &gh.ListOptions{Page: state.Page, PerPage: 100})
+	c.trackRate(resp)
+	if err != nil {
+		return platform.Page[string]{}, err
+	}
+	items := make([]string, 0, len(comparison.Commits))
+	for _, commit := range comparison.Commits {
+		items = append(items, commit.GetSHA())
+	}
+	return landingPageResult(items, resp, state)
+}
+
+func landingObjectID(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }

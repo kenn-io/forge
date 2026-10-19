@@ -108,6 +108,9 @@ must be charged (`landedwork/collect/limits.go::validate`).
 GitHub associations can name upstream PRs when querying a fork. Preserve their
 target identity without fetching that PR number locally; foreign associations
 do not prove local absence (`landedwork/collect/collect.go::Collect`).
+A change above its list cap is complete only through its reported base's
+three-dot range at the reported count and head; GitHub ranges cap at 10,000
+(`landedwork/collect/candidates.go::observe`, `platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
 Collector call limits do not bound HTTP retries or absence-confirmation reads;
 callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
 GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer

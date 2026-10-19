@@ -173,3 +173,20 @@ func TestLandingTitle(t *testing.T) {
 		})
 	}
 }
+
+func TestLandingSourceRangeRequiresObjectIDs(t *testing.T) {
+	calls := 0
+	hc := &http.Client{Transport: platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"commits":[]}`)), Request: req}, nil
+	})}
+	c, err := github.NewClient(github.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
+	require.NoError(t, err)
+	route := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "example", Name: "project"}
+	sha := strings.Repeat("a", 40)
+	for _, pair := range [][2]string{{"main", sha}, {sha, "topic"}, {sha + "...main", sha}, {strings.ToUpper(sha), sha}} {
+		_, err := c.ListLandingSourceRange(t.Context(), route, platform.LandingChangeRef{ID: 7, Number: 3}, pair[0], pair[1], "")
+		require.Error(t, err, pair)
+	}
+	assert.Zero(t, calls, "branch names and ranges must not reach the comparison path")
+}

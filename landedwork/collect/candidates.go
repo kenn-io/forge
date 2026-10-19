@@ -38,10 +38,24 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 	if !validChange(detail, len(c.result.Evidence.Query.Bounds.Head)) {
 		return c.incomplete(o, "invalid_observation", "detail", ""), nil
 	}
-	if detail.SourceCount == nil && policy.RequireCount || detail.SourceCount != nil && (*detail.SourceCount < 0 || policy.MaxCommits > 0 && *detail.SourceCount > policy.MaxCommits) {
+	if detail.SourceCount == nil && policy.RequireCount || detail.SourceCount != nil && *detail.SourceCount < 0 {
 		return c.incomplete(o, "provider_truncation", "detail", ""), nil
 	}
-	o = c.sources(ctx, o)
+	list := func(cursor string) (platform.Page[string], error) {
+		return c.reader.ListLandingSource(ctx, c.route, ref, cursor)
+	}
+	if detail.SourceCount != nil && policy.MaxCommits > 0 && *detail.SourceCount > policy.MaxCommits {
+		// The change's own list is capped. A range from the provider's reported
+		// base is complete only if it reproduces the reported count and head.
+		if *detail.SourceCount > policy.RangeMaxCommits || detail.SourceBase == nil || !objectID(*detail.SourceBase, len(c.result.Evidence.Query.Bounds.Head)) {
+			return c.incomplete(o, "provider_truncation", "detail", ""), nil
+		}
+		base, head := *detail.SourceBase, *detail.SourceHead
+		list = func(cursor string) (platform.Page[string], error) {
+			return c.reader.ListLandingSourceRange(ctx, c.route, ref, base, head, cursor)
+		}
+	}
+	o = c.sources(o, list)
 	if o.Reason != "" {
 		return o, nil
 	}
@@ -90,14 +104,14 @@ func (c *collector) chargeAccounts(d platform.LandingChange) bool {
 	return c.records(n)
 }
 
-func (c *collector) sources(ctx context.Context, o Observation) Observation {
+func (c *collector) sources(o Observation, list func(cursor string) (platform.Page[string], error)) Observation {
 	cursor := ""
 	seen, ids := make(map[string]bool), make(map[string]bool)
 	for {
 		if !c.call() {
 			return c.incomplete(o, "exhausted_limits", "source", cursor)
 		}
-		page, err := c.reader.ListLandingSource(ctx, c.route, o.Change.Ref, cursor)
+		page, err := list(cursor)
 		if err != nil {
 			return c.incomplete(o, c.reason(err), "source", cursor)
 		}
@@ -138,7 +152,7 @@ func validChange(d platform.LandingChange, size int) bool {
 	if d.SourceHead == nil || !objectID(*d.SourceHead, size) || d.SourceID != nil && *d.SourceID <= 0 {
 		return false
 	}
-	for _, sha := range []*string{d.MergeSHA, d.SquashSHA} {
+	for _, sha := range []*string{d.MergeSHA, d.SquashSHA, d.SourceBase} {
 		if sha != nil && *sha != "" && !objectID(*sha, size) {
 			return false
 		}
@@ -156,6 +170,7 @@ func clonePointer[T any](p *T) *T {
 func cloneChange(d platform.LandingChange) platform.LandingChange {
 	d.SourceID, d.Merged = clonePointer(d.SourceID), clonePointer(d.Merged)
 	d.MergeSHA, d.SquashSHA, d.SourceHead = clonePointer(d.MergeSHA), clonePointer(d.SquashSHA), clonePointer(d.SourceHead)
+	d.SourceBase = clonePointer(d.SourceBase)
 	d.SourceCount = clonePointer(d.SourceCount)
 	d.Author, d.Merger = cloneAccount(d.Author), cloneAccount(d.Merger)
 	d.OpenedAt, d.MergedAt = clonePointer(d.OpenedAt), clonePointer(d.MergedAt)

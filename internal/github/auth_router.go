@@ -511,6 +511,14 @@ func (c *RoutedClient) ListLandingSource(ctx context.Context, repo platform.Repo
 	return client.ListLandingSource(ctx, repo, change, cursor)
 }
 
+func (c *RoutedClient) ListLandingSourceRange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef, base, head, cursor string) (platform.Page[string], error) {
+	client, err := c.landingClientForRepo(ctx, repo)
+	if err != nil {
+		return platform.Page[string]{}, err
+	}
+	return client.ListLandingSourceRange(ctx, repo, change, base, head, cursor)
+}
+
 func (c *RoutedClient) ListInventoryIssuesPage(
 	ctx context.Context,
 	owner string,

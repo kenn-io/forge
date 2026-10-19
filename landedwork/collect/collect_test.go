@@ -3,6 +3,7 @@ package collect_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,6 +139,15 @@ func (s *script) ListLandingSource(_ context.Context, _ platform.RepoRef, ref pl
 	return v.(platform.Page[string]), nil
 }
 
+func (s *script) ListLandingSourceRange(_ context.Context, _ platform.RepoRef, ref platform.LandingChangeRef, base, head, cursor string) (platform.Page[string], error) {
+	require.Equal(s.t, platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, ref)
+	v, err := s.next("range/" + base + "/" + head + "/" + cursor)
+	if err != nil {
+		return platform.Page[string]{}, err
+	}
+	return v.(platform.Page[string]), nil
+}
+
 func mergedScript(t *testing.T) *script {
 	t.Helper()
 	detail := platform.LandingChange{Ref: platform.LandingChangeRef{ID: 7, Number: 3, TargetID: 12}, TargetID: 12, TargetBranch: "main", Merged: new(true), MergeSHA: new(head), SourceHead: new(source), SourceCount: new(int64(1)), Terminal: head, TerminalEvidence: "merged_commit_sha"}
@@ -256,6 +266,78 @@ func TestCollectSourceProof(t *testing.T) {
 			assert.Equal(tc.reason == "", got.Evidence.Inventory.Complete)
 			assert.Empty(got.Evidence.Inventory.NextCommit, "candidate failures are not association sweep positions")
 			assert.Empty(got.Evidence.Inventory.NextPage, "source cursors are not association cursors")
+		})
+	}
+}
+
+// A change above its list cap is listed from its reported source base, and
+// that range must reproduce the reported count and head to be complete.
+func TestCollectSourceRangeBeyondCap(t *testing.T) {
+	older := strings.Repeat("d", 40)
+	for _, tc := range []struct {
+		name, reason, stage string
+		edit                func(*script, *platform.LandingChange)
+	}{
+		{"range complete", "", "", func(*script, *platform.LandingChange) {}},
+		{"range continues", "", "", func(s *script, _ *platform.LandingChange) {
+			s.steps[5].value = platform.Page[string]{Items: []string{older}, NextCursor: "next"}
+			s.steps = slices.Insert(s.steps, 6, step{key: "range/" + base + "/" + source + "/next", value: platform.Page[string]{Items: []string{source}, Exhausted: true}})
+		}},
+		{"no range support", "provider_truncation", "detail", func(s *script, _ *platform.LandingChange) {
+			s.policy.RangeMaxCommits = 0
+			s.steps = s.steps[:5]
+		}},
+		{"count beyond range ceiling", "provider_truncation", "detail", func(s *script, d *platform.LandingChange) {
+			d.SourceCount = new(int64(4))
+			s.steps = s.steps[:5]
+		}},
+		{"base absent", "provider_truncation", "detail", func(s *script, d *platform.LandingChange) {
+			d.SourceBase = nil
+			s.steps = s.steps[:5]
+		}},
+		{"base malformed", "invalid_observation", "detail", func(s *script, d *platform.LandingChange) {
+			d.SourceBase = new("main")
+			s.steps = s.steps[:5]
+		}},
+		{"range shorter than count", "provider_truncation", "source", func(s *script, _ *platform.LandingChange) {
+			s.steps[5].value = platform.Page[string]{Items: []string{source}, Exhausted: true}
+			s.steps = s.steps[:6]
+		}},
+		{"range omits head", "provider_truncation", "source", func(s *script, _ *platform.LandingChange) {
+			s.steps[5].value = platform.Page[string]{Items: []string{older, base}, Exhausted: true}
+			s.steps = s.steps[:6]
+		}},
+		{"base changed on recheck", "changed_observation", "detail_recheck", func(s *script, _ *platform.LandingChange) {
+			d := s.steps[6].value.(platform.LandingChange)
+			d.SourceBase = new(older)
+			s.steps[6].value = d
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			s := mergedScript(t)
+			s.policy = platform.LandingSourcePolicy{RequireCount: true, MaxCommits: 1, RangeMaxCommits: 3}
+			d := s.steps[4].value.(platform.LandingChange)
+			d.SourceBase, d.SourceCount = new(base), new(int64(2))
+			s.steps[5] = step{key: "range/" + base + "/" + source + "/", value: platform.Page[string]{Items: []string{older, source}, Exhausted: true}}
+			s.steps[6].value = d
+			tc.edit(s, &d)
+			s.steps[4].value = d
+			got, err := collect.Collect(ctx, s, route, query, limits)
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(s.steps)
+			assert.Equal(tc.reason, got.Evidence.Inventory.Reason)
+			require.Len(t, got.Observations, 1)
+			assert.Equal(tc.reason, got.Observations[0].Reason)
+			assert.Equal(tc.stage, got.Observations[0].FailureStage)
+			require.Len(t, got.Evidence.Candidates, 1)
+			assert.Equal(tc.reason == "", got.Evidence.Candidates[0].SourceComplete)
+			if tc.reason == "" {
+				assert.Equal([]string{older, source}, got.Evidence.Candidates[0].Source)
+				assert.Equal(new(base), got.Observations[0].Change.SourceBase)
+			}
 		})
 	}
 }

@@ -17,9 +17,13 @@ type LandingChangeRef struct {
 
 // LandingSourcePolicy describes the provider's source-list completeness proof.
 // MaxCommits zero means no known endpoint cap, not an unlimited caller budget.
+// A positive RangeMaxCommits lists changes above MaxCommits through
+// ListLandingSourceRange from the change's SourceBase. That listing must still
+// match the reported count; counts above RangeMaxCommits remain truncated.
 type LandingSourcePolicy struct {
-	RequireCount bool
-	MaxCommits   int64
+	RequireCount    bool
+	MaxCommits      int64
+	RangeMaxCommits int64
 }
 
 // LandingEvidenceSupport is an endpoint contract, not the outcome of one sweep.
@@ -54,6 +58,8 @@ type Account struct {
 
 // LandingChange preserves field absence independently of application projections.
 // SourceID, when present, belongs to the same provider instance as TargetID.
+// SourceBase is the target commit the provider reports for the change's source
+// list, not the landing's parent; it only scopes ListLandingSourceRange.
 // TerminalEvidence names a provider fact; it does not infer a merge method.
 type LandingChange struct {
 	Ref                             LandingChangeRef
@@ -62,6 +68,7 @@ type LandingChange struct {
 	SourceID                        *int64
 	Merged                          *bool
 	MergeSHA, SquashSHA, SourceHead *string
+	SourceBase                      *string
 	SourceCount                     *int64
 	Terminal, TerminalEvidence      string
 	// Title, roles and UTC lifecycle times are observations, not landing proof.
@@ -82,6 +89,10 @@ type LandingEvidenceReader interface {
 	ListLandingAssociations(ctx context.Context, repo RepoRef, commit, cursor string) (Page[LandingChangeRef], error)
 	GetLandingChange(ctx context.Context, repo RepoRef, change LandingChangeRef) (LandingChange, error)
 	ListLandingSource(ctx context.Context, repo RepoRef, change LandingChangeRef, cursor string) (Page[string], error)
+	// ListLandingSourceRange lists commits reachable from head and not from the
+	// merge base of base and head, oldest first, for a change whose own source
+	// list is capped. Readers whose policy has no range limit need not support it.
+	ListLandingSourceRange(ctx context.Context, repo RepoRef, change LandingChangeRef, base, head, cursor string) (Page[string], error)
 }
 
 var (

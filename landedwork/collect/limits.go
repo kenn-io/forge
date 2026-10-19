@@ -79,7 +79,7 @@ func resultBytes(r Result) int64 {
 	for _, o := range r.Observations {
 		d := o.Change
 		n += stringsBytes(d.TargetBranch, d.Terminal, d.TerminalEvidence, o.Reason, o.FailureStage, o.NextPage) + stringsBytes(o.Source...)
-		for _, s := range []*string{d.Title, d.MergeSHA, d.SquashSHA, d.SourceHead} {
+		for _, s := range []*string{d.Title, d.MergeSHA, d.SquashSHA, d.SourceHead, d.SourceBase} {
 			if s != nil {
 				n += int64(len(*s))
 			}

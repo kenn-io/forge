@@ -7,6 +7,7 @@
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { isImageContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
+  import type { ContentScrollPositions } from "./chat-content-scroll.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
@@ -16,6 +17,7 @@
     expanded,
     expandedThoughts,
     rawOpen,
+    contentScroll,
     onToggleThought,
     onRawToggle,
     onToggleGroup,
@@ -28,6 +30,7 @@
     openEntries: Readonly<Record<string, boolean>>
     expanded: Readonly<Record<string, boolean>>
     expandedThoughts: Readonly<Record<string, boolean>>
+    contentScroll: ContentScrollPositions
     rawOpen: Readonly<Record<string, { input?: boolean; output?: boolean }>>
     onToggleThought: (id: string) => void
     onRawToggle: (id: string, field: "input" | "output", open: boolean) => void
@@ -148,7 +151,7 @@
               {@render row()}
             </button>
             {#if expanded[key]}
-              <ChatToolDetails {message} id={`${id}-tool-${index}`} rawInputOpen={!!rawOpen[message.id]?.input} rawOutputOpen={!!rawOpen[message.id]?.output} onRawToggle={(field, open) => onRawToggle(message.id, field, open)} />
+              <ChatToolDetails {message} {contentScroll} id={`${id}-tool-${index}`} rawInputOpen={!!rawOpen[message.id]?.input} rawOutputOpen={!!rawOpen[message.id]?.output} onRawToggle={(field, open) => onRawToggle(message.id, field, open)} />
             {/if}
           {:else}
             <div class="row">{@render row()}</div>

@@ -23,6 +23,7 @@
   import { chatRows, type ChatRow } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
   import { makeChatSession } from "./chat-session.js";
+  import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
   import type { AgentCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
@@ -79,6 +80,7 @@
   let activityOpen = $state<Record<string, boolean>>({});
   let expandedTools = $state<Record<string, boolean>>({});
   let expandedThoughts = $state<Record<string, boolean>>({});
+  const contentScroll: ContentScrollPositions = new Map();
   let rawOpen = $state<Record<string, { input?: boolean; output?: boolean }>>({});
   function setRawOpen(id: string, field: "input" | "output", open: boolean) {
     rawOpen[id] = { ...rawOpen[id], [field]: open };
@@ -364,7 +366,7 @@
       {/if}
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
-        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
+        {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
       <!-- Questions read as part of the conversation, in the reply column,

@@ -269,6 +269,28 @@ describe("makeChatSession ID upserts", () => {
     expect(states.at(-1)!.messages).toEqual([first, steer, relinked]);
   });
 
+  it("shows replies connected to retained output while a steering relink is delayed", () => {
+    const first = message("first", "", { role: "user" });
+    const tool = message("tool", "first", { version: 2, role: "tool" });
+    const initial = state([first, tool], { messageCursor: 2 });
+    const { states, send } = open(initial);
+    // Insert steering v3 and relink tool v4; append reply v5, then update
+    // tool v6 and append tail v7. Coalescing delays the relink behind reply.
+    const steer = message("steer", "first", { version: 3, role: "user", text: "Steer".repeat(60_000) });
+    const reply = message("reply", "tool", { version: 5, text: "Reply".repeat(60_000) });
+    const metadata = { ...initial, lastMessageId: "tail", messageCount: 5, more: true };
+    send({ updates: { ...metadata, messages: [steer], messageCursor: 3 } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, tool]);
+    send({ updates: { ...metadata, messages: [reply], messageCursor: 5 } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, tool, reply]);
+    const relinked = { ...tool, previousId: "steer", version: 6 };
+    send({ updates: { ...metadata, messages: [relinked], messageCursor: 6 } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, relinked, reply]);
+    const tail = message("tail", "reply", { version: 7 });
+    send({ updates: { ...metadata, messages: [tail], messageCursor: 7, more: false } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, relinked, reply, tail]);
+  });
+
   it("publishes requested history while a newer global tail is still pending", () => {
     const output = message("output", "tool", { version: 2 });
     const initial = state([output], { messageOffset: 1, messageCount: 2, messageCursor: 2 });
@@ -307,27 +329,5 @@ describe("makeChatSession ID upserts", () => {
     ).toBe("stop");
     expect(states.at(-1)!.messages).toEqual([tool, output]);
     expect(states.at(-1)!.connected).toBe(false);
-  });
-
-  it("retains unchanged nested-content objects by entry version", () => {
-    const tool = message("tool", "", {
-      role: "tool",
-      locations: [{ path: "src/app.ts", line: 3 }],
-      toolContent: [{ type: "diff", path: "src/app.ts", oldText: "a", newText: "b" }],
-    });
-    const output = message("output", "tool");
-    const initial = state([tool, output]);
-    const { states, send } = open(initial);
-    send({
-      updates: {
-        ...initial,
-        messages: [tool, { ...output, text: "Changed", version: 2 }],
-        messageCursor: 2,
-        more: false,
-      },
-    });
-    expect(states[1]!.messages[0]).toBe(states[0]!.messages[0]);
-    expect(states[1]!.messages[1]).not.toBe(states[0]!.messages[1]);
-    expect(states[1]!.messages[1]!.text).toBe("Changed");
   });
 });

@@ -732,7 +732,7 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     },
   );
 
-  it("keeps thoughts and raw disclosures expanded when steering splits their group", async () => {
+  it("keeps expanded thoughts, disclosures and inner scroll positions when steering splits their group", async () => {
     const { host } = await renderChat(900);
     const thought = {
       id: "entry-11",
@@ -750,7 +750,24 @@ describe("ACPWorkspace transcript paging (browser)", () => {
       text: "Inspect changes",
       status: "completed",
       rawInput: JSON.stringify({ paths: Array.from({ length: 25 }, (_, index) => `src/file-${index}.ts`) }, null, 2),
-      rawOutput: JSON.stringify({ result: "Complete", files: 25 }, null, 2),
+      rawOutput: JSON.stringify(
+        { results: Array.from({ length: 40 }, (_, index) => `Finished file ${index}`) },
+        null,
+        2,
+      ),
+      toolContent: [
+        {
+          type: "terminal",
+          terminalId: "inspect-output",
+          output: Array.from({ length: 80 }, (_, index) => `Line ${index}: ${"long output ".repeat(40)}`).join("\n"),
+        },
+        {
+          type: "diff",
+          path: "src/example.ts",
+          oldText: "",
+          newText: Array.from({ length: 80 }, (_, index) => `const value${index} = ${index};`).join("\n"),
+        },
+      ],
     };
     const initial = {
       messages: [
@@ -785,6 +802,22 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     await page.getByText("Raw output", { exact: true }).click();
     const rawDetails = () => [...host.querySelectorAll<HTMLDetailsElement>("details.raw")];
     await expect.poll(() => rawDetails().map((details) => details.open)).toEqual([true, true]);
+    const scrollRegions = () => [
+      host.querySelector<HTMLElement>(".terminal-output pre")!,
+      host.querySelector<HTMLElement>(".diff ol")!,
+      ...rawDetails().map((details) => details.querySelector<HTMLElement>("pre")!),
+    ];
+    for (const region of scrollRegions()) {
+      expect(region.scrollHeight).toBeGreaterThan(region.clientHeight + 90);
+      region.scrollTop = 90;
+      region.dispatchEvent(new Event("scroll"));
+    }
+    const terminalOutput = scrollRegions()[0]!;
+    expect(terminalOutput.scrollWidth).toBeGreaterThan(terminalOutput.clientWidth + 120);
+    terminalOutput.scrollLeft = 120;
+    terminalOutput.dispatchEvent(new Event("scroll"));
+    await nextFrame();
+    const priorScroll = scrollRegions().map((region) => ({ top: region.scrollTop, left: region.scrollLeft }));
     const oldThought = host.querySelector('article[aria-label="Assistant thinking"]')!;
     const output = rawDetails()[1]!.querySelector("pre")!;
     const conversation = host.querySelector<HTMLElement>(".conversation")!;
@@ -814,6 +847,8 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     await nextFrame();
     await nextFrame();
     expect(oldThought.isConnected).toBe(false);
+    expect(terminalOutput.isConnected).toBe(false);
+    expect(scrollRegions().map((region) => ({ top: region.scrollTop, left: region.scrollLeft }))).toEqual(priorScroll);
     expect(host.querySelector(".thought-body")!.textContent).toContain(thought.text);
     expect(Math.abs(rawDetails()[1]!.querySelector("pre")!.getBoundingClientRect().top - before)).toBeLessThan(2);
   });

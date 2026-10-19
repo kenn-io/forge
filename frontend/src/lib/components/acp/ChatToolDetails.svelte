@@ -3,10 +3,11 @@
   import ChatContentBlock from "./ChatContentBlock.svelte";
   import { isImageContent, lineDiff, stripAnsi } from "./chat-content.js";
   import { decodeAppDescriptor } from "./mcp-app.js";
+  import { preserveContentScroll, type ContentScrollPositions } from "./chat-content-scroll.js";
   import type { ChatMessage } from "./chat-types.js";
 
-  let { message, id, rawInputOpen, rawOutputOpen, onRawToggle }: {
-    message: ChatMessage; id: string; rawInputOpen: boolean; rawOutputOpen: boolean;
+  let { message, id, contentScroll, rawInputOpen, rawOutputOpen, onRawToggle }: {
+    message: ChatMessage; id: string; contentScroll: ContentScrollPositions; rawInputOpen: boolean; rawOutputOpen: boolean;
     onRawToggle: (field: "input" | "output", open: boolean) => void;
   } = $props();
 
@@ -39,7 +40,7 @@
       {@const line = diffLine(item.path)}
       <figure class="diff">
         <figcaption><code title={item.path ?? undefined}>{shortPath(item.path)}{line != null ? `:${line}` : ""}</code>{item.oldText == null ? " · new file" : ""}</figcaption>
-        <ol aria-label={`Changes to ${item.path ?? "file"}`}>
+        <ol aria-label={`Changes to ${item.path ?? "file"}`} {@attach preserveContentScroll(contentScroll, message.id, ["diff", item.path ?? "", index])}>
           {#each lineDiff(item.oldText, item.newText) as line, lineIndex (lineIndex)}
             {#if line.kind === "gap"}
               <li class="gap" aria-label="Unchanged lines hidden">…</li>
@@ -58,22 +59,22 @@
       {#if item.output}
         <figure class="terminal-output">
           <figcaption><Terminal size={12} aria-hidden="true" />Output{@render exit(item.exitCode)}</figcaption>
-          <pre aria-label="Command output">{stripAnsi(item.output)}</pre>
+          <pre aria-label="Command output" {@attach preserveContentScroll(contentScroll, message.id, ["terminal", item.terminalId ?? "", index])}>{stripAnsi(item.output)}</pre>
         </figure>
       {:else if item.exitCode != null}
         <span class="terminal"><Terminal size={12} aria-hidden="true" />No output{@render exit(item.exitCode)}</span>
       {/if}
     {:else if item.content?.type === "text"}
-      <pre class="output">{item.content.text ?? ""}</pre>
+      <pre class="output" {@attach preserveContentScroll(contentScroll, message.id, ["content", index])}>{item.content.text ?? ""}</pre>
     {:else if item.content}
       <ChatContentBlock content={item.content} />
     {/if}
   {/each}
   {#if message.rawInput}
-    <details class="raw" open={rawInputOpen} ontoggle={(event) => onRawToggle("input", event.currentTarget.open)}><summary>Raw input</summary><pre>{message.rawInput}</pre></details>
+    <details class="raw" open={rawInputOpen} ontoggle={(event) => onRawToggle("input", event.currentTarget.open)}><summary>Raw input</summary><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-input"])}>{message.rawInput}</pre></details>
   {/if}
   {#if message.rawOutput}
-    <details class="raw" open={rawOutputOpen} ontoggle={(event) => onRawToggle("output", event.currentTarget.open)}><summary>Raw output</summary><pre>{message.rawOutput}</pre></details>
+    <details class="raw" open={rawOutputOpen} ontoggle={(event) => onRawToggle("output", event.currentTarget.open)}><summary>Raw output</summary><pre {@attach preserveContentScroll(contentScroll, message.id, ["raw-output"])}>{message.rawOutput}</pre></details>
   {/if}
 </div>
 

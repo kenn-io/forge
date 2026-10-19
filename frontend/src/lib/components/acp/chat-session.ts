@@ -87,20 +87,21 @@ export function makeChatSession(options: {
     } else {
       const connected: ChatMessage[] = [];
       const visible = new Set<string>();
-      let next = successors.get(boundary);
-      while (next && !visible.has(next)) {
-        const entry = messages.get(next);
-        if (!entry) break;
-        connected.push(entry);
-        visible.add(entry.id);
-        next = successors.get(entry.id);
-      }
-      // A later batch may bridge a gap to entries already on screen. Retain
-      // those entries while showing every received, connected prefix now.
-      displayed = [
-        ...connected,
-        ...displayed.filter((entry) => !visible.has(entry.id)).map((entry) => messages.get(entry.id) ?? entry),
-      ];
+      const appendChain = (start: string | undefined) => {
+        let next = start;
+        while (next && !visible.has(next)) {
+          const entry = messages.get(next);
+          if (!entry) break;
+          connected.push(entry);
+          visible.add(entry.id);
+          next = successors.get(entry.id);
+        }
+      };
+      appendChain(successors.get(boundary));
+      // Retain the established suffix across a missing relink, and keep its
+      // received replies advancing too. Already visited entries are not repeated.
+      for (const entry of displayed) appendChain(entry.id);
+      displayed = connected;
     }
     // Retain updates to unloaded entries while a page is in flight so a late
     // older page cannot overwrite them. Otherwise only the visible range stays.

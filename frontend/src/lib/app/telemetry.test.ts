@@ -210,6 +210,53 @@ describe("browser telemetry", () => {
     ]);
   });
 
+  it("retains a core action through screen backoff and sends it after the gate's retry succeeds", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    let failing = false;
+    const { sent, runtime, reporter, quiet } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet).toHaveBeenLastCalledWith(false);
+    failing = true;
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed"]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(sent).toHaveLength(4));
+    expect(sent).toEqual([
+      { event: "app_opened", properties: { surface: "web" } },
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+    ]);
+  });
+
+  it("suppresses a daily core action across reporter restart after a skipped receipt", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    const { sent, runtime, reporter } = setup(async () => Response.json({ status: "skipped" }, { status: 202 }));
+    await vi.advanceTimersByTimeAsync(0);
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    reporter.stop();
+    const next = startRuntimeTelemetry(runtime);
+    onTestFinished(() => next.stop());
+    await vi.advanceTimersByTimeAsync(0);
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    const actions = () => sent.filter((event) => event.event === "pr_viewed");
+    expect(actions()).toEqual([{ event: "pr_viewed", properties: { provider: "github", surface: "web" } }]);
+    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(actions()).toHaveLength(2);
+  });
+
   it("keeps a same-day core action claimed after a malformed enabled 202 receipt", async () => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
     let malformed = false;

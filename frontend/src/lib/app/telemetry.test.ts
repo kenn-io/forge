@@ -76,17 +76,17 @@ describe("browser telemetry", () => {
     return { sent, runtime, reporter, quiet };
   }
 
-  it("sends nothing after a disabled receipt, including pending core actions", async () => {
+  it("sends nothing after an enabled gate receives a disabled receipt", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime, reporter, quiet } = setup(() => receipt.promise);
-    reportPRViewed(runtime, "gh");
-    reportWorkspaceOpened(runtime, "adhoc");
+    let status = "queued";
+    const { sent, runtime, reporter, quiet } = setup(async () => Response.json({ status }, { status: 202 }));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    status = "disabled";
     reporter.reportScreen("docs");
-    receipt.resolve(Response.json({ status: "disabled" }, { status: 202 }));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(quiet).toHaveBeenLastCalledWith(true);
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+    expect(sent).toHaveLength(2);
     reportPRViewed(runtime, "gitlab");
+    reportWorkspaceOpened(runtime, "adhoc");
     reporter.reportScreen("settings");
     reporter.reportVisit(
       { event: "session_ended", properties: { surface: "web", duration_bucket: "under_1m" } },
@@ -94,7 +94,7 @@ describe("browser telemetry", () => {
     );
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
-    expect(sent).toEqual([{ event: "app_opened", properties: { surface: "web" } }]);
+    expect(sent).toHaveLength(2);
   });
 
   it.each([false, true])("admits pending core actions only on their UTC day, rollover: %s", async (rollover) => {

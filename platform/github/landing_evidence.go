@@ -60,13 +60,14 @@ func (p *Provider) ListLandingAssociations(ctx context.Context, ref platform.Rep
 	return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_evidence")
 }
 
-// landingInventoryAPI is the optional client surface for the merged-change list.
-type landingInventoryAPI interface {
+// LandingInventoryAPI lists every merged change that targets a repository.
+// Clients without it leave foreign associations unresolved.
+type LandingInventoryAPI interface {
 	ListMergedLandingChanges(ctx context.Context, repo platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error)
 }
 
 func (p *Provider) ListMergedLandingChanges(ctx context.Context, ref platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error) {
-	if c, ok := p.client.(landingInventoryAPI); ok {
+	if c, ok := p.client.(LandingInventoryAPI); ok {
 		return c.ListMergedLandingChanges(ctx, ref, cursor)
 	}
 	return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(p.Platform(), p.host, "landing_inventory")

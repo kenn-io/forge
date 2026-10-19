@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/landedwork"
+	"go.kenn.io/forge/landedwork/collect"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -69,6 +71,67 @@ func TestRoutedProviderLandingEvidence(t *testing.T) {
 			assert.Equal([]string{"def"}, sources.Items)
 			assert.True(sources.Exhausted)
 			assert.Equal([]string{"/repos/example/project/commits/abc/pulls", "/repos/example/project/pulls/3", "/repos/example/project/pulls/3/commits"}, paths)
+		})
+	}
+}
+
+// A fork's commits can be associated only with upstream changes. Collection then
+// needs the repository's own merged-change list, which must reach the same
+// routed client as the associations.
+func TestRoutedProviderLandingInventory(t *testing.T) {
+	t.Parallel()
+
+	head, source := strings.Repeat("b", 40), strings.Repeat("c", 40)
+	for _, archive := range []bool{false, true} {
+		name := "foreground"
+		if archive {
+			name = "archive"
+		}
+		t.Run(name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			hc := &http.Client{Transport: platform.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+				var body string
+				switch r.URL.Path {
+				case "/repos/example/project":
+					body = `{"id":12,"name":"project","owner":{"login":"example"}}`
+				case "/repos/example/project/commits/" + head + "/pulls":
+					body = `[{"id":8,"number":3,"base":{"repo":{"id":99}}}]`
+				case "/repos/example/project/commits/" + source + "/pulls":
+					body = `[]`
+				case "/repos/example/project/pulls":
+					body = `[{"id":9,"number":4,"state":"closed","merged_at":null,"base":{"repo":{"id":12}}}]`
+				default:
+					require.Fail("unexpected request", r.URL.String())
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+			})}
+			client, err := platformgithub.NewClient(platformgithub.ClientConfig{Read: hc, Write: hc, Notifications: hc, Clock: time.Now})
+			require.NoError(err)
+			exact := &Route{Key: RouteKey{Host: "github.com", Owner: "example", Name: "project"}, Client: client}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			if archive {
+				exact.Client, exact.ArchiveClient = &mockClient{}, client
+				ctx = WithArchiveSyncBudget(ctx)
+			}
+			router, err := NewHostRouter("github.com",
+				&Route{Key: RouteKey{Host: "github.com"}, Client: &mockClient{}},
+				&Route{Key: RouteKey{Host: "github.com", Owner: "example"}, Client: &mockClient{}}, exact)
+			require.NoError(err)
+			routed, err := NewRoutedClient(router)
+			require.NoError(err)
+			provider := newTestGitHubProvider(t, "github.com", routed)
+			ref := platform.RepoRef{Platform: platform.KindGitHub, Host: "github.com", Owner: "example", Name: "project"}
+			query := landedwork.Query{
+				Bounds:   landedwork.Bounds{Repository: landedwork.Repository{Provider: platform.KindGitHub, Host: "github.com", ID: "12"}, Base: strings.Repeat("a", 40), Head: head},
+				Commits:  []string{head, source},
+				Complete: true,
+			}
+			got, err := collect.Collect(ctx, provider, ref, query, collect.Limits{Calls: 100, Records: 1000, OutputBytes: 100000})
+			require.NoError(err)
+			assert.Empty(got.Evidence.Inventory.Reason)
+			assert.True(got.Evidence.Inventory.Complete)
+			assert.Empty(got.Evidence.Candidates)
 		})
 	}
 }

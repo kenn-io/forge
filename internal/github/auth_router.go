@@ -423,6 +423,7 @@ var (
 	_ platformgithub.ReviewerAPI          = (*RoutedClient)(nil)
 	_ platformgithub.InventoryAPI         = (*RoutedClient)(nil)
 	_ platformgithub.LandingAPI           = (*RoutedClient)(nil)
+	_ platformgithub.LandingInventoryAPI  = (*RoutedClient)(nil)
 	_ markdownImageClient                 = (*RoutedClient)(nil)
 	_ markdownMediaClient                 = (*RoutedClient)(nil)
 	_ repoUserClient                      = (*RoutedClient)(nil)
@@ -493,6 +494,18 @@ func (c *RoutedClient) ListLandingAssociations(ctx context.Context, repo platfor
 		return platform.Page[platform.LandingChangeRef]{}, err
 	}
 	return client.ListLandingAssociations(ctx, repo, commit, cursor)
+}
+
+func (c *RoutedClient) ListMergedLandingChanges(ctx context.Context, repo platform.RepoRef, cursor string) (platform.Page[platform.LandingChangeRef], error) {
+	client, err := c.routeForRepoContext(ctx, repo.Owner, repo.Name)
+	if err != nil {
+		return platform.Page[platform.LandingChangeRef]{}, err
+	}
+	inventory, ok := client.(platformgithub.LandingInventoryAPI)
+	if !ok {
+		return platform.Page[platform.LandingChangeRef]{}, platform.UnsupportedCapability(platform.KindGitHub, c.routes.host, "landing_inventory")
+	}
+	return inventory.ListMergedLandingChanges(ctx, repo, cursor)
 }
 
 func (c *RoutedClient) GetLandingChange(ctx context.Context, repo platform.RepoRef, change platform.LandingChangeRef) (platform.LandingChange, error) {

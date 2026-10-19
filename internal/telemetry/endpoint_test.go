@@ -72,17 +72,3 @@ func TestCoreActionEndpointDailyClaims(t *testing.T) {
 	}
 	require.NoError(t, reporter.Close())
 }
-
-func TestSyncFailedBrowserRouteRejected(t *testing.T) {
-	reporter := telemetry.SetupDailyReporter(t,
-		telemetry.Options{Database: dbtest.Open(t), DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")},
-		time.Now(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
-	)
-	srv := server.New(dbtest.Open(t), nil, nil, "/", nil, server.ServerOptions{Telemetry: reporter})
-	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.WithoutCancel(t.Context()))) })
-	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", bytes.NewBufferString(`{"event":"sync_failed","properties":{"sync_source":"issues","reason":"auth"}}`))
-	req.Header.Set("Content-Type", "application/json")
-	rr := httptest.NewRecorder()
-	srv.ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
-}

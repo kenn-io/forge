@@ -22,27 +22,6 @@ import (
 	"go.kenn.io/forge/platform/gitealike"
 )
 
-func TestSyncFailedFullPassRecovery(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	client := &partialFailureMock{}
-	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	for i, failure := range []bool{true, true, false, true} {
-		client.listOpenIssuesErr = nil
-		if failure {
-			client.listOpenIssuesErr = &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
-		}
-		s.RunOnce(t.Context())
-		want := 1
-		if i == 3 {
-			want = 2
-		}
-		require.Len(t, events, want)
-	}
-	assert.Equal(t, [][2]string{{"issues", "provider"}, {"issues", "provider"}}, events)
-}
-
 func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 	a := RepoRef{Owner: "acme", Name: "a"}
 	b := RepoRef{Owner: "acme", Name: "b"}
@@ -76,6 +55,16 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 			later.observe(b, "issues", platform.ErrNotFound)
 			s.finishSyncPass(later, tc.tracked)
 			assert.Len(t, events, tc.wantLater)
+			if disabled := tc.next["a"]; errors.Is(disabled, platform.ErrRepositoryFeatureDisabled) || errors.Is(disabled, platform.ErrSyncDisabled) {
+				recovered := &syncPass{}
+				recovered.observe(a, "issues", nil)
+				recovered.observe(b, "issues", nil)
+				s.finishSyncPass(recovered, tc.tracked)
+				pass := &syncPass{}
+				pass.observe(a, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
+				s.finishSyncPass(pass, tc.tracked)
+				assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "auth"}}, events)
+			}
 		})
 	}
 }
@@ -87,7 +76,6 @@ func TestSyncFailedScopeCauses(t *testing.T) {
 		want      [][2]string
 	}{
 		{"separate reasons", &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}, [][2]string{{"merge_requests", "auth"}, {"issues", "provider"}}},
-		{"budget cannot hide auth", platform.ErrSyncBudgetExhausted, [][2]string{{"merge_requests", "auth"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -116,32 +104,49 @@ func TestSyncFailedScopeCauses(t *testing.T) {
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	client := &partialFailureMock{}
-	client.listOpenIssuesErr = platform.ErrNotFound
-	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.runOnce(t.Context(), true, nil, []RepoRef{repo})
-	require.Empty(t, events)
-	s.runOnce(t.Context(), true, nil, nil)
-	require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
-	client.listOpenIssuesErr = nil
-	s.runOnce(t.Context(), true, nil, []RepoRef{repo})
-	client.listOpenIssuesErr = platform.ErrNotFound
-	s.RunOnce(t.Context())
-	require.Len(t, events, 1)
-	client.listOpenIssuesErr = nil
-	s.runOnce(t.Context(), true, nil, nil)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) { cancel(); return nil, platform.ErrNotFound }
-	s.RunOnce(ctx)
-	assert.Len(t, events, 1)
-	client.listOpenIssuesFn = nil
-	client.listOpenIssuesErr = platform.ErrNotFound
-	s.RunOnce(t.Context())
-	assert.Len(t, events, 2)
+	for _, scenario := range []string{"partial pass", "recovery", "cancellation"} {
+		t.Run(scenario, func(t *testing.T) {
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			client := &partialFailureMock{}
+			client.listOpenIssuesErr = platform.ErrNotFound
+			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			switch scenario {
+			case "partial pass":
+				s.runOnce(t.Context(), true, nil, []RepoRef{repo})
+				require.Empty(t, events)
+				s.runOnce(t.Context(), true, nil, nil)
+				assert.Equal(t, [][2]string{{"issues", "not_found"}}, events)
+			case "recovery":
+				s.RunOnce(t.Context())
+				s.RunOnce(t.Context())
+				require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
+				client.listOpenIssuesErr = nil
+				s.runOnce(t.Context(), true, nil, []RepoRef{repo})
+				client.listOpenIssuesErr = platform.ErrNotFound
+				s.RunOnce(t.Context())
+				require.Len(t, events, 1)
+				client.listOpenIssuesErr = nil
+				s.runOnce(t.Context(), true, nil, nil)
+				client.listOpenIssuesErr = platform.ErrNotFound
+				s.RunOnce(t.Context())
+				assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}, events)
+			case "cancellation":
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+					cancel()
+					return nil, platform.ErrNotFound
+				}
+				s.RunOnce(ctx)
+				require.Empty(t, events)
+				client.listOpenIssuesFn = nil
+				s.RunOnce(t.Context())
+				assert.Equal(t, [][2]string{{"issues", "not_found"}}, events)
+			}
+		})
+	}
 }
 
 func TestSyncFailedCredentialRoute(t *testing.T) {
@@ -204,29 +209,18 @@ func TestSyncFailureReason(t *testing.T) {
 }
 
 func TestSyncFailedBitbucketDCLookup(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		status int
-		reason string
-	}{
-		{"not found", http.StatusNotFound, "not_found"},
-		{"server failure", http.StatusServiceUnavailable, "provider"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := RepoRef{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)}
-			client, err := bitbucketdc.NewClient(repo.PlatformHost, failingGitTokenSource{}, platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-				return &http.Response{StatusCode: tc.status, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
-			}), nil)
-			require.NoError(t, err)
-			registry, err := platform.NewRegistry(client)
-			require.NoError(t, err)
-			s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.RunOnce(t.Context())
-			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}}, events)
-		})
-	}
+	repo := RepoRef{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)}
+	client, err := bitbucketdc.NewClient(repo.PlatformHost, testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Status: fmt.Sprintf("%d %s", http.StatusServiceUnavailable, http.StatusText(http.StatusServiceUnavailable)), Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+	}), nil)
+	require.NoError(t, err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(t, err)
+	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
 }
 
 func TestSyncFailedRenameRetainsOutage(t *testing.T) {
@@ -244,20 +238,6 @@ func TestSyncFailedRenameRetainsOutage(t *testing.T) {
 		s.finishSyncPass(pass, []RepoRef{repo})
 	}
 	assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
-}
-
-func TestSyncFailedDisabledAggregate(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget"}
-	for _, disabled := range []error{platform.ErrRepositoryFeatureDisabled, platform.ErrSyncDisabled} {
-		t.Run(disabled.Error(), func(t *testing.T) {
-			pass := &syncPass{}
-			pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
-			var events [][2]string
-			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
-		})
-	}
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {

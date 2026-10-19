@@ -680,8 +680,9 @@ repository failures to failing. Further repository failures during that outage
 produce no additional event. It sends
 only `sync_source` (`merge_requests`, `issues`, `checks`, or `refs`) and `reason`
 (`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`), with
-unlisted values sent as `other`. Primary list, detail, CI, and clone
-reads contribute to the count. Skipped reads keep prior state; observed recovery
+unlisted values sent as `other`. Primary list, detail, and CI reads contribute
+to the count. Clone failures count when Git reports an authentication or network
+failure. Skipped reads keep prior state; observed recovery
 or disablement clears it, and archived or untracked repositories drop out.
 Counts are approximate: state stays in memory, and a restart or repository
 identity change can count an outage twice. These properties identify no repository.

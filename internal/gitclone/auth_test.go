@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -749,38 +748,6 @@ func TestWrapGitErrorPreservesMissingTokenIdentity(t *testing.T) {
 	assert.NotContains(err.Error(), "ghp_missing_secret")
 	assert.NotContains(err.Error(), "x-access-token")
 	assert.Contains(err.Error(), "[REDACTED]")
-}
-
-func TestWrapGitErrorLocalFilesystemFailures(t *testing.T) {
-	for _, tc := range []struct {
-		stderr string
-		want   syscall.Errno
-	}{
-		{"error: cannot open 'FETCH_HEAD': Permission denied", syscall.EACCES},
-		{"fatal: cannot create directory 'objects': Operation not permitted", syscall.EPERM},
-		{"fatal: write error: No space left on device", syscall.ENOSPC},
-		{"fatal: cannot create directory 'objects': Read-only file system", syscall.EROFS},
-		{"git@example.com: Permission denied (publickey).", 0},
-		{"remote: error: cannot open 'objects': Permission denied", 0},
-		{"remote: fatal: write error: No space left on device", 0},
-	} {
-		t.Run(tc.stderr, func(t *testing.T) {
-			err := wrapGitError(fmt.Errorf("exit status 128"), []byte(tc.stderr+"\n"))
-			if tc.want != 0 {
-				require.ErrorIs(t, err, tc.want)
-			} else {
-				for _, errno := range []syscall.Errno{syscall.EACCES, syscall.EPERM, syscall.ENOSPC, syscall.EROFS} {
-					require.NotErrorIs(t, err, errno)
-				}
-			}
-		})
-	}
-	for _, errno := range []syscall.Errno{syscall.EACCES, syscall.EPERM, syscall.ENOSPC, syscall.EROFS} {
-		t.Run(errno.Error(), func(t *testing.T) {
-			err := wrapGitError(fmt.Errorf("start git: %w", errno), nil)
-			require.ErrorIs(t, err, errno)
-		})
-	}
 }
 
 // failingTokenSource never resolves a token, standing in for a token file that

@@ -12,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
@@ -34,12 +35,12 @@ type syncPass struct {
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	_, local := errors.AsType[*fs.PathError](err)
-	if local || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
-		return
-	}
 	reason := ""
 	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
+	}
+	if local || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || syncBudgetWait(err) || errors.Is(err, context.Canceled) || errors.Is(err, procutil.ErrProcessLimitReached) || source == "refs" && !slices.Contains([]string{"", "auth", "rate_limited", "network"}, reason) {
+		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -158,6 +159,8 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return "not_found"
+	case errors.Is(err, procutil.ErrProcessLimitReached):
+		return "other"
 	case errors.Is(err, context.DeadlineExceeded), networkError:
 		return "network"
 	case status >= 400 && status < 500:

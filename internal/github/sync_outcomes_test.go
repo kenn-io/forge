@@ -24,11 +24,13 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
+	platformgithub "go.kenn.io/forge/platform/github"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
@@ -220,6 +222,7 @@ func TestSyncFailureReason(t *testing.T) {
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
+		{"process capacity deadline", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), "other"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"unknown", errors.New("private error details"), "other"},
@@ -448,6 +451,89 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 	}
 }
 
+func TestSyncFailedRefsClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"unclassified Git failure", errors.New("git exited with status 128"), ""},
+		{"process capacity deadline", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), ""},
+		{"authentication", platform.ErrPermissionDenied, "auth"},
+		{"rate limit", platform.ErrRateLimited, "rate_limited"},
+		{"network", context.DeadlineExceeded, "network"},
+		{"missing ref", platform.ErrNotFound, ""},
+		{"provider", platform.ErrProviderContract, ""},
+	} {
+		for _, retained := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/retained=%t", tc.name, retained), func(t *testing.T) {
+				assert := assert.New(t)
+				repo := RepoRef{Owner: "acme", Name: "widget"}
+				var events [][2]string
+				s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+				if retained {
+					s.syncFailures = map[string]map[string]bool{"refs": {mergeQueueRepoKey(repo): true}}
+				}
+				pass := &syncPass{}
+				pass.observe(repo, "refs", tc.err)
+				s.finishSyncPass(pass, []RepoRef{repo})
+				if tc.want == "" {
+					assert.NotContains(pass.results, "refs")
+					assert.Equal(retained, s.syncFailures["refs"][mergeQueueRepoKey(repo)])
+					assert.Empty(events)
+				} else {
+					assert.True(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
+					if retained {
+						assert.Empty(events)
+					} else {
+						assert.Equal([][2]string{{"refs", tc.want}}, events)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Embedding preserves the provider's read interfaces while exercising callers
+// that cannot use the concrete GitHub provider's lookup classification.
+type syncOutcomeWrappedProvider struct{ *platformgithub.Provider }
+
+func TestSyncFailedRawIssueReads(t *testing.T) {
+	for _, detail := range []bool{false, true} {
+		t.Run(fmt.Sprintf("detail=%t", detail), func(t *testing.T) {
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
+			client := &partialFailureMock{}
+			called := false
+			client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+				called = true
+				return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}
+			}
+			provider, err := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: client, Clock: time.Now})
+			require.NoError(t, err)
+			registry, err := platform.NewRegistry(&syncOutcomeWrappedProvider{provider})
+			require.NoError(t, err)
+			s := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			pass := &syncPass{}
+			ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+			if detail {
+				_, err = s.fetchIssueDetail(ctx, repo, id, 7)
+			} else {
+				err = s.fetchAndUpdateClosedIssue(ctx, repo, id, 7)
+			}
+			require.Error(t, err)
+			require.True(t, called)
+			assert.NotContains(t, pass.results, "issues", "a missing item must leave the source unread")
+			s.finishSyncPass(pass, []RepoRef{repo})
+			assert.Empty(t, events)
+		})
+	}
+}
+
 func TestSyncFailedGitCloneErrors(t *testing.T) {
 	for _, scenario := range []string{"remote clone failure", "local credential failure"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -487,7 +573,7 @@ func TestSyncFailedGitCloneErrors(t *testing.T) {
 				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 				s.RunOnce(t.Context())
 				require.Positive(t, calls.Load())
-				assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+				assert.Empty(t, events, "unclassified Git failures must leave the source unread")
 			}
 		})
 	}

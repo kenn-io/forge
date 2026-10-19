@@ -8990,7 +8990,7 @@ func (s *Syncer) fetchIssueDetail(
 			return calls, fmt.Errorf("get issue #%d: %w", number, outcomeErr)
 		}
 	}
-	s.observeSync(ctx, repo, "issues", err)
+	s.observeSyncItem(ctx, repo, "issues", err)
 	if err == nil && ghIssue == nil {
 		if notModified {
 			if existing == nil {
@@ -10488,7 +10488,7 @@ func (s *Syncer) fetchAndUpdateClosedIssue(
 		}
 		return fmt.Errorf("get closed issue #%d: %w", number, outcomeErr)
 	}
-	s.observeSync(ctx, repo, "issues", err)
+	s.observeSyncItem(ctx, repo, "issues", err)
 	if err != nil {
 		return fmt.Errorf("get closed issue #%d: %w", number, err)
 	}

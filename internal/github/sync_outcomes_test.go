@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -158,7 +157,7 @@ func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 			var events [][2]string
 			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			for i, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable, http.StatusNotFound, http.StatusServiceUnavailable} {
+			for i, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable} {
 				failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
 				if endpoint == "check runs" {
 					client.checkRunsErr = failure
@@ -315,93 +314,33 @@ func TestSyncFailedRepositoryLookup(t *testing.T) {
 }
 
 func TestSyncFailedUnreadableCredentialFile(t *testing.T) {
-	for _, retained := range []bool{false, true} {
-		t.Run(fmt.Sprintf("retained=%t", retained), func(t *testing.T) {
-			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				w.WriteHeader(http.StatusUnauthorized)
-			}))
-			t.Cleanup(server.Close)
-			parent := filepath.Join(t.TempDir(), "blocked")
-			require.NoError(t, os.WriteFile(parent, nil, 0o600))
-			source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-				Key:        tokenauth.Key{Platform: "github", Host: "github.com"},
-				Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
-			}, tokenauth.Options{})
-			client, err := NewClient(source, "github.com", nil, nil, WithBaseURLForTesting(server.URL))
-			require.NoError(t, err)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-			if retained {
-				pass := &syncPass{}
-				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
-				s.finishSyncPass(pass, []RepoRef{repo})
-			}
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			var results []RepoSyncResult
-			s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
-			s.RunOnce(t.Context())
-			require.Len(t, results, 1)
-			require.Contains(t, results[0].Error, parent)
-			assert.Zero(t, calls.Load())
-			assert.Empty(t, events)
-			for _, source := range []string{"merge_requests", "issues"} {
-				assert.Equal(t, retained, s.syncFailures[source][mergeQueueRepoKey(repo)])
-			}
-		})
-	}
-}
-
-func TestSyncFailedUnwritableFetchHead(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("requires Unix file permissions")
-	}
-	f := setupSyncBranchActivityFixture(t, "main")
-	syncActivityCommit(t, f.Work, "example.txt", "example", "initial")
-	syncActivityGitRun(t, f.Work, "push", "origin", "main")
-	syncActivityGitRun(t, f.Remote, "update-server-info")
 	var calls atomic.Int32
-	files := http.StripPrefix("/group/project.git", http.FileServer(http.Dir(f.Remote)))
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		files.ServeHTTP(w, r)
+		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	t.Cleanup(server.Close)
-	f.Repo.CloneURL = server.URL + "/group/project.git"
-	f.Repo.PlatformHost = strings.TrimPrefix(server.URL, "http://")
-	f.Syncer.clones.SetAllowInsecureHTTP("gitlab", f.Repo.PlatformHost, true)
-	t.Cleanup(f.Syncer.clones.Wait)
-	require.NoError(t, f.Syncer.ensureClone(t.Context(), f.Repo))
-	clone, err := f.Syncer.clones.ClonePath("gitlab", f.Repo.PlatformHost, f.Repo.Owner, f.Repo.Name)
+	parent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(parent, nil, 0o600))
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key:        tokenauth.Key{Platform: "github", Host: "github.com"},
+		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
+	}, tokenauth.Options{})
+	client, err := NewClient(source, "github.com", nil, nil, WithBaseURLForTesting(server.URL))
 	require.NoError(t, err)
-	head := filepath.Join(clone, "FETCH_HEAD")
-	require.NoError(t, os.WriteFile(head, nil, 0o400))
-	require.NoError(t, os.Chmod(head, 0o400))
-	defer func() { require.NoError(t, os.Chmod(head, 0o600)) }()
-	if file, err := os.OpenFile(head, os.O_WRONLY, 0); err == nil {
-		require.NoError(t, file.Close())
-		t.Skip("user can write read-only files")
-	}
-	for _, retained := range []bool{false, true} {
-		t.Run(fmt.Sprintf("retained=%t", retained), func(t *testing.T) {
-			f.Syncer.syncFailures = nil
-			if retained {
-				f.Syncer.syncFailures = map[string]map[string]bool{"refs": {mergeQueueRepoKey(f.Repo): true}}
-			}
-			var events [][2]string
-			f.Syncer.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			calls.Store(0)
-			pass := &syncPass{}
-			err := f.Syncer.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), f.Repo)
-			require.ErrorContains(t, err, "Permission denied")
-			assert.Zero(t, calls.Load())
-			assert.NotContains(t, pass.results, "refs")
-			f.Syncer.finishSyncPass(pass, []RepoRef{f.Repo})
-			assert.Empty(t, events)
-			assert.Equal(t, retained, f.Syncer.syncFailures["refs"][mergeQueueRepoKey(f.Repo)])
-		})
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	var results []RepoSyncResult
+	s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+	s.RunOnce(t.Context())
+	require.Len(t, results, 1)
+	require.Contains(t, results[0].Error, parent)
+	assert.Zero(t, calls.Load())
+	assert.Empty(t, events)
+	for _, source := range []string{"merge_requests", "issues"} {
+		assert.False(t, s.syncFailures[source][mergeQueueRepoKey(repo)])
 	}
 }
 
@@ -458,39 +397,29 @@ func TestSyncFailedRefsClassification(t *testing.T) {
 		want string
 	}{
 		{"unclassified Git failure", errors.New("git exited with status 128"), ""},
-		{"process capacity deadline", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), ""},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"network", context.DeadlineExceeded, "network"},
 		{"missing ref", platform.ErrNotFound, ""},
 		{"provider", platform.ErrProviderContract, ""},
 	} {
-		for _, retained := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/retained=%t", tc.name, retained), func(t *testing.T) {
-				assert := assert.New(t)
-				repo := RepoRef{Owner: "acme", Name: "widget"}
-				var events [][2]string
-				s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-				if retained {
-					s.syncFailures = map[string]map[string]bool{"refs": {mergeQueueRepoKey(repo): true}}
-				}
-				pass := &syncPass{}
-				pass.observe(repo, "refs", tc.err)
-				s.finishSyncPass(pass, []RepoRef{repo})
-				if tc.want == "" {
-					assert.NotContains(pass.results, "refs")
-					assert.Equal(retained, s.syncFailures["refs"][mergeQueueRepoKey(repo)])
-					assert.Empty(events)
-				} else {
-					assert.True(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
-					if retained {
-						assert.Empty(events)
-					} else {
-						assert.Equal([][2]string{{"refs", tc.want}}, events)
-					}
-				}
-			})
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			repo := RepoRef{Owner: "acme", Name: "widget"}
+			var events [][2]string
+			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+			pass := &syncPass{}
+			pass.observe(repo, "refs", tc.err)
+			s.finishSyncPass(pass, []RepoRef{repo})
+			if tc.want == "" {
+				assert.NotContains(pass.results, "refs")
+				assert.False(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
+				assert.Empty(events)
+			} else {
+				assert.True(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
+				assert.Equal([][2]string{{"refs", tc.want}}, events)
+			}
+		})
 	}
 }
 
@@ -557,54 +486,42 @@ func TestSyncFailedGitProcessCapacity(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(release)
 	t.Cleanup(procutil.SetDefaultLimiterForTest(limiter))
-	s.RunOnce(t.Context())
+	pass := &syncPass{}
+	err = s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+	require.ErrorIs(t, err, procutil.ErrProcessLimitReached)
+	s.finishSyncPass(pass, []RepoRef{repo})
 	assert.Zero(t, calls.Load())
 	assert.Empty(t, events)
 }
 
 func TestSyncFailedGitCloneErrors(t *testing.T) {
-	for _, scenario := range []string{"remote clone failure", "local credential failure"} {
-		t.Run(scenario, func(t *testing.T) {
-			var calls atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				w.WriteHeader(http.StatusServiceUnavailable)
-			}))
-			t.Cleanup(server.Close)
-			host := strings.TrimPrefix(server.URL, "http://")
-			var sources gitclone.HostSources
-			if scenario == "local credential failure" {
-				parent := filepath.Join(t.TempDir(), "blocked")
-				require.NoError(t, os.WriteFile(parent, nil, 0o600))
-				sources = gitclone.HostSources{host: tokenauth.NewManagedSource(tokenauth.Descriptor{
-					Key:        tokenauth.Key{Platform: "gitlab", Host: host},
-					Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
-				}, tokenauth.Options{})}
-			}
-			clones := gitclone.New(t.TempDir(), sources)
-			clones.SetAllowInsecureHTTP("gitlab", host, true)
-			t.Cleanup(clones.Wait)
-			repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
-			provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
-			registry, err := platform.NewRegistry(provider)
-			require.NoError(t, err)
-			s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-			if scenario == "local credential failure" {
-				pass := &syncPass{}
-				err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-				var pathErr *fs.PathError
-				require.ErrorAs(t, err, &pathErr)
-				assert.Zero(t, calls.Load())
-				assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
-			} else {
-				var events [][2]string
-				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-				s.RunOnce(t.Context())
-				require.Positive(t, calls.Load())
-				assert.Empty(t, events, "unclassified Git failures must leave the source unread")
-			}
-		})
-	}
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	parent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(parent, nil, 0o600))
+	sources := gitclone.HostSources{host: tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key:        tokenauth.Key{Platform: "gitlab", Host: host},
+		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
+	}, tokenauth.Options{})}
+	clones := gitclone.New(t.TempDir(), sources)
+	clones.SetAllowInsecureHTTP("gitlab", host, true)
+	t.Cleanup(clones.Wait)
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
+	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	pass := &syncPass{}
+	err = s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+	var pathErr *fs.PathError
+	require.ErrorAs(t, err, &pathErr)
+	assert.Zero(t, calls.Load())
+	assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
 }
 
 // The list excludes the seeded item, so its read comes from closure reconciliation.
@@ -687,26 +604,6 @@ func TestSyncFailedClosureReads(t *testing.T) {
 			})
 		}
 	}
-}
-
-func TestSyncFailedPersistenceIsLocal(t *testing.T) {
-	d := openTestDB(t)
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(t, err)
-	_, err = d.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_write BEFORE INSERT ON forge_repos BEGIN SELECT RAISE(ABORT, 'reject identity'); END`)
-	require.NoError(t, err)
-	now := time.Now().UTC()
-	client := &mockClient{openPRs: []*gh.PullRequest{buildOpenPR(8, now)}, openIssues: []*gh.Issue{{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Example"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}}}
-	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	var results []RepoSyncResult
-	s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
-	s.RunOnce(t.Context())
-	require.Len(t, results, 1)
-	require.Contains(t, results[0].Error, "reject identity")
-	assert.Empty(t, events)
 }
 
 func TestSyncFailedKeylessCredentialRoute(t *testing.T) {

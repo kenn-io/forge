@@ -29,6 +29,10 @@ type Client struct {
 	writableRepos        map[int64]struct{}
 }
 
+type HTTPError struct{ StatusCode int }
+
+func (e *HTTPError) Error() string { return "bitbucket data center: " + http.StatusText(e.StatusCode) }
+
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {
 	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: "project", Name: "repo"}
 	if err := platform.ValidateCanonicalRepoRef(ref); err != nil {
@@ -112,7 +116,7 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 		case 429:
 			code = platform.ErrCodeRateLimited
 		default:
-			return result, errors.New("bitbucket data center: " + resp.Status)
+			return result, &HTTPError{StatusCode: resp.StatusCode}
 		}
 		return result, &platform.Error{Code: code, Provider: c.Platform(), PlatformHost: c.host, Err: errors.New(resp.Status)}
 	}

@@ -3,7 +3,6 @@ package github
 import (
 	"context"
 	"errors"
-	"maps"
 	"net"
 	"slices"
 	"sync"
@@ -12,13 +11,15 @@ import (
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 var (
-	syncSources = []string{"merge_requests", "issues", "checks", "refs"}
-	syncReasons = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+	syncSources      = []string{"merge_requests", "issues", "checks", "refs"}
+	syncReasons      = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+	syncScopeSources = map[failScope]string{failMR: "merge_requests", failIssues: "issues"}
 )
 
 type syncPassKey struct{}
@@ -68,6 +69,9 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 
 func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, err error) {
 	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
+		if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
+			err = disabled
+		}
 		pass.observe(repo, source, err)
 	}
 }
@@ -77,13 +81,9 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	if capsErr != nil {
 		return
 	}
-	for source, supported := range map[string]bool{"merge_requests": caps.ReadMergeRequests, "issues": caps.ReadIssues} {
-		if supported {
-			cause := err
-			if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
-				cause = disabled
-			}
-			s.observeSync(ctx, repo, source, cause)
+	for scope, source := range syncScopeSources {
+		if scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues {
+			s.observeSync(ctx, repo, source, err)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			}
 		}
-		wasFailing := len(failures) > 0
+		var reasons []string
 		for key, reason := range pass.results[source] {
 			if !live[key] {
 				continue
@@ -121,13 +121,13 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			if reason == "" {
 				delete(failures, key)
 			} else {
+				if failures[key] == "" {
+					reasons = append(reasons, reason)
+				}
 				failures[key] = reason
 			}
 		}
-		if !wasFailing && len(failures) > 0 && s.onSyncFailed != nil {
-			reasons := slices.Collect(maps.Values(failures))
-			// Prefer rate limits, then auth, missing resources, network,
-			// provider, and other failures when repositories disagree.
+		if s.onSyncFailed != nil {
 			for _, reason := range syncReasons {
 				if slices.Contains(reasons, reason) {
 					s.onSyncFailed(source, reason)
@@ -144,6 +144,9 @@ func syncFailureReason(err error) string {
 		status = response.StatusCode
 	}
 	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
+		status = response.StatusCode
+	}
+	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
 		status = response.StatusCode
 	}
 	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {

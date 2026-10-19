@@ -6267,19 +6267,15 @@ func (s *Syncer) indexSyncRepo(
 	var partialCause error
 	retain := func(scope failScope, err error) {
 		failedScope |= scope
-		for bit, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
+		for bit, source := range syncScopeSources {
 			if scope&bit != 0 {
-				cause := err
-				if disabled := repositoryFeatureDisabledError(repo, source, err); disabled != nil {
-					cause = disabled
-				}
-				s.observeSync(ctx, repo, source, cause)
+				s.observeSync(ctx, repo, source, err)
 			}
 		}
 		partialCause = retainSyncFailureCause(partialCause, err)
 	}
 	defer func() {
-		for scope, source := range map[failScope]string{failMR: "merge_requests", failIssues: "issues"} {
+		for scope, source := range syncScopeSources {
 			if disabledScope&scope != 0 {
 				s.observeSync(ctx, repo, source, platform.ErrRepositoryFeatureDisabled)
 			} else if attemptedScope&scope != 0 && (failedScope|disabledScope)&scope == 0 {
@@ -8375,6 +8371,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
 		ctx, client, repo, number,
 	)
+	s.observeSync(ctx, repo, "merge_requests", err)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -8720,6 +8717,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	requestedAt := s.nowUTC()
 	mr, err := mrReader.GetMergeRequest(ctx, platformRepoRef(repo), number)
+	s.observeSync(ctx, repo, "merge_requests", err)
 	calls++
 	if err != nil {
 		return calls, fmt.Errorf(
@@ -9003,6 +9001,7 @@ func (s *Syncer) fetchIssueDetail(
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
 		ctx, client, repo, number,
 	)
+	s.observeSync(ctx, repo, "issues", err)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
@@ -9188,6 +9187,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 	}
 	issue, err := issueReader.GetIssue(ctx, platformRepoRef(repo), number)
 	calls++
+	s.observeSync(ctx, repo, "issues", err)
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number,
@@ -10820,11 +10820,6 @@ func (s *Syncer) drainDetailQueue(
 		}
 		disabledErr := repositoryFeatureDisabledError(repo, feature, err)
 		if providerCalls > 0 {
-			cause := err
-			if disabledErr != nil {
-				cause = disabledErr
-			}
-			s.observeSync(itemCtx, repo, feature, cause)
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
 

@@ -1,7 +1,7 @@
 # Server Runtime
 
-- Full sync passes report `sync_failed` once per source outage with fixed `sync_source` and `reason`, without repository identifiers.
-  State is per repository, keyed by `mergeQueueRepoKey`; unread keys retain state, observed recovery or disablement clears it, and archived or untracked keys are pruned. Restarts or identity changes can count an outage twice
+- Full sync passes report at most one `sync_failed` per source when any repository newly fails it, with fixed `sync_source` and `reason`, without repository identifiers.
+  Unread repositories retain state; recovery or disablement clears it, and archived or untracked repositories drop out. Counts stay in memory; restarts or identity changes can count an outage twice
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

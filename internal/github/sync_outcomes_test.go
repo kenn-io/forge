@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
@@ -56,9 +57,10 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		wantNow   int
 		wantLater int
 	}{
-		{"recovery overlaps new failure", a, []observation{{a, nil}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
-		{"cadence skipped", a, []observation{{b, nil}}, []RepoRef{a, b}, b, 1, 1},
-		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, b, 1, 1},
+		{"recovery overlaps new failure", a, []observation{{a, nil}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
+		{"persistent failure overlaps new failure", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
+		{"cadence skipped", a, []observation{{b, nil}}, []RepoRef{a, b}, b, 1, 2},
+		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, b, 1, 2},
 		{"disabled", a, []observation{{a, platform.ErrRepositoryFeatureDisabled}}, []RepoRef{a, b}, b, 1, 2},
 		{"untracked", a, []observation{{b, nil}}, []RepoRef{b}, b, 1, 2},
 		{"archived", a, []observation{{b, nil}}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, b, 1, 2},
@@ -86,6 +88,22 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 	}
 }
 
+func TestSyncFailedBitbucketDCServerError(t *testing.T) {
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/rest/api/latest/projects/PROJECT/repos/widget", req.URL.Path)
+		return &http.Response{StatusCode: 503, Status: "503 Service Unavailable", Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+	}), nil)
+	require.NoError(t, err)
+	_, failure := client.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: client.Host(), Owner: "PROJECT", Name: "widget"})
+	require.Error(t, failure)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	s := NewSyncer(map[string]Client{"github.com": &partialFailureMock{listOpenPRsErr: failure}}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
+}
+
 func TestSyncFailedScopeCauses(t *testing.T) {
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -104,6 +122,35 @@ func TestSyncFailedScopeCauses(t *testing.T) {
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.RunOnce(t.Context())
 	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "provider"}}, events)
+}
+
+func TestSyncFailedDetailPersistenceIsLocal(t *testing.T) {
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+	require.NoError(t, err)
+	_, err = d.WriteDB().ExecContext(t.Context(), `CREATE TRIGGER reject_detail BEFORE UPDATE OF detail_fetched_at ON forge_issues WHEN NEW.detail_fetched_at IS NOT NULL BEGIN SELECT RAISE(ABORT, 'reject detail marker'); END`)
+	require.NoError(t, err)
+	client := &partialFailureMock{issuesCached: true, prsCached: true}
+	called := false
+	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		called = true
+		return &gh.Issue{ID: new(int64(7)), Number: new(7), State: new("open"), Title: new("Updated detail"), CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now}}, nil
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.True(t, called)
+	issue, err := d.GetIssueByRepoIDAndNumber(t.Context(), id, 7)
+	require.NoError(t, err)
+	require.NotNil(t, issue)
+	assert.Equal(t, "Updated detail", issue.Title)
+	assert.Nil(t, issue.DetailFetchedAt)
+	assert.Empty(t, events)
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {

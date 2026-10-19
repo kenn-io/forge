@@ -292,7 +292,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toHaveCount(0);
       for (let pageIndex = 0; pageIndex < 2; pageIndex++) {
         const messageCount = await mobileChat.locator(".message-body").count();
-        await mobileChat.getByRole("button", { name: "Load earlier messages" }).click();
+        const historyButton = mobileChat.getByRole("button", { name: "Load earlier messages" });
+        await expect(historyButton).toBeEnabled();
+        await historyButton.dispatchEvent("click");
         await expect.poll(() => mobileChat.locator(".message-body").count()).toBeGreaterThan(messageCount);
       }
       await expect(mobileChat.getByRole("img", { name: "Panel screenshot" })).toBeVisible();

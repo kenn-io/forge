@@ -180,6 +180,16 @@ func (a *ACP) invalidateMessagesLocked(start, end int) {
 	}
 }
 
+func (a *ACP) historyRevisionLocked(before int) uint64 {
+	var newest uint64
+	for index, revision := range a.messageRevisions {
+		if index < before {
+			newest = max(newest, revision)
+		}
+	}
+	return newest
+}
+
 // publishedStateLocked is the state clients may see: held text is cut from
 // the last message, and a message that is entirely held is left out.
 func (a *ACP) publishedStateLocked() ACPState {
@@ -192,12 +202,7 @@ func (a *ACP) publishedStateLocked() ACPState {
 	state.MessageOffset = len(messages) - acpMessageBatchSize(messages[state.MessageOffset:], true)
 	state.Messages = messages[state.MessageOffset:]
 	state.MessageRevision = a.revision
-	state.HistoryRevision = 0
-	for index, revision := range a.messageRevisions {
-		if index < state.MessageOffset {
-			state.HistoryRevision = max(state.HistoryRevision, revision)
-		}
-	}
+	state.HistoryRevision = a.historyRevisionLocked(state.MessageOffset)
 	// Only the owner checks retried answers. A digest of a small form domain
 	// can be reversed, so the ledger never leaves the owner.
 	state.Answered = nil
@@ -307,6 +312,7 @@ func (a *ACP) Page(after, limit int) ([]byte, error) {
 	end := start + min(limit, len(messages)-start)
 	end = start + acpMessageBatchSize(messages[start:end], false)
 	state.MessageOffset = start
+	state.HistoryRevision = a.historyRevisionLocked(start)
 	state.Messages = messages[start:end]
 	return json.Marshal(state, json.Deterministic(true))
 }

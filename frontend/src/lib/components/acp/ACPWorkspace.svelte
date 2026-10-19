@@ -103,7 +103,7 @@
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
-          if (scroll && chatState && (next.messageOffset ?? 0) < firstLoaded) keepReadingPosition(scroll);
+          if (scroll && chatState && (!follow || (next.messageOffset ?? 0) < firstLoaded)) keepReadingPosition(scroll);
           const exited = !next.connected && chatState?.connected !== false;
           chatState = next;
           settingPending = false;
@@ -336,7 +336,7 @@
         </div>
       {/if}
       {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
-      {#each rows as row (row.id)}
+      {#each rows as row (row.key)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}

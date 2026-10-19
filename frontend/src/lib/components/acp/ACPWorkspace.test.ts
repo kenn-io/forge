@@ -47,7 +47,10 @@ const baseState = {
   error: "",
 };
 
-async function openChat(state: Record<string, unknown>, props: { disabled?: boolean } = {}) {
+async function openChat(
+  state: Record<string, unknown>,
+  props: { disabled?: boolean; onExit?: (code: number) => void } = {},
+) {
   render(ACPWorkspace, {
     context: new Map([[STORES_KEY, { settings }]]),
     props: { websocketPath: "/ws/chat", ...props },
@@ -86,6 +89,51 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   if (runtimeCapture.current) await Effect.runPromise(runtimeCapture.current.disposeEffect);
   runtimeCapture.current = undefined;
+});
+
+describe("ACPWorkspace final transcript", () => {
+  it("reports exit only after all final history pages arrive", async () => {
+    const onExit = vi.fn();
+    await openChat(
+      {
+        messageRevision: 1,
+        messageOffset: 0,
+        messageCount: 3,
+        messages: [
+          { role: "tool", text: "Old result", toolCallId: "tool-1" },
+          { role: "user", text: "Continue" },
+          { role: "assistant", text: "Working" },
+        ],
+      },
+      { onExit },
+    );
+    await push({
+      messageRevision: 2,
+      historyRevision: 2,
+      messageOffset: 2,
+      messageCount: 3,
+      messages: [{ role: "assistant", text: "Done" }],
+      connected: false,
+    });
+    expect(onExit).not.toHaveBeenCalled();
+    expect(sentCommands()).toContainEqual({ type: "history", before: 2, limit: 100 });
+    socket.options!.onMessage(
+      JSON.stringify({ history: { revision: 2, offset: 1, messages: [{ role: "user", text: "Continue" }] } }),
+    );
+    await tick();
+    expect(onExit).not.toHaveBeenCalled();
+    expect(sentCommands()).toContainEqual({ type: "history", before: 1, limit: 100 });
+    socket.options!.onMessage(
+      JSON.stringify({
+        history: { revision: 2, offset: 0, messages: [{ role: "tool", text: "Final result", toolCallId: "tool-1" }] },
+      }),
+    );
+    await tick();
+    expect(onExit).toHaveBeenCalledExactlyOnceWith(-1);
+    await fireEvent.click(screen.getByRole("button", { name: /1 tool/ }));
+    expect(screen.getByText("Final result")).toBeTruthy();
+    expect(within(screen.getByRole("article", { name: "Assistant" })).getByText("Done")).toBeTruthy();
+  });
 });
 
 describe("ACPWorkspace elicitations", () => {

@@ -80,6 +80,7 @@ export function makeChatSession(options: {
 }) {
   let snapshot: ChatState | undefined;
   let transcript: Transcript = { start: 0, messages: [] };
+  let displayed: Transcript = transcript;
   let historyLoading = false;
   let historyLimit = 100;
   let refreshStart: number | undefined;
@@ -92,7 +93,15 @@ export function makeChatSession(options: {
   // Consumers see the whole loaded range; messageOffset is the transcript
   // index of messages[0].
   const publish = () => {
-    if (!snapshot) return;
+    if (!snapshot || refreshStart !== undefined) return;
+    transcript = {
+      ...transcript,
+      messages: transcript.messages.map((message, index) => {
+        const prior = displayed.messages[transcript.start + index - displayed.start];
+        return prior && sameValue(prior, message) ? prior : message;
+      }),
+    };
+    displayed = transcript;
     options.onState({ ...snapshot, messages: transcript.messages, messageOffset: transcript.start });
   };
   const requestHistory = (limit: number) => {
@@ -120,8 +129,8 @@ export function makeChatSession(options: {
     }
     transcript = prependPage(transcript, history.offset, history.messages);
     setHistoryLoading(false);
-    publish();
     continueRefresh();
+    publish();
   };
   const connection = makeTerminalSessionController({
     initialStatus: options.initialStatus,
@@ -136,6 +145,7 @@ export function makeChatSession(options: {
     onOpen: () => {
       snapshot = undefined;
       transcript = { start: 0, messages: [] };
+      displayed = transcript;
       refreshStart = undefined;
       deferredHistory = undefined;
       setHistoryLoading(false);
@@ -160,6 +170,7 @@ export function makeChatSession(options: {
           refreshStart = undefined;
           deferredHistory = undefined;
           setHistoryLoading(false);
+          publish();
         }
         options.onError(frame.commandError, { command: frame.command, id: frame.id });
       } else if ("accepted" in frame) {
@@ -169,15 +180,15 @@ export function makeChatSession(options: {
       } else {
         if (snapshot && frame.historyRevision > snapshot.messageRevision && transcript.start < frame.messageOffset) {
           refreshStart = Math.min(refreshStart ?? transcript.start, transcript.start);
-          // Cached indices may have shifted, so rebuild this range from the
-          // latest snapshot and byte-sized history pages.
+          // Rebuild separately while the last published rows remain visible.
+          // Cached indices may have shifted after a steering insertion.
           transcript = { start: frame.messageOffset, messages: [] };
         }
         transcript = mergeWindow(transcript, frame.messageOffset, frame.messages, frame.messageCount);
         snapshot = frame;
-        publish();
         if (deferredHistory) receiveHistory(deferredHistory);
         continueRefresh();
+        publish();
       }
       // The host can still serve history after the agent exits. Complete a
       // refresh of its final results before closing this attachment.

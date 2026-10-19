@@ -183,6 +183,7 @@ type acpAttachment struct {
 	done        chan struct{}
 	mu          sync.Mutex
 	exitCode    int
+	exited      bool
 	subscribers map[chan struct{}]struct{}
 }
 
@@ -245,7 +246,7 @@ func (a *acpAttachment) Done() <-chan struct{} { return a.done }
 func (a *acpAttachment) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }
 func (a *acpAttachment) Detach()               { _ = a.client.Close() }
 func (a *acpAttachment) Stop(ctx context.Context) error {
-	// The watch connection closes as soon as the agent exits. Use an independent
+	// The watch connection can close when the agent exits. Use an independent
 	// request connection so that cannot discard the stop acknowledgement.
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", a.address)
 	if err != nil {
@@ -264,18 +265,25 @@ func (a *acpAttachment) Subscribe() (<-chan struct{}, func()) {
 	a.subscribers[ch] = struct{}{}
 	ch <- struct{}{}
 	a.mu.Unlock()
-	return ch, func() { a.mu.Lock(); delete(a.subscribers, ch); a.mu.Unlock() }
+	return ch, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		delete(a.subscribers, ch)
+		if a.exited && len(a.subscribers) == 0 {
+			_ = a.client.Close()
+		}
+	}
 }
 
 func (a *acpAttachment) watch() {
 	defer close(a.done)
-	defer a.client.Close()
 	var revision uint64
 	for {
 		var reply ACPUpdate
 		err := a.client.Call("ACP.Watch", ACPWatch{Revision: revision}, &reply)
 		a.mu.Lock()
 		a.exitCode = reply.ExitCode
+		a.exited = err != nil || reply.Exited
 		if err != nil || reply.Revision != revision || reply.Exited {
 			for ch := range a.subscribers {
 				select {
@@ -283,6 +291,11 @@ func (a *acpAttachment) watch() {
 				default:
 				}
 			}
+		}
+		// Final snapshots can invalidate loaded history. Existing viewers keep
+		// the read connection until they finish paging and unsubscribe.
+		if err != nil || (reply.Exited && len(a.subscribers) == 0) {
+			_ = a.client.Close()
 		}
 		a.mu.Unlock()
 		if err != nil || reply.Exited {

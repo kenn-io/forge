@@ -82,6 +82,11 @@ Rules:
   insertion shifts their indices. Reload that loaded range in byte-sized pages; reject
   pages older than the invalidation and hold replies that precede their snapshot
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- Keep displayed history and tool expansion intact while replacement pages load; publish
+  the refreshed range together (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- Natural agent exit must leave transcript reads available until existing viewers finish
+  their final refresh and detach; only then release the owner
+  (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
 - A degraded but usable ACP start (no Forge tools, no session reload) is a `notices`
   entry, never `error`; the chat shows it only as a header warning icon with a tooltip,
   not a persistent alert (maintainer decision; `frontend/src/lib/components/acp/ACPWorkspace.svelte`).

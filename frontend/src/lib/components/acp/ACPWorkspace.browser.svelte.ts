@@ -470,6 +470,119 @@ describe("ACPWorkspace transcript paging (browser)", () => {
   });
   const range = (from: number, to: number) => Array.from({ length: to - from }, (_, offset) => message(from + offset));
 
+  it("renders separate tool calls when an agent reuses a call ID", async () => {
+    const { host } = await renderChat(900);
+    const tool = { role: "tool", toolCallId: "edit", createdAt: "2026-10-19T16:00:00Z", status: "completed" };
+    socket.options!.onMessage(
+      JSON.stringify({
+        messages: [
+          { role: "user", text: "First turn" },
+          { ...tool, text: "First edit" },
+          { role: "user", text: "Second turn" },
+          { ...tool, text: "Second edit" },
+          { ...tool, text: "Third edit" },
+        ],
+        messageRevision: 1,
+        historyRevision: 0,
+        messageOffset: 0,
+        messageCount: 5,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await expect.element(page.getByRole("button", { name: "1 tool", exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "2 tools", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "1 tool", exact: true }).click();
+    await page.getByRole("button", { name: "2 tools", exact: true }).click();
+    expect(host.textContent).toContain("First edit");
+    expect(host.textContent).toContain("Second edit");
+    expect(host.textContent).toContain("Third edit");
+  });
+
+  it("keeps expanded tool details and the reading position through a shifted history refresh", async () => {
+    const { host } = await renderChat(900);
+    const tool = {
+      role: "tool",
+      toolCallId: "inspect-files",
+      text: "Inspect files",
+      status: "in_progress",
+      toolContent: [{ type: "terminal", output: "Initial output" }],
+    };
+    const state = {
+      messages: [...range(0, 9), { role: "thought", text: "Inspect the relevant files" }, tool, ...range(11, 40)],
+      messageRevision: 1,
+      historyRevision: 0,
+      messageOffset: 0,
+      messageCount: 40,
+      configOptions: [],
+      configuring: false,
+      permissions: [],
+      busy: true,
+      connected: true,
+      error: "",
+    };
+    socket.options!.onMessage(JSON.stringify(state));
+    await nextFrame();
+    await page.getByRole("button", { name: /1 tool · 1 thought · running/ }).click();
+    await page.getByRole("button", { name: /Inspect files/ }).click();
+    await expect.element(page.getByText("Initial output", { exact: true })).toBeVisible();
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    conversation.style.overflowAnchor = "none";
+    const anchor = host.querySelector<HTMLElement>(".tool-group")!;
+    conversation.scrollTop += anchor.getBoundingClientRect().top - conversation.getBoundingClientRect().top - 2;
+    conversation.dispatchEvent(new Event("scroll"));
+    await nextFrame();
+    const before = anchor.getBoundingClientRect().top;
+
+    socket.options!.onMessage(
+      JSON.stringify({
+        ...state,
+        messages: range(30, 40),
+        messageOffset: 31,
+        messageCount: 41,
+        messageRevision: 2,
+        historyRevision: 2,
+      }),
+    );
+    await expect
+      .poll(() => socket.sent.map((frame) => JSON.parse(frame)))
+      .toContainEqual({ type: "history", before: 31, limit: 100 });
+    await expect.element(page.getByText("Initial output", { exact: true })).toBeVisible();
+    // The first replacement page is incomplete. The displayed rows stay intact.
+    socket.options!.onMessage(JSON.stringify({ history: { revision: 2, offset: 12, messages: range(11, 30) } }));
+    await expect
+      .poll(() => socket.sent.map((frame) => JSON.parse(frame)))
+      .toContainEqual({ type: "history", before: 12, limit: 100 });
+    await expect.element(page.getByText("Initial output", { exact: true })).toBeVisible();
+    socket.options!.onMessage(
+      JSON.stringify({
+        history: {
+          revision: 2,
+          offset: 0,
+          messages: [
+            { role: "user", text: "Steer the work", submissionId: "steering-1" },
+            ...range(0, 9),
+            { role: "thought", text: "Inspect the relevant files" },
+            { ...tool, status: "completed", toolContent: [{ type: "terminal", output: "Final output" }] },
+          ],
+        },
+      }),
+    );
+    await expect.element(page.getByText("Final output", { exact: true })).toBeVisible();
+    await nextFrame();
+    await nextFrame();
+    expect(anchor.isConnected).toBe(true);
+    expect(Math.abs(anchor.getBoundingClientRect().top - before)).toBeLessThan(2);
+    await expect
+      .element(page.getByRole("button", { name: "1 tool · 1 thought", exact: true }))
+      .toHaveAttribute("aria-expanded", "true");
+    await expect.element(page.getByRole("button", { name: /Inspect files/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("keeps the reader's place when earlier messages load above", async () => {
     const host = document.createElement("div");
     host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";

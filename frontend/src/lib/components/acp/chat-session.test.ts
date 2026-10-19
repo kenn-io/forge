@@ -79,11 +79,20 @@ describe("makeChatSession", () => {
       frame([output], { messageRevision: 2, historyRevision: 2, messageOffset: 3, messageCount: 4 }),
     );
     socket.options!.onMessage(
-      JSON.stringify({ history: { revision: 1, offset: 0, messages: [{ role: "user", text: "Old" }] } }),
+      // This page reaches the new window at index 3, so only its stale
+      // revision prevents it from being merged and completing the refresh.
+      JSON.stringify({ history: { revision: 1, offset: 0, messages: [{ role: "user", text: "Old" }, first, output] } }),
     );
-    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ type: "history", before: 3, limit: 100 });
+    expect(states).toHaveLength(1);
+    expect(states.at(-1)!.messages).toEqual([first, output]);
+    expect(socket.sent.map((data) => JSON.parse(data))).toEqual([
+      { type: "history", before: 1, limit: 100 },
+      { type: "history", before: 3, limit: 100 },
+    ]);
     socket.options!.onMessage(JSON.stringify({ history: { revision: 2, offset: 2, messages: [steer] } }));
     expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ type: "history", before: 2, limit: 100 });
+    expect(states).toHaveLength(1);
+    expect(states[0]!.messages).toEqual([first, output]);
     socket.options!.onMessage(JSON.stringify({ history: { revision: 2, offset: 1, messages: [first] } }));
     expect(states.at(-1)!.messages).toEqual([first, steer, output]);
     expect(states.at(-1)!.messageOffset).toBe(1);
@@ -109,6 +118,10 @@ describe("makeChatSession", () => {
     socket.options!.onMessage(
       frame([output], { messageRevision: 2, historyRevision: 2, messageOffset: 2, messageCount: 3 }),
     );
+    expect(socket.sent.map((data) => JSON.parse(data))).toEqual([
+      { type: "history", before: 1, limit: 100 },
+      { type: "history", before: 2, limit: 100 },
+    ]);
     socket.options!.onMessage(JSON.stringify({ history: { revision: 2, offset: 0, messages: [first, steer] } }));
     expect(states.at(-1)!.messages).toEqual([first, steer, output]);
   });
@@ -138,6 +151,8 @@ describe("makeChatSession", () => {
       ),
     ).toBe("continue");
     expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ type: "history", before: 1, limit: 100 });
+    expect(states).toHaveLength(1);
+    expect(states.at(-1)!.connected).toBe(true);
     const completed = { ...tool, status: "completed", rawOutput: "done" };
     expect(
       socket.options!.onMessage(JSON.stringify({ history: { revision: 2, offset: 0, messages: [completed] } })),

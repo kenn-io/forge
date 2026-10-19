@@ -47,6 +47,52 @@ func TestStopDormantACPStopsChatWhoseOwnerDied(t *testing.T) {
 	assert.NoFileExists(t, manager.acpSessionPath("chat"))
 }
 
+func TestACPAttachmentReadsFinalTranscriptUntilSubscribersDetach(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	c := launchRequestChat(t)
+	_, unsubscribe := c.chat.Subscribe()
+	t.Cleanup(unsubscribe)
+	_, unsubscribeSecond := c.chat.Subscribe()
+	t.Cleanup(unsubscribeSecond)
+	require.NoError(c.chat.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "final-read"}))
+	before := c.awaitIdle()
+	require.NotEmpty(before.Messages)
+	pidText, err := os.ReadFile(filepath.Join(c.dir, "pid"))
+	require.NoError(err)
+	pid, err := strconv.Atoi(string(pidText))
+	require.NoError(err)
+	process, err := os.FindProcess(pid)
+	require.NoError(err)
+	defer process.Release()
+	require.NoError(process.Kill())
+	select {
+	case <-c.chat.Done():
+	case <-time.After(5 * time.Second):
+		require.FailNow("agent exit was not reported")
+	}
+	unsubscribeSecond()
+	data, err := c.chat.Snapshot()
+	require.NoError(err)
+	var state ACPState
+	require.NoError(json.Unmarshal(data, &state))
+	assert.False(state.Connected)
+	assert.Equal(before.Messages, state.Messages)
+	data, err = c.chat.History(state.MessageCount, 1)
+	require.NoError(err)
+	var history map[string]ACPHistory
+	require.NoError(json.Unmarshal(data, &history))
+	assert.Equal(before.Messages[len(before.Messages)-1:], history["history"].Messages)
+	data, err = c.chat.Page(0, 1)
+	require.NoError(err)
+	require.NoError(json.Unmarshal(data, &state))
+	assert.Equal(before.Messages[:1], state.Messages)
+	assert.True(c.owner.HasState(c.info.Key), "the owner still serves the attached viewer")
+	unsubscribe()
+	require.Eventually(func() bool { return !c.owner.HasState(c.info.Key) }, 10*time.Second, 10*time.Millisecond,
+		"the owner exits once its final viewer detaches")
+}
+
 func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 	for _, backend := range []string{"ptyowner", "tmux"} {
 		t.Run(backend, func(t *testing.T) {

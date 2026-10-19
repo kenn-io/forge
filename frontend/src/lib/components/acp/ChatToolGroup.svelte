@@ -7,6 +7,7 @@
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { isImageContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
+  import { messageKeys } from "./chat-timeline.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
 
   let {
@@ -22,7 +23,7 @@
   } = $props()
   const id = $props.id()
   let open = $state(false)
-  let expanded = $state<Record<number, boolean>>({})
+  let expanded = $state<Record<string | number, boolean>>({})
   function hasDetails(message: ChatMessage): boolean {
     return !!(
       message.kind ||
@@ -33,6 +34,7 @@
     )
   }
 
+  const keys = $derived(messageKeys(messages))
   const tools = $derived(messages.filter((message) => message.role === "tool"))
   const thoughts = $derived(messages.length - tools.length)
   const failed = $derived(
@@ -82,7 +84,8 @@
   </button>
   {#if open}
     <ul id={`${id}-list`} class="list">
-      {#each messages as message, index (index)}
+      {#each messages as message, index (keys[index] ?? index)}
+        {@const key = keys[index] ?? index}
         {#if message.role === "thought"}
           <li class="thought-row"><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
         {:else}
@@ -123,13 +126,13 @@
             <button
               type="button"
               class="row row--button"
-              aria-expanded={!!expanded[index]}
+              aria-expanded={!!expanded[key]}
               aria-controls={`${id}-tool-${index}`}
-              onclick={() => (expanded[index] = !expanded[index])}
+              onclick={() => (expanded[key] = !expanded[key])}
             >
               {@render row()}
             </button>
-            {#if expanded[index]}
+            {#if expanded[key]}
               <ChatToolDetails {message} id={`${id}-tool-${index}`} />
             {/if}
           {:else}

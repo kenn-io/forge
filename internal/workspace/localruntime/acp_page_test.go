@@ -10,10 +10,47 @@ import (
 	"testing"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 )
+
+func TestACPPageInvalidationUsesTheReturnedOffset(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		after       int
+		edited      int
+		invalidated bool
+	}{
+		{"edit before requested page but inside recent window", 20, 15, true},
+		{"edit after requested page but before recent window", 5, 7, false},
+		{"edit at requested offset belongs to the page", 7, 7, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := newDetachedACP(t)
+			for i := range 210 {
+				acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCall: &acpsdk.SessionUpdateToolCall{
+					ToolCallId: acpsdk.ToolCallId(fmt.Sprintf("tool-%d", i)), Title: "Tool", Status: acpsdk.ToolCallStatusInProgress,
+				}})
+			}
+			require.Equal(t, 10, publishedACPState(t, agent).MessageOffset)
+			completed := acpsdk.ToolCallStatusCompleted
+			acpUpdate(t, agent, acpsdk.SessionUpdate{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
+				ToolCallId: acpsdk.ToolCallId(fmt.Sprintf("tool-%d", tc.edited)), Status: &completed,
+			}})
+			data, err := agent.Page(tc.after, 5)
+			require.NoError(t, err)
+			page := decodePage(t, data)
+			assert.Equal(t, tc.after, page.MessageOffset)
+			if tc.invalidated {
+				assert.Equal(t, page.MessageRevision, page.HistoryRevision)
+			} else {
+				assert.Zero(t, page.HistoryRevision)
+			}
+		})
+	}
+}
 
 func TestACPByteSizedBatchesPreserveTheTranscript(t *testing.T) {
 	assert := assert.New(t)

@@ -470,9 +470,11 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 			clients.Go(func() { defer connections.Delete(conn); server.ServeConn(conn) })
 		}
 	}()
+	naturalExit := false
 	select {
 	case <-ctx.Done():
 	case <-agent.Done():
+		naturalExit = true
 	case <-service.stop:
 	}
 	err = agent.Stop(context.Background())
@@ -494,6 +496,16 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	<-accepted
 	drained := make(chan struct{})
 	go func() { clients.Wait(); close(drained) }()
+	if naturalExit {
+		// Existing viewers may need byte-sized history pages after the final
+		// snapshot. Their attachments close once the last viewer unsubscribes.
+		select {
+		case <-drained:
+			return err
+		case <-ctx.Done():
+		case <-service.stop:
+		}
+	}
 	select {
 	case <-drained:
 	case <-time.After(2 * time.Second):

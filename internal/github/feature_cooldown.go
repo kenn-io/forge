@@ -339,12 +339,12 @@ func (s *Syncer) recordGitHubRepositoryFeatureDisabled(
 	repo RepoRef,
 	feature string,
 	err error,
-) bool {
+) (error, bool) {
 	classified := repositoryFeatureDisabledError(repo, feature, err)
 	if classified == nil {
-		return false
+		return nil, false
 	}
-	return s.recordRepositoryFeatureDisabled(repo, feature, classified)
+	return classified, s.recordRepositoryFeatureDisabled(repo, feature, classified)
 }
 
 func repositoryFeatureDisabledError(repo RepoRef, feature string, err error) error {

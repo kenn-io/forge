@@ -2,6 +2,7 @@ package gitclone
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/cenkalti/backoff/v7"
@@ -12,12 +13,15 @@ import (
 // re-issued before surfacing the error to the caller.
 const retryAttempts = internalretry.DefaultMaxTries
 
-var transientGitErrorSubstrings = []string{
+var providerGitErrorSubstrings = []string{
 	"internal server error",
 	"returned error: 500",
 	"returned error: 502",
 	"returned error: 503",
 	"returned error: 504",
+}
+
+var networkGitErrorSubstrings = []string{
 	"connection reset",
 	"connection refused",
 	"could not resolve host",
@@ -34,16 +38,25 @@ var transientGitErrorSubstrings = []string{
 // repo is healthy; retrying inside the same sync cycle usually succeeds and
 // avoids dropping a full sync window.
 func isTransientGitError(err error) bool {
+	return IsProviderFailure(err) || IsNetworkFailure(err)
+}
+
+// IsProviderFailure reports a transient server failure in Git's stderr.
+func IsProviderFailure(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	for _, needle := range transientGitErrorSubstrings {
-		if strings.Contains(msg, needle) {
-			return true
-		}
+	return slices.ContainsFunc(providerGitErrorSubstrings, func(needle string) bool { return strings.Contains(msg, needle) })
+}
+
+// IsNetworkFailure reports a transient transport failure in Git's stderr.
+func IsNetworkFailure(err error) bool {
+	if err == nil {
+		return false
 	}
-	return false
+	msg := strings.ToLower(err.Error())
+	return slices.ContainsFunc(networkGitErrorSubstrings, func(needle string) bool { return strings.Contains(msg, needle) })
 }
 
 // retryTransient runs op with bounded exponential backoff, retrying only

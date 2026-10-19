@@ -7442,9 +7442,9 @@ func (s *Syncer) refreshPRCommentsForItem(
 			s.observeSync(ctx, repo, "merge_requests", nil)
 			return true, false
 		}
-		if disabled := repositoryFeatureDisabledError(
+		if disabled, recorded := s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureMergeRequests, err,
-		); disabled != nil && s.recordRepositoryFeatureDisabled(repo, platform.RepositoryFeatureMergeRequests, disabled) {
+		); recorded {
 			s.observeSync(ctx, repo, "merge_requests", disabled)
 			return true, true
 		}
@@ -7491,9 +7491,9 @@ func (s *Syncer) refreshIssueCommentsForItem(
 			s.observeSync(ctx, repo, "issues", nil)
 			return true, false
 		}
-		if disabled := repositoryFeatureDisabledError(
+		if disabled, recorded := s.recordGitHubRepositoryFeatureDisabled(
 			repo, platform.RepositoryFeatureIssues, err,
-		); disabled != nil && s.recordRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, disabled) {
+		); recorded {
 			s.observeSync(ctx, repo, "issues", disabled)
 			return true, true
 		}
@@ -11875,6 +11875,7 @@ func (s *Syncer) syncProviderMRDiff(
 			sourceBranch = ""
 		}
 		fetchErr := s.clones.FetchBitbucketMergeRequestHead(ctx, host, repo.Owner, repo.Name, number, normalized.HeadRepoCloneURL, sourceBranch, normalized.PlatformHeadSHA)
+		s.observeSync(ctx, repo, "refs", fetchErr)
 		if fetchErr != nil {
 			err = fmt.Errorf("fetch source head: %w", fetchErr)
 		} else {

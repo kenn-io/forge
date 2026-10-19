@@ -6,6 +6,11 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -70,12 +75,29 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 }
 
 func TestSyncFailedPreservesSiblingCauseUnderDisabledError(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget"}
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	for _, number := range []int{1, 2} {
+		_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: int64(number), Number: number, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+		require.NoError(t, err)
+	}
+	client := &partialFailureMock{}
+	calls := 0
+	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
+		calls++
+		if calls == 1 {
+			return nil, platform.ErrPermissionDenied
+		}
+		return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusGone}, Message: "Issues are disabled for this repo"}
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
 	var events [][2]string
-	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-	pass := &syncPass{}
-	pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, platform.ErrRepositoryFeatureDisabled, platform.ErrPermissionDenied))
-	s.finishSyncPass(pass, []RepoRef{repo})
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Equal(t, 2, calls)
 	assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
 }
 
@@ -214,26 +236,19 @@ func TestSyncFailedCredentialRoute(t *testing.T) {
 }
 
 func TestSyncFailedRefsAndChecks(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	clones := gitclone.New(t.TempDir(), gitclone.HostSources{"github.com": failingGitTokenSource{err: ErrMissingWriteIdentity}})
+	s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
+		p.checksErr = platform.ErrPermissionDenied
+	})
+	seedObservedMR(t, d, repoID, "")
+	clones := gitclone.New(t.TempDir(), gitclone.HostSources{"gitlab.example.com": failingGitTokenSource{err: ErrMissingWriteIdentity}})
 	t.Cleanup(clones.Wait)
-	client := &mockClient{listCheckRunsForRefFn: func(_ context.Context, _, _, sha string) ([]*gh.CheckRun, error) {
-		if sha == "b" {
-			return nil, platform.ErrPermissionDenied
-		}
-		return nil, nil
-	}}
-	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	pass := &syncPass{}
-	ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-	require.ErrorIs(t, s.ensureClone(ctx, repo), ErrMissingWriteIdentity)
-	for _, sha := range []string{"a", "b", "c"} {
-		_, err := s.fetchGitHubCIStatus(ctx, repo, 1, sha)
-		require.NoError(t, err)
-	}
+	s.clones = clones
+	bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
+	require.NoError(t, err)
+	s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.finishSyncPass(pass, []RepoRef{repo})
+	s.RunOnce(t.Context())
 	assert.Equal(t, [][2]string{{"checks", "auth"}, {"refs", "auth"}}, events)
 }
 
@@ -251,6 +266,8 @@ func TestSyncFailureReason(t *testing.T) {
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
+		{"git DNS", errors.New("fatal: unable to access 'https://example.com/repo.git/': Could not resolve host: example.com"), "network"},
+		{"git connection refused", errors.New("fatal: unable to access 'https://example.com/repo.git/': Failed to connect to example.com port 443: Connection refused"), "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
@@ -311,20 +328,6 @@ func TestSyncFailedResolvedIdentityRetainsUnreadOutage(t *testing.T) {
 	client.listOpenIssuesErr = platform.ErrPermissionDenied
 	s.RunOnce(t.Context())
 	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
-}
-
-func TestSyncFailedProviderCIAttribution(t *testing.T) {
-	s, d, repoID := newObservedGitLabSyncer(t, observedGitLabMR(seededHead, "clean"), func(p *observingReadProvider) {
-		p.checksErr = platform.ErrPermissionDenied
-	})
-	seedObservedMR(t, d, repoID, "")
-	bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
-	require.NoError(t, err)
-	s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
@@ -435,4 +438,116 @@ func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSyncFailedGitCloneErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		status     int
+	}{
+		{"server", "provider", http.StatusServiceUnavailable},
+		{"network", "network", 0},
+		{"auth", "auth", http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if tc.status != 0 {
+					w.WriteHeader(tc.status)
+					return
+				}
+				conn, _, err := http.NewResponseController(w).Hijack()
+				if err != nil {
+					return
+				}
+				if tcp, ok := conn.(*net.TCPConn); ok {
+					_ = tcp.SetLinger(0)
+				}
+				_ = conn.Close()
+			}))
+			t.Cleanup(server.Close)
+			host := strings.TrimPrefix(server.URL, "http://")
+			repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
+			provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(t, err)
+			clones := gitclone.New(t.TempDir(), nil)
+			clones.SetAllowInsecureHTTP("gitlab", host, true)
+			t.Cleanup(clones.Wait)
+			s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			require.Positive(t, calls.Load())
+			assert.Equal(t, [][2]string{{"refs", tc.want}}, events)
+		})
+	}
+}
+
+func TestSyncFailedBitbucketForkHead(t *testing.T) {
+	root := t.TempDir()
+	remote := setupBareRemoteForSyncTest(t)
+	work := filepath.Join(root, "work")
+	syncActivityGitRun(t, root, "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "test@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Test")
+	syncActivityGitRun(t, work, "commit", "--allow-empty", "-m", "base")
+	base := syncActivityGitRun(t, work, "rev-parse", "HEAD")
+	syncActivityGitRun(t, work, "push", "origin", "HEAD:main")
+	fork := filepath.Join(root, "contributor", "widget.git")
+	require.NoError(t, os.MkdirAll(filepath.Dir(fork), 0o755))
+	syncActivityGitRun(t, root, "clone", "--bare", remote, fork)
+	syncActivityGitRun(t, work, "commit", "--allow-empty", "-m", "fork head")
+	head := syncActivityGitRun(t, work, "rev-parse", "HEAD")
+	syncActivityGitRun(t, work, "push", fork, "HEAD:feature")
+	syncActivityGitRun(t, fork, "update-server-info")
+	var failing atomic.Bool
+	failing.Store(true)
+	var calls atomic.Int32
+	files := http.FileServer(http.Dir(root))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if failing.Load() {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	repo := RepoRef{Platform: platform.KindBitbucket, PlatformHost: host, Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: remote, DefaultBranch: "main"}
+	mr := observedGitLabMR(head, "clean")
+	mr.Repo = platformRepoRef(repo)
+	mr.BaseSHA = base
+	mr.HeadBranch = "feature"
+	mr.HeadRepoCloneURL = server.URL + "/contributor/widget.git"
+	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindBitbucket, host: host, mergeRequests: []platform.MergeRequest{mr}}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: remote, DefaultBranch: "main"}}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	clones := gitclone.New(t.TempDir(), nil)
+	clones.SetAllowInsecureHTTP("bitbucket", host, true)
+	t.Cleanup(clones.Wait)
+	d := openTestDB(t)
+	s := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	for range 2 {
+		s.RunOnce(t.Context())
+		require.Positive(t, calls.Load())
+		require.Equal(t, [][2]string{{"refs", "auth"}}, events)
+	}
+	failing.Store(false)
+	s.RunOnce(t.Context())
+	stored, err := d.GetMergeRequest(t.Context(), "bitbucket", host, repo.Owner, repo.Name, 1)
+	require.NoError(t, err)
+	require.Equal(t, head, stored.DiffHeadSHA)
+	syncActivityGitRun(t, work, "commit", "--allow-empty", "-m", "next fork head")
+	syncActivityGitRun(t, work, "push", fork, "HEAD:feature")
+	syncActivityGitRun(t, fork, "update-server-info")
+	provider.mergeRequests[0].HeadSHA = syncActivityGitRun(t, work, "rev-parse", "HEAD")
+	provider.mergeRequests[0].UpdatedAt = time.Now().UTC()
+	failing.Store(true)
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"refs", "auth"}, {"refs", "auth"}}, events)
 }

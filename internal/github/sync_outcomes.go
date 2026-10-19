@@ -10,6 +10,7 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
@@ -45,7 +46,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		// other source failed.
 		err = nil
 	}
-	if errors.Is(err, platform.ErrSyncDisabled) || errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 		p.observe(repo, source, nil)
 		//nolint:errorlint // Inspect immediate causes so disabled nodes cannot hide sibling failures.
 		switch wrapped := err.(type) {
@@ -196,9 +197,9 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError:
+	case errors.Is(err, context.DeadlineExceeded), networkError, gitclone.IsNetworkFailure(err):
 		return "network"
-	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600:
+	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600, gitclone.IsProviderFailure(err):
 		return "provider"
 	default:
 		return "other"

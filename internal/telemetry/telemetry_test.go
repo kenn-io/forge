@@ -129,8 +129,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 			backend := &fakeKitClient{}
 			reporter := &Reporter{daemon: daemon, backend: backend}
 
-			properties := map[string]any{"repo_count": "0-5"}
-			err := reporter.Capture(tt.event, properties)
+			err := reporter.Capture(tt.event, map[string]any{"repo_count": "0-5"})
 			switch {
 			case tt.wantErr != nil:
 				require.ErrorIs(t, err, tt.wantErr)

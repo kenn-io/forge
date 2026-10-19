@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -21,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
@@ -348,18 +351,31 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 }
 
 func TestSyncFailedIgnoresLocalCloneFailure(t *testing.T) {
-	parent := t.TempDir()
-	require.NoError(t, os.Chmod(parent, 0o500))
-	t.Cleanup(func() { require.NoError(t, os.Chmod(parent, 0o700)) })
-	clones := gitclone.New(parent, nil)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	parent := filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(parent, nil, 0o600))
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key:        tokenauth.Key{Platform: "gitlab", Host: host},
+		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
+	}, tokenauth.Options{})
+	clones := gitclone.New(t.TempDir(), gitclone.HostSources{host: source})
+	clones.SetAllowInsecureHTTP("gitlab", host, true)
 	t.Cleanup(clones.Wait)
-	repo := RepoRef{Owner: "acme", Name: "widget"}
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", CloneURL: server.URL + "/acme/widget.git"}
 	s := NewSyncer(nil, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	pass := &syncPass{}
 	err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-	require.ErrorIs(t, err, os.ErrPermission)
+	var pathErr *fs.PathError
+	require.ErrorAs(t, err, &pathErr)
+	assert.Zero(t, calls.Load())
 	s.finishSyncPass(pass, []RepoRef{repo})
 	assert.Empty(t, events)
 	assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")

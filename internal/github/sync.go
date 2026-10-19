@@ -2569,8 +2569,13 @@ func withCloneRepositoryIdentity(ctx context.Context, repo RepoRef) context.Cont
 
 func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 	err := s.clones.EnsureCloneValidated(
-		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, cloneRemoteURL(repo), nil,
+		ctx,
+		string(repoPlatform(repo)),
+		repoHost(repo),
+		repo.Owner,
+		repo.Name,
+		cloneRemoteURL(repo),
+		nil,
 	)
 	if _, local := errors.AsType[*fs.PathError](err); !local {
 		s.observeSync(ctx, repo, "refs", err)

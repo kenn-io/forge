@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"go.kenn.io/forge/internal/procutil"
@@ -1469,6 +1470,14 @@ func wrapGitError(err error, stderr []byte) error {
 	wrapped := gitCommandError{
 		message: errMsg + ": " + msg,
 		cause:   safeGitErrorCause(err),
+	}
+	// Preserve local errno identity for callers that distinguish remote failures.
+	for text, errno := range map[string]syscall.Errno{"permission denied": syscall.EACCES, "operation not permitted": syscall.EPERM, "no space left on device": syscall.ENOSPC, "read-only file system": syscall.EROFS} {
+		for line := range strings.SplitSeq(strings.ToLower(errMsg+"\n"+msg), "\n") {
+			if errors.Is(err, errno) || !strings.HasPrefix(line, "remote:") && strings.HasSuffix(strings.TrimSpace(line), ": "+text) {
+				wrapped.cause = errno
+			}
+		}
 	}
 	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		wrapped.exitCode = exitErr.ExitCode()

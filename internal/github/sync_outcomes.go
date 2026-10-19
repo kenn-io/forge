@@ -3,9 +3,11 @@ package github
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net"
 	"slices"
 	"sync"
+	"syscall"
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
@@ -31,7 +33,8 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	if syncBudgetWait(err) || errors.Is(err, context.Canceled) {
+	_, local := errors.AsType[*fs.PathError](err)
+	if local || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	reason := ""

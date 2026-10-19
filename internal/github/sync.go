@@ -7,7 +7,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net/url"
@@ -2577,9 +2576,7 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 		cloneRemoteURL(repo),
 		nil,
 	)
-	if _, local := errors.AsType[*fs.PathError](err); !local {
-		s.observeSync(ctx, repo, "refs", err)
-	}
+	s.observeSync(ctx, repo, "refs", err)
 	return s.recordGitAccess(repo, err)
 }
 

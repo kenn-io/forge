@@ -10,8 +10,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -54,6 +56,11 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		{"persistent failure overlaps new failure", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
 		{"cadence skipped", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
+		{"local path error", a, []observation{{a, fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})}}, []RepoRef{a, b}, a, 1, 1},
+		{"local access denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EACCES)}}, []RepoRef{a, b}, a, 1, 1},
+		{"local operation denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EPERM)}}, []RepoRef{a, b}, a, 1, 1},
+		{"local full disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.ENOSPC)}}, []RepoRef{a, b}, a, 1, 1},
+		{"local read-only disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.EROFS)}}, []RepoRef{a, b}, a, 1, 1},
 		{"disabled", a, []observation{{a, platform.ErrRepositoryFeatureDisabled}}, []RepoRef{a, b}, a, 1, 2},
 		{"untracked", a, []observation{{b, nil}}, []RepoRef{b}, a, 1, 2},
 		{"archived", a, []observation{{b, nil}}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
@@ -302,6 +309,97 @@ func TestSyncFailedRepositoryLookup(t *testing.T) {
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.RunOnce(t.Context())
 	require.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
+}
+
+func TestSyncFailedUnreadableCredentialFile(t *testing.T) {
+	for _, retained := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retained=%t", retained), func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			t.Cleanup(server.Close)
+			parent := filepath.Join(t.TempDir(), "blocked")
+			require.NoError(t, os.WriteFile(parent, nil, 0o600))
+			source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+				Key:        tokenauth.Key{Platform: "github", Host: "github.com"},
+				Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
+			}, tokenauth.Options{})
+			client, err := NewClient(source, "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+			require.NoError(t, err)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			if retained {
+				pass := &syncPass{}
+				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
+				s.finishSyncPass(pass, []RepoRef{repo})
+			}
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			var results []RepoSyncResult
+			s.SetOnSyncCompleted(func(got []RepoSyncResult) { results = got })
+			s.RunOnce(t.Context())
+			require.Len(t, results, 1)
+			require.Contains(t, results[0].Error, parent)
+			assert.Zero(t, calls.Load())
+			assert.Empty(t, events)
+			for _, source := range []string{"merge_requests", "issues"} {
+				assert.Equal(t, retained, s.syncFailures[source][mergeQueueRepoKey(repo)])
+			}
+		})
+	}
+}
+
+func TestSyncFailedUnwritableFetchHead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix file permissions")
+	}
+	f := setupSyncBranchActivityFixture(t, "main")
+	syncActivityCommit(t, f.Work, "example.txt", "example", "initial")
+	syncActivityGitRun(t, f.Work, "push", "origin", "main")
+	syncActivityGitRun(t, f.Remote, "update-server-info")
+	var calls atomic.Int32
+	files := http.StripPrefix("/group/project.git", http.FileServer(http.Dir(f.Remote)))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		files.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+	f.Repo.CloneURL = server.URL + "/group/project.git"
+	f.Repo.PlatformHost = strings.TrimPrefix(server.URL, "http://")
+	f.Syncer.clones.SetAllowInsecureHTTP("gitlab", f.Repo.PlatformHost, true)
+	t.Cleanup(f.Syncer.clones.Wait)
+	require.NoError(t, f.Syncer.ensureClone(t.Context(), f.Repo))
+	clone, err := f.Syncer.clones.ClonePath("gitlab", f.Repo.PlatformHost, f.Repo.Owner, f.Repo.Name)
+	require.NoError(t, err)
+	head := filepath.Join(clone, "FETCH_HEAD")
+	require.NoError(t, os.WriteFile(head, nil, 0o400))
+	require.NoError(t, os.Chmod(head, 0o400))
+	defer func() { require.NoError(t, os.Chmod(head, 0o600)) }()
+	if file, err := os.OpenFile(head, os.O_WRONLY, 0); err == nil {
+		require.NoError(t, file.Close())
+		t.Skip("user can write read-only files")
+	}
+	for _, retained := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retained=%t", retained), func(t *testing.T) {
+			f.Syncer.syncFailures = nil
+			if retained {
+				f.Syncer.syncFailures = map[string]map[string]bool{"refs": {mergeQueueRepoKey(f.Repo): true}}
+			}
+			var events [][2]string
+			f.Syncer.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			calls.Store(0)
+			pass := &syncPass{}
+			err := f.Syncer.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), f.Repo)
+			require.ErrorContains(t, err, "Permission denied")
+			assert.Zero(t, calls.Load())
+			assert.NotContains(t, pass.results, "refs")
+			f.Syncer.finishSyncPass(pass, []RepoRef{f.Repo})
+			assert.Empty(t, events)
+			assert.Equal(t, retained, f.Syncer.syncFailures["refs"][mergeQueueRepoKey(f.Repo)])
+		})
+	}
 }
 
 func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {

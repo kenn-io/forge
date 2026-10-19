@@ -701,9 +701,9 @@ Disable telemetry with:
 TELEMETRY_ENABLED=0 kenn-forge daemon start
 ```
 
-After the daemon confirms telemetry is disabled, the browser stops telemetry
-requests and pauses visit timers. A later UTC day's page load or focus checks
-permission again; an enabled reply resumes timing with the prior visible time.
+Once the daemon reports telemetry as disabled, the web UI stops sending events.
+If you turn telemetry back on, the web UI resumes on the next UTC day, even if
+you reload the page sooner.
 
 ## Container startup
 

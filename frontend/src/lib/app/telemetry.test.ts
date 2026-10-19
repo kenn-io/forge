@@ -88,6 +88,18 @@ describe("browser telemetry", () => {
     expect(sent).toHaveLength(2);
   });
 
+  it("drops stored core action history after a disabled receipt", async () => {
+    let status = "queued";
+    const { sent, runtime, reporter } = setup(async () => Response.json({ status }, { status: 202 }));
+    const actionHistory = () => Object.keys(localStorage).filter((item) => item.includes("pr_viewed"));
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    reportPRViewed(runtime, "github");
+    await vi.waitFor(() => expect(actionHistory()).toHaveLength(1));
+    status = "disabled";
+    reporter.reportScreen("docs");
+    await vi.waitFor(() => expect(actionHistory()).toEqual([]));
+  });
+
   it.each(["same day", "expired day", "recovering after opt-out"])(
     "canonicalizes and deduplicates pending actions, expires old days, and readmits next day: %s",
     async (mode) => {

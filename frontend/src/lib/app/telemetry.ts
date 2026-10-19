@@ -76,39 +76,40 @@ const coreKey = (action: VisitEvent) =>
       : undefined;
 
 /**
- * Keeps core actions a 202 receipt confirmed, like kit-ui's claim history: one item per
- * UTC date ranked newest last, with the 35 newest kept per key. Blocked storage reads as
- * unclaimed and drops writes, leaving the page-local guard.
+ * Keeps the last UTC day a 202 receipt confirmed each core action. Tabs racing at
+ * midnight can overwrite each other's day, costing one send the daemon deduplicates.
+ * Blocked storage reads as unclaimed and drops writes, leaving the page-local guard.
  */
 function actionClaims(storageKey: string) {
-  const prefix = (key: string) => `${storageKey}.actions.v1.${encodeURIComponent(key)}:`;
-  const rank = (item: string) => Number(localStorage.getItem(item)) || 0;
+  const prefix = `${storageKey}.actions.v1.`;
+  const item = (key: string) => prefix + encodeURIComponent(key);
   const has = (key: string, day: string) => {
     try {
-      return localStorage.getItem(prefix(key) + day) !== null;
+      return localStorage.getItem(item(key)) === day;
     } catch {
       return false;
     }
   };
   const add = (key: string, day: string) => {
     try {
-      const items = Object.keys(localStorage)
-        .filter((item) => item.startsWith(prefix(key)) && item !== prefix(key) + day)
-        .sort((a, b) => rank(a) - rank(b));
-      localStorage.setItem(prefix(key) + day, String(Math.max(0, ...items.map(rank)) + 1));
-      for (const item of items.slice(0, -34)) localStorage.removeItem(item);
+      localStorage.setItem(item(key), day);
     } catch {
       /* The page-local guard still holds this claim. */
     }
   };
-  return { has, add };
+  // Opting out drops these claims, like kit-ui drops stored screen names.
+  const forget = () => {
+    try {
+      for (const stored of Object.keys(localStorage)) if (stored.startsWith(prefix)) localStorage.removeItem(stored);
+    } catch {
+      /* Blocked storage holds no claims to drop. */
+    }
+  };
+  return { has, add, forget };
 }
 
-const accepted = (data: unknown) =>
-  data !== null &&
-  typeof data === "object" &&
-  "status" in data &&
-  (data.status === "queued" || data.status === "skipped");
+const replyStatus = (data: unknown) =>
+  data !== null && typeof data === "object" && "status" in data ? data.status : undefined;
 
 /** Hands a 202 receipt's body to `read` once the gate reads it, even when the body is unreadable. */
 function observeReceipt(response: TelemetryReceipt, read: (data: unknown) => void): TelemetryReceipt {
@@ -199,7 +200,9 @@ export function startRuntimeTelemetry(
         if (response.status !== 202) return response;
         // Actions dropped during backoff resend once the gate has applied this receipt.
         return observeReceipt(response, (data) => {
-          if (key && accepted(data)) stored.add(key, day);
+          const status = replyStatus(data);
+          if (status === "disabled") stored.forget();
+          else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
           setTimeout(flush, 0);
         });
       } catch (error) {

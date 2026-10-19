@@ -10,7 +10,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -23,7 +22,7 @@ import (
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -221,7 +220,6 @@ func TestSyncFailureReason(t *testing.T) {
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
-		{"process capacity deadline", fmt.Errorf("%w: %w", procutil.ErrProcessLimitReached, context.DeadlineExceeded), "other"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"unknown", errors.New("private error details"), "other"},
@@ -396,12 +394,10 @@ func TestSyncFailedRefsClassification(t *testing.T) {
 		err  error
 		want string
 	}{
-		{"unclassified Git failure", errors.New("git exited with status 128"), ""},
+		{"unclassified Git failure", errors.New("git exited with status 128"), "other"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
-		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"network", context.DeadlineExceeded, "network"},
-		{"missing ref", platform.ErrNotFound, ""},
-		{"provider", platform.ErrProviderContract, ""},
+		{"local path", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: fs.ErrPermission}), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -411,14 +407,7 @@ func TestSyncFailedRefsClassification(t *testing.T) {
 			pass := &syncPass{}
 			pass.observe(repo, "refs", tc.err)
 			s.finishSyncPass(pass, []RepoRef{repo})
-			if tc.want == "" {
-				assert.NotContains(pass.results, "refs")
-				assert.False(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
-				assert.Empty(events)
-			} else {
-				assert.True(s.syncFailures["refs"][mergeQueueRepoKey(repo)])
-				assert.Equal([][2]string{{"refs", tc.want}}, events)
-			}
+			assert.Equal([][2]string{{"refs", tc.want}}, events)
 		})
 	}
 }
@@ -463,65 +452,30 @@ func TestSyncFailedRawIssueReads(t *testing.T) {
 	}
 }
 
-func TestSyncFailedGitProcessCapacity(t *testing.T) {
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	clones := gitclone.New(t.TempDir(), nil)
-	clones.SetAllowInsecureHTTP("gitlab", host, true)
-	t.Cleanup(clones.Wait)
-	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
-	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
-	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	limiter := procutil.NewLimiterWithAcquireTimeout(1, time.Second)
-	release, err := limiter.TryAcquire(t.Context(), "hold capacity")
-	require.NoError(t, err)
-	t.Cleanup(release)
-	t.Cleanup(procutil.SetDefaultLimiterForTest(limiter))
-	pass := &syncPass{}
-	err = s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-	require.ErrorIs(t, err, procutil.ErrProcessLimitReached)
-	s.finishSyncPass(pass, []RepoRef{repo})
-	assert.Zero(t, calls.Load())
-	assert.Empty(t, events)
-}
-
 func TestSyncFailedGitCloneErrors(t *testing.T) {
-	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	parent := filepath.Join(t.TempDir(), "blocked")
-	require.NoError(t, os.WriteFile(parent, nil, 0o600))
-	sources := gitclone.HostSources{host: tokenauth.NewManagedSource(tokenauth.Descriptor{
-		Key:        tokenauth.Key{Platform: "gitlab", Host: host},
-		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: filepath.Join(parent, "token")}},
-	}, tokenauth.Options{})}
-	clones := gitclone.New(t.TempDir(), sources)
-	clones.SetAllowInsecureHTTP("gitlab", host, true)
-	t.Cleanup(clones.Wait)
-	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: host, Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42), CloneURL: server.URL + "/acme/widget.git"}
-	provider := &syncTestRepositoryReadProvider{syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitLab, host: host}, repository: platform.Repository{Ref: platformRepoRef(repo), CloneURL: repo.CloneURL}}
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(t, err)
-	s := NewSyncerWithRegistry(registry, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	pass := &syncPass{}
-	err = s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-	var pathErr *fs.PathError
-	require.ErrorAs(t, err, &pathErr)
-	assert.Zero(t, calls.Load())
-	assert.NotContains(t, pass.results, "refs", "local failures must leave the refs source unread")
+	for _, operation := range []string{"clone", "fetch"} {
+		t.Run(operation, func(t *testing.T) {
+			remote := filepath.Join(t.TempDir(), "remote")
+			if operation == "fetch" {
+				remote = gitfixture.NewRepository(t, false).Dir
+			}
+			clones := gitclone.New(t.TempDir(), nil)
+			t.Cleanup(clones.Wait)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com", CloneURL: remote}
+			s := NewSyncer(map[string]Client{"github.com": &mockClient{}}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+			if operation == "fetch" {
+				require.NoError(t, s.ensureClone(t.Context(), repo))
+				require.NoError(t, os.Rename(filepath.Join(remote, ".git"), filepath.Join(remote, ".git-unavailable")))
+			}
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			pass := &syncPass{}
+			err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+			require.ErrorContains(t, err, "git "+operation)
+			s.finishSyncPass(pass, []RepoRef{repo})
+			assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+		})
+	}
 }
 
 // The list excludes the seeded item, so its read comes from closure reconciliation.

@@ -1497,12 +1497,16 @@ func (e gitCommandError) ExitCode() (int, bool) {
 }
 
 func safeGitErrorCause(err error) error {
-	for _, cause := range []error{procutil.ErrProcessLimitReached, context.Canceled, context.DeadlineExceeded, tokenauth.ErrMissingToken} {
-		if errors.Is(err, cause) {
-			return cause
-		}
+	switch {
+	case errors.Is(err, context.Canceled):
+		return context.Canceled
+	case errors.Is(err, context.DeadlineExceeded):
+		return context.DeadlineExceeded
+	case errors.Is(err, tokenauth.ErrMissingToken):
+		return tokenauth.ErrMissingToken
+	default:
+		return nil
 	}
-	return nil
 }
 
 func gitExitCode(err error) (int, bool) {

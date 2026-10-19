@@ -681,9 +681,9 @@ produce no additional event. It sends
 only `sync_source` (`merge_requests`, `issues`, `checks`, or `refs`) and `reason`
 (`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`), with
 unlisted values sent as `other`. Primary list, detail, and CI reads contribute
-to the count. Clone and fetch failures count when Git reports an authentication
-failure or a timeout. Other Git failures, such as DNS, local disk, or permission
-errors, leave the source unread. Skipped reads keep prior state; observed recovery
+to the count. Clone and fetch failures count, with `auth` or `network` when
+the cause is clear, otherwise `other`. Local file and permission errors in
+non-clone reads leave the source unread. Skipped reads keep prior state; observed recovery
 or disablement clears it, and archived or untracked repositories drop out.
 Counts are approximate: state stays in memory, and a restart or repository
 identity change can count an outage twice. These properties identify no repository.

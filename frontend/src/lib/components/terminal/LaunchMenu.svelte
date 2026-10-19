@@ -5,7 +5,7 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "./LaunchTargetName.svelte";
-  import { isVisibleLaunchTarget } from "./launchTargets";
+  import { visibleLaunchTargets } from "./launchTargets";
   import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface LaunchMenuProps {
@@ -36,7 +36,7 @@
   let rootEl = $state<HTMLDivElement | null>(null);
   let panelEl = $state<HTMLDivElement | null>(null);
 
-  const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
+  const visibleTargets = $derived(visibleLaunchTargets(launchTargets));
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
 
   $effect(() => {

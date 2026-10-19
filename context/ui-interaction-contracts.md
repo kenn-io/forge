@@ -165,6 +165,9 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
 - Every quick-action list is ordered by action title, ignoring case, not by settings order
   (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
+- Every launch-target list orders agents by label, ignoring case, whether configured or
+  builtin; shell targets follow them
+  (`frontend/src/lib/components/terminal/launchTargets.ts::sortLaunchTargets`).
 - Every quick-action surface resolves the action's agent against both `agent` and `acp`
   launch targets; ACP targets are valid quick-action agents
   (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).

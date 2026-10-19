@@ -8,7 +8,7 @@
   import PlayIcon from "@lucide/svelte/icons/play";
   import ZapIcon from "@lucide/svelte/icons/zap";
   import LaunchTargetName from "./LaunchTargetName.svelte";
-  import { isVisibleLaunchTarget } from "./launchTargets";
+  import { visibleLaunchTargets } from "./launchTargets";
   import { sortQuickActionsByLabel } from "../../stores/workspace-quick-actions.js";
 
   interface WorkspaceLauncherProps {
@@ -38,7 +38,7 @@
     onOpenSession,
   }: WorkspaceLauncherProps = $props();
 
-  const visibleTargets = $derived(launchTargets.filter(isVisibleLaunchTarget));
+  const visibleTargets = $derived(visibleLaunchTargets(launchTargets));
   // ACP agents open a chat, not a terminal, so they get their own section.
   const terminalTargets = $derived(visibleTargets.filter((target) => target.kind !== "acp"));
   const acpTargets = $derived(visibleTargets.filter((target) => target.kind === "acp"));

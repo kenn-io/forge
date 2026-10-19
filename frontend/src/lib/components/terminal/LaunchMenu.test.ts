@@ -128,6 +128,31 @@ describe("LaunchMenu", () => {
     expect(onLaunch).toHaveBeenCalledWith("codex");
   });
 
+  it("lists configured and builtin agents alphabetically with the shell last", async () => {
+    render(LaunchMenu, {
+      props: {
+        launchTargets: [
+          { key: "claude", label: "Claude", kind: "agent", source: "config", available: true },
+          { key: "pi", label: "pi", kind: "agent", source: "config", available: true },
+          { key: "claude-acp", label: "claude-acp", kind: "acp", source: "config", available: true },
+          { key: "gemini", label: "Gemini", kind: "agent", source: "builtin", available: true },
+          { key: "aider", label: "aider", kind: "agent", source: "builtin", available: false },
+          { key: "plain_shell", label: "Shell", kind: "plain_shell", source: "system", available: true },
+        ],
+        onLaunch: vi.fn(),
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Launch" }));
+
+    const menu = screen.getByRole("dialog", { name: "Run configurations" });
+    expect(
+      within(menu)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(["aider", "Claude", "claude-acp", "Gemini", "pi", "Shell"]);
+  });
+
   it("draws a harness glyph for agents whose key matches one and keeps the generic icon otherwise", async () => {
     render(LaunchMenu, {
       props: {

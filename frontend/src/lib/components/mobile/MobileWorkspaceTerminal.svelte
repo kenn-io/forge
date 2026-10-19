@@ -74,6 +74,7 @@
     mobileWorkspaceLinkedItem,
   } from "./mobile-workspace-detail.js";
   import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
+  import { sortLaunchTargets } from "../terminal/launchTargets.js";
   import {
     loadMobileWorkspaceSession,
     saveMobileWorkspaceSession,
@@ -143,7 +144,7 @@
 
   const sessions = $derived(mobileTerminalSessions(runtime, workspace));
   const launchTargets = $derived(runtime?.launch_targets ?? []);
-  const availableLaunchTargets = $derived(launchTargets.filter((target) => target.available));
+  const availableLaunchTargets = $derived(sortLaunchTargets(launchTargets.filter((target) => target.available)));
   const sessionOptions = $derived<SelectDropdownOption[]>(
     sessions.map((session) => ({ value: session.key, label: session.label })),
   );

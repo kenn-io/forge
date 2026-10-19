@@ -732,7 +732,7 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     },
   );
 
-  it("keeps expanded thoughts, disclosures and inner scroll positions when steering splits their group", async () => {
+  it.each([false, true])("keeps expanded details and inner scroll through steering (hidden: %s)", async (hidden) => {
     const { host } = await renderChat(900);
     const thought = {
       id: "entry-11",
@@ -826,6 +826,7 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     conversation.dispatchEvent(new Event("scroll"));
     await nextFrame();
     const before = output.getBoundingClientRect().top;
+    if (hidden) host.style.display = "none";
     socket.options!.onMessage(
       encodeFixture({
         updates: {
@@ -840,6 +841,13 @@ describe("ACPWorkspace transcript paging (browser)", () => {
         },
       }),
     );
+    if (hidden) {
+      await nextFrame();
+      await nextFrame();
+      expect(terminalOutput.isConnected).toBe(false);
+      expect(scrollRegions()[0]!.getClientRects()).toHaveLength(0);
+      host.style.display = "flex";
+    }
     await expect
       .element(page.getByRole("button", { name: "Thinking", exact: true }))
       .toHaveAttribute("aria-expanded", "true");
@@ -848,9 +856,12 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     await nextFrame();
     expect(oldThought.isConnected).toBe(false);
     expect(terminalOutput.isConnected).toBe(false);
-    expect(scrollRegions().map((region) => ({ top: region.scrollTop, left: region.scrollLeft }))).toEqual(priorScroll);
+    await expect
+      .poll(() => scrollRegions().map((region) => ({ top: region.scrollTop, left: region.scrollLeft })))
+      .toEqual(priorScroll);
     expect(host.querySelector(".thought-body")!.textContent).toContain(thought.text);
-    expect(Math.abs(rawDetails()[1]!.querySelector("pre")!.getBoundingClientRect().top - before)).toBeLessThan(2);
+    if (!hidden)
+      expect(Math.abs(rawDetails()[1]!.querySelector("pre")!.getBoundingClientRect().top - before)).toBeLessThan(2);
   });
 
   it("keeps the reader's place when earlier messages load above", async () => {

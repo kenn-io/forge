@@ -571,6 +571,55 @@ describe("App feature routes", () => {
     }
   });
 
+  it("preserves visible duration while a later-day permission check pauses tracking", async () => {
+    startup.autoReady = false;
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T23:58:00Z"));
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    vi.spyOn(document, "hidden", "get").mockReturnValue(false);
+    const receipt = Promise.withResolvers<Response>();
+    const posts: Array<{ event: string; properties: Record<string, string> }> = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+      posts.push(await new Request(input, init).json());
+      return posts.length === 2 ? receipt.promise : Response.json({ status: "queued" }, { status: 202 });
+    });
+    const startReporter = vi.spyOn(telemetry, "startRuntimeTelemetry");
+    const owner = makeTestAppRuntime();
+    const runtime: OwnedAppRuntime = {
+      ...testAppRuntime(() => {}),
+      disposeEffect: owner.disposeEffect,
+      runCommand: (program, options) =>
+        options.operation === "report app opens"
+          ? owner.runCommand(program, options)
+          : testAppRuntime(() => {}).runCommand(program, options),
+    };
+    const mounted = mountApplication(createAppTarget(), runtime);
+    try {
+      const quiet = vi.fn();
+      startReporter.mock.results[0]!.value.onQuietChange(quiet);
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      now = 240_000;
+      vi.setSystemTime(new Date("2026-10-18T00:02:00Z"));
+      window.dispatchEvent(new Event("focus"));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      now += 600_000;
+      receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      now += 120_000;
+      window.dispatchEvent(new Event("pagehide"));
+      await vi.waitFor(() =>
+        expect(posts.at(-1)).toEqual({
+          event: "session_ended",
+          properties: { surface: "web", duration_bucket: "5_to_30m" },
+        }),
+      );
+    } finally {
+      await Effect.runPromise(mounted.dispose);
+      vi.useRealTimers();
+    }
+  });
+
   it("stops session reporting after a disabled receipt", async () => {
     startup.autoReady = false;
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });

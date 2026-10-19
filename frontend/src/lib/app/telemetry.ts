@@ -3,6 +3,8 @@ import {
   type BrowserTelemetryOptions,
   type VisitEvent,
 } from "@kenn-io/kit-ui/utils/browser-telemetry";
+import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
+import { orvalRequest } from "../api/runtime.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import { canonicalProvider } from "../api/provider-routes.js";
 import type { AppRuntime } from "./runtime.js";
@@ -80,30 +82,40 @@ const reporters = new WeakMap<
   }
 >();
 
-export function startRuntimeTelemetry(runtime: AppRuntime, options: BrowserTelemetryOptions) {
+export function startRuntimeTelemetry(
+  runtime: AppRuntime,
+  options: Partial<Pick<BrowserTelemetryOptions, "storageKey" | "post">> = {},
+) {
   const reportedDay = new Map<string, string>();
   const pending = new Map<string, { action: CoreAction; day: string }>();
-  let quiet = true;
-  let disabled = false;
+  const post: BrowserTelemetryOptions["post"] =
+    options.post ??
+    ((route, event, visitOptions) =>
+      orvalRequest(route, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(event),
+        keepalive: visitOptions?.keepalive ?? false,
+      }));
   const reporter = startBrowserTelemetry({
+    route: getCaptureTelemetryEventUrl(),
+    surface: "web",
+    storageKey: "kit-ui.app-opened.web",
     ...options,
     post: async (route, event, visitOptions) => {
       const key = coreKey(event);
       const day = today();
-      if (key) reportedDay.set(key, day);
+      if (key) {
+        reportedDay.set(key, day);
+        pending.delete(key);
+      }
       const release = () => {
         if (key && reportedDay.get(key) === day) reportedDay.delete(key);
       };
       try {
-        const response = await options.post(route, event, visitOptions);
+        const response = await post(route, event, visitOptions);
         if (response.status < 200 || response.status >= 300) release();
-        if (response.status !== 202) return response;
-        const data: unknown = "data" in response ? response.data : await response.json().catch(() => undefined);
-        if (data && typeof data === "object" && "status" in data && data.status === "disabled") {
-          disabled = true;
-          pending.clear();
-        }
-        return { status: response.status, data };
+        return response;
       } catch (error) {
         release();
         throw error;
@@ -115,10 +127,7 @@ export function startRuntimeTelemetry(runtime: AppRuntime, options: BrowserTelem
     reporter.reportVisit({ event: action.event, properties: { ...action.properties, surface: "web" } });
   };
   const unsubscribe = reporter.onQuietChange((value) => {
-    quiet = value;
-    if (quiet) pending.clear();
-    else {
-      disabled = false;
+    if (!value) {
       const actions = [...pending.values()];
       pending.clear();
       for (const { action, day } of actions) if (day === today()) send(action);
@@ -127,9 +136,8 @@ export function startRuntimeTelemetry(runtime: AppRuntime, options: BrowserTelem
   reporters.set(runtime, {
     reportScreen: (screen) => reporter.reportScreen(screen),
     reportAction: (action) => {
-      if (disabled) return;
-      if (quiet) pending.set(coreKey(action)!, { action, day: today() });
-      else send(action);
+      pending.set(coreKey(action)!, { action, day: today() });
+      send(action);
     },
   });
   return {

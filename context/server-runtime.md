@@ -10,7 +10,8 @@
   preserve existing claims during upgrades
   (`internal/telemetry/daily.go::initializeDailyClaims`).
 - Browser screens, visits, and core actions share kit-ui's daily permission gate;
-  quiet stops visit tracking, and pending core actions expire with their UTC day
+  quiet pauses visit timing until a later UTC day checks permission again;
+  preserve accrued time, and expire pending core actions with their UTC day
   (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
 - Core action telemetry uses the same Kit daily claims: `pr_viewed` per provider
   and `workspace_opened` per workspace type, once per installation and UTC day.

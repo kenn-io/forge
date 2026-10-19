@@ -4,8 +4,6 @@ import { Cause, Effect, Exit, Fiber } from "effect";
 import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
-import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
-import { orvalRequest } from "../api/runtime.js";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";
@@ -54,34 +52,23 @@ const observeMarkdownMermaidRendering = (target: HTMLElement) =>
 const reportAppOpens = (runtime: OwnedAppRuntime) =>
   Effect.acquireRelease(
     Effect.sync(() => {
-      const reporter = startRuntimeTelemetry(runtime, {
-        route: getCaptureTelemetryEventUrl(),
-        surface: "web",
-        storageKey: "kit-ui.app-opened.web",
-        post: (route, event, options) =>
-          orvalRequest(route, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(event),
-            keepalive: options?.keepalive ?? false,
-          }),
-      });
-      let stopSessions: (() => void) | undefined;
+      const reporter = startRuntimeTelemetry(runtime);
+      let sessions: ReturnType<typeof startSessionDurationReporting> | undefined;
       const unsubscribe = reporter.onQuietChange((quiet) => {
-        stopSessions?.();
-        stopSessions = quiet
-          ? undefined
-          : startSessionDurationReporting((duration) => {
-              reporter.reportVisit(
-                { event: "session_ended", properties: { surface: "web", duration_bucket: duration } },
-                { keepalive: true },
-              );
-            });
+        if (quiet) sessions?.pause();
+        else if (sessions) sessions.resume();
+        else
+          sessions = startSessionDurationReporting((duration) => {
+            reporter.reportVisit(
+              { event: "session_ended", properties: { surface: "web", duration_bucket: duration } },
+              { keepalive: true },
+            );
+          });
       });
       return () => {
         reporter.stop();
         unsubscribe();
-        stopSessions?.();
+        sessions?.stop();
       };
     }),
     (stop) => Effect.sync(stop),

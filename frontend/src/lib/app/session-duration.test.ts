@@ -4,7 +4,7 @@ import { startSessionDurationReporting } from "./session-duration.js";
 describe("session duration reporting", () => {
   let now: number;
   let hidden: boolean;
-  let stop: (() => void) | undefined;
+  let sessions: ReturnType<typeof startSessionDurationReporting> | undefined;
   const send = vi.fn();
   const advance = (ms: number) => {
     now += ms;
@@ -24,13 +24,13 @@ describe("session duration reporting", () => {
     vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
   });
   afterEach(() => {
-    stop?.();
+    sessions?.stop();
     vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
   it("sums twenty visible minutes across tab switches into one session", () => {
-    stop = startSessionDurationReporting(send);
+    sessions = startSessionDurationReporting(send);
     for (let i = 0; i < 20; i++) {
       advance(60_000);
       visibility(true);
@@ -43,7 +43,7 @@ describe("session duration reporting", () => {
   });
 
   it("ends a session after thirty hidden minutes and starts fresh on return", () => {
-    stop = startSessionDurationReporting(send);
+    sessions = startSessionDurationReporting(send);
     advance(120_000);
     visibility(true);
     advance(1_799_999);
@@ -57,7 +57,7 @@ describe("session duration reporting", () => {
   });
 
   it("ends a session hidden past thirty minutes when its timer was suspended", () => {
-    stop = startSessionDurationReporting(send);
+    sessions = startSessionDurationReporting(send);
     advance(120_000);
     visibility(true);
     now += 2_400_000;
@@ -70,11 +70,28 @@ describe("session duration reporting", () => {
     expect(send.mock.calls).toEqual([["1_to_5m"], ["1_to_5m"]]);
   });
 
+  it("cancels hidden expiry while paused and preserves visible time on resume", () => {
+    sessions = startSessionDurationReporting(send);
+    advance(240_000);
+    visibility(true);
+    expect(vi.getTimerCount()).toBe(1);
+    sessions.pause();
+    expect(vi.getTimerCount()).toBe(0);
+    advance(1_800_000);
+    visibility(false);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(send).not.toHaveBeenCalled();
+    sessions.resume();
+    advance(120_000);
+    window.dispatchEvent(new Event("pagehide"));
+    expect(send.mock.calls).toEqual([["5_to_30m"]]);
+  });
+
   it("drops pending time and removes listeners on cleanup", () => {
-    stop = startSessionDurationReporting(send);
+    sessions = startSessionDurationReporting(send);
     advance(120_000);
     visibility(true);
-    stop();
+    sessions.stop();
     advance(1_800_000);
     visibility(false);
     window.dispatchEvent(new Event("pageshow"));

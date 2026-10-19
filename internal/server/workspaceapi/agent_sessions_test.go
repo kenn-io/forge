@@ -82,7 +82,7 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 		SessionID: "shared-session", CWD: worktree,
 		HookEventName: "Stop",
 	}, agentRuntime.Key))
-	require.NoError(activity.HandleEvent("opencode", agentactivity.HookEvent{
+	require.NoError(activity.HandleEvent("unsupported-agent", agentactivity.HookEvent{
 		SessionID: "unsupported", CWD: worktree,
 		HookEventName: "UserPromptSubmit",
 	}, agentRuntime.Key))

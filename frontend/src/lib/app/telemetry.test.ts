@@ -1,7 +1,6 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 import { makeAppRuntime } from "./runtime.js";
-import { orvalRequest } from "../api/runtime.js";
 import { getRoute, replaceUrl } from "../stores/router.svelte.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
 import { startRuntimeTelemetry, reportPRViewed, reportWorkspaceOpened, visibleScreen } from "./telemetry.js";
@@ -55,25 +54,15 @@ describe("browser telemetry", () => {
       return reply();
     });
     const runtime = makeAppRuntime(makeGeneratedClient());
-    const options = {
-      route: "/api/v1/telemetry/events",
-      surface: "web",
-      storageKey: "test.browser.telemetry",
-      post: (route: string, event: unknown, options?: { keepalive?: boolean }) =>
-        orvalRequest(route, {
-          method: "POST",
-          body: JSON.stringify(event),
-          keepalive: options?.keepalive ?? false,
-        }),
-    };
-    const reporter = startRuntimeTelemetry(runtime, options);
+    const restart = () => startRuntimeTelemetry(runtime, { storageKey: "test.browser.telemetry" });
+    const reporter = restart();
     const quiet = vi.fn();
     reporter.onQuietChange(quiet);
     onTestFinished(async () => {
       reporter.stop();
       await Effect.runPromise(runtime.disposeEffect);
     });
-    return { sent, runtime, reporter, quiet };
+    return { sent, runtime, reporter, quiet, restart };
   }
 
   it("sends nothing after an enabled gate receives a disabled receipt", async () => {
@@ -95,6 +84,50 @@ describe("browser telemetry", () => {
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(0);
     expect(sent).toHaveLength(2);
+  });
+
+  it("keeps core actions while a later-day check recovers from opt-out", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    const receipt = Promise.withResolvers<Response>();
+    let checking = false;
+    const { sent, runtime, quiet } = setup(() =>
+      checking
+        ? receipt.promise.then((response) => response.clone())
+        : Promise.resolve(Response.json({ status: "disabled" }, { status: 202 })),
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    checking = true;
+    vi.setSystemTime(new Date("2026-10-18T12:00:00Z"));
+    window.dispatchEvent(new Event("focus"));
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    reportPRViewed(runtime, "github");
+    reportWorkspaceOpened(runtime, "adhoc");
+    expect(sent).toHaveLength(2);
+    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    await vi.waitFor(() =>
+      expect(sent.slice(2)).toEqual([
+        { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+        { event: "workspace_opened", properties: { item_type: "adhoc", surface: "web" } },
+      ]),
+    );
+  });
+
+  it("keeps screen claims when the runtime reporter restarts", async () => {
+    const { sent, reporter, quiet, restart } = setup();
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    reporter.reportScreen("docs");
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    reporter.stop();
+    const next = restart();
+    onTestFinished(() => next.stop());
+    next.reportScreen("docs");
+    next.reportScreen("settings");
+    await vi.waitFor(() => expect(sent).toHaveLength(3));
+    expect(sent.map((event) => event.properties.screen)).toEqual([undefined, "docs", "settings"]);
   });
 
   it.each([false, true])("admits pending core actions only on their UTC day, rollover: %s", async (rollover) => {

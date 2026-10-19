@@ -7429,6 +7429,7 @@ func (s *Syncer) refreshPRCommentsForItem(
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, pr.Number, pr.CommentCount,
 	)
+	s.observeSync(ctx, repo, "merge_requests", syncReadError(err))
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
 			return true, false
@@ -7474,6 +7475,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 	comments, err := s.listCommentsForRefresh(
 		ctx, client, repo, issue.Number, issue.CommentCount,
 	)
+	s.observeSync(ctx, repo, "issues", syncReadError(err))
 	if err != nil {
 		if platformgithub.IsNotModified(err) {
 			return true, false
@@ -8176,6 +8178,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	var ciChecks []db.CICheck
 	var ciJSON []byte
 	if bulk.CIComplete {
+		s.observeSync(ctx, repo, "checks", nil)
 		ciChecks = normalizeBulkCI(bulk)
 		if ciChecks == nil {
 			ciChecks = []db.CICheck{}
@@ -10802,6 +10805,7 @@ func (s *Syncer) drainDetailQueue(
 			)
 		}
 		if providerCalls > 0 {
+			s.observeSync(itemCtx, repo, feature, err)
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
 

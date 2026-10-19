@@ -102,7 +102,7 @@ func TestSyncFailedScopeCauses(t *testing.T) {
 			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
 				return nil, platform.ErrPermissionDenied
 			}
-			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
@@ -187,6 +187,8 @@ func TestSyncFailureReason(t *testing.T) {
 		err  error
 		want string
 	}{
+		{"github primary limit", &gh.RateLimitError{}, "rate_limited"},
+		{"github secondary limit", &gh.AbuseRateLimitError{}, "rate_limited"},
 		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}, "provider"},
 		{"gitlab", &gitlab.ErrorResponse{StatusCode: 401}, "auth"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
@@ -202,16 +204,128 @@ func TestSyncFailureReason(t *testing.T) {
 }
 
 func TestSyncFailedBitbucketDCLookup(t *testing.T) {
-	repo := RepoRef{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)}
-	client, err := bitbucketdc.NewClient(repo.PlatformHost, failingGitTokenSource{}, platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusNotFound, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
-	}), nil)
+	for _, tc := range []struct {
+		name   string
+		status int
+		reason string
+	}{
+		{"not found", http.StatusNotFound, "not_found"},
+		{"server failure", http.StatusServiceUnavailable, "provider"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := RepoRef{Platform: platform.KindBitbucket, PlatformHost: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)}
+			client, err := bitbucketdc.NewClient(repo.PlatformHost, failingGitTokenSource{}, platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+			}), nil)
+			require.NoError(t, err)
+			registry, err := platform.NewRegistry(client)
+			require.NoError(t, err)
+			s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}}, events)
+		})
+	}
+}
+
+func TestSyncFailedRenameRetainsOutage(t *testing.T) {
+	repo := RepoRef{Owner: "acme", Name: "before", Key: platform.RepositoryIDKey(42)}
+	var events [][2]string
+	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+	for i := range 3 {
+		pass := &syncPass{}
+		if i == 1 {
+			repo.Name = "after"
+			pass.observe(repo, "issues", platform.ErrSyncBudgetExhausted)
+		} else {
+			pass.observe(repo, "issues", platform.ErrPermissionDenied)
+		}
+		s.finishSyncPass(pass, []RepoRef{repo})
+	}
+	assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
+}
+
+func TestSyncFailedDisabledAggregate(t *testing.T) {
+	repo := RepoRef{Owner: "acme", Name: "widget"}
+	for _, disabled := range []error{platform.ErrRepositoryFeatureDisabled, platform.ErrSyncDisabled} {
+		t.Run(disabled.Error(), func(t *testing.T) {
+			pass := &syncPass{}
+			pass.observe(repo, "issues", preservePartialSyncFailure(failIssues, disabled, platform.ErrPermissionDenied))
+			var events [][2]string
+			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+			s.finishSyncPass(pass, []RepoRef{repo})
+			assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
+		})
+	}
+}
+
+func TestSyncFailedBulkCIRecovery(t *testing.T) {
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
 	require.NoError(t, err)
-	registry, err := platform.NewRegistry(client)
-	require.NoError(t, err)
-	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	s := NewSyncer(map[string]Client{"github.com": &mockClient{}}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.Equal(t, [][2]string{{"merge_requests", "not_found"}}, events)
+	for i := range 3 {
+		pass := &syncPass{}
+		ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+		if i == 1 {
+			require.NoError(t, s.syncOpenMRFromBulk(ctx, repo, id, time.Time{}, &BulkPR{
+				PR: buildOpenPR(7, time.Now().UTC()), CIComplete: true,
+			}, false))
+		} else {
+			pass.observe(repo, "checks", platform.ErrPermissionDenied)
+		}
+		s.finishSyncPass(pass, []RepoRef{repo})
+	}
+	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
+}
+
+func TestSyncFailedFullPassDetailAndComments(t *testing.T) {
+	for _, kind := range []string{"issue detail", "PR detail", "issue comments", "PR comments"} {
+		t.Run(kind, func(t *testing.T) {
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
+			now := time.Now().UTC()
+			var fetched *time.Time
+			if kind == "issue comments" || kind == "PR comments" {
+				fetched = &now
+			}
+			client := &partialFailureMock{issuesCached: true, prsCached: true}
+			failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: 503}}
+			called := false
+			source := "issues"
+			if kind == "PR detail" || kind == "PR comments" {
+				source = "merge_requests"
+				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100, MergeableState: "clean"})
+			} else {
+				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, DetailFetchedAt: fetched, CommentCount: 100})
+			}
+			require.NoError(t, err)
+			switch kind {
+			case "issue detail":
+				client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { called = true; return nil, failure }
+			case "PR detail":
+				client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					called = true
+					return nil, failure
+				}
+			default:
+				client.listIssueCommentsFn = func(context.Context, string, string, int) ([]*gh.IssueComment, error) {
+					called = true
+					return nil, failure
+				}
+			}
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			require.True(t, called, "the full pass must reach the failing read")
+			assert.Equal(t, [][2]string{{source, "provider"}}, events)
+		})
+	}
 }

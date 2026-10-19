@@ -321,6 +321,9 @@ registry helpers return typed errors for missing providers or capabilities.
 
 - Missing optional capabilities should degrade that feature with a typed
   platform error, not break unrelated sync work.
+- Preserve HTTP server failures as transient errors; telemetry classification must
+  not assign `ErrProviderContract`, which blocks archive retries
+  (`internal/archive/service.go::defaultArchiveRetryDecision`).
 - `platform.Capabilities` has no flag for "reports a review decision"; GitLab,
   Forgejo, and Gitea normalizers never set `ReviewDecision`. Callers that need
   this compare the repository's provider `Kind` to `platform.KindGitHub`

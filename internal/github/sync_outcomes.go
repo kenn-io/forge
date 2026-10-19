@@ -6,9 +6,11 @@ import (
 	"net"
 	"sync"
 
+	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -27,7 +29,23 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	if syncBudgetWait(err) || errors.Is(err, platform.ErrSyncDisabled) || errors.Is(err, platform.ErrRepositoryFeatureDisabled) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, platform.ErrSyncDisabled) || errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		//nolint:errorlint // Inspect immediate causes so disabled nodes cannot hide sibling failures.
+		switch wrapped := err.(type) {
+		case *platform.Error:
+			if wrapped.Code != platform.ErrCodeRepositoryFeatureDisabled && wrapped.Err != nil {
+				p.observe(repo, source, wrapped.Err)
+			}
+		case interface{ Unwrap() []error }:
+			for _, cause := range wrapped.Unwrap() {
+				p.observe(repo, source, cause)
+			}
+		case interface{ Unwrap() error }:
+			p.observe(repo, source, wrapped.Unwrap())
+		}
+		return
+	}
+	if syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	reason := ""
@@ -42,7 +60,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	if p.results[source] == nil {
 		p.results[source] = make(map[string]string)
 	}
-	key := repoFailKey(repo)
+	key := mergeQueueRepoKey(repo)
 	if p.results[source][key] == "" {
 		p.results[source][key] = reason
 	}
@@ -75,7 +93,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	live := make(map[string]bool, len(tracked))
 	for _, repo := range tracked {
 		if !repo.Archived {
-			live[repoFailKey(repo)] = true
+			live[mergeQueueRepoKey(repo)] = true
 		}
 	}
 	if s.syncFailures == nil {
@@ -126,9 +144,14 @@ func syncFailureReason(err error) string {
 	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
 		status = response.StatusCode
 	}
+	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
+		status = response.StatusCode
+	}
+	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
+	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	_, networkError := errors.AsType[net.Error](err)
 	switch {
-	case errors.Is(err, platform.ErrRateLimited), status == 429:
+	case primaryLimit, secondaryLimit, errors.Is(err, platform.ErrRateLimited), status == 429:
 		return "rate_limited"
 	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "", status == 401, status == 403:
 		return "auth"
@@ -141,4 +164,12 @@ func syncFailureReason(err error) string {
 	default:
 		return "other"
 	}
+}
+
+// A conditional read that returns unchanged still establishes source health.
+func syncReadError(err error) error {
+	if platformgithub.IsNotModified(err) {
+		return nil
+	}
+	return err
 }

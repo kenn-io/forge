@@ -89,8 +89,9 @@ An empty squash may instead exclude it by a one-commit source or a parent that i
 another change's declared terminal (`landedwork/single_parent.go::ownsOnlyTerminal`).
 A rewritten range cannot contain another change's declared terminal (outside that
 change's source) or an ancestor of its own source head (`landedwork/range.go::rangeCorrespondence`).
-A terminal outside the interval with a complete source owns none of it unless the
-head is among its first max(1, source length) first parents (`landedwork/origins.go::reachesInterval`).
+A terminal outside the interval with a complete source owns none of it unless its
+first max(1, source length) first parents reach an interval commit that is a
+source commit or not an ancestor of the source head (`landedwork/origins.go::reachesInterval`).
 Synthesized merge objects belong only to the disposable view; caller objects
 are read-only alternates (`landedwork/git.go::openView`).
 Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base

@@ -112,7 +112,7 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 			}
 			// An incomplete source does not bound a rewritten range's length.
 			if !introduced[c.Terminal] && c.SourceComplete {
-				reaches, g := reachesInterval(ctx, v, p, c)
+				reaches, g := reachesInterval(ctx, v, p, c, introduced)
 				if g.Reason != "" {
 					r.Coverage.Gaps = append(r.Coverage.Gaps, candidateGap(p, c, g))
 				}
@@ -143,14 +143,24 @@ func resolveOrigins(ctx context.Context, v *objectView, p *Interval, candidates 
 // reachesInterval reports whether a change whose terminal this interval does not
 // introduce could still own part of it. A landing owns its terminal and, as a
 // rewritten range, at most one first-parent commit before it per source commit.
-// Unless this interval's head is one of those commits, the terminal is on
-// another branch, was rewritten away, or lands too far after the interval to
-// own any of it.
-func reachesInterval(ctx context.Context, v *objectView, p *Interval, c Candidate) (bool, Gap) {
+// The change can own an interval commit on that walk unless the commit is an
+// ancestor of the source head without being a source commit: the change was
+// written on top of it, so the commit and everything before it predate the
+// change. When no walked commit can be owned, the terminal is on another
+// branch, was rewritten away, or lands too far after the interval to own any
+// of it.
+func reachesInterval(ctx context.Context, v *objectView, p *Interval, c Candidate, introduced map[string]bool) (bool, Gap) {
 	id := c.Terminal
 	for i := 1; ; i++ {
-		if id == p.query.Bounds.Head {
-			return true, Gap{}
+		if introduced[id] {
+			if slices.Contains(c.Source, id) {
+				return true, Gap{}
+			}
+			earlier, err := v.ancestor(ctx, id, c.SourceHead)
+			if err != nil {
+				return false, Gap{CandidateID: c.ID, ObjectID: id, Reason: graphReason(err)}
+			}
+			return !earlier, Gap{}
 		}
 		if i >= max(1, len(c.Source)) {
 			return false, Gap{}

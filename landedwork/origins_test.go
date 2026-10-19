@@ -265,7 +265,7 @@ func TestBlockedSpan(t *testing.T) {
 }
 
 func TestTerminalOutsideInterval(t *testing.T) {
-	for _, variant := range []string{"other branch", "rewritten away", "far after head", "inside range", "missing terminal", "incomplete source"} {
+	for _, variant := range []string{"other branch", "rewritten away", "far after head", "inside range", "range cut back", "source kept", "missing terminal", "incomplete source"} {
 		t.Run(variant, func(t *testing.T) {
 			f := buildFixture(t, true)
 			f.head = ""
@@ -300,7 +300,21 @@ func TestTerminalOutsideInterval(t *testing.T) {
 				r.Run("commit", "-m", "squash change")
 				terminal, source = r.Head(), []string{one, two}
 				r.Run("reset", "--hard", two)
-			case "far after head", "inside range", "incomplete source":
+			case "source kept":
+				// The first source commit landed unchanged and the target
+				// later dropped the rest of the range, so the change can
+				// still own that commit.
+				r.Checkout("-b", "change", first)
+				one := r.CommitFile("work.txt", "new\nkeep\n", "one")
+				two := r.CommitFile("work.txt", "new\nkeep\ntwo\n", "two")
+				source = []string{one, two}
+				r.Checkout("target")
+				r.Run("merge", "--ff-only", one)
+				r.Run("cherry-pick", two)
+				terminal = r.Head()
+				r.Run("reset", "--hard", one)
+				reason = "method_unproven"
+			case "far after head", "inside range", "range cut back", "incomplete source":
 				r.Checkout("-b", "change", f.base)
 				one := r.CommitFile("work.txt", "new\nkeep\n", "one")
 				two := r.CommitFile("work.txt", "new\nkeep\ntwo\n", "two")
@@ -322,6 +336,12 @@ func TestTerminalOutsideInterval(t *testing.T) {
 				if variant == "inside range" {
 					// A rewritten range ending at the terminal can own the head.
 					f.head, reason = rewritten, "method_unproven"
+				}
+				if variant == "range cut back" {
+					// The target dropped the terminal but kept the earlier
+					// rewritten commit, which the change can still own.
+					r.Run("reset", "--hard", rewritten)
+					f.head, reason = "", "method_unproven"
 				}
 			}
 			if f.head == "" {

@@ -732,6 +732,92 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     },
   );
 
+  it("keeps thoughts and raw disclosures expanded when steering splits their group", async () => {
+    const { host } = await renderChat(900);
+    const thought = {
+      id: "entry-11",
+      previousId: "entry-10",
+      version: 1,
+      role: "thought",
+      text: "Compare the file changes before editing.",
+    };
+    const tool = {
+      id: "entry-12",
+      previousId: "entry-11",
+      version: 1,
+      role: "tool",
+      toolCallId: "inspect",
+      text: "Inspect changes",
+      status: "completed",
+      rawInput: JSON.stringify({ paths: Array.from({ length: 25 }, (_, index) => `src/file-${index}.ts`) }, null, 2),
+      rawOutput: JSON.stringify({ result: "Complete", files: 25 }, null, 2),
+    };
+    const initial = {
+      messages: [
+        {
+          id: "entry-10",
+          previousId: "entry-9",
+          version: 1,
+          role: "tool",
+          text: "Prepare inspection",
+          status: "completed",
+        },
+        thought,
+        tool,
+        ...range(13, 40),
+      ],
+      messageOffset: 10,
+      messageCount: 40,
+      messageCursor: 1,
+      lastMessageId: "entry-39",
+      configOptions: [],
+      configuring: false,
+      permissions: [],
+      busy: false,
+      connected: true,
+      error: "",
+    };
+    socket.options!.onMessage(encodeFixture(initial));
+    await page.getByRole("button", { name: "2 tools · 1 thought", exact: true }).click();
+    await page.getByRole("button", { name: "Thinking", exact: true }).click();
+    await page.getByRole("button", { name: /Inspect changes/ }).click();
+    await page.getByText("Raw input", { exact: true }).click();
+    await page.getByText("Raw output", { exact: true }).click();
+    const rawDetails = () => [...host.querySelectorAll<HTMLDetailsElement>("details.raw")];
+    await expect.poll(() => rawDetails().map((details) => details.open)).toEqual([true, true]);
+    const oldThought = host.querySelector('article[aria-label="Assistant thinking"]')!;
+    const output = rawDetails()[1]!.querySelector("pre")!;
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    conversation.style.overflowAnchor = "none";
+    conversation.scrollTop += output.getBoundingClientRect().top - conversation.getBoundingClientRect().top + 2;
+    conversation.dispatchEvent(new Event("scroll"));
+    await nextFrame();
+    const before = output.getBoundingClientRect().top;
+    socket.options!.onMessage(
+      encodeFixture({
+        updates: {
+          ...initial,
+          messageCount: 41,
+          messageCursor: 2,
+          more: false,
+          messages: [
+            { id: "steer", previousId: "entry-10", version: 2, role: "user", text: "Explain the changes" },
+            { ...thought, previousId: "steer", version: 2 },
+          ],
+        },
+      }),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Thinking", exact: true }))
+      .toHaveAttribute("aria-expanded", "true");
+    await expect.poll(() => rawDetails().map((details) => details.open)).toEqual([true, true]);
+    await nextFrame();
+    await nextFrame();
+    expect(oldThought.isConnected).toBe(false);
+    expect(host.querySelector(".thought-body")!.textContent).toContain(thought.text);
+    expect(Math.abs(rawDetails()[1]!.querySelector("pre")!.getBoundingClientRect().top - before)).toBeLessThan(2);
+  });
+
   it("keeps the reader's place when earlier messages load above", async () => {
     const host = document.createElement("div");
     host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";

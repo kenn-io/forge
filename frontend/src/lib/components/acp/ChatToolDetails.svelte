@@ -5,7 +5,10 @@
   import { decodeAppDescriptor } from "./mcp-app.js";
   import type { ChatMessage } from "./chat-types.js";
 
-  let { message, id }: { message: ChatMessage; id: string } = $props();
+  let { message, id, rawInputOpen, rawOutputOpen, onRawToggle }: {
+    message: ChatMessage; id: string; rawInputOpen: boolean; rawOutputOpen: boolean;
+    onRawToggle: (field: "input" | "output", open: boolean) => void;
+  } = $props();
 
   // Image and app outputs are already visible below the tool group.
   const content = $derived((message.toolContent ?? []).filter((item) => !item.content || (!isImageContent(item.content) && !decodeAppDescriptor(item.content))));
@@ -67,10 +70,10 @@
     {/if}
   {/each}
   {#if message.rawInput}
-    <details class="raw"><summary>Raw input</summary><pre>{message.rawInput}</pre></details>
+    <details class="raw" open={rawInputOpen} ontoggle={(event) => onRawToggle("input", event.currentTarget.open)}><summary>Raw input</summary><pre>{message.rawInput}</pre></details>
   {/if}
   {#if message.rawOutput}
-    <details class="raw"><summary>Raw output</summary><pre>{message.rawOutput}</pre></details>
+    <details class="raw" open={rawOutputOpen} ontoggle={(event) => onRawToggle("output", event.currentTarget.open)}><summary>Raw output</summary><pre>{message.rawOutput}</pre></details>
   {/if}
 </div>
 

@@ -14,6 +14,10 @@
     anchorId,
     openEntries,
     expanded,
+    expandedThoughts,
+    rawOpen,
+    onToggleThought,
+    onRawToggle,
     onToggleGroup,
     onToggleTool,
     childCounts = {},
@@ -23,6 +27,10 @@
     anchorId: string
     openEntries: Readonly<Record<string, boolean>>
     expanded: Readonly<Record<string, boolean>>
+    expandedThoughts: Readonly<Record<string, boolean>>
+    rawOpen: Readonly<Record<string, { input?: boolean; output?: boolean }>>
+    onToggleThought: (id: string) => void
+    onRawToggle: (id: string, field: "input" | "output", open: boolean) => void
     onToggleGroup: (messages: readonly ChatMessage[], open: boolean) => void
     onToggleTool: (id: string) => void
     /** Tool calls made inside each sub-agent, keyed by its toolCallId. */
@@ -94,7 +102,7 @@
       {#each messages as message, index (message.id)}
         {@const key = message.id}
         {#if message.role === "thought"}
-          <li class="thought-row" data-message-id={message.id}><ChatMessageView {message} streaming={streaming && index === messages.length - 1} /></li>
+          <li class="thought-row" data-message-id={message.id}><ChatMessageView {message} thoughtOpen={!!expandedThoughts[message.id]} onThoughtToggle={() => onToggleThought(message.id)} streaming={streaming && index === messages.length - 1} /></li>
         {:else}
         {@const status = toolStatus(message)}
         {@const expandable = hasDetails(message)}
@@ -140,7 +148,7 @@
               {@render row()}
             </button>
             {#if expanded[key]}
-              <ChatToolDetails {message} id={`${id}-tool-${index}`} />
+              <ChatToolDetails {message} id={`${id}-tool-${index}`} rawInputOpen={!!rawOpen[message.id]?.input} rawOutputOpen={!!rawOpen[message.id]?.output} onRawToggle={(field, open) => onRawToggle(message.id, field, open)} />
             {/if}
           {:else}
             <div class="row">{@render row()}</div>

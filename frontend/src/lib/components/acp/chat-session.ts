@@ -40,6 +40,7 @@ export function makeChatSession(options: {
 }) {
   let snapshot: ChatState | undefined;
   const messages = new Map<string, ChatMessage>();
+  const successors = new Map<string, string>();
   let displayed: ChatMessage[] = [];
   let displayedOffset = 0;
   // Do not load older entries merely because an agent updates them. This is
@@ -55,7 +56,13 @@ export function makeChatSession(options: {
   const upsert = (entries: readonly ChatMessage[]) => {
     for (const entry of entries) {
       const prior = messages.get(entry.id);
-      if (!prior || entry.version > prior.version) messages.set(entry.id, entry);
+      if (prior && entry.version <= prior.version) continue;
+      if (prior && successors.get(prior.previousId) === prior.id) successors.delete(prior.previousId);
+      messages.set(entry.id, entry);
+      const successor = messages.get(successors.get(entry.previousId) ?? "");
+      // During insertion, an old successor link can coexist with its newer
+      // replacement until the following batch supplies the relinked entry.
+      if (!successor || entry.version > successor.version) successors.set(entry.previousId, entry.id);
     }
   };
   const publish = () => {
@@ -71,19 +78,38 @@ export function makeChatSession(options: {
       id = entry.previousId;
     }
     // Publish complete chains as they arrive, even while more changes remain.
-    // A missing predecessor can belong to a later batch (for example steering).
-    // Keep the prior ordering in that case, but still show updated tool output.
+    // A coalesced predecessor or the advertised global tail can arrive later.
+    // Keep visible output moving without requiring that latest tail.
     const complete = id === boundary || !id;
     if (complete) {
       displayed = ordered.reverse();
       displayedOffset = snapshot.messageCount - displayed.length;
     } else {
-      displayed = displayed.map((entry) => messages.get(entry.id) ?? entry);
+      const connected: ChatMessage[] = [];
+      const visible = new Set<string>();
+      let next = successors.get(boundary);
+      while (next && !visible.has(next)) {
+        const entry = messages.get(next);
+        if (!entry) break;
+        connected.push(entry);
+        visible.add(entry.id);
+        next = successors.get(entry.id);
+      }
+      // A later batch may bridge a gap to entries already on screen. Retain
+      // those entries while showing every received, connected prefix now.
+      displayed = [
+        ...connected,
+        ...displayed.filter((entry) => !visible.has(entry.id)).map((entry) => messages.get(entry.id) ?? entry),
+      ];
     }
     // Retain updates to unloaded entries while a page is in flight so a late
     // older page cannot overwrite them. Otherwise only the visible range stays.
     if (complete && !batching && historyBefore === undefined) {
-      for (const key of messages.keys()) if (!seen.has(key)) messages.delete(key);
+      for (const [key, entry] of messages) {
+        if (seen.has(key)) continue;
+        messages.delete(key);
+        if (successors.get(entry.previousId) === key) successors.delete(entry.previousId);
+      }
     }
     const displayedConnected = snapshot.connected || batching || historyBefore !== undefined;
     options.onState({
@@ -106,6 +132,7 @@ export function makeChatSession(options: {
     onOpen: () => {
       snapshot = undefined;
       messages.clear();
+      successors.clear();
       displayed = [];
       displayedOffset = 0;
       boundary = "";
@@ -137,7 +164,10 @@ export function makeChatSession(options: {
         if (frame.history.beforeId === historyBefore) {
           upsert(frame.history.messages);
           const first = frame.history.messages[0];
-          if (first) boundary = messages.get(first.id)!.previousId;
+          if (first) {
+            boundary = messages.get(first.id)!.previousId;
+            displayedOffset = frame.history.offset;
+          }
           setHistoryLoading(undefined);
           publish();
         }
@@ -148,6 +178,7 @@ export function makeChatSession(options: {
         publish();
       } else {
         messages.clear();
+        successors.clear();
         upsert(frame.messages);
         boundary = frame.messages[0]?.previousId ?? "";
         snapshot = frame;

@@ -179,18 +179,117 @@ describe("makeChatSession ID upserts", () => {
     expect(commands()).toEqual([]);
   });
 
-  it("keeps visible output advancing while a steering predecessor waits in another batch", () => {
+  it("updates visible tool output before the newly appended tail arrives", () => {
     const first = message("first", "", { role: "user" });
-    const tool = message("tool", "first", { role: "tool", rawOutput: "Before" });
-    const initial = state([first, tool]);
+    const tool = message("tool", "first", { role: "tool", rawOutput: "Before", version: 2 });
+    const initial = state([first, tool], { messageCursor: 2 });
     const { states, send } = open(initial);
-    const changed = { ...tool, previousId: "steer", version: 2, rawOutput: "After" };
-    send({ updates: { ...initial, messages: [changed], messageCount: 3, more: true } });
-    expect(states.at(-1)!.messages.map((entry) => entry.id)).toEqual(["first", "tool"]);
-    expect(states.at(-1)!.messages[1]!.rawOutput).toBe("After");
-    const steer = message("steer", "first", { role: "user" });
-    send({ updates: { ...initial, messages: [steer], messageCount: 3, more: true } });
-    expect(states.at(-1)!.messages).toEqual([first, steer, changed]);
+    // Updating this oversized tool then appending the tail produces two batches.
+    const changed = { ...tool, version: 3, rawOutput: "After".repeat(60_000) };
+    const tail = message("tail", "tool", { version: 4 });
+    const metadata = { ...initial, messageCount: 3, lastMessageId: "tail" };
+    send({ updates: { ...metadata, messages: [changed], messageCursor: 3, more: true } });
+    expect(states.at(-1)!.messages).toEqual([first, changed]);
+    send({ updates: { ...metadata, messages: [tail], messageCursor: 4, more: false } });
+    expect(states.at(-1)!.messages).toEqual([first, changed, tail]);
+  });
+
+  it("shows connected new entries while each batch advertises a later undelivered tail", () => {
+    const first = message("first", "", { role: "user" });
+    const initial = state([first]);
+    const { states, send, commands } = open(initial);
+    const second = message("second", "first", { version: 2, text: "Second".repeat(50_000) });
+    const third = message("third", "second", { version: 3, text: "Third".repeat(60_000) });
+    const fourth = message("fourth", "third", { version: 4, text: "Fourth".repeat(50_000) });
+    // Each oversized entry occupies a batch. Another entry is appended before
+    // each read, so delivery never catches the latest global tail in this case.
+    send({
+      updates: {
+        ...initial,
+        messages: [second],
+        messageCursor: 2,
+        messageCount: 3,
+        lastMessageId: "third",
+        more: true,
+      },
+    });
+    expect(states.at(-1)!.messages).toEqual([first, second]);
+    send({
+      updates: {
+        ...initial,
+        messages: [third],
+        messageCursor: 3,
+        messageCount: 4,
+        lastMessageId: "fourth",
+        more: true,
+      },
+    });
+    expect(states.at(-1)!.messages).toEqual([first, second, third]);
+    send({
+      updates: {
+        ...initial,
+        messages: [fourth],
+        messageCursor: 4,
+        messageCount: 5,
+        lastMessageId: "fifth",
+        more: true,
+      },
+    });
+    expect(states.at(-1)!.messages).toEqual([first, second, third, fourth]);
+    expect(states.at(-1)!.messageOffset).toBe(0);
+    expect(commands()).toEqual([]);
+  });
+
+  it("waits for a coalesced predecessor before showing its new successor", () => {
+    const first = message("first", "", { role: "user" });
+    const initial = state([first]);
+    const { states, send } = open(initial);
+    // Append tool v2, append reply v3, update tool v4, then append tail v5.
+    // Coalescing moves the tool behind its reply in publication order.
+    const reply = message("reply", "tool", { version: 3, text: "Reply".repeat(60_000) });
+    const tool = message("tool", "first", { version: 4, role: "tool", rawOutput: "Result".repeat(50_000) });
+    const metadata = { ...initial, lastMessageId: "tail", messageCount: 4, more: true };
+    send({ updates: { ...metadata, messages: [reply], messageCursor: 3 } });
+    expect(states.at(-1)!.messages).toEqual([first]);
+    send({ updates: { ...metadata, messages: [tool], messageCursor: 4 } });
+    expect(states.at(-1)!.messages).toEqual([first, tool, reply]);
+  });
+
+  it("shows a steering insertion in publication order while the latest tail is pending", () => {
+    const first = message("first", "", { role: "user" });
+    const tool = message("tool", "first", { version: 2, role: "tool", rawOutput: "Result".repeat(50_000) });
+    const initial = state([first, tool], { messageCursor: 2 });
+    const { states, send } = open(initial);
+    const steer = message("steer", "first", { version: 3, role: "user", text: "Steer".repeat(60_000) });
+    const metadata = { ...initial, lastMessageId: "tail", messageCount: 4, more: true };
+    send({ updates: { ...metadata, messages: [steer], messageCursor: 3 } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, tool]);
+    const relinked = { ...tool, previousId: "steer", version: 4 };
+    send({ updates: { ...metadata, messages: [relinked], messageCursor: 4 } });
+    expect(states.at(-1)!.messages).toEqual([first, steer, relinked]);
+  });
+
+  it("publishes requested history while a newer global tail is still pending", () => {
+    const output = message("output", "tool", { version: 2 });
+    const initial = state([output], { messageOffset: 1, messageCount: 2, messageCursor: 2 });
+    const { session, states, send, commands } = open(initial);
+    expect(session.loadEarlier()).toBe(true);
+    expect(commands()).toEqual([{ type: "history", beforeId: "output", limit: 100 }]);
+    const changed = { ...output, version: 3, text: "New output".repeat(30_000) };
+    send({
+      updates: {
+        ...initial,
+        messages: [changed],
+        messageCursor: 3,
+        messageCount: 3,
+        lastMessageId: "tail",
+        more: true,
+      },
+    });
+    const tool = message("tool", "", { role: "tool" });
+    send({ history: { beforeId: "output", offset: 0, messages: [tool] } });
+    expect(states.at(-1)!.messages).toEqual([tool, changed]);
+    expect(states.at(-1)!.messageOffset).toBe(0);
   });
 
   it("settles a requested history page before closing after the final update", () => {

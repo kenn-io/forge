@@ -48,14 +48,13 @@
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { senderLabel, type ChatMessage } from "./chat-types.js"
 
-  let { message, streaming = false }: { message: ChatMessage; streaming?: boolean } =
+  let { message, thoughtOpen, onThoughtToggle, streaming = false }: { message: ChatMessage; thoughtOpen: boolean; onThoughtToggle: () => void; streaming?: boolean } =
     $props()
   const user = $derived(message.role === "user")
   // A coordinator's prompt reads as the coordinator's, not the person's.
   const coordinator = $derived(user && message.sender?.kind === "coordinator")
   const thought = $derived(message.role === "thought")
   const id = $props.id()
-  let thoughtOpen = $state(false)
   let copied = $state(false)
   let copyError = $state("")
   let resetCopy: ReturnType<typeof setTimeout> | undefined
@@ -117,7 +116,7 @@
           class="thought-toggle"
           aria-expanded={thoughtOpen}
           aria-controls={`${id}-thought`}
-          onclick={() => (thoughtOpen = !thoughtOpen)}
+          onclick={onThoughtToggle}
         >
           <Brain size={13} aria-hidden="true" />Thinking<ChevronDown
             size={12}

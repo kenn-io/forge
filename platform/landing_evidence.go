@@ -64,8 +64,9 @@ type LandingChange struct {
 	MergeSHA, SquashSHA, SourceHead *string
 	SourceCount                     *int64
 	Terminal, TerminalEvidence      string
-	// Roles and UTC lifecycle times are observations, not landing proof.
+	// Title, roles and UTC lifecycle times are observations, not landing proof.
 	// Nil means unreported; complete landing coverage does not certify these fields.
+	Title              *string
 	Author, Merger     *Account
 	OpenedAt, MergedAt *time.Time
 }

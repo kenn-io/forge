@@ -75,8 +75,8 @@ func (c *collector) observe(ctx context.Context, ref platform.LandingChangeRef, 
 func sameProof(a, b platform.LandingChange) bool {
 	// Metadata may change independently of the source/landing evidence. Compare
 	// all proof fields, including pointer presence, without profile stabilization.
-	a.Author, a.Merger, a.OpenedAt, a.MergedAt = nil, nil, nil, nil
-	b.Author, b.Merger, b.OpenedAt, b.MergedAt = nil, nil, nil, nil
+	a.Title, a.Author, a.Merger, a.OpenedAt, a.MergedAt = nil, nil, nil, nil, nil
+	b.Title, b.Author, b.Merger, b.OpenedAt, b.MergedAt = nil, nil, nil, nil, nil
 	return reflect.DeepEqual(a, b)
 }
 
@@ -159,6 +159,7 @@ func cloneChange(d platform.LandingChange) platform.LandingChange {
 	d.SourceCount = clonePointer(d.SourceCount)
 	d.Author, d.Merger = cloneAccount(d.Author), cloneAccount(d.Merger)
 	d.OpenedAt, d.MergedAt = clonePointer(d.OpenedAt), clonePointer(d.MergedAt)
+	d.Title = clonePointer(d.Title)
 	return d
 }
 

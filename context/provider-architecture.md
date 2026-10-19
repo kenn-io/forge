@@ -94,7 +94,7 @@ Overlap conflicts block the proven landing ranges, not unrelated earlier
 commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
 Collection must preserve unfinished candidates and the exact prepared query;
 missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
-Roles and lifecycle times belong to observations, not landing proof; complete
+Titles, roles and lifecycle times belong to observations, not landing proof; complete
 landing coverage does not certify complete attribution (`platform/landing_evidence.go::LandingChange`).
 Metadata-only rechecks replace the entire observation, including absent fields;
 proof changes retain the initial incomplete observation (`landedwork/collect/candidates.go::observe`).

@@ -92,6 +92,15 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	}
 }
 
+// syncSourceFeature names the feature whose cooldown governs a source. The
+// detail drain skips CI reads under the merge request cooldown.
+func syncSourceFeature(source string) string {
+	if source == "checks" {
+		return platform.RepositoryFeatureMergeRequests
+	}
+	return source
+}
+
 // finishSyncPass runs under the run slot after all observations have finished.
 func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
@@ -104,7 +113,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		live := make(map[string]bool, len(tracked))
 		s.featureCooldowns.mu.Lock()
 		for _, repo := range tracked {
-			_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, source))
+			_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, syncSourceFeature(source)))
 			if !repo.Archived && !state.nextProbe.After(s.nowUTC()) {
 				live[mergeQueueRepoKey(repo)] = true
 			}

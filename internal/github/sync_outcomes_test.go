@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -246,10 +247,38 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
 }
 
+func TestSyncFailedChecksRetentionAfterMergeRequestsDisabled(t *testing.T) {
+	a := RepoRef{Owner: "acme", Name: "a", PlatformHost: "github.com"}
+	b := RepoRef{Owner: "acme", Name: "b", PlatformHost: "github.com"}
+	s := NewSyncer(map[string]Client{"github.com": &partialFailureMock{}}, openTestDB(t), nil, []RepoRef{a, b}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	pass := &syncPass{}
+	pass.observe(a, "checks", platform.ErrPermissionDenied)
+	s.finishSyncPass(pass, []RepoRef{a, b})
+	// The detail drain skips CI reads under the merge request cooldown.
+	require.True(t, s.recordRepositoryFeatureDisabled(a, platform.RepositoryFeatureMergeRequests, platform.RepositoryFeatureDisabled(platform.KindGitHub, a.PlatformHost, platform.RepositoryFeatureMergeRequests, errors.New("feature disabled"))))
+	pass = &syncPass{}
+	pass.observe(b, "checks", platform.ErrPermissionDenied)
+	s.finishSyncPass(pass, []RepoRef{a, b})
+	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
+}
+
 // The list excludes the seeded item, so its read comes from closure reconciliation.
 type closureFailureProvider struct {
 	*syncTestReadProvider
 	failure error
+	// probeErr fails each repository probe that follows an item read.
+	probeErr error
+	probes   atomic.Int32
+}
+
+func (p *closureFailureProvider) GetRepository(ctx context.Context, ref platform.RepoRef) (platform.Repository, error) {
+	if p.probeErr != nil && p.probes.Load() < p.getMRCalls.Load()+p.getIssueCalls.Load() {
+		p.probes.Add(1)
+		return platform.Repository{}, p.probeErr
+	}
+	return p.syncTestReadProvider.GetRepository(ctx, ref)
 }
 
 func (p *closureFailureProvider) GetMergeRequest(_ context.Context, _ platform.RepoRef, _ int) (platform.MergeRequest, error) {
@@ -261,7 +290,7 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// detail refreshes cached open items; closure reconciles items the list omits;
-		// neutral closure does the same through a provider without GitHub's classified lookup.
+		// neutral closure and neutral detail do the same through a provider without GitHub's classified lookup.
 		path   string
 		source string
 		status int
@@ -283,11 +312,13 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 		{"missing items then probe failure/closure", "closure", "", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 		{"missing items/neutral closure", "neutral closure", "", http.StatusNotFound, 0, nil},
 		{"provider failure/neutral closure", "neutral closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
+		{"missing items/neutral detail", "neutral detail", "", http.StatusNotFound, 0, nil},
+		{"missing items then probe failure/neutral detail", "neutral detail", "", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			neutral := tc.path == "neutral closure"
+			neutral := strings.HasPrefix(tc.path, "neutral")
 			if neutral {
 				repo = RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "widget"}
 			} else {
@@ -309,10 +340,21 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 			var s *Syncer
 			if neutral {
 				failure := &gitealike.HTTPError{StatusCode: tc.status}
+				if tc.status == http.StatusNotFound {
+					failure.Err = platform.ErrNotFound
+				}
 				provider := &closureFailureProvider{syncTestReadProvider: &syncTestReadProvider{kind: repo.Platform, host: repo.PlatformHost, getIssueErr: failure}, failure: failure}
+				if tc.probe != 0 {
+					provider.probeErr = &gitealike.HTTPError{StatusCode: tc.probe}
+				}
+				if tc.path == "neutral detail" {
+					// Listed unchanged, the cached items reach the detail drain instead of closure.
+					provider.issues = []platform.Issue{{Repo: platformRepoRef(repo), PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100}}
+					provider.mergeRequests = []platform.MergeRequest{{Repo: platformRepoRef(repo), PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100}}
+				}
 				registry, err := platform.NewRegistry(provider)
 				require.NoError(t, err)
-				s = NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+				s = NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{RateBucketKey(string(repo.Platform), repo.PlatformHost, "host"): NewSyncBudget(1000)})
 				issueReads, mrReads = provider.getIssueCalls.Load, provider.getMRCalls.Load
 			} else {
 				client := &partialFailureMock{issuesCached: true, prsCached: true}

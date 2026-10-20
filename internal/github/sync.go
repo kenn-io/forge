@@ -8689,7 +8689,7 @@ func (s *Syncer) fetchProviderMRDetail(
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get full MR #%d: %w", number,
-			s.classifyProviderItemLookupError(ctx, repo, err),
+			s.classifyProviderItemLookupError(ctx, repo, "merge_requests", err),
 		)
 	}
 
@@ -9159,7 +9159,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 	if err != nil {
 		return calls, fmt.Errorf(
 			"get issue #%d: %w", number,
-			s.classifyProviderItemLookupError(ctx, repo, err),
+			s.classifyProviderItemLookupError(ctx, repo, "issues", err),
 		)
 	}
 
@@ -9228,6 +9228,7 @@ func (s *Syncer) fetchProviderIssueDetail(
 func (s *Syncer) classifyProviderItemLookupError(
 	ctx context.Context,
 	repo RepoRef,
+	source string,
 	err error,
 ) error {
 	if errors.Is(err, platform.ErrLookupNotPresent) {
@@ -9241,6 +9242,7 @@ func (s *Syncer) classifyProviderItemLookupError(
 		return err
 	}
 	if _, probeErr := repositoryReader.GetRepository(ctx, platformRepoRef(repo)); probeErr != nil {
+		s.observeSyncItem(ctx, repo, source, probeErr)
 		return errors.Join(err, fmt.Errorf("probe repository after item not found: %w", probeErr))
 	}
 	return errors.Join(platform.ErrLookupNotPresent, err)

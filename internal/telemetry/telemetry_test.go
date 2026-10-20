@@ -110,13 +110,12 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 	tests := []struct {
 		name        string
 		event       string
-		properties  map[string]any
 		wantErr     error
 		wantDaemon  int
 		wantBackend int
 	}{
-		{name: "daemon_active goes to daemon", event: "daemon_active", properties: map[string]any{"repo_count": "0-5"}, wantDaemon: 1},
-		{name: "sync_failed goes to daemon", event: "sync_failed", properties: map[string]any{"sync_source": "issues", "reason": "provider"}, wantDaemon: 1},
+		{name: "daemon_active goes to daemon", event: "daemon_active", wantDaemon: 1},
+		{name: "sync_failed goes to daemon", event: "sync_failed", wantDaemon: 1},
 		{name: "setup_finished goes to daemon", event: "setup_finished", wantDaemon: 1},
 		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},
@@ -130,7 +129,7 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 			backend := &fakeKitClient{}
 			reporter := &Reporter{daemon: daemon, backend: backend}
 
-			err := reporter.Capture(tt.event, tt.properties)
+			err := reporter.Capture(tt.event, map[string]any{"repo_count": "0-5"})
 			switch {
 			case tt.wantErr != nil:
 				require.ErrorIs(t, err, tt.wantErr)

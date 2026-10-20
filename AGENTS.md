@@ -54,6 +54,7 @@ only routes to them.
 | Phone routes, narrow layouts, or touch UX | `context/mobile-ux.md` |
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | MCP companion tools, transports, safety boundary, or agent handoff | `context/mcp-server.md` |
+| Worklists, their MCP tools, freshness, or worklist UI | `context/worklists.md`, `context/mcp-server.md` |
 | Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
 | Repository source-browser routes, clones, refs, or previews | `context/repository-source-browser.md` |

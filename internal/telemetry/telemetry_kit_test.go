@@ -3,6 +3,7 @@
 package telemetry
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,6 +28,9 @@ func TestNewReporterHandsKitTheStoredInstallIdentity(t *testing.T) {
 
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	t.Setenv("DO_NOT_TRACK", "0")
+	t.Setenv("CI", "")
+	require.NoError(os.Unsetenv("CI"))
 	var built []posthog.Options
 	swapKitReporter(t, func(opts posthog.Options, _ ...posthog.Option) (Client, error) {
 		built = append(built, opts)

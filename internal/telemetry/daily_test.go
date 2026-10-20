@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -83,10 +84,14 @@ func setupDailyReporter(t *testing.T, opts Options, now time.Time, handler http.
 	t.Helper()
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	t.Setenv("DO_NOT_TRACK", "0")
+	t.Setenv("CI", "")
+	require.NoError(t, os.Unsetenv("CI"))
 	endpoint := httptest.NewServer(handler)
 	t.Cleanup(endpoint.Close)
 	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
 		opts.Endpoint = endpoint.URL
+		opts.Version = "v1.2.3"
 		return posthog.NewReporter(opts, options...)
 	})
 	reporter, err := newReporter(opts, now)

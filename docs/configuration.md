@@ -664,12 +664,12 @@ stacks. Mid-stack merges stay blocked by default.
 
 ## Telemetry
 
-Forge sends limited anonymous telemetry by default: daemon activity, an app
+Forge sends limited anonymous telemetry to PostHog by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), `pr_viewed`, `workspace_opened`, `sync_failed`,
 version, commit, OS and architecture, and an anonymous install ID. The browser
 reports app opens to the daemon, never to the analytics service.
-Once per installation, the daemon reports `setup_finished` with no properties
+Once per installation, the daemon reports `setup_finished` with no product properties
 the first time Forge has a ready workspace or a pull request or issue it can
 show. Installations that already had work when they upgraded are not reported.
 At startup and daily while running, the daemon reports the number of tracked
@@ -698,17 +698,74 @@ and `workspace_opened` with its type when you open its own page or launch a
 session or quick action in it. Automatic display beside a PR or issue, or
 creating a workspace without launching anything, sends nothing.
 Each event counts once per installation per UTC day for each provider or
-workspace type. Supported providers are GitHub, GitLab, Forgejo, Gitea, and
-Bitbucket. Workspace types are pull request, issue, Kata task, and ad hoc.
-These events send only `surface: web` and the provider or workspace type.
-It does not send repository names, item content, tokens, usernames, hostnames,
+workspace type. The `provider` values are `github`, `gitlab`, `forgejo`, `gitea`,
+and `bitbucket`. The `item_type` values are `pull_request`, `issue`, `kata_task`,
+and `adhoc`. Both events include `surface: web`.
+Forge does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 
-Disable telemetry with:
+The product properties are `surface` for `app_opened`; `screen` and `surface`
+for `screen_viewed`; `provider` and `surface` for `pr_viewed`; `item_type` and
+`surface` for `workspace_opened`; `duration_bucket` and `surface` for
+`session_ended`; and `repo_count` for `daemon_active`. `setup_finished` has none.
+Browser events use `surface=web`.
+
+Every event includes `event`, `distinct_id` (the anonymous installation ID),
+`uuid` (a random event ID), `timestamp` (UTC), and `properties`.
+Shared properties are `application=kenn-forge`, `source` (`daemon` for
+`daemon_active` and `setup_finished`, `backend` otherwise), `version`, `commit`,
+`goos`, `goarch`, optional `install_age_hours`, `$lib`, `$lib_version`,
+`$process_person_profile=false`, and `$geoip_disable=true`.
+The batch envelope contains `api_key` (a public project key) and `batch` (the
+events). See [Kit's complete shared-field table](https://github.com/kenn-io/kit/blob/v0.39.0/telemetry/posthog/fields.md).
+
+Set `TELEMETRY_ENABLED` or `KENN_FORGE_TELEMETRY_ENABLED` to `0`, `false`, `no`,
+or `off` to disable telemetry. A present `DO_NOT_TRACK` disables it unless its
+value is `0` or `false`. Values are trimmed and case insensitive. Any present
+`CI` variable disables telemetry, including an empty value. Reporting requires
+a plain release version, `vX.Y.Z` or `X.Y.Z`; development and prerelease builds
+send nothing.
+
+The daemon reads these variables at startup. For a shell-managed running daemon:
 
 ```sh
-TELEMETRY_ENABLED=0 kenn-forge daemon start
+TELEMETRY_ENABLED=0 kenn-forge daemon restart
 ```
+
+Use `daemon start` with the same assignment for a stopped daemon. Export the
+variable in the shell startup environment used for future launches; a
+command-scoped assignment applies to that launch.
+
+For a Linux service installed by `fleet setup`, create
+`~/.config/systemd/user/kenn-forge.service.d/telemetry.conf` with:
+
+```ini
+[Service]
+Environment=TELEMETRY_ENABLED=0
+```
+
+As the service user, run `systemctl --user daemon-reload`, then
+`systemctl --user restart kenn-forge.service`. This separate drop-in survives
+`fleet setup` rewriting its managed unit.
+
+For a macOS LaunchAgent installed by `fleet setup`, add
+`<key>TELEMETRY_ENABLED</key><string>0</string>` inside `EnvironmentVariables`
+in `~/Library/LaunchAgents/io.kenn.forge.plist`. In that user's GUI login
+session, reload and start the edited definition:
+
+```sh
+launchctl bootout "gui/$(id -u)/io.kenn.forge"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/io.kenn.forge.plist"
+```
+
+`RunAtLoad` starts the daemon after bootstrap. Repeat the edit and reload after
+rerunning `fleet setup`, which rewrites the plist. Restart both service installs
+through their service manager to retain supervision and the stored opt-out.
+
+For Docker, add `-e TELEMETRY_ENABLED=0` as in the
+[container startup example](https://forge.kenn.io/docs/configuration/#container-startup).
+Recreate an existing container with that environment, keeping its `/home/forge`
+volume and other launch options. `docker restart` reuses the original environment.
 
 Once the daemon reports telemetry as disabled, the web UI stops sending events.
 If you turn telemetry back on, the web UI resumes on the next UTC day, even if
@@ -738,6 +795,7 @@ the port only on host loopback and assumes the proxy runs on the Docker host:
 docker run -d --name forge \
   -p 127.0.0.1:8091:8091 \
   -v forge-home:/home/forge \
+  -e TELEMETRY_ENABLED=0 \
   -e KENN_FORGE_ALLOWED_HOSTS=127.0.0.1:8091,forge.example \
   -e KENN_FORGE_TRUST_REVERSE_PROXY=true \
   kenn-forge:local

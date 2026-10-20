@@ -184,8 +184,9 @@ stateDiagram-v2
 - A handled row stays in place, dimmed, with a check in its status area. The
   rail header shows how many items are handled. The context strip toggles the
   open item's mark, the selection bar marks or unmarks every selected item, and
-  `d` marks the open item and moves to the next row as `j` does, skipping
-  collapsed sections; on an already handled item it only moves
+  `d` marks the open item and, once the mark succeeds, moves to the next row
+  as `j` does, skipping collapsed sections; a failed mark leaves the item open,
+  and on an already handled item `d` only moves
   (`frontend/src/lib/components/worklists/WorklistRail.svelte`).
 - Bulk actions run a quick action, such as triage, on the selected items with
   bounded concurrency, each in its own workspace. Selections mix pull requests

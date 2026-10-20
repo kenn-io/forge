@@ -160,6 +160,23 @@ it("marks the open item handled with d and moves on in rank order", async () => 
   expect(Number(getComputedStyle(openRow.querySelector<HTMLElement>(".worklist-row-body")!).opacity)).toBe(1);
 });
 
+it("keeps the open item when marking it handled with d fails", async () => {
+  await page.viewport(1400, 900);
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [], marks: [] };
+  const failingMarks: MockRouteOverride = (request) => {
+    if (request.method !== "POST" || request.url.pathname !== "/api/v1/worklists/5/handled") return null;
+    return jsonResponse({ title: "Internal Server Error", status: 500, detail: "mark failed" }, 500);
+  };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [failingMarks, worklistRoutes(server)] });
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+
+  pressKey("d");
+
+  await expect.element(page.getByText("0 of 4 handled")).toBeVisible();
+  await expect.element(page.getByText(/mark failed|Could not mark the item handled/)).toBeVisible();
+  expect(window.location.search).toContain("selected=pr%3A42");
+});
+
 it("steps and marks rows in score order when the rail is sorted by score", async () => {
   await page.viewport(1400, 900);
   localStorage.setItem("kenn-forge:worklists:order", "score");

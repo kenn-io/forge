@@ -153,8 +153,15 @@
   function markCurrentAndAdvance(): void {
     const current =
       selectedKey === null ? undefined : worklist.items.find((item) => worklistItemKey(item) === selectedKey);
-    if (current && current.handled_at === null) onSetHandled([current], true);
-    step(1);
+    if (!current || current.handled_at !== null) {
+      step(1);
+      return;
+    }
+    // Move on only once the mark lands, so a failed mark keeps its item open.
+    const key = worklistItemKey(current);
+    onSetHandled([current], true, () => {
+      if (selectedKey === key) step(1);
+    });
   }
 
   function handleRowClick(event: MouseEvent, item: WorklistItem): void {

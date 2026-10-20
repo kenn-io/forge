@@ -7,6 +7,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
+import { navigate } from "./lib/stores/router.svelte.js";
 import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 import { WORKLIST_HANDLED_AT, worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
 
@@ -169,6 +170,43 @@ it("keeps the open item when marking it handled with d fails", async () => {
   await expect.element(page.getByText("0 of 4 handled")).toBeVisible();
   await expect.element(page.getByText(/mark failed|Could not mark the item handled/)).toBeVisible();
   expect(window.location.search).toContain("selected=pr%3A42");
+});
+
+it("does not step after a late d mark once another list is open", async () => {
+  await page.viewport(1400, 900);
+  const server: WorklistServer = {
+    lists: [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")],
+    requests: [],
+    marks: [],
+  };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+  let releaseMark: () => void = () => {};
+  const markHeld = new Promise<void>((resolve) => {
+    releaseMark = resolve;
+  });
+  let markSent = false;
+  const appFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
+    if (request.method === "POST" && new URL(request.url).pathname === "/api/v1/worklists/5/handled") {
+      markSent = true;
+      await markHeld;
+    }
+    return appFetch(input, init);
+  };
+
+  pressKey("d");
+  await vi.waitFor(() => expect(markSent).toBe(true));
+  const otherList =
+    "/worklists/4?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001";
+  navigate(otherList);
+  await expect.element(page.getByRole("region", { name: "Stale issues items" })).toBeVisible();
+  releaseMark();
+
+  await vi.waitFor(() => expect(server.marks).toHaveLength(1));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(window.location.pathname + window.location.search).toBe(otherList);
 });
 
 it("steps and marks rows in score order when the rail is sorted by score", async () => {

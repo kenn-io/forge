@@ -525,17 +525,23 @@ describe("WorklistView", () => {
     expect(screen.getByText("0 of 4 handled")).toBeTruthy();
   });
 
-  it("marks every selected item handled, then offers to unmark them", async () => {
+  it("marks every selected item handled, keeps a selection made meanwhile, then offers to unmark them", async () => {
     server.marks = [];
     renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/handled");
 
     await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
     await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });
     expect(screen.getByText("2 selected")).toBeTruthy();
     await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark handled" }));
+    expect(screen.queryByText("2 selected")).toBeNull();
+    await fireEvent.click(row("Retire the legacy exporter"), { metaKey: true });
+    release();
 
-    await waitFor(() => expect(screen.queryByText("2 selected")).toBeNull());
+    await waitFor(() => expect(screen.getByText("2 of 4 handled")).toBeTruthy());
+    // The open row joins the new selection, so it holds two rows again.
+    await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Clear" }));
     expect(server.marks).toEqual([
       {
         handled: true,
@@ -548,7 +554,6 @@ describe("WorklistView", () => {
     expect(within(row("Add browser regression coverage")).getByLabelText("Handled")).toBeTruthy();
     expect(within(row("Theme toggle does not stick")).getByLabelText("Handled")).toBeTruthy();
     expect(within(row("Mirror host stub PR")).queryByLabelText("Handled")).toBeNull();
-    expect(screen.getByText("2 of 4 handled")).toBeTruthy();
 
     await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
     await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });

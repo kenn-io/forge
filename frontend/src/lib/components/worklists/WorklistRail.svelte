@@ -43,8 +43,7 @@
     onPick: (id: number) => void;
     onDismiss: () => void;
     onItemsChanged: () => void;
-    /** Marks or unmarks items; onApplied runs once the server applied the change. */
-    onSetHandled: (items: readonly WorklistItem[], handled: boolean, onApplied?: () => void) => void;
+    onSetHandled: (items: readonly WorklistItem[], handled: boolean) => void;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
     onVisibleOrder?: (worklist: Worklist, keys: readonly string[]) => void;
   }
@@ -148,10 +147,13 @@
     selection.selected.length > 0 && selection.selected.every((item) => item.handled_at !== null),
   );
 
+  // Clear at once: waiting for the response could clear a newer selection.
   function markSelection(): void {
     const items = selection.selected;
     if (items.length === 0) return;
-    onSetHandled(items, !selectionAllHandled, () => selection.clear());
+    const handled = !selectionAllHandled;
+    selection.clear();
+    onSetHandled(items, handled);
   }
 
   function handleRowClick(event: MouseEvent, item: WorklistItem): void {

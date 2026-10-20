@@ -270,11 +270,12 @@
       stepVisible(1);
       return;
     }
-    // Move on only once the mark lands, so a failed mark keeps its item open.
+    // Move on only once the mark lands, so a failed mark keeps its item open,
+    // and only while the same list and item are still open here.
     const keys = visibleKeys(list);
     const key = worklistItemKey(current);
     setHandled([current], true, () => {
-      if (selectedKey === key) step(1, keys);
+      if (worklists.getOpenId() === list.id && selectedKey === key) step(1, keys);
     });
   }
 

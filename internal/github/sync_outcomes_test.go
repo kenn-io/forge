@@ -32,30 +32,30 @@ func TestSyncFailedOncePerSource(t *testing.T) {
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	for _, phase := range []struct {
-		failA bool
-		failB bool
-		want  int
+		errA error
+		errB error
+		want [][2]string
 	}{
-		{true, false, 1},
-		{true, true, 1},
-		{false, false, 1},
-		{false, true, 2},
+		{platform.ErrPermissionDenied, nil, [][2]string{{"issues", "auth"}}},
+		{platform.ErrPermissionDenied, nil, nil},
+		{platform.ErrPermissionDenied, platform.ErrNotFound, [][2]string{{"issues", "not_found"}}},
+		{nil, platform.ErrNotFound, nil},
 	} {
 		var reads atomic.Int32
 		client.listOpenIssuesFn = func(_ context.Context, owner, name string) ([]*gh.Issue, error) {
 			assert.Equal(t, "acme", owner)
 			assert.Contains(t, []string{"a", "b"}, name)
 			reads.Add(1)
-			if name == "a" && phase.failA || name == "b" && phase.failB {
-				return nil, platform.ErrPermissionDenied
+			if name == "a" {
+				return nil, phase.errA
 			}
-			return nil, nil
+			return nil, phase.errB
 		}
+		events = nil
 		s.RunOnce(t.Context())
 		require.EqualValues(t, 2, reads.Load())
-		require.Len(t, events, phase.want)
+		require.Equal(t, phase.want, events)
 	}
-	assert.Equal(t, [][2]string{{"issues", "auth"}, {"issues", "auth"}}, events)
 }
 
 func TestSyncFailedSourceRecovery(t *testing.T) {
@@ -78,21 +78,21 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 		wantNow   int
 		wantLater int
 	}{
-		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
-		{"cadence skipped with success", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 2},
+		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
+		{"cadence skipped with success", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"no reads", a, nil, []RepoRef{a, b}, a, 1, 1},
 		{"disabled feature without cooldown", a, []observation{{a, platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)}}, []RepoRef{a, b}, a, 1, 1},
 		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, 1, 2},
 		{"failure dominates success", a, []observation{{a, platform.ErrNotFound}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}}, []RepoRef{a, b}, a, 1, 1},
-		{"budget refused with success", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 2},
+		{"budget refused with success", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"local path error", a, []observation{{a, fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})}}, []RepoRef{a, b}, a, 1, 1},
 		{"local access denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EACCES)}}, []RepoRef{a, b}, a, 1, 1},
 		{"local operation denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EPERM)}}, []RepoRef{a, b}, a, 1, 1},
 		{"local full disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.ENOSPC)}}, []RepoRef{a, b}, a, 1, 1},
 		{"local read-only disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.EROFS)}}, []RepoRef{a, b}, a, 1, 1},
-		{"untracked without reads", a, nil, []RepoRef{b}, a, 1, 1},
-		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 1},
+		{"untracked without reads", a, nil, []RepoRef{b}, a, 1, 2},
+		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
 		{"untracked", a, []observation{{b, nil}}, []RepoRef{b}, a, 1, 2},
 		{"archived", a, []observation{{b, nil}}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
 		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, 1, 1},
@@ -382,9 +382,9 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 	for _, tc := range []struct {
 		source string
 		// feature is the disabled feature whose cooldown applies to source.
-		feature  string
-		retained bool
-		want     [][2]string
+		feature string
+		failing bool
+		want    [][2]string
 	}{
 		{"issues", "issues", false, [][2]string{{"merge_requests", "auth"}}},
 		{"issues", "issues", true, nil},
@@ -393,7 +393,7 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 		// The detail drain skips CI reads under the merge request cooldown.
 		{"checks", "merge_requests", true, nil},
 	} {
-		t.Run(fmt.Sprintf("%s/retained=%t", tc.source, tc.retained), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%s/failing=%t", tc.source, tc.failing), func(t *testing.T) {
 			assert := assert.New(t)
 			source := tc.source
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -402,7 +402,7 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 			s.SetClock(func() time.Time { return now })
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			if tc.retained {
+			if tc.failing {
 				pass := &syncPass{}
 				pass.observe(repo, source, platform.ErrPermissionDenied)
 				s.finishSyncPass(pass, []RepoRef{repo})
@@ -412,24 +412,20 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 			// Disablement can be discovered by an item refresh outside a full pass.
 			require.True(t, s.recordRepositoryFeatureDisabled(repo, tc.feature, platform.RepositoryFeatureDisabled(platform.KindGitHub, repo.PlatformHost, tc.feature, errors.New("feature disabled"))))
 			pass := &syncPass{}
-			if !tc.retained {
+			if !tc.failing {
 				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
 				assert.NotContains(pass.results, source, "repository failures must skip the disabled feature")
 			}
 			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Equal(tc.retained, s.syncFailures[source])
+			assert.NotContains(s.syncFailures[source], mergeQueueRepoKey(repo))
 			assert.Equal(tc.want, events)
-			// Resuming a failed probe continues the same source outage.
+			// A repository that leaves the cooldown still failing reports again.
 			now = now.Add(repositoryFeatureProbeInterval)
 			events = nil
 			later := &syncPass{}
 			later.observe(repo, source, platform.ErrPermissionDenied)
 			s.finishSyncPass(later, []RepoRef{repo})
-			if tc.retained {
-				assert.Empty(events)
-			} else {
-				assert.Equal([][2]string{{source, "auth"}}, events)
-			}
+			assert.Equal([][2]string{{source, "auth"}}, events)
 		})
 	}
 }

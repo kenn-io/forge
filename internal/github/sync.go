@@ -867,7 +867,7 @@ type Syncer struct {
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	onSyncFailed     func(source, reason string)
-	syncFailures     map[string]bool
+	syncFailures     map[string]map[string]bool
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()

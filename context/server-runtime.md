@@ -1,11 +1,12 @@
 # Server Runtime
 
-- Full sync passes emit `sync_failed` once per source until a pass has successful
-  reads and no failures; no eligible reads retains the outage, and restart can
-  count it twice. List, CI, clone, fetch, and repository failures count;
-  individual PR, issue, and child reads don't. Archived repositories and feature
-  cooldowns are excluded. Disabled-feature responses observe nothing; 304 counts
-  as success.
+- Full sync passes emit at most one `sync_failed` per source when any repository
+  starts failing it; a repository that keeps failing doesn't report again or hide
+  other repositories' new failures. List, CI, clone, fetch, and repository
+  failures count; individual PR, issue, and child reads don't. Unread
+  repositories keep their state; recovery or disablement clears it, archived or
+  untracked repositories drop out, and restart can count a failing repository
+  twice. Disabled-feature responses observe nothing; 304 counts as success.
   Report only fixed `sync_source` and `reason` values, without repository identifiers
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the

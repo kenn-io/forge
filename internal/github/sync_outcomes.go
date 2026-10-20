@@ -102,7 +102,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		return
 	}
 	if s.syncFailures == nil {
-		s.syncFailures = make(map[string]bool)
+		s.syncFailures = make(map[string]map[string]bool)
 	}
 	for _, source := range syncSources {
 		live := make(map[string]bool, len(tracked))
@@ -114,24 +114,34 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			}
 		}
 		s.featureCooldowns.mu.Unlock()
-		observed := false
+		failures := s.syncFailures[source]
+		if failures == nil {
+			failures = make(map[string]bool)
+			s.syncFailures[source] = failures
+		}
+		for key := range failures {
+			if !live[key] {
+				delete(failures, key)
+			}
+		}
+		// Only repositories that start failing count, so one repository that
+		// keeps failing does not hide outages in the others.
 		reason := ""
 		for key, result := range pass.results[source] {
 			if !live[key] {
 				continue
 			}
-			observed = true
-			if higherSyncFailureReason(result, reason) {
-				reason = result
+			if result == "" {
+				delete(failures, key)
+			} else if !failures[key] {
+				failures[key] = true
+				if higherSyncFailureReason(result, reason) {
+					reason = result
+				}
 			}
 		}
-		if reason != "" {
-			if !s.syncFailures[source] && s.onSyncFailed != nil {
-				s.onSyncFailed(source, reason)
-			}
-			s.syncFailures[source] = true
-		} else if observed {
-			delete(s.syncFailures, source)
+		if reason != "" && s.onSyncFailed != nil {
+			s.onSyncFailed(source, reason)
 		}
 	}
 }

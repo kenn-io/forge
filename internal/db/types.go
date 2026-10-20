@@ -901,7 +901,9 @@ type WorkflowStateListRow struct {
 
 type ListMergeRequestsOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
-	AllowedRepoIDs    []int64
+	AllowedRepoIDs []int64
+	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
+	Items             []RepoItemNumber
 	Label             string
 	RepoID            int64
 	PlatformHost      string
@@ -921,6 +923,11 @@ type ListMergeRequestsOpts struct {
 	// viewer in each repository. nil disables the filter; an empty non-nil
 	// slice matches no subjects.
 	ViewerLogins []RepoViewerLogin
+}
+
+type RepoItemNumber struct {
+	RepoID int64
+	Number int
 }
 
 type ItemActivityOverride struct {
@@ -1020,7 +1027,9 @@ type CommentAutocompleteReference struct {
 
 type ListIssuesOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
-	AllowedRepoIDs    []int64
+	AllowedRepoIDs []int64
+	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
+	Items             []RepoItemNumber
 	PlatformHost      string
 	RepoOwner         string
 	RepoName          string

@@ -74,7 +74,8 @@ func CallAppTool(ctx context.Context, backend Backend, name string, arguments ma
 	switch name {
 	case "kenn_forge_list_repos", "kenn_forge_list_pull_contexts", "kenn_forge_get_item_context",
 		"kenn_forge_list_activity", "kenn_forge_search_items", "kenn_forge_find_review_candidates",
-		"kenn_forge_get_stack_context", "kenn_forge_list_items_by_workflow_state":
+		"kenn_forge_get_stack_context", "kenn_forge_list_items_by_workflow_state",
+		"kenn_forge_list_worklists", "kenn_forge_get_worklist":
 	default:
 		return nil, &Error{Kind: "forbidden", Message: "generated apps may only call cached Forge read tools"}
 	}

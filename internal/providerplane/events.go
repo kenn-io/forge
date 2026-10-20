@@ -42,6 +42,7 @@ var hubProviderEventTypes = map[string]struct{}{
 	"deferred_merge_completed":   {},
 	"workflow_dispatch_progress": {},
 	"workflow_runs_changed":      {},
+	"worklists_changed":          {},
 }
 
 // IsHubProviderEvent reports whether an event is provider-owned and

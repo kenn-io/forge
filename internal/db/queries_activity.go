@@ -1004,6 +1004,30 @@ func repoIDCondition(column string, repoIDs []int64, args *[]any) string {
 	return column + " IN (SELECT value FROM json_each(?))"
 }
 
+func repoItemCondition(alias string, items []RepoItemNumber, args *[]any) string {
+	if items == nil {
+		return ""
+	}
+	if len(items) == 0 {
+		return "0 = 1"
+	}
+	encoded := make([]byte, 0, len(items)*16+2)
+	encoded = append(encoded, '[')
+	for i, item := range items {
+		if i > 0 {
+			encoded = append(encoded, ',')
+		}
+		encoded = append(encoded, '[')
+		encoded = strconv.AppendInt(encoded, item.RepoID, 10)
+		encoded = append(encoded, ',')
+		encoded = strconv.AppendInt(encoded, int64(item.Number), 10)
+		encoded = append(encoded, ']')
+	}
+	*args = append(*args, string(append(encoded, ']')))
+	return "(" + alias + ".repo_id, " + alias + ".number) IN (" +
+		"SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?))"
+}
+
 // activityNotificationRepoFilterCondition scopes the notification union to
 // the requested repositories. It matches on the joined canonical repository
 // r, not the notification's cached route fields, so linked rows stay visible

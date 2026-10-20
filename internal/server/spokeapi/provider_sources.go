@@ -20,6 +20,7 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
@@ -944,4 +945,82 @@ func (s *HubProviderSource) ReadWorkspaceTarget(ctx context.Context, repo db.Rep
 		return workspaceapi.WorkspaceTargetMetadata{}, InvalidHubDescriptor(errors.New("workspace target repository identity changed"))
 	}
 	return workspaceapi.WorkspaceTargetMetadata{URL: detail.Issue.URL, Title: detail.Issue.Title, State: detail.Issue.State}, nil
+}
+
+func (s *HubProviderSource) PutWorklist(
+	ctx context.Context, put mcpserver.WorklistPut,
+) (mcpserver.WorklistPutResult, error) {
+	items := make([]generated.FederationWorklistPutItem, 0, len(put.Items))
+	for _, item := range put.Items {
+		var score *int64
+		if item.Score != nil {
+			score = new(int64(*item.Score))
+		}
+		items = append(items, generated.FederationWorklistPutItem{
+			Item: generated.FederationWorkflowItemIdentity{
+				Type: item.Item.Type, Provider: item.Item.Provider, PlatformHost: item.Item.PlatformHost,
+				PlatformRepoID: wireRepoID(item.Item.RepoKey), BitbucketRepositoryUUID: wireRepoUUID(item.Item.RepoKey),
+				Owner: item.Item.Owner, Name: item.Item.Name, Number: int64(item.Item.Number),
+			},
+			Score: score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+		})
+	}
+	body := generated.FederationPutWorklistBody{
+		Title: put.Title, Recipe: put.Recipe, CreatedBy: put.CreatedBy,
+		WorkspaceID: put.WorkspaceID, Items: items,
+	}
+	if put.WorklistID != 0 {
+		body.WorklistID = new(put.WorklistID)
+	}
+	httpRequest, err := generated.NewFederationPutWorklistRequest(ctx, "/api/v1", &generated.FederationPutWorklistRequestOptions{Body: &body})
+	if err != nil {
+		return mcpserver.WorklistPutResult{}, err
+	}
+	var response mcpserver.WorklistPutResult
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
+		return mcpserver.WorklistPutResult{}, err
+	}
+	return response, nil
+}
+
+func (s *HubProviderSource) GetWorklist(
+	ctx context.Context, id int64,
+) (worklistapi.WorklistResponse, error) {
+	httpRequest, err := generated.NewGetWorklistRequest(ctx, "/api/v1", &generated.GetWorklistRequestOptions{PathParams: &generated.GetWorklistPath{ID: id}})
+	if err != nil {
+		return worklistapi.WorklistResponse{}, err
+	}
+	var response worklistapi.WorklistResponse
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
+		return worklistapi.WorklistResponse{}, err
+	}
+	return response, nil
+}
+
+func (s *HubProviderSource) ListWorklists(
+	ctx context.Context, includeDismissed bool,
+) ([]worklistapi.WorklistSummaryResponse, error) {
+	httpRequest, err := generated.NewListWorklistsRequest(ctx, "/api/v1", &generated.ListWorklistsRequestOptions{Query: &generated.ListWorklistsQuery{IncludeDismissed: new(includeDismissed)}})
+	if err != nil {
+		return nil, err
+	}
+	var response worklistapi.ListWorklistsResponse
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
+		return nil, err
+	}
+	return response.Worklists, nil
+}
+
+func (s *HubProviderSource) DismissWorklist(
+	ctx context.Context, id int64,
+) (worklistapi.WorklistSummaryResponse, error) {
+	httpRequest, err := generated.NewDismissWorklistRequest(ctx, "/api/v1", &generated.DismissWorklistRequestOptions{PathParams: &generated.DismissWorklistPath{ID: id}})
+	if err != nil {
+		return worklistapi.WorklistSummaryResponse{}, err
+	}
+	var response worklistapi.WorklistSummaryResponse
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
+		return worklistapi.WorklistSummaryResponse{}, err
+	}
+	return response, nil
 }

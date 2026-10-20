@@ -40,6 +40,7 @@ export const ProblemErrorCode = {
   unsupportedMediaType: "unsupportedMediaType",
   upstreamError: "upstreamError",
   validationError: "validationError",
+  worklistNotFound: "worklistNotFound",
   workspaceAlreadyExists: "workspaceAlreadyExists",
   workspaceDeletionInProgress: "workspaceDeletionInProgress",
   workspaceDirectoryNotReusable: "workspaceDirectoryNotReusable",

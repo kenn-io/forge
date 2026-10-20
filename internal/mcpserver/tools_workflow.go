@@ -32,7 +32,7 @@ func (s *Server) registerWorkflowTools() {
 		Name: "kenn_forge_set_item_workflow_state",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Set kenn-forge-local workflow state for one cached PR or issue. " +
-			"This is the only MCP write tool and never calls provider APIs.",
+			"Never calls provider APIs.",
 	}, wrapTool(s.setItemWorkflowState))
 }
 

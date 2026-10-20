@@ -3624,6 +3624,58 @@ components:
         - actor
         - reason
       type: object
+    FederationWorklistPut:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/FederationWorklistPut.json
+          format: uri
+          readOnly: true
+          type: string
+        created_by:
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/FederationWorklistPutItem"
+          type: array
+        recipe:
+          type: string
+        title:
+          type: string
+        worklist_id:
+          format: int64
+          type: integer
+        workspace_id:
+          type: string
+      required:
+        - title
+        - recipe
+        - created_by
+        - workspace_id
+        - items
+      type: object
+    FederationWorklistPutItem:
+      additionalProperties: false
+      properties:
+        caveat:
+          type: string
+        item:
+          $ref: "#/components/schemas/FederationWorkflowItemIdentity"
+        note:
+          type: string
+        score:
+          format: int64
+          type: integer
+        section:
+          type: string
+      required:
+        - item
+        - section
+        - note
+        - caveat
+      type: object
     FederationWorkspaceProviderState:
       additionalProperties: false
       properties:
@@ -5376,6 +5428,23 @@ components:
       required:
         - repositories
       type: object
+    ListWorklistsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ListWorklistsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        worklists:
+          items:
+            $ref: "#/components/schemas/WorklistSummaryResponse"
+          type: array
+      required:
+        - worklists
+      type: object
     ListWorkspaceAgentSessionsOutputBody:
       additionalProperties: false
       properties:
@@ -6778,6 +6847,7 @@ components:
             - unsupportedMediaType
             - upstreamError
             - validationError
+            - worklistNotFound
             - workspaceAlreadyExists
             - workspaceDeletionInProgress
             - workspaceDirectoryNotReusable
@@ -11374,6 +11444,266 @@ components:
       required:
         - status
       type: object
+    WorklistChangesResponse:
+      additionalProperties: false
+      properties:
+        ci_from:
+          type: string
+        ci_to:
+          type: string
+        new_comments:
+          format: int64
+          type: integer
+        new_commits:
+          type: boolean
+        review_from:
+          type: string
+        review_to:
+          type: string
+        state_from:
+          type: string
+        state_to:
+          type: string
+      required:
+        - new_commits
+        - new_comments
+      type: object
+    WorklistItemResponse:
+      additionalProperties: false
+      properties:
+        caveat:
+          type: string
+        changes:
+          $ref: "#/components/schemas/WorklistChangesResponse"
+        freshness:
+          enum:
+            - fresh
+            - changed
+            - gone
+          type: string
+        issue:
+          anyOf:
+            - $ref: "#/components/schemas/IssueResponse"
+            - type: "null"
+          description: Issue list row; null unless the item is a visible issue.
+        item_type:
+          enum:
+            - pr
+            - issue
+          type: string
+        live:
+          anyOf:
+            - $ref: "#/components/schemas/WorklistItemStateResponse"
+            - type: "null"
+          description: Current synced state; null once the item is no longer visible.
+        note:
+          type: string
+        number:
+          format: int64
+          type: integer
+        position:
+          format: int64
+          type: integer
+        pull:
+          anyOf:
+            - $ref: "#/components/schemas/MergeRequestResponse"
+            - type: "null"
+          description: Pull request list row; null unless the item is a visible pull request.
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+        score:
+          format: int64
+          maximum: 10
+          minimum: 1
+          type:
+            - integer
+            - "null"
+        section:
+          type: string
+        snapshot:
+          $ref: "#/components/schemas/WorklistItemStateResponse"
+          description: Synced state Forge recorded when the agent wrote the item.
+        title:
+          type: string
+        url:
+          type: string
+        written_at:
+          format: date-time
+          type: string
+      required:
+        - position
+        - repo
+        - item_type
+        - number
+        - title
+        - url
+        - score
+        - section
+        - note
+        - caveat
+        - written_at
+        - snapshot
+        - live
+        - freshness
+        - changes
+        - pull
+        - issue
+      type: object
+    WorklistItemStateResponse:
+      additionalProperties: false
+      properties:
+        ci_status:
+          type: string
+        comment_count:
+          format: int64
+          type: integer
+        head_sha:
+          type: string
+        last_activity_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        review_decision:
+          type: string
+        state:
+          type: string
+      required:
+        - state
+        - head_sha
+        - comment_count
+        - ci_status
+        - review_decision
+        - last_activity_at
+      type: object
+    WorklistPutResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistPutResult.json
+          format: uri
+          readOnly: true
+          type: string
+        created:
+          type: boolean
+        item_count:
+          format: int64
+          type: integer
+        worklist_id:
+          format: int64
+          type: integer
+      required:
+        - worklist_id
+        - item_count
+        - created
+      type: object
+    WorklistResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          type: string
+        dismissed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        id:
+          format: int64
+          type: integer
+        items:
+          items:
+            $ref: "#/components/schemas/WorklistItemResponse"
+          type: array
+        recipe:
+          type: string
+        title:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        workspace_id:
+          description: ACP workspace that last wrote the list; empty when none or for another node's read.
+          type: string
+      required:
+        - id
+        - title
+        - recipe
+        - created_by
+        - workspace_id
+        - created_at
+        - updated_at
+        - dismissed_at
+        - items
+      type: object
+    WorklistSummaryResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistSummaryResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        changed_count:
+          format: int64
+          type: integer
+        created_at:
+          format: date-time
+          type: string
+        created_by:
+          description: Label of the agent that last wrote the list; may be empty.
+          type: string
+        dismissed_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        gone_count:
+          format: int64
+          type: integer
+        id:
+          format: int64
+          type: integer
+        item_count:
+          format: int64
+          type: integer
+        recipe:
+          description: The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
+          type: string
+        title:
+          type: string
+        updated_at:
+          format: date-time
+          type: string
+        workspace_id:
+          description: ACP workspace that last wrote the list; empty when none or for another node's read.
+          type: string
+      required:
+        - id
+        - title
+        - recipe
+        - created_by
+        - workspace_id
+        - item_count
+        - changed_count
+        - gone_count
+        - created_at
+        - updated_at
+        - dismissed_at
+      type: object
     Workspace:
       additionalProperties: false
       properties:
@@ -15490,6 +15820,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List hub workflow states for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/worklist:
+    put:
+      operationId: federation-put-worklist
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FederationWorklistPut"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistPutResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Put hub worklist for a Forge spoke
       tags:
         - Fleet
   /federation/provider/workspace-auto-assign:
@@ -28152,6 +28507,111 @@ paths:
       summary: Save a workspace target verified by the controller
       tags:
         - Devboxes
+  /worklists:
+    get:
+      operationId: list-worklists
+      parameters:
+        - description: Include dismissed worklists.
+          explode: false
+          in: query
+          name: include_dismissed
+          schema:
+            description: Include dismissed worklists.
+            type: boolean
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListWorklistsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List worklists
+      tags:
+        - Worklists
+  /worklists/{id}:
+    get:
+      operationId: get-worklist
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get worklist
+      tags:
+        - Worklists
+  /worklists/{id}/dismiss:
+    post:
+      operationId: dismiss-worklist
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistSummaryResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Dismiss worklist
+      tags:
+        - Worklists
+  /worklists/{id}/undismiss:
+    post:
+      operationId: undismiss-worklist
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistSummaryResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Restore dismissed worklist
+      tags:
+        - Worklists
   /workspaces:
     get:
       operationId: list-workspaces

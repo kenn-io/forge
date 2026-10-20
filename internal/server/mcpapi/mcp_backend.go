@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
 )
@@ -301,4 +302,54 @@ func McpInitialMessage(result workspaceapi.InitialMessageResult) *mcpserver.Init
 		State: result.State, MessageBytes: result.MessageBytes,
 		DeliveredAt: result.DeliveredAt,
 	}
+}
+
+func McpWorklistSummary(summary worklistapi.WorklistSummaryResponse) mcpserver.WorklistSummary {
+	return mcpserver.WorklistSummary{
+		ID: summary.ID, Title: summary.Title, Recipe: summary.Recipe, CreatedBy: summary.CreatedBy,
+		ItemCount: summary.ItemCount, ChangedCount: summary.ChangedCount, GoneCount: summary.GoneCount,
+		CreatedAt: summary.CreatedAt, UpdatedAt: summary.UpdatedAt, DismissedAt: derefString(summary.DismissedAt),
+	}
+}
+
+func McpWorklist(worklist worklistapi.WorklistResponse) mcpserver.Worklist {
+	out := mcpserver.Worklist{
+		ID: worklist.ID, Title: worklist.Title, Recipe: worklist.Recipe, CreatedBy: worklist.CreatedBy,
+		WorkspaceID: worklist.WorkspaceID, CreatedAt: worklist.CreatedAt, UpdatedAt: worklist.UpdatedAt,
+		DismissedAt: derefString(worklist.DismissedAt),
+		Items:       make([]mcpserver.WorklistItem, 0, len(worklist.Items)),
+	}
+	for _, item := range worklist.Items {
+		converted := mcpserver.WorklistItem{
+			Position: item.Position,
+			Item: mcpserver.ItemIdentity{
+				Type: item.ItemType, Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
+				RepoKey: item.Repo.Key, Owner: item.Repo.Owner, Name: item.Repo.Name, Number: item.Number,
+			},
+			Title: item.Title, URL: item.URL, Score: item.Score,
+			Section: item.Section, Note: item.Note, Caveat: item.Caveat, WrittenAt: item.WrittenAt,
+			Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
+			Changes: mcpserver.WorklistChanges(item.Changes),
+		}
+		if item.Live != nil {
+			converted.Live = new(mcpWorklistItemState(*item.Live))
+		}
+		out.Items = append(out.Items, converted)
+	}
+	return out
+}
+
+func mcpWorklistItemState(state worklistapi.WorklistItemStateResponse) mcpserver.WorklistItemState {
+	return mcpserver.WorklistItemState{
+		State: state.State, HeadSHA: state.HeadSHA, CommentCount: state.CommentCount,
+		CIStatus: state.CIStatus, ReviewDecision: state.ReviewDecision,
+		LastActivityAt: derefString(state.LastActivityAt),
+	}
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

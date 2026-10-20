@@ -69,6 +69,7 @@ import (
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/server/telemetryapi"
 	"go.kenn.io/forge/internal/server/workflowapi"
+	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/systemclipboard"
 	"go.kenn.io/forge/internal/telemetry"
@@ -211,6 +212,7 @@ type Server struct {
 	externalContext        *externalcontext.Runner
 	issueAPI               *issueapi.Handler
 	workflowAPI            *workflowapi.Handler
+	worklistAPI            *worklistapi.Handler
 	pullLifecycle          streamapi.PullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	providerSource         *spokeapi.HubProviderSource
@@ -999,6 +1001,18 @@ func newServer(
 			FilterRepos:                       s.filterTrackedRepos,
 			RepoOperations:                    s.operationapi.RepoOperations,
 			MarkClosedLinkedNotificationsDone: s.notificationapi.MarkClosedLinkedNotificationsDone,
+		})
+		var worklistProviderSource worklistapi.ProviderSource
+		if s.providerSource != nil {
+			worklistProviderSource = s.providerSource
+		}
+		s.worklistAPI = worklistapi.New(worklistapi.Deps{
+			DB: database, Resolver: repoResolver, Pulls: s.pullAPI, Issues: s.issueAPI,
+			Now:         func() time.Time { return s.now() },
+			FilterRepos: s.filterTrackedRepos, ProviderSource: worklistProviderSource,
+			Broadcast: func(eventType string, data any) {
+				s.hub.Broadcast(syncevents.Event{Type: eventType, Data: data})
+			},
 		})
 		s.pullLifecycle = s.pullAPI
 	}

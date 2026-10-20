@@ -54,7 +54,7 @@ var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
 	"workspaces", "terminal", "workspace-item", "settings", "project-intake",
-	"design-system", "onboarding",
+	"design-system", "onboarding", "worklists",
 }
 
 var screenFilter = posthog.AllowStringValues(screenNames...)

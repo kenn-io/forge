@@ -2306,6 +2306,31 @@ func (o *FederationListWorkflowStatesRequestOptions) GetHeader() (map[string]str
 	return nil, nil
 }
 
+// FederationPutWorklistRequestOptions is the options needed to make a request to FederationPutWorklist.
+type FederationPutWorklistRequestOptions struct {
+	Body *FederationPutWorklistBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *FederationPutWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *FederationPutWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *FederationPutWorklistRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *FederationPutWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // FederationAutoAssignWorkspaceItemRequestOptions is the options needed to make a request to FederationAutoAssignWorkspaceItem.
 type FederationAutoAssignWorkspaceItemRequestOptions struct {
 	Body *FederationAutoAssignWorkspaceItemBody
@@ -11382,6 +11407,127 @@ func (o *UpdateWorkerWorkspaceTargetRequestOptions) GetHeader() (map[string]stri
 	return nil, nil
 }
 
+// ListWorklistsRequestOptions is the options needed to make a request to ListWorklists.
+type ListWorklistsRequestOptions struct {
+	Query *ListWorklistsQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ListWorklistsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ListWorklistsRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ListWorklistsRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *ListWorklistsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetWorklistRequestOptions is the options needed to make a request to GetWorklist.
+type GetWorklistRequestOptions struct {
+	PathParams *GetWorklistPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorklistRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// DismissWorklistRequestOptions is the options needed to make a request to DismissWorklist.
+type DismissWorklistRequestOptions struct {
+	PathParams *DismissWorklistPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DismissWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DismissWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DismissWorklistRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DismissWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// UndismissWorklistRequestOptions is the options needed to make a request to UndismissWorklist.
+type UndismissWorklistRequestOptions struct {
+	PathParams *UndismissWorklistPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UndismissWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UndismissWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UndismissWorklistRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *UndismissWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // CreateWorkspaceRequestOptions is the options needed to make a request to CreateWorkspace.
 type CreateWorkspaceRequestOptions struct {
 	Body *CreateWorkspaceBody
@@ -12650,6 +12796,7 @@ type ClientInterface interface {
 	FederationUpdateProviderSettingsWithResponse(ctx context.Context, options *FederationUpdateProviderSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationUpdateProviderSettingsResp, error)
 	FederationSetWorkflowStateWithResponse(ctx context.Context, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationSetWorkflowStateResp, error)
 	FederationListWorkflowStatesWithResponse(ctx context.Context, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationListWorkflowStatesResp, error)
+	FederationPutWorklistWithResponse(ctx context.Context, options *FederationPutWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationPutWorklistResp, error)
 	FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, options *FederationAutoAssignWorkspaceItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationAutoAssignWorkspaceItemResp, error)
 	FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationResolveWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveWorkspaceLaunchSpecResp, error)
 	FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Context, options *FederationRefreshWorkspaceLaunchSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationRefreshWorkspaceLaunchSpecResp, error)
@@ -12959,6 +13106,10 @@ type ClientInterface interface {
 	CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error)
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
 	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
+	ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error)
+	GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error)
+	DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error)
+	UndismissWorklistWithResponse(ctx context.Context, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UndismissWorklistResp, error)
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error)
 	CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error)
 	DeleteWorkspaceWithResponse(ctx context.Context, options *DeleteWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteWorkspaceResp, error)
@@ -17657,6 +17808,63 @@ func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, o
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "FederationListWorkflowStatesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// FederationPutWorklist Put hub worklist for a Forge spoke
+func (c *Client) FederationPutWorklistWithResponse(ctx context.Context, options *FederationPutWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationPutWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/worklist",
+		Method:      "PUT",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/worklist")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &FederationPutWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(FederationPutWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(FederationPutWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationPutWorklistResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -33618,6 +33826,234 @@ func (c *Client) UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, op
 	}
 }
 
+// ListWorklists List worklists
+func (c *Client) ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"include_dismissed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ListWorklistsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ListWorklistsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ListWorklistsResponseJSON)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorklistsResponseJSON",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetWorklist Get worklist
+func (c *Client) GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/{id}")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// DismissWorklist Dismiss worklist
+func (c *Client) DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/dismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/{id}/dismiss")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DismissWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DismissWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(DismissWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DismissWorklistResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UndismissWorklist Restore dismissed worklist
+func (c *Client) UndismissWorklistWithResponse(ctx context.Context, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UndismissWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/undismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/{id}/undismiss")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UndismissWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UndismissWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(UndismissWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UndismissWorklistResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // ListWorkspaces List workspaces
 func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error) {
 	var err error
@@ -36920,6 +37356,22 @@ func (c *Client) FederationListWorkflowStatesRaw(ctx context.Context, httpClient
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
 		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// FederationPutWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) FederationPutWorklistRaw(ctx context.Context, httpClient *http.Client, options *FederationPutWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/worklist",
+		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -41963,6 +42415,70 @@ func (c *Client) UpdateWorkerWorkspaceTargetRaw(ctx context.Context, httpClient 
 	return httpClient.Do(req)
 }
 
+// ListWorklistsRaw returns an unread response. The caller must close its body.
+func (c *Client) ListWorklistsRaw(ctx context.Context, httpClient *http.Client, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"include_dismissed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorklistRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// DismissWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) DismissWorklistRaw(ctx context.Context, httpClient *http.Client, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/dismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UndismissWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) UndismissWorklistRaw(ctx context.Context, httpClient *http.Client, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/undismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // ListWorkspacesRaw returns an unread response. The caller must close its body.
 func (c *Client) ListWorkspacesRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44026,6 +44542,23 @@ func NewFederationListWorkflowStatesRequest(ctx context.Context, baseURL string,
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
 		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewFederationPutWorklistRequest constructs a typed request for a caller-owned transport.
+func NewFederationPutWorklistRequest(ctx context.Context, baseURL string, options *FederationPutWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/worklist",
+		Method:      "PUT",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -49374,6 +49907,74 @@ func NewUpdateWorkerWorkspaceTargetRequest(ctx context.Context, baseURL string, 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewListWorklistsRequest constructs a typed request for a caller-owned transport.
+func NewListWorklistsRequest(ctx context.Context, baseURL string, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"include_dismissed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetWorklistRequest constructs a typed request for a caller-owned transport.
+func NewGetWorklistRequest(ctx context.Context, baseURL string, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewDismissWorklistRequest constructs a typed request for a caller-owned transport.
+func NewDismissWorklistRequest(ctx context.Context, baseURL string, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/dismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUndismissWorklistRequest constructs a typed request for a caller-owned transport.
+func NewUndismissWorklistRequest(ctx context.Context, baseURL string, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/undismiss",
+		Method:     "POST",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewListWorkspacesRequest constructs a typed request for a caller-owned transport.
 func NewListWorkspacesRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -50315,6 +50916,7 @@ const (
 	ProblemErrorCodeUnsupportedMediaType          ProblemErrorCode = "unsupportedMediaType"
 	ProblemErrorCodeUpstreamError                 ProblemErrorCode = "upstreamError"
 	ProblemErrorCodeValidationError               ProblemErrorCode = "validationError"
+	ProblemErrorCodeWorklistNotFound              ProblemErrorCode = "worklistNotFound"
 	ProblemErrorCodeWorkspaceAlreadyExists        ProblemErrorCode = "workspaceAlreadyExists"
 	ProblemErrorCodeWorkspaceDeletionInProgress   ProblemErrorCode = "workspaceDeletionInProgress"
 	ProblemErrorCodeWorkspaceDirectoryNotReusable ProblemErrorCode = "workspaceDirectoryNotReusable"
@@ -50371,6 +50973,21 @@ const (
 	WorkflowStateMetaResponseStatusNew           WorkflowStateMetaResponseStatus = "new"
 	WorkflowStateMetaResponseStatusReviewing     WorkflowStateMetaResponseStatus = "reviewing"
 	WorkflowStateMetaResponseStatusWaiting       WorkflowStateMetaResponseStatus = "waiting"
+)
+
+type WorklistItemResponseFreshness string
+
+const (
+	WorklistItemResponseFreshnessChanged WorklistItemResponseFreshness = "changed"
+	WorklistItemResponseFreshnessFresh   WorklistItemResponseFreshness = "fresh"
+	WorklistItemResponseFreshnessGone    WorklistItemResponseFreshness = "gone"
+)
+
+type WorklistItemResponseItemType string
+
+const (
+	WorklistItemResponseItemTypeIssue WorklistItemResponseItemType = "issue"
+	WorklistItemResponseItemTypePr    WorklistItemResponseItemType = "pr"
 )
 
 type WorkspaceChatCommandType string
@@ -52521,6 +53138,18 @@ type UpdateWorkerWorkspaceTargetPath struct {
 	ID string `json:"id"`
 }
 
+type GetWorklistPath struct {
+	ID int64 `json:"id"`
+}
+
+type DismissWorklistPath struct {
+	ID int64 `json:"id"`
+}
+
+type UndismissWorklistPath struct {
+	ID int64 `json:"id"`
+}
+
 type DeleteWorkspacePath struct {
 	ID string `json:"id"`
 }
@@ -52715,6 +53344,8 @@ type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
 type FederationSetWorkflowStateBody = FederationSetWorkflowStateRequest
 
 type FederationListWorkflowStatesBody = FederationWorkflowQuery
+
+type FederationPutWorklistBody = FederationWorklistPut
 
 type FederationAutoAssignWorkspaceItemBody = ProviderWorkspaceItemRequest
 
@@ -53662,6 +54293,11 @@ type TriggerSyncQuery struct {
 	OnlyRepo []string `json:"only_repo,omitempty"`
 }
 
+type ListWorklistsQuery struct {
+	// IncludeDismissed Include dismissed worklists.
+	IncludeDismissed *bool `json:"include_dismissed,omitempty"`
+}
+
 type DeleteWorkspaceQuery struct {
 	Force *bool `json:"force,omitempty"`
 }
@@ -54061,6 +54697,10 @@ type FederationSetWorkflowStateErrorResponse = ProblemError
 type FederationListWorkflowStatesResponse = FederationWorkflowPage
 
 type FederationListWorkflowStatesErrorResponse = ProblemError
+
+type FederationPutWorklistResponse = WorklistPutResult
+
+type FederationPutWorklistErrorResponse = ProblemError
 
 type FederationAutoAssignWorkspaceItemErrorResponse = ProblemError
 
@@ -55134,6 +55774,22 @@ type RefreshWorkerContextErrorResponse = ProblemError
 
 type UpdateWorkerWorkspaceTargetErrorResponse = ProblemError
 
+type ListWorklistsResponseJSON = ListWorklistsResponse
+
+type ListWorklistsErrorResponse = ProblemError
+
+type GetWorklistResponse = WorklistResponse
+
+type GetWorklistErrorResponse = ProblemError
+
+type DismissWorklistResponse = WorklistSummaryResponse
+
+type DismissWorklistErrorResponse = ProblemError
+
+type UndismissWorklistResponse = WorklistSummaryResponse
+
+type UndismissWorklistErrorResponse = ProblemError
+
 type ListWorkspacesResponse = ListWorkspacesOutputBody
 
 type ListWorkspacesErrorResponse = ProblemError
@@ -55920,6 +56576,14 @@ type FederationListWorkflowStatesResp struct {
 	StatusCode   int
 	Error        *FederationListWorkflowStatesErrorResponse
 	JSON200      *FederationListWorkflowStatesResponse
+}
+
+type FederationPutWorklistResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *FederationPutWorklistErrorResponse
+	JSON200      *FederationPutWorklistResponse
 }
 
 type FederationAutoAssignWorkspaceItemResp struct {
@@ -58288,6 +58952,38 @@ type UpdateWorkerWorkspaceTargetResp struct {
 	Error        *UpdateWorkerWorkspaceTargetErrorResponse
 }
 
+type ListWorklistsResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ListWorklistsErrorResponse
+	JSON200      *ListWorklistsResponseJSON
+}
+
+type GetWorklistResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *GetWorklistErrorResponse
+	JSON200      *GetWorklistResponse
+}
+
+type DismissWorklistResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *DismissWorklistErrorResponse
+	JSON200      *DismissWorklistResponse
+}
+
+type UndismissWorklistResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *UndismissWorklistErrorResponse
+	JSON200      *UndismissWorklistResponse
+}
+
 type ListWorkspacesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
@@ -59941,6 +60637,25 @@ type FederationWorkflowUpdate struct {
 	Status         string `json:"status"`
 }
 
+type FederationWorklistPut struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                     `json:"$schema,omitempty"`
+	CreatedBy   string                      `json:"created_by"`
+	Items       []FederationWorklistPutItem `json:"items"`
+	Recipe      string                      `json:"recipe"`
+	Title       string                      `json:"title"`
+	WorklistID  *int64                      `json:"worklist_id,omitempty"`
+	WorkspaceID string                      `json:"workspace_id"`
+}
+
+type FederationWorklistPutItem struct {
+	Caveat  string                         `json:"caveat"`
+	Item    FederationWorkflowItemIdentity `json:"item"`
+	Note    string                         `json:"note"`
+	Score   *int64                         `json:"score,omitempty"`
+	Section string                         `json:"section"`
+}
+
 type FederationWorkspaceProviderState struct {
 	ID                 string  `json:"id"`
 	ItemAuthor         *string `json:"item_author,omitempty"`
@@ -60765,6 +61480,12 @@ type ListUserRepositoriesOutputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema       *string          `json:"$schema,omitempty"`
 	Repositories []UserRepository `json:"repositories"`
+}
+
+type ListWorklistsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string                   `json:"$schema,omitempty"`
+	Worklists []WorklistSummaryResponse `json:"worklists"`
 }
 
 type ListWorkspaceAgentSessionsOutputBody struct {
@@ -62951,6 +63672,98 @@ type WorkflowStateMetaResponse struct {
 	UpdatedAt     *time.Time                      `json:"updated_at,omitempty"`
 	UpdatedReason *string                         `json:"updated_reason,omitempty"`
 	UpdatedSource *string                         `json:"updated_source,omitempty"`
+}
+
+type WorklistChangesResponse struct {
+	CiFrom      *string `json:"ci_from,omitempty"`
+	CiTo        *string `json:"ci_to,omitempty"`
+	NewComments int64   `json:"new_comments"`
+	NewCommits  bool    `json:"new_commits"`
+	ReviewFrom  *string `json:"review_from,omitempty"`
+	ReviewTo    *string `json:"review_to,omitempty"`
+	StateFrom   *string `json:"state_from,omitempty"`
+	StateTo     *string `json:"state_to,omitempty"`
+}
+
+type WorklistItemResponse struct {
+	Caveat    string                        `json:"caveat"`
+	Changes   WorklistChangesResponse       `json:"changes"`
+	Freshness WorklistItemResponseFreshness `json:"freshness"`
+
+	// Issue Issue list row; null unless the item is a visible issue.
+	Issue    IssueResponse                `json:"issue"`
+	ItemType WorklistItemResponseItemType `json:"item_type"`
+
+	// Live Current synced state; null once the item is no longer visible.
+	Live     WorklistItemStateResponse `json:"live"`
+	Note     string                    `json:"note"`
+	Number   int64                     `json:"number"`
+	Position int64                     `json:"position"`
+
+	// Pull Pull request list row; null unless the item is a visible pull request.
+	Pull      MergeRequestResponse      `json:"pull"`
+	Repo      RepoRefResponse           `json:"repo"`
+	Score     *int64                    `json:"score,omitempty"`
+	Section   string                    `json:"section"`
+	Snapshot  WorklistItemStateResponse `json:"snapshot"`
+	Title     string                    `json:"title"`
+	URL       string                    `json:"url"`
+	WrittenAt time.Time                 `json:"written_at"`
+}
+
+type WorklistItemStateResponse struct {
+	CiStatus       string     `json:"ci_status"`
+	CommentCount   int64      `json:"comment_count"`
+	HeadSha        string     `json:"head_sha"`
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	ReviewDecision string     `json:"review_decision"`
+	State          string     `json:"state"`
+}
+
+type WorklistPutResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema     *string `json:"$schema,omitempty"`
+	Created    bool    `json:"created"`
+	ItemCount  int64   `json:"item_count"`
+	WorklistID int64   `json:"worklist_id"`
+}
+
+type WorklistResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema      *string                `json:"$schema,omitempty"`
+	CreatedAt   time.Time              `json:"created_at"`
+	CreatedBy   string                 `json:"created_by"`
+	DismissedAt *time.Time             `json:"dismissed_at,omitempty"`
+	ID          int64                  `json:"id"`
+	Items       []WorklistItemResponse `json:"items"`
+	Recipe      string                 `json:"recipe"`
+	Title       string                 `json:"title"`
+	UpdatedAt   time.Time              `json:"updated_at"`
+
+	// WorkspaceID ACP workspace that last wrote the list; empty when none or for another node's read.
+	WorkspaceID string `json:"workspace_id"`
+}
+
+type WorklistSummaryResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema       *string   `json:"$schema,omitempty"`
+	ChangedCount int64     `json:"changed_count"`
+	CreatedAt    time.Time `json:"created_at"`
+
+	// CreatedBy Label of the agent that last wrote the list; may be empty.
+	CreatedBy   string     `json:"created_by"`
+	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
+	GoneCount   int64      `json:"gone_count"`
+	ID          int64      `json:"id"`
+	ItemCount   int64      `json:"item_count"`
+
+	// Recipe The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
+	Recipe    string    `json:"recipe"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// WorkspaceID ACP workspace that last wrote the list; empty when none or for another node's read.
+	WorkspaceID string `json:"workspace_id"`
 }
 
 type Workspace struct {

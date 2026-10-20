@@ -66,6 +66,7 @@ func (s *Server) registerTools() {
 	s.registerDiffTools()
 	s.registerStackTools()
 	s.registerWorkflowTools()
+	s.registerWorklistTools()
 	s.registerAgentTools()
 	s.registerWorkspaceTargetTools()
 	s.syncKataTargetTool()

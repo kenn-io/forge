@@ -72,6 +72,7 @@ const (
 	CodeUnsupportedMediaType          ProblemCode = "unsupportedMediaType"
 	CodeUpstreamError                 ProblemCode = "upstreamError"
 	CodeValidationError               ProblemCode = "validationError"
+	CodeWorklistNotFound              ProblemCode = "worklistNotFound"
 	CodeWorkspaceAlreadyExists        ProblemCode = "workspaceAlreadyExists"
 	CodeWorkspaceDeletionInProgress   ProblemCode = "workspaceDeletionInProgress"
 	CodeWorkspaceDirectoryNotReusable ProblemCode = "workspaceDirectoryNotReusable"
@@ -117,6 +118,7 @@ func allProblemCodes() []ProblemCode {
 		CodeUnsupportedMediaType,
 		CodeUpstreamError,
 		CodeValidationError,
+		CodeWorklistNotFound,
 		CodeWorkspaceAlreadyExists,
 		CodeWorkspaceDeletionInProgress,
 		CodeWorkspaceDirectoryNotReusable,
@@ -162,7 +164,7 @@ type ProblemError struct {
 
 	// Code is the machine-readable error code drawn from the closed enum
 	// in allProblemCodes(). Frontend logic branches on this value.
-	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,gitCredentialUnavailable,hookFailed,hubUnavailable,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rangeNotSatisfiable,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,spokePreparationInProgress,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,unsupportedMediaType,upstreamError,validationError,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
+	Code ProblemCode `json:"code" enum:"badRequest,branchConflict,branchInUse,branchProtected,commentNotFound,conflict,destinationExists,forbidden,gitCredentialUnavailable,hookFailed,hubUnavailable,internalError,issueNotFound,mutationOutcomeUnknown,notFound,payloadTooLarge,projectNotFound,pullNotFound,rangeNotSatisfiable,rateLimited,repoNotFound,resyncRequired,serviceUnavailable,settingsUnavailable,spokePreparationInProgress,toolMissing,toolUnauthenticated,unauthorized,unsupportedCapability,unsupportedMediaType,upstreamError,validationError,worklistNotFound,workspaceAlreadyExists,workspaceDeletionInProgress,workspaceDirectoryNotReusable,workspaceNotFound,workspaceSetupInProgress,worktreeDirty" example:"badRequest" doc:"Machine-readable error code. Stable across occurrences."`
 
 	// Details is a free-form map of machine-readable context for this
 	// occurrence (e.g. {capability: "merge_mutation"} or

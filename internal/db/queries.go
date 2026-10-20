@@ -1715,6 +1715,9 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
+	if cond := repoItemCondition("p", opts.Items, &args); cond != "" {
+		conds = append(conds, cond)
+	}
 
 	switch state {
 	case "all":
@@ -3057,6 +3060,9 @@ func (d *DB) ListIssues(
 	)`)
 
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+		conds = append(conds, cond)
+	}
+	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 

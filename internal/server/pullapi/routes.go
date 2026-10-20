@@ -384,7 +384,9 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	return &listPullsOutput{Body: rows}, nil
 }
 
-func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
+func (s *Handler) listPullsRouteCore(
+	ctx context.Context, input *listPullsInput, items []db.RepoItemNumber,
+) (*listPullsOutput, error) {
 	if input.State != "" {
 		valid := map[string]bool{
 			"open": true, "closed": true, "all": true,
@@ -455,6 +457,7 @@ func (s *Handler) listPullsRouteCore(ctx context.Context, input *listPullsInput)
 		Offset:            input.Offset,
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
+		Items:             items,
 	}
 	if input.InvolvesMe {
 		if s.viewerLogins == nil {

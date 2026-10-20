@@ -50,7 +50,7 @@ func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]IssueRespon
 	if err != nil {
 		return nil, err
 	}
-	return s.overlayLocalIssueWorkspaces(ctx, rows)
+	return s.OverlayLocalWorkspaces(ctx, rows)
 }
 
 // ListProviderService returns provider-owned rows in hub order.
@@ -61,7 +61,28 @@ func (s *Handler) ListProviderService(
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
 		InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned, ReferencedByPR: req.ReferencedByPR,
 		Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
-	})
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	rows := output.Body
+	for i := range rows {
+		rows[i].Workspace = nil
+		rows[i].LastWorkspaceActivityAt = ""
+	}
+	return rows, nil
+}
+
+// RowsForItems returns list-issues rows for the named visible issues in any
+// state, without workspace references. Rows for repositories the list hides
+// are omitted.
+func (s *Handler) RowsForItems(
+	ctx context.Context, items []db.RepoItemNumber,
+) ([]IssueResponse, error) {
+	if len(items) == 0 {
+		return nil, nil
+	}
+	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{State: "all"}, items)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +128,10 @@ func (s *Handler) GetProviderService(
 	return detail, nil
 }
 
-func (s *Handler) overlayLocalIssueWorkspaces(
+// OverlayLocalWorkspaces replaces workspace references on provider rows
+// with this machine's own, since a reference from another node names a
+// workspace this machine cannot open. It returns a copy.
+func (s *Handler) OverlayLocalWorkspaces(
 	ctx context.Context, rows []IssueResponse,
 ) ([]IssueResponse, error) {
 	rows = append(make([]IssueResponse, 0, len(rows)), rows...)

@@ -273,3 +273,40 @@ func (s *Handlers) createAdHocWorkspaceOnHost(ctx context.Context, input *create
 	}
 	return (*s.WorkspaceAPI).CreateAdHocWorkspace(ctx, &next)
 }
+
+type federationWorklistPutItem struct {
+	Item    spokeapi.FederationWorkflowItemIdentity `json:"item"`
+	Score   *int                                    `json:"score,omitempty"`
+	Section string                                  `json:"section"`
+	Note    string                                  `json:"note"`
+	Caveat  string                                  `json:"caveat"`
+}
+
+type federationWorklistPut struct {
+	WorklistID  int64                       `json:"worklist_id,omitempty"`
+	Title       string                      `json:"title"`
+	Recipe      string                      `json:"recipe"`
+	CreatedBy   string                      `json:"created_by"`
+	WorkspaceID string                      `json:"workspace_id"`
+	Items       []federationWorklistPutItem `json:"items" nullable:"false"`
+}
+
+type FederationPutWorklistInput struct {
+	Body federationWorklistPut
+}
+
+type FederationPutWorklistOutput = httpapi.BodyOutput[mcpserver.WorklistPutResult]
+
+func (put federationWorklistPut) Mcp() mcpserver.WorklistPut {
+	items := make([]mcpserver.WorklistPutItem, 0, len(put.Items))
+	for _, item := range put.Items {
+		items = append(items, mcpserver.WorklistPutItem{
+			Item: mcpserver.ItemIdentity(item.Item), Score: item.Score,
+			Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+		})
+	}
+	return mcpserver.WorklistPut{
+		WorklistID: put.WorklistID, Title: put.Title, Recipe: put.Recipe,
+		CreatedBy: put.CreatedBy, WorkspaceID: put.WorkspaceID, Items: items,
+	}
+}

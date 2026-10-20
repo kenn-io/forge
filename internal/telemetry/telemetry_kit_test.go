@@ -86,7 +86,7 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	assert.NotContains(setupProperties, "surface")
 	assert.True(backend.EventAllowed("screen_viewed"))
 	assert.True(UIEventAllowed("screen_viewed"))
-	for _, screen := range []string{"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs", "workspaces", "terminal", "workspace-item", "settings", "project-intake", "design-system", "onboarding"} {
+	for _, screen := range []string{"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs", "workspaces", "terminal", "workspace-item", "settings", "project-intake", "design-system", "onboarding", "worklists"} {
 		properties, err := backend.SanitizeProperties("screen_viewed", map[string]any{"screen": screen, "surface": "web", "repo": "owner/repo"})
 		require.NoError(err)
 		assert.Equal(screen, properties["screen"])

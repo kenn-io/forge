@@ -33,7 +33,9 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 	return &listIssuesOutput{Body: rows}, nil
 }
 
-func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
+func (s *Handler) listIssuesRouteCore(
+	ctx context.Context, input *listIssuesInput, items []db.RepoItemNumber,
+) (*listIssuesOutput, error) {
 	if input.State != "" && input.State != "open" && input.State != "closed" && input.State != "all" {
 		return nil, httpapi.Validation("query.state", "state must be one of: open, closed, all", "open", "closed", "all")
 	}
@@ -77,6 +79,7 @@ func (s *Handler) listIssuesRouteCore(ctx context.Context, input *listIssuesInpu
 		RepoFilters:       parseRepoFilters(input.Repo),
 		WorkspaceActivity: overrides,
 		ReferencedByPR:    input.ReferencedByPR,
+		Items:             items,
 	}
 	if input.InvolvesMe {
 		if s.viewerLogins == nil {

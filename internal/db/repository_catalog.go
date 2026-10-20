@@ -623,6 +623,7 @@ var repositoryOwnedColumns = []struct{ table, column string }{
 	{"forge_repo_overviews", "repo_id"},
 	{"forge_stacks", "repo_id"},
 	{"forge_starred_items", "repo_id"},
+	{"forge_worklist_items", "repo_id"},
 	{"forge_workspaces", "repo_id"},
 	{"forge_workspace_targets", "repo_id"},
 	{"github_native_stacks", "repo_id"},

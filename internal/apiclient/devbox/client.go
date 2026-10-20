@@ -599,6 +599,7 @@ const (
 	UnsupportedMediaType          ProblemErrorCode = "unsupportedMediaType"
 	UpstreamError                 ProblemErrorCode = "upstreamError"
 	ValidationError               ProblemErrorCode = "validationError"
+	WorklistNotFound              ProblemErrorCode = "worklistNotFound"
 	WorkspaceAlreadyExists        ProblemErrorCode = "workspaceAlreadyExists"
 	WorkspaceDeletionInProgress   ProblemErrorCode = "workspaceDeletionInProgress"
 	WorkspaceDirectoryNotReusable ProblemErrorCode = "workspaceDirectoryNotReusable"

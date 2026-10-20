@@ -18,6 +18,10 @@ type ProviderBackend interface {
 	GetPullStack(context.Context, ItemIdentity) (Stack, error)
 	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)
 	SetWorkflowState(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
+	PutWorklist(context.Context, WorklistPut) (WorklistPutResult, error)
+	GetWorklist(context.Context, int64) (Worklist, error)
+	ListWorklists(context.Context, bool) ([]WorklistSummary, error)
+	DismissWorklist(context.Context, int64) (WorklistDismissal, error)
 }
 
 // LocalBackend owns data and execution that belong to the connected node.
@@ -321,6 +325,101 @@ type WorkflowMutation struct {
 	State          WorkflowState `json:"state"`
 }
 
+// WorklistPut creates a worklist when WorklistID is zero and replaces the
+// named worklist otherwise. WorkspaceID names the ACP workspace that wrote it.
+type WorklistPut struct {
+	WorklistID  int64             `json:"worklist_id,omitempty"`
+	Title       string            `json:"title"`
+	Recipe      string            `json:"recipe"`
+	CreatedBy   string            `json:"created_by"`
+	WorkspaceID string            `json:"workspace_id"`
+	Items       []WorklistPutItem `json:"items" nullable:"false"`
+}
+
+type WorklistPutItem struct {
+	Item    ItemIdentity `json:"item"`
+	Score   *int         `json:"score,omitempty"`
+	Section string       `json:"section"`
+	Note    string       `json:"note"`
+	Caveat  string       `json:"caveat"`
+}
+
+type WorklistPutResult struct {
+	WorklistID int64 `json:"worklist_id"`
+	ItemCount  int   `json:"item_count"`
+	Created    bool  `json:"created"`
+}
+
+type WorklistSummary struct {
+	ID           int64  `json:"id"`
+	Title        string `json:"title"`
+	Recipe       string `json:"recipe"`
+	CreatedBy    string `json:"created_by"`
+	ItemCount    int    `json:"item_count"`
+	ChangedCount int    `json:"changed_count"`
+	GoneCount    int    `json:"gone_count"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
+	DismissedAt  string `json:"dismissed_at,omitempty"`
+}
+
+type Worklist struct {
+	ID          int64          `json:"id"`
+	Title       string         `json:"title"`
+	Recipe      string         `json:"recipe"`
+	CreatedBy   string         `json:"created_by"`
+	WorkspaceID string         `json:"workspace_id"`
+	CreatedAt   string         `json:"created_at"`
+	UpdatedAt   string         `json:"updated_at"`
+	DismissedAt string         `json:"dismissed_at,omitempty"`
+	Items       []WorklistItem `json:"items"`
+}
+
+// WorklistItem reports an item's recorded and live synced state. Live is nil
+// once the item is no longer a visible synced row.
+type WorklistItem struct {
+	Position  int                `json:"position"`
+	Item      ItemIdentity       `json:"item"`
+	Title     string             `json:"title"`
+	URL       string             `json:"url"`
+	Score     *int               `json:"score,omitempty"`
+	Section   string             `json:"section"`
+	Note      string             `json:"note"`
+	Caveat    string             `json:"caveat"`
+	WrittenAt string             `json:"written_at"`
+	Snapshot  WorklistItemState  `json:"snapshot"`
+	Live      *WorklistItemState `json:"live"`
+	Freshness string             `json:"freshness"`
+	Changes   WorklistChanges    `json:"changes"`
+}
+
+type WorklistItemState struct {
+	State          string `json:"state"`
+	HeadSHA        string `json:"head_sha"`
+	CommentCount   int    `json:"comment_count"`
+	CIStatus       string `json:"ci_status"`
+	ReviewDecision string `json:"review_decision"`
+	LastActivityAt string `json:"last_activity_at,omitempty"`
+}
+
+// WorklistChanges names what changed since the item was written. Paired
+// fields appear only when the values differ.
+type WorklistChanges struct {
+	StateFrom   string `json:"state_from,omitempty"`
+	StateTo     string `json:"state_to,omitempty"`
+	NewCommits  bool   `json:"new_commits"`
+	NewComments int    `json:"new_comments"`
+	CIFrom      string `json:"ci_from,omitempty"`
+	CITo        string `json:"ci_to,omitempty"`
+	ReviewFrom  string `json:"review_from,omitempty"`
+	ReviewTo    string `json:"review_to,omitempty"`
+}
+
+type WorklistDismissal struct {
+	WorklistID  int64  `json:"worklist_id"`
+	DismissedAt string `json:"dismissed_at"`
+}
+
 type LaunchTarget struct {
 	Key            string
 	Label          string
@@ -386,6 +485,7 @@ type InitialMessageRequest struct {
 }
 
 const (
+	ErrorCodeValidation                      = "validationError"
 	ErrorCodeWorkspaceAlreadyExists          = "workspaceAlreadyExists"
 	ErrorCodeInitialMessageInputModeNotReady = "initialMessageInputModeNotReady"
 )

@@ -22,7 +22,7 @@ func TestProviderEventFilterOwnsOnlyHubProviderEvents(t *testing.T) {
 	for _, eventType := range []string{
 		"data_changed", "sync_status", "pr_detail_refreshed",
 		"pr_ci_refresh_queued", "pr_ci_refreshed", "deferred_merge_completed",
-		"workflow_dispatch_progress", "workflow_runs_changed",
+		"workflow_dispatch_progress", "workflow_runs_changed", "worklists_changed",
 	} {
 		assert.True(t, IsHubProviderEvent(eventType), eventType)
 	}

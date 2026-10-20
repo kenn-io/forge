@@ -7,7 +7,8 @@ through.
 ## Ownership
 
 - Agents author worklists only through the Forge MCP server. The UI reads,
-  dismisses, and acts on worklists but never authors or reorders items.
+  dismisses, marks items handled, and acts on worklists but never authors or
+  reorders items.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
   score, a section, a note, and a caveat. Readiness is a section, not part of
   the score.
@@ -39,8 +40,8 @@ through.
   warnings, and keep the list usable.
 - New commits mean a review verdict quoted in a note may cover an older head;
   say so next to the note.
-- Gone items stay on the list, marked, until an agent rewrites the list. Only
-  an agent write returns a Changed item to Fresh.
+- Gone items stay on the list, shown as gone, until an agent rewrites the
+  list. Only an agent write returns a Changed item to Fresh.
 
 ```mermaid
 stateDiagram-v2
@@ -50,6 +51,31 @@ stateDiagram-v2
   Fresh --> Gone: merged or closed
   Changed --> Gone: merged or closed
   Gone --> [*]: next rewrite drops it
+```
+
+## Handled marks
+
+- The maintainer marks an item handled once they dealt with it, even while it
+  is still open. Handled is the maintainer's record; Gone is upstream state.
+  The two are independent, and a row shows both
+  (`internal/db/worklists.go::DB.SetWorklistItemsHandled`).
+- Agents cannot mark items. An agent clears every mark on a list with
+  `kenn_forge_clear_worklist_marks`, and only when the maintainer asks
+  (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`).
+- A mark survives an agent rewrite for every item that stays on the list,
+  matched by repository row, item type, and number. A new item, or one removed
+  and added back by a later rewrite, starts unhandled. A copy starts unhandled
+  (`internal/db/worklists.go::DB.PutWorklist`).
+- Marking is idempotent and keeps the first time; unmarking an unhandled item
+  does nothing. A mark is not an agent write: it leaves `updated_at` alone.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Unhandled: agent writes item
+  Unhandled --> Handled: maintainer marks
+  Handled --> Unhandled: maintainer unmarks, or agent clears marks
+  Handled --> Handled: agent rewrite keeps the item
+  Handled --> [*]: agent rewrite drops the item
 ```
 
 ## Refresh and copies
@@ -97,9 +123,15 @@ stateDiagram-v2
   `internal/server/spokeapi/provider_sources.go::HubProviderSource.PutWorklist`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP is read, dismiss, and restore only; agents write through MCP. Each item
-  embeds the same row the pull request or issue list returns, or null once the
-  item is gone. A dismissed list stays readable by ID with `dismissed_at` set.
+- HTTP reads, dismisses, restores, and marks; agents write through MCP. Each
+  item embeds the same row the pull request or issue list returns, or null once
+  the item is gone. A dismissed list stays readable by ID with `dismissed_at` set.
+- A mark request names items by provider-verified repository identity, item
+  type, and number, and marks or unmarks them in one transaction. An unknown
+  repository or an item that is not on the list rejects the request with
+  `details.item_index`, and nothing changes. The response carries the summary
+  and each requested item's `handled_at`, so the UI needs no second read
+  (`internal/server/worklistapi/handler.go::Handler.SetHandledService`).
 - Responses to federation callers carry no workspace references: embedded
   rows have no workspace and `workspace_id` is empty, because the reader
   cannot tell which machine a workspace ID names. A spoke serves a worklist
@@ -108,7 +140,7 @@ stateDiagram-v2
   (`internal/server/worklistapi/handler.go::Handler.GetService`,
   `internal/server/worklistapi/handler.go::Handler.GetProviderService`).
 - The hub broadcasts `worklists_changed` with `{"worklist_id": N}` after every
-  put, dismissal, or restore (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
+  put, dismissal, restore, mark, or clear (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
 
 ## UI
 
@@ -124,6 +156,12 @@ stateDiagram-v2
   live status from the embedded row; rows never overflow the rail at its
   minimum width (`frontend/src/lib/components/worklists/WorklistRow.svelte`).
   Workspace and pull request actions work there as on other surfaces.
+- A handled row stays in place, dimmed, with a check in its status area. The
+  rail header shows how many items are handled. The context strip toggles the
+  open item's mark, the selection bar marks or unmarks every selected item, and
+  `d` marks the open item and moves to the next row as `j` does, skipping
+  collapsed sections; on an already handled item it only moves
+  (`frontend/src/lib/components/worklists/WorklistRail.svelte`).
 - Bulk actions run a quick action, such as triage, on the selected items with
   bounded concurrency, each in its own workspace. Selections mix pull requests
   and issues, so item menus name the actual mix and apply each action only to

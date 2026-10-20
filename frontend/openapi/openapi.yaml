@@ -9692,6 +9692,29 @@ components:
       required:
         - reviewers
       type: object
+    SetWorklistItemsHandledBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SetWorklistItemsHandledBody.json
+          format: uri
+          readOnly: true
+          type: string
+        handled:
+          description: True marks the items handled; false unmarks them.
+          type: boolean
+        items:
+          items:
+            $ref: "#/components/schemas/WorklistItemRef"
+          maxItems: 200
+          minItems: 1
+          type: array
+      required:
+        - items
+        - handled
+      type: object
     SetWorktreeHiddenInputBody:
       additionalProperties: false
       properties:
@@ -11468,6 +11491,77 @@ components:
         - new_commits
         - new_comments
       type: object
+    WorklistHandledResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistHandledResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/WorklistItemMarkResponse"
+          type: array
+        worklist:
+          $ref: "#/components/schemas/WorklistSummaryResponse"
+      required:
+        - worklist
+        - items
+      type: object
+    WorklistItemMarkResponse:
+      additionalProperties: false
+      properties:
+        handled_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        item_type:
+          enum:
+            - pr
+            - issue
+          type: string
+        number:
+          format: int64
+          type: integer
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+      required:
+        - repo
+        - item_type
+        - number
+        - handled_at
+      type: object
+    WorklistItemRef:
+      additionalProperties: false
+      properties:
+        bitbucket_repository_uuid:
+          type: string
+        item_type:
+          enum:
+            - pr
+            - issue
+          type: string
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        platform_host:
+          type: string
+        platform_repo_id:
+          format: int64
+          type: integer
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - item_type
+        - number
+      type: object
     WorklistItemResponse:
       additionalProperties: false
       properties:
@@ -11481,6 +11575,12 @@ components:
             - changed
             - gone
           type: string
+        handled_at:
+          description: When the maintainer marked the item handled; null when unhandled. Independent of freshness.
+          format: date-time
+          type:
+            - string
+            - "null"
         issue:
           anyOf:
             - $ref: "#/components/schemas/IssueResponse"
@@ -11546,6 +11646,7 @@ components:
         - live
         - freshness
         - changes
+        - handled_at
         - pull
         - issue
       type: object
@@ -11575,6 +11676,26 @@ components:
         - ci_status
         - review_decision
         - last_activity_at
+      type: object
+    WorklistMarksCleared:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistMarksCleared.json
+          format: uri
+          readOnly: true
+          type: string
+        cleared:
+          format: int64
+          type: integer
+        worklist_id:
+          format: int64
+          type: integer
+      required:
+        - worklist_id
+        - cleared
       type: object
     WorklistPutResult:
       additionalProperties: false
@@ -11674,6 +11795,10 @@ components:
         gone_count:
           format: int64
           type: integer
+        handled_count:
+          description: Items the maintainer marked handled.
+          format: int64
+          type: integer
         id:
           format: int64
           type: integer
@@ -11700,6 +11825,7 @@ components:
         - item_count
         - changed_count
         - gone_count
+        - handled_count
         - created_at
         - updated_at
         - dismissed_at
@@ -15845,6 +15971,32 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Put hub worklist for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/worklist/{id}/clear-marks:
+    post:
+      operationId: federation-clear-worklist-marks
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistMarksCleared"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Clear hub worklist handled marks for a Forge spoke
       tags:
         - Fleet
   /federation/provider/workspace-auto-assign:
@@ -28584,6 +28736,38 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Dismiss worklist
+      tags:
+        - Worklists
+  /worklists/{id}/handled:
+    post:
+      operationId: set-worklist-items-handled
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetWorklistItemsHandledBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistHandledResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Mark worklist items handled or unhandled
       tags:
         - Worklists
   /worklists/{id}/undismiss:

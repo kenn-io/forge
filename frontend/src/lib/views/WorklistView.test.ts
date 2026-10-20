@@ -2,7 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Effect } from "effect";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../test/mockApiFetch.js";
-import { worklistResponse, worklistRoutes, type WorklistServer } from "../../test/worklistFixtures.js";
+import {
+  WORKLIST_HANDLED_AT,
+  worklistResponse,
+  worklistRoutes,
+  type WorklistServer,
+} from "../../test/worklistFixtures.js";
 import { makeAppRuntime } from "../app/runtime.js";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
@@ -53,6 +58,12 @@ async function visiblePullPane(): Promise<string> {
     if (!pane) throw new Error("no visible pull detail pane");
     return pane.textContent ?? "";
   });
+}
+
+function selectionBar(): HTMLElement {
+  const bar = screen.getByText(/^\d+ selected$/).parentElement;
+  if (!bar) throw new Error("no selection bar");
+  return bar;
 }
 
 function row(title: string): HTMLElement {
@@ -305,6 +316,82 @@ describe("WorklistView", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("sign in again");
     expect(screen.queryByText("No worklists")).toBeNull();
+  });
+
+  it("marks the open item handled from the context strip", async () => {
+    server.marks = [];
+    renderView("/worklists/5", server);
+    const strip = await screen.findByRole("region", { name: "Worklist item context" });
+    expect(screen.getByText("0 of 4 handled")).toBeTruthy();
+    expect(within(row("Add browser regression coverage")).queryByLabelText("Handled")).toBeNull();
+
+    await fireEvent.click(within(strip).getByRole("button", { name: "Mark handled" }));
+
+    const toggle = await within(strip).findByRole("button", { name: "Handled" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(server.marks).toEqual([
+      {
+        handled: true,
+        items: [
+          { provider: "github", platform_host: "github.com", platform_repo_id: 1001, item_type: "pr", number: 42 },
+        ],
+      },
+    ]);
+    expect(within(row("Add browser regression coverage")).getByLabelText("Handled")).toBeTruthy();
+    expect(screen.getByText("1 of 4 handled")).toBeTruthy();
+
+    await fireEvent.click(toggle);
+
+    await within(strip).findByRole("button", { name: "Mark handled" });
+    expect(server.marks[1]?.handled).toBe(false);
+    expect(within(row("Add browser regression coverage")).queryByLabelText("Handled")).toBeNull();
+    expect(screen.getByText("0 of 4 handled")).toBeTruthy();
+  });
+
+  it("marks every selected item handled, then offers to unmark them", async () => {
+    server.marks = [];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+
+    await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
+    await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark handled" }));
+
+    await waitFor(() => expect(screen.queryByText("2 selected")).toBeNull());
+    expect(server.marks).toEqual([
+      {
+        handled: true,
+        items: [
+          { provider: "github", platform_host: "github.com", platform_repo_id: 1001, item_type: "pr", number: 42 },
+          { provider: "github", platform_host: "github.com", platform_repo_id: 1001, item_type: "issue", number: 7 },
+        ],
+      },
+    ]);
+    expect(within(row("Add browser regression coverage")).getByLabelText("Handled")).toBeTruthy();
+    expect(within(row("Theme toggle does not stick")).getByLabelText("Handled")).toBeTruthy();
+    expect(within(row("Mirror host stub PR")).queryByLabelText("Handled")).toBeNull();
+    expect(screen.getByText("2 of 4 handled")).toBeTruthy();
+
+    await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
+    await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });
+    await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark unhandled" }));
+
+    await waitFor(() => expect(screen.getByText("0 of 4 handled")).toBeTruthy());
+    expect(server.marks[1]?.handled).toBe(false);
+  });
+
+  it("shows a handled item that is also gone as both", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) => (item.number === 55 ? { ...item, handled_at: WORKLIST_HANDLED_AT } : item));
+    server.lists = [list];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+
+    const gone = row("Retire the legacy exporter");
+    expect(within(gone).getByLabelText("Handled")).toBeTruthy();
+    expect(within(gone).getByText("No longer synced")).toBeTruthy();
+    expect(screen.getByText("1 of 4 handled")).toBeTruthy();
   });
 
   it("names an unnamed writer as an agent", async () => {

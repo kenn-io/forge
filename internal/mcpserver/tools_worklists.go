@@ -58,17 +58,20 @@ func (s *Server) registerWorklistTools() {
 			"to make another one like an existing list, read its recipe with kenn_forge_get_worklist and put without an id. " +
 			"Forge stores the recipe and shows it but never evaluates it. Every item must be a PR or issue Forge has synced; " +
 			"copy identities from Forge reads. Forge records each item's current state so later reads report what changed. " +
+			"Items the maintainer marked handled keep the mark when they stay on a replaced list; " +
+			"call kenn_forge_clear_worklist_marks only when the maintainer asks to clear the marks. " +
 			"Never calls provider APIs.",
 	}, wrapTool(s.putWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_worklist", OutputSchema: map[string]any{"type": "object"},
 		Description: "Read a worklist with its recipe and, for each item, what Forge recorded when it was written, " +
-			"its live synced state, freshness (fresh, changed or gone) and the changes since. " +
+			"its live synced state, freshness (fresh, changed or gone), the changes since, and handled_at, " +
+			"when the maintainer marked it handled (null when unhandled). Handled is independent of freshness. " +
 			"Re-evaluate only changed and gone items when refreshing. Changes never certify mergeability.",
 	}, wrapTool(s.getWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},
-		Description: "List worklists, most recently updated first, with item, changed and gone counts. " +
+		Description: "List worklists, most recently updated first, with item, changed, gone and handled counts. " +
 			"Dismissed lists are omitted unless include_dismissed is true.",
 	}, wrapTool(s.listWorklists))
 	mcp.AddTool(s.mcp, &mcp.Tool{
@@ -77,6 +80,12 @@ func (s *Server) registerWorklistTools() {
 		Description: "Dismiss a worklist so it no longer appears by default. Repeating it is safe. " +
 			"Writing the list again with kenn_forge_put_worklist brings it back.",
 	}, wrapTool(s.dismissWorklist))
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name: "kenn_forge_clear_worklist_marks",
+		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Clear every handled mark on a worklist. Call it only when the maintainer asks; " +
+			"marks are the maintainer's record of what they dealt with. Returns how many marks were cleared.",
+	}, wrapTool(s.clearWorklistMarks))
 }
 
 func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (WorklistPutResult, error) {
@@ -127,6 +136,13 @@ func (s *Server) dismissWorklist(ctx context.Context, in worklistIDInput) (Workl
 		return WorklistDismissal{}, worklistFieldError("worklist_id", "worklist_id is required")
 	}
 	return s.backend.DismissWorklist(ctx, in.WorklistID)
+}
+
+func (s *Server) clearWorklistMarks(ctx context.Context, in worklistIDInput) (WorklistMarksCleared, error) {
+	if in.WorklistID <= 0 {
+		return WorklistMarksCleared{}, worklistFieldError("worklist_id", "worklist_id is required")
+	}
+	return s.backend.ClearWorklistMarks(ctx, in.WorklistID)
 }
 
 func worklistFieldError(field, message string) *Error {

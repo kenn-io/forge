@@ -1024,3 +1024,17 @@ func (s *HubProviderSource) DismissWorklist(
 	}
 	return response, nil
 }
+
+func (s *HubProviderSource) ClearWorklistMarks(
+	ctx context.Context, id int64,
+) (mcpserver.WorklistMarksCleared, error) {
+	httpRequest, err := generated.NewFederationClearWorklistMarksRequest(ctx, "/api/v1", &generated.FederationClearWorklistMarksRequestOptions{PathParams: &generated.FederationClearWorklistMarksPath{ID: id}})
+	if err != nil {
+		return mcpserver.WorklistMarksCleared{}, err
+	}
+	var response mcpserver.WorklistMarksCleared
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
+		return mcpserver.WorklistMarksCleared{}, err
+	}
+	return response, nil
+}

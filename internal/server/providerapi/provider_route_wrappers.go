@@ -297,6 +297,12 @@ type FederationPutWorklistInput struct {
 
 type FederationPutWorklistOutput = httpapi.BodyOutput[mcpserver.WorklistPutResult]
 
+type FederationClearWorklistMarksInput struct {
+	ID int64 `path:"id"`
+}
+
+type FederationClearWorklistMarksOutput = httpapi.BodyOutput[mcpserver.WorklistMarksCleared]
+
 func (put federationWorklistPut) Mcp() mcpserver.WorklistPut {
 	items := make([]mcpserver.WorklistPutItem, 0, len(put.Items))
 	for _, item := range put.Items {

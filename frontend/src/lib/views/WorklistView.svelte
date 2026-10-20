@@ -247,6 +247,23 @@
     );
   }
 
+  function setHandled(items: readonly WorklistItem[], handled: boolean, onApplied?: () => void): void {
+    const list = worklist;
+    if (!list || items.length === 0) return;
+    const fallback = handled ? "Could not mark the item handled." : "Could not mark the item unhandled.";
+    runtime.runCommand(
+      worklists.setHandledEffect(list.id, items, handled).pipe(Effect.tap(() => Effect.sync(() => onApplied?.()))),
+      {
+        operation: "set worklist items handled",
+        safeContext: { handled, count: items.length },
+        onFailure: (failure) =>
+          showFlash(failure instanceof ApiProblemError ? worklistFailureMessage(failure, fallback) : fallback, {
+            tone: "danger",
+          }),
+      },
+    );
+  }
+
   function reloadAfterItemAction(): void {
     runtime.runCommand(worklists.refreshAllEffect(), {
       operation: "refresh worklist after item action",
@@ -425,6 +442,7 @@
             onPick={(id) => openList(id, "push")}
             onDismiss={dismiss}
             onItemsChanged={reloadAfterItemAction}
+            onSetHandled={setHandled}
           >
             {#snippet headerActions()}
               {#if hasDetail}
@@ -455,7 +473,12 @@
       {#if hasDetail && selected}
         <section class="worklist-detail">
           {#if selectedItem}
-            <WorklistContextStrip item={selectedItem} createdBy={worklist.created_by} onClose={closeItem} />
+            <WorklistContextStrip
+              item={selectedItem}
+              createdBy={worklist.created_by}
+              onToggleHandled={() => setHandled([selectedItem], selectedItem.handled_at === null)}
+              onClose={closeItem}
+            />
           {:else}
             <div class="worklist-detail-header">
               <span>{selected.owner}/{selected.name}#{selected.number}</span>

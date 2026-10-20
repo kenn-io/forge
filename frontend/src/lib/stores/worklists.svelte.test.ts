@@ -4,6 +4,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { makeAppRuntime, type AppServices, type OwnedAppRuntime } from "../app/runtime.js";
 import type { Worklist, WorklistSummary } from "../api/worklists.js";
 import { createMockApiFetch, jsonResponse, type MockApiHandle, type MockRequest } from "../../test/mockApiFetch.js";
+import {
+  WORKLIST_HANDLED_AT,
+  worklistItem,
+  worklistResponse,
+  worklistRoutes,
+  type WorklistServer,
+} from "../../test/worklistFixtures.js";
 import { createWorklistsStore, type WorklistsStore } from "./worklists.svelte.js";
 
 function summary(id: number, title: string, dismissed_at: string | null = null): WorklistSummary {
@@ -16,6 +23,7 @@ function summary(id: number, title: string, dismissed_at: string | null = null):
     item_count: 0,
     changed_count: 0,
     gone_count: 0,
+    handled_count: 0,
     created_at: "2026-10-19T10:00:00Z",
     updated_at: "2026-10-19T10:00:00Z",
     dismissed_at,
@@ -224,6 +232,46 @@ describe("worklists store", () => {
       ),
     ).toBe(true);
     expect(store.getSummaries().map((entry) => entry.id)).toEqual([2, 1]);
+  });
+
+  it("applies handled marks to the matching item by repository identity", async () => {
+    const mirror = worklistItem({ position: 1, item_type: "pr", number: 42, title: "Mirror PR 42" });
+    mirror.repo = { ...mirror.repo, platform_host: "example.com", platform_repo_id: 2002 };
+    const fixtures: WorklistServer = {
+      lists: [
+        worklistResponse(5, "Review queue", [
+          worklistItem({ position: 0, item_type: "pr", number: 42, title: "PR 42" }),
+          mirror,
+        ]),
+      ],
+      requests: [],
+      marks: [],
+    };
+    globalThis.fetch = createMockApiFetch([worklistRoutes(fixtures)]).fetch;
+    await run(store.refreshSummariesEffect());
+    await run(store.openEffect(5));
+    const target = store.getDetail()!.items[0]!;
+
+    const exit = await run(store.setHandledEffect(5, [target], true));
+
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(fixtures.marks).toEqual([
+      {
+        handled: true,
+        items: [
+          { provider: "github", platform_host: "github.com", platform_repo_id: 1001, item_type: "pr", number: 42 },
+        ],
+      },
+    ]);
+    expect(store.getDetail()?.items.map((item) => [item.title, item.handled_at])).toEqual([
+      ["PR 42", WORKLIST_HANDLED_AT],
+      ["Mirror PR 42", null],
+    ]);
+    expect(store.getSummaries()[0]?.handled_count).toBe(1);
+
+    await run(store.setHandledEffect(5, [target], false));
+    expect(store.getDetail()?.items.map((item) => item.handled_at)).toEqual([null, null]);
+    expect(store.getSummaries()[0]?.handled_count).toBe(0);
   });
 
   it("closing the open list forgets it", async () => {

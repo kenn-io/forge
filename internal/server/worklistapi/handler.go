@@ -1,10 +1,12 @@
 // Package worklistapi serves agent-authored worklists to the UI. Agents write
-// worklists only through MCP; this package reads, dismisses, and restores them.
+// worklists only through MCP; this package reads, dismisses, and restores
+// them, and marks items handled.
 package worklistapi
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -15,10 +17,11 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/platform"
 )
 
 // ChangedEvent is the server-sent event published after every worklist
-// write, dismissal, or restore.
+// write, dismissal, restore, or handled-mark change.
 const ChangedEvent = "worklists_changed"
 
 type ChangedEventData struct {
@@ -93,6 +96,101 @@ func (h *Handler) Register(api huma.API) {
 		Summary:     "Restore dismissed worklist",
 		Tags:        []string{"Worklists"},
 	}, h.undismissWorklist)
+	huma.Register(api, huma.Operation{
+		OperationID: "set-worklist-items-handled",
+		Method:      http.MethodPost,
+		Path:        "/worklists/{id}/handled",
+		Summary:     "Mark worklist items handled or unhandled",
+		Tags:        []string{"Worklists"},
+	}, h.setItemsHandled)
+}
+
+type setItemsHandledInput struct {
+	ID   int64 `path:"id"`
+	Body SetWorklistItemsHandledBody
+}
+
+func (h *Handler) setItemsHandled(
+	ctx context.Context, input *setItemsHandledInput,
+) (*httpapi.BodyOutput[WorklistHandledResponse], error) {
+	response, err := h.SetHandledService(ctx, input.ID, input.Body.Items, input.Body.Handled)
+	if err != nil {
+		return nil, err
+	}
+	if federationRequest(ctx) {
+		response.Worklist.WorkspaceID = ""
+	}
+	return &httpapi.BodyOutput[WorklistHandledResponse]{Body: response}, nil
+}
+
+// SetHandledService marks or unmarks items on a worklist. Every item must be
+// on the list; otherwise nothing changes.
+func (h *Handler) SetHandledService(
+	ctx context.Context, id int64, refs []WorklistItemRef, handled bool,
+) (WorklistHandledResponse, error) {
+	keys := make([]db.WorklistItemKey, 0, len(refs))
+	repos := make([]httpapi.RepoRefResponse, 0, len(refs))
+	for i, ref := range refs {
+		identity := platform.RepositoryIdentity{
+			Provider: ref.Provider, PlatformHost: ref.PlatformHost, Key: ref.RepoKey,
+		}.Canonical()
+		if !identity.Valid() {
+			return WorklistHandledResponse{}, httpapi.Validation(
+				fmt.Sprintf("body.items[%d]", i), "a verified repository identity is required",
+			)
+		}
+		repo, err := h.db.GetRepositoryByProviderID(ctx, identity)
+		if err != nil {
+			return WorklistHandledResponse{}, httpapi.Internal("read repository failed")
+		}
+		if repo == nil {
+			return WorklistHandledResponse{}, httpapi.NotFound(
+				httpapi.CodeRepoNotFound, "repository not found", map[string]any{"item_index": i},
+			)
+		}
+		keys = append(keys, db.WorklistItemKey{RepoID: repo.Repository.ID, ItemType: ref.ItemType, ItemNumber: ref.Number})
+		repos = append(repos, h.resolver.Ref(repo.Repository))
+	}
+	err := h.db.SetWorklistItemsHandled(ctx, id, keys, handled, h.now())
+	if errors.Is(err, db.ErrWorklistNotFound) {
+		return WorklistHandledResponse{}, NotFound(id)
+	}
+	if notOnList, ok := errors.AsType[*db.WorklistItemNotOnListError](err); ok {
+		return WorklistHandledResponse{}, httpapi.NotFound(
+			httpapi.CodeNotFound, "item is not on the worklist",
+			map[string]any{"worklist_id": id, "item_index": notOnList.Index},
+		)
+	}
+	if err != nil {
+		return WorklistHandledResponse{}, httpapi.Internal("update worklist failed")
+	}
+	h.PublishChanged(id)
+	tracked, err := h.TrackedRepoIDs(ctx)
+	if err != nil {
+		return WorklistHandledResponse{}, err
+	}
+	detail, err := h.db.GetWorklist(ctx, id, tracked)
+	if errors.Is(err, db.ErrWorklistNotFound) {
+		return WorklistHandledResponse{}, NotFound(id)
+	}
+	if err != nil {
+		return WorklistHandledResponse{}, httpapi.Internal("read worklist failed")
+	}
+	marks := make(map[db.WorklistItemKey]*time.Time, len(detail.Items))
+	for _, item := range detail.Items {
+		marks[db.WorklistItemKey{RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber}] = item.HandledAt
+	}
+	response := WorklistHandledResponse{
+		Worklist: summaryResponse(db.SummarizeWorklist(*detail)),
+		Items:    make([]WorklistItemMarkResponse, 0, len(refs)),
+	}
+	for i, ref := range refs {
+		response.Items = append(response.Items, WorklistItemMarkResponse{
+			Repo: repos[i], ItemType: ref.ItemType, Number: ref.Number,
+			HandledAt: formatTimePtr(marks[keys[i]]),
+		})
+	}
+	return response, nil
 }
 
 type listWorklistsInput struct {
@@ -218,6 +316,20 @@ func (h *Handler) SetDismissedService(
 		return WorklistSummaryResponse{}, httpapi.Internal("read worklist failed")
 	}
 	return summaryResponse(*summary), nil
+}
+
+// ClearMarksService unmarks every handled item on a worklist and returns how
+// many it unmarked.
+func (h *Handler) ClearMarksService(ctx context.Context, id int64) (int, error) {
+	cleared, err := h.db.ClearWorklistMarks(ctx, id)
+	if errors.Is(err, db.ErrWorklistNotFound) {
+		return 0, NotFound(id)
+	}
+	if err != nil {
+		return 0, httpapi.Internal("clear worklist marks failed")
+	}
+	h.PublishChanged(id)
+	return cleared, nil
 }
 
 // TrackedRepoIDs returns the repositories whose items can be live, or nil
@@ -369,6 +481,7 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 			Section: item.Section, Note: item.Note, Caveat: item.Caveat,
 			WrittenAt: formatTime(item.WrittenAt), Snapshot: stateResponse(item.Snapshot),
 			Freshness: string(item.Freshness), Changes: changesResponse(item.Changes),
+			HandledAt: formatTimePtr(item.HandledAt),
 		}
 		if item.Live != nil {
 			live := stateResponse(*item.Live)
@@ -389,7 +502,8 @@ func summaryResponse(summary db.WorklistSummary) WorklistSummaryResponse {
 		ID: summary.ID, Title: summary.Title, Recipe: summary.Recipe, CreatedBy: summary.CreatedBy,
 		WorkspaceID: summary.WorkspaceID, ItemCount: summary.ItemCount,
 		ChangedCount: summary.ChangedCount, GoneCount: summary.GoneCount,
-		CreatedAt: formatTime(summary.CreatedAt), UpdatedAt: formatTime(summary.UpdatedAt),
+		HandledCount: summary.HandledCount,
+		CreatedAt:    formatTime(summary.CreatedAt), UpdatedAt: formatTime(summary.UpdatedAt),
 		DismissedAt: formatTimePtr(summary.DismissedAt),
 	}
 }

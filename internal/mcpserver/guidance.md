@@ -90,6 +90,11 @@ Worklists:
   `changed` and `gone` items, and put it again with the same `worklist_id`.
   That replaces its items and resets what Forge recorded for each. To make
   another list like it, put its recipe without a `worklist_id`.
+- The maintainer marks items handled as they work through a list; reads report
+  `handled_at` per item and `handled_count` per list. A mark stays on an item
+  that remains on a replaced list. You cannot mark items. Call
+  `kenn_forge_clear_worklist_marks` only when the maintainer asks to clear
+  the marks.
 - Changes since an item was written are informational; they never certify
   review status or permission to merge.
 
@@ -136,7 +141,7 @@ External imports and direct network requests are unavailable.
 
 Apps may read repositories, bulk PR contexts, item contexts, activity, search,
 review candidates, stacks, workflow lists, and worklists. They may not change
-workflow state, write or dismiss worklists, merge PRs, launch agents, read
+workflow state, write, dismiss, or clear worklists, merge PRs, launch agents, read
 local workspace sessions, or write diffs.
 Use the schemas from those tools rather than guessing field names. Discover
 stable repository IDs with `kenn_forge_list_repos` and preserve pagination.

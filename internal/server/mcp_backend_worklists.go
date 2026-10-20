@@ -96,6 +96,34 @@ func (b mcpBackend) DismissWorklist(
 	return dismissal, nil
 }
 
+func (b mcpBackend) ClearWorklistMarks(
+	ctx context.Context, id int64,
+) (mcpserver.WorklistMarksCleared, error) {
+	if b.server.providerSource != nil {
+		result, err := b.server.providerSource.ClearWorklistMarks(ctx, id)
+		if err != nil {
+			return mcpserver.WorklistMarksCleared{}, mcpapi.McpBackendMutationError(err)
+		}
+		return result, nil
+	}
+	return b.clearWorklistMarksLocal(ctx, id)
+}
+
+func (b mcpBackend) clearWorklistMarksLocal(
+	ctx context.Context, id int64,
+) (mcpserver.WorklistMarksCleared, error) {
+	release, err := b.admitProviderWrite(ctx)
+	if err != nil {
+		return mcpserver.WorklistMarksCleared{}, err
+	}
+	defer release()
+	cleared, err := b.server.worklistAPI.ClearMarksService(ctx, id)
+	if err != nil {
+		return mcpserver.WorklistMarksCleared{}, mcpapi.McpBackendMutationError(err)
+	}
+	return mcpserver.WorklistMarksCleared{WorklistID: id, Cleared: cleared}, nil
+}
+
 func (b mcpBackend) admitProviderWrite(ctx context.Context) (func(), error) {
 	if b.server.providerWriteGate == nil {
 		return func() {}, nil

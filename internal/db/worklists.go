@@ -25,6 +25,16 @@ func (e *WorklistItemNotFoundError) Error() string {
 	return fmt.Sprintf("worklist item %d: %s not found", e.Index, e.ItemType)
 }
 
+// WorklistItemNotOnListError reports the first item of a mark request that
+// is not on the worklist. Index is the item's input position.
+type WorklistItemNotOnListError struct {
+	Index int
+}
+
+func (e *WorklistItemNotOnListError) Error() string {
+	return fmt.Sprintf("worklist item %d is not on the list", e.Index)
+}
+
 type WorklistFreshness string
 
 const (
@@ -49,6 +59,7 @@ type WorklistSummary struct {
 	ItemCount    int
 	ChangedCount int
 	GoneCount    int
+	HandledCount int
 }
 
 type WorklistItemState struct {
@@ -93,11 +104,20 @@ type WorklistItem struct {
 	Live      *WorklistItemState
 	Freshness WorklistFreshness
 	Changes   WorklistChanges
+	// HandledAt is when the maintainer marked the item handled, or nil.
+	HandledAt *time.Time
 }
 
 type WorklistDetail struct {
 	Worklist
 	Items []WorklistItem
+}
+
+// WorklistItemKey identifies an item within a worklist.
+type WorklistItemKey struct {
+	RepoID     int64
+	ItemType   string
+	ItemNumber int
 }
 
 type WorklistItemParams struct {
@@ -130,8 +150,9 @@ type PutWorklistResult struct {
 
 // PutWorklist creates or replaces a worklist in one transaction. Replacing
 // resets every item's recorded state and written time and clears a dismissal,
-// so an agent rewrite brings a dismissed list back. Every item must name a
-// visible synced pull request or issue; otherwise nothing is written.
+// so an agent rewrite brings a dismissed list back. Handled marks carry over
+// to items that stay on the list. Every item must name a visible synced pull
+// request or issue; otherwise nothing is written.
 func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistResult, error) {
 	now := canonicalUTCTime(p.Now)
 	if now.IsZero() {
@@ -144,6 +165,7 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 	}
 	result := PutWorklistResult{ID: p.ID, ItemCount: len(p.Items)}
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		var handled map[WorklistItemKey]time.Time
 		if p.ID == 0 {
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO forge_worklists
@@ -171,6 +193,9 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 			} else if count == 0 {
 				return ErrWorklistNotFound
 			}
+			if handled, err = worklistHandledMarksTx(ctx, tx, p.ID); err != nil {
+				return err
+			}
 			if _, err := tx.ExecContext(ctx,
 				`DELETE FROM forge_worklist_items WHERE worklist_id = ?`, p.ID,
 			); err != nil {
@@ -178,7 +203,13 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 			}
 		}
 		for i, item := range p.Items {
-			if err := insertWorklistItemTx(ctx, tx, result.ID, i, item, now); err != nil {
+			var handledAt *time.Time
+			if at, ok := handled[WorklistItemKey{
+				RepoID: item.RepoID, ItemType: item.ItemType, ItemNumber: item.ItemNumber,
+			}]; ok {
+				handledAt = &at
+			}
+			if err := insertWorklistItemTx(ctx, tx, result.ID, i, item, now, handledAt); err != nil {
 				return err
 			}
 		}
@@ -190,16 +221,44 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 	return result, nil
 }
 
+func worklistHandledMarksTx(
+	ctx context.Context, tx *sql.Tx, worklistID int64,
+) (map[WorklistItemKey]time.Time, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT repo_id, item_type, item_number, handled_at
+		  FROM forge_worklist_items
+		 WHERE worklist_id = ? AND handled_at IS NOT NULL`, worklistID)
+	if err != nil {
+		return nil, fmt.Errorf("read worklist handled marks: %w", err)
+	}
+	defer rows.Close()
+	marks := make(map[WorklistItemKey]time.Time)
+	for rows.Next() {
+		var (
+			key       WorklistItemKey
+			handledAt time.Time
+		)
+		if err := rows.Scan(&key.RepoID, &key.ItemType, &key.ItemNumber, &handledAt); err != nil {
+			return nil, fmt.Errorf("scan worklist handled mark: %w", err)
+		}
+		marks[key] = handledAt.UTC()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read worklist handled marks: %w", err)
+	}
+	return marks, nil
+}
+
 func insertWorklistItemTx(
 	ctx context.Context, tx *sql.Tx, worklistID int64, position int,
-	item WorklistItemParams, now time.Time,
+	item WorklistItemParams, now time.Time, handledAt *time.Time,
 ) error {
 	var source string
 	switch item.ItemType {
 	case ItemTypePR:
 		source = `SELECT ?, ?, p.repo_id, 'pr', p.number, ?, ?, ?, ?, ?,
 		       p.state, p.platform_head_sha, p.comment_count, p.ci_status,
-		       p.review_decision, p.last_activity_at
+		       p.review_decision, p.last_activity_at, ?
 		  FROM forge_merge_requests p
 		 WHERE p.repo_id = ? AND p.number = ?
 		   AND NOT EXISTS (
@@ -208,7 +267,7 @@ func insertWorklistItemTx(
 		          AND ai.item_number = p.number AND ai.lifecycle_state = 'removed_upstream')`
 	default:
 		source = `SELECT ?, ?, i.repo_id, 'issue', i.number, ?, ?, ?, ?, ?,
-		       i.state, '', i.comment_count, '', '', i.last_activity_at
+		       i.state, '', i.comment_count, '', '', i.last_activity_at, ?
 		  FROM forge_issues i
 		 WHERE i.repo_id = ? AND i.number = ?
 		   AND NOT EXISTS (
@@ -221,10 +280,10 @@ func insertWorklistItemTx(
 		    (worklist_id, position, repo_id, item_type, item_number,
 		     score, section, note, caveat, written_at,
 		     snap_state, snap_head_sha, snap_comment_count, snap_ci_status,
-		     snap_review_decision, snap_last_activity_at)
+		     snap_review_decision, snap_last_activity_at, handled_at)
 		`+source,
 		worklistID, position, item.Score, item.Section, item.Note, item.Caveat, now,
-		item.RepoID, item.ItemNumber,
+		canonicalUTCTimePtr(handledAt), item.RepoID, item.ItemNumber,
 	)
 	if err != nil {
 		return fmt.Errorf("insert worklist item %d: %w", position, err)
@@ -264,6 +323,91 @@ func (d *DB) SetWorklistDismissed(ctx context.Context, id int64, dismissed bool,
 		return fmt.Errorf("set worklist dismissed: %w", err)
 	}
 	if count == 0 {
+		return ErrWorklistNotFound
+	}
+	return nil
+}
+
+// SetWorklistItemsHandled marks or unmarks items on a worklist in one
+// transaction. Marking keeps an existing mark's time, so both directions are
+// idempotent. An item that is not on the list rejects the request and
+// nothing changes.
+func (d *DB) SetWorklistItemsHandled(
+	ctx context.Context, worklistID int64, items []WorklistItemKey, handled bool, now time.Time,
+) error {
+	now = canonicalUTCTime(now)
+	if handled && now.IsZero() {
+		return errors.New("set worklist items handled: time is required")
+	}
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireWorklistTx(ctx, tx, worklistID); err != nil {
+			return err
+		}
+		for i, item := range items {
+			var (
+				result sql.Result
+				err    error
+			)
+			if handled {
+				result, err = tx.ExecContext(ctx, `
+					UPDATE forge_worklist_items SET handled_at = COALESCE(handled_at, ?)
+					 WHERE worklist_id = ? AND repo_id = ? AND item_type = ? AND item_number = ?`,
+					now, worklistID, item.RepoID, item.ItemType, item.ItemNumber)
+			} else {
+				result, err = tx.ExecContext(ctx, `
+					UPDATE forge_worklist_items SET handled_at = NULL
+					 WHERE worklist_id = ? AND repo_id = ? AND item_type = ? AND item_number = ?`,
+					worklistID, item.RepoID, item.ItemType, item.ItemNumber)
+			}
+			if err != nil {
+				return fmt.Errorf("set worklist item %d handled: %w", i, err)
+			}
+			count, err := result.RowsAffected()
+			if err != nil {
+				return fmt.Errorf("set worklist item %d handled: %w", i, err)
+			}
+			if count == 0 {
+				return &WorklistItemNotOnListError{Index: i}
+			}
+		}
+		return nil
+	})
+}
+
+// ClearWorklistMarks unmarks every handled item on a worklist and returns
+// how many it unmarked.
+func (d *DB) ClearWorklistMarks(ctx context.Context, worklistID int64) (int, error) {
+	var cleared int64
+	err := d.Tx(ctx, func(tx *sql.Tx) error {
+		if err := requireWorklistTx(ctx, tx, worklistID); err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx, `
+			UPDATE forge_worklist_items SET handled_at = NULL
+			 WHERE worklist_id = ? AND handled_at IS NOT NULL`, worklistID)
+		if err != nil {
+			return fmt.Errorf("clear worklist marks: %w", err)
+		}
+		cleared, err = result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("clear worklist marks: %w", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return int(cleared), nil
+}
+
+func requireWorklistTx(ctx context.Context, tx *sql.Tx, worklistID int64) error {
+	var exists bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM forge_worklists WHERE id = ?)`, worklistID,
+	).Scan(&exists); err != nil {
+		return fmt.Errorf("read worklist: %w", err)
+	}
+	if !exists {
 		return ErrWorklistNotFound
 	}
 	return nil
@@ -331,19 +475,27 @@ func (d *DB) worklistSummaries(
 	}
 	summaries := make([]WorklistSummary, 0, len(lists))
 	for _, list := range lists {
-		summary := WorklistSummary{Worklist: list, ItemCount: len(items[list.ID])}
-		for _, item := range items[list.ID] {
-			switch item.Freshness {
-			case WorklistFresh:
-			case WorklistChanged:
-				summary.ChangedCount++
-			case WorklistGone:
-				summary.GoneCount++
-			}
-		}
-		summaries = append(summaries, summary)
+		summaries = append(summaries, SummarizeWorklist(WorklistDetail{Worklist: list, Items: items[list.ID]}))
 	}
 	return summaries, nil
+}
+
+// SummarizeWorklist counts a worklist's items by freshness and handled mark.
+func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
+	summary := WorklistSummary{Worklist: detail.Worklist, ItemCount: len(detail.Items)}
+	for _, item := range detail.Items {
+		switch item.Freshness {
+		case WorklistFresh:
+		case WorklistChanged:
+			summary.ChangedCount++
+		case WorklistGone:
+			summary.GoneCount++
+		}
+		if item.HandledAt != nil {
+			summary.HandledCount++
+		}
+	}
+	return summary
 }
 
 func (d *DB) listWorklists(ctx context.Context, where string, args ...any) ([]Worklist, error) {
@@ -394,7 +546,7 @@ func (d *DB) listWorklistItems(
 		SELECT wi.worklist_id, wi.position, wi.repo_id, wi.item_type, wi.item_number,
 		       wi.score, wi.section, wi.note, wi.caveat, wi.written_at,
 		       wi.snap_state, wi.snap_head_sha, wi.snap_comment_count, wi.snap_ci_status,
-		       wi.snap_review_decision, wi.snap_last_activity_at,
+		       wi.snap_review_decision, wi.snap_last_activity_at, wi.handled_at,
 		       COALESCE(p.title, i.title, ''), COALESCE(p.url, i.url, ''),
 		       (r.lifecycle_state = 'active'
 		        AND COALESCE(p.id, i.id) IS NOT NULL
@@ -439,7 +591,7 @@ func (d *DB) listWorklistItems(
 			&score, &item.Section, &item.Note, &item.Caveat, &item.WrittenAt,
 			&item.Snapshot.State, &item.Snapshot.HeadSHA, &item.Snapshot.CommentCount,
 			&item.Snapshot.CIStatus, &item.Snapshot.ReviewDecision, &item.Snapshot.LastActivityAt,
-			&item.Title, &item.URL, &visible,
+			&item.HandledAt, &item.Title, &item.URL, &visible,
 			&live.State, &live.HeadSHA, &live.CommentCount, &live.CIStatus,
 			&live.ReviewDecision, &pullActivityAt, &issueActivityAt,
 		); err != nil {
@@ -450,6 +602,7 @@ func (d *DB) listWorklistItems(
 		}
 		item.WrittenAt = item.WrittenAt.UTC()
 		item.Snapshot.LastActivityAt = canonicalUTCTimePtr(item.Snapshot.LastActivityAt)
+		item.HandledAt = canonicalUTCTimePtr(item.HandledAt)
 		if visible && (tracked == nil || tracked[item.RepoID]) {
 			live.LastActivityAt = canonicalUTCTimePtr(cmp.Or(pullActivityAt, issueActivityAt))
 			item.Live = &live

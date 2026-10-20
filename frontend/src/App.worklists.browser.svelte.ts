@@ -7,7 +7,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
+import { WORKLIST_HANDLED_AT, worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
 
 let mounted: MountedBrowserApp | undefined;
 
@@ -77,4 +77,56 @@ it("fits every row in the rail at its narrowest width", async () => {
       expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(railRight + 0.5);
     }
   }
+});
+
+it("marks the open item handled with d and moves on in rank order", async () => {
+  await page.viewport(1400, 900);
+  const list = worklistResponse(5, "Review queue");
+  list.items = list.items.map((item) => (item.number === 84 ? { ...item, handled_at: WORKLIST_HANDLED_AT } : item));
+  const server: WorklistServer = { lists: [list], requests: [], marks: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  await expect.element(rail.getByRole("button", { name: "Add browser regression coverage" })).toBeVisible();
+
+  pressKey("d");
+
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
+  await expect.element(page.getByText("2 of 4 handled")).toBeVisible();
+  expect(server.marks?.map((mark) => mark.items.map((item) => item.number))).toEqual([[42]]);
+
+  pressKey("d");
+
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=issue%3A7"));
+  expect(server.marks).toHaveLength(1);
+  const handledRow = rail.getByRole("button", { name: "Add browser regression coverage" }).element();
+  const title = handledRow.querySelector<HTMLElement>(".worklist-row-body");
+  expect(Number(getComputedStyle(title!).opacity)).toBeLessThan(1);
+  const openRow = rail.getByRole("button", { name: "Theme toggle does not stick" }).element();
+  expect(Number(getComputedStyle(openRow.querySelector<HTMLElement>(".worklist-row-body")!).opacity)).toBe(1);
+});
+
+it("keeps handled marks on items an agent keeps when it rewrites the list", async () => {
+  await page.viewport(1400, 900);
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [], marks: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  const strip = page.getByRole("region", { name: "Worklist item context" });
+  await strip.getByRole("button", { name: "Mark handled" }).click();
+  await expect.element(strip.getByRole("button", { name: "Handled" })).toBeVisible();
+
+  const kept = server.lists[0]!.items.find((item) => item.number === 42)!;
+  const rewritten = worklistResponse(5, "Review queue, rewritten");
+  rewritten.items = rewritten.items
+    .filter((item) => item.number !== 55)
+    .map((item) => (item.number === 42 ? { ...item, handled_at: kept.handled_at } : item));
+  server.lists = [rewritten];
+  emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
+
+  await expect.element(page.getByRole("heading", { name: "Review queue, rewritten" })).toBeVisible();
+  await expect.element(page.getByText("1 of 3 handled")).toBeVisible();
+  await expect.element(strip.getByRole("button", { name: "Handled" })).toBeVisible();
+  const rail = page.getByRole("region", { name: "Review queue, rewritten items" });
+  await expect
+    .element(rail.getByRole("button", { name: "Add browser regression coverage" }).getByLabelText("Handled"))
+    .toBeVisible();
 });

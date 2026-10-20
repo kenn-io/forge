@@ -2,6 +2,7 @@ package db
 
 import (
 	"cmp"
+	"errors"
 	"testing"
 	"time"
 
@@ -412,4 +413,195 @@ func TestWorklistFreshnessComparesRecordedAndLiveState(t *testing.T) {
 			assert.Equal(tt.wantFreshness == WorklistGone, summary.GoneCount == 1)
 		})
 	}
+}
+
+func worklistHandledAt(t *testing.T, d *DB, id int64) map[int]*time.Time {
+	t.Helper()
+	detail, err := d.GetWorklist(t.Context(), id, nil)
+	require.NoError(t, err)
+	out := make(map[int]*time.Time, len(detail.Items))
+	for _, item := range detail.Items {
+		out[item.ItemNumber] = item.HandledAt
+	}
+	return out
+}
+
+func TestWorklistHandledMarksAreIdempotent(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	insertWorklistTestPull(t, d, repoID, 7, MergeRequestStateOpen)
+	insertTestIssue(t, d, repoID, 9, "Crash on start", now)
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypeIssue, ItemNumber: 9},
+	}})
+	require.NoError(err)
+	pull := WorklistItemKey{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7}
+	markedAt := now.Add(time.Hour)
+
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{pull}, true, markedAt))
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{pull}, true, markedAt.Add(time.Hour)))
+
+	assert.Equal(map[int]*time.Time{7: new(markedAt), 9: nil}, worklistHandledAt(t, d, put.ID),
+		"marking again keeps the first time")
+	summary, err := d.GetWorklistSummary(ctx, put.ID, nil)
+	require.NoError(err)
+	assert.Equal(1, summary.HandledCount)
+	assert.Equal(now, summary.UpdatedAt, "a mark is not an agent write")
+
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{pull}, false, markedAt))
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{pull}, false, markedAt))
+	assert.Equal(map[int]*time.Time{7: nil, 9: nil}, worklistHandledAt(t, d, put.ID))
+}
+
+func TestWorklistHandledMarkRejectsItemsNotOnTheList(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	insertWorklistTestPull(t, d, repoID, 7, MergeRequestStateOpen)
+	insertWorklistTestPull(t, d, repoID, 8, MergeRequestStateOpen)
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+	}})
+	require.NoError(err)
+
+	err = d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 8},
+	}, true, now)
+
+	notOnList, ok := errors.AsType[*WorklistItemNotOnListError](err)
+	require.True(ok, "error %v", err)
+	assert.Equal(1, notOnList.Index)
+	assert.Equal(map[int]*time.Time{7: nil}, worklistHandledAt(t, d, put.ID), "a rejected request marks nothing")
+	assert.ErrorIs(d.SetWorklistItemsHandled(ctx, put.ID+100, nil, true, now), ErrWorklistNotFound)
+}
+
+func TestPutWorklistCarriesHandledMarksForKeptItems(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	for _, number := range []int{7, 8, 9} {
+		insertWorklistTestPull(t, d, repoID, number, MergeRequestStateOpen)
+	}
+	items := func(numbers ...int) []WorklistItemParams {
+		out := make([]WorklistItemParams, 0, len(numbers))
+		for _, number := range numbers {
+			out = append(out, WorklistItemParams{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: number})
+		}
+		return out
+	}
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: items(7, 8)})
+	require.NoError(err)
+	markedAt := now.Add(time.Minute)
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 8},
+	}, true, markedAt))
+
+	_, err = d.PutWorklist(ctx, PutWorklistParams{ID: put.ID, Title: "Queue", Now: now.Add(time.Hour), Items: items(9, 7)})
+	require.NoError(err)
+	assert.Equal(map[int]*time.Time{7: new(markedAt), 9: nil}, worklistHandledAt(t, d, put.ID),
+		"a kept item keeps its mark; a new item starts unhandled")
+
+	_, err = d.PutWorklist(ctx, PutWorklistParams{ID: put.ID, Title: "Queue", Now: now.Add(2 * time.Hour), Items: items(9, 7, 8)})
+	require.NoError(err)
+	assert.Equal(map[int]*time.Time{7: new(markedAt), 8: nil, 9: nil}, worklistHandledAt(t, d, put.ID),
+		"an item removed and added back starts unhandled")
+
+	copied, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Copy", Now: now.Add(3 * time.Hour), Items: items(7)})
+	require.NoError(err)
+	assert.Equal(map[int]*time.Time{7: nil}, worklistHandledAt(t, d, copied.ID), "a new list starts unhandled")
+}
+
+func TestClearWorklistMarksUnmarksEveryItem(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	for _, number := range []int{7, 8, 9} {
+		insertWorklistTestPull(t, d, repoID, number, MergeRequestStateOpen)
+	}
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 8},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 9},
+	}})
+	require.NoError(err)
+	other, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Other", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+	}})
+	require.NoError(err)
+	marked := []WorklistItemKey{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 9},
+	}
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, marked, true, now))
+	require.NoError(d.SetWorklistItemsHandled(ctx, other.ID, marked[:1], true, now))
+
+	cleared, err := d.ClearWorklistMarks(ctx, put.ID)
+
+	require.NoError(err)
+	assert.Equal(2, cleared)
+	assert.Equal(map[int]*time.Time{7: nil, 8: nil, 9: nil}, worklistHandledAt(t, d, put.ID))
+	assert.Equal(map[int]*time.Time{7: new(now)}, worklistHandledAt(t, d, other.ID), "other lists keep their marks")
+	cleared, err = d.ClearWorklistMarks(ctx, put.ID)
+	require.NoError(err)
+	assert.Equal(0, cleared)
+	_, err = d.ClearWorklistMarks(ctx, other.ID+100)
+	assert.ErrorIs(err, ErrWorklistNotFound)
+}
+
+func TestWorklistHandledMarksAreIndependentOfFreshness(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	insertWorklistTestPull(t, d, repoID, 7, MergeRequestStateOpen)
+	insertWorklistTestPull(t, d, repoID, 8, MergeRequestStateOpen)
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 8},
+	}})
+	require.NoError(err)
+	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 8},
+	}, true, now))
+
+	_, err = d.WriteDB().ExecContext(ctx,
+		`UPDATE forge_merge_requests SET platform_head_sha = 'bbb222' WHERE repo_id = ? AND number = 7`, repoID)
+	require.NoError(err)
+	_, err = d.WriteDB().ExecContext(ctx,
+		`UPDATE forge_merge_requests SET state = 'merged' WHERE repo_id = ? AND number = 8`, repoID)
+	require.NoError(err)
+
+	detail, err := d.GetWorklist(ctx, put.ID, nil)
+	require.NoError(err)
+	assert.Equal(WorklistChanged, detail.Items[0].Freshness)
+	assert.Equal(new(now), detail.Items[0].HandledAt)
+	assert.Equal(WorklistGone, detail.Items[1].Freshness)
+	assert.Equal(new(now), detail.Items[1].HandledAt)
+	summary, err := d.GetWorklistSummary(ctx, put.ID, nil)
+	require.NoError(err)
+	assert.Equal([3]int{1, 1, 2}, [3]int{summary.ChangedCount, summary.GoneCount, summary.HandledCount})
 }

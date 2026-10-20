@@ -12,6 +12,8 @@ export interface WorklistSummaryResponse {
   /** @nullable */
   dismissed_at: string | null;
   gone_count: number;
+  /** Items the maintainer marked handled. */
+  handled_count: number;
   id: number;
   item_count: number;
   /** The agent's criteria and searches in plain text. Forge stores it but never evaluates it. */

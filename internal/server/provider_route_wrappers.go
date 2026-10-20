@@ -38,6 +38,24 @@ func (s *Server) registerProviderFederationAPI(api huma.API) {
 		Summary:     "Put hub worklist for a Forge spoke",
 		Tags:        []string{"Fleet"},
 	}, s.federationPutWorklist)
+	huma.Register(api, huma.Operation{
+		OperationID: "federation-clear-worklist-marks",
+		Method:      http.MethodPost,
+		Path:        "/federation/provider/worklist/{id}/clear-marks",
+		Summary:     "Clear hub worklist handled marks for a Forge spoke",
+		Tags:        []string{"Fleet"},
+	}, s.federationClearWorklistMarks)
+}
+
+func (s *Server) federationClearWorklistMarks(
+	ctx context.Context,
+	input *providerapi.FederationClearWorklistMarksInput,
+) (*providerapi.FederationClearWorklistMarksOutput, error) {
+	result, err := (mcpBackend{server: s}).clearWorklistMarksLocal(ctx, input.ID)
+	if err != nil {
+		return nil, providerapi.FederationWorkflowProblem(err)
+	}
+	return &providerapi.FederationClearWorklistMarksOutput{Body: result}, nil
 }
 
 func (s *Server) federationPutWorklist(

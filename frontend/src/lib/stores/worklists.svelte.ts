@@ -5,12 +5,16 @@ import {
   getWorklist,
   isWorklistNotFound,
   listWorklists,
+  setWorklistItemsHandled,
   undismissWorklist,
   worklistFailureMessage,
   type Worklist,
   type WorklistFailure,
+  type WorklistItem,
+  type WorklistMarks,
   type WorklistSummary,
 } from "../api/worklists.js";
+import { worklistMarkMatchesItem } from "../components/worklists/worklist-items.js";
 
 export type WorklistDetailError = { readonly kind: "notFound" } | { readonly kind: "failed"; readonly message: string };
 
@@ -32,6 +36,12 @@ export interface WorklistsStore {
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   dismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
   undismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
+  /** Marks or unmarks items and applies the server's marks to the loaded list. */
+  setHandledEffect(
+    id: number,
+    items: readonly WorklistItem[],
+    handled: boolean,
+  ): Effect.Effect<WorklistMarks, WorklistFailure, AppServices>;
 }
 
 class WorklistsStoreImpl implements WorklistsStore {
@@ -182,6 +192,29 @@ class WorklistsStoreImpl implements WorklistsStore {
 
   undismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices> {
     return undismissWorklist(id).pipe(Effect.tap(() => this.#readSummaries()));
+  }
+
+  setHandledEffect(
+    id: number,
+    items: readonly WorklistItem[],
+    handled: boolean,
+  ): Effect.Effect<WorklistMarks, WorklistFailure, AppServices> {
+    return setWorklistItemsHandled(id, items, handled).pipe(
+      Effect.tap((marks) => Effect.sync(() => this.#applyMarks(id, marks))),
+    );
+  }
+
+  #applyMarks(id: number, marks: WorklistMarks): void {
+    this.#summaries = this.#summaries.map((summary) => (summary.id === id ? marks.worklist : summary));
+    const detail = this.#detail;
+    if (detail?.id !== id) return;
+    this.#detail = {
+      ...detail,
+      items: detail.items.map((item) => {
+        const mark = marks.items.find((candidate) => worklistMarkMatchesItem(candidate, item));
+        return mark ? { ...item, handled_at: mark.handled_at } : item;
+      }),
+    };
   }
 }
 

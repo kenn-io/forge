@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
 )
@@ -40,6 +41,7 @@ var repositoryKeyAPITypes = []reflect.Type{
 	reflect.TypeFor[spokeapi.FederationActivityRepositoryIdentity](),
 	reflect.TypeFor[spokeapi.FederationWorkflowRepositoryIdentity](),
 	reflect.TypeFor[spokeapi.FederationWorkflowItemIdentity](),
+	reflect.TypeFor[worklistapi.WorklistItemRef](),
 }
 
 // WithRepositoryKeyWireSchemas replaces config's schema registry with one that

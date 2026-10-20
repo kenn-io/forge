@@ -3,11 +3,15 @@ import { ApiProblemError, type TransientTransportError } from "./effect-errors.j
 import { executeGeneratedApiRequest, type GeneratedApi } from "./generated-api.js";
 import type {
   WorklistChangesResponse,
+  WorklistHandledResponse,
+  WorklistItemMarkResponse,
+  WorklistItemRef,
   WorklistItemResponse,
   WorklistResponse,
   WorklistSummaryResponse,
 } from "./generated/models/index.js";
 import { ProblemCodes } from "./problems.js";
+import { repositoryKeyFromWire, repositoryKeyToWire } from "./repository-key.js";
 import { retryIdempotentRead } from "./retry-policy.js";
 import { apiErrorMessage } from "./runtime.js";
 
@@ -15,6 +19,8 @@ export type WorklistSummary = WorklistSummaryResponse;
 export type Worklist = WorklistResponse;
 export type WorklistItem = WorklistItemResponse;
 export type WorklistChanges = WorklistChangesResponse;
+export type WorklistMarks = WorklistHandledResponse;
+export type WorklistItemMark = WorklistItemMarkResponse;
 
 export type WorklistFailure = ApiProblemError | TransientTransportError;
 
@@ -42,6 +48,26 @@ export function dismissWorklist(id: number) {
 export function undismissWorklist(id: number) {
   return executeGeneratedApiRequest("undismiss worklist", (client, signal) =>
     client.WorklistsService.undismissWorklist({ id }, { signal }),
+  );
+}
+
+export function worklistItemRef(item: WorklistItem): WorklistItemRef {
+  return {
+    provider: item.repo.provider,
+    platform_host: item.repo.platform_host,
+    ...repositoryKeyToWire(repositoryKeyFromWire(item.repo)),
+    item_type: item.item_type,
+    number: item.number,
+  };
+}
+
+export function setWorklistItemsHandled(
+  id: number,
+  items: readonly WorklistItem[],
+  handled: boolean,
+): Effect.Effect<WorklistMarks, WorklistFailure, GeneratedApi> {
+  return executeGeneratedApiRequest("set worklist items handled", (client, signal) =>
+    client.WorklistsService.setWorklistItemsHandled({ id }, { handled, items: items.map(worklistItemRef) }, { signal }),
   );
 }
 

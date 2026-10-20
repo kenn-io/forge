@@ -26,6 +26,7 @@ CREATE TABLE forge_worklist_items (
     snap_ci_status TEXT NOT NULL,
     snap_review_decision TEXT NOT NULL,
     snap_last_activity_at DATETIME,
+    handled_at DATETIME,
     PRIMARY KEY (worklist_id, position),
     UNIQUE (worklist_id, repo_id, item_type, item_number)
 );

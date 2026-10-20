@@ -13,6 +13,11 @@ export interface WorklistItemResponse {
   caveat: string;
   changes: WorklistChangesResponse;
   freshness: WorklistItemResponseFreshness;
+  /**
+   * When the maintainer marked the item handled; null when unhandled. Independent of freshness.
+   * @nullable
+   */
+  handled_at: string | null;
   /** Issue list row; null unless the item is a visible issue. */
   issue: IssueResponse | null;
   item_type: WorklistItemResponseItemType;

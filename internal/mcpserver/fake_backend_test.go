@@ -29,6 +29,7 @@ type fakeBackend struct {
 	getWorklistFn                func(context.Context, int64) (Worklist, error)
 	listWorklistsFn              func(context.Context, bool) ([]WorklistSummary, error)
 	dismissWorklistFn            func(context.Context, int64) (WorklistDismissal, error)
+	clearWorklistMarksFn         func(context.Context, int64) (WorklistMarksCleared, error)
 	listLaunchTargetsFn          func(context.Context) ([]LaunchTarget, error)
 	preferredWorkspaceAgentFn    func(context.Context, time.Time, []string) (string, bool, error)
 	listWorkspaceAgentSessionsFn func(context.Context, string) ([]WorkspaceAgentSession, error)
@@ -69,6 +70,13 @@ func (b *fakeBackend) DismissWorklist(ctx context.Context, id int64) (WorklistDi
 		return b.dismissWorklistFn(ctx, id)
 	}
 	return WorklistDismissal{}, nil
+}
+
+func (b *fakeBackend) ClearWorklistMarks(ctx context.Context, id int64) (WorklistMarksCleared, error) {
+	if b.clearWorklistMarksFn != nil {
+		return b.clearWorklistMarksFn(ctx, id)
+	}
+	return WorklistMarksCleared{}, nil
 }
 
 func (b *fakeBackend) ListRepositories(ctx context.Context) ([]RepositorySummary, error) {

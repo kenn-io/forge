@@ -6,6 +6,7 @@ import (
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/platform"
 )
 
 type ListWorklistsResponse struct {
@@ -21,6 +22,7 @@ type WorklistSummaryResponse struct {
 	ItemCount    int     `json:"item_count"`
 	ChangedCount int     `json:"changed_count"`
 	GoneCount    int     `json:"gone_count"`
+	HandledCount int     `json:"handled_count" doc:"Items the maintainer marked handled."`
 	CreatedAt    string  `json:"created_at" format:"date-time"`
 	UpdatedAt    string  `json:"updated_at" format:"date-time"`
 	DismissedAt  *string `json:"dismissed_at" format:"date-time"`
@@ -57,6 +59,7 @@ type WorklistItemResponse struct {
 	Live      *WorklistItemStateResponse    `json:"live" doc:"Current synced state; null once the item is no longer visible."`
 	Freshness string                        `json:"freshness" enum:"fresh,changed,gone"`
 	Changes   WorklistChangesResponse       `json:"changes"`
+	HandledAt *string                       `json:"handled_at" format:"date-time" doc:"When the maintainer marked the item handled; null when unhandled. Independent of freshness."`
 	Pull      *pullapi.MergeRequestResponse `json:"pull" doc:"Pull request list row; null unless the item is a visible pull request."`
 	Issue     *issueapi.IssueResponse       `json:"issue" doc:"Issue list row; null unless the item is a visible issue."`
 }
@@ -99,4 +102,43 @@ type WorklistChangesResponse struct {
 	CITo        string `json:"ci_to,omitempty"`
 	ReviewFrom  string `json:"review_from,omitempty"`
 	ReviewTo    string `json:"review_to,omitempty"`
+}
+
+// WorklistItemRef names an item on a worklist by provider-verified repository
+// identity, item type, and number, as an item response's repo reports them.
+type WorklistItemRef struct {
+	Provider     string                 `json:"provider"`
+	PlatformHost string                 `json:"platform_host"`
+	RepoKey      platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	ItemType     string                 `json:"item_type" enum:"pr,issue"`
+	Number       int                    `json:"number" minimum:"1"`
+}
+
+func (r WorklistItemRef) MarshalJSON() ([]byte, error) {
+	type plain WorklistItemRef
+	return platform.MarshalKeyedJSON(plain(r))
+}
+
+func (r *WorklistItemRef) UnmarshalJSON(data []byte) error {
+	type plain WorklistItemRef
+	return platform.UnmarshalKeyedJSON(data, (*plain)(r))
+}
+
+type SetWorklistItemsHandledBody struct {
+	Items   []WorklistItemRef `json:"items" minItems:"1" maxItems:"200" nullable:"false"`
+	Handled bool              `json:"handled" doc:"True marks the items handled; false unmarks them."`
+}
+
+type WorklistItemMarkResponse struct {
+	Repo      httpapi.RepoRefResponse `json:"repo"`
+	ItemType  string                  `json:"item_type" enum:"pr,issue"`
+	Number    int                     `json:"number"`
+	HandledAt *string                 `json:"handled_at" format:"date-time"`
+}
+
+// WorklistHandledResponse reports the list after a mark or unmark and each
+// requested item's mark, in request order.
+type WorklistHandledResponse struct {
+	Worklist WorklistSummaryResponse    `json:"worklist"`
+	Items    []WorklistItemMarkResponse `json:"items"`
 }

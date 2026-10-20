@@ -83,6 +83,58 @@ func TestMCPWorklistPutWritesHubStateAndBroadcasts(t *testing.T) {
 	assert.Equal("fresh", read.Items[0].Freshness)
 }
 
+func countWorklistChangedEvents(t *testing.T, srv *Server) int {
+	t.Helper()
+	events, _, stale := srv.Hub().ReplaySnapshotSince(0)
+	require.False(t, stale)
+	count := 0
+	for _, event := range events {
+		if event.Event.Type == worklistapi.ChangedEvent {
+			count++
+		}
+	}
+	return count
+}
+
+func TestMCPClearWorklistMarksUnmarksItemsAndBroadcasts(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
+	serverfake.SeedIssue(t, database, "acme", "widget", 5, "open")
+	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	backend := srv.MCPBackend()
+	put, err := backend.PutWorklist(ctx, mcpserver.WorklistPut{
+		Title: "Queue", Items: []mcpserver.WorklistPutItem{
+			{Item: worklistTestItem(repo, "pr", 42)}, {Item: worklistTestItem(repo, "issue", 5)},
+		},
+	})
+	require.NoError(err)
+	require.NoError(database.SetWorklistItemsHandled(ctx, put.WorklistID, []db.WorklistItemKey{
+		{RepoID: repo.ID, ItemType: db.ItemTypePR, ItemNumber: 42},
+		{RepoID: repo.ID, ItemType: db.ItemTypeIssue, ItemNumber: 5},
+	}, true, time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)))
+	before := countWorklistChangedEvents(t, srv)
+
+	cleared, err := backend.ClearWorklistMarks(ctx, put.WorklistID)
+
+	require.NoError(err)
+	assert.Equal(mcpserver.WorklistMarksCleared{WorklistID: put.WorklistID, Cleared: 2}, cleared)
+	read, err := backend.GetWorklist(ctx, put.WorklistID)
+	require.NoError(err)
+	assert.Nil(read.Items[0].HandledAt)
+	assert.Nil(read.Items[1].HandledAt)
+	assert.Equal(before+1, countWorklistChangedEvents(t, srv))
+	_, err = backend.ClearWorklistMarks(ctx, put.WorklistID+10)
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal(string(httpapi.CodeWorklistNotFound), backendErr.Code)
+}
+
 func TestMCPWorklistPutRejectsWholeListForUnknownItem(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServer(t)
@@ -189,6 +241,28 @@ func TestFederatedWorklistsHaveOneHubOwner(t *testing.T) {
 	assert.Equal(worklistTestItem(repo, "pr", 42), read.Items[0].Item)
 	assert.Equal(new(7), read.Items[0].Score)
 	assert.Equal("check docs", read.Items[0].Caveat)
+	assert.Nil(read.Items[0].HandledAt)
+
+	markedAt := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	require.NoError(hubDB.SetWorklistItemsHandled(t.Context(), put.WorklistID, []db.WorklistItemKey{
+		{RepoID: repo.ID, ItemType: db.ItemTypePR, ItemNumber: 42},
+	}, true, markedAt))
+	read, err = nodeB.MCPBackend().GetWorklist(t.Context(), put.WorklistID)
+	require.NoError(err)
+	assert.Equal(new("2026-03-04T05:06:07Z"), read.Items[0].HandledAt)
+	listed, err = nodeB.MCPBackend().ListWorklists(t.Context(), false)
+	require.NoError(err)
+	assert.Equal(1, listed[0].HandledCount)
+	cleared, err := nodeA.MCPBackend().ClearWorklistMarks(t.Context(), put.WorklistID)
+	require.NoError(err)
+	assert.Equal(mcpserver.WorklistMarksCleared{WorklistID: put.WorklistID, Cleared: 1}, cleared)
+	hubCopy, err := hubDB.GetWorklist(t.Context(), put.WorklistID, nil)
+	require.NoError(err)
+	assert.Nil(hubCopy.Items[0].HandledAt, "the spoke clears the hub's marks")
+	_, err = nodeA.MCPBackend().ClearWorklistMarks(t.Context(), put.WorklistID+10)
+	var clearErr *mcpserver.Error
+	require.ErrorAs(err, &clearErr)
+	assert.Equal(string(httpapi.CodeWorklistNotFound), clearErr.Code)
 
 	dismissal, err := nodeB.MCPBackend().DismissWorklist(t.Context(), put.WorklistID)
 	require.NoError(err)
@@ -238,6 +312,10 @@ func TestSpokeWorklistsDoNotFallBackWhenHubIsUnavailable(t *testing.T) {
 		Items: []db.WorklistItemParams{{RepoID: repo.ID, ItemType: db.ItemTypePR, ItemNumber: 42}},
 	})
 	require.NoError(err)
+	localMark := time.Date(2026, 3, 4, 6, 0, 0, 0, time.UTC)
+	require.NoError(database.SetWorklistItemsHandled(t.Context(), local.ID, []db.WorklistItemKey{
+		{RepoID: repo.ID, ItemType: db.ItemTypePR, ItemNumber: 42},
+	}, true, localMark))
 	var scopes []federationauth.Scope
 	client := providerPlaneClientFunc(func(
 		_ context.Context, scope federationauth.Scope, _ *http.Request,
@@ -273,13 +351,20 @@ func TestSpokeWorklistsDoNotFallBackWhenHubIsUnavailable(t *testing.T) {
 	require.ErrorAs(err, &dismissErr)
 	assert.Equal(string(httpapi.CodeMutationOutcomeUnknown), dismissErr.Code)
 	assert.True(dismissErr.Ambiguous)
+
+	_, err = backend.ClearWorklistMarks(t.Context(), local.ID)
+	var clearErr *mcpserver.Error
+	require.ErrorAs(err, &clearErr)
+	assert.Equal(string(httpapi.CodeMutationOutcomeUnknown), clearErr.Code)
+	assert.True(clearErr.Ambiguous)
 	assert.Equal([]federationauth.Scope{
 		federationauth.ScopeProviderRead, federationauth.ScopeProviderRead,
-		federationauth.ScopeProviderWrite, federationauth.ScopeProviderWrite,
+		federationauth.ScopeProviderWrite, federationauth.ScopeProviderWrite, federationauth.ScopeProviderWrite,
 	}, scopes)
-	stored, err := database.GetWorklistSummary(t.Context(), local.ID, nil)
+	stored, err := database.GetWorklist(t.Context(), local.ID, nil)
 	require.NoError(err)
 	assert.Nil(stored.DismissedAt, "a spoke never dismisses its local copy")
+	assert.Equal(new(localMark), stored.Items[0].HandledAt, "a spoke never clears its local copy's marks")
 }
 
 func TestSpokeWorklistRowsCarryOnlySpokeWorkspaces(t *testing.T) {
@@ -351,6 +436,26 @@ func TestSpokeWorklistRowsCarryOnlySpokeWorkspaces(t *testing.T) {
 	assert.Equal("ws-hub", onHub.Items[0].Pull.Workspace.ID)
 	assert.Nil(onHub.Items[1].Issue.Workspace)
 	assert.Equal("ws-chat", onHub.WorkspaceID)
+
+	marked := testutil.DoJSON(t, spoke, http.MethodPost,
+		"/api/v1/worklists/"+strconv.FormatInt(put.WorklistID, 10)+"/handled",
+		worklistapi.SetWorklistItemsHandledBody{Handled: true, Items: []worklistapi.WorklistItemRef{{
+			Provider: "github", PlatformHost: "github.com", RepoKey: repo.Key, ItemType: "issue", Number: 5,
+		}}})
+	require.Equal(http.StatusOK, marked.Code, marked.Body.String())
+	var handled worklistapi.WorklistHandledResponse
+	require.NoError(json.Unmarshal(marked.Body.Bytes(), &handled))
+	assert.Equal(1, handled.Worklist.HandledCount)
+	assert.Empty(handled.Worklist.WorkspaceID, "the hub strips its workspace from a spoke's mark")
+	require.Len(handled.Items, 1)
+	assert.NotNil(handled.Items[0].HandledAt)
+	hubCopy, err := hubDB.GetWorklist(t.Context(), put.WorklistID, nil)
+	require.NoError(err)
+	assert.Nil(hubCopy.Items[0].HandledAt)
+	assert.NotNil(hubCopy.Items[1].HandledAt, "a spoke's mark lands on the hub")
+	local, err := spokeDB.ListWorklists(t.Context(), true, nil)
+	require.NoError(err)
+	assert.Empty(local)
 }
 
 func TestWorklistItemsInUnconfiguredRepositoriesAreGone(t *testing.T) {

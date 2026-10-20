@@ -50,6 +50,7 @@ import type {
   EnrollmentToken,
   EnsureFleetProjectWorktreeRuntimeShellDefaultOne,
   EnsureFleetProjectWorktreeRuntimeShellPathParameters,
+  FederationClearWorklistMarksPathParameters,
   FederationDiffDescriptorRequest,
   FederationIdentityOutputBody,
   FederationSetWorkflowStateRequest,
@@ -180,6 +181,7 @@ import type {
   WatchFleetWorkspaceDiffDefaultOne,
   WatchFleetWorkspaceDiffParams,
   WatchFleetWorkspaceDiffPathParameters,
+  WorklistMarksCleared,
   WorklistPutResult,
   WorkspaceLaunchRequest,
   WorkspaceLaunchSpec,
@@ -652,6 +654,23 @@ export const federationPutWorklist = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(federationWorklistPut),
+  });
+};
+
+export const getFederationClearWorklistMarksUrl = ({ id }: FederationClearWorklistMarksPathParameters) => {
+  return `/federation/provider/worklist/${encodeURIComponent(String(id))}/clear-marks`;
+};
+
+/**
+ * @summary Clear hub worklist handled marks for a Forge spoke
+ */
+export const federationClearWorklistMarks = async (
+  { id }: FederationClearWorklistMarksPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorklistMarksCleared> => {
+  return orvalFetch<WorklistMarksCleared>(getFederationClearWorklistMarksUrl({ id }), {
+    ...options,
+    method: "POST",
   });
 };
 

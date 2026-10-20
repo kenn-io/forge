@@ -24,7 +24,7 @@ async function routeWorklists(page: Page, server: WorklistServer): Promise<void>
   });
 }
 
-test("works through a worklist and undoes its dismissal", async ({ page }) => {
+test("works through a worklist, marks an item handled, and undoes its dismissal", async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
   await mockApi(page);
@@ -42,6 +42,12 @@ test("works through a worklist and undoes its dismissal", async ({ page }) => {
   await rail.getByRole("button", { name: "Theme toggle does not stick" }).click();
   await expect(page).toHaveURL(/selected=issue%3A7/);
   await expect(strip.getByText("Reporter confirmed on two browsers.")).toBeVisible();
+
+  await strip.getByRole("button", { name: "Mark handled" }).click();
+  await expect(strip.getByRole("button", { name: "Handled" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("1 of 4 handled")).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Theme toggle does not stick" }).getByLabel("Handled")).toBeVisible();
+  expect(server.requests).toContain("POST /api/v1/worklists/5/handled");
 
   await page.getByRole("button", { name: "Dismiss" }).click();
   await expect(page.getByText("No worklists")).toBeVisible();

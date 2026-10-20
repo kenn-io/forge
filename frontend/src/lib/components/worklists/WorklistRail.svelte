@@ -22,6 +22,8 @@
     onPick: (id: number) => void;
     onDismiss: () => void;
     onItemsChanged: () => void;
+    /** Marks or unmarks items; onApplied runs once the server applied the change. */
+    onSetHandled: (items: readonly WorklistItem[], handled: boolean, onApplied?: () => void) => void;
     headerActions?: Snippet;
   }
 
@@ -34,6 +36,7 @@
     onPick,
     onDismiss,
     onItemsChanged,
+    onSetHandled,
     headerActions = undefined,
   }: Props = $props();
 
@@ -49,6 +52,8 @@
   const sections = $derived(worklistSections(filteredItems));
   const showSectionHeaders = $derived(sections.some((section) => section.section !== ""));
   const authorLabel = $derived(worklist.created_by.trim() || "an agent");
+  const handledCount = $derived(worklist.items.filter((item) => item.handled_at !== null).length);
+  const handledPercent = $derived(worklist.items.length === 0 ? 0 : (handledCount / worklist.items.length) * 100);
 
   function sectionKey(section: string): string {
     return `${worklist.id}\u0000${section}`;
@@ -91,6 +96,22 @@
   }
 
   const selectedTargets = $derived(targetsFor(selection.selected));
+  const selectionAllHandled = $derived(
+    selection.selected.length > 0 && selection.selected.every((item) => item.handled_at !== null),
+  );
+
+  function markSelection(): void {
+    const items = selection.selected;
+    if (items.length === 0) return;
+    onSetHandled(items, !selectionAllHandled, () => selection.clear());
+  }
+
+  function markCurrentAndAdvance(): void {
+    const current =
+      selectedKey === null ? undefined : worklist.items.find((item) => worklistItemKey(item) === selectedKey);
+    if (current && current.handled_at === null) onSetHandled([current], true);
+    step(1);
+  }
 
   function handleRowClick(event: MouseEvent, item: WorklistItem): void {
     if (selection.activate(event, item)) onOpen(item);
@@ -170,6 +191,15 @@
         handler: () => step(-1),
       },
       {
+        id: "worklists.handled-next",
+        label: "Mark handled and go to next",
+        scope: "view-worklists",
+        binding: { key: "d" },
+        priority: 0,
+        when: (ctx) => ctx.page === "worklists",
+        handler: markCurrentAndAdvance,
+      },
+      {
         id: "worklists.next.arrow",
         label: "Next worklist item",
         scope: "view-worklists",
@@ -235,6 +265,12 @@
         </button>
       {/if}
     </div>
+    <div class="worklist-progress">
+      <span class="worklist-progress-bar" aria-hidden="true">
+        <span style:width={`${handledPercent}%`}></span>
+      </span>
+      <span>{handledCount} of {worklist.items.length} handled</span>
+    </div>
     {#if recipeOpen}
       <p class="worklist-recipe">{worklist.recipe}</p>
     {/if}
@@ -248,6 +284,7 @@
           ariaExpanded={contextMenuOpen}
           onclick={openSelectionMenu}
         />
+        <Button size="sm" label={selectionAllHandled ? "Mark unhandled" : "Mark handled"} onclick={markSelection} />
         <Button size="sm" label="Clear" onclick={() => selection.clear()} />
       </div>
     {/if}
@@ -375,6 +412,30 @@
     font-size: var(--font-size-xs);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .worklist-progress {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+  }
+
+  .worklist-progress-bar {
+    flex: 1;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--bg-inset);
+  }
+
+  .worklist-progress-bar span {
+    display: block;
+    height: 100%;
+    background: var(--accent-green);
+    transition: width 0.25s;
   }
 
   .worklist-selection-bar {

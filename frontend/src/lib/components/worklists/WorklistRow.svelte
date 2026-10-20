@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Chip, type ChipTone } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
@@ -75,7 +76,10 @@
 
 <button
   type="button"
-  class={["worklist-row", { opened, "multi-selected": multiSelected, gone: item.freshness === "gone" }]}
+  class={[
+    "worklist-row",
+    { opened, "multi-selected": multiSelected, gone: item.freshness === "gone", handled: item.handled_at !== null },
+  ]}
   data-worklist-key={worklistItemKey(item)}
   aria-labelledby={`${id}-title`}
   aria-describedby={`${id}-details ${id}-status`}
@@ -150,6 +154,11 @@
         <CITokenCluster bucketed={ci} size="compact" pendingStyle="static" />
       </span>
       <span class="kit-sr-only">{composeAriaLabel(ci)}</span>
+    {/if}
+    {#if item.handled_at !== null}
+      <span class="worklist-row-handled" aria-label="Handled" title="Handled">
+        <CheckIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+      </span>
     {/if}
   </span>
 </button>
@@ -247,6 +256,16 @@
     color: var(--text-muted);
   }
 
+  .worklist-row.handled .worklist-row-score,
+  .worklist-row.handled .worklist-row-body {
+    opacity: 0.62;
+  }
+
+  .worklist-row.handled .worklist-row-title {
+    color: var(--text-muted);
+    text-decoration: line-through;
+  }
+
   .worklist-row-details {
     display: flex;
     flex-direction: column;
@@ -313,8 +332,13 @@
   }
 
   .worklist-row-ci,
-  .worklist-row-review {
+  .worklist-row-review,
+  .worklist-row-handled {
     display: inline-flex;
+  }
+
+  .worklist-row-handled {
+    color: var(--accent-green);
   }
 
   .worklist-row-review--approved {

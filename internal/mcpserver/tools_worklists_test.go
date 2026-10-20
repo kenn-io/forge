@@ -139,9 +139,13 @@ func TestGetWorklistReturnsKeyedItemIdentityThroughClientSession(t *testing.T) {
 			ID: id, Title: "Merge today", Recipe: "green CI", CreatedAt: "2026-03-04T05:06:07Z", UpdatedAt: "2026-03-04T05:06:07Z",
 			Items: []WorklistItem{{
 				Item: testItemIdentity("pr", 42), Title: "Fix widget", Freshness: "changed",
-				Snapshot: WorklistItemState{State: "open", HeadSHA: "aaa"},
-				Live:     &WorklistItemState{State: "open", HeadSHA: "bbb"},
-				Changes:  WorklistChanges{NewCommits: true},
+				Snapshot:  WorklistItemState{State: "open", HeadSHA: "aaa"},
+				Live:      &WorklistItemState{State: "open", HeadSHA: "bbb"},
+				Changes:   WorklistChanges{NewCommits: true},
+				HandledAt: new("2026-03-05T00:00:00Z"),
+			}, {
+				Item: testItemIdentity("issue", 7), Title: "Crash on start", Freshness: "fresh",
+				Snapshot: WorklistItemState{State: "open"}, Live: &WorklistItemState{State: "open"},
 			}},
 		}, nil
 	}})
@@ -163,10 +167,14 @@ func TestGetWorklistReturnsKeyedItemIdentityThroughClientSession(t *testing.T) {
 			} `json:"item"`
 			Freshness string         `json:"freshness"`
 			Changes   map[string]any `json:"changes"`
+			HandledAt any            `json:"handled_at"`
 		} `json:"items"`
 	}
 	require.NoError(json.Unmarshal(raw, &decoded))
-	require.Len(decoded.Items, 1)
+	require.Len(decoded.Items, 2)
+	assert.Equal("2026-03-05T00:00:00Z", decoded.Items[0].HandledAt)
+	assert.Nil(decoded.Items[1].HandledAt, "an unhandled item reports null")
+	assert.Contains(string(raw), `"handled_at":null`)
 	assert.Equal(int64(1001), decoded.Items[0].Item.PlatformRepoID)
 	assert.Equal("pr", decoded.Items[0].Item.Type)
 	assert.Equal("changed", decoded.Items[0].Freshness)
@@ -209,4 +217,31 @@ func TestListAndDismissWorklistsForwardToBackend(t *testing.T) {
 
 	assert.Equal([]bool{true}, includeDismissed)
 	assert.Equal([]int64{3}, dismissed)
+}
+
+func TestClearWorklistMarksForwardsToBackend(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var cleared []int64
+	s := newMCPTestServer(t, &fakeBackend{
+		clearWorklistMarksFn: func(_ context.Context, id int64) (WorklistMarksCleared, error) {
+			cleared = append(cleared, id)
+			return WorklistMarksCleared{WorklistID: id, Cleared: 3}, nil
+		},
+	})
+	session := connectMCPTestSession(t, s)
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "kenn_forge_clear_worklist_marks", Arguments: map[string]any{"worklist_id": 4},
+	})
+
+	require.NoError(err)
+	require.False(result.IsError)
+	assert.JSONEq(`{"worklist_id":4,"cleared":3}`, result.Content[0].(*mcp.TextContent).Text)
+	rejected, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "kenn_forge_clear_worklist_marks", Arguments: map[string]any{"worklist_id": 0},
+	})
+	require.NoError(err)
+	assert.True(rejected.IsError)
+	assert.Equal([]int64{4}, cleared, "an invalid id never reaches the backend")
 }

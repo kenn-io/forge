@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
+	"go.kenn.io/forge/internal/server/syncevents"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
@@ -159,4 +160,127 @@ func TestAPIWorklistDismissalHidesListUntilRestored(t *testing.T) {
 	assert.Equal(http.StatusNotFound, dismissMissing.StatusCode)
 	require.NotNil(dismissMissing.Error, string(dismissMissing.Body))
 	assert.Equal(generated.ProblemErrorCode("worklistNotFound"), dismissMissing.Error.Code)
+}
+
+func TestAPIWorklistHandledMarksApplyToEveryRequestedItem(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42)
+	seedPR(t, database, "acme", "widget", 43)
+	seedIssue(t, database, "acme", "widget", 5, "open")
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	identity := func(itemType string, number int) mcpserver.ItemIdentity {
+		return mcpserver.ItemIdentity{
+			Type: itemType, Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: number,
+		}
+	}
+	put, err := srv.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
+		Title: "Queue", Items: []mcpserver.WorklistPutItem{
+			{Item: identity("pr", 42)}, {Item: identity("issue", 5)}, {Item: identity("pr", 43)},
+		},
+	})
+	require.NoError(err)
+	read, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(read.JSON200, string(read.Body))
+	ref := func(item generated.WorklistItemResponse) generated.WorklistItemRef {
+		return generated.WorklistItemRef{
+			Provider: item.Repo.Provider, PlatformHost: item.Repo.PlatformHost,
+			PlatformRepoID: item.Repo.PlatformRepoID, BitbucketRepositoryUUID: item.Repo.BitbucketRepositoryUUID,
+			ItemType: generated.WorklistItemRefItemType(item.ItemType), Number: item.Number,
+		}
+	}
+	items := read.JSON200.Items
+	setHandled := func(handled bool, refs ...generated.WorklistItemRef) (*generated.SetWorklistItemsHandledResp, error) {
+		return client.HTTP.SetWorklistItemsHandledWithResponse(ctx, &generated.SetWorklistItemsHandledRequestOptions{
+			PathParams: &generated.SetWorklistItemsHandledPath{ID: put.WorklistID},
+			Body:       &generated.SetWorklistItemsHandledBody{Handled: handled, Items: refs},
+		})
+	}
+	handledNumbers := func() []int64 {
+		got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+			PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+		})
+		require.NoError(err)
+		require.NotNil(got.JSON200, string(got.Body))
+		numbers := []int64{}
+		for _, item := range got.JSON200.Items {
+			if item.HandledAt != nil {
+				numbers = append(numbers, item.Number)
+			}
+		}
+		return numbers
+	}
+	before := len(worklistChangedEvents(t, srv))
+
+	marked, err := setHandled(true, ref(items[0]), ref(items[1]))
+
+	require.NoError(err)
+	require.NotNil(marked.JSON200, string(marked.Body))
+	assert.EqualValues(2, marked.JSON200.Worklist.HandledCount)
+	require.Len(marked.JSON200.Items, 2)
+	assert.EqualValues(42, marked.JSON200.Items[0].Number)
+	assert.NotNil(marked.JSON200.Items[0].HandledAt)
+	assert.EqualValues(5, marked.JSON200.Items[1].Number)
+	assert.Equal(generated.WorklistItemMarkResponseItemTypeIssue, marked.JSON200.Items[1].ItemType)
+	assert.NotNil(marked.JSON200.Items[1].HandledAt)
+	assert.Equal([]int64{42, 5}, handledNumbers())
+	changed := worklistChangedEvents(t, srv)
+	require.Len(changed, before+1, "a mark broadcasts")
+	assert.JSONEq(`{"worklist_id":`+strconv.FormatInt(put.WorklistID, 10)+`}`, changed[before])
+
+	unmarked, err := setHandled(false, ref(items[1]))
+	require.NoError(err)
+	require.NotNil(unmarked.JSON200, string(unmarked.Body))
+	assert.EqualValues(1, unmarked.JSON200.Worklist.HandledCount)
+	assert.Nil(unmarked.JSON200.Items[0].HandledAt)
+	assert.Equal([]int64{42}, handledNumbers())
+
+	notOnList := ref(items[2])
+	notOnList.Number = 99
+	rejected, err := setHandled(true, ref(items[2]), notOnList)
+	require.Error(err)
+	require.NotNil(rejected)
+	assert.Equal(http.StatusNotFound, rejected.StatusCode)
+	require.NotNil(rejected.Error, string(rejected.Body))
+	assert.Equal(generated.ProblemErrorCode("notFound"), rejected.Error.Code)
+	require.NotNil(rejected.Error.Details)
+	assert.EqualValues(1, rejected.Error.Details["item_index"])
+	assert.Equal([]int64{42}, handledNumbers(), "a rejected request marks nothing")
+	assert.Len(worklistChangedEvents(t, srv), before+2, "a rejected request does not broadcast")
+
+	unknownRepo := ref(items[0])
+	unknownRepo.PlatformRepoID = new(int64(987654))
+	rejected, err = setHandled(true, unknownRepo)
+	require.Error(err)
+	require.NotNil(rejected.Error, string(rejected.Body))
+	assert.Equal(generated.ProblemErrorCode("repoNotFound"), rejected.Error.Code)
+	assert.EqualValues(0, rejected.Error.Details["item_index"])
+}
+
+func worklistChangedEvents(t *testing.T, srv interface {
+	Hub() *syncevents.EventHub
+},
+) []string {
+	t.Helper()
+	events, _, stale := srv.Hub().ReplaySnapshotSince(0)
+	require.False(t, stale)
+	var payloads []string
+	for _, event := range events {
+		if event.Event.Type == "worklists_changed" {
+			payload, err := json.Marshal(event.Event.Data)
+			require.NoError(t, err)
+			payloads = append(payloads, string(payload))
+		}
+	}
+	return payloads
 }

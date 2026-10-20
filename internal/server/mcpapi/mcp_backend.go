@@ -308,7 +308,8 @@ func McpWorklistSummary(summary worklistapi.WorklistSummaryResponse) mcpserver.W
 	return mcpserver.WorklistSummary{
 		ID: summary.ID, Title: summary.Title, Recipe: summary.Recipe, CreatedBy: summary.CreatedBy,
 		ItemCount: summary.ItemCount, ChangedCount: summary.ChangedCount, GoneCount: summary.GoneCount,
-		CreatedAt: summary.CreatedAt, UpdatedAt: summary.UpdatedAt, DismissedAt: derefString(summary.DismissedAt),
+		HandledCount: summary.HandledCount,
+		CreatedAt:    summary.CreatedAt, UpdatedAt: summary.UpdatedAt, DismissedAt: derefString(summary.DismissedAt),
 	}
 }
 
@@ -329,7 +330,7 @@ func McpWorklist(worklist worklistapi.WorklistResponse) mcpserver.Worklist {
 			Title: item.Title, URL: item.URL, Score: item.Score,
 			Section: item.Section, Note: item.Note, Caveat: item.Caveat, WrittenAt: item.WrittenAt,
 			Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
-			Changes: mcpserver.WorklistChanges(item.Changes),
+			Changes: mcpserver.WorklistChanges(item.Changes), HandledAt: item.HandledAt,
 		}
 		if item.Live != nil {
 			converted.Live = new(mcpWorklistItemState(*item.Live))

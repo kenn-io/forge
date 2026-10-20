@@ -22,6 +22,7 @@ type ProviderBackend interface {
 	GetWorklist(context.Context, int64) (Worklist, error)
 	ListWorklists(context.Context, bool) ([]WorklistSummary, error)
 	DismissWorklist(context.Context, int64) (WorklistDismissal, error)
+	ClearWorklistMarks(context.Context, int64) (WorklistMarksCleared, error)
 }
 
 // LocalBackend owns data and execution that belong to the connected node.
@@ -358,6 +359,7 @@ type WorklistSummary struct {
 	ItemCount    int    `json:"item_count"`
 	ChangedCount int    `json:"changed_count"`
 	GoneCount    int    `json:"gone_count"`
+	HandledCount int    `json:"handled_count"`
 	CreatedAt    string `json:"created_at"`
 	UpdatedAt    string `json:"updated_at"`
 	DismissedAt  string `json:"dismissed_at,omitempty"`
@@ -391,6 +393,9 @@ type WorklistItem struct {
 	Live      *WorklistItemState `json:"live"`
 	Freshness string             `json:"freshness"`
 	Changes   WorklistChanges    `json:"changes"`
+	// HandledAt is when the maintainer marked the item handled; nil when
+	// unhandled. It is independent of freshness.
+	HandledAt *string `json:"handled_at"`
 }
 
 type WorklistItemState struct {
@@ -418,6 +423,11 @@ type WorklistChanges struct {
 type WorklistDismissal struct {
 	WorklistID  int64  `json:"worklist_id"`
 	DismissedAt string `json:"dismissed_at"`
+}
+
+type WorklistMarksCleared struct {
+	WorklistID int64 `json:"worklist_id"`
+	Cleared    int   `json:"cleared"`
 }
 
 type LaunchTarget struct {

@@ -1,5 +1,6 @@
 import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
-import type { WorklistItem } from "../../api/worklists.js";
+import { repositoryKeyFromWire, sameRepositoryKey } from "../../api/repository-key.js";
+import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { WorklistItemSelection } from "../../routes.js";
 
@@ -56,6 +57,18 @@ export function worklistItemNotFresh(item: WorklistItem): boolean {
 
 export function worklistItemKey(item: WorklistItem): string {
   return `${item.item_type}:${item.repo.provider}:${item.repo.platform_host}:${item.repo.repo_path}#${item.number}`;
+}
+
+/** Whether a mark names the item, by provider-verified repository identity. */
+export function worklistMarkMatchesItem(mark: WorklistItemMark, item: WorklistItem): boolean {
+  return (
+    mark.item_type === item.item_type &&
+    mark.number === item.number &&
+    canonicalProvider(mark.repo.provider) === canonicalProvider(item.repo.provider) &&
+    resolvedPlatformHost(mark.repo.provider, mark.repo.platform_host) ===
+      resolvedPlatformHost(item.repo.provider, item.repo.platform_host) &&
+    sameRepositoryKey(repositoryKeyFromWire(mark.repo), repositoryKeyFromWire(item.repo))
+  );
 }
 
 export function worklistItemSelection(

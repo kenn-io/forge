@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Chip, formatRelativeTime, IconButton } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
+  import CheckIcon from "@lucide/svelte/icons/check";
   import XIcon from "@lucide/svelte/icons/x";
   import type { WorklistItem } from "../../api/worklists.js";
   import { worklistChangeMarkers } from "./worklist-items.js";
@@ -8,12 +9,14 @@
   interface Props {
     item: WorklistItem;
     createdBy: string;
+    onToggleHandled: () => void;
     onClose: () => void;
   }
 
-  let { item, createdBy, onClose }: Props = $props();
+  let { item, createdBy, onToggleHandled, onClose }: Props = $props();
 
   const markers = $derived(worklistChangeMarkers(item));
+  const handled = $derived(item.handled_at !== null);
 </script>
 
 <section class="worklist-context" aria-label="Worklist item context">
@@ -25,6 +28,15 @@
       <Chip size="sm" tone="muted" uppercase={false}>{item.section}</Chip>
     {/if}
     <span class="worklist-context-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+    <button
+      type="button"
+      class={["worklist-context-handled", { "worklist-context-handled--on": handled }]}
+      aria-pressed={handled}
+      onclick={onToggleHandled}
+    >
+      <CheckIcon size={13} strokeWidth={2.4} aria-hidden="true" />
+      {handled ? "Handled" : "Mark handled"}
+    </button>
     <IconButton size="sm" ariaLabel="Close worklist item" onclick={onClose}>
       <XIcon size={14} aria-hidden="true" />
     </IconButton>
@@ -82,6 +94,34 @@
     font-size: var(--font-size-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .worklist-context-handled {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border: 1px solid color-mix(in srgb, var(--accent-green) 45%, var(--border-default));
+    border-radius: var(--radius-sm, 4px);
+    background: color-mix(in srgb, var(--accent-green) 12%, transparent);
+    color: var(--accent-green);
+    font: inherit;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .worklist-context-handled--on {
+    border-color: var(--border-muted);
+    background: transparent;
+    color: var(--text-secondary);
+  }
+
+  .worklist-context-handled:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--accent-blue);
   }
 
   .worklist-context-note,

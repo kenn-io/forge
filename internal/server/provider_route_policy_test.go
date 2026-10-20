@@ -63,4 +63,8 @@ func TestProviderRouteOwnershipExamples(t *testing.T) {
 	assert.Equal(federationauth.ScopeProviderRead, rules["list-workflows"].PeerScope)
 	assert.Equal(routepolicy.ProviderHubOnly, rules["dispatch-workflow"].Owner)
 	assert.Equal(federationauth.ScopeProviderWrite, rules["dispatch-workflow"].PeerScope)
+	for _, worklistWrite := range []string{"set-worklist-items-handled", "federation-clear-worklist-marks"} {
+		assert.Equal(routepolicy.ProviderHubOnly, rules[worklistWrite].Owner, worklistWrite)
+		assert.Equal(federationauth.ScopeProviderWrite, rules[worklistWrite].PeerScope, worklistWrite)
+	}
 }

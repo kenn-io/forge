@@ -83,7 +83,7 @@ it("does not loop or re-read the open list on the agent status poll", async () =
 
 it("fits every row in the rail at its narrowest width", async () => {
   await page.viewport(1400, 900);
-  localStorage.setItem("kenn-forge-worklist-rail-width", "320");
+  localStorage.setItem("kenn-forge-sidebar-width", "200");
   const long = "A very long agent note that keeps going well past the width of a narrow rail ".repeat(3);
   const list = worklistResponse(5, "Review queue");
   list.items = list.items.map((item) => ({
@@ -116,7 +116,7 @@ it("fits every row in the rail at its narrowest width", async () => {
   await expect.element(rail.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
 
   const region = rail.element();
-  expect(region.getBoundingClientRect().width).toBeLessThanOrEqual(320);
+  expect(region.getBoundingClientRect().width).toBeLessThanOrEqual(200);
   expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth);
   const railRight = region.getBoundingClientRect().right;
   for (const row of region.querySelectorAll<HTMLElement>("li > button")) {

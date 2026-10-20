@@ -1476,6 +1476,10 @@
             <WorklistView
               worklistId={route.worklistId}
               selected={route.selected}
+              isSidebarCollapsed={isSidebarCollapsed()}
+              sidebarWidth={getSidebarWidth()}
+              sidebarOverlay={isNarrow()}
+              onSidebarResize={handleSidebarResize}
               inlineWorkspace={getInlineWorkspaceController("worklists")}
               {workspacePaneControls}
             />

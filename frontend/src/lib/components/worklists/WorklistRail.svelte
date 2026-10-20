@@ -1,5 +1,4 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import {
     Button,
@@ -7,12 +6,14 @@
     ScrollBox,
     SegmentedControl,
     SelectDropdown,
+    SidebarToggle,
     type MenuAnchorPoint,
     type SegmentedControlOption,
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import type { Worklist, WorklistItem, WorklistSummary } from "../../api/worklists.js";
+  import { getSidebar } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { registerScopedActions } from "../../stores/keyboard/registry.svelte.js";
   import { createRangeSelection } from "../../utils/range-selection.svelte.js";
@@ -37,6 +38,8 @@
     selectedKey: string | null;
     dismissing?: boolean;
     onOpen: (item: WorklistItem) => void;
+    /** Opens the next or previous visible row. */
+    onStep: (delta: 1 | -1) => void;
     onPick: (id: number) => void;
     onDismiss: () => void;
     onItemsChanged: () => void;
@@ -44,7 +47,6 @@
     onSetHandled: (items: readonly WorklistItem[], handled: boolean, onApplied?: () => void) => void;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
     onVisibleOrder?: (worklist: Worklist, keys: readonly string[]) => void;
-    headerActions?: Snippet;
   }
 
   let {
@@ -53,13 +55,15 @@
     selectedKey,
     dismissing = false,
     onOpen,
+    onStep,
     onPick,
     onDismiss,
     onItemsChanged,
     onSetHandled,
     onVisibleOrder = undefined,
-    headerActions = undefined,
   }: Props = $props();
+
+  const { toggleSidebar } = getSidebar();
 
   let recipeOpen = $state(false);
   let changedOnly = $state(false);
@@ -150,20 +154,6 @@
     onSetHandled(items, !selectionAllHandled, () => selection.clear());
   }
 
-  function markCurrentAndAdvance(): void {
-    const current =
-      selectedKey === null ? undefined : worklist.items.find((item) => worklistItemKey(item) === selectedKey);
-    if (!current || current.handled_at !== null) {
-      step(1);
-      return;
-    }
-    // Move on only once the mark lands, so a failed mark keeps its item open.
-    const key = worklistItemKey(current);
-    onSetHandled([current], true, () => {
-      if (selectedKey === key) step(1);
-    });
-  }
-
   function handleRowClick(event: MouseEvent, item: WorklistItem): void {
     if (selection.activate(event, item)) onOpen(item);
   }
@@ -201,55 +191,12 @@
     }
   }
 
-  function step(delta: 1 | -1): void {
-    const rows = visibleRows;
-    if (rows.length === 0) return;
-    const current = selectedKey === null ? -1 : rows.findIndex((row) => worklistItemKey(row) === selectedKey);
-    const next = current === -1 ? (delta === 1 ? 0 : rows.length - 1) : current + delta;
-    const row = rows[Math.max(0, Math.min(rows.length - 1, next))];
-    if (!row) return;
-    selection.clear();
-    onOpen(row);
-    queueMicrotask(() => {
-      railElement
-        ?.querySelector<HTMLElement>(`[data-worklist-key="${CSS.escape(worklistItemKey(row))}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
-  }
-
   function focusInRail(): boolean {
     return railElement !== undefined && railElement.contains(document.activeElement);
   }
 
   $effect(() => {
     return registerScopedActions("worklist-rail", [
-      {
-        id: "worklists.next",
-        label: "Next worklist item",
-        scope: "view-worklists",
-        binding: { key: "j" },
-        priority: 0,
-        when: (ctx) => ctx.page === "worklists",
-        handler: () => step(1),
-      },
-      {
-        id: "worklists.prev",
-        label: "Previous worklist item",
-        scope: "view-worklists",
-        binding: { key: "k" },
-        priority: 0,
-        when: (ctx) => ctx.page === "worklists",
-        handler: () => step(-1),
-      },
-      {
-        id: "worklists.handled-next",
-        label: "Mark handled and go to next",
-        scope: "view-worklists",
-        binding: { key: "d" },
-        priority: 0,
-        when: (ctx) => ctx.page === "worklists",
-        handler: markCurrentAndAdvance,
-      },
       {
         id: "worklists.next.arrow",
         label: "Next worklist item",
@@ -258,7 +205,7 @@
         priority: 0,
         when: (ctx) => ctx.page === "worklists" && focusInRail(),
         visible: () => false,
-        handler: () => step(1),
+        handler: () => onStep(1),
       },
       {
         id: "worklists.prev.arrow",
@@ -268,7 +215,7 @@
         priority: 0,
         when: (ctx) => ctx.page === "worklists" && focusInRail(),
         visible: () => false,
-        handler: () => step(-1),
+        handler: () => onStep(-1),
       },
     ]);
   });
@@ -291,7 +238,7 @@
         {/if}
       </h2>
       <Button size="sm" label={dismissing ? "Dismissing" : "Dismiss"} disabled={dismissing} onclick={onDismiss} />
-      {@render headerActions?.()}
+      <SidebarToggle state="expanded" label="sidebar" onclick={toggleSidebar} class="kit-sidebar-toggle--push" />
     </div>
     <div class="worklist-meta">
       <span>Written by {authorLabel} {formatRelativeTime(worklist.updated_at)}</span>

@@ -1,8 +1,7 @@
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import { Effect } from "effect";
-  import { Button, EmptyState, IconButton, SidebarToggle, Spinner, SplitResizeHandle } from "@kenn-io/kit-ui";
-  import type { SplitResizeEvent } from "@kenn-io/kit-ui";
+  import { Button, CollapsibleSidebar, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
@@ -17,12 +16,14 @@
   import WorklistRail from "../components/worklists/WorklistRail.svelte";
   import { WorklistDismissal } from "../components/worklists/worklist-dismissal.svelte.js";
   import {
+    readWorklistOrder,
     worklistItemKey,
     worklistItemMatchesSelection,
     worklistItemSelection,
+    worklistItemsByScore,
     worklistSections,
   } from "../components/worklists/worklist-items.js";
-  import { getStores } from "../context.js";
+  import { getSidebar, getStores } from "../context.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
   import {
     buildWorklistRoute,
@@ -32,6 +33,7 @@
     type WorklistItemSelection,
   } from "../routes.js";
   import { showFlash } from "../stores/flash.svelte.js";
+  import { registerScopedActions } from "../stores/keyboard/registry.svelte.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
   import { navigate, replaceUrl } from "../stores/router.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
@@ -40,49 +42,29 @@
   interface Props {
     worklistId: number | null;
     selected?: WorklistItemSelection | undefined;
+    isSidebarCollapsed?: boolean;
+    sidebarWidth?: number;
+    sidebarOverlay?: boolean;
+    onSidebarResize?: (width: number) => void;
     inlineWorkspace?: InlineWorkspaceController | null;
     workspacePaneControls?: Snippet<[TabbedPanelLeaf]> | undefined;
   }
 
-  let { worklistId, selected = undefined, inlineWorkspace = null, workspacePaneControls = undefined }: Props =
-    $props();
+  let {
+    worklistId,
+    selected = undefined,
+    isSidebarCollapsed = false,
+    sidebarWidth = 340,
+    sidebarOverlay = false,
+    onSidebarResize,
+    inlineWorkspace = null,
+    workspacePaneControls = undefined,
+  }: Props = $props();
 
   const runtime = getAppRuntime();
   const { worklists, detail: detailStore, issues: issuesStore } = getStores();
+  const { toggleSidebar } = getSidebar();
   const paneLayout = getPaneLayoutStore("worklists");
-
-  const RAIL_WIDTH_KEY = "kenn-forge-worklist-rail-width";
-  const DEFAULT_RAIL_WIDTH = 600;
-  const minRailWidth = 320;
-  const minDetailWidth = 360;
-
-  function loadRailWidth(): number {
-    try {
-      const parsed = Number(localStorage.getItem(RAIL_WIDTH_KEY));
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    } catch {
-      // Storage blocked; use the default.
-    }
-    return DEFAULT_RAIL_WIDTH;
-  }
-
-  function persistRailWidth(value: number): void {
-    try {
-      localStorage.setItem(RAIL_WIDTH_KEY, String(Math.round(value)));
-    } catch {
-      // Storage blocked; the width just won't survive a reload.
-    }
-  }
-
-  let requestedRailWidth = $state(loadRailWidth());
-  let railCollapsed = $state(false);
-  let shellWidth = $state(0);
-  let resizeStartWidth = 0;
-  const maxRailWidth = $derived(
-    shellWidth > 0 ? Math.max(minRailWidth, shellWidth - minDetailWidth) : Number.POSITIVE_INFINITY,
-  );
-  const railWidth = $derived(Math.max(minRailWidth, Math.min(maxRailWidth, requestedRailWidth)));
-  const railAriaMax = $derived(Number.isFinite(maxRailWidth) ? maxRailWidth : Math.max(minRailWidth, railWidth));
 
   const summaries = $derived(worklists.getSummaries());
   const loadedWorklist = $derived(worklists.getDetail());
@@ -178,12 +160,22 @@
     visibleOrders.set(list, keys);
   }
 
+  // A collapsed rail is unmounted and reopens with its filter and sections
+  // reset, so its keys follow the stored row order until it is back.
+  function visibleKeys(list: Worklist): readonly string[] {
+    const reported = isSidebarCollapsed ? undefined : visibleOrders.get(list);
+    if (reported) return reported;
+    const rows =
+      readWorklistOrder() === "score"
+        ? worklistItemsByScore(list.items)
+        : worklistSections(list.items).flatMap((section) => section.items);
+    return rows.map(worklistItemKey);
+  }
+
   // An agent rewrite can drop the open item. Move to the item that now takes
   // its place in the visible order, else the one before it, else close it.
   function replacementFor(previous: Worklist, next: Worklist, removedKey: string): WorklistItem | null {
-    const order =
-      visibleOrders.get(previous) ??
-      worklistSections(previous.items).flatMap((section) => section.items.map(worklistItemKey));
+    const order = visibleKeys(previous);
     const surviving = new Map(next.items.map((item) => [worklistItemKey(item), item]));
     const at = order.indexOf(removedKey);
     const after = order.slice(at + 1).find((key) => surviving.has(key));
@@ -250,6 +242,75 @@
       },
     );
   }
+
+  function step(delta: 1 | -1, keys: readonly string[]): void {
+    const list = worklist;
+    if (!list || keys.length === 0) return;
+    const current = selectedKey === null ? -1 : keys.indexOf(selectedKey);
+    const next = current === -1 ? (delta === 1 ? 0 : keys.length - 1) : current + delta;
+    const key = keys[Math.max(0, Math.min(keys.length - 1, next))];
+    const item = list.items.find((candidate) => worklistItemKey(candidate) === key);
+    if (!item) return;
+    openItem(item);
+    queueMicrotask(() => {
+      document.querySelector(`[data-worklist-key="${CSS.escape(worklistItemKey(item))}"]`)?.scrollIntoView({
+        block: "nearest",
+      });
+    });
+  }
+
+  function stepVisible(delta: 1 | -1): void {
+    if (worklist) step(delta, visibleKeys(worklist));
+  }
+
+  function markCurrentAndAdvance(): void {
+    const list = worklist;
+    const current = selectedItem;
+    if (!list || !current || current.handled_at !== null) {
+      stepVisible(1);
+      return;
+    }
+    // Move on only once the mark lands, so a failed mark keeps its item open.
+    const keys = visibleKeys(list);
+    const key = worklistItemKey(current);
+    setHandled([current], true, () => {
+      if (selectedKey === key) step(1, keys);
+    });
+  }
+
+  // Registered here rather than in the rail so they keep working while the
+  // rail is collapsed, as the pull request list's do.
+  $effect(() => {
+    return registerScopedActions("worklist-view", [
+      {
+        id: "worklists.next",
+        label: "Next worklist item",
+        scope: "view-worklists",
+        binding: { key: "j" },
+        priority: 0,
+        when: (ctx) => ctx.page === "worklists",
+        handler: () => stepVisible(1),
+      },
+      {
+        id: "worklists.prev",
+        label: "Previous worklist item",
+        scope: "view-worklists",
+        binding: { key: "k" },
+        priority: 0,
+        when: (ctx) => ctx.page === "worklists",
+        handler: () => stepVisible(-1),
+      },
+      {
+        id: "worklists.handled-next",
+        label: "Mark handled and go to next",
+        scope: "view-worklists",
+        binding: { key: "d" },
+        priority: 0,
+        when: (ctx) => ctx.page === "worklists",
+        handler: markCurrentAndAdvance,
+      },
+    ]);
+  });
 
   function reloadAfterItemAction(): void {
     runtime.runCommand(worklists.refreshAllEffect(), {
@@ -383,19 +444,10 @@
     handleDetailTabChange(tabKey);
   }
 
-  function handleRailResizeStart(): void {
-    resizeStartWidth = railWidth;
-  }
-
-  function handleRailResize(event: SplitResizeEvent): void {
-    requestedRailWidth = Math.max(minRailWidth, Math.min(maxRailWidth, resizeStartWidth + event.delta));
-    persistRailWidth(requestedRailWidth);
-  }
-
   const hasDetail = $derived(selected !== undefined && worklist !== null);
 </script>
 
-<div class="worklist-shell" bind:clientWidth={shellWidth}>
+<div class="worklist-shell">
   {#if dismissal.state.kind === "undo" || dismissal.state.kind === "restoring"}
     {@const restoring = dismissal.state.kind === "restoring"}
     <div class="worklist-undo-row" role="status">
@@ -405,59 +457,30 @@
   {/if}
 
   {#if worklist}
-    <div class="worklist-split" class:worklist-split--detail={hasDetail}>
-      <section
-        class="worklist-rail-pane"
-        class:worklist-rail-pane--collapsed={hasDetail && railCollapsed}
-        style:--worklist-rail-width={`${railWidth}px`}
-      >
-        {#if hasDetail && railCollapsed}
-          <div class="worklist-collapsed-strip">
-            <SidebarToggle
-              state="collapsed"
-              label="Worklist"
-              onclick={() => (railCollapsed = false)}
-              class="kit-sidebar-toggle--compact"
-            />
-          </div>
-        {:else}
-          <WorklistRail
-            {worklist}
-            {summaries}
-            {selectedKey}
-            dismissing={dismissal.state.kind === "dismissing"}
-            onOpen={openItem}
-            onPick={(id) => openList(id, "push")}
-            onDismiss={() => dismissal.dismiss(worklist)}
-            onItemsChanged={reloadAfterItemAction}
-            onSetHandled={setHandled}
-            onVisibleOrder={recordVisibleOrder}
-          >
-            {#snippet headerActions()}
-              {#if hasDetail}
-                <SidebarToggle
-                  state="expanded"
-                  label="Worklist"
-                  onclick={() => (railCollapsed = true)}
-                  class="kit-sidebar-toggle--compact"
-                />
-              {/if}
-            {/snippet}
-          </WorklistRail>
-        {/if}
-      </section>
-
-      {#if hasDetail && !railCollapsed}
-        <SplitResizeHandle
-          ariaLabel="Resize worklist"
-          orientation="horizontal"
-          ariaValueMin={minRailWidth}
-          ariaValueMax={railAriaMax}
-          ariaValueNow={railWidth}
-          onResizeStart={handleRailResizeStart}
-          onResize={handleRailResize}
+    <CollapsibleSidebar
+      isCollapsed={isSidebarCollapsed}
+      {sidebarWidth}
+      {onSidebarResize}
+      overlay={sidebarOverlay}
+      showCollapsedStrip={true}
+      onExpand={toggleSidebar}
+      mainEmpty={!hasDetail}
+    >
+      {#snippet sidebar()}
+        <WorklistRail
+          {worklist}
+          {summaries}
+          {selectedKey}
+          dismissing={dismissal.state.kind === "dismissing"}
+          onOpen={openItem}
+          onStep={stepVisible}
+          onPick={(id) => openList(id, "push")}
+          onDismiss={() => dismissal.dismiss(worklist)}
+          onItemsChanged={reloadAfterItemAction}
+          onSetHandled={setHandled}
+          onVisibleOrder={recordVisibleOrder}
         />
-      {/if}
+      {/snippet}
 
       {#if hasDetail && selected}
         <section class="worklist-detail">
@@ -528,7 +551,7 @@
           {@render inlineWorkspace?.dockRow()?.()}
         </section>
       {/if}
-    </div>
+    </CollapsibleSidebar>
   {:else if detailError?.kind === "failed"}
     <div class="worklist-status" role="alert">
       <span>{detailError.message}</span>
@@ -581,7 +604,6 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    container-type: inline-size;
   }
 
   .worklist-undo-row {
@@ -596,45 +618,10 @@
     font-size: var(--font-size-sm);
   }
 
-  .worklist-split {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    overflow: hidden;
-  }
-
-  .worklist-rail-pane {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .worklist-split--detail .worklist-rail-pane {
-    width: var(--worklist-rail-width, 600px);
-    flex: 0 0 var(--worklist-rail-width, 600px);
-  }
-
-  .worklist-split--detail .worklist-rail-pane--collapsed {
-    width: 28px;
-    flex-basis: 28px;
-    border-right: 1px solid var(--border-default);
-  }
-
-  .worklist-collapsed-strip {
-    width: 28px;
-    flex: 1;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: var(--space-3);
-    background: var(--bg-surface);
-  }
-
   .worklist-detail {
     flex: 1;
     min-width: 0;
+    min-height: 0;
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -676,15 +663,5 @@
     display: flex;
     align-items: center;
     justify-content: center;
-  }
-
-  @container (max-width: 760px) {
-    .worklist-split--detail .worklist-rail-pane {
-      display: none;
-    }
-
-    .worklist-split--detail > :global(.kit-split-resize-handle) {
-      display: none;
-    }
   }
 </style>

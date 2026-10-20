@@ -9,7 +9,7 @@ import {
   type WorklistServer,
 } from "../../test/worklistFixtures.js";
 import { makeAppRuntime } from "../app/runtime.js";
-import { STORES_KEY } from "../context.js";
+import { SIDEBAR_KEY, STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { dismissFlash, getFlashes } from "../stores/flash.svelte.js";
@@ -105,7 +105,12 @@ function renderView(path: string, server: WorklistServer, overrides: MockRouteOv
     detail: { getDetail: () => null, loadDetail: vi.fn(async () => undefined) },
     issues: { getIssueDetail: () => null, loadIssueDetail: vi.fn(async () => undefined) },
   };
-  render(WorklistView, { context: new Map<symbol, unknown>([[STORES_KEY, stores]]) });
+  render(WorklistView, {
+    context: new Map<symbol, unknown>([
+      [STORES_KEY, stores],
+      [SIDEBAR_KEY, { toggleSidebar: () => {} }],
+    ]),
+  });
   return stores;
 }
 

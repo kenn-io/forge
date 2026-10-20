@@ -1925,6 +1925,19 @@ func (s *Handler) workspaceMergeTargetBranch(
 		}
 		return "", false, workspace.ErrLaunchSpecRefreshRequired
 	}
+	if s.syncer == nil && s.launchSpecResolver != nil && summary.ItemType == db.WorkspaceItemTypePullRequest {
+		// Spokes keep hub-issued launch facts, not a local provider item cache.
+		ws := summary.Workspace
+		spec, err := s.workspaces.RequireWorkspaceLaunchSpec(ctx, &ws)
+		if err != nil {
+			return "", false, workspaceLaunchSpecProblem(err)
+		}
+		if spec == nil || spec.Pull == nil {
+			return "", false, nil
+		}
+		branch := strings.TrimSpace(spec.Pull.BaseBranch)
+		return branch, branch != "", nil
+	}
 	prNumber := summary.ItemNumber
 	if summary.ItemType != db.WorkspaceItemTypePullRequest {
 		if summary.AssociatedPRNumber == nil {

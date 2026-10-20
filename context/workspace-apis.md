@@ -662,12 +662,16 @@ Workspace create endpoints may return 202 with a pre-existing workspace
 Workspace diffs compare against local `HEAD`, the pushed branch, or a merge
 target. The merge-target scope exists only when the server can resolve a real
 merge target branch, not merely when the workspace carries a PR identity.
-Resolution requires all of: a positive PR number (PR-backed workspaces use their
-own `item_number`; issue-backed, Kata-backed, and ad-hoc workspaces use
+For locally synced or associated PRs, resolution requires a positive PR number
+(PR-backed workspaces use their own `item_number`; issue-backed, Kata-backed, and ad-hoc workspaces use
 `associated_pr_number`), a synced repo row, a synced merge request row, and a
 non-empty base branch on that row. When any of those is missing the API returns
 "workspace merge target branch not available" and treats it as the
 non-actionable state.
+
+Spoke PR targets use launch specifications and renew expired visibility through the hub.
+Never require spoke-local PR cache rows for those targets
+(`internal/server/workspaceapi/routes_handlers.go::Handler.workspaceMergeTargetBranch`).
 
 The Diff panel opens on `HEAD` for a dirty worktree, the pushed branch for
 unpushed commits with an upstream, and otherwise the merge target when shown;

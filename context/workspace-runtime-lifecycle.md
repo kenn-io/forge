@@ -77,6 +77,9 @@ Rules:
 - Connect with a recent window, then send changed entries in batches bounded by serialized bytes. History
   loads only at the reader's request; updates never invalidate and reload loaded history
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- Encode elicitation property maps deterministically in snapshots and updates; the form
+  uses wire property order, so unchanged metadata must not reshuffle fields
+  (`internal/workspace/localruntime/acp_changes.go::encodeACPBatch`).
 - Chat delivery batches target serialized bytes as well as message count; retain every
   message and allow one oversized message intact so paging always advances
   (`internal/workspace/localruntime/acp_delivery.go::acpMessageBatchSize`).

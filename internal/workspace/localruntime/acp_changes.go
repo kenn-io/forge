@@ -89,9 +89,11 @@ type ACPBatch struct {
 }
 
 func encodeACPBatch(state ACPState, more bool) (ACPBatch, error) {
+	// Match snapshots: form fields use property order, so metadata-only
+	// updates must not reshuffle an unchanged schema.
 	data, err := json.Marshal(struct {
 		Updates ACPChanges `json:"updates"`
-	}{ACPChanges{ACPState: state, More: more}})
+	}{ACPChanges{ACPState: state, More: more}}, json.Deterministic(true))
 	return ACPBatch{Data: data, MessageCursor: state.MessageCursor, More: more}, err
 }
 

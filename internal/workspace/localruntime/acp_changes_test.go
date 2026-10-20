@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"strings"
 	"testing"
@@ -8,6 +9,35 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestACPUpdatesPreserveElicitationFieldOrder(t *testing.T) {
+	agent := &ACP{state: ACPState{Elicitations: []ACPElicitation{{
+		ID: "form", Schema: ACPElicitationSchema{Properties: map[string]any{
+			"question_1_custom": map[string]any{"type": "string"},
+			"question_0":        map[string]any{"type": "string"},
+			"question_1":        map[string]any{"type": "string"},
+			"question_0_custom": map[string]any{"type": "string"},
+		}},
+	}}}}
+	// The UI enumerates properties in wire order. Repeated metadata updates
+	// must keep each question beside its custom answer, as snapshots do.
+	for range 100 {
+		batch, err := agent.Updates(0)
+		require.NoError(t, err)
+		var frame struct {
+			Updates struct {
+				Elicitations []struct {
+					Schema struct {
+						Properties jsontext.Value `json:"properties"`
+					} `json:"schema"`
+				} `json:"elicitations"`
+			} `json:"updates"`
+		}
+		require.NoError(t, json.Unmarshal(batch.Data, &frame))
+		require.Len(t, frame.Updates.Elicitations, 1)
+		require.Equal(t, `{"question_0":{"type":"string"},"question_0_custom":{"type":"string"},"question_1":{"type":"string"},"question_1_custom":{"type":"string"}}`, string(frame.Updates.Elicitations[0].Schema.Properties))
+	}
+}
 
 type acpUpdateReader interface {
 	Updates(uint64) (ACPBatch, error)

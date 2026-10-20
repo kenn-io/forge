@@ -113,6 +113,9 @@ fixtures, or changing shell-script coverage.
   `gitsafe.RunIsolatedMain` from `TestMain`. `make git-test-fixture-check`
   enforces this in pre-push and CI, including build-tagged and platform-specific
   files (`tools/norawgittest/main.go`).
+- Use `gitfixture.ScratchDir(t)` before initializing custom Git fixtures; `t.TempDir()`
+  can land inside a checkout when `TMPDIR` points there. Environment isolation does not check placement
+  (`internal/testutil/gitfixture/repository.go::ScratchDir`).
 - JavaScript tests that create or mutate Git repositories must use the shared
   isolated fixture; raw child processes can inherit hook bindings and mutate the
   hosting checkout (`scripts/test-git-fixture.mjs::createGitTestRepository`).

@@ -49,7 +49,7 @@ func TestWorkspaceMergeTargetWithoutLocalPullCache(t *testing.T) {
 			database := dbtest.Open(t)
 			repoID, err := reposeed.Seed(ctx, database, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(err)
-			work := t.TempDir()
+			work := gitfixture.ScratchDir(t)
 			gitfixture.Run(t, work, "init", "--initial-branch=main")
 			gitfixture.Run(t, work, "config", "user.email", "test@example.com")
 			gitfixture.Run(t, work, "config", "user.name", "Test")

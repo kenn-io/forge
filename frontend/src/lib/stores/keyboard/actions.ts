@@ -50,6 +50,7 @@ function hasSidebarShortcutTarget(ctx: Context): boolean {
     case "pulls":
       return ctx.route.view === "list";
     case "issues":
+    case "worklists":
     case "workspaces":
     case "terminal":
       return true;

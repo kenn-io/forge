@@ -168,13 +168,13 @@ stateDiagram-v2
   route (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemKey`).
 - The list is a rail of compact rows beside the regular pull request or issue
   detail view. The rail is the pull request list's collapsible sidebar, with
-  the same app-wide toggle, width, and narrow overlay. `j`, `k`, and `d` keep
-  working while it is collapsed, following the saved row order
-  (`frontend/src/lib/views/WorklistView.svelte`). The rail header switches between two orders: Agent order, the
-  default, groups rows by section in the agent's rank; Score is one flat list,
-  highest score first, ties by rank, unscored items last. The choice is
-  browser-local and survives a reload. Keyboard steps, `d`, and the changed
-  filter follow the visible order in both
+  the same app-wide toggle and shortcut, width, and narrow overlay. `j`, `k`,
+  and `d` keep working while it is collapsed, following the saved row order
+  (`frontend/src/lib/views/WorklistView.svelte`). The rail header switches
+  between two orders: Agent order, the default, groups rows by section in the
+  agent's rank; Score is one flat list, highest score first, ties by rank,
+  unscored items last. The choice is browser-local and survives a reload.
+  Keyboard steps, `d`, and the changed filter follow the visible order in both
   (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemsByScore`).
 - Each row shows the score, the title, `owner/name#number` with the note and
   caveat, the changes since, and live status from the embedded row. Rows show

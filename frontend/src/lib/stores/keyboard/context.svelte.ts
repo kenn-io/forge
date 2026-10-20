@@ -9,7 +9,7 @@ interface SelectionSources {
 }
 
 function sidebarTargetAvailable(route: Route): boolean {
-  if (route.page !== "pulls" && route.page !== "issues") return true;
+  if (route.page !== "pulls" && route.page !== "issues" && route.page !== "worklists") return true;
   return document.querySelector(".kit-sidebar-layout__sidebar") !== null;
 }
 

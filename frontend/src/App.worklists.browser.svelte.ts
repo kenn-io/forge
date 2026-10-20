@@ -86,6 +86,21 @@ it("does not loop or re-read the open list on the agent status poll", async () =
   }
 });
 
+it("keeps j and k working while the rail is collapsed", async () => {
+  await page.viewport(1400, 900);
+  localStorage.setItem("kenn-forge-sidebar", "collapsed");
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+  await expect.element(page.getByRole("region", { name: "Worklist item context" })).toBeVisible();
+  expect(document.querySelector('[aria-label="Review queue items"]')).toBeNull();
+
+  pressKey("j");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
+  pressKey("k");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+});
+
 it("fits every row in the rail at its narrowest width", async () => {
   await page.viewport(1400, 900);
   localStorage.setItem("kenn-forge-sidebar-width", "200");

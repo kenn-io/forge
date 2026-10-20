@@ -269,6 +269,8 @@ describe("defaultActions", () => {
     expect(isSidebarCollapsed()).toBe(false);
     expect(action!.when(ctx("issues"))).toBe(true);
     expect(visible(ctx("issues"))).toBe(true);
+    expect(visible(ctx("worklists"))).toBe(true);
+    expect(visible(ctx("worklists", { sidebarTargetAvailable: false }))).toBe(false);
     expect(action!.when(ctx("workspaces"))).toBe(true);
     expect(visible(ctx("workspaces"))).toBe(true);
     expect(

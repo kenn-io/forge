@@ -8343,17 +8343,12 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	fullPR, newETag, notModified, err := s.getPullRequestForDetail(
 		ctx, client, repo, number,
 	)
-	s.observeSyncItem(ctx, repo, "merge_requests", err)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
-	if provider, ok := mrReader.(*platformgithub.Provider); ok {
-		if outcomeErr := provider.MergeRequestLookupOutcomeError(
-			ctx, platformRepoRef(repo), number, fullPR, err,
-		); outcomeErr != nil {
-			return calls, fmt.Errorf("get full PR #%d: %w", number, outcomeErr)
-		}
+	if outcomeErr := s.observeMergeRequestFetch(ctx, repo, number, fullPR, err); outcomeErr != nil {
+		return calls, fmt.Errorf("get full PR #%d: %w", number, outcomeErr)
 	}
 	if err == nil && fullPR == nil {
 		if notModified && existing != nil {
@@ -12293,11 +12288,10 @@ func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID 
 	}
 	requestedAt := s.nowUTC()
 	ghPR, err := client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
-	s.observeSyncItem(ctx, repo, "merge_requests", err)
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
-	if outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, ghPR, err); outcomeErr != nil {
+	if outcomeErr := s.observeMergeRequestFetch(ctx, repo, number, ghPR, err); outcomeErr != nil {
 		if errors.Is(outcomeErr, platform.ErrLookupNotPresent) &&
 			errors.Is(outcomeErr, platform.ErrNotFound) && lookupDestination(outcomeErr) == nil {
 			return s.db.RecordRemovedMergeRequest(ctx, repoID, number, outcomeErr.Error(), s.nowUTC())

@@ -256,16 +256,22 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 		path   string
 		source string
 		status int
-		want   [][2]string
+		// probe fails one repository probe per item read; zero leaves them passing.
+		probe int
+		want  [][2]string
 	}{
-		{"provider failure/issue detail", "detail", "issues", http.StatusServiceUnavailable, [][2]string{{"issues", "provider"}}},
-		{"provider failure/PR detail", "detail", "merge_requests", http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}}},
-		{"missing item/issue detail", "detail", "issues", http.StatusNotFound, nil},
-		{"missing item/PR detail", "detail", "merge_requests", http.StatusNotFound, nil},
-		{"deleted issue/issue detail", "detail", "issues", http.StatusGone, nil},
-		{"missing items/closure", "closure", "", http.StatusNotFound, nil},
-		{"deleted items/closure", "closure", "", http.StatusGone, [][2]string{{"merge_requests", "other"}}},
-		{"provider failure/closure", "closure", "", http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
+		{"provider failure/issue detail", "detail", "issues", http.StatusServiceUnavailable, 0, [][2]string{{"issues", "provider"}}},
+		{"provider failure/PR detail", "detail", "merge_requests", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}}},
+		{"missing item/issue detail", "detail", "issues", http.StatusNotFound, 0, nil},
+		{"missing item/PR detail", "detail", "merge_requests", http.StatusNotFound, 0, nil},
+		{"deleted issue/issue detail", "detail", "issues", http.StatusGone, 0, nil},
+		{"missing items/closure", "closure", "", http.StatusNotFound, 0, nil},
+		{"deleted items/closure", "closure", "", http.StatusGone, 0, [][2]string{{"merge_requests", "other"}}},
+		{"provider failure/closure", "closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
+		{"inaccessible PR/PR detail", "detail", "merge_requests", http.StatusForbidden, 0, [][2]string{{"merge_requests", "auth"}}},
+		{"inaccessible items/closure", "closure", "", http.StatusForbidden, 0, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}},
+		{"missing PR then probe failure/PR detail", "detail", "merge_requests", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}}},
+		{"missing items then probe failure/closure", "closure", "", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -296,6 +302,16 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 					assert.Equal(t, "acme/widget/8", fmt.Sprintf("%s/%s/%d", owner, name, number))
 					mrCalls.Add(1)
 					return nil, failure
+				}
+			}
+			var probes atomic.Int32
+			if tc.probe != 0 {
+				client.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+					if probes.Load() < issueCalls.Load()+mrCalls.Load() {
+						probes.Add(1)
+						return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.probe}}
+					}
+					return &gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Owner: &gh.User{Login: &repo.Owner}, Name: &repo.Name}, nil
 				}
 			}
 			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))

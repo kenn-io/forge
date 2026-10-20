@@ -66,6 +66,17 @@ func (s *Syncer) observeSyncItem(ctx context.Context, repo RepoRef, source strin
 	}
 }
 
+// observeMergeRequestFetch records the lookup-classified outcome of a
+// single-PR read, or the raw error when none applies, and returns the outcome.
+func (s *Syncer) observeMergeRequestFetch(ctx context.Context, repo RepoRef, number int, pr *gh.PullRequest, err error) error {
+	outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, pr, err)
+	if outcomeErr != nil {
+		err = outcomeErr
+	}
+	s.observeSyncItem(ctx, repo, "merge_requests", err)
+	return outcomeErr
+}
+
 func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error) {
 	caps, capsErr := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if capsErr != nil {

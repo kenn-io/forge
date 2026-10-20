@@ -85,7 +85,7 @@ func stringValuesOrOther(values ...string) posthog.PropertyFilter {
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"sync_failed": {
-		"sync_source": stringValuesOrOther("merge_requests", "issues", "checks", "refs"),
+		"sync_source": posthog.AllowStringValues("merge_requests", "issues", "checks", "refs"),
 		"reason":      stringValuesOrOther("auth", "rate_limited", "not_found", "network", "provider", "other"),
 	},
 	"setup_finished": {},

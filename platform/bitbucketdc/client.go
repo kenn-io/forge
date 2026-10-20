@@ -30,6 +30,7 @@ type Client struct {
 	writableRepos        map[int64]struct{}
 }
 
+// HTTPError reports an HTTP status that has no platform error code.
 type HTTPError struct{ StatusCode int }
 
 func (e *HTTPError) Error() string {

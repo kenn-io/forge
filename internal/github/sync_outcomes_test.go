@@ -46,7 +46,7 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 		wantNow   int
 		wantLater int
 	}{
-		{"recovery overlaps new failure", a, []observation{{a, nil}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
+		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
 		{"cadence skipped", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"local path error", a, []observation{{a, fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})}}, []RepoRef{a, b}, a, 1, 1},
@@ -278,7 +278,8 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 		{"deleted issue/issue detail", "detail", "issues", http.StatusGone, 0, nil},
 		{"missing items/closure", "closure", "", http.StatusNotFound, 0, nil},
 		{"provider failure/closure", "closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
-		{"inaccessible items/closure", "closure", "", http.StatusForbidden, 0, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}},
+		{"inaccessible items/closure", "closure", "", http.StatusForbidden, 0, nil},
+		{"inaccessible items then probe failure/closure", "closure", "", http.StatusForbidden, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 		{"missing items then probe failure/closure", "closure", "", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 		{"missing items/neutral closure", "neutral closure", "", http.StatusNotFound, 0, nil},
 		{"provider failure/neutral closure", "neutral closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},

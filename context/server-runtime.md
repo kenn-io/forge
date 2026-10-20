@@ -1,8 +1,9 @@
 # Server Runtime
 
-- Full sync passes report at most one `sync_failed` per source when it goes from no retained repository failures to failing, with fixed `sync_source` and `reason`, without repository identifiers.
-  Primary list, detail, CI, clone, and fetch failures count. Git reasons are `auth` when Git reports an authentication or permission failure, otherwise `other`. Local file and permission errors in non-clone reads and missing individual items leave the source unread.
-  Unread repositories retain state; recovery or disablement clears it, and archived or untracked repositories drop out. Counts stay in memory; restarts or identity changes can count an outage twice
+- Full sync passes report at most one `sync_failed` per source when any repository starts failing it, with fixed `sync_source` and `reason`, without repository identifiers.
+  A repository that keeps failing does not report again or suppress other repositories' new failures.
+  Primary list, detail, CI, clone, and fetch failures count. Git reasons are `auth` when Git reports an authentication or permission failure, `network` on timeout, otherwise `other`. Local file and permission errors in non-clone reads and missing or inaccessible individual items leave the source unread.
+  Unread repositories retain state; recovery or disablement clears it, and archived or untracked repositories drop out. Counts stay in memory; restarts or identity changes can count a failing repository twice
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

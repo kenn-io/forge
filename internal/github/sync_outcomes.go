@@ -60,8 +60,10 @@ func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, e
 	}
 }
 
+// observeSyncItem skips items the provider reports as missing or as
+// individually inaccessible; neither says the source itself is failing.
 func (s *Syncer) observeSyncItem(ctx context.Context, repo RepoRef, source string, err error) {
-	if syncFailureReason(err) != "not_found" {
+	if syncFailureReason(err) != "not_found" && !errors.Is(err, platform.ErrLookupInaccessible) {
 		s.observeSync(ctx, repo, source, err)
 	}
 }
@@ -129,7 +131,8 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 				delete(failures, key)
 			}
 		}
-		wasFailing := len(failures) > 0
+		// Only repositories that start failing count, so one repository that
+		// keeps failing does not hide outages in the others.
 		var reasons []string
 		for key, reason := range pass.results[source] {
 			if !live[key] {
@@ -137,12 +140,12 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			}
 			if reason == "" {
 				delete(failures, key)
-			} else {
+			} else if !failures[key] {
 				reasons = append(reasons, reason)
 				failures[key] = true
 			}
 		}
-		if !wasFailing && s.onSyncFailed != nil {
+		if s.onSyncFailed != nil {
 			for _, reason := range syncReasons {
 				if slices.Contains(reasons, reason) {
 					s.onSyncFailed(source, reason)

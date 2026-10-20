@@ -126,7 +126,7 @@ func TestSyncFailedProperties(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, daemon.Close()) })
 	for _, tc := range []struct{ source, reason, wantSource, wantReason string }{
 		{"issues", "provider", "issues", "provider"},
-		{"acme/widget", "private provider message", "other", "other"},
+		{"issues", "private provider message", "issues", "other"},
 	} {
 		properties, err := daemon.SanitizeProperties("sync_failed", map[string]any{
 			"sync_source": tc.source, "reason": tc.reason, "repo": "acme/widget", "error": "private details",
@@ -138,7 +138,7 @@ func TestSyncFailedProperties(t *testing.T) {
 		assert.NotContains(properties, "repo")
 		assert.NotContains(properties, "error")
 	}
-	for _, properties := range []map[string]any{{"reason": "auth"}, {"sync_source": "refs"}} {
+	for _, properties := range []map[string]any{{"reason": "auth"}, {"sync_source": "refs"}, {"sync_source": "acme/widget", "reason": "auth"}} {
 		_, err := daemon.SanitizeProperties("sync_failed", properties)
 		require.ErrorIs(t, err, posthog.ErrInvalidProperty)
 	}

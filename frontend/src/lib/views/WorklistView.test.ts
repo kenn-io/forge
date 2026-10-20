@@ -170,6 +170,41 @@ describe("WorklistView", () => {
     expect(server.lists[0]?.dismissed_at).not.toBeNull();
   });
 
+  it("keeps a newly picked list when a dismissal finishes after the user switched lists", async () => {
+    server.lists.push(worklistResponse(3, "Release blockers", []));
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    navigate("/worklists/3");
+    await screen.findByText("No items remain on this list.");
+    release();
+
+    await waitFor(() => expect(stores.worklists.getSummaries().map((summary) => summary.id)).toEqual([4, 3]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(currentPath()).toBe("/worklists/3");
+    expect(screen.queryByText("Dismissed Review queue.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Dismiss" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("keeps a restored list open when the dismissed copy of it was already loaded", async () => {
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
+    // Opening the list during its undo window loads it with dismissed_at set.
+    navigate("/worklists/5");
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(screen.queryByText("Dismissed Review queue.")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(currentPath()).toBe("/worklists/5");
+    expect(rowTitles()).toHaveLength(4);
+  });
+
   it("keeps the user's route when a restore finishes after they left", async () => {
     const stores = renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(4));
@@ -441,18 +476,6 @@ describe("WorklistView", () => {
 
     expect(await screen.findByText("No worklists")).toBeTruthy();
     expect(rowTitles()).toEqual([]);
-  });
-
-  it("keeps showing a list the user dismissed while its undo is offered", async () => {
-    renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
-    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
-
-    navigate("/worklists/5");
-
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
-    expect(screen.getByText("Dismissed Review queue.")).toBeTruthy();
   });
 
   it("reports a failed read instead of claiming there are no worklists", async () => {

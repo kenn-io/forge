@@ -203,7 +203,16 @@ class WorklistsStoreImpl implements WorklistsStore {
   }
 
   undismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices> {
-    return undismissWorklist(id).pipe(Effect.tap(() => this.#readSummaries()));
+    // Clear the cached copy's dismissal too: opening the restored list reuses
+    // it, and a dismissed copy would read as missing.
+    return undismissWorklist(id).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          if (this.#detail?.id === id) this.#detail = { ...this.#detail, dismissed_at: null };
+        }),
+      ),
+      Effect.tap(() => this.#readSummaries()),
+    );
   }
 
   setHandledEffect(

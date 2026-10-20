@@ -197,13 +197,19 @@ stateDiagram-v2
   and issues, so item menus name the actual mix and apply each action only to
   eligible items (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte`).
 - Dismissing a worklist can be undone; a dismissed list returns only through
-  undo or an agent rewrite of the same list. Undo stays until the restore
-  succeeds; a failed restore keeps it and shows the error. A dismissal or
-  restore that finishes after the maintainer left the view still applies but
-  neither navigates nor offers undo. An open list dismissed elsewhere is
-  treated as missing: the view moves to the newest open list or the empty
-  state, except while this view's undo for that list is showing
-  (`frontend/src/lib/views/WorklistView.svelte`).
+  undo or an agent rewrite of the same list. Dismiss and Undo are one state
+  machine: idle, dismissing, undo window, restoring. A completion acts only
+  while the machine is still in the state that started it. A dismissal that
+  finishes after the maintainer switched lists or left the page updates the
+  store but neither navigates nor offers undo; a restore likewise navigates
+  only if the page still shows what it showed when Undo was pressed. Undo
+  stays until the restore succeeds; a failed restore reopens the undo window
+  and shows the error. A successful restore clears the cached list's
+  dismissal. Leaving the page cancels the undo window, never the request
+  (`frontend/src/lib/components/worklists/worklist-dismissal.svelte.ts`).
+- An open list dismissed elsewhere is treated as missing: the view moves to
+  the newest open list or the empty state, except while this view's undo for
+  that list is showing (`frontend/src/lib/views/WorklistView.svelte`).
 - When an agent rewrite drops the open item, the selection moves, replacing
   the URL, to the row that now takes its place in the visible order, else the
   row before it; with no rows left the detail closes

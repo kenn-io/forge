@@ -7,7 +7,6 @@
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
   import { worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
-  import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
@@ -16,6 +15,7 @@
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import WorklistContextStrip from "../components/worklists/WorklistContextStrip.svelte";
   import WorklistRail from "../components/worklists/WorklistRail.svelte";
+  import { WorklistDismissal } from "../components/worklists/worklist-dismissal.svelte.js";
   import {
     worklistItemKey,
     worklistItemMatchesSelection,
@@ -87,18 +87,24 @@
   const summaries = $derived(worklists.getSummaries());
   const loadedWorklist = $derived(worklists.getDetail());
   const detailError = $derived(worklists.getDetailError());
-  let dismissing = $state(false);
-  let undone = $state.raw<{ id: number; title: string } | null>(null);
-  let restoring = $state(false);
-  let undoTimer: AppExecution<void, never> | null = null;
-  // Dismiss and restore finish in the store even after this view is gone; only
-  // their presentation and navigation belong to the view.
-  let mounted = true;
+
+  const dismissal = new WorklistDismissal({
+    runtime,
+    worklists,
+    shownListId: () => worklistId,
+    onDismissed: () => {
+      const next = worklists.getSummaries()[0];
+      if (next) openList(next.id, "replace");
+      else replaceUrl(buildWorklistsRoute());
+    },
+    onRestored: (id) => openList(id, "replace"),
+  });
+  $effect(() => () => dismissal.dispose());
 
   // Another tab or an agent can dismiss the open list. A dismissed list stays
   // readable by ID, so treat it as missing unless this view's undo offers it.
   const worklist = $derived(
-    loadedWorklist !== null && loadedWorklist.dismissed_at !== null && undone?.id !== loadedWorklist.id
+    loadedWorklist !== null && loadedWorklist.dismissed_at !== null && !dismissal.offersUndo(loadedWorklist.id)
       ? null
       : loadedWorklist,
   );
@@ -226,108 +232,6 @@
     const repositoryKey = ref.repositoryKey ?? selected?.repositoryKey;
     replaceUrl(buildWorklistRoute(worklistId, { ...ref, repositoryKey, itemType: "pr", detailTab }));
     return true;
-  }
-
-
-  function showUndo(entry: { id: number; title: string } | null): void {
-    undoTimer?.interrupt();
-    undoTimer = null;
-    if (!mounted) return;
-    undone = entry;
-    if (entry === null) return;
-    undoTimer = runtime.runCommand(
-      Effect.sleep("10 seconds").pipe(
-        Effect.andThen(
-          Effect.sync(() => {
-            undone = null;
-          }),
-        ),
-      ),
-      { operation: "expire worklist undo", safeContext: {}, onFailure: () => {} },
-    );
-  }
-
-  $effect(() => () => {
-    mounted = false;
-    untrack(() => undoTimer?.interrupt());
-  });
-
-  function dismiss(): void {
-    const list = worklist;
-    if (!list || dismissing) return;
-    dismissing = true;
-    runtime.runCommand(
-      worklists.dismissEffect(list.id).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            if (!mounted) return;
-            showUndo({ id: list.id, title: list.title });
-            const next = worklists.getSummaries()[0];
-            if (next) openList(next.id, "replace");
-            else replaceUrl(buildWorklistsRoute());
-          }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            dismissing = false;
-          }),
-        ),
-      ),
-      {
-        operation: "dismiss worklist",
-        safeContext: {},
-        onFailure: (failure) => {
-          if (!mounted) return;
-          showFlash(
-            failure instanceof ApiProblemError
-              ? worklistFailureMessage(failure, "Could not dismiss the worklist.")
-              : "Could not dismiss the worklist.",
-            { tone: "danger" },
-          );
-        },
-      },
-    );
-  }
-
-  // Undo stays on screen until the restore succeeds: a failed restore would
-  // otherwise remove the only way back to the list. The expiry timer pauses
-  // while the request runs and starts over after a failure.
-  function undo(): void {
-    const entry = undone;
-    if (!entry || restoring) return;
-    restoring = true;
-    undoTimer?.interrupt();
-    undoTimer = null;
-    runtime.runCommand(
-      worklists.undismissEffect(entry.id).pipe(
-        Effect.tap(() =>
-          Effect.sync(() => {
-            if (!mounted) return;
-            showUndo(null);
-            openList(entry.id, "replace");
-          }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            restoring = false;
-          }),
-        ),
-      ),
-      {
-        operation: "restore worklist",
-        safeContext: {},
-        onFailure: (failure) => {
-          if (!mounted) return;
-          showUndo(entry);
-          showFlash(
-            failure instanceof ApiProblemError
-              ? worklistFailureMessage(failure, "Could not restore the worklist.")
-              : "Could not restore the worklist.",
-            { tone: "danger" },
-          );
-        },
-      },
-    );
   }
 
   function setHandled(items: readonly WorklistItem[], handled: boolean, onApplied?: () => void): void {
@@ -492,10 +396,11 @@
 </script>
 
 <div class="worklist-shell" bind:clientWidth={shellWidth}>
-  {#if undone}
+  {#if dismissal.state.kind === "undo" || dismissal.state.kind === "restoring"}
+    {@const restoring = dismissal.state.kind === "restoring"}
     <div class="worklist-undo-row" role="status">
-      <span>Dismissed {undone.title}.</span>
-      <Button size="sm" label={restoring ? "Restoring" : "Undo"} disabled={restoring} onclick={undo} />
+      <span>Dismissed {dismissal.state.title}.</span>
+      <Button size="sm" label={restoring ? "Restoring" : "Undo"} disabled={restoring} onclick={() => dismissal.undo()} />
     </div>
   {/if}
 
@@ -520,10 +425,10 @@
             {worklist}
             {summaries}
             {selectedKey}
-            {dismissing}
+            dismissing={dismissal.state.kind === "dismissing"}
             onOpen={openItem}
             onPick={(id) => openList(id, "push")}
-            onDismiss={dismiss}
+            onDismiss={() => dismissal.dismiss(worklist)}
             onItemsChanged={reloadAfterItemAction}
             onSetHandled={setHandled}
             onVisibleOrder={recordVisibleOrder}

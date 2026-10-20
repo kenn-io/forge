@@ -212,11 +212,10 @@ stateDiagram-v2
   the rail and says no items remain. Long notes, caveats, and recipes scroll
   inside bounded boxes so the detail pane and rows keep their room
   (`frontend/src/lib/components/worklists/WorklistRail.svelte`).
-- The open list refreshes on the same lightweight poll as the pull request
-  list, so CI and freshness follow changes that send no `data_changed`. A read
-  already in flight answers for the poll. Every worklist read, including
-  startup, open, and retry, reports a hub outage to the provider-unavailable
-  banner (`frontend/src/lib/app-stores.svelte.ts`).
+- The open list re-reads on `worklists_changed`, `data_changed`, and
+  reconnects. The agent-status list poll never reads worklists. Every worklist
+  read, including startup, open, and retry, reports a hub outage to the
+  provider-unavailable banner (`frontend/src/lib/app-stores.svelte.ts`).
 - The empty state appears only after the list read succeeds with no lists; a
   failed read shows the error, and a hub outage raises the provider-unavailable
   banner.

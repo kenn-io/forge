@@ -45,7 +45,7 @@ it("adds the Worklists tab when an agent writes a list and opens its first item"
   await expect.element(strip.getByText("Review notes may cover an older head")).toBeVisible();
 });
 
-it("reads the open list once per poll when lists show agent status", async () => {
+it("does not loop or re-read the open list on the agent status poll", async () => {
   await page.viewport(1400, 900);
   const errors: unknown[] = [];
   const onError = (event: ErrorEvent): void => {
@@ -63,15 +63,21 @@ it("reads the open list once per poll when lists show agent status", async () =>
   try {
     mounted = await mountBrowserApp("/worklists/5", { overrides: [agentStatusSettings, worklistRoutes(server)] });
     await expect.element(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
+    // Showing a hidden page runs the poll at once.
+    let visibility: DocumentVisibilityState = "hidden";
+    vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+    document.dispatchEvent(new Event("visibilitychange"));
+    visibility = "visible";
+    document.dispatchEvent(new Event("visibilitychange"));
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // The poll runs every five seconds, so a second has room for the open and
-    // the first poll, not a read loop.
+    // Only opening the list reads it; a loop or a poll refresh would read again.
     const detailReads = server.requests.filter((request) => request === "GET /api/v1/worklists/5");
-    expect(detailReads.length).toBeLessThanOrEqual(3);
+    expect(detailReads).toHaveLength(1);
     expect(errors).toEqual([]);
   } finally {
     window.removeEventListener("error", onError);
+    vi.restoreAllMocks();
   }
 });
 

@@ -258,11 +258,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             },
           ),
         );
-      // The open list is the worklist page's list, so the lightweight poll
-      // refreshes it as it does the pull request list: CI and freshness can
-      // change without a data_changed event.
+      // Full refreshes re-read the open list; the lightweight poll leaves it alone.
       case "worklists":
-        return refreshDetail ? worklistsStore.refreshOpenDetailEffect() : worklistsStore.reconcileOpenDetailEffect();
+        return refreshDetail ? worklistsStore.refreshOpenDetailEffect() : Effect.void;
       case "focus":
         return observeHubFailure(
           Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {

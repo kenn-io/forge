@@ -33,11 +33,6 @@ export interface WorklistsStore {
   refreshSummariesEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   openEffect(id: number | null): Effect.Effect<void, never, AppServices>;
   refreshOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
-  /**
-   * Reconciles the open list on the lightweight poll path. A read of the open
-   * list already in flight answers for it, so a slow response is not stacked.
-   */
-  reconcileOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   dismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
   undismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
@@ -118,12 +113,6 @@ class WorklistsStoreImpl implements WorklistsStore {
 
   refreshOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices> {
     return this.#readOpenDetail().pipe(Effect.flatMap(failIfPresent));
-  }
-
-  reconcileOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices> {
-    return Effect.suspend(() =>
-      this.#detailLoading && this.#openId !== null ? Effect.void : this.refreshOpenDetailEffect(),
-    );
   }
 
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices> {

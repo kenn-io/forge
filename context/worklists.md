@@ -33,7 +33,8 @@ through.
   (`internal/db/worklists.go::CompareWorklistItem`).
 - Freshness and the embedded list row use the same tracked repositories as
   the pull request and issue lists, so list summaries, MCP reads, and HTTP
-  reads agree. Only a Gone item has a null row
+  reads agree. The row is null only when the item is no longer a visible
+  synced row; a merged or closed Gone item keeps its live row
   (`internal/server/worklistapi/handler.go::Handler.trackedRepoIDs`).
 - Changes since the list was written are informational. Show them as quiet
   markers that name what changed and when the agent wrote the item, not as
@@ -81,7 +82,10 @@ stateDiagram-v2
 ## Refresh and copies
 
 - Reading a worklist over MCP returns its recipe and each item's changes since
-  it was written, so an agent can re-evaluate only what changed.
+  it was written. Freshness tracks only state, commits, comments, CI, and
+  review decision, so it shows where to look first; a refresh reruns the
+  recipe's searches, reconciles the full candidate set, and rewrites the list
+  (`internal/mcpserver/guidance.md`).
 - Writing to an existing worklist replaces its items and resets what Forge
   recorded for each one. Writing a new worklist from an existing recipe makes a
   copy; that is how "another one like that" works.
@@ -92,6 +96,7 @@ stateDiagram-v2
   Active --> Active: agent writes the same list again, replacing items
   Active --> Dismissed: maintainer dismisses
   Dismissed --> Active: undo
+  Dismissed --> Active: agent writes the same list again
   Dismissed --> [*]
 ```
 
@@ -121,11 +126,15 @@ stateDiagram-v2
   the hub and never fall back to local rows when the hub is unavailable
   (`internal/server/mcp_backend_worklists.go::mcpBackend.PutWorklist`,
   `internal/server/spokeapi/provider_sources.go::HubProviderSource.PutWorklist`).
+  An execution worker with no hub to forward to answers every worklist MCP
+  tool with `serviceUnavailable`
+  (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
 - HTTP reads, dismisses, restores, and marks; agents write through MCP. Each
   item embeds the same row the pull request or issue list returns, or null once
-  the item is gone. A dismissed list stays readable by ID with `dismissed_at` set.
+  the item is no longer a visible synced row. A dismissed list stays readable
+  by ID with `dismissed_at` set.
 - A mark request names items by provider-verified repository identity, item
   type, and number, and marks or unmarks them in one transaction. An unknown
   repository or an item that is not on the list rejects the request with
@@ -134,7 +143,11 @@ stateDiagram-v2
   (`internal/server/worklistapi/handler.go::Handler.SetHandledService`).
 - Responses to federation callers carry no workspace references: embedded
   rows have no workspace and `workspace_id` is empty, because the reader
-  cannot tell which machine a workspace ID names. A spoke serves a worklist
+  cannot tell which machine a workspace ID names. For the same reason the hub
+  records no workspace for a put a spoke forwards, so that list has no
+  `workspace_id` even on the hub
+  (`internal/server/provider_route_wrappers.go::Server.federationPutWorklist`).
+  A spoke serves a worklist
   read itself, from the hub's copy, and adds its own workspaces to the
   embedded rows, as for the pull request and issue lists
   (`internal/server/worklistapi/handler.go::Handler.GetService`,

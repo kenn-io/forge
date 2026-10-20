@@ -67,7 +67,8 @@ func (s *Server) registerWorklistTools() {
 		Description: "Read a worklist with its recipe and, for each item, what Forge recorded when it was written, " +
 			"its live synced state, freshness (fresh, changed or gone), the changes since, and handled_at, " +
 			"when the maintainer marked it handled (null when unhandled). Handled is independent of freshness. " +
-			"Re-evaluate only changed and gone items when refreshing. Changes never certify mergeability.",
+			"Freshness shows where to look first; to refresh, rerun the recipe's searches and put the whole list again. " +
+			"Changes never certify mergeability.",
 	}, wrapTool(s.getWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},

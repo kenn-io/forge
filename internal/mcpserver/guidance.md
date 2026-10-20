@@ -86,10 +86,14 @@ Worklists:
   Forge stores and shows it but never evaluates it.
 - Every item must be a PR or issue Forge has synced. Copy identities from
   Forge reads; one unknown item fails the whole write.
-- To refresh a list, read it with `kenn_forge_get_worklist`, re-evaluate only
-  `changed` and `gone` items, and put it again with the same `worklist_id`.
-  That replaces its items and resets what Forge recorded for each. To make
-  another list like it, put its recipe without a `worklist_id`.
+- To refresh a list, read it with `kenn_forge_get_worklist`, rerun its
+  recipe's searches, reconcile the full candidate set, and put it again with
+  the same `worklist_id`. Freshness only tracks state, commits, comments, CI,
+  and review decision, so treat `changed` and `gone` as where to look first:
+  labels, assignees, draft status, or titles can change on a `fresh` item, and
+  new matches appear only in the searches. A put replaces the items and resets
+  what Forge recorded for each. To make another list like it, put its recipe
+  without a `worklist_id`.
 - The maintainer marks items handled as they work through a list; reads report
   `handled_at` per item, and `handled_count` and `remaining_count` (items
   neither handled nor gone) per list. A mark stays on an item that remains on

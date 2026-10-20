@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/mcpserver"
@@ -436,7 +437,10 @@ func TestSpokeWorklistRowsCarryOnlySpokeWorkspaces(t *testing.T) {
 	require.NotNil(onHub.Items[0].Pull.Workspace)
 	assert.Equal("ws-hub", onHub.Items[0].Pull.Workspace.ID)
 	assert.Nil(onHub.Items[1].Issue.Workspace)
-	assert.Equal("ws-chat", onHub.WorkspaceID)
+	assert.Empty(onHub.WorkspaceID, "the spoke's workspace names a workspace the hub cannot open")
+	stored, err := hubDB.GetWorklistSummary(t.Context(), put.WorklistID, nil)
+	require.NoError(err)
+	assert.Empty(stored.WorkspaceID, "the hub records no workspace from a forwarded put")
 
 	marked := testutil.DoJSON(t, spoke, http.MethodPost,
 		"/api/v1/worklists/"+strconv.FormatInt(put.WorklistID, 10)+"/handled",
@@ -514,4 +518,58 @@ func TestWorklistItemsInUnconfiguredRepositoriesAreGone(t *testing.T) {
 	require.Len(read.Items, 2)
 	assert.Equal("gone", read.Items[0].Freshness)
 	assert.Nil(read.Items[0].Live)
+}
+
+func TestExecutionWorkerWorklistOperationsReportUnavailable(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	cfg := &config.Config{}
+	cfg.DataDir = t.TempDir()
+	cfg.ExecutionWorker = config.ExecutionWorker{
+		Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock",
+	}
+	worker := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
+		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef",
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, worker) })
+	backend := worker.MCPBackend()
+	item := mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		RepoKey: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget", Number: 42,
+	}
+
+	operations := map[string]func() error{
+		"put": func() error {
+			_, err := backend.PutWorklist(t.Context(), mcpserver.WorklistPut{
+				Title: "Merge today", Items: []mcpserver.WorklistPutItem{{Item: item}},
+			})
+			return err
+		},
+		"get": func() error {
+			_, err := backend.GetWorklist(t.Context(), 1)
+			return err
+		},
+		"list": func() error {
+			_, err := backend.ListWorklists(t.Context(), false)
+			return err
+		},
+		"dismiss": func() error {
+			_, err := backend.DismissWorklist(t.Context(), 1)
+			return err
+		},
+		"clear marks": func() error {
+			_, err := backend.ClearWorklistMarks(t.Context(), 1)
+			return err
+		},
+	}
+	for name, operation := range operations {
+		t.Run(name, func(t *testing.T) {
+			var err error
+			require.NotPanics(t, func() { err = operation() })
+			var backendErr *mcpserver.Error
+			require.ErrorAs(t, err, &backendErr)
+			assert.Equal(t, string(httpapi.CodeServiceUnavailable), backendErr.Code)
+			assert.Equal(t, "unavailable", backendErr.Kind)
+		})
+	}
 }

@@ -35,8 +35,10 @@ func (b mcpBackend) GetWorklist(ctx context.Context, id int64) (mcpserver.Workli
 	)
 	if b.server.providerSource != nil {
 		worklist, err = b.server.providerSource.GetWorklist(ctx, id)
+	} else if worklists, unavailable := b.localWorklists(); unavailable != nil {
+		return mcpserver.Worklist{}, unavailable
 	} else {
-		worklist, err = b.server.worklistAPI.GetService(ctx, id)
+		worklist, err = worklists.GetService(ctx, id)
 	}
 	if err != nil {
 		return mcpserver.Worklist{}, mcpapi.McpBackendError(err)
@@ -53,8 +55,10 @@ func (b mcpBackend) ListWorklists(
 	)
 	if b.server.providerSource != nil {
 		summaries, err = b.server.providerSource.ListWorklists(ctx, includeDismissed)
+	} else if worklists, unavailable := b.localWorklists(); unavailable != nil {
+		return nil, unavailable
 	} else {
-		summaries, err = b.server.worklistAPI.ListService(ctx, includeDismissed)
+		summaries, err = worklists.ListService(ctx, includeDismissed)
 	}
 	if err != nil {
 		return nil, mcpapi.McpBackendError(err)
@@ -79,12 +83,16 @@ func (b mcpBackend) DismissWorklist(
 			return mcpserver.WorklistDismissal{}, mcpapi.McpBackendMutationError(err)
 		}
 	} else {
+		worklists, unavailable := b.localWorklists()
+		if unavailable != nil {
+			return mcpserver.WorklistDismissal{}, unavailable
+		}
 		release, admitErr := b.admitProviderWrite(ctx)
 		if admitErr != nil {
 			return mcpserver.WorklistDismissal{}, admitErr
 		}
 		defer release()
-		summary, err = b.server.worklistAPI.SetDismissedService(ctx, id, true)
+		summary, err = worklists.SetDismissedService(ctx, id, true)
 		if err != nil {
 			return mcpserver.WorklistDismissal{}, mcpapi.McpBackendMutationError(err)
 		}
@@ -112,16 +120,31 @@ func (b mcpBackend) ClearWorklistMarks(
 func (b mcpBackend) clearWorklistMarksLocal(
 	ctx context.Context, id int64,
 ) (mcpserver.WorklistMarksCleared, error) {
+	worklists, unavailable := b.localWorklists()
+	if unavailable != nil {
+		return mcpserver.WorklistMarksCleared{}, unavailable
+	}
 	release, err := b.admitProviderWrite(ctx)
 	if err != nil {
 		return mcpserver.WorklistMarksCleared{}, err
 	}
 	defer release()
-	cleared, err := b.server.worklistAPI.ClearMarksService(ctx, id)
+	cleared, err := worklists.ClearMarksService(ctx, id)
 	if err != nil {
 		return mcpserver.WorklistMarksCleared{}, mcpapi.McpBackendMutationError(err)
 	}
 	return mcpserver.WorklistMarksCleared{WorklistID: id, Cleared: cleared}, nil
+}
+
+// localWorklists returns the hub's worklist handler. Execution workers serve
+// MCP without one, and a worker that is not a spoke has no hub to forward to.
+func (b mcpBackend) localWorklists() (*worklistapi.Handler, error) {
+	if b.server.worklistAPI == nil {
+		return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(
+			"worklists are not available on this server",
+		))
+	}
+	return b.server.worklistAPI, nil
 }
 
 func (b mcpBackend) admitProviderWrite(ctx context.Context) (func(), error) {
@@ -144,6 +167,10 @@ func (b mcpBackend) putWorklistLocal(
 	if err := mcpserver.ValidateWorklistPut(put); err != nil {
 		return mcpserver.WorklistPutResult{}, err
 	}
+	worklists, unavailable := b.localWorklists()
+	if unavailable != nil {
+		return mcpserver.WorklistPutResult{}, unavailable
+	}
 	release, err := b.admitProviderWrite(ctx)
 	if err != nil {
 		return mcpserver.WorklistPutResult{}, err
@@ -154,7 +181,7 @@ func (b mcpBackend) putWorklistLocal(
 		CreatedBy: put.CreatedBy, WorkspaceID: put.WorkspaceID,
 		Items: make([]db.WorklistItemParams, 0, len(put.Items)), Now: b.server.now(),
 	}
-	tracked, err := b.server.worklistAPI.TrackedRepoIDs(ctx)
+	tracked, err := worklists.TrackedRepoIDs(ctx)
 	if err != nil {
 		return mcpserver.WorklistPutResult{}, mcpapi.McpBackendError(err)
 	}
@@ -200,7 +227,7 @@ func (b mcpBackend) putWorklistLocal(
 	if err != nil {
 		return mcpserver.WorklistPutResult{}, mcpapi.McpBackendMutationError(err)
 	}
-	b.server.worklistAPI.PublishChanged(result.ID)
+	worklists.PublishChanged(result.ID)
 	return mcpserver.WorklistPutResult{
 		WorklistID: result.ID, ItemCount: result.ItemCount, Created: result.Created,
 	}, nil

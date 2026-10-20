@@ -62,7 +62,11 @@ func (s *Server) federationPutWorklist(
 	ctx context.Context,
 	input *providerapi.FederationPutWorklistInput,
 ) (*providerapi.FederationPutWorklistOutput, error) {
-	result, err := (mcpBackend{server: s}).putWorklistLocal(ctx, input.Body.Mcp())
+	put := input.Body.Mcp()
+	// A spoke's workspace ID names a workspace on another machine; recording
+	// it would make the hub's own reads point at a workspace it cannot open.
+	put.WorkspaceID = ""
+	result, err := (mcpBackend{server: s}).putWorklistLocal(ctx, put)
 	if err != nil {
 		return nil, providerapi.FederationWorkflowProblem(err)
 	}

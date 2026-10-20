@@ -64016,17 +64016,17 @@ type WorklistItemResponse struct {
 	HandledAt *time.Time `json:"handled_at,omitempty"`
 
 	// Issue Issue list row; null unless the item is a visible issue.
-	Issue    IssueResponse                `json:"issue"`
+	Issue    *IssueResponse               `json:"issue,omitempty"`
 	ItemType WorklistItemResponseItemType `json:"item_type"`
 
 	// Live Current synced state; null once the item is no longer visible.
-	Live     WorklistItemStateResponse `json:"live"`
-	Note     string                    `json:"note"`
-	Number   int64                     `json:"number"`
-	Position int64                     `json:"position"`
+	Live     *WorklistItemStateResponse `json:"live,omitempty"`
+	Note     string                     `json:"note"`
+	Number   int64                      `json:"number"`
+	Position int64                      `json:"position"`
 
 	// Pull Pull request list row; null unless the item is a visible pull request.
-	Pull      MergeRequestResponse      `json:"pull"`
+	Pull      *MergeRequestResponse     `json:"pull,omitempty"`
 	Repo      RepoRefResponse           `json:"repo"`
 	Score     *int64                    `json:"score,omitempty"`
 	Section   string                    `json:"section"`

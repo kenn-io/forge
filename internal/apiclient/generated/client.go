@@ -64093,9 +64093,12 @@ type WorklistSummaryResponse struct {
 	ItemCount    int64 `json:"item_count"`
 
 	// Recipe The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
-	Recipe    string    `json:"recipe"`
-	Title     string    `json:"title"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Recipe string `json:"recipe"`
+
+	// RemainingCount Items neither handled nor gone.
+	RemainingCount int64     `json:"remaining_count"`
+	Title          string    `json:"title"`
+	UpdatedAt      time.Time `json:"updated_at"`
 
 	// WorkspaceID ACP workspace that last wrote the list; empty when none or for another node's read.
 	WorkspaceID string `json:"workspace_id"`

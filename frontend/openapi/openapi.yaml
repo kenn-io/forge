@@ -11808,6 +11808,10 @@ components:
         recipe:
           description: The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
           type: string
+        remaining_count:
+          description: Items neither handled nor gone.
+          format: int64
+          type: integer
         title:
           type: string
         updated_at:
@@ -11826,6 +11830,7 @@ components:
         - changed_count
         - gone_count
         - handled_count
+        - remaining_count
         - created_at
         - updated_at
         - dismissed_at

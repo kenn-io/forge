@@ -394,6 +394,117 @@ describe("WorklistView", () => {
     expect(screen.getByText("1 of 4 handled")).toBeTruthy();
   });
 
+  it("orders rows by score in one flat list and keeps the choice across reloads", async () => {
+    const list = worklistResponse(5, "Review queue");
+    const scores: Record<number, number | null> = { 42: 9, 84: 7, 7: null, 55: 10 };
+    list.items = list.items.map((item) => ({ ...item, score: scores[item.number] ?? null }));
+    server.lists = [list, worklistResponse(4, "Stale issues", [])];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const agentOrder = screen.getByRole("radio", { name: "Agent order" });
+    expect(agentOrder.getAttribute("aria-checked")).toBe("true");
+
+    await fireEvent.click(screen.getByRole("radio", { name: "Score" }));
+
+    expect(rowTitles()).toEqual([
+      "Retire the legacy exporter",
+      "Add browser regression coverage",
+      "Mirror host stub PR",
+      "Theme toggle does not stick",
+    ]);
+    expect(sectionLists()).toEqual([["Review queue", 4]]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "3 changed since" }));
+    expect(rowTitles()).toEqual([
+      "Retire the legacy exporter",
+      "Add browser regression coverage",
+      "Mirror host stub PR",
+    ]);
+
+    cleanup();
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    expect(screen.getByRole("radio", { name: "Score" }).getAttribute("aria-checked")).toBe("true");
+    expect(rowTitles()[0]).toBe("Retire the legacy exporter");
+
+    await fireEvent.click(screen.getByRole("radio", { name: "Agent order" }));
+    expect(sectionLists()).toEqual([
+      ["Ready to merge", 2],
+      ["Needs a decision", 2],
+    ]);
+  });
+
+  it("shows how many items each list has left in the picker while the trigger keeps the title", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) =>
+      item.number === 55 || item.number === 42 ? { ...item, handled_at: WORKLIST_HANDLED_AT } : item,
+    );
+    server.lists = [list, worklistResponse(4, "Stale issues", [])];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const trigger = screen.getByRole("combobox", { name: "Worklist: Review queue" });
+    expect(trigger.textContent?.trim()).toBe("Review queue");
+
+    await fireEvent.click(trigger);
+
+    const options = screen.getAllByRole("option").map((option) => option.textContent?.trim());
+    expect(options).toEqual(["Review queue · 2 left", "Stale issues · done"]);
+  });
+
+  it("shows the same status icons as the pull request and issue lists", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) => {
+      if (item.number === 84 && item.pull) {
+        return {
+          ...item,
+          pull: {
+            ...item.pull,
+            ReviewDecision: "APPROVED",
+            CIChecksJSON: "{not json",
+            stack: { stack_id: 1, position: 2, size: 3 },
+            merge_queue: {
+              position: 2,
+              state: "awaiting_checks",
+              enqueued_at: "2026-10-19T12:00:00Z",
+              observed_at: "2026-10-19T12:01:00Z",
+            },
+            workspace: { id: "ws-84", status: "ready" },
+            labels: [{ name: "needs-docs", color: "0e8a16" }],
+          },
+        } as typeof item;
+      }
+      if (item.number === 7 && item.issue) {
+        return {
+          ...item,
+          issue: {
+            ...item.issue,
+            workspace: { id: "ws-7", status: "ready" },
+            labels: [{ name: "bug", color: "d73a4a" }],
+          },
+        } as typeof item;
+      }
+      return item;
+    });
+    server.lists = [list];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+
+    const pull = row("Mirror host stub PR");
+    expect(within(pull).getByLabelText("PR approved")).toBeTruthy();
+    expect(within(pull).getByLabelText("In merge queue, position 2")).toBeTruthy();
+    expect(within(pull).getByLabelText("Stacked: 2/3")).toBeTruthy();
+    expect(within(pull).getByTestId("ci-token-unavailable")).toBeTruthy();
+    expect(within(pull).getByTitle("Has merge conflicts")).toBeTruthy();
+    expect(within(pull).queryByText("Conflict")).toBeNull();
+    expect(within(pull).getByLabelText("Workspace attached (ready)")).toBeTruthy();
+    expect(within(pull).getByText("needs-docs")).toBeTruthy();
+
+    const issue = row("Theme toggle does not stick");
+    expect(within(issue).getByLabelText("Workspace attached (ready)")).toBeTruthy();
+    expect(within(issue).getByText("bug")).toBeTruthy();
+    expect(within(row("Add browser regression coverage")).queryByTitle("Has merge conflicts")).toBeNull();
+  });
+
   it("names an unnamed writer as an agent", async () => {
     server.lists = [{ ...worklistResponse(5, "Review queue"), created_by: "" }];
     renderView("/worklists", server);

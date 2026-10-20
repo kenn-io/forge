@@ -18,6 +18,8 @@ export interface WorklistSummaryResponse {
   item_count: number;
   /** The agent's criteria and searches in plain text. Forge stores it but never evaluates it. */
   recipe: string;
+  /** Items neither handled nor gone. */
+  remaining_count: number;
   title: string;
   updated_at: string;
   /** ACP workspace that last wrote the list; empty when none or for another node's read. */

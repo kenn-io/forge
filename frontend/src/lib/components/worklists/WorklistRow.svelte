@@ -2,17 +2,16 @@
   import { Chip, type ChipTone } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
-  import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import GitPullRequestClosedIcon from "@lucide/svelte/icons/git-pull-request-closed";
   import GitPullRequestIcon from "@lucide/svelte/icons/git-pull-request";
-  import OctagonXIcon from "@lucide/svelte/icons/octagon-x";
   import type { WorklistItem } from "../../api/worklists.js";
-  import { bucketCIChecks, parseCIChecks } from "../../utils/ci-buckets.js";
   import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
-  import CITokenCluster, { composeAriaLabel } from "../shared/CITokenCluster.svelte";
+  import AgentStatusIndicator from "../shared/AgentStatusIndicator.svelte";
+  import LabelRow from "../shared/LabelRow.svelte";
+  import PullStatusIcons from "../shared/PullStatusIcons.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import { worklistChangeMarkers, worklistItemKey } from "./worklist-items.js";
 
@@ -33,6 +32,7 @@
     if (item.live === null) return "muted";
     if (state === "merged") return "merged";
     if (state === "closed") return item.item_type === "pr" ? "closed" : "merged";
+    if (item.pull?.IsDraft) return "draft";
     return "open";
   });
 
@@ -48,30 +48,11 @@
     if (item.live === null) return null;
     if (state === "merged") return { label: "Merged", tone: "merged" };
     if (state === "closed") return { label: "Closed", tone: "danger" };
-    const pull = item.pull;
-    if (!pull) return null;
-    if (pull.MergeableState.trim().toLowerCase() === "dirty") return { label: "Conflict", tone: "danger" };
-    if (pull.IsDraft) return { label: "Draft", tone: "muted" };
     return null;
   });
 
-  const review = $derived.by((): { kind: "approved" | "changes-requested"; label: string } | null => {
-    if (!item.pull || state !== "open") return null;
-    const decision = item.pull.ReviewDecision.trim().toUpperCase();
-    if (decision === "APPROVED") return { kind: "approved", label: "PR approved" };
-    if (decision === "CHANGES_REQUESTED") return { kind: "changes-requested", label: "Changes requested" };
-    return null;
-  });
-
-  const ci = $derived.by(() => {
-    if (!item.pull || state !== "open") return null;
-    const parsed = parseCIChecks(item.pull.CIChecksJSON);
-    if (parsed.error !== null) return null;
-    const bucketed = bucketCIChecks(parsed.checks);
-    return bucketed.all.length > 0 ? bucketed : null;
-  });
-
-  const workspace = $derived(item.pull?.workspace ?? item.issue?.workspace ?? null);
+  const labels = $derived(item.pull?.labels ?? item.issue?.labels ?? []);
+  const agentState = $derived(item.pull?.workspace?.agent_state ?? item.issue?.workspace?.agent_state);
 </script>
 
 <button
@@ -105,6 +86,9 @@
         {:else}<CircleDotIcon size={13} />{/if}
       </span>
       <span class="worklist-row-title" id={`${id}-title`}>{item.title}</span>
+      {#if labels.length > 0}
+        <span class="worklist-row-labels"><LabelRow {labels} compact /></span>
+      {/if}
     </span>
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
@@ -130,30 +114,17 @@
     </span>
   </span>
   <span class="worklist-row-status" id={`${id}-status`}>
-    {#if workspace}
-      <WorkspaceIndicator status={workspace.status} />
+    <AgentStatusIndicator state={agentState} />
+    {#if kindTone === "draft"}
+      <span class="kit-sr-only">Draft</span>
     {/if}
-    {#if review}
-      <span
-        class={["worklist-row-review", `worklist-row-review--${review.kind}`]}
-        aria-label={review.label}
-        title={review.label}
-      >
-        {#if review.kind === "approved"}
-          <CircleCheckBigIcon size={13} strokeWidth={2.2} aria-hidden="true" />
-        {:else}
-          <OctagonXIcon size={13} strokeWidth={2.2} aria-hidden="true" />
-        {/if}
-      </span>
+    {#if item.pull}
+      <PullStatusIcons pr={item.pull} />
+    {:else if item.issue?.workspace}
+      <WorkspaceIndicator status={item.issue.workspace.status} />
     {/if}
     {#if statusChip}
       <Chip size="xs" tone={statusChip.tone} uppercase={false}>{statusChip.label}</Chip>
-    {/if}
-    {#if ci}
-      <span class="worklist-row-ci" aria-hidden="true">
-        <CITokenCluster bucketed={ci} size="compact" pendingStyle="static" />
-      </span>
-      <span class="kit-sr-only">{composeAriaLabel(ci)}</span>
     {/if}
     {#if item.handled_at !== null}
       <span class="worklist-row-handled" aria-label="Handled" title="Handled">
@@ -228,6 +199,10 @@
     color: var(--accent-green);
   }
 
+  .tone-draft {
+    color: var(--accent-amber);
+  }
+
   .tone-merged {
     color: var(--accent-purple);
   }
@@ -246,6 +221,15 @@
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Block, so the label row fills this box and its labels truncate in a
+   * narrow rail instead of keeping their full width. */
+  .worklist-row-labels {
+    display: block;
+    flex: 0 4 auto;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .worklist-row.opened .worklist-row-title {
@@ -323,29 +307,21 @@
     white-space: nowrap;
   }
 
+  /* A PR can carry many status icons; past the cap they wrap onto another
+   * line instead of squeezing the title or overflowing a narrow rail. */
   .worklist-row-status {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
+    max-width: 120px;
     padding-top: 1px;
     white-space: nowrap;
   }
 
-  .worklist-row-ci,
-  .worklist-row-review,
   .worklist-row-handled {
     display: inline-flex;
-  }
-
-  .worklist-row-handled {
     color: var(--accent-green);
-  }
-
-  .worklist-row-review--approved {
-    color: var(--accent-green);
-  }
-
-  .worklist-row-review--changes-requested {
-    color: var(--accent-red);
   }
 </style>

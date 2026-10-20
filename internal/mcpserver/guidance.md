@@ -91,8 +91,9 @@ Worklists:
   That replaces its items and resets what Forge recorded for each. To make
   another list like it, put its recipe without a `worklist_id`.
 - The maintainer marks items handled as they work through a list; reads report
-  `handled_at` per item and `handled_count` per list. A mark stays on an item
-  that remains on a replaced list. You cannot mark items. Call
+  `handled_at` per item, and `handled_count` and `remaining_count` (items
+  neither handled nor gone) per list. A mark stays on an item that remains on
+  a replaced list. You cannot mark items. Call
   `kenn_forge_clear_worklist_marks` only when the maintainer asks to clear
   the marks.
 - Changes since an item was written are informational; they never certify

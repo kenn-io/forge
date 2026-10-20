@@ -143,6 +143,7 @@ export function worklistSummary(list: WorklistResponse): WorklistSummaryResponse
     changed_count: list.items.filter((item) => item.freshness === "changed").length,
     gone_count: list.items.filter((item) => item.freshness === "gone").length,
     handled_count: list.items.filter((item) => item.handled_at !== null).length,
+    remaining_count: list.items.filter((item) => item.handled_at === null && item.freshness !== "gone").length,
     created_at: list.created_at,
     updated_at: list.updated_at,
     dismissed_at: list.dismissed_at,

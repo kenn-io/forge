@@ -253,6 +253,7 @@ func TestFederatedWorklistsHaveOneHubOwner(t *testing.T) {
 	listed, err = nodeB.MCPBackend().ListWorklists(t.Context(), false)
 	require.NoError(err)
 	assert.Equal(1, listed[0].HandledCount)
+	assert.Equal(0, listed[0].RemainingCount)
 	cleared, err := nodeA.MCPBackend().ClearWorklistMarks(t.Context(), put.WorklistID)
 	require.NoError(err)
 	assert.Equal(mcpserver.WorklistMarksCleared{WorklistID: put.WorklistID, Cleared: 1}, cleared)

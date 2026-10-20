@@ -71,7 +71,8 @@ func (s *Server) registerWorklistTools() {
 	}, wrapTool(s.getWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},
-		Description: "List worklists, most recently updated first, with item, changed, gone and handled counts. " +
+		Description: "List worklists, most recently updated first, with item, changed, gone and handled counts, " +
+			"and the count remaining: items neither handled nor gone. " +
 			"Dismissed lists are omitted unless include_dismissed is true.",
 	}, wrapTool(s.listWorklists))
 	mcp.AddTool(s.mcp, &mcp.Tool{

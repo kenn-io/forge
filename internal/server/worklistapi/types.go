@@ -14,18 +14,19 @@ type ListWorklistsResponse struct {
 }
 
 type WorklistSummaryResponse struct {
-	ID           int64   `json:"id"`
-	Title        string  `json:"title"`
-	Recipe       string  `json:"recipe" doc:"The agent's criteria and searches in plain text. Forge stores it but never evaluates it."`
-	CreatedBy    string  `json:"created_by" doc:"Label of the agent that last wrote the list; may be empty."`
-	WorkspaceID  string  `json:"workspace_id" doc:"ACP workspace that last wrote the list; empty when none or for another node's read."`
-	ItemCount    int     `json:"item_count"`
-	ChangedCount int     `json:"changed_count"`
-	GoneCount    int     `json:"gone_count"`
-	HandledCount int     `json:"handled_count" doc:"Items the maintainer marked handled."`
-	CreatedAt    string  `json:"created_at" format:"date-time"`
-	UpdatedAt    string  `json:"updated_at" format:"date-time"`
-	DismissedAt  *string `json:"dismissed_at" format:"date-time"`
+	ID             int64   `json:"id"`
+	Title          string  `json:"title"`
+	Recipe         string  `json:"recipe" doc:"The agent's criteria and searches in plain text. Forge stores it but never evaluates it."`
+	CreatedBy      string  `json:"created_by" doc:"Label of the agent that last wrote the list; may be empty."`
+	WorkspaceID    string  `json:"workspace_id" doc:"ACP workspace that last wrote the list; empty when none or for another node's read."`
+	ItemCount      int     `json:"item_count"`
+	ChangedCount   int     `json:"changed_count"`
+	GoneCount      int     `json:"gone_count"`
+	HandledCount   int     `json:"handled_count" doc:"Items the maintainer marked handled."`
+	RemainingCount int     `json:"remaining_count" doc:"Items neither handled nor gone."`
+	CreatedAt      string  `json:"created_at" format:"date-time"`
+	UpdatedAt      string  `json:"updated_at" format:"date-time"`
+	DismissedAt    *string `json:"dismissed_at" format:"date-time"`
 }
 
 type WorklistResponse struct {

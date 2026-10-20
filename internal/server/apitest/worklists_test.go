@@ -227,6 +227,7 @@ func TestAPIWorklistHandledMarksApplyToEveryRequestedItem(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(marked.JSON200, string(marked.Body))
 	assert.EqualValues(2, marked.JSON200.Worklist.HandledCount)
+	assert.EqualValues(1, marked.JSON200.Worklist.RemainingCount)
 	require.Len(marked.JSON200.Items, 2)
 	assert.EqualValues(42, marked.JSON200.Items[0].Number)
 	assert.NotNil(marked.JSON200.Items[0].HandledAt)
@@ -242,6 +243,7 @@ func TestAPIWorklistHandledMarksApplyToEveryRequestedItem(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(unmarked.JSON200, string(unmarked.Body))
 	assert.EqualValues(1, unmarked.JSON200.Worklist.HandledCount)
+	assert.EqualValues(2, unmarked.JSON200.Worklist.RemainingCount)
 	assert.Nil(unmarked.JSON200.Items[0].HandledAt)
 	assert.Equal([]int64{42}, handledNumbers())
 

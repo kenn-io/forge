@@ -3,7 +3,9 @@ import { worklistItem } from "../../../test/worklistFixtures.js";
 import {
   worklistChangeMarkers,
   worklistItemMatchesSelection,
+  worklistItemsByScore,
   worklistItemTarget,
+  worklistRemainingLabel,
   worklistSections,
 } from "./worklist-items.js";
 
@@ -94,6 +96,28 @@ describe("worklistSections", () => {
       ["Ready", [1, 3]],
       ["Blocked", [2]],
     ]);
+  });
+});
+
+describe("worklistItemsByScore", () => {
+  it("puts the highest score first, breaks ties by rank, and puts unscored items last", () => {
+    const items = [
+      worklistItem({ position: 0, item_type: "pr", number: 1, score: null }),
+      worklistItem({ position: 1, item_type: "pr", number: 2, score: 5 }),
+      worklistItem({ position: 2, item_type: "issue", number: 3, score: 9 }),
+      worklistItem({ position: 3, item_type: "pr", number: 4, score: 5 }),
+      worklistItem({ position: 4, item_type: "pr", number: 5, score: null }),
+    ];
+
+    expect(worklistItemsByScore(items).map((item) => item.number)).toEqual([3, 2, 4, 1, 5]);
+    expect(items.map((item) => item.number)).toEqual([1, 2, 3, 4, 5]);
+  });
+});
+
+describe("worklistRemainingLabel", () => {
+  it("counts what is left and calls an empty remainder done", () => {
+    expect(worklistRemainingLabel(4)).toBe("4 left");
+    expect(worklistRemainingLabel(0)).toBe("done");
   });
 });
 

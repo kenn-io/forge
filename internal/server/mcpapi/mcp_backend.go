@@ -308,8 +308,8 @@ func McpWorklistSummary(summary worklistapi.WorklistSummaryResponse) mcpserver.W
 	return mcpserver.WorklistSummary{
 		ID: summary.ID, Title: summary.Title, Recipe: summary.Recipe, CreatedBy: summary.CreatedBy,
 		ItemCount: summary.ItemCount, ChangedCount: summary.ChangedCount, GoneCount: summary.GoneCount,
-		HandledCount: summary.HandledCount,
-		CreatedAt:    summary.CreatedAt, UpdatedAt: summary.UpdatedAt, DismissedAt: derefString(summary.DismissedAt),
+		HandledCount: summary.HandledCount, RemainingCount: summary.RemainingCount,
+		CreatedAt: summary.CreatedAt, UpdatedAt: summary.UpdatedAt, DismissedAt: derefString(summary.DismissedAt),
 	}
 }
 

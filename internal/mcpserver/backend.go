@@ -352,17 +352,18 @@ type WorklistPutResult struct {
 }
 
 type WorklistSummary struct {
-	ID           int64  `json:"id"`
-	Title        string `json:"title"`
-	Recipe       string `json:"recipe"`
-	CreatedBy    string `json:"created_by"`
-	ItemCount    int    `json:"item_count"`
-	ChangedCount int    `json:"changed_count"`
-	GoneCount    int    `json:"gone_count"`
-	HandledCount int    `json:"handled_count"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
-	DismissedAt  string `json:"dismissed_at,omitempty"`
+	ID             int64  `json:"id"`
+	Title          string `json:"title"`
+	Recipe         string `json:"recipe"`
+	CreatedBy      string `json:"created_by"`
+	ItemCount      int    `json:"item_count"`
+	ChangedCount   int    `json:"changed_count"`
+	GoneCount      int    `json:"gone_count"`
+	HandledCount   int    `json:"handled_count"`
+	RemainingCount int    `json:"remaining_count"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+	DismissedAt    string `json:"dismissed_at,omitempty"`
 }
 
 type Worklist struct {

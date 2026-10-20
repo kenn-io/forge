@@ -502,8 +502,8 @@ func summaryResponse(summary db.WorklistSummary) WorklistSummaryResponse {
 		ID: summary.ID, Title: summary.Title, Recipe: summary.Recipe, CreatedBy: summary.CreatedBy,
 		WorkspaceID: summary.WorkspaceID, ItemCount: summary.ItemCount,
 		ChangedCount: summary.ChangedCount, GoneCount: summary.GoneCount,
-		HandledCount: summary.HandledCount,
-		CreatedAt:    formatTime(summary.CreatedAt), UpdatedAt: formatTime(summary.UpdatedAt),
+		HandledCount: summary.HandledCount, RemainingCount: summary.RemainingCount,
+		CreatedAt: formatTime(summary.CreatedAt), UpdatedAt: formatTime(summary.UpdatedAt),
 		DismissedAt: formatTimePtr(summary.DismissedAt),
 	}
 }

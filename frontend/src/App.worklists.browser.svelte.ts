@@ -61,8 +61,31 @@ it("fits every row in the rail at its narrowest width", async () => {
   localStorage.setItem("kenn-forge-worklist-rail-width", "320");
   const long = "A very long agent note that keeps going well past the width of a narrow rail ".repeat(3);
   const list = worklistResponse(5, "Review queue");
-  list.items = list.items.map((item) => ({ ...item, note: long, caveat: long }));
-  const server: WorklistServer = { lists: [list], requests: [] };
+  list.items = list.items.map((item) => ({
+    ...item,
+    note: long,
+    caveat: long,
+    pull: item.pull && {
+      ...item.pull,
+      MergeableState: "dirty",
+      ReviewDecision: "APPROVED",
+      stack: { stack_id: 1, position: 12, size: 14 },
+      merge_queue: {
+        position: 3,
+        state: "awaiting_checks",
+        enqueued_at: "2026-10-19T12:00:00Z",
+        observed_at: "2026-10-19T12:01:00Z",
+      },
+      workspace: { id: `ws-${item.number}`, status: "ready", agent_state: "working" },
+      labels: [{ name: "a-rather-long-label-name", color: "0e8a16" }],
+    },
+    issue: item.issue && {
+      ...item.issue,
+      workspace: { id: `ws-${item.number}`, status: "ready", agent_state: "input" },
+      labels: [{ name: "a-rather-long-label-name", color: "d73a4a" }],
+    },
+  })) as typeof list.items;
+  const server: WorklistServer = { lists: [list, worklistResponse(4, "Stale issues", [])], requests: [] };
   mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
   const rail = page.getByRole("region", { name: "Review queue items" });
   await expect.element(rail.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
@@ -104,6 +127,37 @@ it("marks the open item handled with d and moves on in rank order", async () => 
   expect(Number(getComputedStyle(title!).opacity)).toBeLessThan(1);
   const openRow = rail.getByRole("button", { name: "Theme toggle does not stick" }).element();
   expect(Number(getComputedStyle(openRow.querySelector<HTMLElement>(".worklist-row-body")!).opacity)).toBe(1);
+});
+
+it("steps and marks rows in score order when the rail is sorted by score", async () => {
+  await page.viewport(1400, 900);
+  localStorage.setItem("kenn-forge:worklists:order", "score");
+  const list = worklistResponse(5, "Review queue");
+  const scores: Record<number, number | null> = { 42: 9, 84: 7, 7: null, 55: 10 };
+  list.items = list.items.map((item) => ({ ...item, score: scores[item.number] ?? null }));
+  const server: WorklistServer = { lists: [list], requests: [], marks: [] };
+  mounted = await mountBrowserApp(
+    "/worklists/5?selected=pr%3A55&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+    { overrides: [worklistRoutes(server)] },
+  );
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  await expect.element(rail.getByRole("button", { name: "Retire the legacy exporter" })).toBeVisible();
+  await expect.element(page.getByRole("radio", { name: "Score" })).toHaveAttribute("aria-checked", "true");
+
+  // The highest-scored item is last in agent order, so d only moves on in score order.
+  pressKey("d");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+  await expect.element(page.getByText("1 of 4 handled")).toBeVisible();
+  expect(server.marks?.map((mark) => mark.items.map((item) => item.number))).toEqual([[55]]);
+
+  pressKey("j");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
+
+  pressKey("j");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=issue%3A7"));
+
+  pressKey("k");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
 });
 
 it("keeps handled marks on items an agent keeps when it rewrites the list", async () => {

@@ -1,7 +1,15 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
-  import { Button, formatRelativeTime, ScrollBox, SelectDropdown, type MenuAnchorPoint } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    formatRelativeTime,
+    ScrollBox,
+    SegmentedControl,
+    SelectDropdown,
+    type MenuAnchorPoint,
+    type SegmentedControlOption,
+  } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import type { Worklist, WorklistItem, WorklistSummary } from "../../api/worklists.js";
@@ -11,7 +19,17 @@
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import ItemActionsMenu from "../sidebar/ItemActionsMenu.svelte";
   import WorklistRow from "./WorklistRow.svelte";
-  import { worklistItemKey, worklistItemNotFresh, worklistItemTarget, worklistSections } from "./worklist-items.js";
+  import {
+    readWorklistOrder,
+    worklistItemKey,
+    worklistItemNotFresh,
+    worklistItemsByScore,
+    worklistItemTarget,
+    worklistRemainingLabel,
+    worklistSections,
+    writeWorklistOrder,
+    type WorklistOrder,
+  } from "./worklist-items.js";
 
   interface Props {
     worklist: Worklist;
@@ -42,6 +60,7 @@
 
   let recipeOpen = $state(false);
   let changedOnly = $state(false);
+  let order = $state<WorklistOrder>(readWorklistOrder());
   let railElement = $state<HTMLElement | undefined>();
 
   const collapsedSections = new SvelteSet<string>();
@@ -50,7 +69,7 @@
   const changedFilterActive = $derived(changedOnly && changedCount > 0);
   const filteredItems = $derived(changedFilterActive ? worklist.items.filter(worklistItemNotFresh) : worklist.items);
   const sections = $derived(worklistSections(filteredItems));
-  const showSectionHeaders = $derived(sections.some((section) => section.section !== ""));
+  const showSectionHeaders = $derived(order === "agent" && sections.some((section) => section.section !== ""));
   const authorLabel = $derived(worklist.created_by.trim() || "an agent");
   const handledCount = $derived(worklist.items.filter((item) => item.handled_at !== null).length);
   const handledPercent = $derived(worklist.items.length === 0 ? 0 : (handledCount / worklist.items.length) * 100);
@@ -70,10 +89,28 @@
   }
 
   const visibleRows = $derived(
-    sections.filter((section) => !sectionCollapsed(section.section)).flatMap((section) => section.items),
+    order === "score"
+      ? worklistItemsByScore(filteredItems)
+      : sections.filter((section) => !sectionCollapsed(section.section)).flatMap((section) => section.items),
   );
 
-  const pickerOptions = $derived(summaries.map((summary) => ({ value: String(summary.id), label: summary.title })));
+  const orderOptions: SegmentedControlOption[] = [
+    { value: "agent", label: "Agent order", title: "The agent's rank, grouped by section" },
+    { value: "score", label: "Score", title: "Highest score first" },
+  ];
+
+  function setOrder(value: string): void {
+    order = value === "score" ? "score" : "agent";
+    writeWorklistOrder(order);
+  }
+
+  const pickerOptions = $derived(
+    summaries.map((summary) => ({
+      value: String(summary.id),
+      label: `${summary.title} · ${worklistRemainingLabel(summary.remaining_count)}`,
+      triggerLabel: summary.title,
+    })),
+  );
 
   const selection = createRangeSelection<WorklistItem>({
     rows: () => visibleRows,
@@ -264,6 +301,9 @@
           Recipe
         </button>
       {/if}
+      <span class="worklist-order">
+        <SegmentedControl options={orderOptions} value={order} onchange={setOrder} ariaLabel="Row order" />
+      </span>
     </div>
     <div class="worklist-progress">
       <span class="worklist-progress-bar" aria-hidden="true">
@@ -401,6 +441,11 @@
   .worklist-changed-toggle--on {
     border-color: var(--accent-blue);
     color: var(--accent-blue);
+  }
+
+  .worklist-order {
+    display: inline-flex;
+    margin-left: auto;
   }
 
   .worklist-recipe {

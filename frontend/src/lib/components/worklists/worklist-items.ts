@@ -117,3 +117,42 @@ export function worklistSections(items: readonly WorklistItem[]): { section: str
   }
   return [...groups].map(([section, sectionItems]) => ({ section, items: sectionItems }));
 }
+
+/** Rail row order: the agent's rank grouped by section, or a flat list by score. */
+export type WorklistOrder = "agent" | "score";
+
+const ORDER_STORAGE_KEY = "kenn-forge:worklists:order";
+
+export function readWorklistOrder(): WorklistOrder {
+  try {
+    return globalThis.localStorage?.getItem(ORDER_STORAGE_KEY) === "score" ? "score" : "agent";
+  } catch {
+    return "agent";
+  }
+}
+
+export function writeWorklistOrder(order: WorklistOrder): void {
+  try {
+    if (order === "score") globalThis.localStorage?.setItem(ORDER_STORAGE_KEY, "score");
+    else globalThis.localStorage?.removeItem(ORDER_STORAGE_KEY);
+  } catch {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
+}
+
+/** Highest score first, ties by agent rank, unscored items last. */
+export function worklistItemsByScore(items: readonly WorklistItem[]): WorklistItem[] {
+  return [...items].sort((a, b) => {
+    if (a.score !== b.score) {
+      if (a.score === null) return 1;
+      if (b.score === null) return -1;
+      return b.score - a.score;
+    }
+    return a.position - b.position;
+  });
+}
+
+/** How many items are left to handle, for the worklist picker. */
+export function worklistRemainingLabel(remaining: number): string {
+  return remaining === 0 ? "done" : `${remaining} left`;
+}

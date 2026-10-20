@@ -150,12 +150,24 @@ stateDiagram-v2
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
 - The list is a rail of compact rows beside the regular pull request or issue
-  detail view, grouped by section in the agent's rank order. It is a list,
-  not a table, so it has no sortable columns. Each row shows the score, the
-  title, `owner/name#number` with the note and caveat, the changes since, and
-  live status from the embedded row; rows never overflow the rail at its
-  minimum width (`frontend/src/lib/components/worklists/WorklistRow.svelte`).
+  detail view. The rail header switches between two orders: Agent order, the
+  default, groups rows by section in the agent's rank; Score is one flat list,
+  highest score first, ties by rank, unscored items last. The choice is
+  browser-local and survives a reload. Keyboard steps, `d`, and the changed
+  filter follow the visible order in both
+  (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemsByScore`).
+- Each row shows the score, the title, `owner/name#number` with the note and
+  caveat, the changes since, and live status from the embedded row. Rows show
+  the same labels and status icons as the pull request and issue lists, from
+  the same shared component, so the two cannot drift; past a width cap the
+  icons wrap, and rows never overflow the rail at its minimum width
+  (`frontend/src/lib/components/shared/PullStatusIcons.svelte`,
+  `frontend/src/lib/components/worklists/WorklistRow.svelte`).
   Workspace and pull request actions work there as on other surfaces.
+- With more than one list, the title is a picker that shows each list's
+  remaining count: items neither handled nor gone. Handled and gone overlap,
+  so the server computes it rather than the UI subtracting the other counts
+  (`internal/db/worklists.go::SummarizeWorklist`).
 - A handled row stays in place, dimmed, with a check in its status area. The
   rail header shows how many items are handled. The context strip toggles the
   open item's mark, the selection bar marks or unmarks every selected item, and

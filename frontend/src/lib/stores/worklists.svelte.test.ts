@@ -24,6 +24,7 @@ function summary(id: number, title: string, dismissed_at: string | null = null):
     changed_count: 0,
     gone_count: 0,
     handled_count: 0,
+    remaining_count: 0,
     created_at: "2026-10-19T10:00:00Z",
     updated_at: "2026-10-19T10:00:00Z",
     dismissed_at,

@@ -60,6 +60,9 @@ type WorklistSummary struct {
 	ChangedCount int
 	GoneCount    int
 	HandledCount int
+	// RemainingCount counts items that are neither handled nor gone. Handled
+	// and gone overlap, so it is not derivable from the other counts.
+	RemainingCount int
 }
 
 type WorklistItemState struct {
@@ -481,6 +484,8 @@ func (d *DB) worklistSummaries(
 }
 
 // SummarizeWorklist counts a worklist's items by freshness and handled mark.
+// An item that is both handled and gone counts once toward each of those
+// counts and not toward RemainingCount.
 func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 	summary := WorklistSummary{Worklist: detail.Worklist, ItemCount: len(detail.Items)}
 	for _, item := range detail.Items {
@@ -493,6 +498,9 @@ func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 		}
 		if item.HandledAt != nil {
 			summary.HandledCount++
+		}
+		if item.HandledAt == nil && item.Freshness != WorklistGone {
+			summary.RemainingCount++
 		}
 	}
 	return summary

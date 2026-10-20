@@ -360,6 +360,10 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 			}
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			if strings.HasSuffix(tc.path, "closure") {
+				// With no budgets the detail drain never runs, so only closure reconciliation can report.
+				s.budgets = nil
+			}
 			s.RunOnce(t.Context())
 			if tc.source != "merge_requests" {
 				require.Positive(t, issueReads(), "the refresh must reach the failing issue read")

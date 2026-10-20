@@ -33,6 +33,11 @@ export interface WorklistsStore {
   refreshSummariesEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   openEffect(id: number | null): Effect.Effect<void, never, AppServices>;
   refreshOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
+  /**
+   * Reconciles the open list on the lightweight poll path. A read of the open
+   * list already in flight answers for it, so a slow response is not stacked.
+   */
+  reconcileOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   dismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
   undismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
@@ -44,7 +49,13 @@ export interface WorklistsStore {
   ): Effect.Effect<WorklistMarks, WorklistFailure, AppServices>;
 }
 
+export interface WorklistsStoreOptions {
+  /** Observes every failed list or summaries read, whoever started it. */
+  readonly onReadFailure?: (failure: WorklistFailure) => void;
+}
+
 class WorklistsStoreImpl implements WorklistsStore {
+  readonly #onReadFailure: (failure: WorklistFailure) => void;
   #summaries = $state.raw<WorklistSummary[]>([]);
   #summariesLoaded = $state(false);
   #summariesError = $state<string | null>(null);
@@ -54,6 +65,10 @@ class WorklistsStoreImpl implements WorklistsStore {
   #detailError = $state.raw<WorklistDetailError | null>(null);
   #summariesGeneration = 0;
   #detailGeneration = 0;
+
+  constructor(options: WorklistsStoreOptions) {
+    this.#onReadFailure = options.onReadFailure ?? (() => {});
+  }
 
   getSummaries(): readonly WorklistSummary[] {
     return this.#summaries;
@@ -105,6 +120,12 @@ class WorklistsStoreImpl implements WorklistsStore {
     return this.#readOpenDetail().pipe(Effect.flatMap(failIfPresent));
   }
 
+  reconcileOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices> {
+    return Effect.suspend(() =>
+      this.#detailLoading && this.#openId !== null ? Effect.void : this.refreshOpenDetailEffect(),
+    );
+  }
+
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices> {
     return Effect.all([this.#readSummaries(), this.#readOpenDetail()], { concurrency: "unbounded" }).pipe(
       Effect.flatMap(([summariesFailure, detailFailure]) => failIfPresent(summariesFailure ?? detailFailure)),
@@ -124,6 +145,7 @@ class WorklistsStoreImpl implements WorklistsStore {
             return null;
           },
           onFailure: (failure) => {
+            this.#onReadFailure(failure);
             if (generation === this.#summariesGeneration) {
               this.#summariesError = worklistFailureMessage(failure, "Could not load worklists");
             }
@@ -161,6 +183,7 @@ class WorklistsStoreImpl implements WorklistsStore {
             this.#summaries = this.#summaries.filter((summary) => summary.id !== id);
             return null;
           }
+          this.#onReadFailure(failure);
           if (generation !== this.#detailGeneration) return failure;
           this.#detailLoading = false;
           if (this.#detail?.id === id) return failure;
@@ -222,6 +245,6 @@ function failIfPresent(failure: WorklistFailure | null): Effect.Effect<void, Wor
   return failure === null ? Effect.void : Effect.fail(failure);
 }
 
-export function createWorklistsStore(): WorklistsStore {
-  return new WorklistsStoreImpl();
+export function createWorklistsStore(options: WorklistsStoreOptions = {}): WorklistsStore {
+  return new WorklistsStoreImpl(options);
 }

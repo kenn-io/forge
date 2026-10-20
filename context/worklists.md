@@ -191,10 +191,27 @@ stateDiagram-v2
   bounded concurrency, each in its own workspace. Selections mix pull requests
   and issues, so item menus name the actual mix and apply each action only to
   eligible items (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte`).
-- Dismissing a worklist can be undone; a dismissed list never returns on its
-  own. An open list dismissed elsewhere is treated as missing: the view moves
-  to the newest open list or the empty state, except while this view's undo for
-  that list is showing (`frontend/src/lib/views/WorklistView.svelte`).
+- Dismissing a worklist can be undone; a dismissed list returns only through
+  undo or an agent rewrite of the same list. Undo stays until the restore
+  succeeds; a failed restore keeps it and shows the error. A dismissal or
+  restore that finishes after the maintainer left the view still applies but
+  neither navigates nor offers undo. An open list dismissed elsewhere is
+  treated as missing: the view moves to the newest open list or the empty
+  state, except while this view's undo for that list is showing
+  (`frontend/src/lib/views/WorklistView.svelte`).
+- When an agent rewrite drops the open item, the selection moves, replacing
+  the URL, to the row that now takes its place in the visible order, else the
+  row before it; with no rows left the detail closes
+  (`frontend/src/lib/views/WorklistView.svelte::replacementFor`).
+- A list whose items were all removed keeps its title, recipe, and Dismiss in
+  the rail and says no items remain. Long notes, caveats, and recipes scroll
+  inside bounded boxes so the detail pane and rows keep their room
+  (`frontend/src/lib/components/worklists/WorklistRail.svelte`).
+- The open list refreshes on the same lightweight poll as the pull request
+  list, so CI and freshness follow changes that send no `data_changed`. A read
+  already in flight answers for the poll. Every worklist read, including
+  startup, open, and retry, reports a hub outage to the provider-unavailable
+  banner (`frontend/src/lib/app-stores.svelte.ts`).
 - The empty state appears only after the list read succeeds with no lists; a
   failed read shows the error, and a hub outage raises the provider-unavailable
   banner.

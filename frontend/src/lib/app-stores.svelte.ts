@@ -85,7 +85,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const settingsStore = createSettingsStore();
   const workflowActions = createWorkflowActionsStore({ runtime: appRuntime });
   const workspaceItemSearch = createWorkspaceItemSearchStore(appRuntime);
-  const worklistsStore = createWorklistsStore();
+  // Startup, the worklists view, and live updates all read worklists; the store
+  // reports each failed read here so a hub outage raises the same banner.
+  const worklistsStore = createWorklistsStore({ onReadFailure: noteHubFailure });
   const detailStarProjection: {
     current?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
   } = {};
@@ -217,20 +219,21 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     });
   }
 
+  function noteHubFailure(failure: unknown): void {
+    if (failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.hubUnavailable) {
+      syncStore.setProviderAvailable(false);
+    }
+  }
+
   function observeHubFailure<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
-    return effect.pipe(
-      Effect.tapError((failure) =>
-        failure instanceof ApiProblemError && failure.problem.code === ProblemCodes.hubUnavailable
-          ? Effect.sync(() => syncStore.setProviderAvailable(false))
-          : Effect.void,
-      ),
-    );
+    return effect.pipe(Effect.tapError((failure) => Effect.sync(() => noteHubFailure(failure))));
   }
 
   // Summaries only decide whether the header offers the Worklists tab. The
-  // store records a failed read, so it must not fail the refresh it rides on.
+  // store records a failed read and reports a hub outage, so it must not fail
+  // the refresh it rides on.
   function refreshWorklistSummaries() {
-    return observeHubFailure(worklistsStore.refreshSummariesEffect()).pipe(Effect.ignore);
+    return worklistsStore.refreshSummariesEffect().pipe(Effect.ignore);
   }
 
   function refreshVisibleData(refreshDetail = true): Effect.Effect<void, ProviderEventsError, AppServices> {
@@ -255,8 +258,11 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             },
           ),
         );
+      // The open list is the worklist page's list, so the lightweight poll
+      // refreshes it as it does the pull request list: CI and freshness can
+      // change without a data_changed event.
       case "worklists":
-        return refreshDetail ? observeHubFailure(worklistsStore.refreshOpenDetailEffect()) : Effect.void;
+        return refreshDetail ? worklistsStore.refreshOpenDetailEffect() : worklistsStore.reconcileOpenDetailEffect();
       case "focus":
         return observeHubFailure(
           Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {
@@ -338,7 +344,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       );
     },
     onConfigChanged: handleConfigChanged,
-    onWorklistsChanged: () => observeHubFailure(worklistsStore.refreshAllEffect()),
+    onWorklistsChanged: () => worklistsStore.refreshAllEffect(),
     onWorkspaceDeleted: (event) =>
       Effect.gen(function* () {
         yield* Effect.sync(() =>

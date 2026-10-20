@@ -128,6 +128,51 @@ describe("worklists store", () => {
     await Effect.runPromise(runtime.disposeEffect);
   });
 
+  it("lets a slow read of the open list answer for the lightweight poll", async () => {
+    await run(store.openEffect(2));
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inner = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      await held;
+      return inner(input, init);
+    };
+    server.lists.set(2, worklist(2, "Review queue, rewritten"));
+    const detailReads = () =>
+      api.requests.filter((request) => request.method === "GET" && request.url.pathname === "/api/v1/worklists/2")
+        .length;
+    const readsBefore = detailReads();
+
+    const slow = run(store.refreshOpenDetailEffect());
+    await run(store.reconcileOpenDetailEffect());
+    await run(store.reconcileOpenDetailEffect());
+    release();
+    await slow;
+
+    expect(detailReads() - readsBefore).toBe(1);
+    expect(store.getDetail()?.title).toBe("Review queue, rewritten");
+
+    server.lists.set(2, worklist(2, "Review queue, polled"));
+    await run(store.reconcileOpenDetailEffect());
+    expect(store.getDetail()?.title).toBe("Review queue, polled");
+  });
+
+  it("reports every failed read to its observer", async () => {
+    const failures: string[] = [];
+    store = createWorklistsStore({
+      onReadFailure: (failure) => failures.push("problem" in failure ? failure.problem.code : failure._tag),
+    });
+    server.failSummaries = true;
+    server.failDetail = true;
+
+    await run(store.refreshSummariesEffect());
+    await run(store.openEffect(2));
+
+    expect(failures).toEqual(["hubUnavailable", "TransientTransportError"]);
+  });
+
   it("keeps lists that are not dismissed in server order", async () => {
     server.summaries[0]!.dismissed_at = null;
     api = createMockApiFetch([

@@ -7,7 +7,7 @@
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
   import { repositoryKeyFromWire } from "../api/repository-key.js";
-  import { worklistFailureMessage, type WorklistItem } from "../api/worklists.js";
+  import { worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
@@ -21,6 +21,7 @@
     worklistItemKey,
     worklistItemMatchesSelection,
     worklistItemSelection,
+    worklistSections,
   } from "../components/worklists/worklist-items.js";
   import { getStores } from "../context.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
@@ -89,7 +90,11 @@
   const detailError = $derived(worklists.getDetailError());
   let dismissing = $state(false);
   let undone = $state.raw<{ id: number; title: string } | null>(null);
+  let restoring = $state(false);
   let undoTimer: AppExecution<void, never> | null = null;
+  // Dismiss and restore finish in the store even after this view is gone; only
+  // their presentation and navigation belong to the view.
+  let mounted = true;
 
   // Another tab or an agent can dismiss the open list. A dismissed list stays
   // readable by ID, so treat it as missing unless this view's undo offers it.
@@ -159,6 +164,49 @@
     if (first) untrack(() => replaceUrl(buildWorklistRoute(worklist.id, worklistItemSelection(first))));
   });
 
+  // The rail reports its visible order for each list it shows, keyed by the
+  // list object, so the order before an agent rewrite is still known after it.
+  const visibleOrders = new WeakMap<Worklist, readonly string[]>();
+  let previousWorklist: Worklist | null = null;
+
+  function recordVisibleOrder(list: Worklist, keys: readonly string[]): void {
+    visibleOrders.set(list, keys);
+  }
+
+  // An agent rewrite can drop the open item. Move to the item that now takes
+  // its place in the visible order, else the one before it, else close it.
+  function replacementFor(previous: Worklist, next: Worklist, removedKey: string): WorklistItem | null {
+    const order =
+      visibleOrders.get(previous) ??
+      worklistSections(previous.items).flatMap((section) => section.items.map(worklistItemKey));
+    const surviving = new Map(next.items.map((item) => [worklistItemKey(item), item]));
+    const at = order.indexOf(removedKey);
+    const after = order.slice(at + 1).find((key) => surviving.has(key));
+    const before = order
+      .slice(0, Math.max(at, 0))
+      .reverse()
+      .find((key) => surviving.has(key));
+    const key = after ?? before;
+    return key === undefined ? null : (surviving.get(key) ?? null);
+  }
+
+  $effect(() => {
+    const list = worklist;
+    const selection = selected;
+    const previous = previousWorklist;
+    previousWorklist = list;
+    if (!list || !previous || previous === list || previous.id !== list.id || !selection) return;
+    if (list.items.some((item) => worklistItemMatchesSelection(item, selection))) return;
+    const removed = previous.items.find((item) => worklistItemMatchesSelection(item, selection));
+    if (!removed) return;
+    const next = replacementFor(previous, list, worklistItemKey(removed));
+    untrack(() =>
+      replaceUrl(
+        next ? buildWorklistRoute(list.id, worklistItemSelection(next, detailTab)) : buildWorklistRoute(list.id),
+      ),
+    );
+  });
+
   function openItem(item: WorklistItem): void {
     if (!worklist) return;
     replaceUrl(buildWorklistRoute(worklist.id, worklistItemSelection(item, detailTab)));
@@ -183,6 +231,7 @@
   function showUndo(entry: { id: number; title: string } | null): void {
     undoTimer?.interrupt();
     undoTimer = null;
+    if (!mounted) return;
     undone = entry;
     if (entry === null) return;
     undoTimer = runtime.runCommand(
@@ -197,7 +246,10 @@
     );
   }
 
-  $effect(() => () => untrack(() => undoTimer?.interrupt()));
+  $effect(() => () => {
+    mounted = false;
+    untrack(() => undoTimer?.interrupt());
+  });
 
   function dismiss(): void {
     const list = worklist;
@@ -207,6 +259,7 @@
       worklists.dismissEffect(list.id).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
+            if (!mounted) return;
             showUndo({ id: list.id, title: list.title });
             const next = worklists.getSummaries()[0];
             if (next) openList(next.id, "replace");
@@ -222,27 +275,56 @@
       {
         operation: "dismiss worklist",
         safeContext: {},
-        onFailure: (failure) =>
+        onFailure: (failure) => {
+          if (!mounted) return;
           showFlash(
             failure instanceof ApiProblemError
               ? worklistFailureMessage(failure, "Could not dismiss the worklist.")
               : "Could not dismiss the worklist.",
             { tone: "danger" },
-          ),
+          );
+        },
       },
     );
   }
 
+  // Undo stays on screen until the restore succeeds: a failed restore would
+  // otherwise remove the only way back to the list. The expiry timer pauses
+  // while the request runs and starts over after a failure.
   function undo(): void {
     const entry = undone;
-    if (!entry) return;
-    showUndo(null);
+    if (!entry || restoring) return;
+    restoring = true;
+    undoTimer?.interrupt();
+    undoTimer = null;
     runtime.runCommand(
-      worklists.undismissEffect(entry.id).pipe(Effect.tap(() => Effect.sync(() => openList(entry.id, "replace")))),
+      worklists.undismissEffect(entry.id).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (!mounted) return;
+            showUndo(null);
+            openList(entry.id, "replace");
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            restoring = false;
+          }),
+        ),
+      ),
       {
         operation: "restore worklist",
         safeContext: {},
-        onFailure: () => showFlash("Could not restore the worklist.", { tone: "danger" }),
+        onFailure: (failure) => {
+          if (!mounted) return;
+          showUndo(entry);
+          showFlash(
+            failure instanceof ApiProblemError
+              ? worklistFailureMessage(failure, "Could not restore the worklist.")
+              : "Could not restore the worklist.",
+            { tone: "danger" },
+          );
+        },
       },
     );
   }
@@ -412,7 +494,7 @@
   {#if undone}
     <div class="worklist-undo-row" role="status">
       <span>Dismissed {undone.title}.</span>
-      <Button size="sm" label="Undo" onclick={undo} />
+      <Button size="sm" label={restoring ? "Restoring" : "Undo"} disabled={restoring} onclick={undo} />
     </div>
   {/if}
 
@@ -443,6 +525,7 @@
             onDismiss={dismiss}
             onItemsChanged={reloadAfterItemAction}
             onSetHandled={setHandled}
+            onVisibleOrder={recordVisibleOrder}
           >
             {#snippet headerActions()}
               {#if hasDetail}
@@ -517,6 +600,7 @@
                   hideStaleWhileLoading={true}
                   workflowApprovalSync={false}
                   onStackMemberNavigate={handleStackMemberNavigate}
+                  onDetailTabChange={handleDetailTabChange}
                   {inlineWorkspace}
                 />
               {:else if tabKey === "conversation" && issueSelection}

@@ -41,33 +41,38 @@
       <XIcon size={14} aria-hidden="true" />
     </IconButton>
   </div>
-  {#if item.note}
-    <p class="worklist-context-note">{item.note}</p>
-  {/if}
-  {#if item.changes.new_commits}
-    <p class="worklist-context-aside">Review notes may cover an older head</p>
-  {/if}
-  {#if item.caveat}
-    <p class="worklist-context-caveat"><AlertTriangleIcon size={12} aria-hidden="true" />{item.caveat}</p>
-  {/if}
-  <div class="worklist-context-divider">
-    <span>{createdBy.trim() || "An agent"} wrote this item {formatRelativeTime(item.written_at)}</span>
+  <!-- Long notes scroll inside the strip so the detail pane keeps its room. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <div class="worklist-context-body" role="region" aria-label="Item notes" tabindex="0">
+    {#if item.note}
+      <p class="worklist-context-note">{item.note}</p>
+    {/if}
+    {#if item.changes.new_commits}
+      <p class="worklist-context-aside">Review notes may cover an older head</p>
+    {/if}
+    {#if item.caveat}
+      <p class="worklist-context-caveat"><AlertTriangleIcon size={12} aria-hidden="true" />{item.caveat}</p>
+    {/if}
+    <div class="worklist-context-divider">
+      <span>{createdBy.trim() || "An agent"} wrote this item {formatRelativeTime(item.written_at)}</span>
+    </div>
+    {#if markers.length > 0}
+      <ul class="worklist-context-events" aria-label="Changes since">
+        {#each markers as marker (marker.label)}
+          <li>
+            <Chip size="xs" tone="info" uppercase={false}>New</Chip>
+            <span>{marker.label}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </div>
-  {#if markers.length > 0}
-    <ul class="worklist-context-events" aria-label="Changes since">
-      {#each markers as marker (marker.label)}
-        <li>
-          <Chip size="xs" tone="info" uppercase={false}>New</Chip>
-          <span>{marker.label}</span>
-        </li>
-      {/each}
-    </ul>
-  {/if}
 </section>
 
 <style>
   .worklist-context {
     flex-shrink: 0;
+    max-height: 40%;
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -79,6 +84,7 @@
   }
 
   .worklist-context-head {
+    flex-shrink: 0;
     display: flex;
     align-items: center;
     gap: var(--space-3);
@@ -122,6 +128,19 @@
   .worklist-context-handled:focus-visible {
     outline: none;
     box-shadow: 0 0 0 1px var(--accent-blue);
+  }
+
+  .worklist-context-body {
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .worklist-context-body:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
   }
 
   .worklist-context-note,

@@ -12,12 +12,13 @@ import { makeAppRuntime } from "../app/runtime.js";
 import { STORES_KEY } from "../context.js";
 import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
+import { dismissFlash, getFlashes } from "../stores/flash.svelte.js";
 import { navigate } from "../stores/router.svelte.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { createWorklistsStore } from "../stores/worklists.svelte.js";
 
 vi.mock("../components/detail/PullDetailPane.svelte", async () => ({
-  default: (await import("./ActivityFeedViewTestPullDetailPane.svelte")).default,
+  default: (await import("./WorklistViewTestPullDetailPane.svelte")).default,
 }));
 vi.mock("../components/detail/IssueDetail.svelte", async () => ({
   default: (await import("./IssueListViewTestIssueDetail.svelte")).default,
@@ -70,6 +71,31 @@ function row(title: string): HTMLElement {
   return screen.getByRole("button", { name: title });
 }
 
+/** Holds matching requests until the returned release runs. */
+function holdRequests(matches: (method: string, path: string) => boolean): () => void {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const inner = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
+    if (matches(request.method.toUpperCase(), new URL(request.url).pathname)) await held;
+    return inner(input, init);
+  };
+  return release;
+}
+
+async function rewriteLists(stores: ReturnType<typeof renderView>): Promise<void> {
+  const runtime = makeAppRuntime();
+  await runtime.runCommand(stores.worklists.refreshAllEffect(), {
+    operation: "test agent rewrite",
+    safeContext: {},
+    onFailure: () => {},
+  }).exit;
+  await Effect.runPromise(runtime.disposeEffect);
+}
+
 function renderView(path: string, server: WorklistServer, overrides: MockRouteOverride[] = []) {
   globalThis.fetch = createMockApiFetch([...overrides, worklistRoutes(server)]).fetch;
   navigate(path);
@@ -115,7 +141,122 @@ describe("WorklistView", () => {
     resetModalStack();
     resetPaneLayoutStoresForTest();
     localStorage.clear();
+    for (const flash of getFlashes()) dismissFlash(flash.id);
     vi.unstubAllGlobals();
+  });
+
+  it("keeps a review thread's jump to diff on the worklist and shows the files pane", async () => {
+    renderView("/worklists/5", server);
+    expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
+
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42&.*selected_tab=files/));
+    expect(await visiblePullPane()).toContain("PR acme/widgets#42 files");
+  });
+
+  it("keeps the user's route when a dismissal finishes after they left", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    navigate("/pulls");
+    release();
+
+    await waitFor(() => expect(stores.worklists.getSummaries().map((summary) => summary.id)).toEqual([4]));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(currentPath()).toBe("/pulls");
+    expect(server.lists[0]?.dismissed_at).not.toBeNull();
+  });
+
+  it("keeps the user's route when a restore finishes after they left", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
+    const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/undismiss");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    navigate("/pulls");
+    release();
+
+    await waitFor(() => expect(stores.worklists.getSummaries().map((summary) => summary.id)).toContain(5));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(currentPath()).toBe("/pulls");
+  });
+
+  it("keeps Undo after a failed restore and restores the list on retry", async () => {
+    let failRestore = true;
+    renderView("/worklists/5", server, [
+      (request) => {
+        if (request.method !== "POST" || request.url.pathname !== "/api/v1/worklists/5/undismiss" || !failRestore) {
+          return null;
+        }
+        failRestore = false;
+        return jsonResponse(
+          { title: "Bad Request", status: 400, detail: "restore was refused", code: "badRequest" },
+          400,
+        );
+      },
+    ]);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(getFlashes().map((flash) => flash.message)).toContain("restore was refused"));
+    expect(screen.getByText("Dismissed Review queue.")).toBeTruthy();
+    expect(currentPath()).toBe("/worklists/4");
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42/));
+    expect(screen.queryByText("Dismissed Review queue.")).toBeNull();
+  });
+
+  it("moves to the next visible row when a rewrite drops the open item", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await fireEvent.click(row("Mirror host stub PR"));
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A84"));
+
+    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 84);
+    await rewriteLists(stores);
+
+    // Agent order groups by section, so the row after #84 is issue #7, not the
+    // next item by rank.
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=issue%3A7&/));
+    const strip = screen.getByRole("region", { name: "Worklist item context" });
+    expect(within(strip).getByText("Reporter confirmed on two browsers.")).toBeTruthy();
+  });
+
+  it("moves to the previous row when the dropped item was last, and closes the detail once none remain", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await fireEvent.click(row("Retire the legacy exporter"));
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A55"));
+
+    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 55);
+    await rewriteLists(stores);
+    await waitFor(() => expect(currentPath()).toContain("selected=issue%3A7"));
+
+    server.lists[0]!.items = [];
+    await rewriteLists(stores);
+    await waitFor(() => expect(currentPath()).toBe("/worklists/5"));
+    expect(screen.queryByRole("region", { name: "Worklist item context" })).toBeNull();
+  });
+
+  it("keeps the title, recipe, and Dismiss on a list with no items left", async () => {
+    server.lists = [worklistResponse(5, "Review queue", [])];
+    renderView("/worklists/5", server);
+
+    expect(await screen.findByText("No items remain on this list.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Review queue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: "Recipe" }));
+    expect(screen.getByRole("region", { name: "Recipe" }).textContent).toContain("Open pull requests and issues");
   });
 
   it("opens the newest list and its first item", async () => {

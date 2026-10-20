@@ -42,6 +42,8 @@
     onItemsChanged: () => void;
     /** Marks or unmarks items; onApplied runs once the server applied the change. */
     onSetHandled: (items: readonly WorklistItem[], handled: boolean, onApplied?: () => void) => void;
+    /** Receives the keys of the rows on screen, in order, for each list shown. */
+    onVisibleOrder?: (worklist: Worklist, keys: readonly string[]) => void;
     headerActions?: Snippet;
   }
 
@@ -55,6 +57,7 @@
     onDismiss,
     onItemsChanged,
     onSetHandled,
+    onVisibleOrder = undefined,
     headerActions = undefined,
   }: Props = $props();
 
@@ -93,6 +96,10 @@
       ? worklistItemsByScore(filteredItems)
       : sections.filter((section) => !sectionCollapsed(section.section)).flatMap((section) => section.items),
   );
+
+  $effect(() => {
+    onVisibleOrder?.(worklist, visibleRows.map(worklistItemKey));
+  });
 
   const orderOptions: SegmentedControlOption[] = [
     { value: "agent", label: "Agent order", title: "The agent's rank, grouped by section" },
@@ -312,7 +319,9 @@
       <span>{handledCount} of {worklist.items.length} handled</span>
     </div>
     {#if recipeOpen}
-      <p class="worklist-recipe">{worklist.recipe}</p>
+      <!-- A long recipe scrolls, so it needs keyboard access. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="worklist-recipe" role="region" aria-label="Recipe" tabindex="0">{worklist.recipe}</div>
     {/if}
     {#if selection.active}
       <div class="worklist-selection-bar">
@@ -331,7 +340,9 @@
   </header>
 
   <ScrollBox label={`${worklist.title} items`} class="worklist-scroll">
-    {#if showSectionHeaders}
+    {#if worklist.items.length === 0}
+      <p class="worklist-rail-empty">No items remain on this list.</p>
+    {:else if showSectionHeaders}
       {#each sections as section (section.section)}
         {@const collapsed = sectionCollapsed(section.section)}
         <GroupedSidebarSection
@@ -448,7 +459,11 @@
     margin-left: auto;
   }
 
+  /* A long recipe scrolls inside its box so the rows below stay reachable. */
   .worklist-recipe {
+    flex-shrink: 0;
+    max-height: min(12rem, 30vh);
+    overflow-y: auto;
     margin: 0;
     padding: var(--space-3) var(--space-4);
     border-radius: var(--radius-sm, 4px);
@@ -498,6 +513,14 @@
   .worklist-rail :global(.worklist-scroll) {
     flex: 1;
     min-height: 0;
+  }
+
+  .worklist-rail-empty {
+    margin: 0;
+    padding: var(--space-6) var(--space-5);
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    text-align: center;
   }
 
   .worklist-rows {

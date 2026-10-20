@@ -33,12 +33,11 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	_, local := errors.AsType[*fs.PathError](err)
 	reason := ""
 	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
-	if source != "refs" && (local || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS)) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
+	if source != "refs" && isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	p.mu.Lock()
@@ -134,6 +133,13 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	}
 }
 
+// syscall.Errno satisfies net.Error, so callers must rule out local
+// filesystem failures before treating a net.Error as a network one.
+func isLocalFilesystemFailure(err error) bool {
+	_, pathErr := errors.AsType[*fs.PathError](err)
+	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS)
+}
+
 func syncFailureReason(err error) string {
 	status := platformgithub.StatusCode(err)
 	if response, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
@@ -158,7 +164,7 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError:
+	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err):
 		return "network"
 	case status >= 400 && status < 500:
 		return "other"

@@ -398,6 +398,8 @@ func TestSyncFailedRefsClassification(t *testing.T) {
 		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"network", context.DeadlineExceeded, "network"},
 		{"local path", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: fs.ErrPermission}), "other"},
+		{"local path denied", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}), "other"},
+		{"local path full", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.ENOSPC}), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)

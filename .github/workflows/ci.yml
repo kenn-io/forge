@@ -541,10 +541,6 @@ jobs:
         env:
           RACE_SHARD: ${{ matrix.shard }}
         run: |
-          case "$RACE_SHARD" in
-            core|server-rest|server|rest) ;;
-            *) echo "::error::Unknown race shard: $RACE_SHARD" >&2; exit 1 ;;
-          esac
           mkdir -p tmp
           package_list=$(go list ./...)
           packages=()

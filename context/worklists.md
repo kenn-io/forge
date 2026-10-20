@@ -163,9 +163,9 @@ stateDiagram-v2
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and
-  replacement after a rewrite all match items by it; owner/name in the URL is
-  only the display route
-  (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemKey`).
+  replacement after a rewrite all match items by it. Owner/name in the URL is
+  only the display route; the detail loads from the matched item's current
+  route (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemKey`).
 - The list is a rail of compact rows beside the regular pull request or issue
   detail view. The rail is the pull request list's collapsible sidebar, with
   the same app-wide toggle, width, and narrow overlay. `j`, `k`, and `d` keep

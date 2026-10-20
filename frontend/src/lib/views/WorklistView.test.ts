@@ -314,6 +314,15 @@ describe("WorklistView", () => {
     expect(within(strip).getByText("3 new comments")).toBeTruthy();
   });
 
+  it("loads the detail from the repository's current route when the link names its old one", async () => {
+    renderView(
+      "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fold-name&platform_repo_id=1001",
+      server,
+    );
+
+    expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
+  });
+
   it("groups rows by section in rank order and marks what changed", async () => {
     renderView("/worklists/5", server);
 

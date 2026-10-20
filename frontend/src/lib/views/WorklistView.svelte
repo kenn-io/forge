@@ -322,45 +322,47 @@
     refreshSelectionDetail();
   }
 
-  const repositoryKey = $derived(selected?.repositoryKey);
+  // The URL route can be stale after a rename; the matched item carries the
+  // repository's current route.
+  const target = $derived(selectedItem ? worklistItemSelection(selectedItem) : selected);
   const prSelection = $derived(
-    selected?.itemType === "pr"
+    target?.itemType === "pr"
       ? {
-          owner: selected.owner,
-          name: selected.name,
-          number: selected.number,
-          provider: selected.provider,
-          platformHost: selected.platformHost,
-          repositoryKey,
-          repoPath: selected.repoPath,
+          owner: target.owner,
+          name: target.name,
+          number: target.number,
+          provider: target.provider,
+          platformHost: target.platformHost,
+          repositoryKey: target.repositoryKey,
+          repoPath: target.repoPath,
         }
       : null,
   );
   const issueSelection = $derived(
-    selected?.itemType === "issue"
+    target?.itemType === "issue"
       ? {
-          owner: selected.owner,
-          name: selected.name,
-          number: selected.number,
-          provider: selected.provider,
-          platformHost: selected.platformHost,
-          repositoryKey,
-          repoPath: selected.repoPath,
+          owner: target.owner,
+          name: target.name,
+          number: target.number,
+          provider: target.provider,
+          platformHost: target.platformHost,
+          repositoryKey: target.repositoryKey,
+          repoPath: target.repoPath,
         }
       : null,
   );
   const isPRSelection = $derived(prSelection !== null);
 
   const claimIdentity = $derived<WorkspaceItemIdentity | null>(
-    selected
+    target
       ? {
-          provider: selected.provider,
-          platformHost: selected.platformHost,
-          owner: selected.owner,
-          name: selected.name,
-          repoPath: selected.repoPath,
-          number: selected.number,
-          itemType: selected.itemType,
+          provider: target.provider,
+          platformHost: target.platformHost,
+          owner: target.owner,
+          name: target.name,
+          repoPath: target.repoPath,
+          number: target.number,
+          itemType: target.itemType,
         }
       : null,
   );

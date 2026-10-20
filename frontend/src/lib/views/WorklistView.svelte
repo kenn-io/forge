@@ -84,9 +84,10 @@
   $effect(() => () => dismissal.dispose());
 
   // Another tab or an agent can dismiss the open list. A dismissed list stays
-  // readable by ID, so treat it as missing unless this view's undo offers it.
+  // readable by ID, so treat it as missing unless this view is dismissing it
+  // or offering its undo.
   const worklist = $derived(
-    loadedWorklist !== null && loadedWorklist.dismissed_at !== null && !dismissal.offersUndo(loadedWorklist.id)
+    loadedWorklist !== null && loadedWorklist.dismissed_at !== null && !dismissal.keepsShowing(loadedWorklist.id)
       ? null
       : loadedWorklist,
   );

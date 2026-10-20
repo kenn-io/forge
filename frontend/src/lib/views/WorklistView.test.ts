@@ -193,6 +193,20 @@ describe("WorklistView", () => {
     expect(screen.getByRole("button", { name: "Dismiss" }).hasAttribute("disabled")).toBe(false);
   });
 
+  it("keeps Undo when the change event for a dismissal arrives before its response", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    server.lists[0]!.dismissed_at = "2026-10-20T09:00:00Z";
+    await rewriteLists(stores);
+    release();
+
+    await waitFor(() => expect(screen.getByText("Dismissed Review queue.")).toBeTruthy());
+    expect(currentPath()).toBe("/worklists/4");
+  });
+
   it("keeps a restored list open when the dismissed copy of it was already loaded", async () => {
     renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(4));

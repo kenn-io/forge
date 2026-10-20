@@ -55,10 +55,14 @@ export class WorklistDismissal {
     return this.#state;
   }
 
-  /** Whether the undo still offers the list, so the page keeps it on screen though dismissed. */
-  offersUndo(listId: number): boolean {
+  /**
+   * Whether the page keeps the list on screen though it reads as dismissed:
+   * while this page dismisses it, since a change event can arrive before the
+   * response, and while its undo is offered.
+   */
+  keepsShowing(listId: number): boolean {
     const state = this.#state;
-    return (state.kind === "undo" || state.kind === "restoring") && state.listId === listId;
+    return state.kind !== "idle" && state.listId === listId;
   }
 
   dismiss(list: { readonly id: number; readonly title: string }): void {

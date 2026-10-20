@@ -35,7 +35,7 @@
   import { showFlash } from "../stores/flash.svelte.js";
   import { registerScopedActions } from "../stores/keyboard/registry.svelte.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
-  import { navigate, replaceUrl } from "../stores/router.svelte.js";
+  import { getRoute, navigate, replaceUrl } from "../stores/router.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
 
@@ -274,9 +274,11 @@
     // Move on only once the mark lands, so a failed mark keeps its item open,
     // and only while the same list and item are still open here.
     const keys = visibleKeys(list);
-    const key = worklistItemKey(current);
     setHandled([current], true, () => {
-      if (worklists.getOpenId() === list.id && selectedKey === key) step(1, keys);
+      const route = getRoute();
+      const stillOpen =
+        route.page === "worklists" && route.worklistId === list.id && worklistItemMatchesSelection(current, route.selected);
+      if (stillOpen) step(1, keys);
     });
   }
 

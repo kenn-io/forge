@@ -13,75 +13,81 @@ import (
 
 func TestIsTransientGitError(t *testing.T) {
 	cases := []struct {
-		name string
-		err  error
-		want bool
+		name        string
+		err         error
+		want        bool
+		wantServer  bool
+		wantNetwork bool
 	}{
-		{"nil", nil, false},
+		{"nil", nil, false, false, false},
+		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true, false, true},
+		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true, false, true},
 		{
 			"github 500 with internal server error preamble",
 			fmt.Errorf("exit status 128: %s", "remote: Internal Server Error\nfatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 500"),
-			true,
+			true, true, false,
 		},
 		{
 			"bare 502",
 			errors.New("fatal: The requested URL returned error: 502"),
-			true,
+			true, true, false,
 		},
 		{
 			"bare 503",
 			errors.New("fatal: The requested URL returned error: 503"),
-			true,
+			true, true, false,
 		},
 		{
 			"bare 504",
 			errors.New("fatal: The requested URL returned error: 504"),
-			true,
+			true, true, false,
 		},
 		{
 			"connection reset",
 			errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"),
-			true,
+			true, false, true,
 		},
 		{
 			"stalled HTTP transfer",
 			errors.New("fatal: unable to access 'https://example.com/repo.git/': Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds"),
-			true,
+			true, false, true,
 		},
 		{
 			"could not resolve host",
 			errors.New("fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com"),
-			true,
+			true, false, true,
 		},
 		{
 			"case insensitive",
 			errors.New("REMOTE: INTERNAL SERVER ERROR"),
-			true,
+			true, true, false,
 		},
 		{
 			"early eof",
 			errors.New("fatal: early EOF\nfatal: index-pack failed"),
-			true,
+			true, false, true,
 		},
 		{
 			"auth failure is permanent",
 			errors.New("fatal: Authentication failed for 'https://github.com/x/y.git/'"),
-			false,
+			false, false, false,
 		},
 		{
 			"not found is permanent",
 			errors.New("fatal: repository 'https://github.com/x/y.git/' not found"),
-			false,
+			false, false, false,
 		},
 		{
 			"bad ref is permanent",
 			errors.New("fatal: couldn't find remote ref refs/heads/nope"),
-			false,
+			false, false, false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, IsTransientGitError(tc.err))
+			assert.Equal(t, tc.wantServer, IsServerGitError(tc.err))
+			assert.Equal(t, tc.wantNetwork, IsNetworkGitError(tc.err))
 		})
 	}
 }

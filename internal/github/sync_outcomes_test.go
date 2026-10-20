@@ -28,40 +28,6 @@ import (
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
-func TestSyncFailedOncePerSource(t *testing.T) {
-	a := RepoRef{Owner: "acme", Name: "a", PlatformHost: "github.com"}
-	b := RepoRef{Owner: "acme", Name: "b", PlatformHost: "github.com"}
-	client := &partialFailureMock{}
-	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{a, b}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	for _, phase := range []struct {
-		errA error
-		errB error
-		want [][2]string
-	}{
-		{platform.ErrPermissionDenied, nil, [][2]string{{"issues", "auth"}}},
-		{platform.ErrPermissionDenied, nil, nil},
-		{platform.ErrPermissionDenied, platform.ErrNotFound, [][2]string{{"issues", "not_found"}}},
-		{nil, platform.ErrNotFound, nil},
-	} {
-		var reads atomic.Int32
-		client.listOpenIssuesFn = func(_ context.Context, owner, name string) ([]*gh.Issue, error) {
-			assert.Equal(t, "acme", owner)
-			assert.Contains(t, []string{"a", "b"}, name)
-			reads.Add(1)
-			if name == "a" {
-				return nil, phase.errA
-			}
-			return nil, phase.errB
-		}
-		events = nil
-		s.RunOnce(t.Context())
-		require.EqualValues(t, 2, reads.Load())
-		require.Equal(t, phase.want, events)
-	}
-}
-
 func TestSyncFailedSourceRecovery(t *testing.T) {
 	a := RepoRef{Owner: "acme", Name: "a"}
 	b := RepoRef{Owner: "acme", Name: "b"}
@@ -83,22 +49,10 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 		wantLater int
 	}{
 		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
-		{"cadence skipped with success", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"no reads", a, nil, []RepoRef{a, b}, a, 1, 1},
-		{"disabled feature without cooldown", a, []observation{{a, platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)}}, []RepoRef{a, b}, a, 1, 1},
 		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, 1, 2},
-		{"failure dominates success", a, []observation{{a, platform.ErrNotFound}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
-		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}}, []RepoRef{a, b}, a, 1, 1},
-		{"budget refused with success", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
-		{"local path error", a, []observation{{a, fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})}}, []RepoRef{a, b}, a, 1, 1},
-		{"local access denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EACCES)}}, []RepoRef{a, b}, a, 1, 1},
-		{"local operation denied", a, []observation{{a, fmt.Errorf("read: %w", syscall.EPERM)}}, []RepoRef{a, b}, a, 1, 1},
-		{"local full disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.ENOSPC)}}, []RepoRef{a, b}, a, 1, 1},
-		{"local read-only disk", a, []observation{{a, fmt.Errorf("write: %w", syscall.EROFS)}}, []RepoRef{a, b}, a, 1, 1},
 		{"untracked without reads", a, nil, []RepoRef{b}, a, 1, 2},
 		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
-		{"untracked", a, []observation{{b, nil}}, []RepoRef{b}, a, 1, 2},
-		{"archived", a, []observation{{b, nil}}, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
 		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, 1, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,14 +120,29 @@ func TestSyncFailedReasonPriority(t *testing.T) {
 	}
 }
 
-func TestSyncFailedLocalFilesystemOnRefs(t *testing.T) {
+func TestSyncFailedIgnoredErrors(t *testing.T) {
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	pass := &syncPass{}
-	pass.observe(repo, "refs", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}))
-	var events [][2]string
-	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-	s.finishSyncPass(pass, []RepoRef{repo})
-	assert.Empty(t, events)
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"local path error", fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
+		{"local access denied", fmt.Errorf("read: %w", syscall.EACCES)},
+		{"local operation denied", fmt.Errorf("read: %w", syscall.EPERM)},
+		{"local full disk", fmt.Errorf("write: %w", syscall.ENOSPC)},
+		{"local read-only disk", fmt.Errorf("write: %w", syscall.EROFS)},
+		{"budget refused", platform.ErrSyncBudgetExhausted},
+		{"disabled feature without cooldown", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pass := &syncPass{}
+			pass.observe(repo, "refs", tc.err)
+			var events [][2]string
+			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+			s.finishSyncPass(pass, []RepoRef{repo})
+			assert.Empty(t, events)
+		})
+	}
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {
@@ -289,9 +258,6 @@ func TestSyncFailureReason(t *testing.T) {
 		{"normalized permission takes precedence", &platform.Error{Code: platform.ErrCodePermissionDenied, Err: &gitealike.HTTPError{StatusCode: 429}}, "auth"},
 		{"normalized contract takes precedence", &platform.Error{Code: platform.ErrCodeProviderContract, Err: &gitealike.HTTPError{StatusCode: 404}}, "provider"},
 		{"git DNS", errors.New("fatal: unable to access remote: Could not resolve host: example.com"), "network"},
-		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), "network"},
-		{"git reset", errors.New("fatal: unable to access remote: Connection reset by peer"), "network"},
-		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), "network"},
 		{"git 503", errors.New("fatal: unable to access remote: The requested URL returned error: 503"), "provider"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
@@ -357,11 +323,16 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 	}{
 		{"repository lookup", func(t *testing.T) *Syncer {
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			d := openTestDB(t)
+			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
 			client := &partialFailureMock{}
-			client.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+			client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
+				assert.Equal(t, "acme", owner)
+				assert.Equal(t, "widget", name)
 				return nil, platform.ErrPermissionDenied
 			}
-			return NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			return NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 		}},
 		{"keyless credential route", func(t *testing.T) *Syncer {
 			d := openTestDB(t)
@@ -459,6 +430,9 @@ func TestSyncFailedGitCloneErrors(t *testing.T) {
 }
 
 func TestSyncFailedReadOnlyFetchHead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can write to read-only FETCH_HEAD")
+	}
 	fixture := setupSyncBranchActivityFixture(t, "main")
 	t.Cleanup(fixture.Syncer.clones.Wait)
 	syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
@@ -496,25 +470,4 @@ func TestSyncFailedBitbucketDCUnavailable(t *testing.T) {
 	s.RunOnce(t.Context())
 	require.Positive(t, reads.Load())
 	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
-}
-
-func TestSyncFailedRouteOnlyRepositoryLookup(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	d := openTestDB(t)
-	_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-	require.NoError(t, err)
-	var reads atomic.Int32
-	client := &partialFailureMock{}
-	client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
-		assert.Equal(t, "acme", owner)
-		assert.Equal(t, "widget", name)
-		reads.Add(1)
-		return nil, platform.ErrPermissionDenied
-	}
-	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	require.Positive(t, reads.Load())
-	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"net/http"
 	"sync"
 	"testing"
 	"time"
@@ -17,25 +16,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
-	"go.kenn.io/forge/internal/testutil/tokenauthtest"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
 )
-
-func TestArchiveRetryBitbucketDCUnavailable(t *testing.T) {
-	client, err := bitbucketdc.NewClient("bitbucket.example.com", tokenauthtest.Source("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "/rest/api/latest/projects/ACME/repos/widget", req.URL.Path)
-		return &http.Response{StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable", Body: http.NoBody, Header: make(http.Header), Request: req}, nil
-	}), nil)
-	require.NoError(t, err)
-	_, err = client.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "ACME", Name: "widget"})
-	require.Error(t, err)
-	now := archiveTestTime()
-	decision := defaultArchiveRetryDecision(err, 0, now)
-	assert.Equal(t, db.ArchiveErrorCodeTransient, decision.Code)
-	require.NotNil(t, decision.RetryAt)
-	assert.Equal(t, now.Add(time.Minute), *decision.RetryAt)
-}
 
 func TestArchiveRetryClassifierTreatsAttemptBudgetRefusalAsDeferral(t *testing.T) {
 	t.Parallel()

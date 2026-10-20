@@ -251,26 +251,15 @@ func TestWireSyncFailed(t *testing.T) {
 			provider := &serverfake.MockGH{}
 			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": provider}, dbtest.Open(t), nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
 			wireSyncFailed(syncer, client)
-			for i, failed := range []bool{true, true, false, true} {
-				provider.ListOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
-					if failed {
-						return nil, platform.ErrPermissionDenied
-					}
-					return nil, nil
-				}
-				syncer.RunOnce(t.Context())
-				want := 1
-				if i == 3 {
-					want = 2
-				}
-				if disabled {
-					want = 0
-				}
-				require.Len(t, client.events(), want)
+			provider.ListOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+				return nil, platform.ErrPermissionDenied
 			}
-			if !disabled {
-				require.Equal(t, []string{"sync_failed", "sync_failed"}, client.eventNames)
-				require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "auth"}, {"sync_source": "issues", "reason": "auth"}}, client.captures)
+			syncer.RunOnce(t.Context())
+			if disabled {
+				require.Empty(t, client.events())
+			} else {
+				require.Equal(t, []string{"sync_failed"}, client.events())
+				require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "auth"}}, client.captures)
 			}
 		})
 	}

@@ -16,4 +16,4 @@ permissions:
 
 jobs:
   run:
-    uses: ./.github/workflows/ci.yml
+    uses: kenn-io/forge/.github/workflows/ci.yml@main

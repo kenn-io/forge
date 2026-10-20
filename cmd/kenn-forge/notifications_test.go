@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,12 +13,15 @@ import (
 	"testing/synctest"
 	"time"
 
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -240,11 +244,36 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require.Equal(12, settings.batchSize)
 }
 
-func TestCaptureSyncFailed(t *testing.T) {
-	client := &fakeTelemetryClient{}
-	captureSyncFailed(client)("issues", "provider")
-	require.Equal(t, []string{"sync_failed"}, client.eventNames)
-	require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "provider"}}, client.captures)
+func TestWireSyncFailed(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("disabled=%t", disabled), func(t *testing.T) {
+			client := &fakeTelemetryClient{disabled: disabled}
+			provider := &serverfake.MockGH{}
+			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": provider}, dbtest.Open(t), nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+			wireSyncFailed(syncer, client)
+			for i, failed := range []bool{true, true, false, true} {
+				provider.ListOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+					if failed {
+						return nil, platform.ErrPermissionDenied
+					}
+					return nil, nil
+				}
+				syncer.RunOnce(t.Context())
+				want := 1
+				if i == 3 {
+					want = 2
+				}
+				if disabled {
+					want = 0
+				}
+				require.Len(t, client.events(), want)
+			}
+			if !disabled {
+				require.Equal(t, []string{"sync_failed", "sync_failed"}, client.eventNames)
+				require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "auth"}, {"sync_source": "issues", "reason": "auth"}}, client.captures)
+			}
+		})
+	}
 }
 
 func TestSetupFinishedMinute(t *testing.T) {

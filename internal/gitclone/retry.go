@@ -28,12 +28,12 @@ var transientGitErrorSubstrings = []string{
 	"tls connection",
 }
 
-// isTransientGitError reports whether the stderr captured from git looks
+// IsTransientGitError reports whether the stderr captured from git looks
 // like a transient remote or network failure worth retrying. GitHub's
 // smart-HTTP endpoint sporadically returns 5xx on /info/refs even when the
 // repo is healthy; retrying inside the same sync cycle usually succeeds and
 // avoids dropping a full sync window.
-func isTransientGitError(err error) bool {
+func IsTransientGitError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -47,7 +47,7 @@ func isTransientGitError(err error) bool {
 }
 
 // retryTransient runs op with bounded exponential backoff, retrying only
-// when the underlying error matches isTransientGitError. Permanent errors
+// when the underlying error matches IsTransientGitError. Permanent errors
 // (auth, not-found, malformed remote, etc.) short-circuit immediately so
 // they surface to the caller without delay.
 func retryTransient[T any](
@@ -56,7 +56,7 @@ func retryTransient[T any](
 	return internalretry.Do(ctx, internalretry.Config[T]{
 		Label:       label,
 		MaxTries:    retryAttempts,
-		IsTransient: isTransientGitError,
+		IsTransient: IsTransientGitError,
 		Op:          op,
 	})
 }
@@ -73,7 +73,7 @@ func retryTransientWithBackOff[T any](
 		Label:       label,
 		BackOff:     bo,
 		MaxTries:    retryAttempts,
-		IsTransient: isTransientGitError,
+		IsTransient: IsTransientGitError,
 		Op:          op,
 	})
 }

@@ -81,6 +81,8 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 1, 1},
 		{"cadence skipped with success", a, []observation{{b, nil}}, []RepoRef{a, b}, a, 1, 2},
 		{"no reads", a, nil, []RepoRef{a, b}, a, 1, 1},
+		{"disabled feature without cooldown", a, []observation{{a, platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)}}, []RepoRef{a, b}, a, 1, 1},
+		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, 1, 2},
 		{"failure dominates success", a, []observation{{a, platform.ErrNotFound}, {b, nil}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused", a, []observation{{a, platform.ErrSyncBudgetExhausted}}, []RepoRef{a, b}, a, 1, 1},
 		{"budget refused with success", a, []observation{{a, platform.ErrSyncBudgetExhausted}, {b, nil}}, []RepoRef{a, b}, a, 1, 2},
@@ -265,12 +267,6 @@ func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 func TestSyncFailureReason(t *testing.T) {
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
 	require.NoError(t, err)
-	dcClient, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
-	}), nil)
-	require.NoError(t, err)
-	_, dcErr := dcClient.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)})
-	require.Error(t, dcErr)
 	for _, tc := range []struct {
 		name string
 		err  error
@@ -281,16 +277,46 @@ func TestSyncFailureReason(t *testing.T) {
 		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable, Request: req}}, "provider"},
 		{"not found", platform.ErrNotFound, "not_found"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
-		{"bitbucket data center", dcErr, "provider"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
+		{"normalized permission takes precedence", &platform.Error{Code: platform.ErrCodePermissionDenied, Err: &gitealike.HTTPError{StatusCode: 429}}, "auth"},
+		{"normalized contract takes precedence", &platform.Error{Code: platform.ErrCodeProviderContract, Err: &gitealike.HTTPError{StatusCode: 404}}, "provider"},
+		{"git DNS", errors.New("fatal: unable to access remote: Could not resolve host: example.com"), "network"},
+		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), "network"},
+		{"git reset", errors.New("fatal: unable to access remote: Connection reset by peer"), "network"},
+		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), "network"},
+		{"git 503", errors.New("fatal: unable to access remote: The requested URL returned error: 503"), "network"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
+	}
+}
+
+func TestSyncFailureReasonBitbucketDC(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{401, "auth"},
+		{404, "not_found"},
+		{429, "rate_limited"},
+		{418, "other"},
+		{500, "provider"},
+		{503, "provider"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			client, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Status: http.StatusText(tc.status), Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+			}), nil)
+			require.NoError(t, err)
+			_, err = client.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)})
+			require.Error(t, err)
+			assert.Equal(t, tc.want, syncFailureReason(err))
+		})
 	}
 }
 

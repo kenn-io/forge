@@ -12,15 +12,16 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
+	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 var (
-	syncSources      = []string{"merge_requests", "issues", "checks", "refs"}
-	syncReasons      = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+	syncSources      = telemetry.SyncSources
+	syncReasons      = telemetry.SyncReasons
 	syncScopeSources = map[failScope]string{failMR: "merge_requests", failIssues: "issues"}
 )
 
@@ -33,8 +34,11 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
+	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+		return
+	}
 	reason := ""
-	if err != nil && !errors.Is(err, platform.ErrRepositoryFeatureDisabled) && !platformgithub.IsNotModified(err) {
+	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
 	if source != "refs" && isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
@@ -145,14 +149,21 @@ func isLocalFilesystemFailure(err error) bool {
 }
 
 func syncFailureReason(err error) string {
+	switch {
+	case errors.Is(err, platform.ErrRateLimited):
+		return "rate_limited"
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken):
+		return "auth"
+	case errors.Is(err, platform.ErrNotFound):
+		return "not_found"
+	case errors.Is(err, platform.ErrProviderContract):
+		return "provider"
+	}
 	status := platformgithub.StatusCode(err)
 	if response, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
 		status = response.StatusCode
 	}
 	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
-		status = response.StatusCode
-	}
-	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
 		status = response.StatusCode
 	}
 	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
@@ -162,17 +173,17 @@ func syncFailureReason(err error) string {
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	_, networkError := errors.AsType[net.Error](err)
 	switch {
-	case primaryLimit, secondaryLimit, errors.Is(err, platform.ErrRateLimited), status == 429:
+	case primaryLimit, secondaryLimit, status == 429:
 		return "rate_limited"
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "", status == 401, status == 403:
+	case gitAccessFailureReason(err) != "", status == 401, status == 403:
 		return "auth"
-	case errors.Is(err, platform.ErrNotFound), status == 404:
+	case status == 404:
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err):
+	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err), gitclone.IsTransientGitError(err):
 		return "network"
 	case status >= 400 && status < 500:
 		return "other"
-	case errors.Is(err, platform.ErrProviderContract), status >= 500 && status < 600:
+	case status >= 500 && status < 600:
 		return "provider"
 	default:
 		return "other"

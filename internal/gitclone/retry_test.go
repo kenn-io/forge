@@ -81,7 +81,7 @@ func TestIsTransientGitError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, isTransientGitError(tc.err))
+			assert.Equal(t, tc.want, IsTransientGitError(tc.err))
 		})
 	}
 }

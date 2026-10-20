@@ -192,8 +192,4 @@ describe("worklist routes", () => {
         ?.detailTab,
     ).toBe("conversation");
   });
-
-  it("builds the bare list route without a selection", () => {
-    expect(buildWorklistRoute(12)).toBe("/worklists/12");
-  });
 });

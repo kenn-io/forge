@@ -384,7 +384,7 @@ describe("WorklistView", () => {
     expect(screen.queryByText("Dismissed Review queue.")).toBeNull();
   });
 
-  it("shows the empty state after the last list is dismissed", async () => {
+  it("shows the empty state after the last list is dismissed and brings the list back on undo", async () => {
     server.lists = [worklistResponse(5, "Review queue")];
     renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(4));
@@ -394,6 +394,14 @@ describe("WorklistView", () => {
     expect(await screen.findByText("No worklists")).toBeTruthy();
     expect(screen.getByText("Dismissed Review queue.")).toBeTruthy();
     expect(currentPath()).toBe("/worklists");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42/));
+    expect(server.requests).toContain("POST /api/v1/worklists/5/undismiss");
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    expect(screen.queryByText("No worklists")).toBeNull();
+    expect(screen.queryByText("Dismissed Review queue.")).toBeNull();
   });
 
   it("falls back to the newest list when the routed one is gone", async () => {

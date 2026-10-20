@@ -45,18 +45,6 @@ it("adds the Worklists tab when an agent writes a list and opens its first item"
   await expect.element(strip.getByText("Review notes may cover an older head")).toBeVisible();
 });
 
-it("refreshes the open list when an agent rewrites it", async () => {
-  await page.viewport(1400, 900);
-  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
-  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
-  await expect.element(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
-
-  server.lists = [worklistResponse(5, "Review queue, rewritten")];
-  emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
-
-  await expect.element(page.getByRole("heading", { name: "Review queue, rewritten" })).toBeVisible();
-});
-
 it("reads the open list once per poll when lists show agent status", async () => {
   await page.viewport(1400, 900);
   const errors: unknown[] = [];

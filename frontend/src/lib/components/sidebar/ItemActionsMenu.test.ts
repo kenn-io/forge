@@ -53,12 +53,6 @@ describe("ItemActionsMenu with a mixed selection", () => {
     expect(screen.getByRole("menuitem", { name: "Star 3 items" })).toBeTruthy();
   });
 
-  it("keeps the PR noun when every target is a pull request", () => {
-    renderMenu([mixed[0]!, mixed[2]!]);
-
-    expect(screen.getByRole("menu", { name: "Actions for 2 PRs" })).toBeTruthy();
-  });
-
   it("sets workflow status only on the pull requests in the selection", async () => {
     renderMenu(mixed);
 

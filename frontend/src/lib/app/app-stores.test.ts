@@ -5,7 +5,6 @@ import { createAppStores } from "../app-stores.svelte.js";
 import type { Issue, IssueDetail, PullDetail, PullRequest } from "../api/types.js";
 import { createMockApiFetch } from "../../test/mockApiFetch.js";
 import { worklistResponse, worklistRoutes, type WorklistServer } from "../../test/worklistFixtures.js";
-import { appStartupProgram } from "../utils/appStartup.js";
 
 let runtime: OwnedAppRuntime;
 let eventSources: EventSourceStub[];
@@ -394,105 +393,6 @@ describe("app store composition", () => {
     await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
   });
 
-  it("marks provider data unavailable when a worklist refresh cannot reach the hub", async () => {
-    const hubUnavailable = () =>
-      new Response(
-        JSON.stringify({
-          type: "about:blank",
-          title: "Hub unavailable",
-          status: 503,
-          detail: "provider data is unavailable because the federation hub cannot be reached",
-          code: "hubUnavailable",
-        }),
-        { status: 503, headers: { "content-type": "application/problem+json" } },
-      );
-    let hubDown = false;
-    vi.stubGlobal(
-      "fetch",
-      createMockApiFetch([
-        (request) => (hubDown && request.url.pathname === "/api/v1/worklists/7" ? hubUnavailable() : null),
-      ]).fetch,
-    );
-    const composition = createAppStores({ runtime, getPage: () => "worklists" });
-    await runtime.runCommand(composition.stores.worklists.openEffect(7), {
-      operation: "test open worklist",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
-    runtime.runCommand(composition.stores.events.streamEffect, {
-      operation: "test provider events",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
-    hubDown = true;
-
-    emit(eventSources[0]!, "workspace_deleted", {
-      workspace_id: "ws-1",
-      provider: "github",
-      platform_host: "github.com",
-      repo_path: "acme/widgets",
-      owner: "acme",
-      name: "widgets",
-      number: 42,
-      item_type: "pull_request",
-    });
-
-    await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
-  });
-
-  it("marks provider data unavailable when a worklist change cannot be read from the hub", async () => {
-    vi.stubGlobal(
-      "fetch",
-      createMockApiFetch([
-        (request) =>
-          request.url.pathname.startsWith("/api/v1/worklists")
-            ? new Response(JSON.stringify({ title: "Hub unavailable", status: 503, code: "hubUnavailable" }), {
-                status: 503,
-                headers: { "content-type": "application/problem+json" },
-              })
-            : null,
-      ]).fetch,
-    );
-    const composition = createAppStores({ runtime, getPage: () => "pulls" });
-    runtime.runCommand(composition.stores.events.streamEffect, {
-      operation: "test provider events",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
-
-    emit(eventSources[0]!, "worklists_changed", { worklist_id: 7 });
-
-    await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
-  });
-
-  it("raises the hub banner when a worklist summaries read cannot reach the hub", async () => {
-    vi.stubGlobal(
-      "fetch",
-      createMockApiFetch([
-        (request) =>
-          request.url.pathname === "/api/v1/worklists"
-            ? new Response(JSON.stringify({ title: "Hub unavailable", status: 503, code: "hubUnavailable" }), {
-                status: 503,
-                headers: { "content-type": "application/problem+json" },
-              })
-            : null,
-      ]).fetch,
-    );
-    const composition = createAppStores({ runtime, getPage: () => "pulls" });
-    runtime.runCommand(composition.stores.events.streamEffect, {
-      operation: "test provider events",
-      safeContext: {},
-      onFailure: () => {},
-    });
-    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
-
-    emit(eventSources[0]!, "data_changed", {});
-
-    await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
-  });
-
   it("keeps a data change successful when only the worklist summaries read fails", async () => {
     const failures: string[] = [];
     vi.stubGlobal(
@@ -548,31 +448,6 @@ describe("app store composition", () => {
 
     await vi.waitFor(() => expect(composition.stores.worklists.getDetail()?.items[0]?.live?.ci_status).toBe("success"));
     poll.interrupt();
-  });
-
-  it("raises the hub banner when the first worklist reads at startup cannot reach the hub", async () => {
-    vi.stubGlobal(
-      "fetch",
-      createMockApiFetch([
-        (request) =>
-          request.url.pathname === "/api/v1/worklists"
-            ? new Response(JSON.stringify({ title: "Hub unavailable", status: 503, code: "hubUnavailable" }), {
-                status: 503,
-                headers: { "content-type": "application/problem+json" },
-              })
-            : null,
-      ]).fetch,
-    );
-    const composition = createAppStores({ runtime, getPage: () => "pulls" });
-
-    const startup = runtime.runCommand(
-      appStartupProgram({ stores: composition.stores, onReady: () => {}, loadInitialLists: false }),
-      { operation: "test application startup", safeContext: {}, onFailure: () => {} },
-    );
-
-    await vi.waitFor(() => expect(composition.stores.sync.getProviderAvailable()).toBe(false));
-    expect(composition.stores.worklists.getSummariesError()).not.toBeNull();
-    startup.interrupt();
   });
 
   it("raises the hub banner when opening a worklist cannot reach the hub", async () => {

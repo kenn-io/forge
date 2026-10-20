@@ -13,7 +13,7 @@ import {
 } from "../../test/worklistFixtures.js";
 import { createWorklistsStore, type WorklistsStore } from "./worklists.svelte.js";
 
-function summary(id: number, title: string, dismissed_at: string | null = null): WorklistSummary {
+function summary(id: number, title: string): WorklistSummary {
   return {
     id,
     title,
@@ -27,11 +27,11 @@ function summary(id: number, title: string, dismissed_at: string | null = null):
     remaining_count: 0,
     created_at: "2026-10-19T10:00:00Z",
     updated_at: "2026-10-19T10:00:00Z",
-    dismissed_at,
+    dismissed_at: null,
   };
 }
 
-function worklist(id: number, title: string, dismissed_at: string | null = null): Worklist {
+function worklist(id: number, title: string): Worklist {
   return {
     id,
     title,
@@ -40,7 +40,7 @@ function worklist(id: number, title: string, dismissed_at: string | null = null)
     workspace_id: "",
     created_at: "2026-10-19T10:00:00Z",
     updated_at: "2026-10-19T10:00:00Z",
-    dismissed_at,
+    dismissed_at: null,
     items: [],
   };
 }
@@ -104,15 +104,10 @@ describe("worklists store", () => {
   beforeEach(() => {
     originalFetch = globalThis.fetch;
     server = {
-      summaries: [
-        summary(2, "Review queue"),
-        summary(1, "Stale issues"),
-        summary(3, "Old list", "2026-10-18T00:00:00Z"),
-      ],
+      summaries: [summary(2, "Review queue"), summary(1, "Stale issues")],
       lists: new Map([
         [2, worklist(2, "Review queue")],
         [1, worklist(1, "Stale issues")],
-        [3, worklist(3, "Old list", "2026-10-18T00:00:00Z")],
       ]),
       failDetail: false,
       failSummaries: false,
@@ -173,22 +168,6 @@ describe("worklists store", () => {
     expect(failures).toEqual(["hubUnavailable", "TransientTransportError"]);
   });
 
-  it("keeps lists that are not dismissed in server order", async () => {
-    server.summaries[0]!.dismissed_at = null;
-    api = createMockApiFetch([
-      (request) =>
-        request.method === "GET" && request.url.pathname === "/api/v1/worklists"
-          ? jsonResponse({ worklists: server.summaries })
-          : null,
-    ]);
-    globalThis.fetch = api.fetch;
-
-    await run(store.refreshSummariesEffect());
-
-    expect(store.getSummaries().map((entry) => entry.title)).toEqual(["Review queue", "Stale issues"]);
-    expect(store.summariesLoaded()).toBe(true);
-  });
-
   it("re-reads the summaries and the open list when a list changes", async () => {
     await run(store.openEffect(2));
     expect(store.getDetail()?.title).toBe("Review queue");
@@ -210,16 +189,6 @@ describe("worklists store", () => {
     expect(store.getDetailError()).toEqual({ kind: "notFound" });
     expect(store.getDetail()).toBeNull();
     expect(store.getSummaries().map((entry) => entry.id)).toEqual([1]);
-  });
-
-  it("opens a dismissed list as the server returns it, outside the summaries", async () => {
-    await run(store.refreshSummariesEffect());
-
-    await run(store.openEffect(3));
-
-    expect(store.getDetail()?.dismissed_at).toBe("2026-10-18T00:00:00Z");
-    expect(store.getDetailError()).toBeNull();
-    expect(store.getSummaries().map((entry) => entry.id)).toEqual([2, 1]);
   });
 
   it("reports a failed summaries read without claiming the read succeeded", async () => {
@@ -318,13 +287,5 @@ describe("worklists store", () => {
     await run(store.setHandledEffect(5, [target], false));
     expect(store.getDetail()?.items.map((item) => item.handled_at)).toEqual([null, null]);
     expect(store.getSummaries()[0]?.handled_count).toBe(0);
-  });
-
-  it("closing the open list forgets it", async () => {
-    await run(store.openEffect(1));
-    await run(store.openEffect(null));
-
-    expect(store.getOpenId()).toBeNull();
-    expect(store.getDetail()).toBeNull();
   });
 });

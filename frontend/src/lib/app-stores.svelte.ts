@@ -258,9 +258,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             },
           ),
         );
-      // Full refreshes re-read the open list; the lightweight poll leaves it alone.
       case "worklists":
-        return refreshDetail ? worklistsStore.refreshOpenDetailEffect() : Effect.void;
+        return worklistsStore.refreshOpenDetailEffect();
       case "focus":
         return observeHubFailure(
           Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {
@@ -478,8 +477,11 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     roborevClient = createRoborevClient(bp + roborevBase);
   }
 
+  // The poll never reads worklists; workspace status events still refresh the open list.
   const listAgentStatusPolling = pollWhileVisible(
-    Effect.suspend(() => refreshVisibleData(false)).pipe(Effect.catch(() => Effect.void)),
+    Effect.suspend(() => (gp() === "worklists" ? Effect.void : refreshVisibleData(false))).pipe(
+      Effect.catch(() => Effect.void),
+    ),
     "5 seconds",
     { immediate: true },
   );

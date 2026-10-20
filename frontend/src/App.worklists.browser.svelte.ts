@@ -73,9 +73,13 @@ it("does not loop or re-read the open list on the agent status poll", async () =
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // Only opening the list reads it; a loop or a poll refresh would read again.
-    const detailReads = server.requests.filter((request) => request === "GET /api/v1/worklists/5");
-    expect(detailReads).toHaveLength(1);
+    const detailReads = () => server.requests.filter((request) => request === "GET /api/v1/worklists/5").length;
+    expect(detailReads()).toBe(1);
     expect(errors).toEqual([]);
+
+    // A workspace status event still refreshes the rows' agent status.
+    emitBrowserEventSource("workspace_status", { id: "ws-1", status: "ready" });
+    await vi.waitFor(() => expect(detailReads()).toBe(2));
   } finally {
     window.removeEventListener("error", onError);
     vi.restoreAllMocks();

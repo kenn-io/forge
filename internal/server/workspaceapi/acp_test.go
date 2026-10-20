@@ -254,15 +254,30 @@ type imageReferenceChat struct {
 	stallingChat
 	snapshot []byte
 	history  []byte
-	changes  chan struct{}
 	batches  map[uint64]localruntime.ACPBatch
+	mu       sync.Mutex
+	changes  chan struct{}
 }
 
 func (c *imageReferenceChat) Snapshot() ([]byte, error)           { return c.snapshot, nil }
 func (c *imageReferenceChat) History(string, int) ([]byte, error) { return c.history, nil }
+
+// Each connection gets its own channel, so a closed connection's server
+// goroutine cannot take a change meant for the reconnected one.
 func (c *imageReferenceChat) Subscribe() (<-chan struct{}, func()) {
-	c.changes <- struct{}{}
-	return c.changes, func() {}
+	changes := make(chan struct{}, 1)
+	changes <- struct{}{}
+	c.mu.Lock()
+	c.changes = changes
+	c.mu.Unlock()
+	return changes, func() {}
+}
+
+func (c *imageReferenceChat) notify() {
+	c.mu.Lock()
+	changes := c.changes
+	c.mu.Unlock()
+	changes <- struct{}{}
 }
 
 func (c *imageReferenceChat) Updates(after uint64) (localruntime.ACPBatch, error) {
@@ -292,7 +307,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 		require.NoError(err)
 		batches[cursor] = localruntime.ACPBatch{Data: data, MessageCursor: cursor + 1, More: cursor == 0}
 	}
-	chat := &imageReferenceChat{snapshot: snapshot, history: history, changes: make(chan struct{}, 1), batches: batches}
+	chat := &imageReferenceChat{snapshot: snapshot, history: history, batches: batches}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { serveACP(w, r, chat) }))
 	defer server.Close()
 	for range 2 {
@@ -318,7 +333,7 @@ func TestACPChatServesReferencedImagesOnConnectAndReload(t *testing.T) {
 		assert.Equal(3, page["history"].Offset)
 		require.Len(page["history"].Messages, 1)
 		assert.Equal(base64.StdEncoding.EncodeToString(image), page["history"].Messages[0].ToolContent[0].Content.Data)
-		chat.changes <- struct{}{}
+		chat.notify()
 		for version := uint64(1); version <= 2; version++ {
 			_, data, readErr = conn.Read(ctx)
 			require.NoError(readErr)

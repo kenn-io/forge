@@ -8,6 +8,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -18,8 +20,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
@@ -452,4 +456,65 @@ func TestSyncFailedGitCloneErrors(t *testing.T) {
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.finishSyncPass(pass, []RepoRef{repo})
 	assert.Equal(t, [][2]string{{"refs", "provider"}}, events)
+}
+
+func TestSyncFailedReadOnlyFetchHead(t *testing.T) {
+	fixture := setupSyncBranchActivityFixture(t, "main")
+	t.Cleanup(fixture.Syncer.clones.Wait)
+	syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
+	ctx := withCloneRepositoryIdentity(t.Context(), fixture.Repo)
+	require.NoError(t, fixture.Syncer.ensureClone(ctx, fixture.Repo))
+	clone, err := fixture.Syncer.clones.ClonePathForContext(ctx, "gitlab", fixture.Repo.PlatformHost, fixture.Repo.Owner, fixture.Repo.Name)
+	require.NoError(t, err)
+	fetchHead := filepath.Join(clone, "FETCH_HEAD")
+	require.NoError(t, os.Chmod(fetchHead, 0o444))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(fetchHead, 0o644)) })
+	_, stderr, err := gitsafe.Runner().Run(ctx, clone, nil, "fetch", "origin")
+	require.Error(t, err)
+	require.Contains(t, string(stderr), "FETCH_HEAD")
+	require.Contains(t, string(stderr), "Permission denied")
+	var events [][2]string
+	fixture.Syncer.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	fixture.Syncer.RunOnce(t.Context())
+	assert.Empty(t, events)
+}
+
+func TestSyncFailedBitbucketDCUnavailable(t *testing.T) {
+	var reads atomic.Int32
+	client, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		assert.Equal(t, "/rest/api/latest/projects/ACME/repos/widget", req.URL.Path)
+		reads.Add(1)
+		return &http.Response{StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable", Body: http.NoBody, Header: make(http.Header), Request: req}, nil
+	}), nil)
+	require.NoError(t, err)
+	registry, err := platform.NewRegistry(client)
+	require.NoError(t, err)
+	repo := RepoRef{Platform: "bitbucket", PlatformHost: "bitbucket.example.com", Owner: "ACME", Name: "widget"}
+	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Positive(t, reads.Load())
+	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
+}
+
+func TestSyncFailedRouteOnlyRepositoryLookup(t *testing.T) {
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	d := openTestDB(t)
+	_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	var reads atomic.Int32
+	client := &partialFailureMock{}
+	client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		assert.Equal(t, "acme", owner)
+		assert.Equal(t, "widget", name)
+		reads.Add(1)
+		return nil, platform.ErrPermissionDenied
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Positive(t, reads.Load())
+	assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }

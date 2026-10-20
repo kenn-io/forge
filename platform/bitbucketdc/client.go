@@ -112,10 +112,7 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 		case 429:
 			code = platform.ErrCodeRateLimited
 		default:
-			code = platform.ErrCodeInvalidArgument
-			if resp.StatusCode >= 500 && resp.StatusCode < 600 {
-				code = platform.ErrCodeProviderContract
-			}
+			return result, errors.New("bitbucket data center: " + resp.Status)
 		}
 		return result, &platform.Error{Code: code, Provider: c.Platform(), PlatformHost: c.host, Err: errors.New(resp.Status)}
 	}

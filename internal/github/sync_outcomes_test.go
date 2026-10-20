@@ -7,7 +7,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"path/filepath"
+	"net/http/httptest"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -20,8 +20,8 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
+	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 func TestSyncFailedOncePerSource(t *testing.T) {
@@ -163,14 +163,13 @@ func TestSyncFailedReasonPriority(t *testing.T) {
 }
 
 func TestSyncFailedLocalFilesystemOnRefs(t *testing.T) {
-	// A local file error on the refs source must classify as other, not stay silent.
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	pass := &syncPass{}
 	pass.observe(repo, "refs", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}))
 	var events [][2]string
 	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
 	s.finishSyncPass(pass, []RepoRef{repo})
-	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+	assert.Empty(t, events)
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {
@@ -289,33 +288,37 @@ func TestSyncFailureReason(t *testing.T) {
 		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), "network"},
 		{"git reset", errors.New("fatal: unable to access remote: Connection reset by peer"), "network"},
 		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), "network"},
-		{"git 503", errors.New("fatal: unable to access remote: The requested URL returned error: 503"), "network"},
+		{"git 503", errors.New("fatal: unable to access remote: The requested URL returned error: 503"), "provider"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
 	}
 }
 
-func TestSyncFailureReasonBitbucketDC(t *testing.T) {
-	for _, tc := range []struct {
-		status int
-		want   string
-	}{
-		{401, "auth"},
-		{404, "not_found"},
-		{429, "rate_limited"},
-		{418, "other"},
-		{500, "provider"},
-		{503, "provider"},
+func TestSyncFailedGitLabNetworkErrors(t *testing.T) {
+	for _, cause := range []error{
+		&net.DNSError{Err: "unavailable", Name: "gitlab.example.com"},
+		&net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED},
+		&net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT},
 	} {
-		t.Run(http.StatusText(tc.status), func(t *testing.T) {
-			client, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-				return &http.Response{StatusCode: tc.status, Status: http.StatusText(tc.status), Header: make(http.Header), Body: http.NoBody, Request: req}, nil
-			}), nil)
+		t.Run(cause.Error(), func(t *testing.T) {
+			var reads atomic.Int32
+			client, err := platformgitlab.NewClient("gitlab.example.com", testTokenSource("test-token"),
+				platformgitlab.WithoutRetriesForTesting(),
+				platformgitlab.WithTransport(platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
+					reads.Add(1)
+					return nil, cause
+				})))
 			require.NoError(t, err)
-			_, err = client.GetRepository(t.Context(), platform.RepoRef{Platform: platform.KindBitbucket, Host: "bitbucket.example.com", Owner: "PROJECT", Name: "widget", Key: platform.RepositoryIDKey(42)})
-			require.Error(t, err)
-			assert.Equal(t, tc.want, syncFailureReason(err))
+			registry, err := platform.NewRegistry(client)
+			require.NoError(t, err)
+			repo := RepoRef{Platform: "gitlab", PlatformHost: "gitlab.example.com", Owner: "acme", Name: "widget"}
+			s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			require.Positive(t, reads.Load())
+			assert.ElementsMatch(t, [][2]string{{"merge_requests", "network"}, {"issues", "network"}}, events)
 		})
 	}
 }
@@ -435,12 +438,18 @@ func TestSyncFailedGitCloneErrors(t *testing.T) {
 	pass := &syncPass{}
 	clones := gitclone.New(t.TempDir(), nil)
 	t.Cleanup(clones.Wait)
-	repo.CloneURL = filepath.Join(t.TempDir(), "remote")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	repo.PlatformHost = server.Listener.Addr().String()
+	clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
+	repo.CloneURL = server.URL + "/acme/widget.git"
 	s := NewSyncer(map[string]Client{"github.com": &mockClient{}}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
 	err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
 	require.ErrorContains(t, err, "git clone")
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.finishSyncPass(pass, []RepoRef{repo})
-	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
+	assert.Equal(t, [][2]string{{"refs", "provider"}}, events)
 }

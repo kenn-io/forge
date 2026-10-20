@@ -677,13 +677,14 @@ repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass reports `sync_failed` when repositories start failing a
 source, at most once per source per pass. A repository that keeps failing
-reports nothing more until it recovers. The event sends only `sync_source` (`merge_requests`, `issues`, `checks`, or
-`refs`) and `reason` (`auth`, `rate_limited`, `not_found`, `network`, `provider`,
-or `other`), with unlisted reasons sent as `other`. List, CI, clone, fetch, and
-repository failures count; individual PR, issue, and child reads don't. Skipped
-reads keep prior state; observed recovery or disablement clears it, and archived
-or untracked repositories drop out. Counts are approximate: state stays in
-memory, so a restart can count a failing repository twice. These properties
+reports nothing more until it recovers. The event sends only `sync_source`
+(`merge_requests`, `issues`, `checks`, or `refs`) and `reason` (`auth`,
+`rate_limited`, `not_found`, `network`, `provider`, or `other`), with unlisted
+reasons sent as `other`. List, CI, clone, fetch, and repository failures count.
+Local filesystem failures and individual PR, issue, and child reads don't count.
+Skipped reads keep prior state; observed recovery or disablement clears it, and
+archived or untracked repositories drop out. Counts are approximate: state stays
+in memory, so a restart can count a failing repository twice. These properties
 identify no repository.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,

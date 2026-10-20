@@ -11,7 +11,6 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
-	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
@@ -19,11 +18,7 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var (
-	syncSources      = telemetry.SyncSources
-	syncReasons      = telemetry.SyncReasons
-	syncScopeSources = map[failScope]string{failMR: "merge_requests", failIssues: "issues"}
-)
+var syncScopeSources = map[failScope]string{failMR: "merge_requests", failIssues: "issues"}
 
 type syncPassKey struct{}
 
@@ -41,7 +36,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
-	if source != "refs" && isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
+	if isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	p.mu.Lock()
@@ -104,7 +99,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if s.syncFailures == nil {
 		s.syncFailures = make(map[string]map[string]bool)
 	}
-	for _, source := range syncSources {
+	for _, source := range telemetry.SyncSources {
 		live := make(map[string]bool, len(tracked))
 		s.featureCooldowns.mu.Lock()
 		for _, repo := range tracked {
@@ -148,7 +143,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	return reason != "" && (current == "" || slices.Index(syncReasons, reason) < slices.Index(syncReasons, current))
+	return reason != "" && (current == "" || slices.Index(telemetry.SyncReasons, reason) < slices.Index(telemetry.SyncReasons, current))
 }
 
 // syscall.Errno satisfies net.Error, so callers must rule out local
@@ -159,6 +154,7 @@ func isLocalFilesystemFailure(err error) bool {
 }
 
 func syncFailureReason(err error) string {
+	_, networkError := errors.AsType[net.Error](err)
 	switch {
 	case errors.Is(err, platform.ErrRateLimited):
 		return "rate_limited"
@@ -166,13 +162,12 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
+	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err):
+		return "network"
 	case errors.Is(err, platform.ErrProviderContract):
 		return "provider"
 	}
 	status := platformgithub.StatusCode(err)
-	if response, ok := errors.AsType[*gitlab.ErrorResponse](err); ok {
-		status = response.StatusCode
-	}
 	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
 		status = response.StatusCode
 	}
@@ -181,7 +176,6 @@ func syncFailureReason(err error) string {
 	}
 	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
-	_, networkError := errors.AsType[net.Error](err)
 	switch {
 	case primaryLimit, secondaryLimit, status == 429:
 		return "rate_limited"
@@ -189,11 +183,11 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case status == 404:
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err), gitclone.IsTransientGitError(err):
+	case gitclone.IsNetworkGitError(err):
 		return "network"
 	case status >= 400 && status < 500:
 		return "other"
-	case status >= 500 && status < 600:
+	case status >= 500 && status < 600, gitclone.IsServerGitError(err):
 		return "provider"
 	default:
 		return "other"

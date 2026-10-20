@@ -12,12 +12,15 @@ import (
 // re-issued before surfacing the error to the caller.
 const retryAttempts = internalretry.DefaultMaxTries
 
-var transientGitErrorSubstrings = []string{
+var serverGitErrorSubstrings = []string{
 	"internal server error",
 	"returned error: 500",
 	"returned error: 502",
 	"returned error: 503",
 	"returned error: 504",
+}
+
+var networkGitErrorSubstrings = []string{
 	"connection reset",
 	"connection refused",
 	"could not resolve host",
@@ -34,11 +37,25 @@ var transientGitErrorSubstrings = []string{
 // repo is healthy; retrying inside the same sync cycle usually succeeds and
 // avoids dropping a full sync window.
 func IsTransientGitError(err error) bool {
+	return IsServerGitError(err) || IsNetworkGitError(err)
+}
+
+// IsServerGitError reports whether git stderr indicates an HTTP server failure.
+func IsServerGitError(err error) bool {
+	return matchesGitError(err, serverGitErrorSubstrings)
+}
+
+// IsNetworkGitError reports whether git stderr indicates a network failure.
+func IsNetworkGitError(err error) bool {
+	return matchesGitError(err, networkGitErrorSubstrings)
+}
+
+func matchesGitError(err error, substrings []string) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	for _, needle := range transientGitErrorSubstrings {
+	for _, needle := range substrings {
 		if strings.Contains(msg, needle) {
 			return true
 		}

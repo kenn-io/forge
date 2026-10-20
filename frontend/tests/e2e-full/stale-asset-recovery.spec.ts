@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 import { mockApi } from "../e2e/support/mockApi";
 
@@ -64,6 +64,15 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     if (!entrypointMatch || !currentEntrypointPath) throw new Error("Frontend entrypoint not found in test shell");
 
     currentEntrypointUrl ||= new URL(currentEntrypointPath, route.request().url()).href;
+    // The chunk that imports Mermaid moves as the bundler regroups shared
+    // modules, and it can load in parallel with the entrypoint. Find the core
+    // chunk in the build output before the reload so every chunk is rewritten.
+    if (!currentMermaidCoreUrl) {
+      const assets = await readdir(new URL("../../dist/assets/", import.meta.url));
+      const mermaidCoreFilename = assets.find((name) => /^mermaid\.core-[A-Za-z0-9_-]+\.js$/.test(name));
+      if (!mermaidCoreFilename) throw new Error("Mermaid core chunk not found in the frontend build");
+      currentMermaidCoreUrl = new URL(mermaidCoreFilename, currentEntrypointUrl).href;
+    }
     const updatedEntrypoint = entrypointMatch[0].replace(currentEntrypointPath, updatedEntrypointPath);
     await route.fulfill({
       status: 200,
@@ -75,10 +84,6 @@ test("reloads an outdated frontend before rendering a Mermaid diagram", async ({
     if (!currentEntrypointUrl) throw new Error("Current frontend entrypoint URL not captured");
 
     const body = await readFile(distAssetUrl(currentEntrypointUrl), "utf8");
-    const mermaidCoreFilename = body.match(/mermaid\.core-[A-Za-z0-9_-]+\.js/)?.[0];
-    if (!mermaidCoreFilename) throw new Error("Mermaid core chunk not found in frontend entrypoint");
-
-    currentMermaidCoreUrl = new URL(mermaidCoreFilename, currentEntrypointUrl).href;
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",

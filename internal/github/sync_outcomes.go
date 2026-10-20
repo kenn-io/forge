@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -150,7 +151,22 @@ func higherSyncFailureReason(reason, current string) bool {
 // filesystem failures before treating a net.Error as a network one.
 func isLocalFilesystemFailure(err error) bool {
 	_, pathErr := errors.AsType[*fs.PathError](err)
-	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS)
+	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || gitclone.IsLocalGitError(err)
+}
+
+// providerStatusCode returns the HTTP status carried by a provider error
+// that has no platform error code.
+func providerStatusCode(err error) int {
+	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
+		return response.StatusCode
+	}
+	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
+		return response.StatusCode
+	}
+	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
+		return response.StatusCode
+	}
+	return platformgithub.StatusCode(err)
 }
 
 func syncFailureReason(err error) string {
@@ -167,13 +183,7 @@ func syncFailureReason(err error) string {
 	case errors.Is(err, platform.ErrProviderContract):
 		return "provider"
 	}
-	status := platformgithub.StatusCode(err)
-	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
-		status = response.StatusCode
-	}
-	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
-		status = response.StatusCode
-	}
+	status := providerStatusCode(err)
 	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	switch {

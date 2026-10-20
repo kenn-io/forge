@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -21,12 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
-	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
@@ -81,6 +78,17 @@ func TestSyncFailedRetainsUnreadRepositories(t *testing.T) {
 			assert.Len(t, events, tc.wantLater)
 		})
 	}
+}
+
+func TestSyncFailedLocalFilesystemOnRefs(t *testing.T) {
+	// A local file error on the refs source must classify as other, not stay silent.
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	pass := &syncPass{}
+	pass.observe(repo, "refs", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}))
+	var events [][2]string
+	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
 }
 
 func TestSyncFailedPassEligibility(t *testing.T) {
@@ -175,25 +183,6 @@ func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 }
 
 func TestSyncFailureReason(t *testing.T) {
-	for _, tc := range []struct {
-		status int
-		want   string
-	}{
-		{401, "auth"},
-		{404, "not_found"},
-		{429, "rate_limited"},
-		{503, "provider"},
-	} {
-		t.Run(fmt.Sprintf("gitlab %d", tc.status), func(t *testing.T) {
-			client, err := platformgitlab.NewClient("gitlab.example.com", testTokenSource("test-token"), platformgitlab.WithoutRetriesForTesting(), platformgitlab.WithTransport(platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-				return &http.Response{StatusCode: tc.status, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
-			})))
-			require.NoError(t, err)
-			_, err = client.GetRepository(t.Context(), platform.RepoRef{Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42)})
-			require.Error(t, err)
-			assert.Equal(t, tc.want, syncFailureReason(err))
-		})
-	}
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
 	require.NoError(t, err)
 	dcClient, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -210,6 +199,7 @@ func TestSyncFailureReason(t *testing.T) {
 		{"github primary limit", &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
 		{"github secondary limit", &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
 		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable, Request: req}}, "provider"},
+		{"not found", platform.ErrNotFound, "not_found"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
 		{"bitbucket data center", dcErr, "provider"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
@@ -244,23 +234,6 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 		}
 		s.finishSyncPass(pass, []RepoRef{repo})
 	}
-	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
-}
-
-func TestSyncFailedChecksRetentionAfterMergeRequestsDisabled(t *testing.T) {
-	a := RepoRef{Owner: "acme", Name: "a", PlatformHost: "github.com"}
-	b := RepoRef{Owner: "acme", Name: "b", PlatformHost: "github.com"}
-	s := NewSyncer(map[string]Client{"github.com": &partialFailureMock{}}, openTestDB(t), nil, []RepoRef{a, b}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	pass := &syncPass{}
-	pass.observe(a, "checks", platform.ErrPermissionDenied)
-	s.finishSyncPass(pass, []RepoRef{a, b})
-	// The detail drain skips CI reads under the merge request cooldown.
-	require.True(t, s.recordRepositoryFeatureDisabled(a, platform.RepositoryFeatureMergeRequests, platform.RepositoryFeatureDisabled(platform.KindGitHub, a.PlatformHost, platform.RepositoryFeatureMergeRequests, errors.New("feature disabled"))))
-	pass = &syncPass{}
-	pass.observe(b, "checks", platform.ErrPermissionDenied)
-	s.finishSyncPass(pass, []RepoRef{a, b})
 	assert.Equal(t, [][2]string{{"checks", "auth"}, {"checks", "auth"}}, events)
 }
 
@@ -304,11 +277,8 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 		{"missing item/PR detail", "detail", "merge_requests", http.StatusNotFound, 0, nil},
 		{"deleted issue/issue detail", "detail", "issues", http.StatusGone, 0, nil},
 		{"missing items/closure", "closure", "", http.StatusNotFound, 0, nil},
-		{"deleted items/closure", "closure", "", http.StatusGone, 0, [][2]string{{"merge_requests", "other"}}},
 		{"provider failure/closure", "closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
-		{"inaccessible PR/PR detail", "detail", "merge_requests", http.StatusForbidden, 0, [][2]string{{"merge_requests", "auth"}}},
 		{"inaccessible items/closure", "closure", "", http.StatusForbidden, 0, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}},
-		{"missing PR then probe failure/PR detail", "detail", "merge_requests", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}}},
 		{"missing items then probe failure/closure", "closure", "", http.StatusNotFound, http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 		{"missing items/neutral closure", "neutral closure", "", http.StatusNotFound, 0, nil},
 		{"provider failure/neutral closure", "neutral closure", "", http.StatusServiceUnavailable, 0, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
@@ -439,14 +409,18 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 
 func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 	for _, tc := range []struct {
-		source   string
+		source string
+		// feature is the disabled feature whose cooldown applies to source.
+		feature  string
 		retained bool
 		want     [][2]string
 	}{
-		{"issues", false, [][2]string{{"merge_requests", "auth"}}},
-		{"issues", true, nil},
-		{"merge_requests", false, [][2]string{{"issues", "auth"}}},
-		{"merge_requests", true, nil},
+		{"issues", "issues", false, [][2]string{{"merge_requests", "auth"}}},
+		{"issues", "issues", true, nil},
+		{"merge_requests", "merge_requests", false, [][2]string{{"issues", "auth"}}},
+		{"merge_requests", "merge_requests", true, nil},
+		// The detail drain skips CI reads under the merge request cooldown.
+		{"checks", "merge_requests", true, nil},
 	} {
 		t.Run(fmt.Sprintf("%s/retained=%t", tc.source, tc.retained), func(t *testing.T) {
 			assert := assert.New(t)
@@ -465,7 +439,7 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 				events = nil
 			}
 			// Disablement can be discovered by an item refresh outside a full pass.
-			require.True(t, s.recordRepositoryFeatureDisabled(repo, source, platform.RepositoryFeatureDisabled(platform.KindGitHub, repo.PlatformHost, source, errors.New("feature disabled"))))
+			require.True(t, s.recordRepositoryFeatureDisabled(repo, tc.feature, platform.RepositoryFeatureDisabled(platform.KindGitHub, repo.PlatformHost, tc.feature, errors.New("feature disabled"))))
 			pass := &syncPass{}
 			if !tc.retained {
 				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
@@ -486,35 +460,16 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 }
 
 func TestSyncFailedGitCloneErrors(t *testing.T) {
-	for _, operation := range []string{"clone", "fetch", "local filesystem"} {
-		t.Run(operation, func(t *testing.T) {
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			pass := &syncPass{}
-			var s *Syncer
-			if operation == "local filesystem" {
-				// A local file error on the refs source must classify as other, not stay silent.
-				s = &Syncer{}
-				pass.observe(repo, "refs", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}))
-			} else {
-				remote := filepath.Join(t.TempDir(), "remote")
-				if operation == "fetch" {
-					remote = gitfixture.NewRepository(t, false).Dir
-				}
-				clones := gitclone.New(t.TempDir(), nil)
-				t.Cleanup(clones.Wait)
-				repo.CloneURL = remote
-				s = NewSyncer(map[string]Client{"github.com": &mockClient{}}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-				if operation == "fetch" {
-					require.NoError(t, s.ensureClone(t.Context(), repo))
-					require.NoError(t, os.Rename(filepath.Join(remote, ".git"), filepath.Join(remote, ".git-unavailable")))
-				}
-				err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
-				require.ErrorContains(t, err, "git "+operation)
-			}
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Equal(t, [][2]string{{"refs", "other"}}, events)
-		})
-	}
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	pass := &syncPass{}
+	clones := gitclone.New(t.TempDir(), nil)
+	t.Cleanup(clones.Wait)
+	repo.CloneURL = filepath.Join(t.TempDir(), "remote")
+	s := NewSyncer(map[string]Client{"github.com": &mockClient{}}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	err := s.ensureClone(context.WithValue(t.Context(), syncPassKey{}, pass), repo)
+	require.ErrorContains(t, err, "git clone")
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
 }

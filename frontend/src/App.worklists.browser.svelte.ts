@@ -7,6 +7,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
+import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
 import { WORKLIST_HANDLED_AT, worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
 
 let mounted: MountedBrowserApp | undefined;
@@ -54,6 +55,36 @@ it("refreshes the open list when an agent rewrites it", async () => {
   emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
 
   await expect.element(page.getByRole("heading", { name: "Review queue, rewritten" })).toBeVisible();
+});
+
+it("reads the open list once per poll when lists show agent status", async () => {
+  await page.viewport(1400, 900);
+  const errors: unknown[] = [];
+  const onError = (event: ErrorEvent): void => {
+    errors.push(event.error ?? event.message);
+  };
+  window.addEventListener("error", onError);
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
+  const agentStatusSettings: MockRouteOverride = (request) => {
+    if (request.method !== "GET" || request.url.pathname !== "/api/v1/settings") return null;
+    return jsonResponse({
+      ...mockSettings,
+      workspaces: { ...mockSettings.workspaces, show_agent_status_in_lists: true },
+    });
+  };
+  try {
+    mounted = await mountBrowserApp("/worklists/5", { overrides: [agentStatusSettings, worklistRoutes(server)] });
+    await expect.element(page.getByRole("heading", { name: "Review queue" })).toBeVisible();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    // The poll runs every five seconds, so a second has room for the open and
+    // the first poll, not a read loop.
+    const detailReads = server.requests.filter((request) => request === "GET /api/v1/worklists/5");
+    expect(detailReads.length).toBeLessThanOrEqual(3);
+    expect(errors).toEqual([]);
+  } finally {
+    window.removeEventListener("error", onError);
+  }
 });
 
 it("fits every row in the rail at its narrowest width", async () => {

@@ -189,11 +189,15 @@
   stores = appComposition.stores;
   $effect(() => {
     if (!stores?.settings.getWorkspaceSettings().show_agent_status_in_lists) return;
-    const execution = appRuntime.runCommand(appComposition.listAgentStatusPolling, {
-      operation: "poll list agent status",
-      safeContext: {},
-      onFailure: () => {},
-    });
+    // The first poll runs synchronously here. Untracked, so store state it
+    // reads or writes cannot restart the poll and loop.
+    const execution = untrack(() =>
+      appRuntime.runCommand(appComposition.listAgentStatusPolling, {
+        operation: "poll list agent status",
+        safeContext: {},
+        onFailure: () => {},
+      }),
+    );
     return () => execution.interrupt();
   });
 

@@ -37,12 +37,13 @@ export type HostSlot = "tab" | InlineWorkspaceSurface;
 type InlineClaim = { identity: WorkspaceItemIdentity; ref: WorkspaceRefLite };
 
 /** Every detail surface that can host an inline workspace, for cross-surface cleanup. */
-const INLINE_SURFACES: readonly InlineWorkspaceSurface[] = ["prs", "issues", "activity"];
+const INLINE_SURFACES: readonly InlineWorkspaceSurface[] = ["prs", "issues", "activity", "worklists"];
 
 const PAGE_SURFACE: Partial<Record<string, InlineWorkspaceSurface>> = {
   activity: "activity",
   pulls: "prs",
   issues: "issues",
+  worklists: "worklists",
 };
 
 // A tombstone remembers WHICH workspace was deleted: it must keep masking

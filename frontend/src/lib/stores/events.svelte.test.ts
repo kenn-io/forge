@@ -201,6 +201,16 @@ describe("createEventsStore event dispatch", () => {
     expect(onSyncStatus).not.toHaveBeenCalled();
   });
 
+  it("routes worklists_changed frames with the changed list id", async () => {
+    const onWorklistsChanged = vi.fn(() => Effect.void);
+    const onDataChanged = vi.fn(() => Effect.void);
+    const store = createEventsStore({ onWorklistsChanged, onDataChanged });
+    start(store);
+    emit(await awaitSource(), "worklists_changed", { data: JSON.stringify({ worklist_id: 12 }) });
+    await vi.waitFor(() => expect(onWorklistsChanged).toHaveBeenCalledWith({ worklist_id: 12 }));
+    expect(onDataChanged).not.toHaveBeenCalled();
+  });
+
   it("fires onReconnectStale for reconnect.stale frames", async () => {
     const onReconnectStale = vi.fn(() => Effect.void);
     const store = createEventsStore({ onReconnectStale });

@@ -211,6 +211,18 @@ const issues = [
   },
 ];
 
+export function mockPullFixture(number: number): (typeof pulls)[number] {
+  const pull = pulls.find((candidate) => candidate.Number === number);
+  if (!pull) throw new Error(`no mock pull #${number}`);
+  return JSON.parse(JSON.stringify(pull));
+}
+
+export function mockIssueFixture(number: number): (typeof issues)[number] {
+  const issue = issues.find((candidate) => candidate.Number === number);
+  if (!issue) throw new Error(`no mock issue #${number}`);
+  return JSON.parse(JSON.stringify(issue));
+}
+
 const repos = [
   {
     ID: 1,
@@ -756,6 +768,10 @@ export function createMockApiHandler(overrides: MockRouteOverride[] = []): MockA
 
     if (method === "GET" && pathname === "/api/v1/settings") {
       return jsonResponse(mockSettings);
+    }
+
+    if (method === "GET" && pathname === "/api/v1/worklists") {
+      return jsonResponse({ worklists: [] });
     }
 
     if (method === "GET" && pathname === "/api/v1/rate-limits") {

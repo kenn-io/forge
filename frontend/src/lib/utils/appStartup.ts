@@ -60,6 +60,10 @@ export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: Ap
       deps.stores.issues.loadIssues();
     });
   }
+  // The store records a failed read; the header just keeps the tab hidden.
+  yield* Effect.forkChild(deps.stores.worklists.refreshSummariesEffect().pipe(Effect.ignore), {
+    startImmediately: true,
+  });
   yield* Effect.forkChild(deps.stores.sync.pollingEffect, { startImmediately: true });
   yield* Effect.forkChild(deps.stores.events.streamEffect, { startImmediately: true });
   return yield* Effect.never;

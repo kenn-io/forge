@@ -1,9 +1,11 @@
 import {
   buildRoutedItemRoute,
+  parseWorklistSelection,
   type IssueRouteRef,
   type NumberedRouteItemRef,
   type RepositoryRouteRef,
   type RoutedItemRef,
+  type WorklistItemSelection,
 } from "../routes.js";
 import { canonicalProvider } from "../api/provider-routes.js";
 
@@ -48,6 +50,7 @@ export type Route =
       anchor?: string | undefined;
     }
   | { page: "workspaces" }
+  | { page: "worklists"; worklistId: number | null; selected?: WorklistItemSelection }
   | {
       page: "pulls";
       view: "list";
@@ -376,6 +379,13 @@ function parseRoute(fullPath: string): Route {
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
   }
+  if (path === "/worklists") return { page: "worklists", worklistId: null };
+  const worklistMatch = path.match(/^\/worklists\/([1-9]\d*)$/);
+  if (worklistMatch) {
+    const selected = parseWorklistSelection(search);
+    return { page: "worklists", worklistId: parseInt(worklistMatch[1]!, 10), ...(selected && { selected }) };
+  }
+  if (path.startsWith("/worklists/")) return { page: "worklists", worklistId: null };
   return { page: "activity" };
 }
 

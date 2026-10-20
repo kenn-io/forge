@@ -22,6 +22,12 @@ export function listItemNoun(kind: ListItemTarget["kind"], count: number): strin
   return count === 1 ? "issue" : "issues";
 }
 
+export function listTargetsNoun(targets: readonly ListItemTarget[], count: number = targets.length): string {
+  const [first] = targets;
+  if (first && targets.every((target) => target.kind === first.kind)) return listItemNoun(first.kind, count);
+  return count === 1 ? "item" : "items";
+}
+
 /** Identifies the item's repository across hosts. */
 export function listItemRepoKey({ item }: ListItemTarget): string {
   return `${item.repo.provider}\0${item.repo.platform_host}\0${item.repo.owner}/${item.repo.name}`;
@@ -272,7 +278,6 @@ export function runListItemAction(
 ): void {
   const first = targets[0];
   if (!first) return;
-  const kind = first.kind;
   // Per-item actions let labels skip repositories whose catalog lacks a label.
   const resolve = typeof actionFor === "function" ? actionFor : () => actionFor;
   const action = resolve(first);
@@ -294,11 +299,11 @@ export function runListItemAction(
           const done = outcomes.length - failures.length;
           if (failures.length === 0) {
             if (action.type === "star" || action.type === "kanban") return;
-            showFlash(`${doneVerbs[action.type]} ${done} ${listItemNoun(kind, done)}.`, { tone: "success" });
+            showFlash(`${doneVerbs[action.type]} ${done} ${listTargetsNoun(targets, done)}.`, { tone: "success" });
             return;
           }
           showFlash(
-            `Could not ${failVerbs[action.type]} ${failures.length} of ${outcomes.length} ${listItemNoun(kind, outcomes.length)}. ${failures.join(" ")}`,
+            `Could not ${failVerbs[action.type]} ${failures.length} of ${outcomes.length} ${listTargetsNoun(targets, outcomes.length)}. ${failures.join(" ")}`,
             { tone: done > 0 ? "warning" : "danger" },
           );
         }),

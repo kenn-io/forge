@@ -572,6 +572,7 @@
     "mobile-pulls",
     "pulls",
     "repos",
+    "worklists",
   ]);
 
   function providerUnavailable(): boolean {
@@ -1462,6 +1463,25 @@
           inlineWorkspace={getInlineWorkspaceController("activity")}
           {workspacePaneControls}
         />
+      {:else if getPage() === "worklists"}
+        {@const route = getRoute()}
+        {#if route.page === "worklists"}
+          {#await import("./lib/views/WorklistView.svelte")}
+            <div class="loading-state" role="status"><Spinner size={18} />Loading worklists</div>
+          {:then { default: WorklistView }}
+            <WorklistView
+              worklistId={route.worklistId}
+              selected={route.selected}
+              inlineWorkspace={getInlineWorkspaceController("worklists")}
+              {workspacePaneControls}
+            />
+          {:catch}
+            <div class="loading-state" role="alert">
+              <span>Could not load worklists.</span>
+              <button type="button" onclick={() => window.location.reload()}>Reload</button>
+            </div>
+          {/await}
+        {/if}
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
       {:else if getPage() === "actions"

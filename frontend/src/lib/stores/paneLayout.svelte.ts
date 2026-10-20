@@ -22,7 +22,7 @@ import { getStackDepth } from "./keyboard/modal-stack.svelte.js";
 import { PANE_SURFACES } from "./pane-surfaces.js";
 import { parseSessionPaneKey, sessionPaneKeyMatchesWorkspace } from "./session-pane-key.js";
 
-export type PaneSurfaceKey = "prs" | "issues" | "activity";
+export type PaneSurfaceKey = "prs" | "issues" | "activity" | "worklists";
 
 /** One entry per pane a surface can show. Lives here, not in the component, so it is re-exportable. */
 export interface PaneTabSpec {

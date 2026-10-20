@@ -159,3 +159,45 @@ function providerRouteParts(ref: ProviderRouteRef): ReturnType<typeof providerRo
     repoPath,
   } satisfies APIProviderRouteRef);
 }
+
+export type WorklistDetailTab = "conversation" | "files";
+
+export type WorklistItemSelection = RoutedItemRef & { detailTab: WorklistDetailTab };
+
+export function buildWorklistsRoute(): string {
+  return "/worklists";
+}
+
+export function buildWorklistRoute(worklistId: number, selected?: WorklistItemSelection | null): string {
+  const route = `/worklists/${encodeURIComponent(worklistId.toString())}`;
+  if (!selected) return route;
+  const params = new URLSearchParams();
+  params.set("selected", `${selected.itemType}:${selected.number}`);
+  params.set("provider", selected.provider);
+  if (selected.platformHost) params.set("platform_host", selected.platformHost);
+  params.set("repo_path", selected.repoPath);
+  if (selected.itemType === "pr" && selected.detailTab === "files") params.set("selected_tab", "files");
+  return `${route}?${params.toString()}`;
+}
+
+export function parseWorklistSelection(search: string): WorklistItemSelection | null {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const match = params.get("selected")?.match(/^(pr|issue):(\d+)$/);
+  const provider = params.get("provider")?.trim();
+  const repoPath = trimSlashes(params.get("repo_path") ?? "");
+  if (!match || !provider) return null;
+  const parts = repoPath.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const itemType = match[1] as "pr" | "issue";
+  const platformHost = params.get("platform_host")?.trim();
+  return {
+    itemType,
+    provider,
+    ...(platformHost && { platformHost }),
+    repoPath,
+    owner: parts.slice(0, -1).join("/"),
+    name: parts[parts.length - 1]!,
+    number: parseInt(match[2]!, 10),
+    detailTab: itemType === "pr" && params.get("selected_tab") === "files" ? "files" : "conversation",
+  };
+}

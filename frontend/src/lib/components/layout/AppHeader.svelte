@@ -28,6 +28,7 @@
     parseActivitySelection,
   } from "../../utils/activitySelection.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
+  import { buildWorklistsRoute } from "../../routes.js";
   import HeaderIconButton from "./HeaderIconButton.svelte";
   import ForgeSelector from "./ForgeSelector.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -95,7 +96,7 @@
   );
 
   const stores = getStores();
-  const { settings, sync } = stores;
+  const { settings, sync, worklists } = stores;
 
   type ModeKey = keyof ModeVisibility;
   type NavDestination =
@@ -106,7 +107,7 @@
     | "pulls"
     | "issues"
     | "workspaces";
-  type NavValue = NavDestination | "settings" | "design-system";
+  type NavValue = NavDestination | "worklists" | "settings" | "design-system";
 
   const modeNavOptions: { value: NavDestination; label: string; mode: ModeKey }[] = [
     { value: "activity", label: "Activity", mode: "activity" },
@@ -257,6 +258,9 @@
       .filter((option) => settings.isModeVisible(option.mode))
       .map(({ value, label }) => ({ id: value, label }));
 
+    if (worklists.getSummaries().length > 0 || getPage() === "worklists") {
+      entries.push({ id: "worklists", label: "Worklists" });
+    }
     if (getPage() === "design-system") {
       entries.push({ id: "design-system", label: "Design system" });
     }
@@ -332,6 +336,9 @@
         navigate(getLastWorkspaceRoute());
       }
     }
+    else if (destination === "worklists") {
+      if (getPage() !== "worklists") navigate(buildWorklistsRoute());
+    }
     else if (destination === "settings") navigate("/settings");
     else if (destination === "design-system") navigate("/design-system");
   }
@@ -344,6 +351,7 @@
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
     else if (value === "workspaces") navigateTab("workspaces");
+    else if (value === "worklists") navigateTab("worklists");
     else if (value === "settings") navigateTab("settings");
     else if (value === "design-system") navigateTab("design-system");
   }

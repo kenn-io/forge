@@ -556,3 +556,46 @@ describe("Activity preferences after Settings", () => {
     expect(restored.get("hide_closed")).toBe(hideClosed);
   });
 });
+
+describe("router /worklists routes", () => {
+  afterEach(() => {
+    navigate("/");
+  });
+
+  it("parses the bare page as no list chosen yet", () => {
+    navigate("/worklists");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+  });
+
+  it("parses a list id with the selected item from the query", () => {
+    navigate(
+      "/worklists/7?selected=pr%3A42&provider=gitlab&platform_host=gitlab.example.com&repo_path=acme%2Fplatform%2Fwidgets&selected_tab=files",
+    );
+    expect(getRoute()).toEqual({
+      page: "worklists",
+      worklistId: 7,
+      selected: {
+        itemType: "pr",
+        provider: "gitlab",
+        platformHost: "gitlab.example.com",
+        repoPath: "acme/platform/widgets",
+        owner: "acme/platform",
+        name: "widgets",
+        number: 42,
+        detailTab: "files",
+      },
+    });
+  });
+
+  it("ignores an incomplete selection and keeps the list", () => {
+    navigate("/worklists/7?selected=issue%3A9&provider=github");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: 7 });
+  });
+
+  it("treats a malformed id as no list chosen", () => {
+    navigate("/worklists/0");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+    navigate("/worklists/abc");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+  });
+});

@@ -280,6 +280,8 @@ function paneSurfaceFor(ctx: Context): PaneSurfaceKey | null {
       return "issues";
     case "activity":
       return "activity";
+    case "worklists":
+      return "worklists";
     default:
       return null;
   }

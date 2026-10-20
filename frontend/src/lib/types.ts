@@ -87,6 +87,7 @@ import type { DaemonStore } from "./stores/roborev/daemon.svelte.js";
 import type { JobsStore } from "./stores/roborev/jobs.svelte.js";
 import type { ReviewStore } from "./stores/roborev/review.svelte.js";
 import type { LogStore } from "./stores/roborev/log.svelte.js";
+import type { WorklistsStore } from "./stores/worklists.svelte.js";
 
 export interface StoreInstances {
   workspaceItemSearch: WorkspaceItemSearchStore;
@@ -104,6 +105,7 @@ export interface StoreInstances {
   settings: SettingsStore;
   events: EventsStore;
   workflowActions: WorkflowActionsStore;
+  worklists: WorklistsStore;
   roborevDaemon?: DaemonStore;
   roborevJobs?: JobsStore;
   roborevReview?: ReviewStore;

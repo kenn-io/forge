@@ -34,6 +34,7 @@
           const ctx = buildContext(stores);
           if (ctx.page === "pulls") return "view-pulls";
           if (ctx.page === "issues") return "view-issues";
+          if (ctx.page === "worklists") return "view-worklists";
           return null;
         })()
       : null,

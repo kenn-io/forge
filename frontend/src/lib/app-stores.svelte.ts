@@ -36,6 +36,7 @@ import { beginRoborevSettingsHydration } from "./stores/roborev-settings-persist
 import { beginACPSettingsHydration } from "./stores/acp-settings-persistence.js";
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
+import { createWorklistsStore } from "./stores/worklists.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
 import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 
@@ -84,6 +85,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const settingsStore = createSettingsStore();
   const workflowActions = createWorkflowActionsStore({ runtime: appRuntime });
   const workspaceItemSearch = createWorkspaceItemSearchStore(appRuntime);
+  const worklistsStore = createWorklistsStore();
   const detailStarProjection: {
     current?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
   } = {};
@@ -200,6 +202,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       });
       yield* refreshVisibleData();
       yield* workspaceItemSearch.refreshEffect;
+      yield* refreshWorklistSummaries();
     });
   }
 
@@ -224,6 +227,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     );
   }
 
+  // Summaries only decide whether the header offers the Worklists tab. The
+  // store records a failed read, so it must not fail the refresh it rides on.
+  function refreshWorklistSummaries() {
+    return observeHubFailure(worklistsStore.refreshSummariesEffect()).pipe(Effect.ignore);
+  }
+
   function refreshVisibleData(refreshDetail = true): Effect.Effect<void, ProviderEventsError, AppServices> {
     switch (gp()) {
       case "terminal":
@@ -246,6 +255,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             },
           ),
         );
+      case "worklists":
+        return refreshDetail ? observeHubFailure(worklistsStore.refreshOpenDetailEffect()) : Effect.void;
       case "focus":
         return observeHubFailure(
           Effect.all([pullsStore.reconcilePullsEffect(), issuesStore.reconcileIssuesEffect()], {
@@ -272,6 +283,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         issuesStore.refreshActiveIssueDetailEffect(),
         syncStore.reconcileSyncStatusEffect,
         workspaceItemSearch.refreshEffect,
+        refreshWorklistSummaries(),
       ],
       { concurrency: "unbounded", discard: true },
     );
@@ -304,6 +316,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             refreshRetainedActivity(),
             issuesStore.refreshActiveIssueDetailEffect(),
             workspaceItemSearch.refreshEffect,
+            refreshWorklistSummaries(),
           ],
           {
             concurrency: "unbounded",
@@ -325,6 +338,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       );
     },
     onConfigChanged: handleConfigChanged,
+    onWorklistsChanged: () => observeHubFailure(worklistsStore.refreshAllEffect()),
     onWorkspaceDeleted: (event) =>
       Effect.gen(function* () {
         yield* Effect.sync(() =>
@@ -451,6 +465,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     settings: settingsStore,
     events: eventsStore,
     workflowActions,
+    worklists: worklistsStore,
   };
 
   let roborevClient: RoborevClient | undefined;

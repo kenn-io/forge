@@ -23,6 +23,7 @@ function makeStores(
   options: {
     readonly syncPolling?: Effect.Effect<never>;
     readonly providerEvents?: Effect.Effect<never>;
+    readonly worklistSummaries?: Effect.Effect<void>;
   } = {},
 ): StoreInstances {
   let terminalSettings = { ...DEFAULT_TERMINAL_SETTINGS };
@@ -76,6 +77,9 @@ function makeStores(
     },
     events: {
       streamEffect: options.providerEvents ?? Effect.never,
+    },
+    worklists: {
+      refreshSummariesEffect: () => options.worklistSummaries ?? Effect.void,
     },
   } as unknown as StoreInstances;
 }
@@ -158,6 +162,18 @@ it.layer(SuccessfulStartup)("application startup hydration", (it) => {
 
         assert.strictEqual(syncReleased, true);
         assert.strictEqual(eventsReleased, true);
+      }),
+    ),
+  );
+
+  it.effect("reads worklist summaries at startup so the header can offer the tab", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const summariesRead = yield* Deferred.make<void>();
+        const stores = makeStores({ worklistSummaries: Deferred.succeed(summariesRead, undefined) });
+        yield* Effect.forkScoped(appStartupProgram({ stores, onReady: () => {} }));
+
+        yield* Deferred.await(summariesRead);
       }),
     ),
   );

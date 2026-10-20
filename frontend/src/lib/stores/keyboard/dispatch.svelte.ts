@@ -19,6 +19,7 @@ const SCOPE_SPECIFICITY: Record<Action["scope"], number> = {
   detail: 30,
   "view-pulls": 20,
   "view-issues": 20,
+  "view-worklists": 20,
   global: 10,
 };
 

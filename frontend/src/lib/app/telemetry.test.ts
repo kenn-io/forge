@@ -25,6 +25,7 @@ describe("visible screen names", () => {
     ["/settings", "settings"],
     ["/project-intake", "project-intake"],
     ["/design-system", "design-system"],
+    ["/worklists/3", "worklists"],
     ["/m/activity", "activity"],
     ["/m/pulls", "pulls"],
     ["/m/issues", "issues"],

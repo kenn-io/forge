@@ -1,9 +1,10 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { PullRequest } from "../api/types.js";
+import { dismissFlash, getFlashes } from "./flash.svelte.js";
+import type { Issue, PullRequest } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { runListItemAction } from "./item-actions.js";
+import { listTargetsNoun, runListItemAction } from "./item-actions.js";
 import { ProviderMutations } from "./ordered-mutations.js";
 import { providerMutationKey } from "./provider-key.js";
 
@@ -66,5 +67,70 @@ describe("sidebar item actions", () => {
     expect(earlierCommitted).toHaveBeenCalledOnce();
     expect(updatePrLabels).toHaveBeenCalledOnce();
     expect(updatePrLabels.mock.calls[0]?.[1]).toEqual({ add: ["docs"], remove: [] });
+  });
+});
+
+describe("sidebar item actions on a mixed selection", () => {
+  let runtime: OwnedAppRuntime;
+  const setPrGithubState = vi.fn();
+  const setIssueGithubState = vi.fn();
+
+  beforeEach(() => {
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    setPrGithubState.mockReset().mockResolvedValue({});
+    setIssueGithubState.mockReset().mockResolvedValue({});
+    runtime = makeAppRuntime(
+      makeGeneratedClient({ PullRequestsService: { setPrGithubState }, IssuesService: { setIssueGithubState } }),
+    );
+  });
+
+  afterEach(async () => {
+    await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  it("names pull requests and issues together as items", async () => {
+    const issue = { ...pull, Number: 7 } as unknown as Issue;
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [
+        { kind: "pull", item: pull },
+        { kind: "issue", item: issue },
+      ],
+      { type: "close" },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(setPrGithubState.mock.calls[0]?.[0]).toMatchObject({ number: 21 });
+    expect(setIssueGithubState.mock.calls[0]?.[0]).toMatchObject({ number: 7 });
+    expect(getFlashes().map((flash) => flash.message)).toContain("Closed 2 items.");
+  });
+});
+
+describe("listTargetsNoun", () => {
+  it("follows the kinds in the selection", () => {
+    const issue = { ...pull, Number: 7 } as unknown as Issue;
+    expect(listTargetsNoun([{ kind: "pull", item: pull }], 2)).toBe("PRs");
+    expect(listTargetsNoun([{ kind: "issue", item: issue }], 3)).toBe("issues");
+    expect(
+      listTargetsNoun(
+        [
+          { kind: "pull", item: pull },
+          { kind: "issue", item: issue },
+        ],
+        5,
+      ),
+    ).toBe("items");
+    expect(
+      listTargetsNoun(
+        [
+          { kind: "pull", item: pull },
+          { kind: "issue", item: issue },
+        ],
+        1,
+      ),
+    ).toBe("item");
   });
 });

@@ -22,6 +22,7 @@ import {
   type WorkspaceDeletedEvent,
   type WorkspaceStatusEvent,
   type WorkflowDispatchProgressEvent,
+  type WorklistsChangedEvent,
 } from "./provider-events-workflow.js";
 
 export interface EventsStoreOptions {
@@ -57,6 +58,7 @@ export interface EventsStoreOptions {
   readonly onDeferredMergeCompleted?: (
     event: DeferredMergeCompletedEvent,
   ) => Effect.Effect<void, ProviderEventsError, AppServices>;
+  readonly onWorklistsChanged?: (event: WorklistsChangedEvent) => Effect.Effect<void, ProviderEventsError, AppServices>;
   readonly onWorkflowDispatchProgress?: (
     event: WorkflowDispatchProgressEvent,
   ) => Effect.Effect<void, ProviderEventsError, AppServices>;
@@ -132,6 +134,8 @@ export function createEventsStore(opts: EventsStoreOptions) {
           return opts.onDeferredMergeCompleted?.(event.payload) ?? Effect.void;
         case "workflow_dispatch_progress":
           return opts.onWorkflowDispatchProgress?.(event.payload) ?? Effect.void;
+        case "worklists_changed":
+          return opts.onWorklistsChanged?.(event.payload) ?? Effect.void;
         case "workspace_diff_ready":
         case "workspace_diff_changed":
         case "workflow_runs_changed":

@@ -16,6 +16,10 @@ const mockedSync = vi.hoisted(() => ({
   triggerRepoSync: vi.fn((_repo: string) => Promise.resolve()),
 }));
 
+const mockedWorklists = vi.hoisted(() => ({
+  summaries: [] as Array<{ id: number; title: string }>,
+}));
+
 const mockedSettings = vi.hoisted(() => ({
   value: undefined as
     | {
@@ -55,6 +59,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         triggerRepoSync: mockedSync.triggerRepoSync,
       },
       settings: mockedSettings.value,
+      worklists: { getSummaries: () => mockedWorklists.summaries },
     }),
   };
 });
@@ -130,6 +135,7 @@ describe("AppHeader", () => {
     mockedSync.triggerRepoSync.mockClear();
     setGlobalRepo(undefined);
     mockedSettings.value = createSettingsStore();
+    mockedWorklists.summaries = [];
     resetPaletteState();
   });
 
@@ -347,6 +353,31 @@ describe("AppHeader", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Actions" })).toBeNull());
 
     view.unmount();
+  });
+
+  it("offers Worklists only while an agent has written one", () => {
+    initTheme();
+    render(AppHeader);
+
+    expect(screen.queryByRole("button", { name: "Worklists" })).toBeNull();
+  });
+
+  it("navigates to the newest worklist from the Worklists tab", async () => {
+    initTheme();
+    mockedWorklists.summaries = [{ id: 4, title: "Review queue" }];
+    render(AppHeader);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Worklists" }));
+
+    expect(window.location.pathname).toBe("/worklists");
+  });
+
+  it("keeps the Worklists tab current on the worklists page after the last list is dismissed", () => {
+    initTheme();
+    navigate("/worklists/4");
+    render(AppHeader);
+
+    expect(screen.getByRole("button", { name: "Worklists" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("marks the Workspaces tab current on terminal routes", () => {

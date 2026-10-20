@@ -63,4 +63,9 @@ export const PANE_SURFACES: Record<PaneSurfaceKey, PaneSurfaceDefinition> = {
     defaultTree: () => stackedTree([["conversation", "files", "commit"], ["workspace"]]),
     keepIfStored: isSessionPaneKey,
   },
+  worklists: {
+    tabs: ["conversation", "files", "workspace"],
+    defaultTree: () => stackedTree([["conversation", "files"], ["workspace"]]),
+    keepIfStored: isSessionPaneKey,
+  },
 };

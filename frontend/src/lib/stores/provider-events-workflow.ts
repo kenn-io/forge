@@ -68,6 +68,10 @@ export class WorkspaceDeletedEvent extends Schema.Class<WorkspaceDeletedEvent>("
   item_type: Schema.String,
 }) {}
 
+export class WorklistsChangedEvent extends Schema.Class<WorklistsChangedEvent>("WorklistsChangedEvent")({
+  worklist_id: Schema.Number,
+}) {}
+
 export class WorkspacePRRefreshQueuedEvent extends Schema.Class<WorkspacePRRefreshQueuedEvent>(
   "WorkspacePRRefreshQueuedEvent",
 )({
@@ -200,7 +204,8 @@ export type ProviderEvent =
   | { readonly type: "pr_ci_refreshed"; readonly payload: PRCIRefreshedEvent }
   | { readonly type: "deferred_merge_completed"; readonly payload: DeferredMergeCompletedEvent }
   | { readonly type: "workflow_runs_changed"; readonly payload: WorkflowRunsChangedEvent }
-  | { readonly type: "workflow_dispatch_progress"; readonly payload: WorkflowDispatchProgressEvent };
+  | { readonly type: "workflow_dispatch_progress"; readonly payload: WorkflowDispatchProgressEvent }
+  | { readonly type: "worklists_changed"; readonly payload: WorklistsChangedEvent };
 
 export type ProviderEventsError = ApiProblemError | InvalidExternalPayload | TransientTransportError;
 
@@ -311,6 +316,7 @@ const providerEventTypes: ReadonlyArray<ProviderEventType> = [
   "deferred_merge_completed",
   "workflow_dispatch_progress",
   "workflow_runs_changed",
+  "worklists_changed",
 ];
 
 interface ProviderEventFrame {
@@ -408,6 +414,13 @@ const decodeProviderEvent = Effect.fn("ProviderEvents.decodeFrame")(function* (f
       return {
         type: frame.type,
         payload: yield* Schema.decodeUnknownEffect(WorkspaceDiffEvent)(payload).pipe(
+          Effect.mapError((cause) => invalidFrame(frame, cause)),
+        ),
+      } satisfies ProviderEvent;
+    case "worklists_changed":
+      return {
+        type: "worklists_changed",
+        payload: yield* Schema.decodeUnknownEffect(WorklistsChangedEvent)(payload).pipe(
           Effect.mapError((cause) => invalidFrame(frame, cause)),
         ),
       } satisfies ProviderEvent;

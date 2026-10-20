@@ -32,7 +32,7 @@ export function canonicalItemType(itemType: string): string {
   return ITEM_TYPE_ALIASES[itemType] ?? itemType;
 }
 
-export type InlineWorkspaceSurface = "activity" | "prs" | "issues";
+export type InlineWorkspaceSurface = "activity" | "prs" | "issues" | "worklists";
 
 export type InlineDockMode = "split" | "collapsed" | "expanded";
 

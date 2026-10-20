@@ -32,8 +32,8 @@
   import {
     actionEligibility,
     listItemLabel,
-    listItemNoun,
     listItemRepoKey,
+    listTargetsNoun,
     runListItemAction,
     type ListItemAction,
     type ListItemTarget,
@@ -91,6 +91,7 @@
   };
 
   const kind = $derived(targets[0]?.kind ?? "pull");
+  const noun = (count: number) => listTargetsNoun(targets, count);
   const count = $derived(targets.length);
   const multi = $derived(count > 1);
   const quickActions = $derived(sortQuickActionsByLabel(settings.getQuickActions()));
@@ -121,9 +122,9 @@
   }
 
   function countLabel(verb: string, eligibleCount: number): string {
-    if (!multi) return `${verb} ${listItemNoun(kind, 1)}`;
-    if (eligibleCount === count || eligibleCount === 0) return `${verb} ${count} ${listItemNoun(kind, count)}`;
-    return `${verb} ${eligibleCount} of ${count} ${listItemNoun(kind, count)}`;
+    if (!multi) return `${verb} ${noun(1)}`;
+    if (eligibleCount === count || eligibleCount === 0) return `${verb} ${count} ${noun(count)}`;
+    return `${verb} ${eligibleCount} of ${count} ${noun(count)}`;
   }
 
   function finish(): void {
@@ -182,8 +183,8 @@
   }
 
   const allStarred = $derived(targets.every((target) => target.item.Starred));
-  const commonKanban = $derived.by(() => {
-    const statuses = new Set(targets.map((target) => (target.kind === "pull" ? target.item.KanbanStatus : "")));
+  const commonPullKanban = $derived.by(() => {
+    const statuses = new Set(targets.flatMap((target) => (target.kind === "pull" ? [target.item.KanbanStatus] : [])));
     return statuses.size === 1 ? [...statuses][0] ?? "" : "";
   });
 
@@ -402,7 +403,7 @@
     const [only] = edit.targets;
     const subject = edit.targets.length === 1 && only
       ? listItemLabel(only)
-      : `${edit.targets.length} ${listItemNoun(kind, edit.targets.length)}`;
+      : `${edit.targets.length} ${listTargetsNoun(edit.targets)}`;
     return `${edit.field === "labels" ? "Labels" : "Assignees"} for ${subject}`;
   }
 
@@ -452,7 +453,7 @@
 
 <Menu bind:open {anchor} {returnFocus} class="item-actions-menu-root">
   <MenuContent
-    ariaLabel={multi ? `Actions for ${count} ${listItemNoun(kind, count)}` : `${kind === "pull" ? "Pull request" : "Issue"} actions`}
+    ariaLabel={multi ? `Actions for ${count} ${noun(count)}` : `${kind === "pull" ? "Pull request" : "Issue"} actions`}
     class="item-actions-menu"
   >
     {#if !multi}
@@ -467,7 +468,7 @@
     </MenuItem>
     <MenuItem disabled={running} onselect={() => run(targets, { type: "star", starred: !allStarred })}>
       {#snippet icon()}<StarIcon size={14} />{/snippet}
-      {allStarred ? "Unstar" : "Star"}{multi ? ` ${count} ${listItemNoun(kind, count)}` : ""}
+      {allStarred ? "Unstar" : "Star"}{multi ? ` ${count} ${noun(count)}` : ""}
     </MenuItem>
 
     {@const labels = plan("labels")}
@@ -490,12 +491,13 @@
       </MenuItem>
     {/if}
 
-    {#if kind === "pull"}
+    {@const kanban = plan("kanban")}
+    {#if kanban.offered}
       <MenuSeparator />
       <MenuRadioGroup
-        ariaLabel="Workflow status"
-        value={commonKanban}
-        onchange={(status) => run(targets, { type: "kanban", status: status as KanbanStatus })}
+        ariaLabel={kanban.eligible.length === count ? "Workflow status" : `Workflow status for ${kanban.eligible.length} ${listTargetsNoun(kanban.eligible)}`}
+        value={commonPullKanban}
+        onchange={(status) => run(kanban.eligible, { type: "kanban", status: status as KanbanStatus })}
       >
         {#each kanbanOptions as option (option.value)}
           <MenuRadioItem value={option.value} disabled={running} closeOnSelect>{option.label}</MenuRadioItem>
@@ -519,7 +521,7 @@
         <MenuItem disabled={reason !== "" || running} textValue={action.label} onselect={() => chooseQuickAction(action)}>
           {#snippet icon()}<ZapIcon size={14} />{/snippet}
           {#snippet trailing()}{reason || agentLabel(action)}{/snippet}
-          {multi ? `${action.label} on ${count} ${listItemNoun(kind, count)}...` : action.label}
+          {multi ? `${action.label} on ${count} ${noun(count)}...` : action.label}
         </MenuItem>
       {/each}
     {/if}
@@ -534,11 +536,11 @@
 <ConfirmDialog
   open={confirmState !== null}
   title={confirmState
-    ? `${stateActionVerbs[confirmState.action]} ${confirmState.targets.length} ${listItemNoun(kind, confirmState.targets.length)}?`
+    ? `${stateActionVerbs[confirmState.action]} ${confirmState.targets.length} ${listTargetsNoun(confirmState.targets)}?`
     : ""}
   message={confirmState ? `${stateActionVerbs[confirmState.action]} ${itemList(confirmState.targets)}?` : ""}
   confirmLabel={confirmState
-    ? `${stateActionVerbs[confirmState.action]} ${confirmState.targets.length} ${listItemNoun(kind, confirmState.targets.length)}`
+    ? `${stateActionVerbs[confirmState.action]} ${confirmState.targets.length} ${listTargetsNoun(confirmState.targets)}`
     : ""}
   pendingLabel="Updating…"
   busy={running}
@@ -550,12 +552,12 @@
 
 <ConfirmDialog
   open={confirmQuickAction !== null}
-  title={`Run "${confirmQuickAction?.action.label ?? ""}" on ${confirmQuickAction?.targets.length ?? 0} ${listItemNoun(kind, 2)}?`}
+  title={`Run "${confirmQuickAction?.action.label ?? ""}" on ${confirmQuickAction?.targets.length ?? 0} ${listTargetsNoun(confirmQuickAction?.targets ?? [], 2)}?`}
   message={confirmQuickAction ? `Run "${confirmQuickAction.action.label}" on ${itemList(confirmQuickAction.targets)}?` : ""}
   hint={confirmQuickAction
     ? `Each gets a workspace, reusing one that already exists, and ${agentLabel(confirmQuickAction.action)} starts with the action's prompt.`
     : undefined}
-  confirmLabel={`Run on ${confirmQuickAction?.targets.length ?? 0} ${listItemNoun(kind, 2)}`}
+  confirmLabel={`Run on ${confirmQuickAction?.targets.length ?? 0} ${listTargetsNoun(confirmQuickAction?.targets ?? [], 2)}`}
   frameId="item-quick-action-confirm"
   onCancel={() => { confirmQuickAction = null; }}
   onConfirm={() => { if (confirmQuickAction) runQuick(confirmQuickAction.action, confirmQuickAction.targets); }}

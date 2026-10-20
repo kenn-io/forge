@@ -49,7 +49,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		p.results[source] = make(map[string]string)
 	}
 	key := mergeQueueRepoKey(repo)
-	if p.results[source][key] == "" {
+	if higherSyncFailureReason(reason, p.results[source][key]) || p.results[source][key] == "" {
 		p.results[source][key] = reason
 	}
 }
@@ -66,17 +66,6 @@ func (s *Syncer) observeSyncItem(ctx context.Context, repo RepoRef, source strin
 	if syncFailureReason(err) != "not_found" && !errors.Is(err, platform.ErrLookupInaccessible) {
 		s.observeSync(ctx, repo, source, err)
 	}
-}
-
-// observeMergeRequestFetch records the lookup-classified outcome of a
-// single-PR read, or the raw error when none applies, and returns the outcome.
-func (s *Syncer) observeMergeRequestFetch(ctx context.Context, repo RepoRef, number int, pr *gh.PullRequest, err error) error {
-	outcomeErr := s.mergeRequestFetchOutcomeError(ctx, repo, number, pr, err)
-	if outcomeErr != nil {
-		err = outcomeErr
-	}
-	s.observeSyncItem(ctx, repo, "merge_requests", err)
-	return outcomeErr
 }
 
 func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error) {
@@ -109,7 +98,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		return
 	}
 	if s.syncFailures == nil {
-		s.syncFailures = make(map[string]map[string]bool)
+		s.syncFailures = make(map[string]bool)
 	}
 	for _, source := range syncSources {
 		live := make(map[string]bool, len(tracked))
@@ -121,39 +110,31 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			}
 		}
 		s.featureCooldowns.mu.Unlock()
-		failures := s.syncFailures[source]
-		if failures == nil {
-			failures = make(map[string]bool)
-			s.syncFailures[source] = failures
-		}
-		for key := range failures {
-			if !live[key] {
-				delete(failures, key)
-			}
-		}
-		// Only repositories that start failing count, so one repository that
-		// keeps failing does not hide outages in the others.
-		var reasons []string
-		for key, reason := range pass.results[source] {
+		observed := false
+		reason := ""
+		for key, result := range pass.results[source] {
 			if !live[key] {
 				continue
 			}
-			if reason == "" {
-				delete(failures, key)
-			} else if !failures[key] {
-				reasons = append(reasons, reason)
-				failures[key] = true
+			observed = true
+			if higherSyncFailureReason(result, reason) {
+				reason = result
 			}
 		}
-		if s.onSyncFailed != nil {
-			for _, reason := range syncReasons {
-				if slices.Contains(reasons, reason) {
-					s.onSyncFailed(source, reason)
-					break
-				}
+		if reason != "" {
+			if !s.syncFailures[source] && s.onSyncFailed != nil {
+				s.onSyncFailed(source, reason)
 			}
+			s.syncFailures[source] = true
+		} else if observed {
+			delete(s.syncFailures, source)
 		}
 	}
+}
+
+// An empty reason represents success and ranks below every failure.
+func higherSyncFailureReason(reason, current string) bool {
+	return reason != "" && (current == "" || slices.Index(syncReasons, reason) < slices.Index(syncReasons, current))
 }
 
 // syscall.Errno satisfies net.Error, so callers must rule out local

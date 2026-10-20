@@ -177,11 +177,12 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 // Reconnect only this workspace. Failed restoration leaves its stored identity
 // available for another attempt instead of silently creating a fresh chat.
 // Chats idle stop stopped wait for a page view to resume them.
-func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd string) {
+func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd string) error {
 	err := s.openWorkspaceACP(ctx, workspaceID, cwd, "", nil)
 	if err != nil && !errors.Is(err, errWorkspaceACPNotAdmitted) {
 		slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "err", err)
 	}
+	return err
 }
 
 // errWorkspaceACPNotAdmitted reports that setup or deletion owns the workspace.
@@ -206,6 +207,7 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		return fmt.Errorf("list ACP sessions: %w", err)
 	}
 	idle := s.idle.Load()
+	var restoreErr error
 	for _, item := range stored {
 		if item.Kind != string(localruntime.LaunchTargetACP) || item.SessionKey == skip ||
 			s.runtime.Exited(item.SessionKey) || s.chatCannotReload(item.SessionKey) || idle.Stopped(ctx, item) {
@@ -213,6 +215,7 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		}
 		if err := s.reloadACP(ctx, cwd, item); err != nil {
 			slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "session_key", item.SessionKey, "err", err)
+			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, err))
 			continue
 		}
 		if err := s.recordResumedACP(ctx, item); err != nil {
@@ -223,7 +226,7 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		s.finishChatRestore(item)
 	}
 	if then == nil {
-		return nil
+		return restoreErr
 	}
 	return then(stored)
 }

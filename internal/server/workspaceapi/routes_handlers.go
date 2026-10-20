@@ -2608,7 +2608,7 @@ func (s *Handler) GetWorkspaceRuntimeService(
 	if viewing {
 		s.idle.Load().Viewed(&summary.Workspace)
 	}
-	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	_ = s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
 		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())

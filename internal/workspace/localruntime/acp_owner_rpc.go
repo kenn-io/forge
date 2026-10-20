@@ -11,9 +11,14 @@ import (
 	"time"
 )
 
+// Increment when the owner chat frames or RPC contracts change incompatibly.
+// Owners outlive the daemon; attaching a new UI must not reuse an old decoder.
+const acpOwnerProtocol = 1
+
 type (
 	ACPWatch  struct{ Revision uint64 }
 	ACPUpdate struct {
+		Protocol int
 		Revision uint64
 		State    []byte
 		Exited   bool
@@ -38,7 +43,7 @@ func (o *acpOwnerRPC) Snapshot(_ struct{}, reply *ACPUpdate) error {
 	// Sorted map keys keep agent-provided objects, such as form schemas,
 	// stable across snapshots.
 	data, err := json.Marshal(o.agent.publishedStateLocked(), json.Deterministic(true))
-	*reply = ACPUpdate{Revision: o.agent.revision, State: data, ExitCode: o.agent.exitCode}
+	*reply = ACPUpdate{Protocol: acpOwnerProtocol, Revision: o.agent.revision, State: data, ExitCode: o.agent.exitCode}
 	select {
 	case <-o.agent.done:
 		reply.Exited = true

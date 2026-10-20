@@ -191,7 +191,7 @@ func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string
 	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
 		return chat, nil
 	}
-	s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	_ = s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
 		return chat, nil
 	}

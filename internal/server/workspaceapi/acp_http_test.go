@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/stretchr/testify/assert"
@@ -25,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -43,10 +45,11 @@ type chatOwner struct {
 	code        string
 	unavailable bool
 	refusal     string
+	protocol    int
 }
 
 func newChatOwner(generation string, messages ...string) *chatOwner {
-	owner := &chatOwner{exited: make(chan struct{}), state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
+	owner := &chatOwner{exited: make(chan struct{}), protocol: 1, state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
 	for _, text := range messages {
 		owner.state.Messages = append(owner.state.Messages, localruntime.ACPMessage{Role: "assistant", Text: text})
 	}
@@ -56,6 +59,42 @@ func newChatOwner(generation string, messages ...string) *chatOwner {
 func (o *chatOwner) exit() { o.once.Do(func() { close(o.exited) }) }
 
 func (o *chatOwner) Bind(localruntime.ACPMCPBinding, *struct{}) error { return nil }
+
+func (o *chatOwner) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	data, err := json.Marshal(o.state)
+	reply.Protocol = o.protocol
+	reply.State = data
+	return err
+}
+
+func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
+	t.Parallel()
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(false)
+	owner := newChatOwner("old", "Saved conversation")
+	owner.protocol = 0
+	f.serve(owner)
+	mux := http.NewServeMux()
+	f.handler.RegisterTerminal(humago.New(mux, huma.DefaultConfig("test", "1")))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp", nil, nil) //nolint:bodyclose // upgraded response has no body
+	require.NoError(t, err)
+	defer conn.Close(websocket.StatusNormalClosure, "test done")
+	_, data, err := conn.Read(ctx)
+	require.NoError(t, err)
+	var state localruntime.ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	assert.False(t, state.Connected)
+	assert.Contains(t, state.Error, "protocol 0")
+	assert.Contains(t, state.Error, "does not confirm native session resume")
+	assert.Contains(t, state.Error, chatKey)
+	assert.NotContains(t, state.Error, "Saved conversation")
+}
 
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
 	<-o.exited

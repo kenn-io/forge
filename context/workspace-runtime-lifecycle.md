@@ -49,9 +49,11 @@ Rules:
 - On Windows the ACP agent shares its parent's console: acp-owner's ConPTY for workspace
   agents, or the daemon's console for the settings test handshake (`Manager.TestACP`). Only a
   parent with no console launches it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).
-- Owner-to-client ACP state changes are not bridged across upgrades: an owner started by an
-  older binary may fail under a newer UI until the agent is relaunched. Do not add
-  compatibility fallbacks for it (maintainer decision; `frontend/src/lib/components/acp/chat-types.ts::ChatStateSchema`).
+- ACP owners outlive the daemon. Check their protocol before attachment; park and reload
+  incompatible idle, resumable owners without deleting their transcript or native session.
+  Active/pending work and owners without confirmed resume support stay running with an
+  actionable recovery error. Increment the owner protocol for incompatible RPC/frame changes;
+  do not translate old frames (`internal/workspace/localruntime/acp_upgrade.go::Manager.replaceACPOwner`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed, even before its
@@ -165,8 +167,11 @@ Rules:
 - Publish streamed ACP text only in finished markdown blocks, paced at 400 ms and released
   before tool activity, when the agent goes quiet, and at turn end; never per token
   (`internal/workspace/localruntime/acp_delivery.go::ACP.deliverTextLocked`).
+- A saved chat that previously supported native resume must fail rather than silently lose
+  agent context if the replacement no longer supports it
+  (`internal/workspace/localruntime/acp.go::startACPSession`).
 - The saved ACP transcript is the conversation of record: drop `session/load` replay, and
-  continue in a new session when the agent lacks `loadSession`. A chat a coordinator holds
+  continue in a new session only when the agent never supported `loadSession`. A chat a coordinator holds
   never falls back to a new native session: the start fails with `ErrACPCannotReload`, which
   the owner records for the waiting daemon, and the saved session stays. A taken-over chat
   falls back like any person's chat

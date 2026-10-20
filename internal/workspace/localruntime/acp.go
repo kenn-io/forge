@@ -399,10 +399,10 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		a.state.SteeringSupported = steering["supported"] == true
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
-		// An agent that cannot load sessions continues a saved conversation
-		// no coordinator holds in a new session rather than failing to start.
-		// A taken-over chat is a person's chat, so it continues too.
-		if saved != nil && saved.State.Supervision.held() && !initialized.AgentCapabilities.LoadSession {
+		// Never silently discard native context after an agent previously
+		// supported resume. A chat that never supported it may still show its
+		// saved transcript in a new session, unless a coordinator holds it.
+		if saved != nil && (saved.LoadSession || saved.State.Supervision.held()) && !initialized.AgentCapabilities.LoadSession {
 			err = ErrACPCannotReload
 		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse

@@ -214,7 +214,14 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err == nil {
-		return m.acpAttachment(ctx, info, conn)
+		attached, attachErr := m.acpAttachment(ctx, info, conn)
+		mismatch, incompatible := errors.AsType[*acpOwnerMismatchError](attachErr)
+		if !incompatible {
+			return attached, attachErr
+		}
+		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
+			return nil, fmt.Errorf("resume chat %q after %w: %w", info.Key, mismatch, err)
+		}
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
@@ -389,6 +396,15 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
 	client := rpc.NewClient(conn)
 	remote := &acpAttachment{client: client, done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), workspaceID: info.WorkspaceID, key: info.Key}
+	var snapshot ACPUpdate
+	if err := remote.call(ctx, "ACP.Snapshot", struct{}{}, &snapshot); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("read ACP owner protocol: %w", err)
+	}
+	if snapshot.Protocol != acpOwnerProtocol {
+		_ = client.Close()
+		return nil, &acpOwnerMismatchError{protocol: snapshot.Protocol, state: snapshot.State}
+	}
 	var reply struct{}
 	if err := remote.call(ctx, "ACP.Bind", ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}, &reply); err != nil {
 		_ = client.Close()

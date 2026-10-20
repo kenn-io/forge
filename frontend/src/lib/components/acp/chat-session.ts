@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect";
+import { Result, Schema, SchemaIssue } from "effect";
 import { makeTerminalSessionController } from "../terminal/terminal-session.js";
 import {
   ChatMessageSchema,
@@ -14,7 +14,7 @@ const HistoryFrameSchema = Schema.Struct({
 const UpdateFrameSchema = Schema.Struct({
   updates: Schema.Struct({ ...ChatStateSchema.fields, more: Schema.Boolean }),
 });
-const decodeFrame = Schema.decodeUnknownOption(
+const decodeFrame = Schema.decodeUnknownResult(
   Schema.fromJsonString(
     Schema.Union([
       ChatStateSchema,
@@ -25,6 +25,9 @@ const decodeFrame = Schema.decodeUnknownOption(
     ]),
   ),
 );
+// Report field paths and failure kinds without copying chat contents or tool
+// output into diagnostics.
+const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1({ leafHook: (issue) => issue._tag });
 
 export function makeChatSession(options: {
   path: string;
@@ -148,11 +151,14 @@ export function makeChatSession(options: {
     onMessage: (data) => {
       if (typeof data !== "string") return "continue";
       const decoded = decodeFrame(data);
-      if (Option.isNone(decoded)) {
-        options.onError("The host sent an invalid chat response.");
+      if (Result.isFailure(decoded)) {
+        const issues = formatIssue(decoded.failure.issue).issues;
+        const detail = issues.map((issue) => `${JSON.stringify(issue.path ?? [])}: ${issue.message}`).join("; ");
+        console.error("Invalid ACP chat response", { path: options.path, issues });
+        options.onError(`Chat connection stopped because the host response is incompatible. ${detail}`);
         return "stop";
       }
-      const frame = decoded.value;
+      const frame = decoded.success;
       if ("commandError" in frame) {
         if (frame.command === "history") {
           setHistoryLoading(undefined);

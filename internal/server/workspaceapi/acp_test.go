@@ -43,6 +43,12 @@ func (p *acpReconnectPeer) Bind(_ localruntime.ACPMCPBinding, _ *struct{}) error
 	return nil
 }
 
+func (p *acpReconnectPeer) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
+	reply.Protocol = 1
+	reply.State = []byte(`{"messages":[],"connected":true,"busy":false}`)
+	return nil
+}
+
 func (p *acpReconnectPeer) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
 	<-p.done
 	reply.Exited = true

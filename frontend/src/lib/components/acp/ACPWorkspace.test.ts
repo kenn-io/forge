@@ -49,7 +49,7 @@ const baseState = {
 
 async function openChat(
   state: Record<string, unknown>,
-  props: { disabled?: boolean; onExit?: (code: number) => void } = {},
+  props: { status?: string; disabled?: boolean; onExit?: (code: number) => void } = {},
 ) {
   render(ACPWorkspace, {
     context: new Map([[STORES_KEY, { settings }]]),
@@ -92,6 +92,20 @@ afterEach(async () => {
 });
 
 describe("ACPWorkspace final transcript", () => {
+  it("keeps a recovery failure and the transcript visible without reporting an agent exit", async () => {
+    const onExit = vi.fn();
+    await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] }, { status: "error", onExit });
+    expect(socket.options!.initialStatus).toBe("running");
+    expect(
+      socket.options!.onMessage(JSON.stringify({ commandError: "Owner needs recovery", command: "connect", id: "" })),
+    ).toBe("stop");
+    socket.options!.onDisconnected?.();
+    await tick();
+    expect(screen.getByText("Owner needs recovery")).toBeTruthy();
+    expect(screen.getByText("Saved answer")).toBeTruthy();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
   it("reports exit after the final update batch while showing permission requests immediately", async () => {
     const onExit = vi.fn();
     await openChat(

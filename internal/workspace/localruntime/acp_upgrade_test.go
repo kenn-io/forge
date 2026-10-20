@@ -41,12 +41,17 @@ func (o *OldACPOwner) Park(_ struct{}, _ *struct{}) error {
 
 func TestRestoreIncompatibleACPOwner(t *testing.T) {
 	for _, tc := range []struct {
-		name             string
-		busy, reloadable bool
-		wantError        string
+		name       string
+		reloadable bool
+		state      string
+		wantError  string
 	}{
 		{name: "resumes saved conversation", reloadable: true},
-		{name: "keeps active turn", busy: true, reloadable: true, wantError: "active or pending work"},
+		{name: "keeps active turn", state: `{"busy":true}`, reloadable: true, wantError: "active operation"},
+		{name: "keeps configuring owner", state: `{"configuring":true}`, reloadable: true, wantError: "active operation"},
+		{name: "keeps pending permission", state: `{"permissions":[{}]}`, reloadable: true, wantError: "compatible Forge version"},
+		{name: "keeps pending elicitation", state: `{"elicitations":[{}]}`, reloadable: true, wantError: "compatible Forge version"},
+		{name: "keeps queued prompt", state: `{"queue":[{}]}`, reloadable: true, wantError: "compatible Forge version"},
 		{name: "keeps nonresumable owner", wantError: "does not confirm native session resume"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,8 +80,8 @@ func TestRestoreIncompatibleACPOwner(t *testing.T) {
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = listener.Close() })
 			state := []byte(`{"messages":[{"role":"user","text":"remember"}],"busy":false,"connected":true}`)
-			if tc.busy {
-				state = []byte(`{"messages":[],"busy":true,"connected":true}`)
+			if tc.state != "" {
+				state = []byte(tc.state)
 			}
 			old := &OldACPOwner{listener: listener, state: state}
 			server := rpc.NewServer()

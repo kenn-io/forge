@@ -210,7 +210,11 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 	var restoreErr error
 	for _, item := range stored {
 		if item.Kind != string(localruntime.LaunchTargetACP) || item.SessionKey == skip ||
-			s.runtime.Exited(item.SessionKey) || s.chatCannotReload(item.SessionKey) || idle.Stopped(ctx, item) {
+			s.runtime.Exited(item.SessionKey) || idle.Stopped(ctx, item) {
+			continue
+		}
+		if s.chatCannotReload(item.SessionKey) {
+			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, localruntime.ErrACPCannotReload))
 			continue
 		}
 		if err := s.reloadACP(ctx, cwd, item); err != nil {

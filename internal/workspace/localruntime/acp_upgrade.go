@@ -28,8 +28,11 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 	if err := json.Unmarshal(mismatch.state, &state); err != nil {
 		return fmt.Errorf("decode owner state before recovery: %w", err)
 	}
-	if state.Busy || state.Steering || len(state.Permissions) != 0 || len(state.Elicitations) != 0 || len(state.Queue) != 0 {
-		return errors.New("chat has active or pending work; reopen it after that work finishes")
+	if len(state.Permissions) != 0 || len(state.Elicitations) != 0 || len(state.Queue) != 0 {
+		return errors.New("chat has pending input or queued prompts; reopen with a compatible Forge version to answer or cancel them before upgrading")
+	}
+	if state.Busy || state.Steering || state.Configuring {
+		return errors.New("chat has an active operation; reopen it after that operation finishes")
 	}
 	if !m.ACPReloadable(info.Key) {
 		return errors.New("saved chat does not confirm native session resume support; owner was left running")

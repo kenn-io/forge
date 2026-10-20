@@ -54,6 +54,9 @@ Rules:
   Active/pending work and owners without confirmed resume support stay running with an
   actionable recovery error. Increment the owner protocol for incompatible RPC/frame changes;
   do not translate old frames (`internal/workspace/localruntime/acp_upgrade.go::Manager.replaceACPOwner`).
+- A failed ACP attachment is not an agent exit: retain the pane and show the recovery
+  error even when the runtime list already marks the chat as errored
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved
   ACP session only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed, even before its

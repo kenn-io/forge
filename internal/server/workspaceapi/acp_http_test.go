@@ -87,13 +87,13 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "test done")
 	_, data, err := conn.Read(ctx)
 	require.NoError(t, err)
-	var state localruntime.ACPState
+	var state acpCommandError
 	require.NoError(t, json.Unmarshal(data, &state))
-	assert.False(t, state.Connected)
-	assert.Contains(t, state.Error, "protocol 0")
-	assert.Contains(t, state.Error, "does not confirm native session resume")
-	assert.Contains(t, state.Error, chatKey)
-	assert.NotContains(t, state.Error, "Saved conversation")
+	assert.Equal(t, "connect", state.Command)
+	assert.Contains(t, state.Message, "protocol 0")
+	assert.Contains(t, state.Message, "does not confirm native session resume")
+	assert.Contains(t, state.Message, chatKey)
+	assert.NotContains(t, state.Message, "Saved conversation")
 }
 
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
@@ -779,6 +779,13 @@ func TestWorkspaceChatRemembersAnAgentThatCannotReload(t *testing.T) {
 	status, data := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel"}`)
 	assert.Equal(t, http.StatusServiceUnavailable, status, string(data))
 	assert.Equal(t, 1, launches(), "only the first read may start the agent")
+
+	for range 2 {
+		err := f.handler.restoreWorkspaceACP(t.Context(), "workspace", f.root)
+		require.ErrorIs(t, err, localruntime.ErrACPCannotReload)
+		assert.Contains(t, err.Error(), chatKey)
+	}
+	assert.Equal(t, 1, launches(), "diagnostics must not relaunch a refused agent")
 
 	f.requireCannotReloadRestore()
 	assert.Equal(t, 2, launches(), "an explicit restore tries again")

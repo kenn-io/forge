@@ -36,13 +36,13 @@ const state = (messages: ChatMessage[], fields: Partial<ChatState> = {}): ChatSt
   error: "",
   ...fields,
 });
-function open(initial: ChatState) {
+function open(initial: ChatState, initialStatus = "running") {
   const states: ChatState[] = [];
   const errors = vi.fn();
   socket.sent = [];
   const session = makeChatSession({
     path: "/ws/chat",
-    initialStatus: "running",
+    initialStatus,
     onState: (next) => states.push(next),
     onError: errors,
     onConnection: vi.fn(),
@@ -54,6 +54,15 @@ function open(initial: ChatState) {
 }
 
 describe("makeChatSession ID upserts", () => {
+  it("attaches errored chats and reports recovery failure without publishing an exit", () => {
+    const initial = state([message("saved", "")]);
+    const { states, errors, send } = open(initial, "error");
+    expect(socket.options!.initialStatus).toBe("running");
+    expect(send({ commandError: "Owner needs recovery", command: "connect", id: "" })).toBe("stop");
+    expect(errors).toHaveBeenLastCalledWith("Owner needs recovery");
+    expect(states).toEqual([initial]);
+  });
+
   it("identifies rejected fields without exposing the transcript", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
     try {

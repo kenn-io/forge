@@ -124,7 +124,8 @@ export function makeChatSession(options: {
     });
   };
   const connection = makeTerminalSessionController({
-    initialStatus: options.initialStatus,
+    // Stored recovery failures still need a socket to receive their diagnostic.
+    initialStatus: options.initialStatus === "error" ? "running" : options.initialStatus,
     url: () => {
       const url = new URL(options.path, location.href);
       url.searchParams.set("protocol", "acp");
@@ -160,6 +161,10 @@ export function makeChatSession(options: {
       }
       const frame = decoded.success;
       if ("commandError" in frame) {
+        if (frame.command === "connect") {
+          options.onError(frame.commandError);
+          return "stop";
+        }
         if (frame.command === "history") {
           setHistoryLoading(undefined);
           publish();

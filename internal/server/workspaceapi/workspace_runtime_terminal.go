@@ -78,7 +78,7 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 			return
 		}
 		defer conn.Close(websocket.StatusNormalClosure, "chat recovery failed")
-		data, err := json.Marshal(localruntime.ACPState{Error: restoreErr.Error()})
+		data, err := json.Marshal(acpCommandError{Message: restoreErr.Error(), Command: "connect"})
 		if err == nil {
 			_ = conn.Write(ctx, websocket.MessageText, data)
 		}

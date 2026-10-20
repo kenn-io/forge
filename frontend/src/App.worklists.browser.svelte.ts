@@ -33,7 +33,7 @@ it("adds the Worklists tab when an agent writes a list and opens its first item"
 
   await vi.waitFor(() =>
     expect(window.location.pathname + window.location.search).toBe(
-      "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+      "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
     ),
   );
   const strip = page.getByRole("region", { name: "Worklist item context" });
@@ -173,7 +173,7 @@ it("steps and marks rows in score order when the rail is sorted by score", async
   list.items = list.items.map((item) => ({ ...item, score: scores[item.number] ?? null }));
   const server: WorklistServer = { lists: [list], requests: [], marks: [] };
   mounted = await mountBrowserApp(
-    "/worklists/5?selected=pr%3A55&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+    "/worklists/5?selected=pr%3A55&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
     { overrides: [worklistRoutes(server)] },
   );
   const rail = page.getByRole("region", { name: "Review queue items" });

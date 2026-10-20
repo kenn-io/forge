@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { repositoryIdKey } from "./api/repository-key.js";
 import {
   buildFocusIssueRoute,
   buildFocusListRoute,
@@ -156,11 +157,12 @@ describe("route item builders", () => {
 });
 
 describe("worklist routes", () => {
-  it("round-trips a selected issue through the query string", () => {
+  it("round-trips a selected issue and its stable repository identity through the query string", () => {
     const route = buildWorklistRoute(3, {
       itemType: "issue",
       provider: "github",
       platformHost: "github.com",
+      repositoryKey: repositoryIdKey(1001),
       owner: "acme",
       name: "widgets",
       repoPath: "acme/widgets",
@@ -168,12 +170,13 @@ describe("worklist routes", () => {
       detailTab: "conversation",
     });
     expect(route).toBe(
-      "/worklists/3?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+      "/worklists/3?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
     );
     expect(parseWorklistSelection(route.slice(route.indexOf("?")))).toEqual({
       itemType: "issue",
       provider: "github",
       platformHost: "github.com",
+      repositoryKey: repositoryIdKey(1001),
       owner: "acme",
       name: "widgets",
       repoPath: "acme/widgets",

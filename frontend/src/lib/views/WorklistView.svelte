@@ -6,7 +6,6 @@
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
-  import { repositoryKeyFromWire } from "../api/repository-key.js";
   import { worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -221,9 +220,11 @@
     replaceUrl(buildWorklistRoute(worklistId, { ...selected, detailTab: tab }));
   }
 
+  // Stack members share the open item's repository, so they keep its identity.
   function handleStackMemberNavigate(ref: PullRequestRouteRef): boolean {
     if (worklistId === null) return false;
-    replaceUrl(buildWorklistRoute(worklistId, { ...ref, itemType: "pr", detailTab }));
+    const repositoryKey = ref.repositoryKey ?? selected?.repositoryKey;
+    replaceUrl(buildWorklistRoute(worklistId, { ...ref, repositoryKey, itemType: "pr", detailTab }));
     return true;
   }
 
@@ -355,7 +356,7 @@
     refreshSelectionDetail();
   }
 
-  const repositoryKey = $derived(selectedItem ? repositoryKeyFromWire(selectedItem.repo) : undefined);
+  const repositoryKey = $derived(selected?.repositoryKey);
   const prSelection = $derived(
     selected?.itemType === "pr"
       ? {

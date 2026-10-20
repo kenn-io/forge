@@ -1,5 +1,5 @@
 import { providerRouteParams, type ProviderRouteRef as APIProviderRouteRef } from "./api/provider-routes.js";
-import type { RepositoryKey } from "./api/repository-key.js";
+import { repositoryKeyFromWire, repositoryKeyToWire, type RepositoryKey } from "./api/repository-key.js";
 
 export type RepositoryRouteRef = {
   provider: string;
@@ -176,6 +176,9 @@ export function buildWorklistRoute(worklistId: number, selected?: WorklistItemSe
   params.set("provider", selected.provider);
   if (selected.platformHost) params.set("platform_host", selected.platformHost);
   params.set("repo_path", selected.repoPath);
+  for (const [field, value] of Object.entries(repositoryKeyToWire(selected.repositoryKey))) {
+    params.set(field, String(value));
+  }
   if (selected.itemType === "pr" && selected.detailTab === "files") params.set("selected_tab", "files");
   return `${route}?${params.toString()}`;
 }
@@ -190,10 +193,15 @@ export function parseWorklistSelection(search: string): WorklistItemSelection | 
   if (parts.length < 2) return null;
   const itemType = match[1] as "pr" | "issue";
   const platformHost = params.get("platform_host")?.trim();
+  const repositoryKey = repositoryKeyFromWire({
+    platform_repo_id: Number(params.get("platform_repo_id")),
+    bitbucket_repository_uuid: params.get("bitbucket_repository_uuid"),
+  });
   return {
     itemType,
     provider,
     ...(platformHost && { platformHost }),
+    ...(repositoryKey && { repositoryKey }),
     repoPath,
     owner: parts.slice(0, -1).join("/"),
     name: parts[parts.length - 1]!,

@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 import { worklistItem } from "../../../test/worklistFixtures.js";
+import { repositoryIdKey } from "../../api/repository-key.js";
+import { buildWorklistRoute, parseWorklistSelection } from "../../routes.js";
 import {
   worklistChangeMarkers,
+  worklistItemKey,
   worklistItemMatchesSelection,
+  worklistItemSelection,
   worklistItemsByScore,
   worklistSections,
 } from "./worklist-items.js";
@@ -105,6 +109,7 @@ describe("worklistItemMatchesSelection", () => {
     itemType: "pr" as const,
     provider: "github",
     platformHost: "github.com",
+    repositoryKey: repositoryIdKey(1001),
     owner: "acme",
     name: "widgets",
     repoPath: "acme/widgets",
@@ -123,5 +128,23 @@ describe("worklistItemMatchesSelection", () => {
     expect(worklistItemMatchesSelection(item, { ...selection, itemType: "issue" })).toBe(false);
     expect(worklistItemMatchesSelection(item, { ...selection, number: 43 })).toBe(false);
     expect(worklistItemMatchesSelection(item, { ...selection, provider: "gitlab" })).toBe(false);
+  });
+
+  it("tells apart repositories that share a route by their stable identity, through the URL", () => {
+    // A repository renamed away and a new one created under its old name.
+    const renamedAway = worklistItem({ position: 0, item_type: "pr", number: 42 });
+    const reusedName = worklistItem({
+      position: 1,
+      item_type: "pr",
+      number: 42,
+      repo: { ...renamedAway.repo, platform_repo_id: 3003 },
+    });
+    expect(worklistItemKey(renamedAway)).not.toBe(worklistItemKey(reusedName));
+
+    const route = buildWorklistRoute(5, worklistItemSelection(reusedName));
+    const selected = parseWorklistSelection(route.slice(route.indexOf("?")));
+    expect([renamedAway, reusedName].filter((candidate) => worklistItemMatchesSelection(candidate, selected))).toEqual([
+      reusedName,
+    ]);
   });
 });

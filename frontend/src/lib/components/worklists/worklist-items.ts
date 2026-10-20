@@ -1,5 +1,5 @@
 import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
-import { repositoryKeyFromWire, sameRepositoryKey } from "../../api/repository-key.js";
+import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from "../../api/repository-key.js";
 import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { WorklistItemSelection } from "../../routes.js";
@@ -55,8 +55,12 @@ export function worklistItemNotFresh(item: WorklistItem): boolean {
   return item.freshness !== "fresh";
 }
 
+/** Row identity by provider-verified repository identity; owner/name is a mutable route. */
 export function worklistItemKey(item: WorklistItem): string {
-  return `${item.item_type}:${item.repo.provider}:${item.repo.platform_host}:${item.repo.repo_path}#${item.number}`;
+  const { provider, platform_host } = item.repo;
+  const repositoryKey = repositoryKeyFromWire(item.repo);
+  const repository = repositoryKey ? repositoryKeyString(repositoryKey) : "";
+  return `${item.item_type}:${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platform_host)}:${repository}#${item.number}`;
 }
 
 /** Whether a mark names the item, by provider-verified repository identity. */
@@ -79,6 +83,7 @@ export function worklistItemSelection(
     itemType: item.item_type,
     provider: item.repo.provider,
     platformHost: item.repo.platform_host,
+    repositoryKey: repositoryKeyFromWire(item.repo),
     repoPath: item.repo.repo_path,
     owner: item.repo.owner,
     name: item.repo.name,
@@ -98,7 +103,8 @@ export function worklistItemMatchesSelection(
     canonicalProvider(item.repo.provider) === canonicalProvider(selection.provider) &&
     resolvedPlatformHost(item.repo.provider, item.repo.platform_host) ===
       resolvedPlatformHost(selection.provider, selection.platformHost) &&
-    item.repo.repo_path === selection.repoPath
+    selection.repositoryKey !== undefined &&
+    sameRepositoryKey(repositoryKeyFromWire(item.repo), selection.repositoryKey)
   );
 }
 

@@ -264,7 +264,7 @@ describe("WorklistView", () => {
 
     await waitFor(() =>
       expect(currentPath()).toBe(
-        "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets",
+        "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
       ),
     );
     expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");

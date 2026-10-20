@@ -510,11 +510,11 @@ jobs:
           go test ./landedwork/... -shuffle=on
 
   race:
-    name: ${{ matrix.shard == 'all' && 'go test -race' || format('go test -race ({0})', matrix.shard) }}
+    name: go test -race (${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '[{"shard":"all","runner":"namespace-profile-linux-16cpu","p":4}]' || '[{"shard":"server","runner":"ubuntu-latest","p":2},{"shard":"core","runner":"ubuntu-latest","p":2},{"shard":"rest","runner":"ubuntu-latest","p":2}]') }}
+        include: ${{ fromJSON(github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '[{"shard":"core","runner":"namespace-profile-linux-16cpu","p":4},{"shard":"server-rest","runner":"namespace-profile-linux-16cpu","p":4}]' || '[{"shard":"server","runner":"ubuntu-latest","p":2},{"shard":"core","runner":"ubuntu-latest","p":2},{"shard":"rest","runner":"ubuntu-latest","p":2}]') }}
     runs-on: ${{ matrix.runner }}
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
@@ -542,22 +542,18 @@ jobs:
           RACE_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p tmp
-          if [[ "$RACE_SHARD" == all ]]; then
-            packages=(./...)
-          else
-            package_list=$(go list ./...)
-            packages=()
-            while IFS= read -r package; do
-              case "$package" in
-                go.kenn.io/forge/internal/server/*) group=server ;;
-                go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
-                *) group=rest ;;
-              esac
-              if [[ "$group" == "$RACE_SHARD" ]]; then
-                packages+=("$package")
-              fi
-            done <<< "$package_list"
-          fi
+          package_list=$(go list ./...)
+          packages=()
+          while IFS= read -r package; do
+            case "$package" in
+              go.kenn.io/forge/internal/server/*) group=server ;;
+              go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
+              *) group=rest ;;
+            esac
+            if [[ "$group" == "$RACE_SHARD" || ( "$RACE_SHARD" == server-rest && ( "$group" == server || "$group" == rest ) ) ]]; then
+              packages+=("$package")
+            fi
+          done <<< "$package_list"
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Summarize race test timings
@@ -596,7 +592,7 @@ jobs:
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
         with:
-          name: ${{ matrix.shard == 'all' && 'Go race tests' || format('Go race tests ({0})', matrix.shard) }}
+          name: Go race tests (${{ matrix.shard }})
           path: tmp/test-race-output.json
           reporter: golang-json
           fail-on-error: false
@@ -605,7 +601,7 @@ jobs:
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ matrix.shard == 'all' && 'go-race-timing' || format('go-race-timing-{0}', matrix.shard) }}
+          name: go-race-timing-${{ matrix.shard }}
           path: |
             tmp/test-race-output.json
             tmp/test-race-timing-events.json

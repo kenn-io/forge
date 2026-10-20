@@ -468,10 +468,10 @@ slow packages. CI also writes race timing JSON and summarizes slow packages and
 tests in the `go test -race` job summaries. When a PR regresses race runtime, use
 the CI timing artifacts rather than guessing from local timings alone.
 
-Shard race tests on GitHub runners; keep Namespace on one `all` job. Keep GitHub
-shards exhaustive: server descendants in `server`, CLI/DB/GitHub in `core`, and
-everything else in `rest`, including the server root. Rebalance from per-shard
-timing artifacts (`.github/workflows/ci.yml::race`).
+Keep race shards exhaustive: server descendants in `server`, CLI/DB/GitHub in
+`core`, and everything else in `rest`, including the server root. Namespace uses
+`core` and combined `server-rest` jobs; GitHub keeps the three groups separate.
+Rebalance from per-shard timing artifacts (`.github/workflows/ci.yml::race`).
 
 New full-stack server tests should default to `t.Parallel()` when they build
 their own `t.TempDir` filesystem, SQLite fixture, provider fake, and server

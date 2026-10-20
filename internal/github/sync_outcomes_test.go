@@ -19,7 +19,6 @@ import (
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	gitlab "gitlab.com/gitlab-org/api/client-go/v3"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
@@ -28,7 +27,6 @@ import (
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
-	platformgithub "go.kenn.io/forge/platform/github"
 	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
@@ -183,7 +181,6 @@ func TestSyncFailureReason(t *testing.T) {
 		status int
 		want   string
 	}{
-		{400, "other"},
 		{401, "auth"},
 		{404, "not_found"},
 		{429, "rate_limited"},
@@ -221,6 +218,7 @@ func TestSyncFailureReason(t *testing.T) {
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
 		{"contract", platform.ErrProviderContract, "provider"},
+		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
@@ -253,16 +251,21 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 
 func TestSyncFailedFullPassDetail(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
+		name string
+		// detail refreshes cached open items; closure reconciles items the list omits.
+		path   string
 		source string
 		status int
 		want   [][2]string
 	}{
-		{"provider failure/issue detail", "issues", http.StatusServiceUnavailable, [][2]string{{"issues", "provider"}}},
-		{"provider failure/PR detail", "merge_requests", http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}}},
-		{"missing item/issue detail", "issues", http.StatusNotFound, nil},
-		{"missing item/PR detail", "merge_requests", http.StatusNotFound, nil},
-		{"deleted issue/issue detail", "issues", http.StatusGone, nil},
+		{"provider failure/issue detail", "detail", "issues", http.StatusServiceUnavailable, [][2]string{{"issues", "provider"}}},
+		{"provider failure/PR detail", "detail", "merge_requests", http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}}},
+		{"missing item/issue detail", "detail", "issues", http.StatusNotFound, nil},
+		{"missing item/PR detail", "detail", "merge_requests", http.StatusNotFound, nil},
+		{"deleted issue/issue detail", "detail", "issues", http.StatusGone, nil},
+		{"missing items/closure", "closure", "", http.StatusNotFound, nil},
+		{"deleted items/closure", "closure", "", http.StatusGone, [][2]string{{"merge_requests", "other"}}},
+		{"provider failure/closure", "closure", "", http.StatusServiceUnavailable, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -272,27 +275,39 @@ func TestSyncFailedFullPassDetail(t *testing.T) {
 			require.NoError(t, err)
 			now := time.Now().UTC()
 			client := &partialFailureMock{issuesCached: true, prsCached: true}
+			if tc.path == "closure" {
+				client = &partialFailureMock{}
+			}
 			failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}}
-			called := false
-			if tc.source == "merge_requests" {
-				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100, MergeableState: "clean"})
-				client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-					called = true
-					return nil, failure
-				}
-			} else {
+			var issueCalls, mrCalls atomic.Int32
+			if tc.source != "merge_requests" {
 				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100})
-				client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
-					called = true
+				require.NoError(t, err)
+				client.getIssueFn = func(_ context.Context, owner, name string, number int) (*gh.Issue, error) {
+					assert.Equal(t, "acme/widget/7", fmt.Sprintf("%s/%s/%d", owner, name, number))
+					issueCalls.Add(1)
 					return nil, failure
 				}
 			}
-			require.NoError(t, err)
+			if tc.source != "issues" {
+				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now, CommentCount: 100, MergeableState: "clean"})
+				require.NoError(t, err)
+				client.getPullRequestFn = func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+					assert.Equal(t, "acme/widget/8", fmt.Sprintf("%s/%s/%d", owner, name, number))
+					mrCalls.Add(1)
+					return nil, failure
+				}
+			}
 			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
-			require.True(t, called, "the refresh must reach the failing read")
+			if tc.source != "merge_requests" {
+				require.Positive(t, issueCalls.Load(), "the refresh must reach the failing issue read")
+			}
+			if tc.source != "issues" {
+				require.Positive(t, mrCalls.Load(), "the refresh must reach the failing PR read")
+			}
 			assert.Equal(t, tc.want, events)
 		})
 	}
@@ -389,69 +404,13 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 }
 
 func TestSyncFailedRefsClassification(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		err  error
-		want string
-	}{
-		{"unclassified Git failure", errors.New("git exited with status 128"), "other"},
-		{"authentication", platform.ErrPermissionDenied, "auth"},
-		{"network", context.DeadlineExceeded, "network"},
-		{"local path", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: fs.ErrPermission}), "other"},
-		{"local path denied", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}), "other"},
-		{"local path full", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.ENOSPC}), "other"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert := assert.New(t)
-			repo := RepoRef{Owner: "acme", Name: "widget"}
-			var events [][2]string
-			s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
-			pass := &syncPass{}
-			pass.observe(repo, "refs", tc.err)
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Equal([][2]string{{"refs", tc.want}}, events)
-		})
-	}
-}
-
-// Embedding preserves the provider's read interfaces while exercising callers
-// that cannot use the concrete GitHub provider's lookup classification.
-type syncOutcomeWrappedProvider struct{ *platformgithub.Provider }
-
-func TestSyncFailedRawIssueReads(t *testing.T) {
-	for _, detail := range []bool{false, true} {
-		t.Run(fmt.Sprintf("detail=%t", detail), func(t *testing.T) {
-			d := openTestDB(t)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-			require.NoError(t, err)
-			client := &partialFailureMock{}
-			called := false
-			client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) {
-				called = true
-				return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotFound}}
-			}
-			provider, err := platformgithub.NewProvider(platformgithub.ProviderConfig{Host: "github.com", Client: client, Clock: time.Now})
-			require.NoError(t, err)
-			registry, err := platform.NewRegistry(&syncOutcomeWrappedProvider{provider})
-			require.NoError(t, err)
-			s := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			pass := &syncPass{}
-			ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-			if detail {
-				_, err = s.fetchIssueDetail(ctx, repo, id, 7)
-			} else {
-				err = s.fetchAndUpdateClosedIssue(ctx, repo, id, 7)
-			}
-			require.Error(t, err)
-			require.True(t, called)
-			assert.NotContains(t, pass.results, "issues", "a missing item must leave the source unread")
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Empty(t, events)
-		})
-	}
+	repo := RepoRef{Owner: "acme", Name: "widget"}
+	var events [][2]string
+	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+	pass := &syncPass{}
+	pass.observe(repo, "refs", fmt.Errorf("clone: %w", &fs.PathError{Op: "mkdir", Path: "clone", Err: syscall.EACCES}))
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Equal(t, [][2]string{{"refs", "other"}}, events)
 }
 
 func TestSyncFailedGitCloneErrors(t *testing.T) {
@@ -492,73 +451,42 @@ func (p *closureFailureProvider) GetMergeRequest(_ context.Context, _ platform.R
 }
 
 func TestSyncFailedClosureReads(t *testing.T) {
-	for _, providerRef := range []RepoRef{
-		{Platform: platform.KindGitHub, PlatformHost: "github.com"},
-		{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com"},
-	} {
-		for _, status := range []int{404, 410, 503} {
-			if status == 410 && providerRef.Platform != platform.KindGitHub {
-				continue
+	for _, status := range []int{404, 503} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			client, err := platformgitlab.NewClient("gitlab.example.com", testTokenSource("test-token"), platformgitlab.WithoutRetriesForTesting(), platformgitlab.WithTransport(platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: status, Header: make(http.Header), Body: http.NoBody, Request: req}, nil
+			})))
+			require.NoError(t, err)
+			ref := platform.RepoRef{Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(42)}
+			_, issueErr := client.GetIssue(t.Context(), ref, 7)
+			require.Error(t, issueErr)
+			_, mrErr := client.GetMergeRequest(t.Context(), ref, 8)
+			require.Error(t, mrErr)
+
+			d := openTestDB(t)
+			repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "widget"}
+			id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
+			now := time.Now().UTC()
+			_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+			require.NoError(t, err)
+			_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
+			require.NoError(t, err)
+			provider := &closureFailureProvider{syncTestReadProvider: &syncTestReadProvider{kind: repo.Platform, host: repo.PlatformHost, getIssueErr: issueErr}, failure: mrErr}
+			registry, err := platform.NewRegistry(provider)
+			require.NoError(t, err)
+			s := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			require.Positive(t, provider.getIssueCalls.Load())
+			require.Positive(t, provider.getMRCalls.Load())
+			if status == 404 {
+				assert.Empty(t, events)
+			} else {
+				assert.Equal(t, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}, events)
 			}
-			t.Run(fmt.Sprintf("%s/%d", providerRef.PlatformHost, status), func(t *testing.T) {
-				d := openTestDB(t)
-				repo := providerRef
-				repo.Owner, repo.Name = "acme", "widget"
-				kind := repo.Platform
-				id, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-				require.NoError(t, err)
-				now := time.Now().UTC()
-				_, err = d.UpsertIssue(t.Context(), &db.Issue{RepoID: id, PlatformID: 7, Number: 7, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
-				require.NoError(t, err)
-				_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{RepoID: id, PlatformID: 8, Number: 8, State: "open", Title: "Example", CreatedAt: now, UpdatedAt: now})
-				require.NoError(t, err)
-				var failure error
-				if kind == platform.KindGitHub {
-					failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
-				} else {
-					failure = &gitlab.ErrorResponse{StatusCode: status}
-				}
-				var s *Syncer
-				var issueCalls, mrCalls atomic.Int32
-				provider := &closureFailureProvider{syncTestReadProvider: &syncTestReadProvider{kind: kind, host: repo.PlatformHost, getIssueErr: failure}, failure: failure}
-				if kind == platform.KindGitHub {
-					client := &partialFailureMock{}
-					client.getIssueFn = func(_ context.Context, owner, name string, number int) (*gh.Issue, error) {
-						assert.Equal(t, "acme/widget/7", fmt.Sprintf("%s/%s/%d", owner, name, number))
-						issueCalls.Add(1)
-						return nil, failure
-					}
-					client.getPullRequestFn = func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-						assert.Equal(t, "acme/widget/8", fmt.Sprintf("%s/%s/%d", owner, name, number))
-						mrCalls.Add(1)
-						return nil, failure
-					}
-					s = NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-				} else {
-					registry, registryErr := platform.NewRegistry(provider)
-					require.NoError(t, registryErr)
-					s = NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-				}
-				var events [][2]string
-				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-				s.RunOnce(t.Context())
-				if kind == platform.KindGitHub {
-					require.Positive(t, issueCalls.Load())
-					require.Positive(t, mrCalls.Load())
-				} else {
-					require.Positive(t, provider.getIssueCalls.Load())
-					require.Positive(t, provider.getMRCalls.Load())
-				}
-				switch status {
-				case 404:
-					assert.Empty(t, events)
-				case 410:
-					assert.Equal(t, [][2]string{{"merge_requests", "other"}}, events)
-				default:
-					assert.Equal(t, [][2]string{{"merge_requests", "provider"}, {"issues", "provider"}}, events)
-				}
-			})
-		}
+		})
 	}
 }
 

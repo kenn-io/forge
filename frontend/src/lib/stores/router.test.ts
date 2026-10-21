@@ -3,6 +3,7 @@ import {
   navigate,
   replaceUrl,
   getRoute,
+  getCommentNavigation,
   getDetailTab,
   isDiffView,
   getSelectedPRFromRoute,
@@ -604,5 +605,24 @@ describe("router /worklists routes", () => {
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
     navigate("/worklists/abc");
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+  });
+});
+
+describe("comment navigation", () => {
+  it("preserves targets for selected items and creates a request for every navigation", () => {
+    const item = { ...prRef, itemType: "pull" as const };
+    const path = "/host/github.com/pulls/github/acme/widgets/42#issuecomment-123";
+    navigate(path);
+    const first = getCommentNavigation(item);
+    expect(first?.commentAnchor).toBe("issuecomment-123");
+    navigate(path);
+    expect(getCommentNavigation(item)).not.toBe(first);
+    expect(getCommentNavigation({ ...item, number: 43 })).toBeNull();
+    expect(getCommentNavigation({ ...item, platformHost: "code.example" })).toBeNull();
+    expect(getCommentNavigation({ ...item, itemType: "issue" })).toBeNull();
+    navigate("/host/github.com/pulls/github/acme/widgets/42/files#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
+    navigate("/pulls#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
   });
 });

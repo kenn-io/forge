@@ -14,7 +14,9 @@ export type NumberedItemRef = NumberedRouteItemRef;
 export type HostedItemRef = IssueRouteRef;
 export type RoutableItemRef = RoutedItemRef;
 
-export type Route =
+export type Route = RoutePage & { commentAnchor?: string };
+
+type RoutePage =
   | { page: "activity" }
   | { page: "actions" }
   | { page: "mobile-activity" }
@@ -191,6 +193,21 @@ function splitRepoPath(repoPath: string): { owner: string; name: string } | unde
 }
 
 function parseRoute(fullPath: string): Route {
+  const parsed = parseRoutePage(fullPath);
+  const hash = fullPath.indexOf("#");
+  const anchor = hash >= 0 ? decodeRouteHash(fullPath.slice(hash + 1)) : undefined;
+  if (anchor && /^(?:issuecomment-|discussion_r|pullrequestreview-)\d+$/.test(anchor)) {
+    if ((parsed.page === "pulls" || parsed.page === "issues") && parsed.selected) {
+      return { ...parsed, commentAnchor: anchor };
+    }
+    if (parsed.page === "focus" && (parsed.itemType === "pr" || parsed.itemType === "issue")) {
+      return { ...parsed, commentAnchor: anchor };
+    }
+  }
+  return parsed;
+}
+
+function parseRoutePage(fullPath: string): RoutePage {
   const hashIdx = fullPath.indexOf("#");
   const routePath = hashIdx >= 0 ? fullPath.slice(0, hashIdx) : fullPath;
   const anchor = hashIdx >= 0 ? decodeRouteHash(fullPath.slice(hashIdx + 1)) : undefined;
@@ -700,4 +717,35 @@ export function setTab(t: Tab): void {
 
 export function isDiffView(): boolean {
   return getDetailTab() === "files";
+}
+
+// Return the route object as the request identity: opening the same URL again
+// is a new navigation, while a background discussion refresh is not.
+export function getCommentNavigation(item: {
+  provider?: string | undefined;
+  platformHost?: string | undefined;
+  repoPath?: string | undefined;
+  number?: number | undefined;
+  itemType?: "pull" | "issue" | undefined;
+}): (Route & { commentAnchor: string }) | null {
+  const current = getRoute();
+  if (!current.commentAnchor || canonicalProvider(item.provider ?? "") !== "github") return null;
+  const selected =
+    current.page === "pulls" || current.page === "issues"
+      ? current.selected
+      : current.page === "focus" && (current.itemType === "pr" || current.itemType === "issue")
+        ? current
+        : undefined;
+  const kind = current.page === "pulls" || (current.page === "focus" && current.itemType === "pr") ? "pull" : "issue";
+  if (
+    !selected ||
+    kind !== item.itemType ||
+    selected.provider !== "github" ||
+    selected.platformHost !== (item.platformHost ?? "github.com") ||
+    selected.repoPath !== item.repoPath ||
+    selected.number !== item.number ||
+    ("tab" in current && current.tab === "files")
+  )
+    return null;
+  return current as Route & { commentAnchor: string };
 }

@@ -4,6 +4,7 @@
 
 <script lang="ts">
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
+  import { getCommentNavigation } from "../../stores/router.svelte.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
@@ -698,7 +699,8 @@
     void pullDetailScroller;
     void activeTab;
     void detailStore.getDetail()?.detail_fetched_at;
-    if (activeTab !== "conversation") return;
+    pullDetailScrollRestoreExecution?.interrupt();
+    if (activeTab !== "conversation" || getCommentNavigation({ provider, platformHost, repoPath, number, itemType: "pull" })) return;
     restorePullDetailScroll();
   });
 

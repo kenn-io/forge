@@ -6,11 +6,13 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -52,7 +54,7 @@ func (c *Client) GetMarkdownImage(
 		!strings.HasPrefix(parsed.EscapedPath(), "/user-attachments/assets/") {
 		return platform.MarkdownImage{}, c.invalidMarkdownImageSource(errors.New("unsupported markdown image URL"))
 	}
-	return c.getAttachmentImage(ctx, owner, parsed)
+	return c.getAttachmentImage(ctx, owner, repo, parsed)
 }
 
 func (c *Client) invalidMarkdownImageSource(err error) error {
@@ -213,7 +215,7 @@ func (b *boundedBuffer) Bytes() []byte {
 
 func (c *Client) getAttachmentImage(
 	ctx context.Context,
-	owner string,
+	owner, repo string,
 	parsed *url.URL,
 ) (platform.MarkdownImage, error) {
 	// github.com/user-attachments accepts the user's credential but returns
@@ -232,11 +234,33 @@ func (c *Client) getAttachmentImage(
 	}
 	req.Header.Set("Accept", "application/octet-stream")
 	req.Header.Set("Authorization", "Bearer "+token)
-	client := c.markdownImageHTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+	image, err := c.fetchAttachmentImage(req)
+	if missing, ok := errors.AsType[*platform.Error](err); !ok || missing.Code != platform.ErrCodeNotFound {
+		return image, err
 	}
-	resp, err := client.Do(req)
+	// Some uploads 404 at their attachment URL for every credential while
+	// GitHub still renders them in the repository's markdown through a
+	// short-lived signed URL, so ask GitHub to render the image and fetch that.
+	signed, err := c.renderSignedAttachmentURL(authCtx, token, owner, repo, parsed)
+	if err != nil {
+		return platform.MarkdownImage{}, err
+	}
+	req, err = http.NewRequestWithContext(authCtx, http.MethodGet, signed.String(), nil)
+	if err != nil {
+		return platform.MarkdownImage{}, err
+	}
+	return c.fetchAttachmentImage(req)
+}
+
+func (c *Client) markdownImageClient() *http.Client {
+	if c.markdownImageHTTPClient != nil {
+		return c.markdownImageHTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+func (c *Client) fetchAttachmentImage(req *http.Request) (platform.MarkdownImage, error) {
+	resp, err := c.markdownImageClient().Do(req)
 	if err != nil {
 		return platform.MarkdownImage{}, err
 	}
@@ -266,4 +290,58 @@ func (c *Client) getAttachmentImage(
 		return platform.MarkdownImage{}, errMarkdownImageTooLarge
 	}
 	return platform.MarkdownImage{Content: content, ContentType: contentType}, nil
+}
+
+var renderedImageSource = regexp.MustCompile(`<img[^>]*\ssrc="([^"]+)"`)
+
+// renderSignedAttachmentURL renders the attachment as markdown in the
+// repository's context and returns the signed storage URL GitHub substitutes
+// for it. Only GitHub's signed image host (or the platform host itself on
+// GitHub Enterprise) is accepted, so the rendered HTML cannot point the proxy
+// elsewhere.
+func (c *Client) renderSignedAttachmentURL(
+	ctx context.Context,
+	token, owner, repo string,
+	attachment *url.URL,
+) (*url.URL, error) {
+	notFound := &platform.Error{Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub, PlatformHost: c.platformHost}
+	req, err := c.gh.NewRequest(ctx, http.MethodPost, "markdown", map[string]string{
+		"text": "![](" + attachment.String() + ")", "mode": "gfm", "context": owner + "/" + repo,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.markdownImageClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, notFound
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("render GitHub markdown image: %s", resp.Status)
+	}
+	rendered, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return nil, err
+	}
+	match := renderedImageSource.FindSubmatch(rendered)
+	if match == nil {
+		return nil, notFound
+	}
+	signed, err := url.Parse(html.UnescapeString(string(match[1])))
+	if err != nil || signed.Scheme != "https" || signed.User != nil || signed.String() == attachment.String() {
+		return nil, notFound
+	}
+	signedHost := c.platformHost
+	if c.platformHost == "github.com" {
+		signedHost = "private-user-images.githubusercontent.com"
+	}
+	if !strings.EqualFold(signed.Host, signedHost) {
+		return nil, notFound
+	}
+	return signed, nil
 }

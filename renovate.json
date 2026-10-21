@@ -35,6 +35,7 @@
       "matchManagers": ["bun"],
       "matchPackageNames": [
         "vite",
+        "@voidzero-dev/vite-plus-core",
         "rolldown",
         "tsdown",
         "vitest",

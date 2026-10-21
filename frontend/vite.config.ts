@@ -16,6 +16,9 @@ import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
+// kata-ui imports kit-ui too, but Bun links kata from its global cache with no
+// node_modules beside it. Point every kit-ui import at this app's copy.
+const kitUiEntry = require.resolve("@kenn-io/kit-ui");
 const kitUiMarkdownEntry = require.resolve("@kenn-io/kit-ui/utils/markdown");
 const kitUiTimeEntry = require.resolve("@kenn-io/kit-ui/utils/time");
 // kit-ui is consumed as source and Bun links it from its global cache, which
@@ -286,6 +289,10 @@ const config = {
       {
         find: /^@testing-library\/svelte$/,
         replacement: testingLibrarySvelteEntry,
+      },
+      {
+        find: /^@kenn-io\/kit-ui$/,
+        replacement: kitUiEntry,
       },
       {
         find: /^@kenn-io\/kit-ui\/utils\/markdown$/,

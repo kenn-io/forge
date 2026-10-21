@@ -208,7 +208,7 @@
         --diffs-bg-deletion-emphasis-override: color-mix(in srgb, var(--diff-del-mark) 22%, transparent);
       }`;
 
-  const pierreOptions = $derived.by<FileDiffOptions<unknown>>(() => ({
+  const pierreOptions = $derived.by<FileDiffOptions<unknown, undefined>>(() => ({
     diffStyle: viewMode,
     diffIndicators: eReader ? "classic" : "bars",
     disableFileHeader: true,

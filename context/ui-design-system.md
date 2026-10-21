@@ -103,7 +103,9 @@ global cache outside the workspace root, so kit source that imports assets
 (`?inline` SVGs) needs kit's resolved source root in vite `server.fs.allow`
 (`frontend/vite.config.ts::kitUiSourceRoot`); a bump that adds such an import
 otherwise fails only in the Vitest/Playwright transform tier, not in
-`svelte-check`. See kit-ui's `docs/migration.md` and
+`svelte-check`. kata-ui's cached checkout has no `node_modules`, so every kit-ui
+specifier it imports needs a vite alias to forge's copy
+(`frontend/vite.config.ts::kitUiEntry`). See kit-ui's `docs/migration.md` and
 `docs/theming.md`. Invariants kenn-forge relies on:
 
 - Theme tokens come from kit `theme.css` plus the kit `quiet` identity from

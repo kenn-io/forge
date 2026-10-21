@@ -680,7 +680,9 @@ source, at most once per source per pass. A repository that keeps failing
 reports nothing more until it recovers. The event sends only `sync_source`
 (`merge_requests`, `issues`, `checks`, or `refs`) and `reason` (`auth`,
 `rate_limited`, `not_found`, `network`, `provider`, or `other`), with unlisted
-reasons sent as `other`. List, CI, clone, fetch, and repository failures count.
+reasons sent as `other`. List and repository failures count. `checks` counts a
+repository only when none of its CI reads succeeded. `refs` counts only auth,
+rate-limit, network, and provider failures during clone or fetch.
 Local filesystem failures and individual PR, issue, and child reads don't count.
 Skipped reads keep prior state; observed recovery or disablement clears it, and
 archived or untracked repositories drop out. Counts are approximate: state stays

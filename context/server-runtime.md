@@ -2,8 +2,10 @@
 
 - Full sync passes emit at most one `sync_failed` per source when any repository
   starts failing it; a repository that keeps failing doesn't report again or
-  hide other repositories' new failures. List, CI, clone, fetch, and repository
-  failures count; local filesystem failures and individual PR, issue, and child
+  hide other repositories' new failures. List and repository failures count;
+  `checks` fails only if none of the repository's CI reads succeeded. `refs`
+  counts only auth, rate-limit, network, and provider clone/fetch failures.
+  Local filesystem failures and individual PR, issue, and child
   reads don't. Unread repositories keep their state; recovery or disablement
   clears it, archived or untracked repositories drop out, and restart can count
   a failing repository twice. Disabled-feature responses observe nothing; 304

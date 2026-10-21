@@ -31,15 +31,6 @@ var networkGitErrorSubstrings = []string{
 	"tls connection",
 }
 
-// Git prints local errno failures after a quoted path, which keeps them
-// apart from remote messages such as SSH's "Permission denied (publickey)".
-var localGitErrorSubstrings = []string{
-	"': permission denied",
-	"': operation not permitted",
-	"no space left on device",
-	"read-only file system",
-}
-
 // IsTransientGitError reports whether the stderr captured from git looks
 // like a transient remote or network failure worth retrying. GitHub's
 // smart-HTTP endpoint sporadically returns 5xx on /info/refs even when the
@@ -57,11 +48,6 @@ func IsServerGitError(err error) bool {
 // IsNetworkGitError reports whether git stderr indicates a network failure.
 func IsNetworkGitError(err error) bool {
 	return matchesGitError(err, networkGitErrorSubstrings)
-}
-
-// IsLocalGitError reports whether git stderr indicates a local filesystem failure.
-func IsLocalGitError(err error) bool {
-	return matchesGitError(err, localGitErrorSubstrings)
 }
 
 func matchesGitError(err error, substrings []string) bool {

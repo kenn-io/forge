@@ -49,6 +49,11 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		p.results[source] = make(map[string]string)
 	}
 	key := mergeQueueRepoKey(repo)
+	// One successful CI read establishes repository availability for the pass.
+	if current, observed := p.results[source][key]; source == "checks" && (reason == "" || observed && current == "") {
+		p.results[source][key] = ""
+		return
+	}
 	if higherSyncFailureReason(reason, p.results[source][key]) || p.results[source][key] == "" {
 		p.results[source][key] = reason
 	}
@@ -151,7 +156,7 @@ func higherSyncFailureReason(reason, current string) bool {
 // filesystem failures before treating a net.Error as a network one.
 func isLocalFilesystemFailure(err error) bool {
 	_, pathErr := errors.AsType[*fs.PathError](err)
-	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || gitclone.IsLocalGitError(err)
+	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS)
 }
 
 // providerStatusCode returns the HTTP status carried by a provider error
@@ -174,7 +179,7 @@ func syncFailureReason(err error) string {
 	switch {
 	case errors.Is(err, platform.ErrRateLimited):
 		return "rate_limited"
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken):
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "":
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
@@ -189,7 +194,7 @@ func syncFailureReason(err error) string {
 	switch {
 	case primaryLimit, secondaryLimit, status == 429:
 		return "rate_limited"
-	case gitAccessFailureReason(err) != "", status == 401, status == 403:
+	case status == 401, status == 403:
 		return "auth"
 	case status == 404:
 		return "not_found"

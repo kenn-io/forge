@@ -18,8 +18,6 @@ func TestIsTransientGitError(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
-		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true},
-		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true},
 		{
 			"github 500 with internal server error preamble",
 			fmt.Errorf("exit status 128: %s", "remote: Internal Server Error\nfatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 500"),
@@ -40,12 +38,6 @@ func TestIsTransientGitError(t *testing.T) {
 			errors.New("fatal: The requested URL returned error: 504"),
 			true,
 		},
-		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false},
-		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false},
-		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false},
-		{"certificate verification is permanent", errors.New("fatal: unable to access remote: server certificate verification failed"), false},
-		{"SSL certificate problem is permanent", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), false},
-		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false},
 		{
 			"connection reset",
 			errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"),

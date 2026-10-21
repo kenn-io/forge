@@ -11,7 +11,6 @@ import (
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
-	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
@@ -35,17 +34,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	}
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
-		if source == "refs" {
-			reason = gitclone.FailureReason(err)
-			if reason == "" && gitAccessFailureReason(err) == GitAccessCredentialUnavailable {
-				reason = "auth"
-			}
-			if reason == "" {
-				return
-			}
-		} else {
-			reason = syncFailureReason(err)
-		}
+		reason = syncFailureReason(err)
 	}
 	if source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
 		return

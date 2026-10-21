@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -17,7 +16,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
-	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/serverfake"
@@ -246,11 +244,19 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 func TestWireSyncFailed(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("disabled=%t", disabled), func(t *testing.T) {
+			require := require.New(t)
 			client := &fakeTelemetryClient{disabled: disabled}
-			syncer := ghclient.NewSyncer(nil, nil, nil, nil, time.Minute, nil, nil)
-			wireSyncFailed(syncer, client)
-			callback := reflect.ValueOf(syncer).Elem().FieldByName("onSyncFailed")
-			require.Equal(t, disabled, callback.IsNil())
+			callback := syncFailedCapture(client)
+			if disabled {
+				require.Nil(callback)
+				require.Empty(client.events())
+				require.Empty(client.captures)
+				return
+			}
+			require.NotNil(callback)
+			callback("merge_requests", "provider")
+			require.Equal([]string{"sync_failed"}, client.events())
+			require.Equal([]map[string]any{{"sync_source": "merge_requests", "reason": "provider"}}, client.captures)
 		})
 	}
 }

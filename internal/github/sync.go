@@ -2576,7 +2576,6 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 		cloneRemoteURL(repo),
 		nil,
 	)
-	s.observeSync(ctx, repo, "refs", err)
 	return s.recordGitAccess(repo, err)
 }
 

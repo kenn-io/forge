@@ -132,14 +132,21 @@ func captureDaemonActive(reporter telemetry.Client, repoCount func() int) error 
 }
 
 func wireSyncFailed(syncer *ghclient.Syncer, reporter telemetry.Client) {
-	if syncer == nil || !reporter.Enabled() {
+	if syncer == nil {
 		return
 	}
-	syncer.SetOnSyncFailed(func(source, reason string) {
+	syncer.SetOnSyncFailed(syncFailedCapture(reporter))
+}
+
+func syncFailedCapture(reporter telemetry.Client) func(source, reason string) {
+	if !reporter.Enabled() {
+		return nil
+	}
+	return func(source, reason string) {
 		if err := reporter.Capture("sync_failed", map[string]any{"sync_source": source, "reason": reason}); err != nil {
 			slog.Warn("capture telemetry event", "err", err)
 		}
-	})
+	}
 }
 
 func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Syncer, cfg *config.Config) {

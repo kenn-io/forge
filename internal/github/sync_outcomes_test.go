@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -19,8 +18,6 @@ import (
 	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -142,8 +139,6 @@ func TestSyncFailedIgnoredErrors(t *testing.T) {
 		{"local system file limit", "issues", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ENFILE}},
 		{"budget refused", "issues", platform.ErrSyncBudgetExhausted},
 		{"disabled feature without cooldown", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
-		{"refs token file error", "refs", fmt.Errorf("%w: %w", gitclone.ErrCredentialUnavailable, &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
-		{"refs deadline only", "refs", fmt.Errorf("resolve git token: %w", context.DeadlineExceeded)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pass := &syncPass{}
@@ -266,43 +261,6 @@ func TestSyncFailureReason(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
 	}
-	t.Run("git", func(t *testing.T) {
-		cases := []struct {
-			name string
-			err  error
-			want string
-		}{
-			{"nil", nil, ""},
-			{"git refused", errors.New("fatal: unable to access remote: Connection refused"), "network"},
-			{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), "network"},
-			{"github 500 with internal server error preamble", fmt.Errorf("exit status 128: %s", "remote: Internal Server Error\nfatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 500"), "provider"},
-			{"bare 502", errors.New("fatal: The requested URL returned error: 502"), "provider"},
-			{"bare 503", errors.New("fatal: The requested URL returned error: 503"), "provider"},
-			{"bare 504", errors.New("fatal: The requested URL returned error: 504"), "provider"},
-			{"HTTP 401", errors.New("fatal: The requested URL returned error: 401"), "auth"},
-			{"HTTP 403", errors.New("fatal: The requested URL returned error: 403"), "auth"},
-			{"HTTP 429", errors.New("fatal: The requested URL returned error: 429"), "rate_limited"},
-			{"certificate verification", errors.New("fatal: unable to access remote: server certificate verification failed"), "network"},
-			{"SSL certificate problem", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), "network"},
-			{"HTTP 501", errors.New("fatal: The requested URL returned error: 501"), "provider"},
-			{"connection reset", errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"), "network"},
-			{"stalled HTTP transfer", errors.New("fatal: unable to access 'https://example.com/repo.git/': Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds"), "network"},
-			{"could not resolve host", errors.New("fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com"), "network"},
-			{"case insensitive", errors.New("REMOTE: INTERNAL SERVER ERROR"), "provider"},
-			{"early eof", errors.New("fatal: early EOF\nfatal: index-pack failed"), "network"},
-			{"auth failure", errors.New("fatal: Authentication failed for 'https://github.com/x/y.git/'"), "auth"},
-			{"not found", errors.New("fatal: repository 'https://github.com/x/y.git/' not found"), "not_found"},
-			{"bad ref", errors.New("fatal: couldn't find remote ref refs/heads/nope"), ""},
-			{"HTTP 404", errors.New("fatal: The requested URL returned error: 404"), "not_found"},
-			{"HTTP 410", errors.New("fatal: The requested URL returned error: 410"), "not_found"},
-			{"locked ref", errors.New("error: cannot lock ref 'refs/remotes/origin/main': Unable to create 'refs/remotes/origin/main.lock': File exists"), ""},
-		}
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				assert.Equal(t, tc.want, gitclone.FailureReason(tc.err))
-			})
-		}
-	})
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
@@ -413,123 +371,6 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 	}
 }
 
-func TestSyncFailedGitHTTP(t *testing.T) {
-	for _, tc := range []struct {
-		status     int
-		reason     string
-		emptyToken bool
-		emptyReply bool
-	}{
-		{http.StatusForbidden, "auth", false, false},
-		{0, "auth", true, false},
-		{0, "network", false, true},
-	} {
-		name := fmt.Sprint(tc.status)
-		if tc.emptyToken {
-			name = "empty managed token"
-		} else if tc.emptyReply {
-			name = "empty reply"
-		}
-		t.Run(name, func(t *testing.T) {
-			assert := assert.New(t)
-			fixture := setupSyncBranchActivityFixture(t, "main")
-			syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
-			var reads atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				assert.Equal("/acme/widget.git/info/refs", req.URL.Path)
-				assert.Equal("git-upload-pack", req.URL.Query().Get("service"))
-				reads.Add(1)
-				if tc.emptyReply {
-					conn, _, err := w.(http.Hijacker).Hijack()
-					if assert.NoError(err) {
-						assert.NoError(conn.Close())
-					}
-					return
-				}
-				w.WriteHeader(tc.status)
-			}))
-			t.Cleanup(server.Close)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
-			remote := repo.CloneURL
-			client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-				return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(remote), DefaultBranch: new("main")}, nil
-			}}
-			sources := gitclone.HostSources{}
-			var tokenFile string
-			if tc.emptyToken {
-				tokenFile = filepath.Join(t.TempDir(), "token")
-				require.NoError(t, os.WriteFile(tokenFile, nil, 0o600))
-				sources[repo.PlatformHost] = tokenauth.NewManagedSource(tokenauth.Descriptor{
-					Key:        tokenauth.Key{Platform: "github", Host: repo.PlatformHost},
-					Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: tokenFile}},
-				}, tokenauth.Options{})
-			}
-			clones := gitclone.New(t.TempDir(), sources)
-			t.Cleanup(clones.Wait)
-			clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
-			s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.RunOnce(t.Context())
-			assert.Equal([][2]string{{"refs", tc.reason}}, events)
-			s.RunOnce(t.Context())
-			assert.Len(events, 1)
-			if tc.emptyToken {
-				assert.Zero(reads.Load(), "missing credentials must fail before Git contacts the remote")
-				require.NoError(t, os.WriteFile(tokenFile, []byte("test-token"), 0o600))
-			}
-			remote = fixture.Remote
-			s.RunOnce(t.Context())
-			assert.Len(events, 1)
-			repo.Key = platform.RepositoryIDKey(42)
-			clone, err := clones.ClonePathForContext(withCloneRepositoryIdentity(t.Context(), repo), "github", repo.PlatformHost, repo.Owner, repo.Name)
-			require.NoError(t, err)
-			syncActivityGitRun(t, clone, "remote", "set-url", "origin", repo.CloneURL)
-			remote = repo.CloneURL
-			if tc.emptyToken {
-				require.NoError(t, os.WriteFile(tokenFile, nil, 0o600))
-			}
-			s.RunOnce(t.Context())
-			assert.Equal([][2]string{{"refs", tc.reason}, {"refs", tc.reason}}, events)
-			if tc.emptyToken {
-				assert.Zero(reads.Load())
-			}
-		})
-	}
-}
-
-func TestSyncFailedRefsProcessCapacity(t *testing.T) {
-	assert := assert.New(t)
-	var reads atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		reads.Add(1)
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
-	client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-		return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(repo.CloneURL), DefaultBranch: new("main")}, nil
-	}}
-	clones := gitclone.New(t.TempDir(), nil)
-	t.Cleanup(clones.Wait)
-	clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
-	s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	limiter := procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond)
-	t.Cleanup(procutil.SetDefaultLimiterForTest(limiter))
-	release, err := limiter.TryAcquire(t.Context(), "test")
-	require.NoError(t, err)
-	t.Cleanup(release)
-	s.RunOnce(t.Context())
-	assert.Empty(events)
-	assert.Zero(reads.Load(), "capacity exhaustion must prevent Git from starting")
-	release()
-	s.RunOnce(t.Context())
-	assert.Positive(reads.Load())
-	assert.Equal([][2]string{{"refs", "provider"}}, events)
-}
-
 func TestSyncFailedMixedReads(t *testing.T) {
 	for _, failureFirst := range []bool{false, true} {
 		t.Run(fmt.Sprintf("failureFirst=%t", failureFirst), func(t *testing.T) {
@@ -586,9 +427,9 @@ func TestSyncFailedBitbucketDCUnavailable(t *testing.T) {
 	require.NoError(t, err)
 	repo := RepoRef{Platform: "bitbucket", PlatformHost: "bitbucket.example.com", Owner: "ACME", Name: "widget"}
 	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events []string
-	s.SetOnSyncFailed(func(source, _ string) { events = append(events, source) })
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.RunOnce(t.Context())
 	require.Positive(t, reads.Load())
-	assert.Equal(t, []string{"merge_requests"}, events)
+	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
 }

@@ -2,11 +2,12 @@
   import { Button, Chip, Spinner, type ChipTone } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import { Effect } from "effect";
-  import { untrack } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     importWorklist,
     previewWorklistImport,
     worklistFailureMessage,
+    type WorklistFailure,
     type WorklistImportItem,
     type WorklistImportPreview,
   } from "../api/worklists.js";
@@ -32,11 +33,18 @@
   let previewState = $state.raw<PreviewState>({ kind: "loading" });
   let creating = $state(false);
   let createError = $state<string | null>(null);
+  // Set when an import may have created the list without confirming it.
+  // Create stays off so a retry cannot add a second copy; reopening the link
+  // is the deliberate way to try again.
+  let createUncertain = $state(false);
+  let mounted = true;
+  onDestroy(() => (mounted = false));
 
   $effect(() => {
     const current = fragment;
     previewState = { kind: "loading" };
     createError = null;
+    createUncertain = false;
     const execution = untrack(() =>
       runtime.runCommand(
         previewWorklistImport(current).pipe(
@@ -54,9 +62,15 @@
     return () => execution.interrupt();
   });
 
+  // A view opened again for the same link is a new instance, so a reply to
+  // the old one neither navigates it nor shows its outcome there.
   function stillShowing(current: string): boolean {
     const route = getRoute();
-    return route.page === "worklists" && route.importFragment === current;
+    return mounted && route.page === "worklists" && route.importFragment === current;
+  }
+
+  function outcomeUnknown(failure: WorklistFailure): boolean {
+    return failure._tag === "TransientTransportError" || failure.problem.code === "mutationOutcomeUnknown";
   }
 
   // The import is not cancelled when the page is left: the list is created
@@ -80,6 +94,15 @@
         safeContext: { length: current.length },
         onFailure: (failure) => {
           creating = false;
+          if (outcomeUnknown(failure)) {
+            runtime.runCommand(worklists.refreshSummariesEffect(), {
+              operation: "refresh worklists after uncertain import",
+              safeContext: {},
+              onFailure: () => {},
+            });
+            if (stillShowing(current)) createUncertain = true;
+            return;
+          }
           if (stillShowing(current)) createError = worklistFailureMessage(failure, "Could not create the worklist.");
         },
       },
@@ -157,13 +180,22 @@
       {/each}
     </ol>
     <footer class="worklist-import-actions">
-      {#if createError}
+      {#if createUncertain}
+        <span class="worklist-import-error" role="alert">Forge may have created this worklist.</span>
+      {:else if createError}
         <span class="worklist-import-error" role="alert">{createError}</span>
       {:else if preview.importable_count === 0}
         <span class="worklist-import-error">None of these items are tracked here.</span>
       {/if}
-      <Button onclick={() => navigate(buildWorklistsRoute())} disabled={creating}>Cancel</Button>
-      <Button tone="info" surface="solid" onclick={create} disabled={creating || preview.importable_count === 0}>
+      <Button onclick={() => navigate(buildWorklistsRoute())} disabled={creating}>
+        {createUncertain ? "Open worklists" : "Cancel"}
+      </Button>
+      <Button
+        tone="info"
+        surface="solid"
+        onclick={create}
+        disabled={creating || createUncertain || preview.importable_count === 0}
+      >
         {preview.importable_count === total
           ? "Create worklist"
           : `Create with ${preview.importable_count} of ${total}`}

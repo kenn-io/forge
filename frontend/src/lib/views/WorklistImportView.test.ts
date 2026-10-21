@@ -140,6 +140,47 @@ describe("WorklistImportView", () => {
     expect(window.location.pathname).toBe("/pulls");
   });
 
+  it("does not navigate a reopened link when the earlier import finishes", async () => {
+    let respond: (response: Response) => void = () => {};
+    server.importResponse = () => new Promise<Response>((resolve) => (respond = resolve));
+    renderImport("/worklists/import#v1.abc", server);
+    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
+    await waitFor(() => expect(server.imports).toEqual(["v1.abc"]));
+    navigate("/pulls");
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Merge today" })).toBeNull());
+    navigate("/worklists/import#v1.abc");
+    await screen.findByRole("button", { name: "Create with 1 of 2" });
+
+    respond(jsonResponse({ worklist_id: 7, item_count: 1, skipped_count: 1 }));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(window.location.pathname).toBe("/worklists/import");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps Create off when the import's response is lost", async () => {
+    server.importResponse = () => Promise.reject(new TypeError("Failed to fetch"));
+    renderImport("/worklists/import#v1.abc", server);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
+
+    expect(await screen.findByText("Forge may have created this worklist.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create with 1 of 2" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Open worklists" })).toBeTruthy();
+    expect(server.imports).toEqual(["v1.abc"]);
+  });
+
+  it("lets the maintainer retry when Forge rejects the import", async () => {
+    server.importResponse = () =>
+      jsonResponse({ title: "Bad Request", status: 400, detail: "no item is tracked", code: "validationError" }, 400);
+    renderImport("/worklists/import#v1.abc", server);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
+
+    expect(await screen.findByText(/no item is tracked/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create with 1 of 2" }).hasAttribute("disabled")).toBe(false);
+  });
+
   it("shows why an unreadable link cannot be imported", async () => {
     globalThis.fetch = createMockApiFetch([
       (request) =>

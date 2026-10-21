@@ -38,12 +38,18 @@ const (
 	maxListJSON = 8 << 20
 )
 
-// ErrInvalidFragment reports a fragment that is not a worklist link this
-// version of Forge can read.
-var ErrInvalidFragment = errors.New("not a worklist link")
+var (
+	// ErrInvalidFragment reports a fragment that is not a worklist link this
+	// version of Forge can read.
+	ErrInvalidFragment = errors.New("not a worklist link")
+	// ErrTooLarge reports a list whose link would be longer than Forge
+	// accepts. Fragment never returns a link ParseFragment rejects.
+	ErrTooLarge = errors.New("worklist too large for a link")
+)
 
 // Fragment validates the list and encodes it for a link's fragment, without
-// the leading '#'.
+// the leading '#'. It does not check where the link will travel; GitHub, for
+// one, stops rendering links past 32,768 characters.
 func Fragment(l List) (string, error) {
 	if err := l.Validate(); err != nil {
 		return "", err
@@ -51,6 +57,9 @@ func Fragment(l List) (string, error) {
 	data, err := json.Marshal(l)
 	if err != nil {
 		return "", fmt.Errorf("encode worklist: %w", err)
+	}
+	if len(data) > maxListJSON {
+		return "", fmt.Errorf("%w: list larger than %d bytes", ErrTooLarge, maxListJSON)
 	}
 	var compressed bytes.Buffer
 	writer, err := flate.NewWriter(&compressed, flate.BestCompression)
@@ -63,7 +72,11 @@ func Fragment(l List) (string, error) {
 	if err := writer.Close(); err != nil {
 		return "", fmt.Errorf("compress worklist: %w", err)
 	}
-	return fragmentPrefix + base64.RawURLEncoding.EncodeToString(compressed.Bytes()), nil
+	fragment := fragmentPrefix + base64.RawURLEncoding.EncodeToString(compressed.Bytes())
+	if len(fragment) > MaxFragmentLength {
+		return "", fmt.Errorf("%w: link longer than %d characters", ErrTooLarge, MaxFragmentLength)
+	}
+	return fragment, nil
 }
 
 // KennLink returns a kenn:// link that opens the list in the recipient's

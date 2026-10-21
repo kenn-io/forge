@@ -10,9 +10,12 @@ import (
 	"go.kenn.io/forge/worklist"
 )
 
-func TestValidateChecksTheRepositoryKeyALinkMayCarry(t *testing.T) {
+func TestValidateChecksTheRepositoryALinkNames(t *testing.T) {
 	list := func(ref worklist.ItemRef) worklist.List {
-		ref.Type, ref.Provider, ref.Owner, ref.Name, ref.Number = "pr", "bitbucket", "acme", "widgets", 1
+		ref.Type, ref.Provider, ref.Name, ref.Number = "pr", "bitbucket", "widgets", 1
+		if ref.Owner == "" {
+			ref.Owner = "acme"
+		}
 		return worklist.List{Title: "T", Items: []worklist.Item{{Item: ref}}}
 	}
 	tests := []struct {
@@ -25,6 +28,7 @@ func TestValidateChecksTheRepositoryKeyALinkMayCarry(t *testing.T) {
 		{"braced UUID", worklist.ItemRef{BitbucketRepositoryUUID: "{0b0e9a43-6a51-4f3a-9a4f-0e7c2f3c4d5e}"}, false},
 		{"negative ID", worklist.ItemRef{PlatformRepoID: -1}, true},
 		{"malformed UUID", worklist.ItemRef{BitbucketRepositoryUUID: "not-a-uuid"}, true},
+		{"blank owner", worklist.ItemRef{Owner: "  "}, true},
 		{"both keys", worklist.ItemRef{PlatformRepoID: 1001, BitbucketRepositoryUUID: "0b0e9a43-6a51-4f3a-9a4f-0e7c2f3c4d5e"}, true},
 	}
 	for _, tt := range tests {

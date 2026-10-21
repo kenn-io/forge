@@ -70062,7 +70062,7 @@ type WorklistImportItemResponse struct {
 	Caveat string `json:"caveat"`
 
 	// Issue Issue list row; null unless the item is a visible issue.
-	Issue        IssueResponse                      `json:"issue"`
+	Issue        *IssueResponse                     `json:"issue,omitempty"`
 	ItemType     WorklistImportItemResponseItemType `json:"item_type"`
 	Name         string                             `json:"name"`
 	Note         string                             `json:"note"`
@@ -70073,9 +70073,9 @@ type WorklistImportItemResponse struct {
 	Provider     string                             `json:"provider"`
 
 	// Pull Pull request list row; null unless the item is a visible pull request.
-	Pull    MergeRequestResponse `json:"pull"`
-	Score   *int64               `json:"score,omitempty"`
-	Section string               `json:"section"`
+	Pull    *MergeRequestResponse `json:"pull,omitempty"`
+	Score   *int64                `json:"score,omitempty"`
+	Section string                `json:"section"`
 
 	// Status importable, or why an import skips the item: its repository is not tracked here, the pull request or issue is not synced, or an earlier item names the same one.
 	Status WorklistImportItemResponseStatus `json:"status"`

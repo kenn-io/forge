@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"encoding/base64"
+	"encoding/json/v2"
 	"errors"
 	"math/rand/v2"
 	"strings"
@@ -126,9 +127,51 @@ func TestParseFragmentReportsTheFieldOfAReadableListOverALimit(t *testing.T) {
 	assert.Equal(t, "items[0].score", fieldErr.Field)
 }
 
-// oversizedFragment encodes a list within every field limit whose
-// incompressible notes make the fragment longer than Forge accepts.
+func TestFragmentRefusesAListTooLargeForForgeToRead(t *testing.T) {
+	// Control characters encode as six-byte JSON escapes but compress to
+	// almost nothing, so only the decompressed bound catches this list.
+	escaped := worklist.List{Title: "Escapes"}
+	for number := 1; number <= worklist.MaxItems; number++ {
+		escaped.Items = append(escaped.Items, worklist.Item{
+			Item: worklist.ItemRef{Type: "pr", Provider: "github", Owner: "acme", Name: "widgets", Number: number},
+			Note: strings.Repeat("\x01", worklist.MaxText), Caveat: strings.Repeat("\x01", worklist.MaxText),
+		})
+	}
+	tests := []struct {
+		name string
+		list worklist.List
+	}{
+		{"link too long", incompressibleList()},
+		{"list JSON too large", escaped},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := worklist.Fragment(tt.list)
+
+			require.ErrorIs(t, err, worklist.ErrTooLarge)
+		})
+	}
+}
+
+// oversizedFragment encodes, without Fragment's own bound, a list whose
+// fragment is longer than Forge accepts.
 func oversizedFragment(t *testing.T) string {
+	data, err := json.Marshal(incompressibleList())
+	require.NoError(t, err)
+	var buf bytes.Buffer
+	writer, err := flate.NewWriter(&buf, flate.BestCompression)
+	require.NoError(t, err)
+	_, err = writer.Write(data)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	fragment := "v1." + base64.RawURLEncoding.EncodeToString(buf.Bytes())
+	require.Greater(t, len(fragment), worklist.MaxFragmentLength)
+	return fragment
+}
+
+// incompressibleList stays within every field limit, but its random notes
+// leave too little for DEFLATE to remove.
+func incompressibleList() worklist.List {
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	random := rand.New(rand.NewPCG(1, 2))
 	note := func() string {
@@ -145,8 +188,5 @@ func oversizedFragment(t *testing.T) string {
 			Note: note(),
 		})
 	}
-	fragment, err := worklist.Fragment(list)
-	require.NoError(t, err)
-	require.Greater(t, len(fragment), worklist.MaxFragmentLength)
-	return fragment
+	return list
 }

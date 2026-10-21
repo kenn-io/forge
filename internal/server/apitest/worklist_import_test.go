@@ -62,7 +62,10 @@ func TestAPIWorklistImportPreviewsThenCreatesTrackedItems(t *testing.T) {
 		generated.WorklistImportItemResponseStatusItemNotFound,
 		generated.WorklistImportItemResponseStatusDuplicate,
 	}, statuses)
-	assert.EqualValues(42, preview.JSON200.Items[0].Pull.Number, "a tracked item carries its list row")
+	require.NotNil(preview.JSON200.Items[0].Pull, "a tracked item carries its list row")
+	assert.EqualValues(42, preview.JSON200.Items[0].Pull.Number)
+	assert.Nil(preview.JSON200.Items[0].Issue, "a pull request item carries no issue row")
+	assert.Nil(preview.JSON200.Items[1].Pull, "an untracked item carries no row")
 	assert.Equal("repository this Forge does not track", preview.JSON200.Items[1].Note)
 	assert.Zero(listCount(), "a preview writes nothing")
 

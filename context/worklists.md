@@ -19,8 +19,9 @@ through.
   looked like then: head commit, comment count, CI result, review decision, and
   open, merged, or closed state. Comparing that record with the live synced
   item produces the changes since the list was written, without provider calls.
-- Items identify repositories by provider-verified stable identity, never by
-  owner/name alone (`context/platform-sync-invariants.md`).
+- Stored items identify repositories by provider-verified stable identity,
+  never by owner/name alone (`context/platform-sync-invariants.md`). A link may
+  name only owner/name; import resolves it to stable identity before writing.
 - Worklists cover pull requests and issues from every supported provider.
   Kata tasks are out of scope for now.
 
@@ -132,7 +133,8 @@ stateDiagram-v2
   (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP reads, dismisses, restores, and marks; agents write through MCP. Each
+- HTTP reads, dismisses, restores, marks, and creates a list from a confirmed
+  link; only MCP replaces a list. Each
   item embeds the same row the pull request or issue list returns, or null once
   the item is no longer a visible synced row. A dismissed list stays readable
   by ID with `dismissed_at` set.
@@ -158,12 +160,15 @@ stateDiagram-v2
 
 ## Links
 
-- Other tools build links with the public `worklist` package, the shape the MCP
-  put tool takes; never copy the shape (`worklist/link.go::Fragment`).
+- Go tools build links with the public `worklist` package, the shape the MCP
+  put tool takes (`worklist/link.go::Fragment`). Other producers use its JSON
+  field names; the Python-built fragment in `worklist/link_test.go` is the
+  cross-language test vector.
 - The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd:
   browsers and scripts build links too. It never reaches a request line.
-- `kenn://kenn-forge/worklists/import#…` routes through the Kenn desktop app,
-  whose link allowlist lives outside this repository.
+- `kenn://kenn-forge/worklists/import#…` works only once the Kenn desktop
+  app's link allowlist, kept outside this repository, admits the path.
+  `/worklists/import#…` works on any Forge origin.
 - Opening a link never writes; any page can link there, so only the
   maintainer's confirm creates the list (`internal/server/worklistapi/import.go`).
 - Untracked, unsynced, or repeated items are skipped, never added; every
@@ -174,8 +179,10 @@ stateDiagram-v2
 - Worklists appear as a header tab only while at least one exists, or while
   the worklists page is open so the tab survives dismissing the last list
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
-- An import that finishes after the maintainer left the page does not
-  navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
+- An import that finishes after the maintainer left or reopened the page does
+  not navigate. When its outcome is unknown, Create stays off; reopening the
+  link is the deliberate retry
+  (`frontend/src/lib/views/WorklistImportView.svelte`).
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and

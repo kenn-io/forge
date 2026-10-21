@@ -119,11 +119,11 @@ func (r ItemRef) validate() error {
 	switch {
 	case r.Type != "pr" && r.Type != "issue":
 		return errors.New("item type must be pr or issue")
-	case r.Provider == "":
+	case strings.TrimSpace(r.Provider) == "":
 		return errors.New("provider is required")
-	case r.Owner == "":
+	case strings.TrimSpace(r.Owner) == "":
 		return errors.New("owner is required")
-	case r.Name == "":
+	case strings.TrimSpace(r.Name) == "":
 		return errors.New("name is required")
 	case r.Number <= 0:
 		return errors.New("number must be greater than zero")

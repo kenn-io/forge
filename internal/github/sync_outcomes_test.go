@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/githubapp"
+	"go.kenn.io/forge/internal/config"
 	appauth "go.kenn.io/forge/internal/githubapp"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -346,6 +347,50 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
 		})
 	}
+}
+
+func TestSyncFailedAfterResolvedRecoveryAndReadd(t *testing.T) {
+	assert := assert.New(t)
+	raw := config.Repo{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &partialFailureMock{}
+	outage := true
+	client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		if outage {
+			return nil, platform.ErrPermissionDenied
+		}
+		return &gh.Repository{ID: new(int64(42)), Name: &name, Owner: &gh.User{Login: &owner}}, nil
+	}
+	var issueReads atomic.Int32
+	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+		issueReads.Add(1)
+		return nil, nil
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, FallbackConfiguredRepoRefs(nil, raw), time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
+	assert.Zero(issueReads.Load())
+
+	outage = false
+	s.RunOnce(t.Context())
+	assert.Equal(int32(1), issueReads.Load())
+	tracked := s.TrackedRepos()
+	require.Len(t, tracked, 1)
+	assert.Equal(platform.RepositoryIDKey(42), tracked[0].Key)
+	assert.Len(events, 2)
+
+	require.NoError(t, s.SetReposWithContext(t.Context(), nil, false))
+	s.RunOnce(t.Context())
+	require.Empty(t, s.TrackedRepos())
+	outage = true
+	readded := FallbackConfiguredRepoRefs(s.TrackedRepos(), raw)
+	require.Len(t, readded, 1)
+	assert.True(readded[0].Key.IsZero())
+	require.NoError(t, s.SetReposWithContext(t.Context(), readded, false))
+	s.RunOnce(t.Context())
+	assert.Equal(int32(1), issueReads.Load())
+	assert.Equal([][2]string{{"merge_requests", "auth"}, {"issues", "auth"}, {"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }
 
 func TestSyncFailedArchivedMetadataRead(t *testing.T) {

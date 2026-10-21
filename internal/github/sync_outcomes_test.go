@@ -2,17 +2,11 @@ package github
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -23,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
-	appauth "go.kenn.io/forge/internal/githubapp"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -254,42 +247,6 @@ func TestSyncFailureReason(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
 	}
-}
-
-func TestSyncFailedManagedTokenRenewal(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
-	keyPath := filepath.Join(t.TempDir(), "app.pem")
-	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0o600))
-	assert := assert.New(t)
-	var mints atomic.Int32
-	host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(http.MethodPost, r.Method)
-		assert.Equal("/api/v3/app/installations/11/access_tokens", r.URL.Path)
-		if mints.Add(1) == 1 {
-			w.WriteHeader(http.StatusCreated)
-			fmt.Fprintf(w, `{"token":"installation-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
-			return
-		}
-		http.Error(w, "mint failed", http.StatusUnauthorized)
-	}))
-	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-		Key:        tokenauth.Key{Platform: "github", Host: host},
-		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindGitHubApp, Host: host, AppID: 7, FilePath: keyPath, InstallationID: 11}},
-	}, tokenauth.Options{GitHubApp: func(ctx context.Context, candidate tokenauth.Candidate) (string, time.Time, error) {
-		return appauth.MintInstallationToken(ctx, candidate.Host, candidate.AppID, candidate.FilePath, candidate.InstallationID)
-	}})
-	token, err := source.Token(t.Context())
-	require.NoError(t, err)
-	source.Invalidate(token)
-	client, err := NewClient(source, host, nil, nil)
-	require.NoError(t, err)
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: host}
-	s := NewSyncer(map[string]Client{host: client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.Equal([][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {

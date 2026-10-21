@@ -121,15 +121,7 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 
 func TestSyncFailedProperties(t *testing.T) {
 	t.Setenv(EnabledEnv, "0")
-	var properties []posthog.AllowedProperty
-	for name, filter := range allowedEvents["sync_failed"] {
-		if requiredProperties["sync_failed"][name] {
-			properties = append(properties, posthog.RequireProperty(name, filter))
-		} else {
-			properties = append(properties, posthog.AllowProperty(name, filter))
-		}
-	}
-	daemon, err := posthog.NewReporter(posthog.Options{}, posthog.WithAllowedEvent("sync_failed", properties...))
+	daemon, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("daemon")...)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, daemon.Close()) })
 	for _, tc := range []struct{ source, reason, wantSource, wantReason string }{

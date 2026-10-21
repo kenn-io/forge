@@ -138,6 +138,8 @@ func TestSyncFailedIgnoredErrors(t *testing.T) {
 		{"local process file limit", "issues", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.EMFILE}},
 		{"local system file limit", "issues", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ENFILE}},
 		{"budget refused", "issues", platform.ErrSyncBudgetExhausted},
+		{"provider not configured", "merge_requests", fmt.Errorf("resolve reader: %w", platform.ErrProviderNotConfigured)},
+		{"invalid repository reference", "issues", fmt.Errorf("resolve reader: %w", platform.ErrInvalidRepoRef)},
 		{"disabled feature without cooldown", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

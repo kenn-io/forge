@@ -32,7 +32,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -390,7 +389,7 @@ type syncBranchActivityFixture struct {
 
 func setupSyncBranchActivityFixture(t *testing.T, defaultBranch string) syncBranchActivityFixture {
 	t.Helper()
-	dir := gitfixture.ScratchDir(t)
+	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote.git")
 	syncActivityGitRun(t, dir, "init", "--bare", "--initial-branch=main", remote)
 	work := filepath.Join(dir, "work")

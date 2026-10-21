@@ -52,7 +52,7 @@ func RepoCountBucket(count int) string {
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
-var syncSources = []string{"merge_requests", "issues", "checks", "refs"}
+var syncSources = []string{"merge_requests", "issues", "checks"}
 
 // SyncSources returns the sources reported by full sync passes.
 func SyncSources() []string { return slices.Clone(syncSources) }

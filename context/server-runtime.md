@@ -1,12 +1,13 @@
 # Server Runtime
 
-- A full sync pass sends at most one `sync_failed` event per source, when a
-  repository newly fails that source. Any successful read wins within that repository/source.
-  Observe list/repository and checks reads;
-  exclude local filesystem/capacity errors, budget waits, and individual item reads.
-  Unread repositories retain state; recovery, cooldown, archival, or untracking
-  clears it. Disabled-feature responses observe nothing; 304 counts as success.
-  State is in memory. Report only fixed source/reason values, without identifiers
+- Full sync passes report `sync_failed` once per source when a repository newly
+  fails; a successful read wins within each repository/source
+  (`internal/github/sync_outcomes.go::syncPass.observe`).
+- Observe repository, list, and checks reads; exclude local filesystem/capacity
+  and configuration errors, budget waits, disabled features, and item reads.
+  HTTP 304 counts as success (`internal/github/sync_outcomes.go::syncPass.observe`).
+- Unread repositories retain in-memory outage state; recovery, cooldown,
+  archival, or untracking clears it. Report fixed values without identifiers
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

@@ -29,7 +29,7 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) || isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) || errors.Is(err, platform.ErrProviderNotConfigured) || errors.Is(err, platform.ErrInvalidRepoRef) || isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	reason := ""
@@ -69,10 +69,10 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	if capsErr != nil {
 		return
 	}
-	s.featureCooldowns.mu.Lock()
-	defer s.featureCooldowns.mu.Unlock()
 	for scope, source := range syncScopeSources {
+		s.featureCooldowns.mu.Lock()
 		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, source))
+		s.featureCooldowns.mu.Unlock()
 		if !state.nextProbe.After(s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
 			s.observeSync(ctx, repo, source, err)
 		}

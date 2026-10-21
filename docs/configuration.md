@@ -704,10 +704,12 @@ These events send only `surface: web` and the provider or workspace type.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 
-Disable telemetry with:
+Only release builds send telemetry, and it stays off in CI. Disable it with
+`TELEMETRY_ENABLED=0` or `DO_NOT_TRACK=1` in the daemon's environment, then
+restart the daemon:
 
 ```sh
-TELEMETRY_ENABLED=0 kenn-forge daemon start
+TELEMETRY_ENABLED=0 kenn-forge daemon restart
 ```
 
 Once the daemon reports telemetry as disabled, the web UI stops sending events.

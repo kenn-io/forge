@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -40,15 +41,28 @@ func (f *fakeKitClient) Enabled() bool {
 	return true
 }
 
+func enableTelemetryEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv(EnabledEnv, "1")
+	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	t.Setenv("DO_NOT_TRACK", "0")
+	ci, present := os.LookupEnv("CI")
+	require.NoError(t, os.Unsetenv("CI"))
+	t.Cleanup(func() {
+		if present {
+			require.NoError(t, os.Setenv("CI", ci)) //nolint:usetesting // t.Setenv would undo this restoration during its own cleanup.
+		}
+	})
+}
+
 func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	t.Setenv(EnabledEnv, "1")
-	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	enableTelemetryEnv(t)
 	database := dbtest.Open(t)
 
-	reporter, err := NewReporter(Options{Database: database})
+	reporter, err := NewReporter(Options{Database: database, Version: "v1.2.3"})
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())

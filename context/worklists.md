@@ -6,9 +6,10 @@ through.
 
 ## Ownership
 
-- Agents author worklists only through the Forge MCP server. The UI reads,
-  dismisses, marks items handled, and acts on worklists but never authors or
-  reorders items.
+- Agents author worklists through the Forge MCP server, or hand the
+  maintainer a worklist link that creates the list when opened. The UI reads,
+  dismisses, marks items handled, and acts on worklists, and opening a link
+  stores the list it carries, but the UI never edits or reorders items.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
   score, a section, a note, and a caveat. Readiness is a section, not part of
   the score.
@@ -18,8 +19,9 @@ through.
   looked like then: head commit, comment count, CI result, review decision, and
   open, merged, or closed state. Comparing that record with the live synced
   item produces the changes since the list was written, without provider calls.
-- Items identify repositories by provider-verified stable identity, never by
-  owner/name alone (`context/platform-sync-invariants.md`).
+- Stored items identify repositories by provider-verified stable identity,
+  never by owner/name alone (`context/platform-sync-invariants.md`). A link may
+  name only owner/name; import resolves it to stable identity before writing.
 - Worklists cover pull requests and issues from every supported provider.
   Kata tasks are out of scope for now.
 
@@ -131,7 +133,8 @@ stateDiagram-v2
   (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP reads, dismisses, restores, and marks; agents write through MCP. Each
+- HTTP reads, dismisses, restores, marks, and creates a list from a link;
+  only MCP replaces a list. Each
   item embeds the same row the pull request or issue list returns, or null once
   the item is no longer a visible synced row. A dismissed list stays readable
   by ID with `dismissed_at` set.
@@ -155,11 +158,38 @@ stateDiagram-v2
 - The hub broadcasts `worklists_changed` with `{"worklist_id": N}` after every
   put, dismissal, restore, mark, or clear (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
 
+## Links
+
+- Go tools build links with the public `worklist` package, the shape the MCP
+  put tool takes (`worklist/link.go::Fragment`). Other producers use its JSON
+  field names; the Python-built fragment in `worklist/link_test.go` is the
+  cross-language test vector.
+- The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd:
+  browsers and scripts build links too. It never reaches a request line.
+- `kenn://kenn-forge/worklists/import#…` works only once the Kenn desktop
+  app's link allowlist, kept outside this repository, admits the path.
+  `/worklists/import#…` works on any Forge origin.
+- Opening a link creates its list with no confirm step. The same list always
+  maps to the same worklist: opening it again, by Back, reload, or a second
+  click, returns that worklist and restores it if dismissed. A hash of the
+  list's JSON, not of the fragment text, is the key, so encodings agree
+  (`internal/db/worklists.go::DB.PutWorklist`). Any page can link there; an
+  unwanted list is dismissed like any other.
+- The link follows its worklist, not its contents (maintainer decision): after
+  an agent rewrites the list, or its items go away, the link still opens it.
+- Untracked, unsynced, or repeated items are skipped, never added, and the UI
+  reports how many, counted from the link alone
+  (`internal/server/worklistapi/import.go::Handler.importableRepos`). A link
+  with no usable item and no earlier worklist creates nothing; the page shows
+  why.
+
 ## UI
 
 - Worklists appear as a header tab only while at least one exists, or while
   the worklists page is open so the tab survives dismissing the last list
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
+- An import that finishes after the maintainer left the page does not
+  navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and

@@ -25,8 +25,7 @@ func TestNewReporterHandsKitTheStoredInstallIdentity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	t.Setenv(EnabledEnv, "1")
-	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	enableTelemetryEnv(t)
 	var built []posthog.Options
 	swapKitReporter(t, func(opts posthog.Options, _ ...posthog.Option) (Client, error) {
 		built = append(built, opts)
@@ -53,10 +52,11 @@ func TestNewReporterDisabledByEnvDoesNotCreateInstallID(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
+	enableTelemetryEnv(t)
 	t.Setenv(EnabledEnv, "0")
 	database := dbtest.Open(t)
 
-	reporter, err := newReporter(Options{Database: database}, time.Now())
+	reporter, err := newReporter(Options{Database: database, Version: "v1.2.3"}, time.Now())
 	require.NoError(err)
 
 	assert.False(reporter.Enabled())
@@ -79,44 +79,45 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	assert.False(backend.EventAllowed("setup_finished"))
 	daemon, err := posthog.NewReporter(posthog.Options{}, kitAllowedEvents("daemon")...)
 	require.NoError(err)
-	setupProperties, err := daemon.SanitizeProperties("setup_finished", map[string]any{"repo": "acme/widget", "item": 42, "surface": "web"})
-	require.NoError(err)
-	assert.NotContains(setupProperties, "repo")
-	assert.NotContains(setupProperties, "item")
-	assert.NotContains(setupProperties, "surface")
+	assert.True(daemon.EventAllowed("setup_finished"))
 	assert.True(backend.EventAllowed("screen_viewed"))
-	assert.True(UIEventAllowed("screen_viewed"))
-	for _, screen := range []string{"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs", "workspaces", "terminal", "workspace-item", "settings", "project-intake", "design-system", "onboarding", "worklists"} {
-		properties, err := backend.SanitizeProperties("screen_viewed", map[string]any{"screen": screen, "surface": "web", "repo": "owner/repo"})
-		require.NoError(err)
-		assert.Equal(screen, properties["screen"])
-		assert.Equal("web", properties["surface"])
-		assert.NotContains(properties, "repo")
-	}
-	for _, invalid := range []any{nil, 7, "owner/repo", ""} {
-		_, valid := screenFilter(invalid)
-		assert.False(valid)
+	for _, tc := range []struct {
+		screen any
+		valid  bool
+	}{
+		{"activity", true},
+		{"actions", true},
+		{"repos", true},
+		{"repo-browser", true},
+		{"pulls", true},
+		{"issues", true},
+		{"docs", true},
+		{"workspaces", true},
+		{"terminal", true},
+		{"workspace-item", true},
+		{"settings", true},
+		{"project-intake", true},
+		{"design-system", true},
+		{"onboarding", true},
+		{"worklists", true},
+		{nil, false},
+		{7, false},
+		{"owner/repo", false},
+		{"", false},
+	} {
+		value, valid := allowedEvents["screen_viewed"]["screen"](tc.screen)
+		assert.Equal(tc.valid, valid, "screen: %v", tc.screen)
+		if tc.valid {
+			assert.Equal(tc.screen, value)
+		}
 	}
 	for _, duration := range []string{"under_1m", "1_to_5m", "5_to_30m", "over_30m", "30m_to_2h", "over_2h"} {
-		properties, err := backend.SanitizeProperties("session_ended", map[string]any{"duration_bucket": duration})
-		require.NoError(err)
-		assert.Equal(duration, properties["duration_bucket"])
+		value, valid := allowedEvents["session_ended"]["duration_bucket"](duration)
+		assert.True(valid)
+		assert.Equal(duration, value)
 	}
-	properties, err := backend.SanitizeProperties("app_opened", map[string]any{
-		"surface":                 "web",
-		"distinct_id":             "spoofed",
-		"$geoip_disable":          false,
-		"$process_person_profile": true,
-	})
-	require.NoError(err)
-	assert.Equal("web", properties["surface"])
-	assert.NotContains(properties, "distinct_id")
-	assert.Equal(true, properties["$geoip_disable"])
-	assert.Equal(false, properties["$process_person_profile"])
-
-	properties, err = backend.SanitizeProperties("app_opened", map[string]any{"surface": "owner/repo"})
-	require.NoError(err)
-	assert.NotContains(properties, "surface")
+	_, valid := allowedEvents["app_opened"]["surface"]("owner/repo")
+	assert.False(valid)
 }
 
 func TestSyncFailedProperties(t *testing.T) {

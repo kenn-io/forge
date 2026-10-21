@@ -143,3 +143,16 @@ type WorklistHandledResponse struct {
 	Worklist WorklistSummaryResponse    `json:"worklist"`
 	Items    []WorklistItemMarkResponse `json:"items"`
 }
+
+// ImportWorklistBody carries the fragment of a worklist link. The SPA reads
+// it from its own URL, so the encoded list never reaches a request line.
+type ImportWorklistBody struct {
+	Fragment string `json:"fragment" minLength:"1" maxLength:"524288" doc:"The link's fragment without '#': v1. followed by the encoded list."`
+}
+
+// WorklistImportResponse names the list an import created or reopened.
+type WorklistImportResponse struct {
+	WorklistID   int64 `json:"worklist_id"`
+	ItemCount    int   `json:"item_count" doc:"Items of the link this Forge can show now."`
+	SkippedCount int   `json:"skipped_count" doc:"Items of the link this Forge cannot show now."`
+}

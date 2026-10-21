@@ -36,6 +36,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	katacatalog "go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
@@ -1025,6 +1026,13 @@ func newServer(
 			FilterRepos: s.filterTrackedRepos, ProviderSource: worklistProviderSource,
 			Broadcast: func(eventType string, data any) {
 				s.hub.Broadcast(syncevents.Event{Type: eventType, Data: data})
+			},
+			Put: func(ctx context.Context, put mcpserver.WorklistPut) (mcpserver.WorklistPutResult, error) {
+				result, err := (mcpBackend{server: s}).PutWorklist(ctx, put)
+				if err != nil {
+					return mcpserver.WorklistPutResult{}, providerapi.FederationWorkflowProblem(err)
+				}
+				return result, nil
 			},
 		})
 		s.pullLifecycle = s.pullAPI

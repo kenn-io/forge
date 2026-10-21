@@ -1,6 +1,7 @@
 // Package worklistapi serves agent-authored worklists to the UI. Agents write
-// worklists only through MCP; this package reads, dismisses, and restores
-// them, and marks items handled.
+// worklists through MCP, or hand the maintainer a link this package previews
+// and imports once they confirm. It also reads, dismisses, and restores
+// worklists, and marks items handled.
 package worklistapi
 
 import (
@@ -14,6 +15,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/pullapi"
@@ -46,6 +48,9 @@ type Deps struct {
 	ProviderSource ProviderSource
 	// Broadcast publishes an event to connected clients. It may be nil.
 	Broadcast func(eventType string, data any)
+	// Put writes an imported worklist through the same path as MCP and
+	// returns HTTP problems.
+	Put func(context.Context, mcpserver.WorklistPut) (mcpserver.WorklistPutResult, error)
 }
 
 type Handler struct {
@@ -57,13 +62,14 @@ type Handler struct {
 	filterRepos    func([]db.Repo) []db.Repo
 	providerSource ProviderSource
 	broadcast      func(eventType string, data any)
+	put            func(context.Context, mcpserver.WorklistPut) (mcpserver.WorklistPutResult, error)
 }
 
 func New(deps Deps) *Handler {
 	return &Handler{
 		db: deps.DB, resolver: deps.Resolver, pulls: deps.Pulls, issues: deps.Issues,
 		now: deps.Now, filterRepos: deps.FilterRepos, providerSource: deps.ProviderSource,
-		broadcast: deps.Broadcast,
+		broadcast: deps.Broadcast, put: deps.Put,
 	}
 }
 
@@ -103,6 +109,7 @@ func (h *Handler) Register(api huma.API) {
 		Summary:     "Mark worklist items handled or unhandled",
 		Tags:        []string{"Worklists"},
 	}, h.setItemsHandled)
+	h.registerImport(api)
 }
 
 type setItemsHandledInput struct {

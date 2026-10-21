@@ -4355,6 +4355,24 @@ components:
         - new_count
         - lines
       type: object
+    ImportWorklistBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ImportWorklistBody.json
+          format: uri
+          readOnly: true
+          type: string
+        fragment:
+          description: "The link's fragment without '#': v1. followed by the encoded list."
+          maxLength: 524288
+          minLength: 1
+          type: string
+      required:
+        - fragment
+      type: object
     InspectProjectWorktreeOutputBody:
       additionalProperties: false
       properties:
@@ -11532,6 +11550,32 @@ components:
       required:
         - worklist
         - items
+      type: object
+    WorklistImportResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistImportResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        item_count:
+          description: Items of the link this Forge can show now.
+          format: int64
+          type: integer
+        skipped_count:
+          description: Items of the link this Forge cannot show now.
+          format: int64
+          type: integer
+        worklist_id:
+          format: int64
+          type: integer
+      required:
+        - worklist_id
+        - item_count
+        - skipped_count
       type: object
     WorklistItemMarkResponse:
       additionalProperties: false
@@ -28711,6 +28755,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List worklists
+      tags:
+        - Worklists
+  /worklists/import:
+    post:
+      operationId: import-worklist
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportWorklistBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistImportResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Create the worklist a link carries
       tags:
         - Worklists
   /worklists/{id}:

@@ -328,12 +328,15 @@ type WorkflowMutation struct {
 
 // WorklistPut creates a worklist when WorklistID is zero and replaces the
 // named worklist otherwise. WorkspaceID names the ACP workspace that wrote it.
+// LinkKey names the worklist link a new list comes from; a key already stored
+// returns that list instead of creating another.
 type WorklistPut struct {
 	WorklistID  int64             `json:"worklist_id,omitempty"`
 	Title       string            `json:"title"`
 	Recipe      string            `json:"recipe"`
 	CreatedBy   string            `json:"created_by"`
 	WorkspaceID string            `json:"workspace_id"`
+	LinkKey     string            `json:"link_key,omitempty"`
 	Items       []WorklistPutItem `json:"items" nullable:"false"`
 }
 

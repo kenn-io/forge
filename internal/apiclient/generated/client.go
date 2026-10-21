@@ -11464,6 +11464,31 @@ func (o *ListWorklistsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ImportWorklistRequestOptions is the options needed to make a request to ImportWorklist.
+type ImportWorklistRequestOptions struct {
+	Body *ImportWorklistBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ImportWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ImportWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ImportWorklistRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ImportWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetWorklistRequestOptions is the options needed to make a request to GetWorklist.
 type GetWorklistRequestOptions struct {
 	PathParams *GetWorklistPath
@@ -13197,6 +13222,7 @@ type ClientInterface interface {
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
 	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
 	ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error)
+	ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error)
 	GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error)
 	DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error)
 	SetWorklistItemsHandledWithResponse(ctx context.Context, options *SetWorklistItemsHandledRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorklistItemsHandledResp, error)
@@ -38890,6 +38916,75 @@ func (c *Client) ListWorklistsWithResponse(ctx context.Context, options *ListWor
 	}
 }
 
+// ImportWorklist Create the worklist a link carries
+func (c *Client) ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/import")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ImportWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ImportWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ImportWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ImportWorklistResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ImportWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ImportWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetWorklist Get worklist
 func (c *Client) GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error) {
 	var err error
@@ -47966,6 +48061,22 @@ func (c *Client) ListWorklistsRaw(ctx context.Context, httpClient *http.Client, 
 	return httpClient.Do(req)
 }
 
+// ImportWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) ImportWorklistRaw(ctx context.Context, httpClient *http.Client, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetWorklistRaw returns an unread response. The caller must close its body.
 func (c *Client) GetWorklistRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55491,6 +55602,23 @@ func NewListWorklistsRequest(ctx context.Context, baseURL string, options *ListW
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewImportWorklistRequest constructs a typed request for a caller-owned transport.
+func NewImportWorklistRequest(ctx context.Context, baseURL string, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetWorklistRequest constructs a typed request for a caller-owned transport.
 func NewGetWorklistRequest(ctx context.Context, baseURL string, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -61392,6 +61520,10 @@ type ListWorklistsResponseJSON = ListWorklistsResponse
 
 type ListWorklistsErrorResponse = ProblemError
 
+type ImportWorklistResponse = WorklistImportResponse
+
+type ImportWorklistErrorResponse = ProblemError
+
 type GetWorklistResponse = WorklistResponse
 
 type GetWorklistErrorResponse = ProblemError
@@ -64979,6 +65111,15 @@ type ListWorklistsResp struct {
 	ApplicationProblemPlusJSONDefault *ListWorklistsErrorResponse
 }
 
+type ImportWorklistResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ImportWorklistErrorResponse
+	JSON200                           *ImportWorklistResponse
+	ApplicationProblemPlusJSONDefault *ImportWorklistErrorResponse
+}
+
 type GetWorklistResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -67160,6 +67301,14 @@ type Hunk struct {
 	OldCount int64   `json:"old_count"`
 	OldStart int64   `json:"old_start"`
 	Section  *string `json:"section,omitempty"`
+}
+
+type ImportWorklistBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Fragment The link's fragment without '#': v1. followed by the encoded list.
+	Fragment string `json:"fragment"`
 }
 
 type InspectProjectWorktreeOutputBody struct {
@@ -69773,6 +69922,18 @@ type WorklistHandledResponse struct {
 	Schema   *string                    `json:"$schema,omitempty"`
 	Items    []WorklistItemMarkResponse `json:"items"`
 	Worklist WorklistSummaryResponse    `json:"worklist"`
+}
+
+type WorklistImportResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// ItemCount Items of the link this Forge can show now.
+	ItemCount int64 `json:"item_count"`
+
+	// SkippedCount Items of the link this Forge cannot show now.
+	SkippedCount int64 `json:"skipped_count"`
+	WorklistID   int64 `json:"worklist_id"`
 }
 
 type WorklistItemMarkResponse struct {

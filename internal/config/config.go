@@ -1043,9 +1043,9 @@ type Shell struct {
 }
 
 type MCP struct {
-	Enabled     bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
-	Port        int  `toml:"port,omitempty" json:"port,omitempty"`
-	DiffCacheMB int  `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
+	Enabled     *bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	Port        int   `toml:"port,omitempty" json:"port,omitempty"`
+	DiffCacheMB int   `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
 }
 
 // ExternalContextSource is configured through TOML, never through settings writes.
@@ -1157,12 +1157,41 @@ func (c *Config) SSEBufferSizeOrDefault() int {
 	return c.SSEBufferSize
 }
 
+func (c *Config) MCPEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.MCP.Enabled != nil {
+		return *c.MCP.Enabled
+	}
+	return c.mcpDefaultOn()
+}
+
+func (c *Config) mcpDefaultOn() bool {
+	ip := net.ParseIP(c.Host)
+	return c.MCP.Port == 0 && !c.ExecutionWorker.Enabled && ip != nil && ip.IsLoopback()
+}
+
+func (c *Config) SetMCPEnabled(want bool) {
+	if want == c.MCPEnabled() {
+		return
+	}
+	if want == c.mcpDefaultOn() {
+		c.MCP.Enabled = nil
+	} else {
+		c.MCP.Enabled = new(want)
+	}
+}
+
 func (c *Config) MCPPort() int {
-	if c == nil || !c.MCP.Enabled {
+	if !c.MCPEnabled() {
 		return 0
 	}
 	if c.MCP.Port != 0 {
 		return c.MCP.Port
+	}
+	if c.MCP.Enabled == nil {
+		return c.Port
 	}
 	return c.Port + 1
 }
@@ -1699,7 +1728,7 @@ func (c *Config) validate() error {
 	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
 		return errors.New("config: MCP diff cache size is outside the supported range")
 	}
-	if c.MCP.Enabled {
+	if c.MCPEnabled() {
 		mcpPort := c.MCPPort()
 		if mcpPort < 1 || mcpPort > 65535 {
 			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)

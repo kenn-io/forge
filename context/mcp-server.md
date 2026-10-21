@@ -33,9 +33,9 @@
 - Durable ACP owners retain their injected MCP address across daemon restarts;
   reattachment updates the daemon URL and credential behind that address
   (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy.Bind`).
-- The companion uses an optional daemon-owned listener enabled by
-  `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
-  a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
+- With enabled and port omitted, MCP shares the main loopback-IP listener on non-workers;
+  explicit true retains backend port plus one, and an explicit port overrides it
+  (`internal/config/config.go::Config.MCPPort`).
   When that port is the backend port and the main listener already accepts the
   companion's loopback address, the main listener serves `/mcp` at the base path
   instead of binding a colliding socket. Direct loopback requests get the

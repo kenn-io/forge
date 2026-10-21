@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -45,6 +46,7 @@ func (s *Server) buildLocalSettingsResponse(
 	quickActions := settingsapi.CloneQuickActions(s.cfg.QuickActions)
 	kataProjects := slices.Clone(s.cfg.KataProjects)
 	mcp := s.cfg.MCP
+	mcpEnabled := s.cfg.MCPEnabled()
 	roborev := s.cfg.Roborev
 	if kataProjects == nil {
 		// kata_projects is a required non-null array in the API schema, so a
@@ -122,10 +124,10 @@ func (s *Server) buildLocalSettingsResponse(
 		LaunchTargets: launchTargets,
 		Fleet:         fleetSettings,
 		MCP: spokeapi.McpSettingsResponse{
-			Enabled:            mcp.Enabled,
+			Enabled:            mcpEnabled,
 			Port:               mcp.Port,
 			DiffCacheMB:        mcp.DiffCacheMB,
-			RestartRequired:    mcp != s.bootCfgSnapshot.MCP,
+			RestartRequired:    !reflect.DeepEqual(mcp, s.bootCfgSnapshot.MCP),
 			ActiveURL:          s.options.MCPURL,
 			ActiveRequiresAuth: s.bootCfgSnapshot.RequireAuth,
 		},
@@ -405,9 +407,12 @@ func (s *Server) commitLocalSettings(
 	}
 	if input.Body.MCP != nil {
 		if input.Body.MCP.Enabled != nil {
-			s.cfg.MCP.Enabled = *input.Body.MCP.Enabled
+			s.cfg.SetMCPEnabled(*input.Body.MCP.Enabled)
 		}
 		if input.Body.MCP.Port != nil {
+			if *input.Body.MCP.Port != 0 && s.cfg.MCP.Enabled == nil && s.cfg.MCPEnabled() {
+				s.cfg.MCP.Enabled = new(true)
+			}
 			s.cfg.MCP.Port = *input.Body.MCP.Port
 		}
 		if input.Body.MCP.DiffCacheMB != nil {

@@ -91,7 +91,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
-	if !cfg.MCP.Enabled || cfg.MCPSharesMainListener() {
+	if cfg.MCPPort() == 0 || cfg.MCPSharesMainListener() {
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
@@ -463,7 +463,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if mcpLn != nil {
 		mcpListenAddr = mcpLn.Addr().String()
 		mcpURL = "http://" + mcpListenAddr + "/mcp"
-	} else if cfg.MCP.Enabled {
+	} else if cfg.MCPEnabled() {
 		// The main listener already accepts the companion's loopback address.
 		mcpListenAddr = cfg.MCPListenAddr()
 		mcpURL = "http://" + mcpListenAddr + cfg.BasePath + "mcp"

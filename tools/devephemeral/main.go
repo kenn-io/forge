@@ -317,10 +317,11 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	cfg.TrustReverseProxy = false
 	// The source config's MCP port belongs to the developer's live daemon, so
 	// the ephemeral backend must never inherit it. The launcher resolves a free
-	// port; a zero here keeps the config's implicit backend+1.
+	// port; enabling explicitly preserves it when the source used the shared default.
 	mcpPort := 0
 	mcpURL := ""
-	if cfg.MCP.Enabled {
+	if cfg.MCPEnabled() {
+		cfg.MCP.Enabled = new(true)
 		cfg.MCP.Port = opts.mcpPort
 		mcpPort = cfg.MCPPort()
 		mcpURL, err = serverURL(cfg.Host, mcpPort, "/")

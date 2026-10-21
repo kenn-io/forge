@@ -255,20 +255,20 @@ func TestRestartRequiredForFleetRoleAndHubBinding(t *testing.T) {
 func TestRestartRequiredForMCPConfig(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
-	base := &config.Config{MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128}}
+	base := &config.Config{MCP: config.MCP{Enabled: new(true), Port: 8092, DiffCacheMB: 128}}
 	snap := configreload.SnapshotStartupConfig(base)
 
 	assert.False(snap.RestartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 128},
+		MCP: config.MCP{Enabled: new(true), Port: 8092, DiffCacheMB: 128},
 	}))
 	assert.True(snap.RestartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: false, Port: 8092, DiffCacheMB: 128},
+		MCP: config.MCP{Enabled: new(false), Port: 8092, DiffCacheMB: 128},
 	}))
 	assert.True(snap.RestartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: true, Port: 9192, DiffCacheMB: 128},
+		MCP: config.MCP{Enabled: new(true), Port: 9192, DiffCacheMB: 128},
 	}))
 	assert.True(snap.RestartRequiredFor(&config.Config{
-		MCP: config.MCP{Enabled: true, Port: 8092, DiffCacheMB: 256},
+		MCP: config.MCP{Enabled: new(true), Port: 8092, DiffCacheMB: 256},
 	}))
 }
 

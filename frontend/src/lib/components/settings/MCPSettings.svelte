@@ -135,7 +135,7 @@
         disabled={saving}
         aria-invalid={!portValid}
       />
-      <span class="field-help">Leave blank to use the Forge backend port plus one.</span>
+      <span class="field-help">Leave blank for the default port.</span>
     </label>
 
     <label class="field">

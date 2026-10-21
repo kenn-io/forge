@@ -5,30 +5,37 @@ running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.
 
-## Enable the companion
+## On by default
 
-Add this section to `~/.kenn/forge/config.toml`:
+With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own
+port when `host` is a loopback IP, such as `127.0.0.1` or `::1`, and Forge
+isn't an execution worker. Wildcard addresses and `localhost` require explicit
+enabling. With the default backend port, the endpoint is:
+
+```text
+http://127.0.0.1:8091/mcp
+```
+
+To turn it off, save this in `~/.kenn/forge/config.toml`:
 
 ```toml
 [mcp]
-enabled = true
-# port = 8092 # defaults to the main backend port plus one
+enabled = false
 ```
 
-Set `port` to the backend port to serve the companion at `/mcp` on the main
-loopback listener instead of a second port. It keeps the same loopback and
-authentication rules.
+For a separate listener, set `enabled = true`. Its port defaults to the backend
+port plus one; set `port` to choose another. A saved `port` with `enabled`
+omitted keeps the companion off. Existing explicit `enabled = true` configurations
+keep their endpoint. Re-enabling in Settings uses the default endpoint for the
+saved host and port.
+
+Older versions omitted `enabled = false` when saving, so those opt-outs can't
+be distinguished from fresh configurations. Set it again to keep MCP off.
 
 Restart the daemon after changing either setting:
 
 ```sh
 kenn-forge daemon restart
-```
-
-With the default backend port, the sessionless Streamable HTTP endpoint is:
-
-```text
-http://127.0.0.1:8092/mcp
 ```
 
 The listener is loopback-only. It follows `[api].require_auth`: when API
@@ -59,7 +66,7 @@ server catalog, the shape is typically similar to:
   "mcpServers": {
     "kenn-forge": {
       "type": "http",
-      "url": "http://127.0.0.1:8092/mcp"
+      "url": "http://127.0.0.1:8091/mcp"
     }
   }
 }
@@ -75,7 +82,7 @@ configuration:
   "mcpServers": {
     "kenn-forge": {
       "type": "http",
-      "url": "http://127.0.0.1:8092/mcp",
+      "url": "http://127.0.0.1:8091/mcp",
       "headers": {
         "Authorization": "Bearer ${KENN_FORGE_API_TOKEN}"
       }
@@ -207,7 +214,7 @@ Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 
 ## Troubleshooting
 
-If the endpoint is unavailable, confirm `[mcp].enabled = true`, restart the
+If the endpoint is unavailable, check `kenn-forge mcp quickstart`, restart the
 daemon, and inspect daemon status for the resolved listener. A separate MCP
 port must be free at startup.
 

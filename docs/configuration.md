@@ -633,14 +633,20 @@ proxy and use HTTPS origins for federation.
 
 ### MCP companion
 
-Enable the daemon's optional loopback MCP listener with:
+The companion is on by default on Forge's own port when `host` is a loopback IP,
+`mcp.enabled` and `mcp.port` are omitted, and Forge isn't an execution worker.
+Wildcard addresses and `localhost` require explicit enabling. To turn it off:
 
 ```toml
 [mcp]
-enabled = true
-# port = 8092 # defaults to the main backend port plus one
-diff_cache_mb = 128
+enabled = false
 ```
+
+Set `enabled = true` for a separate listener at the backend port plus one, or
+also set `port` to choose its port. Existing explicit settings keep their endpoint.
+A saved `port` with `enabled` omitted keeps MCP off. Re-enabling in Settings uses
+the default endpoint for the saved host and port. Older versions dropped explicit
+false values on save; set `enabled = false` again to preserve an old opt-out.
 
 The sessionless Streamable HTTP endpoint is
 `http://127.0.0.1:<resolved-port>/mcp`. Authentication follows

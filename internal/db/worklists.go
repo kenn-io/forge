@@ -60,8 +60,9 @@ type WorklistSummary struct {
 	ChangedCount int
 	GoneCount    int
 	HandledCount int
-	// RemainingCount counts items that are neither handled nor gone. Handled
-	// and gone overlap, so it is not derivable from the other counts.
+	// RemainingCount counts items that are neither handled nor closed:
+	// merged, closed, or no longer synced. Handled and closed overlap, so it
+	// is not derivable from the other counts.
 	RemainingCount int
 }
 
@@ -521,7 +522,8 @@ func (d *DB) worklistSummaries(
 
 // SummarizeWorklist counts a worklist's items by freshness and handled mark.
 // An item that is both handled and gone counts once toward each of those
-// counts and not toward RemainingCount.
+// counts. A handled or closed item, including one already closed when the
+// agent wrote it, does not count toward RemainingCount.
 func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 	summary := WorklistSummary{Worklist: detail.Worklist, ItemCount: len(detail.Items)}
 	for _, item := range detail.Items {
@@ -535,7 +537,7 @@ func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 		if item.HandledAt != nil {
 			summary.HandledCount++
 		}
-		if item.HandledAt == nil && item.Freshness != WorklistGone {
+		if item.HandledAt == nil && !worklistItemClosed(item) {
 			summary.RemainingCount++
 		}
 	}
@@ -659,6 +661,12 @@ func (d *DB) listWorklistItems(
 
 func worklistStateTerminal(state string) bool {
 	return slices.Contains([]string{"closed", "merged"}, state)
+}
+
+// worklistItemClosed reports whether the item is merged, closed, or no longer
+// a visible synced row, whatever its state when the agent wrote it.
+func worklistItemClosed(item WorklistItem) bool {
+	return item.Live == nil || worklistStateTerminal(item.Live.State)
 }
 
 // CompareWorklistItem derives an item's freshness and changes from its

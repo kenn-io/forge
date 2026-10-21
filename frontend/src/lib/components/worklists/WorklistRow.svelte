@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Chip, type ChipTone } from "@kenn-io/kit-ui";
+  import { Chip, DiffStats, type ChipTone } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
@@ -52,6 +52,12 @@
   });
 
   const labels = $derived(item.pull?.labels ?? item.issue?.labels ?? []);
+  // Providers that report no line counts leave both at zero; show nothing then.
+  const pullSize = $derived(
+    item.pull && (item.pull.Additions > 0 || item.pull.Deletions > 0)
+      ? { additions: item.pull.Additions, deletions: item.pull.Deletions }
+      : null,
+  );
   const agentState = $derived(item.pull?.workspace?.agent_state ?? item.issue?.workspace?.agent_state);
 </script>
 
@@ -93,6 +99,9 @@
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
       <span class="worklist-row-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+      {#if pullSize}
+        <span class="worklist-row-size"><DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros /></span>
+      {/if}
       {#if item.note}
         <span class="worklist-row-sep" aria-hidden="true">·</span>
         <span class="worklist-row-note">{item.note}</span>
@@ -270,6 +279,11 @@
 
   .worklist-row-ref {
     font-family: var(--font-mono);
+  }
+
+  .worklist-row-size {
+    margin-left: var(--space-2);
+    white-space: nowrap;
   }
 
   .worklist-row-sep {

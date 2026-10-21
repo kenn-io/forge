@@ -70040,7 +70040,7 @@ type WorklistSummaryResponse struct {
 	// Recipe The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
 	Recipe string `json:"recipe"`
 
-	// RemainingCount Items neither handled nor gone.
+	// RemainingCount Items neither handled nor merged, closed, or gone.
 	RemainingCount int64     `json:"remaining_count"`
 	Title          string    `json:"title"`
 	UpdatedAt      time.Time `json:"updated_at"`

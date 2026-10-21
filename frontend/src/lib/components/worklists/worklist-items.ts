@@ -3,6 +3,7 @@ import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from ".
 import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { WorklistItemSelection } from "../../routes.js";
+import { matchesSearchQuery, type SearchQuery } from "../../utils/search-query.js";
 
 export interface WorklistChangeMarker {
   readonly label: string;
@@ -48,6 +49,16 @@ export function worklistChangeMarkers(item: WorklistItem): WorklistChangeMarker[
     markers.push({ label: to === "" ? "Review cleared" : reviewWords(to), tone: "info" });
   }
   return markers;
+}
+
+/** Whether the item is merged, closed, or no longer synced, whatever its state when the agent wrote it. */
+export function worklistItemClosed(item: WorklistItem): boolean {
+  return item.live === null || TERMINAL_STATES.has(item.live.state.trim().toLowerCase());
+}
+
+/** Whether the maintainer has nothing left to do: the item is handled or closed. */
+export function worklistItemDone(item: WorklistItem): boolean {
+  return item.handled_at !== null || worklistItemClosed(item);
 }
 
 /** Whether the item changed or is gone since the agent wrote it. */
@@ -161,4 +172,59 @@ export function worklistItemsByScore(items: readonly WorklistItem[]): WorklistIt
 /** How many items are left to handle, for the worklist picker. */
 export function worklistRemainingLabel(remaining: number): string {
   return remaining === 0 ? "done" : `${remaining} left`;
+}
+
+/** Which rows the rail shows: open items, closed items, or both. */
+export type WorklistStateFilter = "open" | "closed" | "all";
+
+const STATE_FILTER_STORAGE_KEY = "kenn-forge:worklists:state";
+
+export function readWorklistStateFilter(): WorklistStateFilter {
+  try {
+    const stored = globalThis.localStorage?.getItem(STATE_FILTER_STORAGE_KEY);
+    return stored === "closed" || stored === "all" ? stored : "open";
+  } catch {
+    return "open";
+  }
+}
+
+export function writeWorklistStateFilter(filter: WorklistStateFilter): void {
+  try {
+    if (filter === "open") globalThis.localStorage?.removeItem(STATE_FILTER_STORAGE_KEY);
+    else globalThis.localStorage?.setItem(STATE_FILTER_STORAGE_KEY, filter);
+  } catch {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
+}
+
+export function worklistItemsInState(items: readonly WorklistItem[], filter: WorklistStateFilter): WorklistItem[] {
+  if (filter === "all") return [...items];
+  const closed = filter === "closed";
+  return items.filter((item) => worklistItemClosed(item) === closed);
+}
+
+/** The rail's rows in the stored order and state filter, as shown with every section expanded. */
+export function worklistStoredRows(items: readonly WorklistItem[]): WorklistItem[] {
+  const shown = worklistItemsInState(items, readWorklistStateFilter());
+  return readWorklistOrder() === "score"
+    ? worklistItemsByScore(shown)
+    : worklistSections(shown).flatMap((section) => section.items);
+}
+
+/** Whether the item matches a rail search, by its title, repository, number, author, labels, or the agent's words. */
+export function worklistItemMatchesSearch(item: WorklistItem, query: SearchQuery): boolean {
+  const row = item.pull ?? item.issue;
+  const repository = `${item.repo.owner}/${item.repo.name}`;
+  return matchesSearchQuery(query, [
+    item.title,
+    repository,
+    `${repository}#${item.number}`,
+    `#${item.number}`,
+    item.section,
+    item.note,
+    item.caveat,
+    row?.Author,
+    item.pull?.AuthorDisplayName,
+    ...(row?.labels ?? []).map((label) => label.name),
+  ]);
 }

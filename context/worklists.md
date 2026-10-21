@@ -190,8 +190,13 @@ stateDiagram-v2
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
 - An import that finishes after the maintainer left the page does not
   navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
-- `/worklists` opens the newest list; the selected item lives in the query
-  string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
+- `/worklists` reopens the last list shown in this browser, else the newest;
+  arriving on a list without an item reopens that list's last open item while
+  it is still a shown row, else its first row. Both are browser-local and
+  keyed by item identity
+  (`frontend/src/lib/components/worklists/worklist-memory.ts`). The selected
+  item lives in the query string as on Activity, so a reload keeps it
+  (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and
   replacement after a rewrite all match items by it. Owner/name in the URL is
   only the display route; the detail loads from the matched item's current
@@ -206,8 +211,24 @@ stateDiagram-v2
   unscored items last. The choice is browser-local and survives a reload.
   Keyboard steps, `d`, and the changed filter follow the visible order in both
   (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemsByScore`).
-- Each row shows the score, the title, `owner/name#number` with the note and
-  caveat, the changes since, and live status from the embedded row. Rows show
+- The rail shows open items by default. Merged, closed, and no longer synced
+  items are hidden until the maintainer picks Closed or All; the choice is
+  browser-local and survives a reload. Closed means the live state, not a
+  change since the list was written, so an item already closed when the agent
+  wrote it is hidden too. Sections order by their first shown item, so hiding
+  an item can reorder sections; the first item opened on arrival follows the
+  same order (`frontend/src/lib/components/worklists/worklist-items.ts::worklistStoredRows`).
+- A search box filters rows by title, `owner/name#number`, author, labels,
+  section, note, and caveat, with the same query syntax as the pull request
+  list. It applies within the state filter, and like the changed filter it
+  resets when the rail remounts
+  (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemMatchesSearch`).
+- When the open item leaves the rail, for example because it merged, the
+  detail stays open and `j` and `k` step from where its row was
+  (`frontend/src/lib/views/WorklistView.svelte::stepFromHidden`).
+- Each row shows the score, the title, `owner/name#number` with the pull
+  request's `+/-` line counts (omitted when the provider reports none), the
+  note and caveat, the changes since, and live status from the embedded row. Rows show
   the same labels and status icons as the pull request and issue lists, from
   the same shared component, so the two cannot drift; past a width cap the
   icons wrap, and rows never overflow the rail at its minimum width
@@ -215,11 +236,13 @@ stateDiagram-v2
   `frontend/src/lib/components/worklists/WorklistRow.svelte`).
   Workspace and pull request actions work there as on other surfaces.
 - With more than one list, the title is a picker that shows each list's
-  remaining count: items neither handled nor gone. Handled and gone overlap,
-  so the server computes it rather than the UI subtracting the other counts
-  (`internal/db/worklists.go::SummarizeWorklist`).
+  remaining count: items neither handled nor closed (merged, closed, or no
+  longer synced, whatever their state when written). Handled and closed
+  overlap, so the server computes it rather than the UI subtracting the other
+  counts (`internal/db/worklists.go::SummarizeWorklist`).
 - A handled row stays in place, dimmed, with a check in its status area. The
-  rail header shows how many items are handled. The context strip toggles the
+  rail header's progress counts items done: handled, merged, or closed, the
+  same items the remaining count excludes. The context strip toggles the
   open item's mark, and the selection bar marks or unmarks every selected item
   and clears the selection at once. `d` marks the open item and, once the mark
   succeeds, moves to the next row as `j` does, skipping collapsed sections, but

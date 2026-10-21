@@ -23,7 +23,7 @@ type WorklistSummaryResponse struct {
 	ChangedCount   int     `json:"changed_count"`
 	GoneCount      int     `json:"gone_count"`
 	HandledCount   int     `json:"handled_count" doc:"Items the maintainer marked handled."`
-	RemainingCount int     `json:"remaining_count" doc:"Items neither handled nor gone."`
+	RemainingCount int     `json:"remaining_count" doc:"Items neither handled nor merged, closed, or gone."`
 	CreatedAt      string  `json:"created_at" format:"date-time"`
 	UpdatedAt      string  `json:"updated_at" format:"date-time"`
 	DismissedAt    *string `json:"dismissed_at" format:"date-time"`

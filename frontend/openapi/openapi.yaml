@@ -11875,7 +11875,7 @@ components:
           description: The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
           type: string
         remaining_count:
-          description: Items neither handled nor gone.
+          description: Items neither handled nor merged, closed, or gone.
           format: int64
           type: integer
         title:

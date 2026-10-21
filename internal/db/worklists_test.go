@@ -606,7 +606,7 @@ func TestWorklistHandledMarksAreIndependentOfFreshness(t *testing.T) {
 	assert.Equal([3]int{1, 1, 2}, [3]int{summary.ChangedCount, summary.GoneCount, summary.HandledCount})
 }
 
-func TestWorklistRemainingCountCountsHandledAndGoneItemsOnce(t *testing.T) {
+func TestWorklistRemainingCountExcludesHandledAndClosedItems(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
@@ -614,14 +614,17 @@ func TestWorklistRemainingCountCountsHandledAndGoneItemsOnce(t *testing.T) {
 	ctx := t.Context()
 	now := baseTime()
 	repoID := insertTestRepo(t, d, "acme", "widgets")
-	items := make([]WorklistItemParams, 0, 5)
+	items := make([]WorklistItemParams, 0, 6)
 	for number := 7; number <= 11; number++ {
 		insertWorklistTestPull(t, d, repoID, number, MergeRequestStateOpen)
 		items = append(items, WorklistItemParams{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: number})
 	}
+	insertWorklistTestPull(t, d, repoID, 12, MergeRequestStateClosed)
+	items = append(items, WorklistItemParams{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 12})
 	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Queue", Now: now, Items: items})
 	require.NoError(err)
-	// 7 is handled and gone, 8 is gone, 9 is handled; 10 and 11 remain.
+	// 7 is handled and gone, 8 is gone, 9 is handled, 12 was already closed
+	// when written; 10 and 11 remain.
 	require.NoError(d.SetWorklistItemsHandled(ctx, put.ID, []WorklistItemKey{
 		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
 		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 9},
@@ -632,8 +635,8 @@ func TestWorklistRemainingCountCountsHandledAndGoneItemsOnce(t *testing.T) {
 
 	summary, err := d.GetWorklistSummary(ctx, put.ID, nil)
 	require.NoError(err)
-	assert.Equal([3]int{5, 2, 2}, [3]int{summary.ItemCount, summary.GoneCount, summary.HandledCount})
-	assert.Equal(2, summary.RemainingCount, "a handled item that is also gone counts once")
+	assert.Equal([3]int{6, 2, 2}, [3]int{summary.ItemCount, summary.GoneCount, summary.HandledCount})
+	assert.Equal(2, summary.RemainingCount, "handled and closed items, however they overlap, do not remain")
 	listed, err := d.ListWorklists(ctx, false, nil)
 	require.NoError(err)
 	require.Len(listed, 1)

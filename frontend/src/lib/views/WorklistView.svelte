@@ -15,13 +15,12 @@
   import WorklistContextStrip from "../components/worklists/WorklistContextStrip.svelte";
   import WorklistRail from "../components/worklists/WorklistRail.svelte";
   import { WorklistDismissal } from "../components/worklists/worklist-dismissal.svelte.js";
+  import { lastWorklistId, lastWorklistItemKey, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
-    readWorklistOrder,
     worklistItemKey,
     worklistItemMatchesSelection,
     worklistItemSelection,
-    worklistItemsByScore,
-    worklistSections,
+    worklistStoredRows,
   } from "../components/worklists/worklist-items.js";
   import { getSidebar, getStores } from "../context.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
@@ -138,18 +137,32 @@
     );
   });
 
+  // Without a usable routed list, reopen the last list shown here, else the newest.
   $effect(() => {
     if (!routedListMissing || !worklists.summariesLoaded()) return;
-    const newest = summaries.find((summary) => summary.id !== worklistId);
-    if (newest) untrack(() => openList(newest.id, "replace"));
+    const candidates = summaries.filter((summary) => summary.id !== worklistId);
+    const remembered = untrack(lastWorklistId);
+    const next = candidates.find((summary) => summary.id === remembered) ?? candidates[0];
+    if (next) untrack(() => openList(next.id, "replace"));
   });
 
+  // Arriving without an item reopens the list's last open item while it is
+  // still a shown row, else its first row.
   $effect(() => {
     if (!worklist || worklist.id !== selectFirstItemOnArrival) return;
     selectFirstItemOnArrival = null;
     if (selected) return;
-    const first = [...worklist.items].sort((a, b) => a.position - b.position)[0];
+    const rows = worklistStoredRows(worklist.items);
+    const rememberedKey = untrack(() => lastWorklistItemKey(worklist.id));
+    const first = rows.find((item) => worklistItemKey(item) === rememberedKey) ?? rows[0];
     if (first) untrack(() => replaceUrl(buildWorklistRoute(worklist.id, worklistItemSelection(first))));
+  });
+
+  $effect(() => {
+    const list = worklist;
+    const key = selectedKey;
+    if (!list || list.id !== worklistId) return;
+    untrack(() => rememberWorklist(list.id, key, summaries.map((summary) => summary.id)));
   });
 
   // The rail reports its visible order for each list it shows, keyed by the
@@ -157,8 +170,14 @@
   const visibleOrders = new WeakMap<Worklist, readonly string[]>();
   let previousWorklist: Worklist | null = null;
 
+  // The last order that showed the open item. Once the item merges or closes
+  // it leaves the rail, and j and k step from where it was.
+  let orderWithSelected: readonly string[] = [];
+
   function recordVisibleOrder(list: Worklist, keys: readonly string[]): void {
     visibleOrders.set(list, keys);
+    const left = selectedKey !== null && !keys.includes(selectedKey) && orderWithSelected.includes(selectedKey);
+    if (!left) orderWithSelected = keys;
   }
 
   // A collapsed rail is unmounted and reopens with its filter and sections
@@ -166,11 +185,7 @@
   function visibleKeys(list: Worklist): readonly string[] {
     const reported = isSidebarCollapsed ? undefined : visibleOrders.get(list);
     if (reported) return reported;
-    const rows =
-      readWorklistOrder() === "score"
-        ? worklistItemsByScore(list.items)
-        : worklistSections(list.items).flatMap((section) => section.items);
-    return rows.map(worklistItemKey);
+    return worklistStoredRows(list.items).map(worklistItemKey);
   }
 
   // An agent rewrite can drop the open item. Move to the item that now takes
@@ -248,8 +263,10 @@
     const list = worklist;
     if (!list || keys.length === 0) return;
     const current = selectedKey === null ? -1 : keys.indexOf(selectedKey);
-    const next = current === -1 ? (delta === 1 ? 0 : keys.length - 1) : current + delta;
-    const key = keys[Math.max(0, Math.min(keys.length - 1, next))];
+    const key =
+      current === -1
+        ? (stepFromHidden(delta, keys) ?? (delta === 1 ? keys[0] : keys[keys.length - 1]))
+        : keys[Math.max(0, Math.min(keys.length - 1, current + delta))];
     const item = list.items.find((candidate) => worklistItemKey(candidate) === key);
     if (!item) return;
     openItem(item);
@@ -258,6 +275,16 @@
         block: "nearest",
       });
     });
+  }
+
+  // The open item is no longer shown, so step to the nearest shown row on
+  // the given side of where it last was.
+  function stepFromHidden(delta: 1 | -1, keys: readonly string[]): string | undefined {
+    const at = selectedKey === null ? -1 : orderWithSelected.indexOf(selectedKey);
+    if (at === -1) return undefined;
+    const shown = new Set(keys);
+    const side = delta === 1 ? orderWithSelected.slice(at + 1) : orderWithSelected.slice(0, at).reverse();
+    return side.find((key) => shown.has(key));
   }
 
   function stepVisible(delta: 1 | -1): void {

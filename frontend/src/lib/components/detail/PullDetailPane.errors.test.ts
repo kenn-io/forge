@@ -62,6 +62,15 @@ it.each(["initial", "refresh", "mismatch"])("counts rendered PR failures for %s 
       expect(errors()).toHaveLength(0);
     } else {
       await waitFor(() => expect(errors()).toHaveLength(1));
+      if (mode === "initial") {
+        const conversationError = screen.getByText(/Read denied/);
+        await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, tabKey: "files" } });
+        await waitFor(() => expect(stores.diff.getDiffError()).toContain("Read denied"));
+        expect(conversationError.isConnected).toBe(true);
+        await waitFor(() => expect(screen.getAllByText(/Read denied/)).toHaveLength(2));
+        await waitFor(() => expect(errors()).toHaveLength(2));
+        return;
+      }
       stores.detail.loadDetail("acme", "widgets", paneProps.pr.number, {
         provider: "github",
         repoPath: "acme/widgets",
@@ -69,12 +78,6 @@ it.each(["initial", "refresh", "mismatch"])("counts rendered PR failures for %s 
       });
       await screen.findByText(/Read denied/);
       await waitFor(() => expect(errors()).toHaveLength(2));
-      if (mode === "initial") {
-        await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, tabKey: "files" } });
-        await waitFor(() => expect(stores.diff.getDiffError()).toContain("Read denied"));
-        await screen.findByText(/Read denied/);
-        await waitFor(() => expect(errors()).toHaveLength(3));
-      }
     }
   } finally {
     cleanup();

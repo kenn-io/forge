@@ -951,6 +951,7 @@
           if (options.fromConflictDialog && options.reuseExistingBranch && branchConflict) {
             branchConflict.error =
               "This branch is already checked out in another worktree. Create a new branch instead.";
+            reportWorkspaceLaunchError(runtime);
             return;
           }
           branchConflict = conflict;

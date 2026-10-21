@@ -8,6 +8,7 @@
   setAppRuntime(untrack(() => runtime));
 </script>
 
-{#key paneProps.tabKey}
+<PullDetailPane {...paneProps} tabKey="conversation" visible={paneProps.visible && paneProps.tabKey === "conversation"} />
+{#if paneProps.tabKey === "files"}
   <PullDetailPane {...paneProps} />
-{/key}
+{/if}

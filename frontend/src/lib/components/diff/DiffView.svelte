@@ -647,7 +647,7 @@
         <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
-      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={prErrorScope(provider, platformHost, repoPath, number)} />{/if}
+      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:diff`} />{/if}
       <div class="diff-state">
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>

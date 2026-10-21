@@ -853,12 +853,14 @@ describe("IssueDetail inline workspace handoff", () => {
   });
 
   it("explains when the existing branch is checked out elsewhere", async () => {
+    const telemetry = vi.fn();
     const conflict = workspaceBranchConflict();
     const apiClient = {
       GET: vi.fn(),
       POST: vi.fn().mockResolvedValueOnce({ error: conflict }).mockResolvedValueOnce({ error: conflict }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Branch" }));
@@ -867,6 +869,12 @@ describe("IssueDetail inline workspace handoff", () => {
       await screen.findByText("This branch is already checked out in another worktree. Create a new branch instead."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Use Existing Directory" })).toBeNull();
+    await waitFor(() =>
+      expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+        event: "error_shown",
+        properties: { surface: "web", kind: "workspace_opened" },
+      }),
+    );
   });
 
   it("create with inline controller records the override and does not navigate", async () => {

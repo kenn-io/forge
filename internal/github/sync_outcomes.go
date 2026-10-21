@@ -55,7 +55,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	key := mergeQueueRepoKey(repo)
 	// One successful read establishes repository availability for the pass.
 	if current, observed := p.results[source][key]; reason == "" || observed && current == "" {
-		p.results[source][key] = ""
+		p.results[source][key], p.results[source][repoFailKey(repo)] = "", ""
 		return
 	}
 	if higherSyncFailureReason(reason, p.results[source][key]) {

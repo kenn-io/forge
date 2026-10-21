@@ -4,11 +4,21 @@
   import type { AppRuntime } from "../../app/runtime.js";
   import PullDetailPane from "./PullDetailPane.svelte";
 
-  const { runtime, paneProps }: { runtime: AppRuntime; paneProps: ComponentProps<typeof PullDetailPane> } = $props();
+  const {
+    runtime,
+    paneProps,
+    keepConversationMounted = false,
+  }: {
+    runtime: AppRuntime;
+    paneProps: ComponentProps<typeof PullDetailPane>;
+    keepConversationMounted?: boolean;
+  } = $props();
   setAppRuntime(untrack(() => runtime));
 </script>
 
-<PullDetailPane {...paneProps} tabKey="conversation" visible={paneProps.visible && paneProps.tabKey === "conversation"} />
-{#if paneProps.tabKey === "files"}
+{#if keepConversationMounted}
+  <PullDetailPane {...paneProps} tabKey="conversation" visible={paneProps.visible && paneProps.tabKey === "conversation"} />
+{/if}
+{#if !keepConversationMounted || paneProps.tabKey === "files"}
   <PullDetailPane {...paneProps} />
 {/if}

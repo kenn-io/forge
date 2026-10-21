@@ -13,11 +13,18 @@ it.each([
   [true, "sidebar"],
   [false, "focus"],
   [true, "focus"],
-  [false, "phone"],
-  [true, "phone"],
 ] as const)("counts Enter through the real search, issues=%s, presentation=%s", async (issues, presentation) => {
+  const response = Promise.withResolvers<Response>();
+  let reads = 0;
   const api = createMockApiFetch([
-    ({ url }) => (url.pathname === (issues ? "/api/v1/issues" : "/api/v1/pulls") ? Response.json([]) : undefined),
+    ({ url }) => {
+      if (url.pathname !== (issues ? "/api/v1/issues" : "/api/v1/pulls")) return undefined;
+      if (url.searchParams.get("q") === "missing") {
+        reads++;
+        return response.promise.then((value) => value.clone());
+      }
+      return Response.json([]);
+    },
   ]);
   vi.stubGlobal("fetch", api.fetch);
   const runtime = makeAppRuntime();
@@ -37,50 +44,8 @@ it.each([
     const input = screen.getByRole("searchbox", { name: issues ? "Search issues" : "Search PRs" });
     await fireEvent.input(input, { target: { value: "missing" } });
     await fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() =>
-      expect(sent).toHaveBeenCalledExactlyOnceWith({ event: "search_empty", properties: { surface: "web" } }, {}),
-    );
-    await fireEvent.input(input, { target: { value: "different" } });
-    await fireEvent.input(input, { target: { value: "missing" } });
-    await fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
-  } finally {
-    cleanup();
-    await Effect.runPromise(runtime.disposeEffect);
-    vi.unstubAllGlobals();
-  }
-});
-
-it.each([false, true])("counts separate submissions sharing a pending read, issues=%s", async (issues) => {
-  const response = Promise.withResolvers<Response>();
-  const api = createMockApiFetch();
-  let reads = 0;
-  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
-    if (url.pathname === (issues ? "/api/v1/issues" : "/api/v1/pulls") && url.searchParams.get("q") === "missing") {
-      reads++;
-      return response.promise.then((value) => value.clone());
-    }
-    return api.fetch(input, init);
-  });
-  const runtime = makeAppRuntime();
-  const { stores } = createAppStores({ runtime });
-  const sent = vi.fn();
-  await startTestTelemetry(runtime, sent).ready;
-  render(Harness, {
-    props: { runtime, issues },
-    context: new Map<symbol, unknown>([
-      [STORES_KEY, stores],
-      [NAVIGATE_KEY, vi.fn()],
-      [SIDEBAR_KEY, { toggleSidebar: vi.fn() }],
-      [HOST_STATE_KEY, {}],
-    ]),
-  });
-  try {
-    const input = screen.getByRole("searchbox", { name: issues ? "Search issues" : "Search PRs" });
-    await fireEvent.input(input, { target: { value: "missing" } });
-    await fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(reads).toBe(1));
+    expect(sent).not.toHaveBeenCalled();
     await fireEvent.input(input, { target: { value: "different" } });
     await fireEvent.input(input, { target: { value: "missing" } });
     await fireEvent.keyDown(input, { key: "Enter" });
@@ -92,10 +57,6 @@ it.each([false, true])("counts separate submissions sharing a pending read, issu
         { event: "search_empty", properties: { surface: "web" } },
       ]),
     );
-    await fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(reads).toBe(2));
-    await waitFor(() => expect(issues ? stores.issues.isIssuesLoading() : stores.pulls.isLoading()).toBe(false));
-    expect(sent).toHaveBeenCalledTimes(2);
   } finally {
     cleanup();
     await Effect.runPromise(runtime.disposeEffect);

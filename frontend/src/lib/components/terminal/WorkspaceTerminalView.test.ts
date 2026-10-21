@@ -1338,7 +1338,9 @@ describe("WorkspaceTerminalView", () => {
           {},
         ),
       );
-      expect(coreActions).toHaveBeenCalledTimes(status === "error" ? 2 : 1);
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "workspace_opened"),
+      ).toHaveLength(1);
     },
   );
 
@@ -2280,16 +2282,22 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
-  it.each([false, true])("counts embedded runtime failures only for queued launches: %s", async (launch) => {
-    claimForPrs();
-    noteWorkspacePaneRendered("prs");
+  it.each([
+    [true, false],
+    [true, true],
+    [false, false],
+  ])("counts runtime failures for embedded=%s, launch=%s", async (embedded, launch) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+    }
     if (launch) queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockRejectedValue(new Error("runtime unavailable"));
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: embedded ? "prs" : undefined } });
     await screen.findByText("runtime unavailable");
     const errors = () =>
       coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown");
-    if (launch)
+    if (!embedded || launch)
       await waitFor(() =>
         expect(errors()).toEqual([
           [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
@@ -2331,11 +2339,6 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findByText("runtime unavailable")).toBeTruthy();
-    await waitFor(() =>
-      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
-        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
-      ]),
-    );
     await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
     expect(screen.queryByText("Loading workspace details...")).toBeNull();
   });

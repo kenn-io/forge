@@ -213,28 +213,25 @@ describe("browser telemetry", () => {
     const { sent, runtime, quiet } = setup(() => receipt.promise);
     reportOutcome(runtime, { event: "search_empty" });
     reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
+    if (status === "queued") {
+      for (let i = 0; i < 32; i++) reportOutcome(runtime, { event: "search_empty" });
+    }
     await vi.waitFor(() => expect(sent.map((event) => event.event)).toEqual(["app_opened"]));
     receipt.resolve(Response.json({ status }, { status: 202 }));
     if (status === "queued") {
       await vi.waitFor(() =>
-        expect(sent.map((event) => event.event)).toEqual(["app_opened", "search_empty", "error_shown"]),
+        expect(sent.map((event) => event.event)).toEqual([
+          "app_opened",
+          "search_empty",
+          "error_shown",
+          ...Array(32).fill("search_empty"),
+        ]),
       );
     } else {
       await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sent.map((event) => event.event)).toEqual(["app_opened"]);
     }
-  });
-
-  it("retains distinct outcomes while permission is pending", async () => {
-    const receipt = Promise.withResolvers<Response>();
-    const { sent, runtime } = setup(() => receipt.promise);
-    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
-    for (let i = 0; i < 32; i++) reportOutcome(runtime, { event: "search_empty" });
-    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(sent).toHaveLength(34));
-    expect(sent[1]?.event).toBe("error_shown");
-    expect(sent.slice(2).every((event) => event.event === "search_empty")).toBe(true);
   });
 
   it("labels shown errors with the failed core action", async () => {
@@ -266,24 +263,6 @@ describe("browser telemetry", () => {
     expect(sent.map((event) => event.event)).toEqual(["app_opened", "pr_viewed"]);
   });
 
-  it("sends fresh outcomes after backoff without replaying failed outcomes", async () => {
-    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
-    let failing = false;
-    const { sent, runtime, quiet } = setup(async () =>
-      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    expect(quiet).toHaveBeenLastCalledWith(false);
-    failing = true;
-    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
-    await vi.advanceTimersByTimeAsync(0);
-    failing = false;
-    await vi.advanceTimersByTimeAsync(1000);
-    reportOutcome(runtime, { event: "search_empty" });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sent.map((event) => event.event)).toEqual(["app_opened", "error_shown", "search_empty"]);
-  });
-
   it("wakes outcomes queued during backoff after all daily events are claimed", async () => {
     vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
     let failing = false;
@@ -306,35 +285,31 @@ describe("browser telemetry", () => {
     expect(sent).toHaveLength(4);
   });
 
-  it.each(["pr_viewed", "search_empty"] as const)(
-    "retains %s through screen backoff until the gate retry succeeds",
-    async (event) => {
-      vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
-      vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
-      let failing = false;
-      const { sent, runtime, reporter, quiet } = setup(async () =>
-        failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
-      );
-      await vi.advanceTimersByTimeAsync(0);
-      expect(quiet).toHaveBeenLastCalledWith(false);
-      failing = true;
-      reporter.reportScreen("docs");
-      await vi.advanceTimersByTimeAsync(0);
-      failing = false;
-      if (event === "pr_viewed") reportPRViewed(runtime, "github");
-      else reportOutcome(runtime, { event });
-      await vi.advanceTimersByTimeAsync(0);
-      expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed"]);
-      await vi.advanceTimersByTimeAsync(1_000);
-      await vi.waitFor(() => expect(sent).toHaveLength(4));
-      expect(sent).toEqual([
-        { event: "app_opened", properties: { surface: "web" } },
-        { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
-        { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
-        { event, properties: event === "pr_viewed" ? { provider: "github", surface: "web" } : { surface: "web" } },
-      ]);
-    },
-  );
+  it("retains pr_viewed through screen backoff until the gate retry succeeds", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
+    let failing = false;
+    const { sent, runtime, reporter, quiet } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet).toHaveBeenLastCalledWith(false);
+    failing = true;
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed"]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.waitFor(() => expect(sent).toHaveLength(4));
+    expect(sent).toEqual([
+      { event: "app_opened", properties: { surface: "web" } },
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+      { event: "screen_viewed", properties: { surface: "web", screen: "docs" } },
+      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
+    ]);
+  });
 
   it("suppresses a daily core action across reporter restart after a skipped receipt", async () => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });

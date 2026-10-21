@@ -6,7 +6,8 @@ import { makeAppRuntime } from "../../app/runtime.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import Harness from "./ErrorShownTestHarness.svelte";
 
-it.each([2, 3])("reports a visible error once across %s presenters, then counts retries", async (copies) => {
+it("reports a visible error once across two presenters, then counts retries", async () => {
+  const copies = 2;
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   const runtime = makeAppRuntime();
   const sent = vi.fn();

@@ -35,7 +35,7 @@ it.each(["initial", "refresh", "mismatch"])("counts rendered PR failures for %s 
     autoSync: false as const,
   };
   const view = render(Harness, {
-    props: { runtime, paneProps },
+    props: { runtime, paneProps, keepConversationMounted: true },
     context: new Map<symbol, unknown>([
       [STORES_KEY, stores],
       [NAVIGATE_KEY, vi.fn()],

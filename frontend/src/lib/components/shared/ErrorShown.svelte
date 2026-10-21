@@ -1,5 +1,7 @@
 <script module lang="ts">
-  const errors = new Map<string, { mounted: number; reported: boolean }>();
+  // The presenter that reported an error owns the claim until it unmounts, so
+  // sibling presenters of one attempt count once and a remounted retry counts again.
+  const errors = new Map<string, object>();
 </script>
 
 <script lang="ts">
@@ -10,21 +12,22 @@
 
   const { kind, scope, shown = true }: { kind: Extract<Outcome, { event: "error_shown" }>["kind"]; scope: string; shown?: boolean } = $props();
   const runtime = getAppRuntime();
-  let entry = $state.raw<{ mounted: number; reported: boolean }>();
+  const self = {};
+  let counted: string | undefined;
   $effect(() => {
     const key = `${kind}:${scope}`;
-    const current = errors.get(key) ?? { mounted: 0, reported: false };
-    current.mounted++;
-    errors.set(key, current);
-    entry = current;
     return () => {
-      if (--current.mounted === 0) errors.delete(key);
+      if (errors.get(key) === self) errors.delete(key);
     };
   });
+  function claim(key: string): void {
+    counted = key;
+    if (errors.has(key)) return;
+    errors.set(key, self);
+    untrack(() => reportOutcome(runtime, { event: "error_shown", kind }));
+  }
   $effect(() => {
-    if (entry && shown && documentVisible() && !entry.reported) {
-      entry.reported = true;
-      untrack(() => reportOutcome(runtime, { event: "error_shown", kind }));
-    }
+    const key = `${kind}:${scope}`;
+    if (counted !== key && shown && documentVisible()) claim(key);
   });
 </script>

@@ -144,7 +144,7 @@
 
   function onSearchInput(value: string): void {
     searchInput = value;
-
+    pulls.searchTextChanged();
     searchExecution?.interrupt();
     searchExecution = runtime.runCommand(
       Effect.sleep("300 millis").pipe(

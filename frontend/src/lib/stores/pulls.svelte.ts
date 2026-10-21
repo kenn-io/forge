@@ -368,7 +368,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   const emptySearch = searchEmptyReporter(runtime);
-
   function setSearchQuery(q: string | undefined): void {
     if (q !== searchQuery) emptySearch.textChanged();
     searchQuery = q;
@@ -753,6 +752,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     clearLocalFilters,
     getSearchQuery,
     setSearchQuery,
+    searchTextChanged: emptySearch.textChanged,
     selectPR,
     clearSelection,
     getPullKanbanStatus,

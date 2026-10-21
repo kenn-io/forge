@@ -372,7 +372,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     writeIssuePRReferenceFilter(value);
   }
   const emptySearch = searchEmptyReporter(runtime);
-
   function setIssueSearchQuery(q: string | undefined): void {
     if (q !== searchQuery) emptySearch.textChanged();
     searchQuery = q;
@@ -2050,6 +2049,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     canFilterReferencedByPR,
     getIssueSearchQuery,
     setIssueSearchQuery,
+    searchTextChanged: emptySearch.textChanged,
     getIssueFilterState,
     setIssueFilterState,
     hydrateDefaults,

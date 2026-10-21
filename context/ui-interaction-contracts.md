@@ -93,6 +93,9 @@ Interactive surfaces must agree on which item is selected.
   replacement list; label additions wait until every repository label list is current and are dropped for repositories
   whose list did not load or reports a refresh `sync_error`
   (`internal/server/pullapi/membership_handlers.go::livePull`, `ItemActionsMenu.svelte::applyMembership`).
+  Row menus offer no workflow (kanban) status; the maintainer judged it noise there. Bulk merge offers only
+  methods every selected repository allows, pins each row's head, defers PRs with pending CI, and skips
+  failed CI, which stays a per-PR detail decision (`frontend/src/lib/stores/item-actions.ts::actionRequest`).
 - Repository pickers share the app's successful catalog during refresh and refresh failures;
   refreshed options preserve the selected stable identity across renames or clear it, never select another repository
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).

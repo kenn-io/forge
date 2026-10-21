@@ -4,8 +4,6 @@
     Menu,
     MenuContent,
     MenuItem,
-    MenuRadioGroup,
-    MenuRadioItem,
     MenuSeparator,
     type MenuAnchorPoint,
   } from "@kenn-io/kit-ui";
@@ -14,13 +12,14 @@
   import CircleXIcon from "@lucide/svelte/icons/circle-x";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import FilePenIcon from "@lucide/svelte/icons/file-pen";
+  import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import LinkIcon from "@lucide/svelte/icons/link";
   import StarIcon from "@lucide/svelte/icons/star";
   import TagIcon from "@lucide/svelte/icons/tag";
   import UsersIcon from "@lucide/svelte/icons/users";
   import ZapIcon from "@lucide/svelte/icons/zap";
   import { Effect } from "effect";
-  import type { KanbanStatus, Label, QuickAction } from "../../api/types.js";
+  import type { Label, QuickAction } from "../../api/types.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../../api/provider-routes.js";
   import type { AppExecution } from "../../app/runtime.js";
@@ -38,7 +37,14 @@
     type ListItemAction,
     type ListItemTarget,
   } from "../../stores/item-actions.js";
-  import { refreshRepoOperations, repoOperations } from "../../stores/repo-operations.svelte.js";
+  import { shouldDeferMergeForCI } from "../detail/merge-policy.js";
+  import {
+    refreshRepoOperations,
+    repoMergeMethods,
+    repoOperations,
+    repoReadFailed,
+    type MergeMethod,
+  } from "../../stores/repo-operations.svelte.js";
   import {
     quickActionDisabledReason,
     quickActionTarget,
@@ -46,6 +52,7 @@
   } from "../../stores/workspace-quick-actions.js";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import BulkMembershipDialog, { type MembershipOption } from "./BulkMembershipDialog.svelte";
+  import BulkMergeDialog from "./BulkMergeDialog.svelte";
 
   // Right-click menu for PR and issue rows. Every action applies to the
   // right-clicked item, or to every selected item when it is part of a
@@ -74,13 +81,6 @@
 
   const runtime = getAppRuntime();
   const { settings } = getStores();
-
-  const kanbanOptions: { value: KanbanStatus; label: string }[] = [
-    { value: "new", label: "New" },
-    { value: "reviewing", label: "Reviewing" },
-    { value: "waiting", label: "Waiting" },
-    { value: "awaiting_merge", label: "Awaiting merge" },
-  ];
 
   type StateAction = "close" | "reopen" | "draft" | "ready";
   const stateActionVerbs: Record<StateAction, string> = {
@@ -183,10 +183,53 @@
   }
 
   const allStarred = $derived(targets.every((target) => target.item.Starred));
-  const commonPullKanban = $derived.by(() => {
-    const statuses = new Set(targets.flatMap((target) => (target.kind === "pull" ? [target.item.KanbanStatus] : [])));
-    return statuses.size === 1 ? [...statuses][0] ?? "" : "";
+
+  // Merge
+
+  let confirmMerge = $state.raw<readonly ListItemTarget[] | null>(null);
+
+  // One method applies to the whole batch, so only methods every
+  // repository allows are offered; undefined until each has loaded.
+  const mergeMethods = $derived.by((): readonly MergeMethod[] | undefined => {
+    if (!confirmMerge) return undefined;
+    let common: readonly MergeMethod[] | undefined;
+    for (const target of distinctRepos(confirmMerge)) {
+      const allowed = repoMergeMethods(target.item.repo);
+      if (!allowed) return undefined;
+      common = common ? common.filter((method) => allowed.includes(method)) : allowed;
+    }
+    return common ?? [];
   });
+
+  // Repositories whose merge settings could not be read, so the dialog
+  // reports the failure instead of waiting for methods that never arrive.
+  const mergeSettingsFailed = $derived(
+    confirmMerge
+      ? distinctRepos(confirmMerge).filter((target) => !repoMergeMethods(target.item.repo) && repoReadFailed(target.item.repo))
+      : [],
+  );
+
+  function chooseMerge(items: readonly ListItemTarget[]): void {
+    confirmMerge = items;
+    refreshRepoOperations(runtime, distinctRepos(items).map((target) => target.item.repo));
+  }
+
+  function confirmMergeAction(choice: { method: MergeMethod; deleteWorkspaces: boolean }): void {
+    const pending = confirmMerge;
+    if (!pending) return;
+    running = true;
+    runListItemAction(runtime, pending, { type: "merge", ...choice }, {
+      onSettled: () => {
+        confirmMerge = null;
+        finish();
+        onClearSelection();
+      },
+    });
+  }
+
+  function deferredMergeCount(items: readonly ListItemTarget[]): number {
+    return items.filter((target) => target.kind === "pull" && shouldDeferMergeForCI(target.item.CIStatus, target.item.CIChecksJSON)).length;
+  }
 
   // Quick actions
 
@@ -491,23 +534,19 @@
       </MenuItem>
     {/if}
 
-    {@const kanban = plan("kanban")}
-    {#if kanban.offered}
-      <MenuSeparator />
-      <MenuRadioGroup
-        ariaLabel={kanban.eligible.length === count ? "Workflow status" : `Workflow status for ${kanban.eligible.length} ${listTargetsNoun(kanban.eligible)}`}
-        value={commonPullKanban}
-        onchange={(status) => run(kanban.eligible, { type: "kanban", status: status as KanbanStatus })}
-      >
-        {#each kanbanOptions as option (option.value)}
-          <MenuRadioItem value={option.value} disabled={running} closeOnSelect>{option.label}</MenuRadioItem>
-        {/each}
-      </MenuRadioGroup>
-    {/if}
-
+    {@const merge = plan("merge")}
     {@const stateActions = (["ready", "draft", "reopen", "close"] as const).filter((action) => plan(action).offered)}
-    {#if stateActions.length > 0}
+    {#if merge.offered || stateActions.length > 0}
       <MenuSeparator />
+    {/if}
+    {#if merge.offered}
+      <MenuItem disabled={running || merge.eligible.length === 0} onselect={() => chooseMerge(merge.eligible)}>
+        {#snippet icon()}<GitMergeIcon size={14} />{/snippet}
+        {#snippet trailing()}{merge.eligible.length === 0 ? merge.reason : ""}{/snippet}
+        {countLabel("Merge", merge.eligible.length)}...
+      </MenuItem>
+    {/if}
+    {#if stateActions.length > 0}
       {@render stateItem("ready", CheckCircleIcon)}
       {@render stateItem("draft", FilePenIcon)}
       {@render stateItem("reopen", CircleDotIcon)}
@@ -562,6 +601,22 @@
   onCancel={() => { confirmQuickAction = null; }}
   onConfirm={() => { if (confirmQuickAction) runQuick(confirmQuickAction.action, confirmQuickAction.targets); }}
 />
+
+{#if confirmMerge}
+  {@const items = confirmMerge}
+  <BulkMergeDialog
+    title={`Merge ${items.length} ${listTargetsNoun(items)}?`}
+    message={`Merge ${itemList(items)}? Each merges with its own title and description.`}
+    deferredCount={deferredMergeCount(items)}
+    methods={mergeMethods}
+    loadFailedRepos={mergeSettingsFailed.map((target) => `${target.item.repo.owner}/${target.item.repo.name}`)}
+    hasWorkspaces={items.some((target) => target.kind === "pull" && target.item.workspace?.id)}
+    confirmLabel={`Merge ${items.length} ${listTargetsNoun(items)}`}
+    busy={running}
+    onCancel={() => { confirmMerge = null; }}
+    onConfirm={confirmMergeAction}
+  />
+{/if}
 
 {#if membership}
   <BulkMembershipDialog

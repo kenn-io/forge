@@ -45,6 +45,11 @@ merge when the provider and credential allow it.
 
 Unsupported actions remain visible but unavailable.
 
+To merge several pull requests at once, Shift- or Cmd/Ctrl-click them in the
+list, right-click, and choose **Merge**. Ready pull requests merge right away;
+those with pending CI merge once their checks pass. Drafts, conflicts, and
+failed CI are skipped.
+
 Detected stacks show member order. Mid-stack merges stay blocked by default
 until earlier members land.
 

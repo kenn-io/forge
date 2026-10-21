@@ -1,8 +1,11 @@
 package github
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -187,4 +190,99 @@ func TestGetMarkdownImageRejectsOversizedRepositoryFile(t *testing.T) {
 	_, err := client.GetMarkdownImage(t.Context(), "acme", "widgets",
 		"https://github.com/acme/widgets/blob/feat/search-controls/docs/images/search.png?raw=true")
 	require.ErrorIs(t, err, errMarkdownImageTooLarge)
+}
+
+// githubHostServer serves requests addressed to any github.com host from one
+// TLS test server, routing on the original Host so tests exercise the real
+// attachment, API, and signed-storage hosts.
+func githubHostServer(t *testing.T, handler http.HandlerFunc) *http.Client {
+	t.Helper()
+	server := httptest.NewTLSServer(handler)
+	t.Cleanup(server.Close)
+	target, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	base := server.Client().Transport
+	return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		routed := r.Clone(r.Context())
+		routed.URL.Scheme, routed.URL.Host = target.Scheme, target.Host
+		return base.RoundTrip(routed)
+	})}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func newGitHubHostImageClient(t *testing.T, hc *http.Client) *Client {
+	t.Helper()
+	client, err := NewClient(ClientConfig{
+		Host: "github.com", Read: hc, Write: hc, Notifications: hc, MarkdownImages: hc,
+		Clock: time.Now, ViewerCacheTTL: time.Hour,
+		Authentication: Authentication{Source: staticMediaToken("user-token")},
+	})
+	require.NoError(t, err)
+	return client
+}
+
+const unreachableAttachment = "https://github.com/user-attachments/assets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"
+
+func TestGetMarkdownImageFallsBackToRenderedSignedURLWhenAttachmentIsMissing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	const signedPath = "/1001/2002-aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb.png"
+	var mu sync.Mutex
+	var signedAuth []string
+	hc := githubHostServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host + r.URL.Path {
+		case "github.com/user-attachments/assets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb":
+			w.WriteHeader(http.StatusNotFound)
+		case "api.github.com/markdown":
+			assert.Equal("Bearer user-token", r.Header.Get("Authorization"))
+			var body map[string]string
+			assert.NoError(json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal(map[string]string{
+				"text": "![](" + unreachableAttachment + ")", "mode": "gfm", "context": "acme/widgets",
+			}, body)
+			_, _ = fmt.Fprintf(w, `<p dir="auto"><a href="x"><img src="https://private-user-images.githubusercontent.com%s?jwt=a.b.c&amp;v=1" alt="" style="max-width: 100%%;"></a></p>`, signedPath)
+		case "private-user-images.githubusercontent.com" + signedPath:
+			assert.Equal("a.b.c", r.URL.Query().Get("jwt"))
+			assert.Equal("1", r.URL.Query().Get("v"), "HTML entities in the rendered src are decoded")
+			mu.Lock()
+			signedAuth = append(signedAuth, r.Header.Get("Authorization"))
+			mu.Unlock()
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(pngBytes)
+		default:
+			assert.Failf("unexpected request", "%s%s", r.Host, r.URL.Path)
+			w.WriteHeader(http.StatusTeapot)
+		}
+	})
+	client := newGitHubHostImageClient(t, hc)
+
+	image, err := client.GetMarkdownImage(t.Context(), "acme", "widgets", unreachableAttachment)
+	require.NoError(err)
+	assert.Equal("image/png", image.ContentType)
+	assert.Equal(pngBytes, image.Content)
+	assert.False(image.Mutable, "the signed URL resolves the same immutable upload")
+	assert.Equal([]string{""}, signedAuth, "the signed URL carries its own authorization")
+}
+
+func TestGetMarkdownImageDoesNotFollowRenderedSourceOffGitHubStorage(t *testing.T) {
+	hc := githubHostServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.Host + r.URL.Path {
+		case "github.com/user-attachments/assets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb":
+			w.WriteHeader(http.StatusNotFound)
+		case "api.github.com/markdown":
+			_, _ = w.Write([]byte(`<p><img src="https://attacker.example/steal.png"></p>`))
+		default:
+			assert.Failf(t, "unexpected request", "%s%s", r.Host, r.URL.Path)
+			w.WriteHeader(http.StatusTeapot)
+		}
+	})
+	client := newGitHubHostImageClient(t, hc)
+
+	_, err := client.GetMarkdownImage(t.Context(), "acme", "widgets", unreachableAttachment)
+	var providerErr *platform.Error
+	require.ErrorAs(t, err, &providerErr)
+	assert.Equal(t, platform.ErrCodeNotFound, providerErr.Code)
 }

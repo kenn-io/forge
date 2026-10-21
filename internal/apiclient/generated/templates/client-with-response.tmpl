@@ -129,6 +129,26 @@ var _ {{$clientName}}Interface = (*{{$clientName}})(nil)
 
 {{ template "client-with-response" dict "config" .Config "operations" .Operations }}
 
+{{ range .Operations }}{{ $op := . }}
+// {{$op.ID}}Raw returns an unread response. The caller must close its body.
+func (c *{{$.Config.Client.Name}}) {{$op.ID}}Raw(ctx context.Context, httpClient *http.Client{{ if $op.HasRequestOptions }}, options *{{$op.ID | ucFirst}}RequestOptions{{ end }}, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+    {{ template "requestParams" (dict "op" $op) }}
+    req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+    if err != nil { return nil, err }
+    return httpClient.Do(req)
+}
+{{ end }}
+
+{{ range .Operations }}{{ $op := . }}
+// New{{$op.ID}}Request constructs a typed request for a caller-owned transport.
+func New{{$op.ID}}Request(ctx context.Context, baseURL string{{ if $op.HasRequestOptions }}, options *{{$op.ID | ucFirst}}RequestOptions{{ end }}, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+    apiClient, err := runtime.NewAPIClient(baseURL)
+    if err != nil { return nil, err }
+    c := New{{$.Config.Client.Name}}(apiClient)
+    {{ template "requestParams" (dict "op" $op) }}
+    return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+{{ end }}
 {{- /* Populates the envelope from one documented response and returns it.
        A `default` standing in for the success also covers error statuses,
        so it only reports success for a 2xx. */ -}}
@@ -157,24 +177,3 @@ var _ {{$clientName}}Interface = (*{{$clientName}})(nil)
         return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
         {{- end }}
 {{- end }}
-
-{{ range .Operations }}{{ $op := . }}
-// {{$op.ID}}Raw returns an unread response. The caller must close its body.
-func (c *{{$.Config.Client.Name}}) {{$op.ID}}Raw(ctx context.Context, httpClient *http.Client{{ if $op.HasRequestOptions }}, options *{{$op.ID | ucFirst}}RequestOptions{{ end }}, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-    {{ template "requestParams" (dict "op" $op) }}
-    req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-    if err != nil { return nil, err }
-    return httpClient.Do(req)
-}
-{{ end }}
-
-{{ range .Operations }}{{ $op := . }}
-// New{{$op.ID}}Request constructs a typed request for a caller-owned transport.
-func New{{$op.ID}}Request(ctx context.Context, baseURL string{{ if $op.HasRequestOptions }}, options *{{$op.ID | ucFirst}}RequestOptions{{ end }}, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-    apiClient, err := runtime.NewAPIClient(baseURL)
-    if err != nil { return nil, err }
-    c := New{{$.Config.Client.Name}}(apiClient)
-    {{ template "requestParams" (dict "op" $op) }}
-    return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-{{ end }}

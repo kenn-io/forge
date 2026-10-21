@@ -1,10 +1,11 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { dismissFlash, getFlashes } from "./flash.svelte.js";
+import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { Issue, PullRequest } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
-import { listTargetsNoun, runListItemAction } from "./item-actions.js";
+import { listTargetsNoun, runListItemAction, type ListItemTarget } from "./item-actions.js";
 import { ProviderMutations } from "./ordered-mutations.js";
 import { providerMutationKey } from "./provider-key.js";
 
@@ -106,6 +107,143 @@ describe("sidebar item actions on a mixed selection", () => {
     expect(setPrGithubState.mock.calls[0]?.[0]).toMatchObject({ number: 21 });
     expect(setIssueGithubState.mock.calls[0]?.[0]).toMatchObject({ number: 7 });
     expect(getFlashes().map((flash) => flash.message)).toContain("Closed 2 items.");
+  });
+});
+
+describe("merging a selection of pull requests", () => {
+  let runtime: OwnedAppRuntime;
+  const mergePull = vi.fn();
+  const deferMergePull = vi.fn();
+
+  beforeEach(() => {
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    mergePull.mockReset();
+    deferMergePull.mockReset().mockResolvedValue({});
+    runtime = makeAppRuntime(makeGeneratedClient({ PullRequestsService: { mergePull, deferMergePull } }));
+  });
+
+  afterEach(async () => {
+    await Effect.runPromise(runtime.disposeEffect);
+  });
+
+  function target(number: number, overrides: Partial<PullRequest> = {}): ListItemTarget {
+    return {
+      kind: "pull",
+      item: {
+        ...pull,
+        Number: number,
+        Title: `Change ${number}`,
+        CIStatus: "success",
+        CIChecksJSON: "[]",
+        ...overrides,
+      },
+    };
+  }
+
+  it("merges now, after pending CI, or through the merge queue, and says which", async () => {
+    mergePull.mockImplementation((params: { number: number }) =>
+      Promise.resolve(
+        params.number === 23
+          ? { merged: false, queued: true, sha: "", message: "" }
+          : { merged: true, sha: "abc", message: "" },
+      ),
+    );
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [
+        target(21, { workspace: { id: "ws-21" } as PullRequest["workspace"] }),
+        target(22, { CIStatus: "pending" }),
+        target(23),
+      ],
+      { type: "merge", method: "squash", deleteWorkspaces: true },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(mergePull.mock.calls.map((call) => call[0].number).sort()).toEqual([21, 23]);
+    expect(deferMergePull.mock.calls.map((call) => call[0].number)).toEqual([22]);
+    expect(mergePull.mock.calls.find((call) => call[0].number === 21)?.[1]).toMatchObject({
+      method: "squash",
+      commit_title: "Change 21 (#21)",
+      delete_workspace_id: "ws-21",
+    });
+    expect(getFlashes().map((flash) => flash.message)).toContain(
+      "Merged 1 PR. 1 PR will merge once CI passes. Added 1 PR to the merge queue.",
+    );
+  });
+
+  it("counts a PR whose merge is already waiting for CI as queued, not failed", async () => {
+    const alreadyPending = {
+      type: "about:blank",
+      title: "Conflict",
+      status: 409,
+      code: "conflict",
+      detail: "a deferred merge is already waiting for this pull request",
+      details: { reason: "already_pending" },
+    };
+    deferMergePull.mockRejectedValue(
+      new GeneratedProblemResponse(alreadyPending, Response.json(alreadyPending, { status: 409 })),
+    );
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21, { CIStatus: "pending" })],
+      { type: "merge", method: "squash", deleteWorkspaces: false },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(getFlashes().map((flash) => flash.message)).toContain("1 PR will merge once CI passes.");
+  });
+
+  it("warns when a merged PR's workspace could not be deleted", async () => {
+    mergePull.mockResolvedValue({
+      merged: true,
+      sha: "abc",
+      message: "",
+      workspace_cleanup_warning: "workspace has uncommitted changes",
+    });
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21, { workspace: { id: "ws-21" } as PullRequest["workspace"] })],
+      { type: "merge", method: "squash", deleteWorkspaces: true },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    const flash = getFlashes().find((candidate) => candidate.message.startsWith("Merged 1 PR."));
+    expect(flash?.message).toBe(
+      "Merged 1 PR. Kept the workspace for acme/widgets#21: workspace has uncommitted changes.",
+    );
+    expect(flash?.tone).toBe("warning");
+  });
+
+  it("reports a merge the provider declined as a failure", async () => {
+    mergePull.mockImplementation((params: { number: number }) =>
+      Promise.resolve(
+        params.number === 22
+          ? { merged: false, sha: "", message: "Base branch was modified" }
+          : { merged: true, sha: "abc", message: "" },
+      ),
+    );
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21), target(22)],
+      { type: "merge", method: "merge", deleteWorkspaces: false },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(getFlashes().map((flash) => flash.message)).toContain(
+      "Merged 1 PR. Could not merge 1 of 2 PRs. acme/widgets#22: Base branch was modified.",
+    );
   });
 });
 

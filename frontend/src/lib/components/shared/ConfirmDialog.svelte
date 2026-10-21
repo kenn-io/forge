@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import DialogButton from "./DialogButton.svelte";
   import Modal from "./Modal.svelte";
 
@@ -13,11 +14,15 @@
     confirmLabel: string;
     pendingLabel?: string | undefined;
     busy?: boolean;
+    /** Holds the confirm button until the choices in `children` are complete. */
+    confirmDisabled?: boolean;
     tone?: "primary" | "danger";
     width?: number;
     frameId?: string | undefined;
     onCancel: () => void;
     onConfirm: () => void;
+    /** Choices the confirmation needs, shown between the message and hint. */
+    children?: Snippet | undefined;
   }
 
   let {
@@ -28,11 +33,13 @@
     confirmLabel,
     pendingLabel = undefined,
     busy = false,
+    confirmDisabled = false,
     tone = "primary",
     width = 420,
     frameId = undefined,
     onCancel,
     onConfirm,
+    children = undefined,
   }: Props = $props();
 
   function closeDialog(): void {
@@ -44,6 +51,7 @@
 <Modal {open} {title} onClose={closeDialog} {width} {frameId}>
   <div class="confirm-content">
     <p class="confirm-message">{message}</p>
+    {@render children?.()}
     {#if hint}
       <p class="confirm-hint">{hint}</p>
     {/if}
@@ -55,7 +63,7 @@
     </DialogButton>
     <DialogButton
       tone={tone}
-      disabled={busy}
+      disabled={busy || confirmDisabled}
       onclick={onConfirm}
     >
       {busy && pendingLabel ? pendingLabel : confirmLabel}

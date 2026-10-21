@@ -889,6 +889,11 @@ chain "correctly" falls back to the PAT.
 - Private `user-attachments` reads are the exception to app-token-first reads:
   GitHub returns 404 to installation tokens, so the repo-scoped image proxy must
   use the user's PAT/`gh` chain (`platform/github/markdown_images.go::GetMarkdownImage`).
+  Some uploads 404 at their attachment URL for every credential, even on public
+  repos, yet GitHub still renders them; on a 404 the proxy renders the image
+  through `POST /markdown` in the repository's context and fetches the signed
+  storage URL GitHub substitutes, accepting only GitHub's signed image host
+  (`platform/github/markdown_images.go::renderSignedAttachmentURL`).
   Video attachments use the same chain; the attachment URL redirects to signed
   storage on another host, and Go drops `Authorization` on that cross-host
   redirect (`platform/github/markdown_media.go::Client.OpenMarkdownMedia`).

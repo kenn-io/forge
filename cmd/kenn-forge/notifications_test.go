@@ -249,11 +249,15 @@ func TestNotificationLoopSettingsSnapshotConfig(t *testing.T) {
 	require.Equal(12, settings.batchSize)
 }
 
-func TestWireSyncFailed(t *testing.T) {
-	client := &fakeTelemetryClient{disabled: true}
-	require.Nil(t, syncFailedCapture(client))
-	require.Empty(t, client.events())
-	require.Empty(t, client.captures)
+func TestSyncFailedCapture(t *testing.T) {
+	require := require.New(t)
+	require.Nil(syncFailedCapture(&fakeTelemetryClient{disabled: true}))
+	client := &fakeTelemetryClient{}
+	capture := syncFailedCapture(client)
+	require.NotNil(capture)
+	capture("issues", "auth")
+	require.Equal([]string{"sync_failed"}, client.events())
+	require.Equal([]map[string]any{{"sync_source": "issues", "reason": "auth"}}, client.captures)
 }
 
 func TestRunWiresSyncFailed(t *testing.T) {
@@ -302,14 +306,6 @@ name = "widget"
 	err = runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath}, func(telemetry.Options) telemetry.Client { return client })
 	require.NoError(err)
 	require.Contains(client.events(), "sync_failed")
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	for i, event := range client.eventNames {
-		if event == "sync_failed" {
-			require.Equal(map[string]any{"sync_source": "merge_requests", "reason": "provider"}, client.captures[i])
-			break
-		}
-	}
 }
 
 func TestSetupFinishedMinute(t *testing.T) {

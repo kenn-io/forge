@@ -138,7 +138,7 @@ func TestSyncFailedProperties(t *testing.T) {
 		assert.NotContains(properties, "repo")
 		assert.NotContains(properties, "error")
 	}
-	for _, properties := range []map[string]any{{"reason": "auth"}, {"sync_source": "refs"}, {"sync_source": "acme/widget", "reason": "auth"}} {
+	for _, properties := range []map[string]any{{"reason": "auth"}, {"sync_source": "issues"}, {"sync_source": "acme/widget", "reason": "auth"}} {
 		_, err := daemon.SanitizeProperties("sync_failed", properties)
 		require.ErrorIs(t, err, posthog.ErrInvalidProperty)
 	}

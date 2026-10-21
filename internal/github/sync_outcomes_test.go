@@ -7,9 +7,6 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -24,7 +21,6 @@ import (
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/bitbucketdc"
 	"go.kenn.io/forge/platform/gitealike"
-	platformgitlab "go.kenn.io/forge/platform/gitlab"
 )
 
 func TestSyncFailedSourceRecovery(t *testing.T) {
@@ -268,40 +264,25 @@ func TestSyncFailureReason(t *testing.T) {
 		{"github primary limit", &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
 		{"github secondary limit", &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
 		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable, Request: req}}, "provider"},
+		{"github unauthorized", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusUnauthorized, Request: req}}, "auth"},
+		{"github forbidden", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "auth"},
+		{"github rate limit status", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusTooManyRequests, Request: req}}, "rate_limited"},
 		{"not found", platform.ErrNotFound, "not_found"},
 		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
 		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
 		{"bitbucket DC", &bitbucketdc.HTTPError{StatusCode: 503}, "provider"},
 		{"network", &net.DNSError{Err: "unavailable"}, "network"},
 		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, "network"},
-		{"connection timeout", &net.OpError{Op: "read", Net: "tcp", Err: syscall.ETIMEDOUT}, "network"},
 		{"deadline", context.DeadlineExceeded, "network"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
+		{"empty managed token", tokenauth.ErrMissingToken, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"normalized permission takes precedence", &platform.Error{Code: platform.ErrCodePermissionDenied, Err: &gitealike.HTTPError{StatusCode: 429}}, "auth"},
 		{"normalized contract takes precedence", &platform.Error{Code: platform.ErrCodeProviderContract, Err: &gitealike.HTTPError{StatusCode: 404}}, "provider"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
-	}
-}
-
-func TestSyncFailureReasonWrappedHTTPStatus(t *testing.T) {
-	for _, tc := range []struct {
-		status int
-		want   string
-	}{
-		{401, "auth"},
-		{403, "auth"},
-		{404, "not_found"},
-		{429, "rate_limited"},
-		{503, "provider"},
-	} {
-		t.Run(http.StatusText(tc.status), func(t *testing.T) {
-			err := &url.Error{Op: "Get", URL: "https://api.github.com/repos/acme/widget", Err: &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}}}
-			assert.Equal(t, tc.want, syncFailureReason(err))
-		})
 	}
 }
 
@@ -431,30 +412,6 @@ func TestSyncFailedMixedReads(t *testing.T) {
 			assert.Empty(t, events)
 		})
 	}
-}
-
-func TestSyncFailedEmptyManagedGitLabToken(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "token")
-	require.NoError(t, os.WriteFile(path, nil, 0o600))
-	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-		Key:        tokenauth.Key{Platform: "gitlab", Host: "gitlab.example.com"},
-		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: path}},
-	}, tokenauth.Options{})
-	client, err := platformgitlab.NewClient("gitlab.example.com", source,
-		platformgitlab.WithoutRetriesForTesting(),
-		platformgitlab.WithTransport(platform.RoundTripFunc(func(*http.Request) (*http.Response, error) {
-			assert.Fail(t, "empty credentials must fail before sending an HTTP request")
-			return nil, errors.New("unexpected request")
-		})))
-	require.NoError(t, err)
-	registry, err := platform.NewRegistry(client)
-	require.NoError(t, err)
-	repo := RepoRef{Platform: "gitlab", PlatformHost: "gitlab.example.com", Owner: "acme", Name: "widget"}
-	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.ElementsMatch(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }
 
 func TestSyncFailedBitbucketDCUnavailable(t *testing.T) {

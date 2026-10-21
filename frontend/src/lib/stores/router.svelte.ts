@@ -740,7 +740,7 @@ export function getCommentNavigation(item: {
   if (
     !selected ||
     kind !== item.itemType ||
-    selected.provider !== "github" ||
+    canonicalProvider(selected.provider) !== "github" ||
     selected.platformHost !== (item.platformHost ?? "github.com") ||
     selected.repoPath !== item.repoPath ||
     selected.number !== item.number ||

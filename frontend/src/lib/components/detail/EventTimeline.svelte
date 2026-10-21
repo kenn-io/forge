@@ -757,11 +757,14 @@
     return prefix !== null && event.PlatformID != null &&
       `${prefix}${event.PlatformID}` === commentNavigation?.commentAnchor;
   }));
-  // A link must still reveal its target when activity filters exclude it.
-  const displayEvents = $derived(collapseLifecycleTransitions(
-    targetComment && !events.some((event) => event.ID === targetComment.ID)
-      ? [...events, targetComment] : events,
-  ));
+  // Reveal filtered targets in their original position in the discussion.
+  const displayEvents = $derived.by(() => {
+    if (!targetComment || events.some((event) => event.ID === targetComment.ID)) {
+      return collapseLifecycleTransitions(events);
+    }
+    const visibleIDs = new Set([targetComment.ID, ...events.map((event) => event.ID)]);
+    return collapseLifecycleTransitions(orderingEvents.filter((event) => visibleIDs.has(event.ID)));
+  });
   const displayOrderingEvents = $derived(collapseLifecycleTransitions(orderingEvents));
   const timelineEntries = $derived(buildTimelineEntries(displayEvents, displayOrderingEvents));
   const compactTimelineEntries = $derived(buildCompactTimelineEntries(displayEvents, displayOrderingEvents));
@@ -805,12 +808,25 @@
   $effect(() => {
     const navigation = commentNavigation;
     const target = targetComment;
+    const entry = renderedTimelineEntries[targetEntryIndex];
     const element = timelineElement;
     const missing = missingCommentElement;
     if (!navigation || (!element && !missing) ||
         (navigation === completedCommentNavigation && target?.ID === completedCommentID)) return;
     const execution = untrack(() => runtime.runCommand(
-      Effect.promise(() => tick()).pipe(
+      Effect.sync(() => {
+        if (!target || !entry) return;
+        // Reveal once for this navigation; subsequent toggles and refreshes
+        // keep the user's normal expansion state.
+        expandedCompactRows = [...new Set([...expandedCompactRows, entry.key])];
+        expandedProviderHiddenComments = [...new Set([
+          ...expandedProviderHiddenComments, target.ID, entry.event.ID,
+        ])];
+        if (entry.replies.some((reply) => reply.ID === target.ID)) {
+          collapsedThreads = collapsedThreads.filter((id) => id !== entryThreadID(entry));
+        }
+      }).pipe(
+        Effect.andThen(Effect.promise(() => tick())),
         Effect.andThen(nextAnimationFrame),
         Effect.andThen(Effect.sync(() => {
           const comment = target
@@ -1280,7 +1296,7 @@
   }
 
   function isThreadCollapsed(entry: TimelineEntry): boolean {
-    return !entry.replies.some((reply) => reply.ID === targetComment?.ID) && collapsedThreads.includes(entryThreadID(entry));
+    return collapsedThreads.includes(entryThreadID(entry));
   }
 
   function toggleThread(entry: TimelineEntry): void {
@@ -1291,9 +1307,7 @@
   }
 
   function isProviderHiddenExpanded(event: PREvent | IssueEvent): boolean {
-    return event.ID === targetComment?.ID ||
-      event.ID === renderedTimelineEntries[targetEntryIndex]?.event.ID ||
-      expandedProviderHiddenComments.includes(event.ID);
+    return expandedProviderHiddenComments.includes(event.ID);
   }
 
   function toggleProviderHidden(event: PREvent | IssueEvent): void {
@@ -1327,7 +1341,7 @@
   }
 
   function isCompactEntryExpanded(entry: TimelineEntry): boolean {
-    return entry.event.ID === targetComment?.ID || expandedCompactRows.includes(entry.key);
+    return expandedCompactRows.includes(entry.key);
   }
 
   function toggleCompactEntry(entry: TimelineEntry): void {

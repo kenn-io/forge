@@ -103,7 +103,23 @@ it("reveals a filtered review reply and expands compact comments", async () => {
   });
   navigate(`${route}#discussion_r101`);
   await expect.poll(focusedComment).toBe("1");
-  expect(document.activeElement?.textContent).toContain("Comment 1");
+  const row = document.activeElement as HTMLElement;
+  const toggle = row.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(row.textContent).toContain("Discussion text.");
+
+  toggle.click();
+  await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(row.textContent).not.toContain("Discussion text.");
+  // A refresh preserves the user's choice, but reopening the link reveals it again.
+  await view.rerender({
+    runtime,
+    timelineProps: { ...timelineProps, events: [{ ...root }, { ...reply }], activityViewMode: "compact" },
+  });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  navigate(`${route}#discussion_r101`);
+  await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(row.textContent).toContain("Discussion text.");
 });
 
 it("cancels a pending scroll when another item opens", async () => {
@@ -142,4 +158,39 @@ it("reveals a reply inside a provider-hidden thread", async () => {
   });
   await expect.poll(focusedComment).toBe("2");
   expect(document.activeElement?.textContent).toContain("Comment 2");
+  for (const selector of [".thread-toggle", ".provider-hidden-toggle"]) {
+    const expanded = () => document.querySelector(selector)?.getAttribute("aria-expanded");
+    expect(expanded()).toBe("true");
+    (document.querySelector(selector) as HTMLButtonElement).click();
+    await expect.poll(expanded).toBe("false");
+    navigate(`${route}#discussion_r102`);
+    await expect.poll(expanded).toBe("true");
+    await expect.poll(focusedComment).toBe("2");
+  }
 });
+
+it.each(["grouped", "chronological"] as const)(
+  "preserves %s order when revealing a filtered recent comment",
+  async (timelineOrder) => {
+    runtime = makeAppRuntime();
+    const ordered = [comments[11]!, comments[10]!, comments[9]!];
+    navigate(`${route}#issuecomment-112`);
+    await render(EventTimelineTestHarness, {
+      props: {
+        runtime,
+        timelineProps: {
+          ...timelineProps,
+          events: ordered.slice(1),
+          orderingEvents: ordered,
+          filtered: true,
+          timelineOrder,
+          initialEntryLimit: 25,
+        },
+      },
+    });
+    await expect.poll(focusedComment).toBe("12");
+    expect(
+      Array.from(document.querySelectorAll("[data-comment-id]"), (row) => row.getAttribute("data-comment-id")),
+    ).toEqual(["12", "11", "10"]);
+  },
+);

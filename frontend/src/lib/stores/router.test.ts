@@ -609,6 +609,16 @@ describe("router /worklists routes", () => {
 });
 
 describe("comment navigation", () => {
+  it.each([
+    ["/pulls/gh/acme/widgets/42", "pull"],
+    ["/issues/gh/acme/widgets/42", "issue"],
+    ["/focus/pulls/gh/acme/widgets/42", "pull"],
+    ["/focus/issues/gh/acme/widgets/42", "issue"],
+  ] as const)("recognizes GitHub comment targets through %s", (path, itemType) => {
+    navigate(`${path}#issuecomment-123`);
+    expect(getCommentNavigation({ ...prRef, itemType })?.commentAnchor).toBe("issuecomment-123");
+  });
+
   it("preserves targets for selected items and creates a request for every navigation", () => {
     const item = { ...prRef, itemType: "pull" as const };
     const path = "/host/github.com/pulls/github/acme/widgets/42#issuecomment-123";

@@ -36,7 +36,11 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
 		if source == "refs" {
-			reason = gitclone.FailureReason(err)
+			if gitAccessFailureReason(err) != "" {
+				reason = "auth"
+			} else {
+				reason = gitclone.FailureReason(err)
+			}
 			if reason == "" {
 				return
 			}

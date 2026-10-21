@@ -130,20 +130,23 @@ func TestSyncFailedReasonPriority(t *testing.T) {
 func TestSyncFailedIgnoredErrors(t *testing.T) {
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	for _, tc := range []struct {
-		name string
-		err  error
+		name   string
+		source string
+		err    error
 	}{
-		{"local path error", fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
-		{"local access denied", fmt.Errorf("read: %w", syscall.EACCES)},
-		{"local operation denied", fmt.Errorf("read: %w", syscall.EPERM)},
-		{"local full disk", fmt.Errorf("write: %w", syscall.ENOSPC)},
-		{"local read-only disk", fmt.Errorf("write: %w", syscall.EROFS)},
-		{"budget refused", platform.ErrSyncBudgetExhausted},
-		{"disabled feature without cooldown", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
+		{"local path error", "issues", fmt.Errorf("read: %w", &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
+		{"local access denied", "issues", fmt.Errorf("read: %w", syscall.EACCES)},
+		{"local operation denied", "issues", fmt.Errorf("read: %w", syscall.EPERM)},
+		{"local full disk", "issues", fmt.Errorf("write: %w", syscall.ENOSPC)},
+		{"local read-only disk", "issues", fmt.Errorf("write: %w", syscall.EROFS)},
+		{"budget refused", "issues", platform.ErrSyncBudgetExhausted},
+		{"disabled feature without cooldown", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
+		{"refs token file error", "refs", fmt.Errorf("%w: %w", gitclone.ErrCredentialUnavailable, &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
+		{"refs deadline only", "refs", fmt.Errorf("resolve git token: %w", context.DeadlineExceeded)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			pass := &syncPass{}
-			pass.observe(repo, "issues", tc.err)
+			pass.observe(repo, tc.source, tc.err)
 			var events [][2]string
 			s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
@@ -402,14 +405,20 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 
 func TestSyncFailedGitHTTP(t *testing.T) {
 	for _, tc := range []struct {
-		status int
-		reason string
+		status     int
+		reason     string
+		emptyToken bool
 	}{
-		{http.StatusForbidden, "auth"},
-		{http.StatusNotFound, "not_found"},
-		{http.StatusGone, "not_found"},
+		{http.StatusForbidden, "auth", false},
+		{http.StatusNotFound, "not_found", false},
+		{http.StatusGone, "not_found", false},
+		{0, "auth", true},
 	} {
-		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+		name := fmt.Sprint(tc.status)
+		if tc.emptyToken {
+			name = "empty managed token"
+		}
+		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			fixture := setupSyncBranchActivityFixture(t, "main")
 			syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
@@ -426,7 +435,17 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 			client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
 				return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(remote), DefaultBranch: new("main")}, nil
 			}}
-			clones := gitclone.New(t.TempDir(), nil)
+			sources := gitclone.HostSources{}
+			var tokenFile string
+			if tc.emptyToken {
+				tokenFile = filepath.Join(t.TempDir(), "token")
+				require.NoError(t, os.WriteFile(tokenFile, nil, 0o600))
+				sources[repo.PlatformHost] = tokenauth.NewManagedSource(tokenauth.Descriptor{
+					Key:        tokenauth.Key{Platform: "github", Host: repo.PlatformHost},
+					Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindFile, FilePath: tokenFile}},
+				}, tokenauth.Options{})
+			}
+			clones := gitclone.New(t.TempDir(), sources)
 			t.Cleanup(clones.Wait)
 			clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
 			s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
@@ -436,7 +455,12 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 			assert.Equal([][2]string{{"refs", tc.reason}}, events)
 			s.RunOnce(t.Context())
 			assert.Len(events, 1)
-			assert.Equal(int32(2), reads.Load(), "HTTP failures must retain their single-attempt policy")
+			if tc.emptyToken {
+				assert.Zero(reads.Load(), "missing credentials must fail before Git contacts the remote")
+				require.NoError(t, os.WriteFile(tokenFile, []byte("test-token"), 0o600))
+			} else {
+				assert.Equal(int32(2), reads.Load(), "HTTP failures must retain their single-attempt policy")
+			}
 			remote = fixture.Remote
 			s.RunOnce(t.Context())
 			assert.Len(events, 1)
@@ -445,9 +469,16 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 			require.NoError(t, err)
 			syncActivityGitRun(t, clone, "remote", "set-url", "origin", repo.CloneURL)
 			remote = repo.CloneURL
+			if tc.emptyToken {
+				require.NoError(t, os.WriteFile(tokenFile, nil, 0o600))
+			}
 			s.RunOnce(t.Context())
 			assert.Equal([][2]string{{"refs", tc.reason}, {"refs", tc.reason}}, events)
-			assert.Equal(int32(3), reads.Load())
+			if tc.emptyToken {
+				assert.Zero(reads.Load())
+			} else {
+				assert.Equal(int32(3), reads.Load())
+			}
 		})
 	}
 }

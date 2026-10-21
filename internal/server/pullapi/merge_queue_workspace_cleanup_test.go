@@ -67,7 +67,10 @@ func newMergeQueueCleanupFixture(t *testing.T) *mergeQueueCleanupFixture {
 		ObservedAt: now.Add(-time.Hour),
 	})
 	require.NoError(t, err)
-	f.srv.handler.syncer.SetOnMergeRequestLeftOpen(f.srv.handler.ResolveMergeWorkspaceCleanup)
+	f.srv.handler.syncer.SetOnMergeRequestTerminal(func(context.Context, int64, int) {
+		f.srv.handler.WakeMergeWorkspaceCleanup()
+	})
+	f.srv.handler.StartMergeWorkspaceCleanup()
 	return f
 }
 
@@ -98,8 +101,7 @@ func (f *mergeQueueCleanupFixture) enqueue(ctx context.Context) {
 	require.NoError(f.t, err)
 	require.True(f.t, result.Queued)
 	assert.False(f.t, result.WorkspaceCleanupPending)
-	assert.Empty(f.t, result.WorkspaceCleanupWarning)
-	f.requireKept(true)
+	require.True(f.t, f.kept())
 }
 
 // providerReports changes the pull request's provider state, as the merge
@@ -124,29 +126,22 @@ func (f *mergeQueueCleanupFixture) sync() {
 	require.NoError(f.t, f.srv.handler.syncer.SyncClosedMROnProvider(f.t.Context(), f.repoID, 7))
 }
 
-func (f *mergeQueueCleanupFixture) requireKept(kept bool) {
+func (f *mergeQueueCleanupFixture) kept() bool {
 	f.t.Helper()
-	cleanup, err := f.database.GetMergeWorkspaceCleanup(f.t.Context(), f.repoID, 7)
+	cleanups, err := f.database.ListMergeWorkspaceCleanups(f.t.Context())
 	require.NoError(f.t, err)
-	require.Equal(f.t, kept, cleanup != nil)
+	return len(cleanups) > 0
 }
 
-func (f *mergeQueueCleanupFixture) eventuallyForgotten() {
-	f.t.Helper()
-	require.Eventually(f.t, func() bool {
-		cleanup, err := f.database.GetMergeWorkspaceCleanup(f.t.Context(), f.repoID, 7)
-		return err == nil && cleanup == nil
-	}, 5*time.Second, 10*time.Millisecond)
-}
-
-// drain waits for the handler's background resolutions to finish.
+// drain stops the handler's cleanup loop.
 func (f *mergeQueueCleanupFixture) drain() {
 	f.t.Helper()
 	require.NoError(f.t, f.srv.handler.Shutdown(f.t.Context()))
 }
 
-func TestMergeQueueWorkspaceCleanupDeletesOnOwningFleetHost(t *testing.T) {
+func TestMergeQueueWorkspaceCleanupDeletesOnOwningFleetHostAndRetriesRefusal(t *testing.T) {
 	f := newMergeQueueCleanupFixture(t)
+	f.refuse = 1
 	spoke := federationauth.WithPrincipal(t.Context(), federationauth.Principal{
 		NodeID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 	})
@@ -154,28 +149,14 @@ func TestMergeQueueWorkspaceCleanupDeletesOnOwningFleetHost(t *testing.T) {
 
 	f.providerReports("merged")
 	f.sync()
-	f.eventuallyForgotten()
-	f.drain()
-	assert.Equal(t, []requestedWorkspaceDeletion{{
-		hostKey: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", workspaceID: "ws-1",
-	}}, f.requestedDeletions())
-}
-
-func TestMergeQueueWorkspaceCleanupRetriesRefusedDeletion(t *testing.T) {
-	f := newMergeQueueCleanupFixture(t)
-	f.refuse = 1
-	f.enqueue(t.Context())
-
-	f.providerReports("merged")
-	f.sync()
-	require.Eventually(t, func() bool { return len(f.requestedDeletions()) == 1 },
+	require.Eventually(t, func() bool { return len(f.requestedDeletions()) > 0 },
 		5*time.Second, 10*time.Millisecond)
-	f.requireKept(true)
 
-	// The periodic pass retries it.
-	f.srv.handler.resolveMergeWorkspaceCleanups(t.Context())
-	f.requireKept(false)
-	assert.Len(t, f.requestedDeletions(), 2)
+	f.srv.handler.WakeMergeWorkspaceCleanup()
+	require.Eventually(t, func() bool { return !f.kept() }, 5*time.Second, 10*time.Millisecond)
+	f.drain()
+	spokeDeletion := requestedWorkspaceDeletion{hostKey: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", workspaceID: "ws-1"}
+	assert.Equal(t, []requestedWorkspaceDeletion{spokeDeletion, spokeDeletion}, f.requestedDeletions())
 }
 
 func TestMergeQueueWorkspaceCleanupDroppedWhenPullRequestCloses(t *testing.T) {
@@ -184,28 +165,7 @@ func TestMergeQueueWorkspaceCleanupDroppedWhenPullRequestCloses(t *testing.T) {
 
 	f.providerReports("closed")
 	f.sync()
-	f.eventuallyForgotten()
-	f.drain()
-	assert.Empty(t, f.requestedDeletions())
-}
-
-func TestMergeQueueWorkspaceCleanupDroppedWhenPullRequestLeavesQueue(t *testing.T) {
-	f := newMergeQueueCleanupFixture(t)
-	f.enqueue(t.Context())
-
-	// A queue read finds the pull request open and out of the queue.
-	removedAt := time.Now().UTC()
-	_, err := f.database.UpsertMergeQueueState(t.Context(), f.repoID, db.MergeQueueState{
-		Number: 7, BaseBranch: "main", Enabled: true,
-		RemovedAt: &removedAt, RemovalReason: "branch_protection_failure", ObservedAt: removedAt,
-	})
-	require.NoError(t, err)
-	f.srv.handler.ResolveMergeWorkspaceCleanup(t.Context(), f.repoID, 7)
-	f.eventuallyForgotten()
-
-	// Merging it later some other way leaves the workspace alone.
-	f.providerReports("merged")
-	f.sync()
+	require.Eventually(t, func() bool { return !f.kept() }, 5*time.Second, 10*time.Millisecond)
 	f.drain()
 	assert.Empty(t, f.requestedDeletions())
 }

@@ -625,17 +625,18 @@ func newServer(
 	)
 	if syncer != nil {
 		syncer.SetOnMergedActorRepaired(s.syncevents.BroadcastPRDetailRefresh)
-		// Sync resolves workspace deletions kept for merge-queued pull
-		// requests. pullAPI is built below, before sync starts.
+		// Sync wakes the resolution of workspace deletions kept for
+		// merge-queued pull requests. pullAPI is built below, before sync
+		// starts.
 		syncer.SetOnMergeQueueChanged(func(ctx context.Context, repoID int64, number int) {
 			s.syncevents.BroadcastPRDetailRefresh(ctx, repoID, number)
 			if s.pullAPI != nil {
-				s.pullAPI.ResolveMergeWorkspaceCleanup(ctx, repoID, number)
+				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}
 		})
-		syncer.SetOnMergeRequestLeftOpen(func(ctx context.Context, repoID int64, number int) {
+		syncer.SetOnMergeRequestTerminal(func(context.Context, int64, int) {
 			if s.pullAPI != nil {
-				s.pullAPI.ResolveMergeWorkspaceCleanup(ctx, repoID, number)
+				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}
 		})
 		syncer.SetOnRelayRefresh(s.syncevents.BroadcastRelayRefresh)

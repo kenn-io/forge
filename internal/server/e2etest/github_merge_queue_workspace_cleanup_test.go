@@ -101,9 +101,9 @@ func (f mergeQueueWorkspaceE2E) requireWorkspaceDeleted(t *testing.T) {
 		ws, err := f.database.GetWorkspace(t.Context(), f.workspaceID)
 		return err == nil && ws == nil
 	}, 5*time.Second, 10*time.Millisecond)
-	kept, err := f.database.GetMergeWorkspaceCleanup(t.Context(), f.repoID, 7)
+	kept, err := f.database.ListMergeWorkspaceCleanups(t.Context())
 	require.NoError(t, err)
-	assert.Nil(t, kept, "a resolved request is forgotten")
+	assert.Empty(t, kept, "a resolved request is forgotten")
 }
 
 // syncPullRequest re-reads the pull request through sync's close-detection
@@ -134,8 +134,8 @@ func TestGitHubDeferredMergeIntoQueueDeletesWorkspaceWhenSyncSeesQueueMerge(t *t
 
 	fixture.enqueue(t, srv, true)
 	require.Eventually(t, func() bool {
-		kept, err := fixture.database.GetMergeWorkspaceCleanup(t.Context(), fixture.repoID, 7)
-		return err == nil && kept != nil
+		kept, err := fixture.database.ListMergeWorkspaceCleanups(t.Context())
+		return err == nil && len(kept) == 1
 	}, 5*time.Second, 10*time.Millisecond, "the deferred worker's enqueue keeps the deletion")
 	fixture.requireWorkspaceKept(t)
 

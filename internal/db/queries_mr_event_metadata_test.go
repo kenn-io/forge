@@ -132,9 +132,9 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 			"commit-1": `{"commit_order_key":1,"obsolete":true}`,
 		}
 	}
-	upsert := func(state MergeRequestState, title string, updatedAt time.Time) MergeRequestSnapshotCommit {
+	upsert := func(state MergeRequestState, title string, updatedAt time.Time) bool {
 		t.Helper()
-		commit, err := database.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
+		_, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 			ctx, &MergeRequest{
 				RepoID: repoID, PlatformID: 1, Number: 1, Title: title,
 				State: state, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
@@ -143,29 +143,23 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 			}, computer,
 		)
 		require.NoError(t, err)
-		return commit
+		return accepted
 	}
 
 	// A rejected snapshot (older updated_at) must invoke nothing and write
 	// neither the terminal state nor any metadata.
-	commit := upsert(MergeRequestStateClosed, "stale close", now.Add(-time.Minute))
-	assert.False(commit.Accepted)
-	assert.False(commit.LeftOpen)
+	assert.False(upsert(MergeRequestStateClosed, "stale close", now.Add(-time.Minute)))
 	assert.Equal(0, invocations)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 
 	// An accepted open-state snapshot is not a terminal transition.
-	commit = upsert(MergeRequestStateOpen, "still open", now.Add(30*time.Second))
-	assert.True(commit.Accepted)
-	assert.False(commit.LeftOpen)
+	assert.True(upsert(MergeRequestStateOpen, "still open", now.Add(30*time.Second)))
 	assert.Equal(0, invocations)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1}`)
 
 	// The accepted transition runs the computation inside the snapshot
 	// transaction and lands state and metadata together.
-	commit = upsert(MergeRequestStateClosed, "real close", now.Add(time.Minute))
-	assert.True(commit.Accepted)
-	assert.True(commit.LeftOpen)
+	assert.True(upsert(MergeRequestStateClosed, "real close", now.Add(time.Minute)))
 	assert.Equal(1, invocations)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
 	fresh, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
@@ -175,9 +169,7 @@ func TestParentSnapshotComputesTerminalEventMetadataInTransaction(t *testing.T) 
 
 	// A later snapshot of the already-terminal MR is no transition: the
 	// terminal record is never recomputed.
-	commit = upsert(MergeRequestStateClosed, "closed again", now.Add(2*time.Minute))
-	assert.True(commit.Accepted)
-	assert.False(commit.LeftOpen)
+	assert.True(upsert(MergeRequestStateClosed, "closed again", now.Add(2*time.Minute)))
 	assert.Equal(1, invocations)
 }
 

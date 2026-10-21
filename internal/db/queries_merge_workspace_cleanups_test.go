@@ -65,13 +65,9 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 				insertTestMRWithOptions(t, database, terminal)
 			}
 
-			got, err := database.GetMergeWorkspaceCleanup(ctx, repoID, 7)
-			require.NoError(t, err)
-			require.NotNil(t, got)
-			assert.Equal(t, ObservedMergeWorkspaceCleanup{MergeWorkspaceCleanup: cleanup, Outcome: tt.want}, *got)
 			listed, err := database.ListMergeWorkspaceCleanups(ctx)
 			require.NoError(t, err)
-			assert.Equal(t, []ObservedMergeWorkspaceCleanup{*got}, listed)
+			assert.Equal(t, []ObservedMergeWorkspaceCleanup{{MergeWorkspaceCleanup: cleanup, Outcome: tt.want}}, listed)
 		})
 	}
 }
@@ -95,13 +91,13 @@ func TestDeleteMergeWorkspaceCleanupKeepsNewerRequest(t *testing.T) {
 
 	// Resolving the request read earlier must not forget the newer one.
 	require.NoError(database.DeleteMergeWorkspaceCleanup(ctx, older))
-	kept, err := database.GetMergeWorkspaceCleanup(ctx, repoID, 7)
+	kept, err := database.ListMergeWorkspaceCleanups(ctx)
 	require.NoError(err)
-	require.NotNil(kept)
-	assert.Equal(t, newer, kept.MergeWorkspaceCleanup)
+	require.Len(kept, 1)
+	assert.Equal(t, newer, kept[0].MergeWorkspaceCleanup)
 
 	require.NoError(database.DeleteMergeWorkspaceCleanup(ctx, newer))
-	kept, err = database.GetMergeWorkspaceCleanup(ctx, repoID, 7)
+	kept, err = database.ListMergeWorkspaceCleanups(ctx)
 	require.NoError(err)
-	assert.Nil(t, kept)
+	assert.Empty(t, kept)
 }

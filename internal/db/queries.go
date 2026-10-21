@@ -1284,19 +1284,7 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabels(
 	ctx context.Context,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
-	commit, err := d.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(ctx, mr, nil)
-	return commit.ID, commit.Revision, commit.Accepted, err
-}
-
-// MergeRequestSnapshotCommit reports how a parent snapshot upsert landed.
-type MergeRequestSnapshotCommit struct {
-	ID       int64
-	Revision int64
-	// Accepted is false when a newer snapshot already owns the row.
-	Accepted bool
-	// LeftOpen reports that the accepted snapshot took a stored open merge
-	// request out of the open state.
-	LeftOpen bool
+	return d.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(ctx, mr, nil)
 }
 
 // MREventMetadataComputer derives metadata_json replacements (keyed by event
@@ -1313,25 +1301,26 @@ type MREventMetadataComputer func(mergeRequestID int64, events []MREvent) map[st
 // transaction's view of the stored events and its returned metadata lands with
 // the terminal state — together or not at all, computed from data no
 // concurrent writer can change underneath it. Non-transition rounds and
-// rejected snapshots never invoke it. The result reports that transition
-// whether or not terminalEventMetadata is set.
+// rejected snapshots never invoke it.
 func (d *DB) UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 	ctx context.Context,
 	mr *MergeRequest,
 	terminalEventMetadata MREventMetadataComputer,
-) (MergeRequestSnapshotCommit, error) {
+) (int64, int64, bool, error) {
 	release, err := d.lockMergeRequestSnapshot(
 		ctx, mr.RepoID, mr.Number,
 	)
 	if err != nil {
-		return MergeRequestSnapshotCommit{}, err
+		return 0, 0, false, err
 	}
 	defer release()
 
-	var commit MergeRequestSnapshotCommit
+	var id int64
+	var revision int64
+	var accepted bool
 	err = d.Tx(ctx, func(tx *sql.Tx) error {
 		terminalTransition := false
-		if mr.State != MergeRequestStateOpen {
+		if terminalEventMetadata != nil && mr.State != MergeRequestStateOpen {
 			var priorState string
 			err := tx.QueryRowContext(ctx,
 				`SELECT state FROM forge_merge_requests
@@ -1346,26 +1335,18 @@ func (d *DB) UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 				terminalTransition = priorState == string(MergeRequestStateOpen)
 			}
 		}
-		commit = MergeRequestSnapshotCommit{}
 		var err error
-		commit.ID, commit.Revision, commit.Accepted, err = commitMergeRequestParentSnapshotTx(ctx, tx, mr, mr.Labels)
-		if err != nil || !commit.Accepted || !terminalTransition {
+		id, revision, accepted, err = commitMergeRequestParentSnapshotTx(ctx, tx, mr, mr.Labels)
+		if err != nil || !accepted || !terminalTransition {
 			return err
 		}
-		commit.LeftOpen = true
-		if terminalEventMetadata == nil {
-			return nil
-		}
-		events, err := listMREvents(ctx, tx, commit.ID)
+		events, err := listMREvents(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		return updateMREventMetadataTx(ctx, tx, commit.ID, terminalEventMetadata(commit.ID, events))
+		return updateMREventMetadataTx(ctx, tx, id, terminalEventMetadata(id, events))
 	})
-	if err != nil {
-		return MergeRequestSnapshotCommit{}, err
-	}
-	return commit, nil
+	return id, revision, accepted, err
 }
 
 // UpsertMergeRequestSnapshot reports whether the provider snapshot was

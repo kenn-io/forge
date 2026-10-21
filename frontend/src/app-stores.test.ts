@@ -724,33 +724,6 @@ describe("app store event wiring", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("warns when a deferred merge joined the merge queue but its workspace deletion was not scheduled", async () => {
-    const onWarning = vi.fn();
-    const onNotification = vi.fn();
-    compose({ onWarning, onNotification });
-
-    await acceptEvent(
-      captured.store?.options.onDeferredMergeCompleted?.({
-        provider: "github",
-        platform_host: "github.com",
-        repo_path: "acme/widget",
-        owner: "acme",
-        name: "widget",
-        number: 42,
-        head_sha: "2222222",
-        status: "queued",
-        merged: false,
-        completed_at: "2026-07-10T15:00:00Z",
-        workspace_cleanup_warning: "the workspace deletion could not be scheduled",
-      }),
-    );
-
-    expect(onWarning).toHaveBeenCalledWith(
-      "acme/widget#42 was added to the merge queue after CI passed, but the workspace deletion could not be scheduled.",
-    );
-    expect(onNotification).not.toHaveBeenCalled();
-  });
-
   it("routes merged workspace cleanup failures through the warning callback", async () => {
     const onWarning = vi.fn();
     const onNotification = vi.fn();

@@ -371,45 +371,6 @@ describe("provider action mutations", () => {
     ]);
   });
 
-  it("warns when the merge queue accepted the pull request but its workspace deletion was not scheduled", async () => {
-    const store = createDetailStore({
-      client: {
-        GET: vi.fn(async () => ({ data: detail() })),
-        POST: vi.fn().mockResolvedValue({
-          data: {
-            merged: false,
-            queued: true,
-            sha: "",
-            message: "Added to the merge queue",
-            workspace_cleanup_warning: "the workspace deletion could not be scheduled",
-          },
-          response: new Response(null, { status: 200 }),
-        }),
-        PUT: vi.fn(),
-        DELETE: vi.fn(),
-      } as unknown as GeneratedClient,
-    });
-    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
-    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
-    for (const flash of getFlashes()) dismissFlash(flash.id);
-    const onSuccess = vi.fn();
-    const settled = Promise.withResolvers<void>();
-
-    store.mergePull(
-      routeRef,
-      1,
-      { commit_message: "", commit_title: "Merge pull request", method: "squash", delete_workspace_id: "ws-1" },
-      false,
-      { onSuccess, onSettled: settled.resolve },
-    );
-    await settled.promise;
-
-    expect(onSuccess).toHaveBeenCalledWith({ _tag: "Enqueued" });
-    expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
-      ["Added octo/repo #1 to the merge queue, but the workspace deletion could not be scheduled.", "warning"],
-    ]);
-  });
-
   it("reports a provider response that did not merge as a failed merge", async () => {
     const store = createDetailStore({
       client: {

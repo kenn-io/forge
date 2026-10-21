@@ -2009,12 +2009,19 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
 		// The workspace outlives the enqueue: it is deleted once sync records
-		// the queue's merge.
-		workspaceCleanup = s.keepQueuedMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
-			RepoID: repo.ID, Number: number,
-			WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
-			RequestedAt: requestedAt,
-		})
+		// the queue's merge. The provider already accepted the enqueue, so
+		// keep the request even if the call that made it was cancelled.
+		if body.DeleteWorkspaceID != "" {
+			if err := s.db.SaveMergeWorkspaceCleanup(context.WithoutCancel(ctx), db.MergeWorkspaceCleanup{
+				RepoID: repo.ID, Number: number,
+				WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
+				RequestedAt: requestedAt,
+			}); err != nil {
+				slog.Error("keep workspace cleanup for merge queue failed",
+					"repo_id", repo.ID, "number", number,
+					"workspace_id", body.DeleteWorkspaceID, "err", err)
+			}
+		}
 		// Record the pull request's queue state now so the detail refresh
 		// that follows this response shows it queued.
 		s.syncer.RecordPullRequestEnqueued(

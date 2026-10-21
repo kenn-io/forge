@@ -94,6 +94,8 @@ type Handler struct {
 	deferredMergeInFlight map[string]*deferredMergeHandle
 	mergeLocks            httpapi.KeyedLocks
 	deferredMergeMaxWait  time.Duration
+
+	mergeWorkspaceCleanupWake chan struct{}
 }
 
 func New(deps Deps) *Handler {
@@ -128,6 +130,7 @@ func New(deps Deps) *Handler {
 		bgCtx:                         bgCtx,
 		bgCancel:                      bgCancel,
 		shutdownDone:                  make(chan struct{}),
+		mergeWorkspaceCleanupWake:     make(chan struct{}, 1),
 		deferredMergeInFlight:         make(map[string]*deferredMergeHandle),
 		deferredMergeMaxWait:          maxWait,
 	}

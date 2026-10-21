@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 )
@@ -43,12 +42,13 @@ type ObservedMergeWorkspaceCleanup struct {
 	Outcome MergeWorkspaceCleanupOutcome
 }
 
-const observedMergeWorkspaceCleanupQuery = `
+const listMergeWorkspaceCleanupsQuery = `
 	SELECT c.repo_id, c.number, c.workspace_id, c.host_key, c.requested_at,
 	       COALESCE(p.state, ''), q.queued, q.observed_at
 	FROM forge_merge_workspace_cleanups c
 	LEFT JOIN forge_merge_requests p ON p.repo_id = c.repo_id AND p.number = c.number
-	LEFT JOIN forge_merge_queue_states q ON q.repo_id = c.repo_id AND q.number = c.number`
+	LEFT JOIN forge_merge_queue_states q ON q.repo_id = c.repo_id AND q.number = c.number
+	ORDER BY c.repo_id, c.number`
 
 // SaveMergeWorkspaceCleanup keeps a workspace deletion until the pull
 // request's queued merge resolves, replacing an earlier request for the same
@@ -72,15 +72,14 @@ func (d *DB) SaveMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorkspa
 
 // ListMergeWorkspaceCleanups returns every kept cleanup with its outcome.
 func (d *DB) ListMergeWorkspaceCleanups(ctx context.Context) ([]ObservedMergeWorkspaceCleanup, error) {
-	rows, err := d.roQueryContext(ctx, observedMergeWorkspaceCleanupQuery+`
-		ORDER BY c.repo_id, c.number`)
+	rows, err := d.roQueryContext(ctx, listMergeWorkspaceCleanupsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("list merge workspace cleanups: %w", err)
 	}
 	defer rows.Close()
 	var cleanups []ObservedMergeWorkspaceCleanup
 	for rows.Next() {
-		cleanup, err := scanObservedMergeWorkspaceCleanup(rows.Scan)
+		cleanup, err := scanObservedMergeWorkspaceCleanup(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -90,23 +89,6 @@ func (d *DB) ListMergeWorkspaceCleanups(ctx context.Context) ([]ObservedMergeWor
 		return nil, fmt.Errorf("list merge workspace cleanups: %w", err)
 	}
 	return cleanups, nil
-}
-
-// GetMergeWorkspaceCleanup returns a pull request's kept cleanup with its
-// outcome, or nil when none is kept.
-func (d *DB) GetMergeWorkspaceCleanup(
-	ctx context.Context, repoID int64, number int,
-) (*ObservedMergeWorkspaceCleanup, error) {
-	cleanup, err := scanObservedMergeWorkspaceCleanup(d.roQueryRowContext(ctx,
-		observedMergeWorkspaceCleanupQuery+`
-		WHERE c.repo_id = ? AND c.number = ?`, repoID, number).Scan)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &cleanup, nil
 }
 
 // DeleteMergeWorkspaceCleanup forgets a kept cleanup once it is resolved. It
@@ -125,18 +107,15 @@ func (d *DB) DeleteMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorks
 	return nil
 }
 
-func scanObservedMergeWorkspaceCleanup(scan func(...any) error) (ObservedMergeWorkspaceCleanup, error) {
+func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCleanup, error) {
 	var cleanup ObservedMergeWorkspaceCleanup
 	var state string
 	var queued sql.NullBool
 	var observedAt sql.NullTime
-	if err := scan(
+	if err := rows.Scan(
 		&cleanup.RepoID, &cleanup.Number, &cleanup.WorkspaceID, &cleanup.HostKey,
 		&cleanup.RequestedAt, &state, &queued, &observedAt,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return cleanup, err
-		}
 		return cleanup, fmt.Errorf("scan merge workspace cleanup: %w", err)
 	}
 	cleanup.RequestedAt = cleanup.RequestedAt.UTC()

@@ -393,10 +393,11 @@ Workspace deletion is intentionally conservative.
   authoritative absence; stale projections and retries succeed without
   publishing another deletion
   (`internal/server/workspaceapi/workspace_deletion.go::Handler.QueueWorkspaceDeletion`).
-- A merge that enqueues keeps its workspace deletion durably until sync commits the
-  pull request's open-to-terminal transition: merged deletes on the owning daemon; closed,
-  or a queue read newer than the request showing it unqueued, drops it. Startup and a
-  periodic pass retry refused deletions (`internal/server/pullapi/workspace_cleanup.go::Handler.resolveMergeWorkspaceCleanup`).
+- A merge that enqueues keeps its workspace deletion durably. One loop resolves kept
+  deletions at startup, when sync records a merged or closed snapshot or a queue change,
+  and periodically: merged deletes on the owning daemon and retries a refusal; closed, or
+  a queue read newer than the request showing it unqueued, drops it
+  (`internal/server/pullapi/workspace_cleanup.go::Handler.resolveMergeWorkspaceCleanups`).
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.

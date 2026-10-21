@@ -429,15 +429,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
               notificationCb?.(`${event.owner}/${event.name}#${event.number} merged after CI passed.`);
             }
           } else if (event.status === "queued") {
-            if (event.workspace_cleanup_warning) {
-              warningCb?.(
-                `${event.owner}/${event.name}#${event.number} was added to the merge queue after CI passed, but ${event.workspace_cleanup_warning}.`,
-              );
-            } else {
-              notificationCb?.(
-                `${event.owner}/${event.name}#${event.number} was added to the merge queue after CI passed.`,
-              );
-            }
+            notificationCb?.(
+              `${event.owner}/${event.name}#${event.number} was added to the merge queue after CI passed.`,
+            );
           } else {
             errorCb?.(
               `Deferred merge for ${event.owner}/${event.name}#${event.number} failed: ${event.error ?? "checks did not pass"}`,

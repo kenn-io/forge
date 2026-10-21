@@ -36,6 +36,10 @@ it.each([false, true])("counts Enter through the real sidebar search, issues=%s"
     await fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(issues ? stores.issues.isIssuesLoading() : stores.pulls.isLoading()).toBe(false));
     expect(sent).toHaveBeenCalledTimes(1);
+    await fireEvent.input(input, { target: { value: "different" } });
+    await fireEvent.input(input, { target: { value: "missing" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
   } finally {
     cleanup();
     await Effect.runPromise(runtime.disposeEffect);

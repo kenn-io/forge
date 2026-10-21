@@ -1,4 +1,4 @@
-import { showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
+import { reportWorkspaceLaunchError, showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
 import { Effect } from "effect";
 import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
@@ -189,8 +189,8 @@ export function runQuickActionOnItems(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
           const { message, tone } = summary(action, outcomes);
-          if (tone === "danger") showWorkspaceLaunchError(runtime, message);
-          else showFlash(message, { tone });
+          showFlash(message, { tone });
+          if (outcomes.some(({ outcome }) => outcome.type === "failed")) reportWorkspaceLaunchError(runtime);
         }),
       ),
     ),

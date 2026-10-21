@@ -7,7 +7,7 @@ import {
 import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
 import { orvalRequest } from "../api/runtime.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
-import { canonicalProvider } from "../api/provider-routes.js";
+import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
 import type { AppRuntime } from "./runtime.js";
 import type { Page, Route } from "../stores/router.svelte.js";
 
@@ -70,6 +70,12 @@ type CoreAction =
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
 export type Outcome = { event: "search_empty" } | { event: "error_shown"; kind: CoreAction["event"] };
+
+export const prErrorScope = (provider: string, host: string | undefined, repoPath: string, number: number) =>
+  `${canonicalProvider(provider)}:${resolvedPlatformHost(provider, host)}:${repoPath}#${number}`;
+
+export const workspaceErrorScope = (hostKey: string | undefined, workspaceId: string) =>
+  JSON.stringify([hostKey, workspaceId]);
 
 const today = () => new Date().toISOString().slice(0, 10);
 const coreKey = (action: VisitEvent) =>
@@ -195,7 +201,6 @@ export function startRuntimeTelemetry(
       pending.delete(key ?? event);
       if (key) {
         reportedDay.set(key, day);
-        pending.delete(key);
       }
       const release = () => {
         if (key && reportedDay.get(key) === day) reportedDay.delete(key);

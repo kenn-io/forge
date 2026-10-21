@@ -821,6 +821,7 @@ describe("IssueDetail inline workspace handoff", () => {
   });
 
   it("keeps directory recovery errors in the conflict dialog", async () => {
+    const telemetry = vi.fn();
     const conflict = workspaceBranchConflict("kenn-forge/issue-7-original-title", true);
     const apiClient = {
       GET: vi.fn(),
@@ -836,12 +837,19 @@ describe("IssueDetail inline workspace handoff", () => {
         }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Directory" }));
 
     expect(await screen.findByRole("dialog", { name: "Existing Workspace Directory" })).toBeTruthy();
     expect(await screen.findByText("the expected Kenn Forge worktree directory does not exist")).toBeTruthy();
+    await waitFor(() =>
+      expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+        event: "error_shown",
+        properties: { surface: "web", kind: "workspace_opened" },
+      }),
+    );
   });
 
   it("explains when the existing branch is checked out elsewhere", async () => {

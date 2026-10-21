@@ -1,7 +1,7 @@
 <script lang="ts">
   import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportWorkspaceOpened, workspaceErrorScope } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
@@ -959,7 +959,7 @@
   </header>
 
   {#if loadError}
-    <ErrorShown kind="workspace_opened" scope={JSON.stringify([hostKey, workspaceId])} shown={visible} />
+    <ErrorShown kind="workspace_opened" scope={workspaceErrorScope(hostKey, workspaceId)} shown={visible} />
     <div class="mobile-workspace-terminal__state error">
       <strong>{hostKey ? `Fleet · ${hostKey}` : "Workspace unavailable"}</strong>
       <span>{loadError}</span>
@@ -989,7 +989,7 @@
       {#if workspace.error_message}<span>{workspace.error_message}</span>{/if}
       {#if runtimeError}<span>{runtimeError}</span>{/if}
       {#if workspace.status === "error"}
-        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={JSON.stringify([hostKey, workspaceId])} shown={visible} />{/if}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={workspaceErrorScope(hostKey, workspaceId)} shown={visible} />{/if}
         <button type="button" disabled={retryingSetup} onclick={retryWorkspaceSetup}>
           {#if retryingSetup}<Spinner size={16} />{:else}<RefreshCwIcon size="18" aria-hidden="true" />{/if}
           Retry

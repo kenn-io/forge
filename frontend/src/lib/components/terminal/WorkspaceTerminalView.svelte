@@ -1,7 +1,7 @@
 <script lang="ts">
   import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportWorkspaceOpened, workspaceErrorScope } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -4633,7 +4633,7 @@
           </div>
         {/if}
       {:else if loadError && !workspaceLive}
-        <ErrorShown kind="workspace_opened" scope={JSON.stringify([workspaceHostKey, workspaceId])} shown={!embeddedWorkspace && hostVisible && loadError.report} />
+        <ErrorShown kind="workspace_opened" scope={workspaceErrorScope(workspaceHostKey, workspaceId)} shown={!embeddedWorkspace && hostVisible && loadError.report} />
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4671,7 +4671,7 @@
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
-        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={JSON.stringify([workspaceHostKey, workspaceId])} shown={!embeddedWorkspace && hostVisible} />{/if}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={workspaceErrorScope(workspaceHostKey, workspaceId)} shown={!embeddedWorkspace && hostVisible} />{/if}
         <div class="state-message error">
           <span
             class="error-icon-badge"

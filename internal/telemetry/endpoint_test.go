@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -55,6 +56,49 @@ func TestCoreActionEndpointDailyClaims(t *testing.T) {
 				var body telemetryapi.TelemetryEventResponse
 				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &body))
 				assert.Equal(expected, body.Status)
+			}
+		})
+	}
+	require.NoError(t, reporter.Close())
+}
+
+func TestOutcomeEndpointCountsRepeatedAttempts(t *testing.T) {
+	database := dbtest.Open(t)
+	reporter := telemetry.SetupDailyReporter(t,
+		telemetry.Options{Database: database, DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")},
+		time.Now(),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+	)
+	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{Telemetry: reporter})
+	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.WithoutCancel(t.Context()))) })
+	for _, tc := range []struct {
+		event      string
+		properties map[string]any
+		status     int
+	}{
+		{"search_empty", map[string]any{"surface": "web"}, http.StatusAccepted},
+		{"error_shown", map[string]any{"surface": "web", "kind": "pr_viewed"}, http.StatusAccepted},
+		{"error_shown", map[string]any{"surface": "web", "kind": "workspace_opened"}, http.StatusAccepted},
+		{"error_shown", map[string]any{"surface": "web", "kind": "unknown"}, http.StatusAccepted},
+		{"search_empty", nil, http.StatusBadRequest},
+		{"search_empty", map[string]any{"surface": "cli"}, http.StatusBadRequest},
+		{"error_shown", map[string]any{"surface": "web"}, http.StatusBadRequest},
+		{"error_shown", map[string]any{"surface": "cli", "kind": "pr_viewed"}, http.StatusBadRequest},
+	} {
+		t.Run(tc.event+"/"+fmt.Sprint(tc.properties), func(t *testing.T) {
+			for range 2 {
+				body, err := json.Marshal(map[string]any{"event": tc.event, "properties": tc.properties})
+				require.NoError(t, err)
+				req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/telemetry/events", bytes.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rr := httptest.NewRecorder()
+				srv.ServeHTTP(rr, req)
+				require.Equal(t, tc.status, rr.Code, "response: %s", rr.Body.String())
+				if tc.status == http.StatusAccepted {
+					var receipt telemetryapi.TelemetryEventResponse
+					require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &receipt))
+					assert.Equal(t, "queued", receipt.Status)
+				}
 			}
 		})
 	}

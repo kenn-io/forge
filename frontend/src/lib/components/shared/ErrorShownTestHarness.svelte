@@ -4,12 +4,14 @@
   import { setAppRuntime } from "../../app/runtime-context.js";
   import ErrorShown from "./ErrorShown.svelte";
 
-  const { runtime, shown = true, mounted = true, copies = 1 }: { runtime: AppRuntime; shown?: boolean; mounted?: boolean; copies?: number } = $props();
+  const { runtime, shown = true, mounted = true, copies = 1, retrying = false }: { runtime: AppRuntime; shown?: boolean; mounted?: boolean; copies?: number; retrying?: boolean } = $props();
   setAppRuntime(untrack(() => runtime));
 </script>
 
 {#if mounted}
   {#each Array(copies) as _, i (i)}
-    <ErrorShown kind="pr_viewed" scope="github:acme/widgets#42" {shown} />
+    {#if i !== 0 || !retrying}
+      <ErrorShown kind="pr_viewed" scope="github:acme/widgets#42" {shown} />
+    {/if}
   {/each}
 {/if}

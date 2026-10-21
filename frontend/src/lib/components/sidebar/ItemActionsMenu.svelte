@@ -42,6 +42,7 @@
     refreshRepoOperations,
     repoMergeMethods,
     repoOperations,
+    repoReadFailed,
     type MergeMethod,
   } from "../../stores/repo-operations.svelte.js";
   import {
@@ -199,6 +200,14 @@
     }
     return common ?? [];
   });
+
+  // Repositories whose merge settings could not be read, so the dialog
+  // reports the failure instead of waiting for methods that never arrive.
+  const mergeSettingsFailed = $derived(
+    confirmMerge
+      ? distinctRepos(confirmMerge).filter((target) => !repoMergeMethods(target.item.repo) && repoReadFailed(target.item.repo))
+      : [],
+  );
 
   function chooseMerge(items: readonly ListItemTarget[]): void {
     confirmMerge = items;
@@ -600,6 +609,7 @@
     message={`Merge ${itemList(items)}? Each merges with its own title and description.`}
     deferredCount={deferredMergeCount(items)}
     methods={mergeMethods}
+    loadFailedRepos={mergeSettingsFailed.map((target) => `${target.item.repo.owner}/${target.item.repo.name}`)}
     hasWorkspaces={items.some((target) => target.kind === "pull" && target.item.workspace?.id)}
     confirmLabel={`Merge ${items.length} ${listTargetsNoun(items)}`}
     busy={running}

@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { dismissFlash, getFlashes } from "./flash.svelte.js";
+import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { Issue, PullRequest } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
@@ -171,6 +172,55 @@ describe("merging a selection of pull requests", () => {
     expect(getFlashes().map((flash) => flash.message)).toContain(
       "Merged 1 PR. 1 PR will merge once CI passes. Added 1 PR to the merge queue.",
     );
+  });
+
+  it("counts a PR whose merge is already waiting for CI as queued, not failed", async () => {
+    const alreadyPending = {
+      type: "about:blank",
+      title: "Conflict",
+      status: 409,
+      code: "conflict",
+      detail: "a deferred merge is already waiting for this pull request",
+      details: { reason: "already_pending" },
+    };
+    deferMergePull.mockRejectedValue(
+      new GeneratedProblemResponse(alreadyPending, Response.json(alreadyPending, { status: 409 })),
+    );
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21, { CIStatus: "pending" })],
+      { type: "merge", method: "squash", deleteWorkspaces: false },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(getFlashes().map((flash) => flash.message)).toContain("1 PR will merge once CI passes.");
+  });
+
+  it("warns when a merged PR's workspace could not be deleted", async () => {
+    mergePull.mockResolvedValue({
+      merged: true,
+      sha: "abc",
+      message: "",
+      workspace_cleanup_warning: "workspace has uncommitted changes",
+    });
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21, { workspace: { id: "ws-21" } as PullRequest["workspace"] })],
+      { type: "merge", method: "squash", deleteWorkspaces: true },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    const flash = getFlashes().find((candidate) => candidate.message.startsWith("Merged 1 PR."));
+    expect(flash?.message).toBe(
+      "Merged 1 PR. Kept the workspace for acme/widgets#21: workspace has uncommitted changes.",
+    );
+    expect(flash?.tone).toBe("warning");
   });
 
   it("reports a merge the provider declined as a failure", async () => {

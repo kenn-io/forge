@@ -158,9 +158,10 @@ const mutationFamily: Record<ListItemAction["type"], string> = {
 
 /**
  * What a merge did: merged now, waiting for pending CI before merging, or
- * added to the base branch's merge queue.
+ * added to the base branch's merge queue. A merge can land while deleting
+ * its workspace fails; the warning says why the workspace was kept.
  */
-type MergeOutcome = "merged" | "deferred" | "enqueued";
+type MergeOutcome = { kind: "merged" | "deferred" | "enqueued"; cleanupWarning?: string | undefined };
 
 /**
  * Runs one action on one item through the shared provider mutation queue,
@@ -254,8 +255,16 @@ function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: 
             ? client.PullRequestsService.deferMergePullOnHost(route.params, params, { signal })
             : client.PullRequestsService.deferMergePull(route.params, params, { signal }),
         ).pipe(
-          Effect.tap(() => Effect.sync(() => onMerge("deferred"))),
           Effect.asVoid,
+          // A merge already waiting for this PR's CI is still scheduled.
+          Effect.catchIf(
+            (failure): failure is ApiProblemError =>
+              failure instanceof ApiProblemError &&
+              failure.problem.code === ProblemCodes.conflict &&
+              failure.problem.details?.["reason"] === "already_pending",
+            () => Effect.void,
+          ),
+          Effect.tap(() => Effect.sync(() => onMerge({ kind: "deferred" }))),
         );
       }
       return executeGeneratedApiRequest(operation, (client, signal) =>
@@ -264,8 +273,10 @@ function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: 
           : client.PullRequestsService.mergePull(route.params, params, { signal }),
       ).pipe(
         Effect.flatMap((result) => {
-          if (result.merged) return Effect.sync(() => onMerge("merged"));
-          if (result.queued === true) return Effect.sync(() => onMerge("enqueued"));
+          if (result.merged) {
+            return Effect.sync(() => onMerge({ kind: "merged", cleanupWarning: result.workspace_cleanup_warning }));
+          }
+          if (result.queued === true) return Effect.sync(() => onMerge({ kind: "enqueued" }));
           return Effect.fail(
             new ApiProblemError({
               operation,
@@ -345,8 +356,8 @@ const failVerbs: Record<ListItemAction["type"], string> = {
   assignees: "update assignees on",
 };
 
-function mergeSummary(outcomes: readonly MergeOutcome[]): string {
-  const count = (outcome: MergeOutcome) => outcomes.filter((candidate) => candidate === outcome).length;
+function mergeSummary(outcomes: readonly { target: ListItemTarget; outcome: MergeOutcome }[]): string {
+  const count = (kind: MergeOutcome["kind"]) => outcomes.filter(({ outcome }) => outcome.kind === kind).length;
   const prs = (n: number) => `${n} ${listItemNoun("pull", n)}`;
   const merged = count("merged");
   const deferred = count("deferred");
@@ -355,6 +366,9 @@ function mergeSummary(outcomes: readonly MergeOutcome[]): string {
     merged > 0 ? `Merged ${prs(merged)}.` : "",
     deferred > 0 ? `${prs(deferred)} will merge once CI passes.` : "",
     enqueued > 0 ? `Added ${prs(enqueued)} to the merge queue.` : "",
+    ...outcomes.flatMap(({ target, outcome }) =>
+      outcome.cleanupWarning ? [`Kept the workspace for ${listItemLabel(target)}: ${outcome.cleanupWarning}.`] : [],
+    ),
   ]
     .filter(Boolean)
     .join(" ");
@@ -392,17 +406,17 @@ export function runListItemAction(
               : [],
           );
           const done = outcomes.length - failures.length;
+          const merges = outcomes.flatMap(({ target, result }) =>
+            Result.isSuccess(result) && result.success ? [{ target, outcome: result.success }] : [],
+          );
           const summary =
             action.type === "merge"
-              ? mergeSummary(
-                  outcomes.flatMap(({ result }) =>
-                    Result.isSuccess(result) && result.success ? [result.success] : [],
-                  ),
-                )
+              ? mergeSummary(merges)
               : `${doneVerbs[action.type]} ${done} ${listTargetsNoun(targets, done)}.`;
           if (failures.length === 0) {
             if (action.type === "star") return;
-            showFlash(summary, { tone: "success" });
+            const kept = merges.some(({ outcome }) => outcome.cleanupWarning);
+            showFlash(summary, { tone: kept ? "warning" : "success" });
             return;
           }
           showFlash(

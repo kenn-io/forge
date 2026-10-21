@@ -22,6 +22,10 @@ attempt at `DEBUG`.
 
 Production schedule: 500ms → ~4s, jitter ±30%, 3 attempts.
 
+Frontend idempotent reads use `retryIdempotentRead`
+(`frontend/src/lib/api/retry-policy.ts`). Never add custom retry loops or Retry
+buttons; a read that still fails shows its error.
+
 **Transient retry sites:**
 
 - [`internal/retry/retry.go`](../internal/retry/retry.go) — shared helper and

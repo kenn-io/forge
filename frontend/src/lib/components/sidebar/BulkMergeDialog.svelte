@@ -13,6 +13,8 @@
     deferredCount: number;
     /** Methods every selected repository allows; undefined while loading. */
     methods: readonly MergeMethod[] | undefined;
+    /** Repositories whose merge settings failed to load. */
+    loadFailedRepos: readonly string[];
     /** Offer to delete the selected pull requests' workspaces. */
     hasWorkspaces: boolean;
     confirmLabel: string;
@@ -21,8 +23,18 @@
     onConfirm: (choice: { method: MergeMethod; deleteWorkspaces: boolean }) => void;
   }
 
-  let { title, message, deferredCount, methods, hasWorkspaces, confirmLabel, busy, onCancel, onConfirm }: Props =
-    $props();
+  let {
+    title,
+    message,
+    deferredCount,
+    methods,
+    loadFailedRepos,
+    hasWorkspaces,
+    confirmLabel,
+    busy,
+    onCancel,
+    onConfirm,
+  }: Props = $props();
 
   const methodLabels: Record<MergeMethod, string> = {
     squash: "Squash and merge",
@@ -37,7 +49,11 @@
 
   const hint = $derived(
     [
-      methods === undefined ? "Loading merge methods..." : "",
+      loadFailedRepos.length > 0
+        ? `Could not load merge settings for ${loadFailedRepos.join(", ")}. Close and reopen this dialog to try again.`
+        : methods === undefined
+          ? "Loading merge methods..."
+          : "",
       methods?.length === 0 ? "These repositories share no merge method. Merge them separately." : "",
       deferredCount === 1 ? "1 has pending CI and will merge once the checks pass." : "",
       deferredCount > 1 ? `${deferredCount} have pending CI and will merge once the checks pass.` : "",

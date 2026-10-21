@@ -166,7 +166,7 @@ it.layer(SuccessfulStartup)("application startup hydration", (it) => {
     ),
   );
 
-  it.effect("reads worklist summaries at startup so the header can offer the tab", () =>
+  it.effect("reads worklist summaries at startup", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const summariesRead = yield* Deferred.make<void>();

@@ -365,7 +365,7 @@ describe("AppHeader", () => {
     expect(window.location.pathname).toBe("/worklists");
   });
 
-  it("keeps the Worklists tab current on the worklists page after the last list is dismissed", () => {
+  it("marks the Worklists tab current on worklists routes", () => {
     initTheme();
     navigate("/worklists/4");
     render(AppHeader);

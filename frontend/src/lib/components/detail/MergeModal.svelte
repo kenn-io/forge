@@ -58,7 +58,8 @@
     /**
      * Set when the base branch uses a merge queue: submitting adds the
      * pull request to the queue, which merges it with its own configured
-     * method, so method, commit text, and workspace cleanup do not apply.
+     * method, so method and commit text do not apply. A requested workspace
+     * deletion waits for the queue's merge.
      */
     mergeQueue?: { branch: string; mergeMethod: string } | undefined;
     onclose: () => void;
@@ -150,8 +151,7 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      // Queue merges never delete the workspace at enqueue time.
-      ...(!mergeQueue && workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
+      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
     };
   }
@@ -271,16 +271,16 @@
             rows={8}
           ></textarea>
         </div>
+      {/if}
 
-        {#if workspaceId}
-          <Checkbox
-            checked={deleteWorkspaceAfterMerge}
-            label="Delete workspace after merge"
-            onchange={(checked) => {
-              deleteWorkspaceAfterMerge = checked;
-            }}
-          />
-        {/if}
+      {#if workspaceId}
+        <Checkbox
+          checked={deleteWorkspaceAfterMerge}
+          label="Delete workspace after merge"
+          onchange={(checked) => {
+            deleteWorkspaceAfterMerge = checked;
+          }}
+        />
       {/if}
 
       {#if ciFailed}

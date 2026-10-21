@@ -469,6 +469,7 @@ func (s *Handler) completeDeferredMerge(
 				Status:       "queued",
 				Message:      result.Message,
 				CompletedAt:  formatUTCRFC3339(s.now().UTC()),
+				Warning:      result.WorkspaceCleanupWarning,
 			},
 		})
 		return

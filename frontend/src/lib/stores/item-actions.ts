@@ -158,8 +158,9 @@ const mutationFamily: Record<ListItemAction["type"], string> = {
 
 /**
  * What a merge did: merged now, waiting for pending CI before merging, or
- * added to the base branch's merge queue. A merge can land while deleting
- * its workspace fails; the warning says why the workspace was kept.
+ * added to the base branch's merge queue. A merge can land, or a pull
+ * request enter the queue, while its workspace deletion cannot be arranged;
+ * the warning says why the workspace was kept.
  */
 type MergeOutcome = { kind: "merged" | "deferred" | "enqueued"; cleanupWarning?: string | undefined };
 
@@ -276,7 +277,9 @@ function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: 
           if (result.merged) {
             return Effect.sync(() => onMerge({ kind: "merged", cleanupWarning: result.workspace_cleanup_warning }));
           }
-          if (result.queued === true) return Effect.sync(() => onMerge({ kind: "enqueued" }));
+          if (result.queued === true) {
+            return Effect.sync(() => onMerge({ kind: "enqueued", cleanupWarning: result.workspace_cleanup_warning }));
+          }
           return Effect.fail(
             new ApiProblemError({
               operation,

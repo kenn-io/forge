@@ -625,7 +625,19 @@ func newServer(
 	)
 	if syncer != nil {
 		syncer.SetOnMergedActorRepaired(s.syncevents.BroadcastPRDetailRefresh)
-		syncer.SetOnMergeQueueChanged(s.syncevents.BroadcastPRDetailRefresh)
+		// Sync resolves workspace deletions kept for merge-queued pull
+		// requests. pullAPI is built below, before sync starts.
+		syncer.SetOnMergeQueueChanged(func(ctx context.Context, repoID int64, number int) {
+			s.syncevents.BroadcastPRDetailRefresh(ctx, repoID, number)
+			if s.pullAPI != nil {
+				s.pullAPI.ResolveMergeWorkspaceCleanup(ctx, repoID, number)
+			}
+		})
+		syncer.SetOnMergeRequestLeftOpen(func(ctx context.Context, repoID int64, number int) {
+			if s.pullAPI != nil {
+				s.pullAPI.ResolveMergeWorkspaceCleanup(ctx, repoID, number)
+			}
+		})
 		syncer.SetOnRelayRefresh(s.syncevents.BroadcastRelayRefresh)
 	}
 	s.workspaceDependentsCtx, s.workspaceDependentsCancel = context.WithCancel(s.bgCtx)
@@ -1070,6 +1082,9 @@ func newServer(
 		tmuxAvailable && s.workspaces != nil,
 		options.DisableWorkspaceBackgroundMonitors,
 	)
+	if syncer != nil && s.pullAPI != nil {
+		s.pullAPI.StartMergeWorkspaceCleanup()
+	}
 	if s.hubEvents != nil {
 		s.streamapi.RunWorkspaceDependent(s.hubEvents.Run)
 	}

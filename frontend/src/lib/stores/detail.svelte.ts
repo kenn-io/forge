@@ -909,6 +909,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               if (!result.merged && result.queued === true) {
                 return Effect.sync(() => {
                   addedToMergeQueue = true;
+                  workspaceCleanupWarning = result.workspace_cleanup_warning;
                 });
               }
               if (!result.merged) {
@@ -941,7 +942,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
       onSuccess: () => {
         onDetailSynchronized();
         if (addedToMergeQueue) {
-          showFlash(`Added ${ref.repoPath} #${number} to the merge queue.`, { tone: "success" });
+          if (workspaceCleanupWarning) {
+            showFlash(`Added ${ref.repoPath} #${number} to the merge queue, but ${workspaceCleanupWarning}.`, {
+              tone: "warning",
+            });
+          } else {
+            showFlash(`Added ${ref.repoPath} #${number} to the merge queue.`, { tone: "success" });
+          }
           callbacks.onSuccess?.({ _tag: "Enqueued" });
           return;
         }

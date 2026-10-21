@@ -322,7 +322,8 @@ fallback repository listing.
 - A merge of a pull request whose base branch sync last saw with a merge queue
   enqueues with `merge_action: merge_queue` and no method, title, or message,
   which GitHub rejects for queued merges; `enqueued` is success with
-  `queued: true`, never merged, and runs no merge-completion side effects. Only
+  `queued: true`, never merged, and runs no merge-completion side effects beyond
+  keeping a requested workspace deletion for the queue's merge. Only
   GitHub.com enqueues (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`,
   `platform/github/merge_async.go::Client.EnqueuePullRequest`).
 - Preserve required-rebase failures verbatim; do not substitute private website routes

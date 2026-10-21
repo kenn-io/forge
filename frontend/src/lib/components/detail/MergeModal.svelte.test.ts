@@ -293,7 +293,7 @@ describe("MergeModal acknowledged merge commands", () => {
   describe("when the base branch uses a merge queue", () => {
     const mergeQueue = { branch: "main", mergeMethod: "squash" };
 
-    it("explains the queue and hides method, commit text, and workspace cleanup", () => {
+    it("explains the queue and hides method and commit text", () => {
       renderModal({ mergeQueue, workspaceId: "ws-1" });
 
       expect(screen.getByText("Add to Merge Queue")).toBeTruthy();
@@ -305,7 +305,6 @@ describe("MergeModal acknowledged merge commands", () => {
       expect(screen.queryByRole("group", { name: "Merge method" })).toBeNull();
       expect(screen.queryByLabelText("Commit title")).toBeNull();
       expect(screen.queryByLabelText("Commit message")).toBeNull();
-      expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
     });
 
     it("omits the merge method while Forge has not read it", () => {
@@ -317,14 +316,28 @@ describe("MergeModal acknowledged merge commands", () => {
       );
     });
 
-    it("adds the pull request to the queue immediately without deleting the workspace", async () => {
+    it("asks to delete the workspace once the queue merges the pull request", async () => {
       renderModal({ mergeQueue, workspaceId: "ws-1", expectedHeadSha: "abc123" });
 
+      expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" }).checked).toBe(
+        true,
+      );
       await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue" }));
 
       expect(mockMergePull).toHaveBeenCalledOnce();
       expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
-      expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "abc123" });
+      expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({
+        expected_head_sha: "abc123",
+        delete_workspace_id: "ws-1",
+      });
+    });
+
+    it("keeps the workspace when deletion is unchecked", async () => {
+      renderModal({ mergeQueue, workspaceId: "ws-1" });
+
+      await fireEvent.click(screen.getByRole("checkbox", { name: "Delete workspace after merge" }));
+      await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue" }));
+
       expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("delete_workspace_id");
     });
 

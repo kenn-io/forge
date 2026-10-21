@@ -142,6 +142,22 @@ func setupGitHubAsyncMergeE2E(
 	mergeResults ...string,
 ) (*server.Server, *db.DB, int64, *githubAsyncMergeUpstream) {
 	t.Helper()
+	fixture := seedGitHubAsyncMergeE2E(t, mergeResults...)
+	srv, _ := fixture.startServer(t, server.ServerOptions{})
+	return srv, fixture.database, fixture.repoID, fixture.upstream
+}
+
+// githubAsyncMergeE2E is a seeded database and fake GitHub that servers can
+// be started against, more than once to model a daemon restart.
+type githubAsyncMergeE2E struct {
+	database *db.DB
+	repoID   int64
+	upstream *githubAsyncMergeUpstream
+	client   ghclient.Client
+}
+
+func seedGitHubAsyncMergeE2E(t *testing.T, mergeResults ...string) githubAsyncMergeE2E {
+	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -190,6 +206,15 @@ func setupGitHubAsyncMergeE2E(
 		ctx, repoID, 7, "reviewed-sha", "base-sha", "merge-base",
 	))
 
+	return githubAsyncMergeE2E{
+		database: database, repoID: repoID, upstream: upstream, client: client,
+	}
+}
+
+func (f githubAsyncMergeE2E) startServer(
+	t *testing.T, options server.ServerOptions,
+) (*server.Server, *ghclient.Syncer) {
+	t.Helper()
 	repo := ghclient.RepoRef{
 		Platform:     platform.KindGitHub,
 		Owner:        "acme",
@@ -198,13 +223,13 @@ func setupGitHubAsyncMergeE2E(
 		RepoPath:     "acme/widget",
 	}
 	syncer := ghclient.NewSyncer(
-		map[string]ghclient.Client{"github.com": client},
-		database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
+		map[string]ghclient.Client{"github.com": f.client},
+		f.database, nil, []ghclient.RepoRef{repo}, time.Minute, nil, nil,
 	)
 	t.Cleanup(syncer.Stop)
 
-	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
-	return srv, database, repoID, upstream
+	srv := servertest.New(t, f.database, syncer, nil, "/", nil, options)
+	return srv, syncer
 }
 
 func TestGitHubAsyncMergePersistsOnlyAfterTerminalSuccess(t *testing.T) {

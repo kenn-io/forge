@@ -23,7 +23,8 @@ supersession, completion events, or pending-state presentation.
   target checks cannot see it (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - A deferred worker whose merge went to the target branch's merge queue
   completes with status `queued`: clear pending, publish no merged status, and
-  leave the outcome to the pull request's queue state
+  leave the outcome to the pull request's queue state; its workspace deletion is
+  kept like an immediate enqueue's
   (`internal/server/pullapi/deferred_merge.go::Handler.completeDeferredMerge`).
 - A deferred worker response with `merged: false` is a terminal failure: clear pending and publish the provider message,
   but never publish merged status or run merge-completion side effects

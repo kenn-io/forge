@@ -223,6 +223,32 @@ describe("merging a selection of pull requests", () => {
     expect(flash?.tone).toBe("warning");
   });
 
+  it("warns when a queued PR's workspace deletion could not be scheduled", async () => {
+    mergePull.mockResolvedValue({
+      merged: false,
+      queued: true,
+      sha: "",
+      message: "",
+      workspace_cleanup_warning: "the workspace deletion could not be scheduled",
+    });
+    const settled = vi.fn();
+
+    runListItemAction(
+      runtime,
+      [target(21, { workspace: { id: "ws-21" } as PullRequest["workspace"] })],
+      { type: "merge", method: "squash", deleteWorkspaces: true },
+      { onSettled: settled },
+    );
+
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(mergePull.mock.calls[0]?.[1]).toMatchObject({ delete_workspace_id: "ws-21" });
+    const flash = getFlashes().find((candidate) => candidate.message.startsWith("Added 1 PR"));
+    expect(flash?.message).toBe(
+      "Added 1 PR to the merge queue. Kept the workspace for acme/widgets#21: the workspace deletion could not be scheduled.",
+    );
+    expect(flash?.tone).toBe("warning");
+  });
+
   it("reports a merge the provider declined as a failure", async () => {
     mergePull.mockImplementation((params: { number: number }) =>
       Promise.resolve(

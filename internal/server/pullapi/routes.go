@@ -1882,6 +1882,9 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if admit != nil && !admit() {
 		return mergePRBody{}, errMergeNotAdmitted
 	}
+	// Queue reads made from here on reflect this merge, so they may drop a
+	// workspace cleanup it keeps for the merge queue.
+	requestedAt := s.now().UTC()
 	var result platform.MergeResult
 	enqueue := func(queueMutator platform.MergeQueueMutator) (platform.MergeResult, error) {
 		return queueMutator.EnqueueMergeRequest(
@@ -2005,6 +2008,13 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
+		// The workspace outlives the enqueue: it is deleted once sync records
+		// the queue's merge.
+		workspaceCleanup = s.keepQueuedMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
+			RepoID: repo.ID, Number: number,
+			WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
+			RequestedAt: requestedAt,
+		})
 		// Record the pull request's queue state now so the detail refresh
 		// that follows this response shows it queued.
 		s.syncer.RecordPullRequestEnqueued(

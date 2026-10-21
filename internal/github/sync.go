@@ -878,6 +878,9 @@ type Syncer struct {
 	// onMergeQueueChanged fires for each pull request whose merge queue
 	// membership, position, or state changed.
 	onMergeQueueChanged func(context.Context, int64, int)
+	// onMergeRequestLeftOpen fires after an accepted snapshot records a
+	// stored open merge request as merged or closed.
+	onMergeRequestLeftOpen func(context.Context, int64, int)
 	// mergeQueueMethods caches, per repository and branch, the merge queue's
 	// merge method and when it was read.
 	mergeQueueMethods sync.Map
@@ -1687,11 +1690,11 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 ) (int64, int64, bool, error) {
 	ctx = withCloneRepositoryIdentity(ctx, repo)
 	clearUnknownMergeableStateTime(mr)
-	mrID, revision, accepted, err := s.db.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
+	commit, err := s.db.UpsertMergeRequestSnapshotWithLabelsAndEventMetadata(
 		ctx, mr, s.terminalLivenessComputer(ctx, repo, mr),
 	)
-	if err != nil || !accepted {
-		return mrID, revision, accepted, err
+	if err != nil || !commit.Accepted {
+		return commit.ID, commit.Revision, commit.Accepted, err
 	}
 	if s.afterMergeRequestParentSnapshotCommit != nil {
 		s.afterMergeRequestParentSnapshotCommit()
@@ -1699,7 +1702,10 @@ func (s *Syncer) CommitMergeRequestParentSnapshot(
 	s.reclassifyWorkspaceHeadRepoTrust(
 		ctx, repo, mr.RepoID, mr.Number,
 	)
-	return mrID, revision, accepted, err
+	if commit.LeftOpen && s.onMergeRequestLeftOpen != nil {
+		s.onMergeRequestLeftOpen(ctx, mr.RepoID, mr.Number)
+	}
+	return commit.ID, commit.Revision, commit.Accepted, nil
 }
 
 // commitIssueCommentsSnapshot binds the child snapshot to the parent issue ID
@@ -2073,6 +2079,17 @@ func (s *Syncer) SetOnMergeQueueChanged(
 	fn func(context.Context, int64, int),
 ) {
 	s.onMergeQueueChanged = fn
+}
+
+// SetOnMergeRequestLeftOpen registers a callback invoked after an accepted
+// provider snapshot records a stored open merge request as merged or closed.
+// It runs on the syncing goroutine, which RunOnce can run for repositories in
+// parallel, so it must be concurrency-safe and must not block. Register it
+// before Start or RunOnce.
+func (s *Syncer) SetOnMergeRequestLeftOpen(
+	fn func(context.Context, int64, int),
+) {
+	s.onMergeRequestLeftOpen = fn
 }
 
 // SetParallelism sets the maximum number of repos synced

@@ -38966,10 +38966,22 @@ func (c *Client) ImportWorklistWithResponse(ctx context.Context, options *Import
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ImportWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ImportWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -65100,11 +65112,12 @@ type ListWorklistsResp struct {
 }
 
 type ImportWorklistResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ImportWorklistErrorResponse
-	JSON200      *ImportWorklistResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ImportWorklistErrorResponse
+	JSON200                           *ImportWorklistResponse
+	ApplicationProblemPlusJSONDefault *ImportWorklistErrorResponse
 }
 
 type GetWorklistResp struct {

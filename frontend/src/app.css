@@ -348,11 +348,18 @@ a:hover {
   border: var(--border-width) solid var(--border-muted);
   border-radius: var(--radius-md);
 }
-.markdown-body .markdown-video-header {
+.markdown-body .markdown-video-bar {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+  background: var(--bg-surface);
+}
+.markdown-body .markdown-video-header {
+  display: flex;
+  flex: 1;
+  align-items: center;
   gap: var(--space-3);
-  width: 100%;
   min-width: 0;
   padding: var(--space-2) var(--space-4);
   color: var(--text-secondary);
@@ -387,11 +394,45 @@ a:hover {
 .markdown-body .markdown-video-header[aria-expanded="false"] .markdown-video-chevron {
   transform: rotate(180deg);
 }
-.markdown-body .markdown-video-header[aria-expanded="false"] ~ * {
+.markdown-body
+  .markdown-video-frame:has(> .markdown-video-bar > .markdown-video-header[aria-expanded="false"])
+  > :not(.markdown-video-bar) {
   display: none;
 }
+/* Kit's markdown image expand button, without its hover reveal and on the
+   bar's surface: the header bar is always visible. */
+.markdown-body .markdown-video-expand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: var(--border-width) solid var(--border-muted);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast) var(--transition-ease, ease);
+}
+.markdown-body .markdown-video-expand:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+.markdown-body .markdown-video-expand:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (hover: none), (pointer: coarse) {
+  .markdown-body .markdown-video-expand {
+    width: 44px;
+    height: 44px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .markdown-body .markdown-video-chevron {
+  .markdown-body .markdown-video-chevron,
+  .markdown-body .markdown-video-expand {
     transition: none;
   }
 }

@@ -586,12 +586,23 @@ linking to the original attachment; without preload, that happens only after
 the reader presses play. Each player sits in its own frame element so the
 swap never disturbs the nodes the markdown host inserted
 (`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
-The frame opens with a `<button aria-expanded>` header that collapses the
-player; it names the file from the source as written, before the media route
+The frame opens with a bar: a `<button aria-expanded>` header that collapses
+the player, and beside it (a button cannot hold another) an expand button.
+The header names the file from the source as written, before the media route
 rewrites it, or says "Video". Frame content stays phrasing-level: a block
 element such as `<details>` splits the paragraph an inline GitLab video sits
 in when `{@html}` parses it again
 (`frontend/src/lib/utils/markdown-video-toggle.ts::initMarkdownVideoToggle`).
+
+Expand opens kit-ui's `MediaViewer` in place of browser full screen, which
+stays on the native controls. Players join the page gallery with images and
+diagrams (`frontend/src/lib/utils/markdown-video-viewer.ts::initMarkdownVideoViewer`):
+
+- Opening pauses every inline player in the gallery; a player resumes only
+  if the viewer closes while showing it playing, and always takes back the
+  viewer's position.
+- A collapsed player can still be expanded but stays paused on return, as
+  collapsing pauses it. A player replaced by the error notice loses the button.
 
 - GitHub and GitLab declare `read_markdown_media`; their video loads through
   `GET .../markdown-media?source=` on default and host routes with the

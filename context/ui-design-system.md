@@ -75,9 +75,9 @@ only on locally observed agents (`frontend/src/lib/components/detail/commit-attr
   all imported at the top of `frontend/src/app.css`, plus the
   kenn-forge-specific tokens `app.css` defines on top (chrome, budget,
   workflow status, review, verdict, diff)
-- Expanded media: markdown images and Mermaid diagrams open kit-ui's
-  `MediaViewer`, which pages through every displayed image and diagram
-  on the page (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
+- Expanded media: markdown images, Mermaid diagrams, and videos open
+  kit-ui's `MediaViewer`, which pages through every displayed one on the
+  page (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
   Do not add app-side lightboxes; kit-ui's `hand-rolled-lightbox` check
   rule flags them.
 - Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live

@@ -156,7 +156,7 @@ test("replaces a player that cannot load with a link to the original", async ({ 
 test("collapses and expands a player from its header", async ({ page }) => {
   await page.goto(route("/issues/github/acme/widgets/14"));
   const frame = page.locator(".markdown-body .markdown-video-frame").first();
-  const header = frame.getByRole("button", { name: "Video" });
+  const header = frame.getByRole("button", { name: "Video", exact: true });
   const video = frame.locator("video.markdown-video");
   const chevron = header.locator(".markdown-video-chevron");
   await expect(header).toHaveAttribute("aria-expanded", "true");
@@ -191,4 +191,36 @@ test("turns the header chevron without animation for reduced motion", async ({ p
   expect(await chevron.evaluate((svg) => getComputedStyle(svg).transitionDuration)).toBe("0s");
   await header.click();
   expect(await chevron.evaluate((svg) => getComputedStyle(svg).transform)).toBe("matrix(-1, 0, 0, -1, 0, 0)");
+});
+
+function playback(video: Locator) {
+  return video.evaluate((v: HTMLVideoElement) => ({ time: v.currentTime, playing: !v.paused && !v.ended }));
+}
+
+test("continues a playing video in the expanded view and back inline", async ({ page }) => {
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const frame = page.locator(".markdown-body .markdown-video-frame").first();
+  const video = frame.locator("video.markdown-video");
+  await startPlayback(video);
+
+  await frame.getByRole("button", { name: "Open video in expanded view" }).click();
+
+  const viewer = page.getByRole("dialog");
+  const expanded = viewer.locator("video");
+  await expect(expanded).toBeVisible();
+  const handedOver = await playback(video);
+  expect(handedOver.playing).toBe(false);
+  await expect(frame.getByRole("button", { name: "Video", exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect.poll(async () => (await playback(expanded)).playing).toBe(true);
+  expect((await playback(expanded)).time).toBeGreaterThanOrEqual(handedOver.time);
+  await expect.poll(async () => (await playback(expanded)).time).toBeGreaterThan(handedOver.time + 0.8);
+
+  await page.keyboard.press("Escape");
+
+  await expect(viewer).toHaveCount(0);
+  const resumed = await playback(video);
+  expect(resumed.time).toBeGreaterThan(handedOver.time + 0.8);
+  // The 3-second clip can end before the poll looks; a player that never
+  // resumed stays paused short of the end.
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => !v.paused || v.ended)).toBe(true);
 });

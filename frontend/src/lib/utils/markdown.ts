@@ -260,6 +260,8 @@ const DRAG_HANDLE_SVG =
   `<circle cx="9" cy="13" r="1.2"/>` +
   `</svg>`;
 
+const MARKDOWN_VIDEO_EXPAND_LABEL = "Open video in expanded view";
+
 // Lucide's video and chevron-down icons for the header above each player.
 const VIDEO_ICON_SVG =
   `<svg class="markdown-video-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ` +
@@ -271,6 +273,12 @@ const CHEVRON_DOWN_SVG =
   `<svg class="markdown-video-chevron" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ` +
   `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
   `<path d="m6 9 6 6 6-6"/>` +
+  `</svg>`;
+// Lucide's maximize-2, the icon kit-ui gives the markdown image expand button.
+const EXPAND_SVG =
+  `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ` +
+  `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` +
+  `<path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/>` +
   `</svg>`;
 
 const SHIKI_LIGHT_THEME = "github-light-default";
@@ -625,7 +633,10 @@ function normalizePlayer(video: HTMLVideoElement, fileName: string | null): void
   const frame = doc.createElement("span");
   frame.className = "markdown-video-frame";
   video.replaceWith(frame);
-  frame.append(markdownVideoHeader(doc, fileName), video);
+  const bar = doc.createElement("span");
+  bar.className = "markdown-video-bar";
+  bar.append(markdownVideoHeader(doc, fileName), markdownVideoExpandButton(doc, fileName));
+  frame.append(bar, video);
 }
 
 // Collapses and expands the player; markdown-video-toggle.ts handles clicks.
@@ -643,6 +654,20 @@ function markdownVideoHeader(doc: Document, fileName: string | null): HTMLButton
   header.append(name);
   header.insertAdjacentHTML("beforeend", CHEVRON_DOWN_SVG);
   return header;
+}
+
+// Opens the player in kit-ui's expanded view; markdown-video-viewer.ts
+// handles clicks. It sits beside the header, since a button cannot hold
+// another, and is labelled like kit-ui's image expand button.
+function markdownVideoExpandButton(doc: Document, fileName: string | null): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "markdown-video-expand";
+  const label = fileName ? `${MARKDOWN_VIDEO_EXPAND_LABEL}: ${fileName}` : MARKDOWN_VIDEO_EXPAND_LABEL;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.innerHTML = EXPAND_SVG;
+  return button;
 }
 
 function sanitizeMarkdownHtml(html: string): string {

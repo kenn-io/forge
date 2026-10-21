@@ -42,6 +42,8 @@ function replaceWithNotice(video: HTMLVideoElement): void {
     link.textContent = "Open the original";
     notice.append(link);
   }
+  // The notice has nothing to open in the expanded view.
+  video.parentElement?.querySelector(":scope > .markdown-video-bar > .markdown-video-expand")?.remove();
   video.replaceWith(notice);
 }
 

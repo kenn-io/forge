@@ -5,6 +5,7 @@ import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
+import { initMarkdownVideoViewer } from "../utils/markdown-video-viewer.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";
 import { startRuntimeTelemetry } from "./telemetry.js";
@@ -28,8 +29,8 @@ export const appProgram = (target: HTMLElement, runtime: OwnedAppRuntime) =>
     (application) => Effect.promise(() => unmount(application)),
   ).pipe(Effect.andThen(Effect.never));
 
-// Markdown images and Mermaid diagrams expand into kit-ui's MediaViewer,
-// which pages through every displayed image and diagram on the page.
+// Markdown images, Mermaid diagrams, and videos expand into kit-ui's
+// MediaViewer, which pages through every displayed one on the page.
 const openMediaViewerFrame = () => pushModalFrame("media-viewer", []);
 
 const observeMarkdownImageExpansion = (target: HTMLElement) =>
@@ -40,6 +41,12 @@ const observeMarkdownImageExpansion = (target: HTMLElement) =>
         onViewerOpen: openMediaViewerFrame,
       }),
     ),
+    (controller) => Effect.sync(() => controller.disconnect()),
+  ).pipe(Effect.andThen(Effect.never));
+
+const observeMarkdownVideoExpansion = (target: HTMLElement) =>
+  Effect.acquireRelease(
+    Effect.sync(() => initMarkdownVideoViewer(target, { onViewerOpen: openMediaViewerFrame })),
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 
@@ -84,6 +91,11 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
+  const videoExpansion = runtime.runCommand(Effect.scoped(observeMarkdownVideoExpansion(target)), {
+    operation: "observe markdown videos",
+    safeContext: {},
+    onFailure: () => {},
+  });
   const mermaidRendering = runtime.runCommand(Effect.scoped(observeMarkdownMermaidRendering(target)), {
     operation: "observe markdown diagrams",
     safeContext: {},
@@ -96,6 +108,7 @@ export function mountApplication(
   });
   const root = Effect.scoped(appProgram(target, runtime)).pipe(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
+    Effect.ensuring(Effect.sync(videoExpansion.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
     Effect.ensuring(Effect.sync(appOpens.interrupt)),
     Effect.ensuring(runtime.disposeEffect),

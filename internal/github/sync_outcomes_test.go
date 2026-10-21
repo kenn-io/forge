@@ -44,8 +44,6 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, additionalFailure, additionalFailure},
 		{"no reads", a, nil, []RepoRef{a, b}, a, initialFailure, initialFailure},
 		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, initialFailure, additionalFailure},
-		{"untracked without reads", a, nil, []RepoRef{b}, a, initialFailure, additionalFailure},
-		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, initialFailure, additionalFailure},
 		{"resolved identity keeps outage", a, []observation{{resolved, platform.ErrNotFound}}, []RepoRef{resolved}, resolved, initialFailure, initialFailure},
 		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, initialFailure, initialFailure},
 	} {
@@ -198,27 +196,6 @@ func TestSyncFailedProviderChecks(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
-func TestSyncFailedUntrackAndReaddBeforeFullPass(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-	client := &partialFailureMock{}
-	client.listOpenIssuesErr = platform.ErrNotFound
-	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
-	s.RunOnce(t.Context())
-	require.Len(t, events, 1)
-	tracked := s.TrackedRepos()
-	require.NoError(t, s.SetReposWithContext(t.Context(), tracked, false))
-	s.RunOnce(t.Context())
-	require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
-	require.NoError(t, s.SetReposWithContext(t.Context(), nil, false))
-	require.NoError(t, s.SetReposWithContext(t.Context(), tracked, false))
-	s.RunOnce(t.Context())
-	assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}, events)
-}
-
 func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 	for _, endpoint := range []string{"check runs", "combined status"} {
 		t.Run(endpoint, func(t *testing.T) {
@@ -338,58 +315,6 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
 			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
-		})
-	}
-}
-
-func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
-	for _, tc := range []struct {
-		source string
-		// feature is the disabled feature whose cooldown applies to source.
-		feature string
-		failing bool
-		want    [][2]string
-	}{
-		{"issues", "issues", false, [][2]string{{"merge_requests", "auth"}}},
-		{"issues", "issues", true, nil},
-		{"merge_requests", "merge_requests", false, [][2]string{{"issues", "auth"}}},
-		{"merge_requests", "merge_requests", true, nil},
-		// The detail drain skips CI reads under the merge request cooldown.
-		{"checks", "merge_requests", true, nil},
-	} {
-		t.Run(fmt.Sprintf("%s/failing=%t", tc.source, tc.failing), func(t *testing.T) {
-			assert := assert.New(t)
-			source := tc.source
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			s := NewSyncer(map[string]Client{"github.com": &partialFailureMock{}}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-			now := time.Now().UTC()
-			s.SetClock(func() time.Time { return now })
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			if tc.failing {
-				pass := &syncPass{}
-				pass.observe(repo, source, platform.ErrPermissionDenied)
-				s.finishSyncPass(pass, []RepoRef{repo})
-				require.Equal(t, [][2]string{{source, "auth"}}, events)
-				events = nil
-			}
-			// Disablement can be discovered by an item refresh outside a full pass.
-			require.True(t, s.recordRepositoryFeatureDisabled(repo, tc.feature, platform.RepositoryFeatureDisabled(platform.KindGitHub, repo.PlatformHost, tc.feature, errors.New("feature disabled"))))
-			pass := &syncPass{}
-			if !tc.failing {
-				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
-			}
-			if !tc.failing || tc.source != "issues" {
-				s.finishSyncPass(pass, []RepoRef{repo})
-			}
-			assert.Equal(tc.want, events)
-			// A repository that leaves the cooldown still failing reports again.
-			now = now.Add(repositoryFeatureProbeInterval)
-			events = nil
-			later := &syncPass{}
-			later.observe(repo, source, platform.ErrPermissionDenied)
-			s.finishSyncPass(later, []RepoRef{repo})
-			assert.Equal([][2]string{{source, "auth"}}, events)
 		})
 	}
 }

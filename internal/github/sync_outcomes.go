@@ -7,7 +7,6 @@ import (
 	"slices"
 	"sync"
 	"syscall"
-	"time"
 
 	gh "github.com/google/go-github/v92/github"
 	"go.kenn.io/forge/internal/telemetry"
@@ -15,7 +14,10 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var syncScopeSources = map[failScope]string{failMR: telemetry.SyncSourceMergeRequests, failIssues: telemetry.SyncSourceIssues}
+var syncScopeSources = map[failScope]struct{ source, feature string }{
+	failMR:     {telemetry.SyncSourceMergeRequests, platform.RepositoryFeatureMergeRequests},
+	failIssues: {telemetry.SyncSourceIssues, platform.RepositoryFeatureIssues},
+}
 
 type syncPassKey struct{}
 
@@ -66,37 +68,14 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	if capsErr != nil {
 		return
 	}
-	for scope, source := range syncScopeSources {
+	for scope, names := range syncScopeSources {
 		s.featureCooldowns.mu.Lock()
-		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, source))
+		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, names.feature))
 		s.featureCooldowns.mu.Unlock()
 		if !state.nextProbe.After(s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
-			s.observeSync(ctx, repo, source, err)
+			s.observeSync(ctx, repo, names.source, err)
 		}
 	}
-}
-
-// deferRepositoryFeature ends the repository's outages for sources the
-// cooldown governs, so a failure after the cooldown reports again.
-func (s *Syncer) deferRepositoryFeature(repo RepoRef, feature string, nextProbe time.Time) {
-	s.featureCooldowns.deferUntil(repo, feature, nextProbe)
-	s.syncFailuresMu.Lock()
-	defer s.syncFailuresMu.Unlock()
-	for source, failures := range s.syncFailures {
-		if syncSourceFeature(source) == feature {
-			delete(failures, mergeQueueRepoKey(repo))
-			delete(failures, repoFailKey(repo))
-		}
-	}
-}
-
-// syncSourceFeature names the feature whose cooldown governs a source. The
-// detail drain skips CI reads under the merge request cooldown.
-func syncSourceFeature(source string) string {
-	if source == telemetry.SyncSourceChecks {
-		return platform.RepositoryFeatureMergeRequests
-	}
-	return source
 }
 
 // finishSyncPass runs under the run slot and syncFailuresMu after all
@@ -111,12 +90,19 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		s.syncFailures = make(map[string]map[string]bool)
 	}
 	for _, source := range telemetry.SyncSources() {
-		live, failures := s.liveSyncFailures(source, tracked)
+		if s.syncFailures[source] == nil {
+			s.syncFailures[source] = make(map[string]bool)
+		}
+		failures := s.syncFailures[source]
+		for _, repo := range tracked {
+			// Resolving identity re-keys a repository without ending its outage.
+			if failures[repoFailKey(repo)] {
+				delete(failures, repoFailKey(repo))
+				failures[mergeQueueRepoKey(repo)] = true
+			}
+		}
 		reason := ""
 		for key, result := range pass.results[source] {
-			if !live[key] {
-				continue
-			}
 			if result == "" {
 				delete(failures, key)
 			} else if !failures[key] {
@@ -130,36 +116,6 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			s.onSyncFailed(source, reason)
 		}
 	}
-}
-
-// liveSyncFailures returns the source's live repositories and its failure
-// state, pruned to them.
-func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]bool, map[string]bool) {
-	if s.syncFailures[source] == nil {
-		s.syncFailures[source] = make(map[string]bool)
-	}
-	failures := s.syncFailures[source]
-	live := make(map[string]bool, len(tracked))
-	s.featureCooldowns.mu.Lock()
-	for _, repo := range tracked {
-		key := mergeQueueRepoKey(repo)
-		// Resolving identity re-keys a repository without ending its outage.
-		if failures[repoFailKey(repo)] {
-			delete(failures, repoFailKey(repo))
-			failures[key] = true
-		}
-		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, syncSourceFeature(source)))
-		if !repo.Archived && !state.nextProbe.After(s.nowUTC()) {
-			live[key] = true
-		}
-	}
-	s.featureCooldowns.mu.Unlock()
-	for key := range failures {
-		if !live[key] {
-			delete(failures, key)
-		}
-	}
-	return live, failures
 }
 
 // An empty reason represents success and ranks below every failure.

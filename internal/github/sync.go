@@ -3046,7 +3046,9 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		s.replaceTrackedRepos(repos)
+		s.reposMu.Lock()
+		s.repos = slices.Clone(repos)
+		s.reposMu.Unlock()
 		s.refreshGitAccessStatus()
 		s.WakeArchive()
 	}
@@ -3073,21 +3075,12 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 			}
 		}
 	}
-	s.replaceTrackedRepos(repos)
-	s.refreshGitAccessStatus()
-	s.WakeArchive()
-	return nil
-}
-
-func (s *Syncer) replaceTrackedRepos(repos []RepoRef) {
-	s.syncFailuresMu.Lock()
-	defer s.syncFailuresMu.Unlock()
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
 	s.reposMu.Unlock()
-	for source := range s.syncFailures {
-		s.liveSyncFailures(source, repos)
-	}
+	s.refreshGitAccessStatus()
+	s.WakeArchive()
+	return nil
 }
 
 // Start runs an immediate sync then launches a background ticker.

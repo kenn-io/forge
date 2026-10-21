@@ -129,8 +129,15 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	bin := buildForge(t)
 
-	for _, name := range []string{"explicit shared port", "omitted MCP config"} {
-		t.Run(name, func(t *testing.T) {
+	for _, tt := range []struct {
+		name             string
+		explicitMCP      bool
+		wantBearerStatus int
+	}{
+		{name: "explicit shared port", explicitMCP: true, wantBearerStatus: http.StatusOK},
+		{name: "omitted MCP config", wantBearerStatus: http.StatusNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 
@@ -144,7 +151,7 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 			existing, err := os.ReadFile(cfgPath)
 			require.NoError(err)
 			existing = append(fmt.Appendf(nil, "allowed_hosts = [%q]\n", publicHost), existing...)
-			if name == "explicit shared port" {
+			if tt.explicitMCP {
 				existing = append(existing, fmt.Appendf(nil,
 					"\n[mcp]\nenabled = true\nport = %d\n", appPort,
 				)...)
@@ -206,11 +213,7 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 			bearerResponse, err := http.DefaultClient.Do(bearerRequest)
 			require.NoError(err)
 			defer bearerResponse.Body.Close()
-			expectedStatus := http.StatusNotFound
-			if name == "explicit shared port" {
-				expectedStatus = http.StatusOK
-			}
-			assert.Equal(expectedStatus, bearerResponse.StatusCode)
+			assert.Equal(tt.wantBearerStatus, bearerResponse.StatusCode)
 
 			quickstartOutput, err := procutil.Command(
 				bin, "mcp", "quickstart", "--config", cfgPath, "--json",

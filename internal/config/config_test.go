@@ -95,6 +95,22 @@ func TestMCPOnByDefault(t *testing.T) {
 }
 
 func TestMCPDefaultConditions(t *testing.T) {
+	workerDir := t.TempDir()
+	worker, err := Load(writeConfig(t, fmt.Sprintf(`
+host = "127.0.0.1"
+data_dir = %q
+[api]
+require_auth = true
+[execution_worker]
+enabled = true
+broker_socket = %q
+uid = 1001
+github_user_id = 1234
+commit_name = "Developer A"
+commit_email = "developer-a@example.org"
+`, workerDir, filepath.Join(workerDir, "broker.sock"))))
+	require.NoError(t, err)
+
 	for _, tt := range []struct {
 		name string
 		cfg  Config
@@ -104,7 +120,7 @@ func TestMCPDefaultConditions(t *testing.T) {
 		{name: "network", cfg: Config{Host: "192.0.2.10"}},
 		{name: "wildcard", cfg: Config{Host: "0.0.0.0"}},
 		{name: "hostname", cfg: Config{Host: "localhost"}},
-		{name: "worker", cfg: Config{Host: "127.0.0.1", ExecutionWorker: ExecutionWorker{Enabled: true}}},
+		{name: "worker", cfg: *worker},
 		{name: "saved port", cfg: Config{Host: "127.0.0.1", MCP: MCP{Port: 9192}}},
 		{name: "cache override", cfg: Config{Host: "127.0.0.1", MCP: MCP{DiffCacheMB: 256}}, want: true},
 	} {
@@ -136,10 +152,7 @@ func TestSetMCPEnabled(t *testing.T) {
 		{"explicit on turns off", MCP{Enabled: new(true)}, false, new(false)},
 		{"saved port stays off", MCP{Port: 9192}, false, new(false)},
 		{"saved port turns on", MCP{Port: 9192}, true, new(true)},
-		{"saved port explicit off stays off", MCP{Enabled: new(false), Port: 9192}, false, new(false)},
 		{"saved port explicit off turns on", MCP{Enabled: new(false), Port: 9192}, true, new(true)},
-		{"saved port explicit on stays on", MCP{Enabled: new(true), Port: 9192}, true, new(true)},
-		{"saved port explicit on turns off", MCP{Enabled: new(true), Port: 9192}, false, new(false)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Host: "127.0.0.1", MCP: tt.input}

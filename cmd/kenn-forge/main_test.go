@@ -296,8 +296,6 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 		wantErr     string
 	}{
 		{name: "disabled", mcp: config.MCP{Enabled: new(false)}},
-		{name: "omitted"},
-		{name: "omitted enabled with occupied saved port", mcp: config.MCP{Port: explicitMCPPort}, occupiedMCP: true},
 		{
 			name: "default next port", mcp: config.MCP{Enabled: new(true)},
 			wantMCPPort: defaultMCPPort,

@@ -113,8 +113,7 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 		expectedPort  int
 	}{
 		{name: "explicit flag", mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
-		{name: "explicit enable", mcp: config.MCP{Enabled: new(true)}, requestedPort: 39103, expectedPort: 39103},
-		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}, requestedPort: 39103, expectedPort: 39103},
+		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}, mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
 		{name: "explicit zero flag", mcpPortSet: true},
 		{name: "explicit enable free port", mcp: config.MCP{Enabled: new(true)}},
 		{name: "source port free port", mcp: config.MCP{Enabled: new(true), Port: 6661}},

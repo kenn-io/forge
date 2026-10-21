@@ -13,8 +13,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each(["initial", "refresh", "mismatch", "both panes"])("counts rendered PR failures for %s reads", async (mode) => {
-  let denied = mode === "initial" || mode === "both panes";
+it.each(["initial", "refresh", "mismatch"])("counts rendered PR failures for %s reads", async (mode) => {
+  let denied = mode === "initial";
   const api = createMockApiFetch([
     ({ url }) =>
       denied && /\/pulls\/github\/acme\/widgets\/\d+(?:\/diff)?$/.test(url.pathname)
@@ -44,7 +44,7 @@ it.each(["initial", "refresh", "mismatch", "both panes"])("counts rendered PR fa
   const errors = () => sent.mock.calls.filter(([event]) => event.event === "error_shown");
   try {
     await waitFor(() => expect(stores.detail.isDetailLoading()).toBe(false));
-    if (mode !== "initial" && mode !== "both panes") {
+    if (mode !== "initial") {
       await waitFor(() => expect(stores.detail.getDetail()).not.toBeNull());
       denied = true;
       if (mode === "mismatch") {
@@ -56,17 +56,12 @@ it.each(["initial", "refresh", "mismatch", "both panes"])("counts rendered PR fa
     }
     await screen.findByText(/Read denied/);
     expect(errors()).toHaveLength(0);
-    await view.rerender({ runtime, paneProps: { ...paneProps, visible: true }, files: mode === "both panes" });
+    await view.rerender({ runtime, paneProps: { ...paneProps, visible: true } });
     if (mode === "refresh") {
       expect(screen.getByTestId("detail-load-error").textContent).toContain("Showing previously loaded content");
       expect(errors()).toHaveLength(0);
     } else {
       await waitFor(() => expect(errors()).toHaveLength(1));
-      if (mode === "both panes") {
-        await waitFor(() => expect(stores.diff.getDiffError()).toContain("Read denied"));
-        expect(errors()).toHaveLength(1);
-        return;
-      }
       stores.detail.loadDetail("acme", "widgets", paneProps.pr.number, {
         provider: "github",
         repoPath: "acme/widgets",
@@ -74,6 +69,12 @@ it.each(["initial", "refresh", "mismatch", "both panes"])("counts rendered PR fa
       });
       await screen.findByText(/Read denied/);
       await waitFor(() => expect(errors()).toHaveLength(2));
+      if (mode === "initial") {
+        await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, tabKey: "files" } });
+        await waitFor(() => expect(stores.diff.getDiffError()).toContain("Read denied"));
+        await screen.findByText(/Read denied/);
+        await waitFor(() => expect(errors()).toHaveLength(3));
+      }
     }
   } finally {
     cleanup();

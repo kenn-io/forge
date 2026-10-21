@@ -4,10 +4,10 @@
   import type { AppRuntime } from "../../app/runtime.js";
   import PullDetailPane from "./PullDetailPane.svelte";
 
-  const { runtime, paneProps, files = false }: { runtime: AppRuntime; paneProps: ComponentProps<typeof PullDetailPane>; files?: boolean } = $props();
+  const { runtime, paneProps }: { runtime: AppRuntime; paneProps: ComponentProps<typeof PullDetailPane> } = $props();
   setAppRuntime(untrack(() => runtime));
 </script>
 
-<PullDetailPane {...paneProps} />
-
-{#if files}<PullDetailPane {...paneProps} tabKey="files" />{/if}
+{#key paneProps.tabKey}
+  <PullDetailPane {...paneProps} />
+{/key}

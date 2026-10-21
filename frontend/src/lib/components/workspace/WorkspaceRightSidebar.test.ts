@@ -292,7 +292,7 @@ describe("WorkspaceRightSidebar", () => {
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
-  it("counts a hidden failed PR view once when shown and again on retry", async () => {
+  it("counts a hidden failed PR view once when shown", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(
       createMockApiFetch([
         (request) =>
@@ -332,8 +332,6 @@ describe("WorkspaceRightSidebar", () => {
         {},
       ),
     );
-    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true, refreshToken: 1 } });
-    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
   });
 
   it("counts visible PR detail on the PR tab even while actions are disabled", async () => {

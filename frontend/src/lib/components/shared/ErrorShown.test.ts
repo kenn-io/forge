@@ -6,23 +6,7 @@ import { makeAppRuntime } from "../../app/runtime.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import Harness from "./ErrorShownTestHarness.svelte";
 
-it("counts a retried pane while another failed pane stays mounted", async () => {
-  const runtime = makeAppRuntime();
-  const sent = vi.fn();
-  await startTestTelemetry(runtime, sent).ready;
-  const view = render(Harness, { runtime, copies: 2 });
-  try {
-    await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
-    await view.rerender({ runtime, copies: 2, retrying: true });
-    await view.rerender({ runtime, copies: 2, retrying: false });
-    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
-  } finally {
-    cleanup();
-    await Effect.runPromise(runtime.disposeEffect);
-  }
-});
-
-it("reports a visible error once across presenters, then counts a remounted attempt", async () => {
+it("reports a visible error once across presenters, then counts retries with and without a mounted sibling", async () => {
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
   const runtime = makeAppRuntime();
   const sent = vi.fn();
@@ -43,9 +27,12 @@ it("reports a visible error once across presenters, then counts a remounted atte
     await view.rerender({ runtime, copies: 1 });
     await view.rerender({ runtime, copies: 2 });
     expect(sent).toHaveBeenCalledTimes(1);
+    await view.rerender({ runtime, copies: 2, retrying: true });
+    await view.rerender({ runtime, copies: 2, retrying: false });
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
     await view.rerender({ runtime, mounted: false });
     await view.rerender({ runtime, mounted: true });
-    await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(sent).toHaveBeenCalledTimes(3));
   } finally {
     cleanup();
     await Effect.runPromise(runtime.disposeEffect);

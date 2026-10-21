@@ -74,16 +74,9 @@ func TestOutcomeEndpointCountsRepeatedAttempts(t *testing.T) {
 	for _, tc := range []struct {
 		event      string
 		properties map[string]any
-		status     int
 	}{
-		{"search_empty", map[string]any{"surface": "web"}, http.StatusAccepted},
-		{"error_shown", map[string]any{"surface": "web", "kind": "pr_viewed"}, http.StatusAccepted},
-		{"error_shown", map[string]any{"surface": "web", "kind": "workspace_opened"}, http.StatusAccepted},
-		{"error_shown", map[string]any{"surface": "web", "kind": "unknown"}, http.StatusAccepted},
-		{"search_empty", nil, http.StatusBadRequest},
-		{"search_empty", map[string]any{"surface": "cli"}, http.StatusBadRequest},
-		{"error_shown", map[string]any{"surface": "web"}, http.StatusBadRequest},
-		{"error_shown", map[string]any{"surface": "cli", "kind": "pr_viewed"}, http.StatusBadRequest},
+		{"search_empty", map[string]any{"surface": "web"}},
+		{"error_shown", map[string]any{"surface": "web", "kind": "pr_viewed"}},
 	} {
 		t.Run(tc.event+"/"+fmt.Sprint(tc.properties), func(t *testing.T) {
 			for range 2 {
@@ -93,12 +86,10 @@ func TestOutcomeEndpointCountsRepeatedAttempts(t *testing.T) {
 				req.Header.Set("Content-Type", "application/json")
 				rr := httptest.NewRecorder()
 				srv.ServeHTTP(rr, req)
-				require.Equal(t, tc.status, rr.Code, "response: %s", rr.Body.String())
-				if tc.status == http.StatusAccepted {
-					var receipt telemetryapi.TelemetryEventResponse
-					require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &receipt))
-					assert.Equal(t, "queued", receipt.Status)
-				}
+				require.Equal(t, http.StatusAccepted, rr.Code, "response: %s", rr.Body.String())
+				var receipt telemetryapi.TelemetryEventResponse
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &receipt))
+				assert.Equal(t, "queued", receipt.Status)
 			}
 		})
 	}

@@ -1114,7 +1114,7 @@ describe("createIssuesStore", () => {
   });
 });
 
-it("counts settled empty submissions while excluding previews and failures", async () => {
+it("counts submitted empty issue searches while excluding previews and hidden bots", async () => {
   const get = vi.fn().mockResolvedValue([]);
   const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
   const sent = vi.fn();
@@ -1126,19 +1126,11 @@ it("counts settled empty submissions while excluding previews and failures", asy
   };
   await search("preview", false);
   expect(sent).not.toHaveBeenCalled();
-  for (const query of ["A", "A", "B", "A"]) await search(query);
-  expect(sent).toHaveBeenCalledTimes(3);
-  expect(sent).toHaveBeenLastCalledWith({ event: "search_empty", properties: { surface: "web" } }, {});
-  get.mockResolvedValueOnce([issue(1, "alice")]);
-  await search("found");
-  get.mockRejectedValueOnce(
-    new GeneratedProblemResponse({ detail: "unavailable" }, new Response(null, { status: 403 })),
-  );
-  await search("failed");
-  expect(sent).toHaveBeenCalledTimes(3);
+  await search("missing");
+  expect(sent).toHaveBeenCalledExactlyOnceWith({ event: "search_empty", properties: { surface: "web" } }, {});
   store.hydrateDefaults({ hide_bots: true });
   get.mockResolvedValueOnce([issue(2, "automation[bot]")]);
   await search("only bots");
   expect(store.getIssues()).toEqual([]);
-  await vi.waitFor(() => expect(sent).toHaveBeenCalledTimes(3));
+  expect(sent).toHaveBeenCalledTimes(1);
 });

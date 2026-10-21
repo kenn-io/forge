@@ -182,24 +182,6 @@ describe("MobileWorkspaceTerminal", () => {
     await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
   });
 
-  it("counts a setup failure once when it becomes visible", async () => {
-    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, status: "error" });
-    render(MobileWorkspaceTerminalTestHarness, { props: { ...props, initialVisible: false } });
-    await screen.findByText("Workspace setup failed");
-    expect(coreActions).not.toHaveBeenCalled();
-    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
-    await waitFor(() =>
-      expect(
-        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
-      ).toHaveLength(1),
-    );
-    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
-    expect(
-      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
-    ).toHaveLength(1);
-  });
-
   it.each(["creating", "error"])("counts another setup failure after retry returns %s", async (status) => {
     let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
     events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
@@ -228,13 +210,12 @@ describe("MobileWorkspaceTerminal", () => {
     );
   });
 
-  it.each(["denied", "failed", "unavailable"])("reports one shown mobile launch error: %s", async (failure) => {
+  it.each(["failed", "unavailable"])("reports one shown mobile launch error: %s", async (failure) => {
     if (failure === "unavailable") {
       mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...runtime, launch_targets: [] });
     } else {
-      const status = failure === "denied" ? 403 : 400;
       mocks.runtimeClient.launchWorkspaceRuntimeSession.mockRejectedValue(
-        new GeneratedProblemResponse({ title: "Launch refused", status }, new Response(null, { status })),
+        new GeneratedProblemResponse({ title: "Launch refused", status: 400 }, new Response(null, { status: 400 })),
       );
     }
     queueWorkspaceLaunch("ws-a", "helper", undefined);

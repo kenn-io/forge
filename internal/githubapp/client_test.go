@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/githubapp/githubapptest"
+	"go.kenn.io/forge/platform"
 )
 
 // submitManifest plays the browser role: POST a manifest form to the
@@ -179,6 +180,30 @@ func TestStatusErrorRetryDeadline(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: tt.header}
 			assert.Equal(t, tt.want, err.RetryDeadline(now))
+		})
+	}
+}
+
+func TestStatusErrorPlatformErrorCode(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		status int
+		header http.Header
+		want   platform.PlatformErrorCode
+	}{
+		{"unauthorized", http.StatusUnauthorized, nil, platform.ErrCodePermissionDenied},
+		{"forbidden", http.StatusForbidden, nil, platform.ErrCodePermissionDenied},
+		{"not found", http.StatusNotFound, nil, platform.ErrCodeNotFound},
+		{"too many requests", http.StatusTooManyRequests, nil, platform.ErrCodeRateLimited},
+		{"secondary limit", http.StatusForbidden, http.Header{"Retry-After": {"90"}}, platform.ErrCodeRateLimited},
+		{"primary limit", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {" 0 "}}, platform.ErrCodeRateLimited},
+		{"remaining quota", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"4999"}}, platform.ErrCodePermissionDenied},
+		{"unknown", http.StatusServiceUnavailable, nil, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &githubapp.StatusError{StatusCode: tt.status, Header: tt.header}
+			assert.Equal(t, tt.want, err.PlatformErrorCode())
 		})
 	}
 }

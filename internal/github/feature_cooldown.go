@@ -143,6 +143,13 @@ func (c *repositoryFeatureCooldowns) lookupState(
 	return primary, repositoryFeatureCooldownState{}, false
 }
 
+func (c *repositoryFeatureCooldowns) inCooldown(repo RepoRef, feature string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, state, _ := c.lookupState(repositoryFeatureKeys(repo, feature))
+	return state.nextProbe.After(now)
+}
+
 func (c *repositoryFeatureCooldowns) beginProbeWithRetry(
 	repo RepoRef,
 	feature string,

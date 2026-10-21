@@ -3,26 +3,24 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -152,7 +150,6 @@ type fakeTelemetryClient struct {
 	disabled   bool
 	captures   []map[string]any
 	eventNames []string
-	onCapture  func(string)
 	report     func(context.Context) (posthog.Status, error)
 	close      func() error
 }
@@ -162,9 +159,6 @@ func (f *fakeTelemetryClient) Capture(event string, properties map[string]any) e
 	defer f.mu.Unlock()
 	f.eventNames = append(f.eventNames, event)
 	f.captures = append(f.captures, properties)
-	if f.onCapture != nil {
-		f.onCapture(event)
-	}
 	return nil
 }
 
@@ -262,50 +256,18 @@ func TestSyncFailedCapture(t *testing.T) {
 
 func TestRunWiresSyncFailed(t *testing.T) {
 	require := require.New(t)
-	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch req.URL.Path {
-		case "/api/v1/version":
-			_, _ = io.WriteString(w, `{"version":"1.23.0"}`)
-		case "/api/v1/repos/acme/widget":
-			_, _ = io.WriteString(w, `{"id":42,"name":"widget","full_name":"acme/widget","owner":{"login":"acme"},"default_branch":"main"}`)
-		default:
-			w.WriteHeader(http.StatusServiceUnavailable)
-		}
-	}))
-	t.Cleanup(api.Close)
-	original := http.DefaultTransport
-	http.DefaultTransport = api.Client().Transport
-	t.Cleanup(func() { http.DefaultTransport = original })
-	host := strings.TrimPrefix(api.URL, "https://")
-	root := t.TempDir()
-	cfgPath := filepath.Join(root, "config.toml")
-	writeMinimalConfig(t, cfgPath, filepath.Join(root, "data"), reserveFreePort(t))
-	cfgBody, err := os.ReadFile(cfgPath)
-	require.NoError(err)
-	require.NoError(os.WriteFile(cfgPath, fmt.Appendf(cfgBody, `
-[[platforms]]
-type = "gitea"
-host = %[1]q
-token_env = "SYNC_FAILED_TEST_TOKEN"
-
-[[repos]]
-platform = "gitea"
-platform_host = %[1]q
-owner = "acme"
-name = "widget"
-`, host), 0o600))
-	t.Setenv("SYNC_FAILED_TEST_TOKEN", "test-token")
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	client := &fakeTelemetryClient{onCapture: func(event string) {
-		if event == "sync_failed" {
-			cancel()
-		}
+	provider := &serverfake.MockGH{GetRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		require.Equal("acme", owner)
+		require.Equal("widget", name)
+		return nil, platform.ErrPermissionDenied
 	}}
-	err = runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath}, func(telemetry.Options) telemetry.Client { return client })
-	require.NoError(err)
-	require.Contains(client.events(), "sync_failed")
+	syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": provider}, dbtest.Open(t), nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget"}}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	client := &fakeTelemetryClient{}
+	wireSyncFailed(syncer, client)
+	syncer.RunOnce(t.Context())
+	require.Equal([]string{"sync_failed", "sync_failed"}, client.events())
+	require.Equal([]map[string]any{{"sync_source": "merge_requests", "reason": "auth"}, {"sync_source": "issues", "reason": "auth"}}, client.captures)
 }
 
 func TestSetupFinishedMinute(t *testing.T) {

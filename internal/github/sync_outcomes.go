@@ -74,10 +74,7 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 		return
 	}
 	for scope, names := range syncScopeSources {
-		s.featureCooldowns.mu.Lock()
-		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, names.feature))
-		s.featureCooldowns.mu.Unlock()
-		if !state.nextProbe.After(s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
+		if !s.featureCooldowns.inCooldown(repo, names.feature, s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
 			s.observeSync(ctx, repo, names.source, err)
 		}
 	}

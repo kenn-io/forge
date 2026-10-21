@@ -91,7 +91,9 @@
     ),
   );
   const changedCount = $derived(shownItems.filter(worklistItemNotFresh).length);
-  const changedFilterActive = $derived(changedOnly && changedCount > 0);
+  // Stays on while a search or state filter leaves no changed rows; only a
+  // list with nothing changed at all turns it off.
+  const changedFilterActive = $derived(changedOnly && worklist.items.some(worklistItemNotFresh));
   const filteredItems = $derived(changedFilterActive ? shownItems.filter(worklistItemNotFresh) : shownItems);
   const sections = $derived(worklistSections(filteredItems));
   const showSectionHeaders = $derived(order === "agent" && sections.some((section) => section.section !== ""));
@@ -147,6 +149,7 @@
 
   const emptyFilterMessage = $derived.by(() => {
     if (searching) return "No items match this search.";
+    if (changedFilterActive) return "No shown items changed since the list was written.";
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
 
@@ -287,7 +290,7 @@
     />
     <div class="worklist-meta">
       <span>Written by {authorLabel} {formatRelativeTime(worklist.updated_at)}</span>
-      {#if changedCount > 0}
+      {#if changedCount > 0 || changedFilterActive}
         <button
           type="button"
           class="worklist-changed-toggle"
@@ -348,7 +351,7 @@
   <ScrollBox label={`${worklist.title} items`} class="worklist-scroll">
     {#if worklist.items.length === 0}
       <p class="worklist-rail-empty">No items remain on this list.</p>
-    {:else if shownItems.length === 0}
+    {:else if filteredItems.length === 0}
       <p class="worklist-rail-empty">{emptyFilterMessage}</p>
     {:else if showSectionHeaders}
       {#each sections as section (section.section)}

@@ -162,7 +162,13 @@
     const list = worklist;
     const key = selectedKey;
     if (!list || list.id !== worklistId) return;
-    untrack(() => rememberWorklist(list.id, key, summaries.map((summary) => summary.id)));
+    untrack(() =>
+      rememberWorklist(
+        list.id,
+        key,
+        worklists.summariesLoaded() ? summaries.map((summary) => summary.id) : null,
+      ),
+    );
   });
 
   // The rail reports its visible order for each list it shows, keyed by the

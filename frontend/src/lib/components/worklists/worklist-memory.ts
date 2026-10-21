@@ -35,13 +35,17 @@ export function lastWorklistItemKey(listId: number): string | null {
 
 /**
  * Records the open list and, when one is open, its item. Lists missing from
- * `liveListIds` are forgotten so the stored map stays bounded.
+ * `liveListIds` are forgotten so the stored map stays bounded; pass null until
+ * the lists have loaded, so nothing is forgotten against an empty list.
  */
-export function rememberWorklist(listId: number, itemKey: string | null, liveListIds: readonly number[]): void {
+export function rememberWorklist(listId: number, itemKey: string | null, liveListIds: readonly number[] | null): void {
   const memory = readMemory();
-  const live = new Set(liveListIds.map(String));
-  live.add(String(listId));
-  const items = Object.fromEntries(Object.entries(memory.items).filter(([id]) => live.has(id)));
+  let items = memory.items;
+  if (liveListIds !== null) {
+    const live = new Set(liveListIds.map(String));
+    live.add(String(listId));
+    items = Object.fromEntries(Object.entries(items).filter(([id]) => live.has(id)));
+  }
   if (itemKey !== null) items[String(listId)] = itemKey;
   try {
     globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify({ listId, items }));

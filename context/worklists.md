@@ -221,7 +221,8 @@ stateDiagram-v2
 - A search box filters rows by title, `owner/name#number`, author, labels,
   section, note, and caveat, with the same query syntax as the pull request
   list. It applies within the state filter, and like the changed filter it
-  resets when the rail remounts
+  resets when the rail remounts. The changed filter, once on, stays on with its
+  button visible even when a search or state filter leaves no changed rows
   (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemMatchesSearch`).
 - When the open item leaves the rail, for example because it merged, the
   detail stays open and `j` and `k` step from where its row was

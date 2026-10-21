@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Effect } from "effect";
+import { formatDiffStat } from "@kenn-io/kit-ui";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../test/mockApiFetch.js";
 import {
   WORKLIST_HANDLED_AT,
@@ -793,7 +794,8 @@ describe("WorklistView", () => {
     await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     const size = within(row("Add browser regression coverage")).getByLabelText("1234 additions, 56 deletions");
-    expect(size.textContent?.replace(/\s+/g, "")).toBe("+1.23k\u221256");
+    // The row uses kit-ui's diff stat formatting, whatever that formatting is.
+    expect(size.textContent?.replace(/\s+/g, "")).toBe(`+${formatDiffStat(1234)}\u2212${formatDiffStat(56)}`);
     expect(within(row("Mirror host stub PR")).queryByLabelText(/additions/)).toBeNull();
     expect(within(row("Theme toggle does not stick")).queryByLabelText(/additions/)).toBeNull();
   });
@@ -841,6 +843,51 @@ describe("WorklistView", () => {
     navigate("/");
     renderView("/worklists", server);
     await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
+  });
+
+  it("keeps other lists' remembered items when a list opens before the list of worklists loads", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")];
+    renderView("/worklists/4", server);
+    await fireEvent.click(await screen.findByRole("button", { name: "Theme toggle does not stick" }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+    cleanup();
+
+    // The list of worklists fails to load at first, so list 5 opens while it
+    // is still unknown which lists exist.
+    navigate("/");
+    let listsUnavailable = true;
+    const stores = renderView("/worklists/5", server, [
+      (request) =>
+        listsUnavailable && request.method === "GET" && request.url.pathname === "/api/v1/worklists"
+          ? jsonResponse({ title: "Unauthorized", status: 401, detail: "sign in again", code: "unauthorized" }, 401)
+          : null,
+    ]);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    expect(stores.worklists.summariesLoaded()).toBe(false);
+    listsUnavailable = false;
+    await rewriteLists(stores);
+
+    await fireEvent.click(await screen.findByRole("combobox", { name: "Worklist: Review queue" }));
+    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+  });
+
+  it("keeps the changed filter on and visible when a search leaves no changed rows", async () => {
+    renderView("/worklists/5", server);
+    const toggle = await screen.findByRole("button", { name: "2 changed since" });
+    await fireEvent.click(toggle);
+    const search = screen.getByRole("searchbox", { name: "Filter worklist items" });
+
+    await fireEvent.input(search, { target: { value: "theme" } });
+
+    expect(rowTitles()).toEqual([]);
+    const stillOn = screen.getByRole("button", { name: "0 changed since" });
+    expect(stillOn.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("No items match this search.")).toBeTruthy();
+
+    await fireEvent.input(search, { target: { value: "" } });
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
   });
 
   it("names an unnamed writer as an agent", async () => {

@@ -1,4 +1,3 @@
-import ErrorHarness from "../shared/ErrorShownTestHarness.svelte";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -3680,7 +3679,6 @@ describe("PullDetail inline workspace handoff", () => {
     settings.setQuickActions([{ label: "Review", agent: "codex", prompt: "Review this change" }]);
     const telemetry = vi.fn();
     await startTestTelemetry(detailRuntime!, (event) => telemetry(event)).ready;
-    render(ErrorHarness, { runtime: detailRuntime!, flashesOnly: true });
     if (intent === "agent") {
       await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace options" })[0]!);
       await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));

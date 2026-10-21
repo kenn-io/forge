@@ -66,7 +66,6 @@
     searchKataReferences,
   } from "./lib/api/kata/integration.js";
   import { createDocsAPI } from "./lib/api/docs/api.js";
-  import WorkspaceErrorFlashes from "./lib/components/shared/WorkspaceErrorFlashes.svelte";
   import { FlashBanner, Spinner } from "@kenn-io/kit-ui";
   import { showFlash } from "./lib/stores/flash.svelte.js";
   import { isSafeExternalHTTPURL } from "./lib/utils/safe-external-url.js";
@@ -1311,7 +1310,6 @@
 <!-- Mounted once above the focus/full-shell branching so flashes raised
        through the shared store stay visible in every presentation, not just
        the desktop shell. -->
-  <WorkspaceErrorFlashes />
   <FlashBanner top={flashTopOffset()} />
   {#if onboardingActive && stores}
     <OnboardingFlow

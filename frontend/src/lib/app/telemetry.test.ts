@@ -268,6 +268,28 @@ describe("browser telemetry", () => {
     expect(sent.map((event) => event.event)).toEqual(["app_opened", "error_shown", "search_empty"]);
   });
 
+  it("wakes outcomes queued during backoff after all daily events are claimed", async () => {
+    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
+    let failing = false;
+    const { sent, runtime, reporter } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    failing = true;
+    reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    reportOutcome(runtime, { event: "search_empty" });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed", "error_shown"]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed", "error_shown", "search_empty"]);
+    await vi.advanceTimersByTimeAsync(32_000);
+    expect(sent).toHaveLength(4);
+  });
+
   it.each(["pr_viewed", "search_empty"] as const)(
     "retains %s through screen backoff until the gate retry succeeds",
     async (event) => {

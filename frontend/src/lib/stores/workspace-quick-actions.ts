@@ -2,8 +2,8 @@ import { Deferred, Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { LaunchTarget, QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
-import { reportWorkspaceOpened } from "../app/telemetry.js";
-import { showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
+import { reportWorkspaceOpened, reportOutcome } from "../app/telemetry.js";
+import { documentVisible } from "../browser/document-visible.svelte.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -182,8 +182,10 @@ export function runWorkspaceQuickAction(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;
-          if (outcome.type === "failed") showWorkspaceLaunchError(outcome.message);
-          else showFlash(outcome.message, { tone: "warning" });
+          if (outcome.type === "failed") {
+            showFlash(outcome.message, { tone: "danger" });
+            if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+          } else showFlash(outcome.message, { tone: "warning" });
         }),
       ),
     ),
@@ -191,7 +193,8 @@ export function runWorkspaceQuickAction(
       operation: "run workspace quick action",
       safeContext: { workspaceId, agent: action.agent },
       onFailure: () => {
-        showWorkspaceLaunchError(`"${action.label}" could not start.`);
+        showFlash(`"${action.label}" could not start.`, { tone: "danger" });
+        if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
       },
     },
   );

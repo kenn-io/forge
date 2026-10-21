@@ -373,7 +373,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   }
   const emptySearch = searchEmptyReporter(runtime);
   function setIssueSearchQuery(q: string | undefined): void {
-    if (q !== searchQuery) emptySearch.textChanged();
     searchQuery = q;
   }
   function getIssueFilterState(): string {

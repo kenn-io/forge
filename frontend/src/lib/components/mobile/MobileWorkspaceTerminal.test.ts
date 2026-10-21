@@ -1,4 +1,3 @@
-import WorkspaceErrorFlashes from "../shared/WorkspaceErrorFlashes.svelte";
 import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
@@ -118,7 +117,6 @@ describe("MobileWorkspaceTerminal", () => {
     );
     localStorage.clear();
     await startTestTelemetry(runtimeState.appRuntime, coreActions).ready;
-    render(WorkspaceErrorFlashes);
     quickActionWorkspaces.clear();
     quickActionLaunches.clear();
     resetWorkspaceHostForTest();
@@ -199,7 +197,18 @@ describe("MobileWorkspaceTerminal", () => {
       ).toHaveLength(1),
     );
     expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    const retry = Promise.withResolvers<never>();
+    mocks.runtimeClient.getWorkspaceRuntime.mockReturnValueOnce(retry.promise);
+    const reads = mocks.runtimeClient.getWorkspaceRuntime.mock.calls.length;
     await fireEvent.click(screen.getByRole("button", { name: "Retry runtime sessions" }));
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(reads + 1));
+    expect(screen.getByText("Runtime denied")).toBeTruthy();
+    expect(
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+    ).toHaveLength(1);
+    retry.reject(
+      new GeneratedProblemResponse({ title: "Runtime denied", status: 403 }, new Response(null, { status: 403 })),
+    );
     await screen.findByText("Runtime denied");
     await waitFor(() =>
       expect(

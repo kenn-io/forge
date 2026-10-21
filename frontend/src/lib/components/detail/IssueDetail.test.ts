@@ -1,4 +1,3 @@
-import ErrorHarness from "../shared/ErrorShownTestHarness.svelte";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -986,7 +985,6 @@ describe("IssueDetail inline workspace handoff", () => {
     );
     const telemetry = vi.fn();
     await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
-    render(ErrorHarness, { runtime: issueRuntime!, flashesOnly: true });
     if (intent === "agent") {
       await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace options" })[0]!);
       await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));

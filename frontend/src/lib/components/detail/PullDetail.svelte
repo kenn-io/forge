@@ -14,8 +14,8 @@
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { prErrorScope } from "../../app/telemetry.js";
-  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
+  import { prErrorScope, reportOutcome } from "../../app/telemetry.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
@@ -1915,8 +1915,8 @@
           failure._tag === "ApiProblemError"
             ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
             : "Could not reach Kenn Forge";
-        if (launchTargetKey || quickAction) showWorkspaceLaunchError(message);
-        else showFlash(message, { tone: "danger" });
+        showFlash(message, { tone: "danger" });
+        if ((launchTargetKey || quickAction) && documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
       },
     });
   }
@@ -2216,10 +2216,13 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onDocumentMousedown} />
 
+{#if !detailStore.isDetailLoading() && detailStore.getDetailError() !== null && (detailStore.getDetail() === null || detailMismatch)}
+  <ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:detail`} shown={visible} />
+{/if}
+
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
 {:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
-  <ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:detail`} shown={visible} />
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
@@ -2249,7 +2252,6 @@
     )}
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
       {#if detailLoadError}
-        {#if detailMismatch}<ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:detail`} shown={visible} />{/if}
         <div class="detail-load-error" data-testid="detail-load-error">
           {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
           {detailStore.getDetailError()}

@@ -1,5 +1,4 @@
 import { showFlash as kitShowFlash } from "@kenn-io/kit-ui";
-import WorkspaceErrorFlashes from "../shared/WorkspaceErrorFlashes.svelte";
 import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
@@ -743,7 +742,6 @@ describe("WorkspaceTerminalView", () => {
     delete window.__BASE_PATH__;
     localStorage.clear();
     await startTestTelemetry(mocks.runtime, coreActions).ready;
-    render(WorkspaceErrorFlashes);
     resetSessionHostForTest();
     resetPaneLayoutStoresForTest();
     resetWorkspaceHostForTest();
@@ -5091,7 +5089,12 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
-  it("counts setup failures again after retry", async () => {
+  it.each([false, true])("counts setup failures again after retry, embedded=%s", async (embedded) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      queueWorkspaceLaunch("ws-1", "codex", undefined);
+    }
     const events = installEventSourceRecorder();
     capturePollingIntervals([]);
     vi.stubGlobal(
@@ -5103,7 +5106,9 @@ describe("WorkspaceTerminalView", () => {
         return Response.json({ workspaces: [] });
       }),
     );
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", ...(embedded ? { paneSurface: "prs" as const } : {}) },
+    });
     await waitFor(() =>
       expect(
         coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
@@ -5123,7 +5128,12 @@ describe("WorkspaceTerminalView", () => {
     );
   });
 
-  it("counts failed workspace reads again on retry", async () => {
+  it.each([false, true])("counts failed workspace reads again on retry, embedded=%s", async (embedded) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      queueWorkspaceLaunch("ws-1", "codex", undefined);
+    }
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: Request | URL | string) => {
@@ -5133,7 +5143,9 @@ describe("WorkspaceTerminalView", () => {
           : Response.json({ workspaces: [] });
       }),
     );
-    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", ...(embedded ? { paneSurface: "prs" as const } : {}) },
+    });
     await screen.findByText("Read denied");
     await waitFor(() =>
       expect(coreActions).toHaveBeenCalledExactlyOnceWith(

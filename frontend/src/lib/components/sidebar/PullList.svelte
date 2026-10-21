@@ -133,13 +133,9 @@
   onDestroy(() => searchExecution?.interrupt());
 
   function applySearch(value: string, submitted = false): void {
+    if (submitted) searchExecution?.interrupt();
     pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
-    pulls.loadPulls(undefined, { submitted });
-  }
-
-  function submitSearch(value: string): void {
-    searchExecution?.interrupt();
-    applySearch(value, value.trim() !== "");
+    pulls.loadPulls(undefined, { submitted: submitted && value.trim() !== "" });
   }
 
   function onSearchInput(value: string): void {
@@ -686,7 +682,7 @@
         placeholder="Search PRs..."
         ariaLabel="Search PRs"
         oninput={onSearchInput}
-        onsubmit={submitSearch}
+        onsubmit={(value) => applySearch(value, true)}
       />
     </div>
     <button

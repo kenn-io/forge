@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportOutcome, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -974,6 +973,8 @@
   });
 
   const embeddedWorkspace = $derived(paneSurface !== undefined);
+  const workspaceErrorVisible = $derived(hostVisible && (!embeddedWorkspace || pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null));
+
   // `auto` records who opened it: an overlay the view raised over an empty pane is
   // its own to take back once there is something to show, while one the user asked
   // for stays until they dismiss it - they may be picking a second session.
@@ -2729,8 +2730,8 @@
                       : "Delete failed";
         if (current) {
           const message = workspaceMutationFailureMessage(state.error, fallback);
-          if (state.operation === "Launch") showWorkspaceLaunchError(message);
-          else showFlash(message, { tone: "danger" });
+          showFlash(message, { tone: "danger" });
+          if (state.operation === "Launch" && documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
         }
         clearRuntimeMutationPending(state);
         return true;
@@ -3042,7 +3043,8 @@
         sessionKey: acceptedSessionKey,
         acceptedAt,
         onExpired: Effect.sync(() => {
-          showWorkspaceLaunchError(`${label} launched, but its session did not become available`);
+          showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+          if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
         }),
       });
     });
@@ -4516,7 +4518,8 @@
     const target = admissionRuntime.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
-      showWorkspaceLaunchError(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`);
+      showFlash(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`, { tone: "danger" });
+      if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
@@ -4633,7 +4636,7 @@
           </div>
         {/if}
       {:else if loadError && !workspaceLive}
-        <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={!embeddedWorkspace && hostVisible && loadError.report} />
+        <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={workspaceErrorVisible && loadError.report} />
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4671,7 +4674,7 @@
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
-        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={!embeddedWorkspace && hostVisible} />{/if}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={workspaceErrorVisible} />{/if}
         <div class="state-message error">
           <span
             class="error-icon-badge"

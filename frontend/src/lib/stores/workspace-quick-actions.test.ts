@@ -1,6 +1,5 @@
-import { dismissFlash } from "./flash.svelte.js";
-import { cleanup, render } from "@testing-library/svelte";
-import ErrorHarness from "../components/shared/ErrorShownTestHarness.svelte";
+import { tick } from "svelte";
+import { getFlashes, dismissFlash } from "./flash.svelte.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { VisitEvent } from "@kenn-io/kit-ui/utils/browser-telemetry";
 import { startTestTelemetry } from "../testing/telemetry.js";
@@ -46,11 +45,9 @@ describe("quick-action launch serialization", () => {
       }),
     );
     await startTestTelemetry(runtime, telemetry).ready;
-    render(ErrorHarness, { runtime, flashesOnly: true });
   });
 
   afterEach(async () => {
-    cleanup();
     dismissFlash();
     await Effect.runPromise(runtime.disposeEffect);
     quickActionLaunches.clear();
@@ -83,6 +80,27 @@ describe("quick-action launch serialization", () => {
     // A finished launch never blocks a later one.
     runWorkspaceQuickAction(runtime, "ws-a", "pull_request", firstAction);
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
+  });
+
+  it("drops launch failures shown while the document is hidden", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    launchHandoff.mockRejectedValue(
+      new GeneratedProblemResponse(
+        { code: "forbidden", title: "Launch denied", status: 403 },
+        new Response(null, { status: 403 }),
+      ),
+    );
+    try {
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review" });
+      await vi.waitFor(() => expect(getFlashes().some((flash) => flash.message.includes("Launch denied"))).toBe(true));
+      expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toEqual([]);
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toEqual([]);
+    } finally {
+      visibility.mockRestore();
+    }
   });
 
   it("reports each rejected quick-action launch as a failed workspace open", async () => {

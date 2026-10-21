@@ -1,6 +1,7 @@
 <script lang="ts">
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
+  import { reportOutcome } from "../../app/telemetry.js";
   import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -960,8 +961,10 @@
         const message = problem?.detail ?? problem?.title ??
           (failure._tag === "ApiProblemError" ? "failed to create workspace" : "Could not reach Kenn Forge");
         if (options.fromConflictDialog && branchConflict) branchConflict.error = message;
-        else if (launchTargetKey || quickAction) showWorkspaceLaunchError(message);
-        else showFlash(message, { tone: "danger" });
+        else {
+          showFlash(message, { tone: "danger" });
+          if ((launchTargetKey || quickAction) && documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+        }
       },
     });
   }

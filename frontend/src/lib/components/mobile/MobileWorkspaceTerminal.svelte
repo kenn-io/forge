@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportOutcome, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
@@ -126,6 +125,7 @@
   let selectedSessionKey = $state<string | null>(null);
   let provisionalBaseSelection = false;
   let ownedHostKeys: SessionHostKey[] = [];
+  let runtimeErrorAttempt = $state(0);
   let loadError = $state<string | null>(null);
   let runtimeError = $state<string | null>(null);
   let launchingTarget = $state<string | null>(null);
@@ -333,7 +333,8 @@
     const launchTarget = next.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!launchTarget || (launchTarget.kind !== "agent" && launchTarget.kind !== "acp") || !launchTarget.available) {
       if (discardWorkspaceLaunch(workspaceId, hostKey) !== null) {
-        showWorkspaceLaunchError(`Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`);
+        showFlash(`Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`, { tone: "danger" });
+        if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
       }
       return;
     }
@@ -376,6 +377,7 @@
             handleWorkspaceMissing();
             return;
           }
+          if (force) runtimeErrorAttempt += 1;
           runtimeError = failureMessage(failure, "Runtime unavailable");
         }),
       ),
@@ -492,12 +494,11 @@
     fallback: string,
   ): void {
     const message = failureMessage(state.error, fallback);
-    if (state.operation === "Launch") showWorkspaceLaunchError(message);
-    else showFlash(message, { tone: "danger" });
+    showFlash(message, { tone: "danger" });
+    if (state.operation === "Launch" && documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
   }
 
   function requestRuntimeRefresh(): void {
-    runtimeError = null;
     appRuntime.runCommand(readRuntime(true), {
       operation: "refresh mobile workspace runtime",
       safeContext: { workspaceId, remote: Boolean(hostKey) },
@@ -655,7 +656,8 @@
         onFailure: (failure) => {
           launchingTarget = null;
           if (launchClaim) failWorkspaceLaunch(launchClaim);
-          showWorkspaceLaunchError(failureMessage(failure, "Launch failed"));
+          showFlash(failureMessage(failure, "Launch failed"), { tone: "danger" });
+          if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
         },
       },
     );
@@ -680,7 +682,8 @@
           acceptedAt,
           onExpired: Effect.sync(() => {
             if (workspaceId === launchClaim.workspaceId && hostKey === launchClaim.workspaceHostKey) {
-              showWorkspaceLaunchError(`${label} launched, but its session did not become available`);
+              showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+              if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
             }
           }),
         });
@@ -1006,7 +1009,7 @@
     <div class="mobile-workspace-terminal__state"><Spinner size={18} /><span>Loading terminal sessions…</span></div>
   {:else if runtimeError && !runtime && !selectedHostKey}
     <div class="mobile-workspace-terminal__state error">
-      <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, hostKey)} shown={visible} />
+      <ErrorShown kind="workspace_opened" scope={`${quickActionWorkspaceKey(workspaceId, hostKey)}:runtime:${runtimeErrorAttempt}`} shown={visible} />
       <strong>Terminal runtime unavailable</strong><span>{runtimeError}</span>
       <button type="button" onclick={requestRuntimeRefresh}><RefreshCwIcon size="18" aria-hidden="true" />Reconnect</button>
     </div>
@@ -1014,7 +1017,7 @@
     <div class="mobile-workspace-terminal__stage" aria-label={`Selected terminal: ${selectedSession?.label ?? "Terminal"}`}>
       {#if runtimeError}
         <div class="mobile-workspace-terminal__runtime-error" role="status">
-          <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, hostKey)} shown={visible} />
+          <ErrorShown kind="workspace_opened" scope={`${quickActionWorkspaceKey(workspaceId, hostKey)}:runtime:${runtimeErrorAttempt}`} shown={visible} />
           <span><strong>Runtime sessions unavailable</strong><small>{runtimeError}</small></span>
           <button type="button" aria-label="Retry runtime sessions" onclick={requestRuntimeRefresh}>
             <RefreshCwIcon size="16" aria-hidden="true" />Retry

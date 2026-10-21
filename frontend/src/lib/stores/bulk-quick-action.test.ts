@@ -1,5 +1,3 @@
-import { cleanup, render } from "@testing-library/svelte";
-import ErrorHarness from "../components/shared/ErrorShownTestHarness.svelte";
 import { Effect } from "effect";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
@@ -39,7 +37,6 @@ it.each(["partial", "all"])("counts one error flash for %s bulk workspace creati
   const runtime = makeAppRuntime();
   const sent = vi.fn();
   await startTestTelemetry(runtime, sent).ready;
-  render(ErrorHarness, { runtime, flashesOnly: true });
   try {
     runQuickActionOnItems(
       runtime,
@@ -66,7 +63,6 @@ it.each(["partial", "all"])("counts one error flash for %s bulk workspace creati
       ),
     );
   } finally {
-    cleanup();
     await Effect.runPromise(runtime.disposeEffect);
     for (const flash of getFlashes()) dismissFlash(flash.id);
     vi.unstubAllGlobals();

@@ -185,6 +185,8 @@ export function startRuntimeTelemetry(
   const reportedDay = new Map<string, string>();
   const pending = new Map<string, { action: VisitEvent; day: string }>();
   const pendingOutcomes = new Map<VisitEvent, string>();
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let quiet = true;
   const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
   const stored = actionClaims(storageKey);
   const post = options.post ?? postReceipt;
@@ -232,6 +234,8 @@ export function startRuntimeTelemetry(
     reporter.reportVisit(action);
   };
   const flush = () => {
+    clearTimeout(retry);
+    retry = undefined;
     for (const [key, { action, day }] of pending) {
       if (day === today()) send(action);
       else pending.delete(key);
@@ -240,8 +244,12 @@ export function startRuntimeTelemetry(
       if (day === today()) send(outcome);
       else pendingOutcomes.delete(outcome);
     }
+    // Kit drops visits during backoff and only wakes its own pending daily events.
+    if (!quiet && (pending.size > 0 || pendingOutcomes.size > 0)) retry = setTimeout(flush, 1_000);
   };
   const unsubscribe = reporter.onQuietChange((value) => {
+    quiet = value;
+    if (quiet) clearTimeout(retry);
     if (!value) flush();
   });
   reporters.set(runtime, {
@@ -252,18 +260,19 @@ export function startRuntimeTelemetry(
         properties: { surface: "web", ...(outcome.event === "error_shown" ? { kind: outcome.kind } : {}) },
       };
       pendingOutcomes.set(visit, today());
-      send(visit);
+      flush();
     },
     reportAction: (action) => {
       const visit = { event: action.event, properties: { ...action.properties, surface: "web" } };
       pending.set(coreKey(action)!, { action: visit, day: today() });
-      send(visit);
+      flush();
     },
   });
   return {
     ...reporter,
     stop: () => {
       reporters.delete(runtime);
+      clearTimeout(retry);
       pending.clear();
       pendingOutcomes.clear();
       unsubscribe();

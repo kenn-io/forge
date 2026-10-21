@@ -458,6 +458,38 @@ func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
 	}
 }
 
+func TestHandleUpdateSettingsMCPDisableSurvivesPortRemoval(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t,
+		"host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = 9192\n", &serverfake.MockGH{})
+
+	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		MCP: &spokeapi.McpSettingsUpdate{Enabled: new(false)},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var response spokeapi.SettingsResponse
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+	assert.False(response.MCP.Enabled)
+
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(config.MCP{Enabled: new(false), Port: 9192}, reloaded.MCP)
+	assert.False(reloaded.MCPEnabled())
+
+	contents, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	require.Contains(t, string(contents), "  port = 9192\n")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(strings.Replace(string(contents), "  port = 9192\n", "", 1)), 0o600))
+
+	reloaded, err = config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Zero(reloaded.MCP.Port)
+	assert.Equal(new(false), reloaded.MCP.Enabled)
+	assert.False(reloaded.MCPEnabled())
+	assert.Empty(reloaded.MCPListenAddr())
+}
+
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

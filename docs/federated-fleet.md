@@ -266,7 +266,8 @@ Serve publishes on HTTPS port 443 by default. To use another port, such as
 `https://build-a.example.ts.net:8091`, pass `--tailscale-https-port 8091`.
 Running setup again keeps the port of the existing origin.
 
-When the MCP server is enabled, the same logins can reach it at the Serve
+The MCP server is on by default for a loopback host without a saved MCP port,
+or when `[mcp].enabled = true`. The same logins can reach it at the Serve
 origin without a token, for example `https://build-a.example.ts.net/mcp`.
 
 If your LAN, UniFi network, VPN, or reverse proxy already provides private

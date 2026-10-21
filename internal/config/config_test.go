@@ -134,12 +134,12 @@ func TestSetMCPEnabled(t *testing.T) {
 		{"explicit off returns to default", MCP{Enabled: new(false)}, true, nil},
 		{"explicit on stays on", MCP{Enabled: new(true)}, true, new(true)},
 		{"explicit on turns off", MCP{Enabled: new(true)}, false, new(false)},
-		{"saved port stays off", MCP{Port: 9192}, false, nil},
+		{"saved port stays off", MCP{Port: 9192}, false, new(false)},
 		{"saved port turns on", MCP{Port: 9192}, true, new(true)},
 		{"saved port explicit off stays off", MCP{Enabled: new(false), Port: 9192}, false, new(false)},
 		{"saved port explicit off turns on", MCP{Enabled: new(false), Port: 9192}, true, new(true)},
 		{"saved port explicit on stays on", MCP{Enabled: new(true), Port: 9192}, true, new(true)},
-		{"saved port explicit on returns to default", MCP{Enabled: new(true), Port: 9192}, false, nil},
+		{"saved port explicit on turns off", MCP{Enabled: new(true), Port: 9192}, false, new(false)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Host: "127.0.0.1", MCP: tt.input}

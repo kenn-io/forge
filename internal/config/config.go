@@ -1173,10 +1173,10 @@ func (c *Config) mcpDefaultOn() bool {
 }
 
 func (c *Config) SetMCPEnabled(want bool) {
-	if want == c.MCPEnabled() {
+	if want && c.MCPEnabled() {
 		return
 	}
-	if want == c.mcpDefaultOn() {
+	if want && c.mcpDefaultOn() {
 		c.MCP.Enabled = nil
 	} else {
 		c.MCP.Enabled = new(want)

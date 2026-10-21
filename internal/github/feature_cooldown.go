@@ -317,7 +317,7 @@ func (s *Syncer) recordRepositoryFeatureDisabledUntil(
 		return time.Time{}, false
 	}
 	nextProbe := s.now().UTC().Add(repositoryFeatureProbeInterval)
-	s.featureCooldowns.deferUntil(repo, feature, nextProbe)
+	s.deferRepositoryFeature(repo, feature, nextProbe)
 	slog.Info("repository feature disabled; deferring background sync",
 		"platform", repoPlatform(repo),
 		"host", repoHost(repo),

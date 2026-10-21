@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sync"
 	"syscall"
+	"time"
 
 	gh "github.com/google/go-github/v92/github"
 	bitbucket "github.com/ktrysmt/go-bitbucket"
@@ -75,6 +76,20 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 		s.featureCooldowns.mu.Unlock()
 		if !state.nextProbe.After(s.nowUTC()) && (scope == failMR && caps.ReadMergeRequests || scope == failIssues && caps.ReadIssues) {
 			s.observeSync(ctx, repo, source, err)
+		}
+	}
+}
+
+// deferRepositoryFeature ends the repository's outages for sources the
+// cooldown governs, so a failure after the cooldown reports again.
+func (s *Syncer) deferRepositoryFeature(repo RepoRef, feature string, nextProbe time.Time) {
+	s.featureCooldowns.deferUntil(repo, feature, nextProbe)
+	s.syncFailuresMu.Lock()
+	defer s.syncFailuresMu.Unlock()
+	for source, failures := range s.syncFailures {
+		if syncSourceFeature(source) == feature {
+			delete(failures, mergeQueueRepoKey(repo))
+			delete(failures, repoFailKey(repo))
 		}
 	}
 }

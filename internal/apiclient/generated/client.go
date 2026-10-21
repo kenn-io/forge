@@ -12691,14 +12691,26 @@ func (c *Client) StreamEventsStreamWithResponse(ctx context.Context, options *St
 		}
 		out.Stream200 = runtime.NewEventStream[[]byte](resp.Raw)
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
 
 		if resp.Raw != nil && resp.Raw.Body != nil {
 			_ = resp.Raw.Body.Close()
 		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StreamEventsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StreamEventsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -12743,14 +12755,26 @@ func (c *Client) StreamFederationProviderEventsStreamWithResponse(ctx context.Co
 		}
 		out.Stream200 = runtime.NewEventStream[[]byte](resp.Raw)
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
 
 		if resp.Raw != nil && resp.Raw.Body != nil {
 			_ = resp.Raw.Body.Close()
 		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StreamFederationProviderEventsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StreamFederationProviderEventsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13270,10 +13294,22 @@ func (c *Client) ListWorkflowRunsWithResponse(ctx context.Context, options *List
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowRunsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowRunsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13326,10 +13362,22 @@ func (c *Client) ListWorkflowRunJobsWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowRunJobsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowRunJobsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13382,10 +13430,22 @@ func (c *Client) ListWorkflowsWithResponse(ctx context.Context, options *ListWor
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13439,10 +13499,22 @@ func (c *Client) DispatchWorkflowWithResponse(ctx context.Context, options *Disp
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DispatchWorkflowErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DispatchWorkflowErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13515,10 +13587,22 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListActivityErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListActivityErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13576,10 +13660,22 @@ func (c *Client) ListActivityAuthorsWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListActivityAuthorsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListActivityAuthorsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13652,10 +13748,22 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListActivityThreadEventsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListActivityThreadEventsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13709,10 +13817,22 @@ func (c *Client) ReceiveAgentHookWithResponse(ctx context.Context, options *Rece
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReceiveAgentHookErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReceiveAgentHookErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13764,10 +13884,22 @@ func (c *Client) ListArchivePacingWithResponse(ctx context.Context, reqEditors .
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListArchivePacingErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListArchivePacingErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13821,10 +13953,22 @@ func (c *Client) PauseArchivesWithResponse(ctx context.Context, options *PauseAr
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PauseArchivesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PauseArchivesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13883,10 +14027,22 @@ func (c *Client) GetArchiveReportWithResponse(ctx context.Context, options *GetA
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetArchiveReportErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetArchiveReportErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -13945,10 +14101,22 @@ func (c *Client) GetArchiveSnapshotWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetArchiveSnapshotErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetArchiveSnapshotErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14002,10 +14170,22 @@ func (c *Client) StartArchivesWithResponse(ctx context.Context, options *StartAr
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StartArchivesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StartArchivesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14058,10 +14238,22 @@ func (c *Client) ListArchiveStatusWithResponse(ctx context.Context, options *Lis
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListArchiveStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListArchiveStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14113,10 +14305,22 @@ func (c *Client) ListDevboxConnectionsWithResponse(ctx context.Context, reqEdito
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListDevboxConnectionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxConnectionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14170,10 +14374,22 @@ func (c *Client) ConnectDevboxWithResponse(ctx context.Context, options *Connect
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ConnectDevboxErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ConnectDevboxErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14230,10 +14446,22 @@ func (c *Client) DiscoverDevboxesWithResponse(ctx context.Context, options *Disc
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DiscoverDevboxesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DiscoverDevboxesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14272,10 +14500,22 @@ func (c *Client) DisconnectDevboxWithResponse(ctx context.Context, options *Disc
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DisconnectDevboxErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DisconnectDevboxErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14314,10 +14554,22 @@ func (c *Client) ReconnectDevboxWithResponse(ctx context.Context, options *Recon
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReconnectDevboxErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReconnectDevboxErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14371,10 +14623,22 @@ func (c *Client) StoreDevboxPasteImageWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StoreDevboxPasteImageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StoreDevboxPasteImageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14427,10 +14691,22 @@ func (c *Client) ListDevboxWorkspacesWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListDevboxWorkspacesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxWorkspacesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14484,10 +14760,22 @@ func (c *Client) CreateDevboxWorkspaceWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14530,10 +14818,22 @@ func (c *Client) DeleteDevboxWorkspaceWithResponse(ctx context.Context, options 
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14586,10 +14886,22 @@ func (c *Client) GetDevboxWorkspaceWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14642,10 +14954,22 @@ func (c *Client) ListDevboxAgentSessionsWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListDevboxAgentSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxAgentSessionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14698,10 +15022,22 @@ func (c *Client) GetDevboxCommitsWithResponse(ctx context.Context, options *GetD
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxCommitsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxCommitsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14764,10 +15100,22 @@ func (c *Client) GetDevboxDiffWithResponse(ctx context.Context, options *GetDevb
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14824,10 +15172,22 @@ func (c *Client) WatchDevboxDiffWithResponse(ctx context.Context, options *Watch
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(WatchDevboxDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WatchDevboxDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14891,10 +15251,22 @@ func (c *Client) GetDevboxFilePreviewWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxFilePreviewErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxFilePreviewErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -14955,10 +15327,22 @@ func (c *Client) GetDevboxFilesWithResponse(ctx context.Context, options *GetDev
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxFilesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxFilesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15011,10 +15395,22 @@ func (c *Client) PullDevboxWorkspaceWithResponse(ctx context.Context, options *P
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PullDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PullDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15067,10 +15463,22 @@ func (c *Client) PushDevboxWorkspaceWithResponse(ctx context.Context, options *P
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PushDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PushDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15123,10 +15531,22 @@ func (c *Client) RefreshDevboxWorkspaceWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15179,10 +15599,22 @@ func (c *Client) RetryDevboxWorkspaceWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RetryDevboxWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RetryDevboxWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15239,10 +15671,22 @@ func (c *Client) GetDevboxRuntimeWithResponse(ctx context.Context, options *GetD
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxRuntimeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxRuntimeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15296,10 +15740,22 @@ func (c *Client) LaunchDevboxHandoffWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchDevboxHandoffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchDevboxHandoffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15353,10 +15809,22 @@ func (c *Client) LaunchDevboxSessionWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchDevboxSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchDevboxSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15395,10 +15863,22 @@ func (c *Client) StopDevboxSessionWithResponse(ctx context.Context, options *Sto
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StopDevboxSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopDevboxSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15452,10 +15932,22 @@ func (c *Client) RenameDevboxSessionWithResponse(ctx context.Context, options *R
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RenameDevboxSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RenameDevboxSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15508,10 +16000,22 @@ func (c *Client) GetDevboxAttachSpecWithResponse(ctx context.Context, options *G
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxAttachSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxAttachSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15565,10 +16069,22 @@ func (c *Client) SendDevboxInitialMessageWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SendDevboxInitialMessageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SendDevboxInitialMessageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15621,10 +16137,22 @@ func (c *Client) ListDevboxWorkspaceTargetsWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListDevboxWorkspaceTargetsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDevboxWorkspaceTargetsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15664,10 +16192,22 @@ func (c *Client) UpdateDevboxWorkspaceTargetWithResponse(ctx context.Context, op
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateDevboxWorkspaceTargetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateDevboxWorkspaceTargetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15720,10 +16260,22 @@ func (c *Client) GetDevboxWorkspaceViewStateWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDevboxWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDevboxWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15777,10 +16329,22 @@ func (c *Client) UpdateDevboxWorkspaceViewStateWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateDevboxWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateDevboxWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15837,10 +16401,22 @@ func (c *Client) BrowseDocsFoldersWithResponse(ctx context.Context, options *Bro
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(BrowseDocsFoldersErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "BrowseDocsFoldersErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15892,10 +16468,22 @@ func (c *Client) ListDocsFoldersWithResponse(ctx context.Context, reqEditors ...
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListDocsFoldersErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListDocsFoldersErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15949,10 +16537,22 @@ func (c *Client) CreateDocsFolderWithResponse(ctx context.Context, options *Crea
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateDocsFolderErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateDocsFolderErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -15991,10 +16591,22 @@ func (c *Client) DeleteDocsFolderWithResponse(ctx context.Context, options *Dele
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteDocsFolderErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteDocsFolderErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16048,10 +16660,22 @@ func (c *Client) UpdateDocsFolderWithResponse(ctx context.Context, options *Upda
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateDocsFolderErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateDocsFolderErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16099,10 +16723,22 @@ func (c *Client) ReadDocsBlobWithResponse(ctx context.Context, options *ReadDocs
 			ContentType:   resp.Headers.Get("Content-Type"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReadDocsBlobErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReadDocsBlobErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16145,10 +16781,22 @@ func (c *Client) DeleteDocsFileWithResponse(ctx context.Context, options *Delete
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteDocsFileErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteDocsFileErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16205,10 +16853,22 @@ func (c *Client) ReadDocsFileWithResponse(ctx context.Context, options *ReadDocs
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReadDocsFileErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReadDocsFileErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16266,10 +16926,22 @@ func (c *Client) CreateDocsFileWithResponse(ctx context.Context, options *Create
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateDocsFileErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateDocsFileErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16327,10 +16999,22 @@ func (c *Client) WriteDocsFileWithResponse(ctx context.Context, options *WriteDo
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(WriteDocsFileErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WriteDocsFileErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16384,10 +17068,22 @@ func (c *Client) RenameDocsFileWithResponse(ctx context.Context, options *Rename
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RenameDocsFileErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RenameDocsFileErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16440,10 +17136,22 @@ func (c *Client) GetDocsGitStatusWithResponse(ctx context.Context, options *GetD
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDocsGitStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDocsGitStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16496,10 +17204,22 @@ func (c *Client) GetDocsGitChangesWithResponse(ctx context.Context, options *Get
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDocsGitChangesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDocsGitChangesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16553,10 +17273,22 @@ func (c *Client) PublishDocsGitWithResponse(ctx context.Context, options *Publis
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PublishDocsGitErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PublishDocsGitErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16609,10 +17341,22 @@ func (c *Client) PullDocsGitWithResponse(ctx context.Context, options *PullDocsG
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PullDocsGitErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PullDocsGitErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16670,10 +17414,22 @@ func (c *Client) SearchDocsFolderWithResponse(ctx context.Context, options *Sear
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SearchDocsFolderErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SearchDocsFolderErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16726,10 +17482,22 @@ func (c *Client) GetDocsTreeWithResponse(ctx context.Context, options *GetDocsTr
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetDocsTreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetDocsTreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16787,10 +17555,22 @@ func (c *Client) SearchDocsWithResponse(ctx context.Context, options *SearchDocs
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SearchDocsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SearchDocsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16833,10 +17613,22 @@ func (c *Client) StreamEventsWithResponse(ctx context.Context, options *StreamEv
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StreamEventsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StreamEventsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16888,10 +17680,22 @@ func (c *Client) ListExternalContextSourcesWithResponse(ctx context.Context, req
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListExternalContextSourcesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListExternalContextSourcesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -16943,10 +17747,22 @@ func (c *Client) IssueFederationBrowserLoginTicketWithResponse(ctx context.Conte
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(IssueFederationBrowserLoginTicketErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "IssueFederationBrowserLoginTicketErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17000,10 +17816,22 @@ func (c *Client) BeginFederationEnrollmentWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(BeginFederationEnrollmentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "BeginFederationEnrollmentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17042,10 +17870,22 @@ func (c *Client) AbortFederationEnrollmentWithResponse(ctx context.Context, opti
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(AbortFederationEnrollmentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "AbortFederationEnrollmentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17099,10 +17939,22 @@ func (c *Client) ActivateFederationEnrollmentWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ActivateFederationEnrollmentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ActivateFederationEnrollmentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17155,10 +18007,22 @@ func (c *Client) BeginFederationSpokePreparationWithResponse(ctx context.Context
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(BeginFederationSpokePreparationErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "BeginFederationSpokePreparationErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17212,10 +18076,22 @@ func (c *Client) SealFederationSpokePreparationWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SealFederationSpokePreparationErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SealFederationSpokePreparationErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17258,10 +18134,22 @@ func (c *Client) StreamFederationProviderEventsWithResponse(ctx context.Context,
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StreamFederationProviderEventsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StreamFederationProviderEventsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17313,10 +18201,22 @@ func (c *Client) GetFederationIdentityWithResponse(ctx context.Context, reqEdito
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetFederationIdentityErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFederationIdentityErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17370,10 +18270,22 @@ func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationImportReviewDraftErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationImportReviewDraftErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17427,10 +18339,22 @@ func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationImportWorkflowStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationImportWorkflowStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17484,10 +18408,22 @@ func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx cont
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationFilterUnassignedActivitySubjectsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationFilterUnassignedActivitySubjectsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17541,10 +18477,22 @@ func (c *Client) FederationGetDiffDescriptorWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationGetDiffDescriptorErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationGetDiffDescriptorErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17598,10 +18546,22 @@ func (c *Client) FederationResolveGithubRepositoryIDWithResponse(ctx context.Con
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationResolveGithubRepositoryIDErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationResolveGithubRepositoryIDErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17655,10 +18615,22 @@ func (c *Client) FederationGetRepositoryDescriptorWithResponse(ctx context.Conte
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationGetRepositoryDescriptorErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationGetRepositoryDescriptorErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17710,10 +18682,22 @@ func (c *Client) FederationGetProviderSettingsWithResponse(ctx context.Context, 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationGetProviderSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationGetProviderSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17767,10 +18751,22 @@ func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Contex
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationUpdateProviderSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationUpdateProviderSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17824,10 +18820,22 @@ func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationSetWorkflowStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationSetWorkflowStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17881,10 +18889,22 @@ func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationListWorkflowStatesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationListWorkflowStatesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17938,10 +18958,22 @@ func (c *Client) FederationPutWorklistWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationPutWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationPutWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -17994,10 +19026,22 @@ func (c *Client) FederationClearWorklistMarksWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationClearWorklistMarksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationClearWorklistMarksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18037,10 +19081,22 @@ func (c *Client) FederationAutoAssignWorkspaceItemWithResponse(ctx context.Conte
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationAutoAssignWorkspaceItemErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationAutoAssignWorkspaceItemErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18094,10 +19150,22 @@ func (c *Client) FederationResolveWorkspaceLaunchSpecWithResponse(ctx context.Co
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationResolveWorkspaceLaunchSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationResolveWorkspaceLaunchSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18151,10 +19219,22 @@ func (c *Client) FederationRefreshWorkspaceLaunchSpecWithResponse(ctx context.Co
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationRefreshWorkspaceLaunchSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationRefreshWorkspaceLaunchSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18208,10 +19288,22 @@ func (c *Client) FederationQueryWorkspaceProviderStateWithResponse(ctx context.C
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(FederationQueryWorkspaceProviderStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "FederationQueryWorkspaceProviderStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18249,10 +19341,22 @@ func (c *Client) QueueFederationWorkspaceCleanupWithResponse(ctx context.Context
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(QueueFederationWorkspaceCleanupErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "QueueFederationWorkspaceCleanupErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18309,10 +19413,22 @@ func (c *Client) CompleteFilesystemPathWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CompleteFilesystemPathErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CompleteFilesystemPathErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18369,10 +19485,22 @@ func (c *Client) ValidateFilesystemRepoWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ValidateFilesystemRepoErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ValidateFilesystemRepoErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18426,10 +19554,22 @@ func (c *Client) CreateFleetEnrollmentTokenWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateFleetEnrollmentTokenErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetEnrollmentTokenErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18468,10 +19608,22 @@ func (c *Client) RevokeFederationEnrollmentWithResponse(ctx context.Context, opt
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RevokeFederationEnrollmentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RevokeFederationEnrollmentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18501,10 +19653,25 @@ func (c *Client) CompleteFleetFilesystemPathWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CompleteFleetFilesystemPathResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CompleteFleetFilesystemPathResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18534,10 +19701,25 @@ func (c *Client) ValidateFleetFilesystemRepoWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(ValidateFleetFilesystemRepoResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ValidateFleetFilesystemRepoResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18568,10 +19750,25 @@ func (c *Client) CreateFleetIssueWorkspaceOnPlatformHostWithResponse(ctx context
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetIssueWorkspaceOnPlatformHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetIssueWorkspaceOnPlatformHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18602,10 +19799,25 @@ func (c *Client) CreateFleetRepoWorkspaceOnPlatformHostWithResponse(ctx context.
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetRepoWorkspaceOnPlatformHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetRepoWorkspaceOnPlatformHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18636,10 +19848,25 @@ func (c *Client) CreateFleetIssueWorkspaceWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetIssueWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetIssueWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18670,10 +19897,25 @@ func (c *Client) RegisterFleetProjectWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RegisterFleetProjectResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RegisterFleetProjectResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18704,10 +19946,25 @@ func (c *Client) CloneFleetProjectWithResponse(ctx context.Context, options *Clo
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CloneFleetProjectResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CloneFleetProjectResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18737,10 +19994,25 @@ func (c *Client) DeleteFleetProjectWithResponse(ctx context.Context, options *De
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(DeleteFleetProjectResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteFleetProjectResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18770,10 +20042,25 @@ func (c *Client) GetFleetProjectWithResponse(ctx context.Context, options *GetFl
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetProjectResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetProjectResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18803,10 +20090,25 @@ func (c *Client) ListFleetProjectBranchesWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(ListFleetProjectBranchesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetProjectBranchesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18836,10 +20138,25 @@ func (c *Client) ListFleetProjectWorktreesWithResponse(ctx context.Context, opti
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(ListFleetProjectWorktreesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetProjectWorktreesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18870,10 +20187,25 @@ func (c *Client) CreateFleetProjectWorktreeWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetProjectWorktreeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetProjectWorktreeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18904,10 +20236,25 @@ func (c *Client) CreateFleetProjectWorktreeFromMergeRequestWithResponse(ctx cont
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetProjectWorktreeFromMergeRequestResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetProjectWorktreeFromMergeRequestResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18938,10 +20285,25 @@ func (c *Client) RemoveFleetProjectWorktreeWithResponse(ctx context.Context, opt
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RemoveFleetProjectWorktreeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RemoveFleetProjectWorktreeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -18971,10 +20333,25 @@ func (c *Client) InspectFleetProjectWorktreeWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(InspectFleetProjectWorktreeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "InspectFleetProjectWorktreeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19005,10 +20382,25 @@ func (c *Client) SetFleetProjectWorktreeLinksWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(SetFleetProjectWorktreeLinksResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetFleetProjectWorktreeLinksResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19038,10 +20430,25 @@ func (c *Client) RefreshFleetProjectWorktreeStatsWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RefreshFleetProjectWorktreeStatsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshFleetProjectWorktreeStatsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19071,10 +20478,25 @@ func (c *Client) GetFleetProjectWorktreeRuntimeWithResponse(ctx context.Context,
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetProjectWorktreeRuntimeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetProjectWorktreeRuntimeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19105,10 +20527,25 @@ func (c *Client) LaunchFleetProjectWorktreeRuntimeSessionWithResponse(ctx contex
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(LaunchFleetProjectWorktreeRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchFleetProjectWorktreeRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19138,10 +20575,25 @@ func (c *Client) StopFleetProjectWorktreeRuntimeSessionWithResponse(ctx context.
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(StopFleetProjectWorktreeRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopFleetProjectWorktreeRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19171,10 +20623,25 @@ func (c *Client) GetFleetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19204,10 +20671,25 @@ func (c *Client) EnsureFleetProjectWorktreeRuntimeShellWithResponse(ctx context.
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(EnsureFleetProjectWorktreeRuntimeShellResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnsureFleetProjectWorktreeRuntimeShellResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19238,10 +20720,25 @@ func (c *Client) SetFleetProjectWorktreeSessionBackendWithResponse(ctx context.C
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(SetFleetProjectWorktreeSessionBackendResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetFleetProjectWorktreeSessionBackendResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19272,10 +20769,25 @@ func (c *Client) CreateFleetRepoWorkspaceWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetRepoWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetRepoWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19306,10 +20818,25 @@ func (c *Client) LaunchFleetHostRuntimeSessionWithResponse(ctx context.Context, 
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(LaunchFleetHostRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchFleetHostRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19339,10 +20866,25 @@ func (c *Client) StopFleetHostRuntimeSessionWithResponse(ctx context.Context, op
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(StopFleetHostRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopFleetHostRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19372,10 +20914,25 @@ func (c *Client) GetFleetHostRuntimeSessionAttachSpecWithResponse(ctx context.Co
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetHostRuntimeSessionAttachSpecResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetHostRuntimeSessionAttachSpecResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19406,10 +20963,25 @@ func (c *Client) StoreFleetTerminalPasteImageWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(StoreFleetTerminalPasteImageResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StoreFleetTerminalPasteImageResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19439,10 +21011,25 @@ func (c *Client) ListFleetWorkspacesWithResponse(ctx context.Context, options *L
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(ListFleetWorkspacesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetWorkspacesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19473,10 +21060,25 @@ func (c *Client) CreateFleetWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(CreateFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19506,10 +21108,25 @@ func (c *Client) DeleteFleetWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(DeleteFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19539,10 +21156,25 @@ func (c *Client) GetFleetWorkspaceWithResponse(ctx context.Context, options *Get
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19572,10 +21204,25 @@ func (c *Client) GetFleetWorkspaceCommitsWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceCommitsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceCommitsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19605,10 +21252,25 @@ func (c *Client) GetFleetWorkspaceDiffWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceDiffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceDiffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19638,10 +21300,25 @@ func (c *Client) WatchFleetWorkspaceDiffWithResponse(ctx context.Context, option
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(WatchFleetWorkspaceDiffResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WatchFleetWorkspaceDiffResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19671,10 +21348,25 @@ func (c *Client) GetFleetWorkspaceFilePreviewWithResponse(ctx context.Context, o
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceFilePreviewResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceFilePreviewResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19704,10 +21396,25 @@ func (c *Client) GetFleetWorkspaceFilesWithResponse(ctx context.Context, options
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceFilesResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceFilesResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19737,10 +21444,25 @@ func (c *Client) PullFleetWorkspaceBranchWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(PullFleetWorkspaceBranchResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PullFleetWorkspaceBranchResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19770,10 +21492,25 @@ func (c *Client) PushFleetWorkspaceBranchWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(PushFleetWorkspaceBranchResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PushFleetWorkspaceBranchResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19803,10 +21540,25 @@ func (c *Client) RefreshFleetWorkspaceWithResponse(ctx context.Context, options 
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RefreshFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19836,10 +21588,25 @@ func (c *Client) RetryFleetWorkspaceWithResponse(ctx context.Context, options *R
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RetryFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RetryFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19869,10 +21636,25 @@ func (c *Client) RevealFleetWorkspaceWithResponse(ctx context.Context, options *
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RevealFleetWorkspaceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RevealFleetWorkspaceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19902,10 +21684,25 @@ func (c *Client) GetFleetWorkspaceRuntimeWithResponse(ctx context.Context, optio
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceRuntimeResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceRuntimeResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19936,10 +21733,25 @@ func (c *Client) LaunchFleetWorkspaceRuntimeSessionWithResponse(ctx context.Cont
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(LaunchFleetWorkspaceRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchFleetWorkspaceRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -19969,10 +21781,25 @@ func (c *Client) StopFleetWorkspaceRuntimeSessionWithResponse(ctx context.Contex
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(StopFleetWorkspaceRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopFleetWorkspaceRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20003,10 +21830,25 @@ func (c *Client) RenameFleetWorkspaceRuntimeSessionWithResponse(ctx context.Cont
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(RenameFleetWorkspaceRuntimeSessionResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RenameFleetWorkspaceRuntimeSessionResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20036,10 +21878,25 @@ func (c *Client) GetFleetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx conte
 		StatusCode:   resp.StatusCode,
 	}
 	switch resp.StatusCode {
-	case 200:
-		return out, nil
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceRuntimeSessionAttachSpecResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceRuntimeSessionAttachSpecResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		if resp.StatusCode/100 == 2 {
+			return out, nil
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20092,10 +21949,22 @@ func (c *Client) ListFleetWorkspaceTargetsWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(ListFleetWorkspaceTargetsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListFleetWorkspaceTargetsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20135,10 +22004,22 @@ func (c *Client) UpdateFleetWorkspaceTargetWithResponse(ctx context.Context, opt
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(UpdateFleetWorkspaceTargetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateFleetWorkspaceTargetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20191,10 +22072,22 @@ func (c *Client) GetFleetWorkspaceViewStateWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(GetFleetWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20248,10 +22141,22 @@ func (c *Client) UpdateFleetWorkspaceViewStateWithResponse(ctx context.Context, 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.JSONDefault = new(UpdateFleetWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateFleetWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20305,10 +22210,22 @@ func (c *Client) CreateFleetBrowserLoginWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateFleetBrowserLoginErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateFleetBrowserLoginErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20362,10 +22279,22 @@ func (c *Client) JoinFederationWithResponse(ctx context.Context, options *JoinFe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(JoinFederationErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "JoinFederationErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20417,10 +22346,22 @@ func (c *Client) PrepareFederationSpokeWithResponse(ctx context.Context, reqEdit
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PrepareFederationSpokeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PrepareFederationSpokeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20474,10 +22415,22 @@ func (c *Client) AbortFederationSpokePreparationWithResponse(ctx context.Context
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(AbortFederationSpokePreparationErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "AbortFederationSpokePreparationErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20531,10 +22484,22 @@ func (c *Client) QueryGhWithResponse(ctx context.Context, options *QueryGhReques
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(QueryGhErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "QueryGhErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20595,10 +22560,22 @@ func (c *Client) ListWorkflowRunsOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowRunsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowRunsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20651,10 +22628,22 @@ func (c *Client) ListWorkflowRunJobsOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowRunJobsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowRunJobsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20707,10 +22696,22 @@ func (c *Client) ListWorkflowsOnHostWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkflowsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkflowsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20764,10 +22765,22 @@ func (c *Client) DispatchWorkflowOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DispatchWorkflowOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DispatchWorkflowOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20821,10 +22834,22 @@ func (c *Client) CreateIssueOnHostWithResponse(ctx context.Context, options *Cre
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20877,10 +22902,22 @@ func (c *Client) GetIssueOnHostWithResponse(ctx context.Context, options *GetIss
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetIssueOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetIssueOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20934,10 +22971,22 @@ func (c *Client) EditIssueContentOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditIssueContentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditIssueContentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -20991,10 +23040,22 @@ func (c *Client) UpdateIssueAssigneesOnHostWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateIssueAssigneesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueAssigneesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21048,10 +23109,22 @@ func (c *Client) SetIssueAssigneesOnHostWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueAssigneesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueAssigneesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21105,10 +23178,22 @@ func (c *Client) PostIssueCommentOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PostIssueCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PostIssueCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21147,10 +23232,22 @@ func (c *Client) DeleteIssueCommentOnHostWithResponse(ctx context.Context, optio
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteIssueCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteIssueCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21204,10 +23301,22 @@ func (c *Client) EditIssueCommentOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditIssueCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditIssueCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21261,10 +23370,22 @@ func (c *Client) SetIssueGithubStateOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueGithubStateOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueGithubStateOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21317,10 +23438,22 @@ func (c *Client) ListIssueKataLinksOnHostWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListIssueKataLinksOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListIssueKataLinksOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21374,10 +23507,22 @@ func (c *Client) CreateIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueKataLinkOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueKataLinkOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21416,10 +23561,22 @@ func (c *Client) DeleteIssueKataLinkOnHostWithResponse(ctx context.Context, opti
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteIssueKataLinkOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteIssueKataLinkOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21473,10 +23630,22 @@ func (c *Client) UpdateIssueLabelsOnHostWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateIssueLabelsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueLabelsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21530,10 +23699,22 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueLabelsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueLabelsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21586,10 +23767,22 @@ func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncI
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SyncIssueOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SyncIssueOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21628,10 +23821,22 @@ func (c *Client) EnqueueIssueSyncOnHostWithResponse(ctx context.Context, options
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EnqueueIssueSyncOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnqueueIssueSyncOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21685,10 +23890,22 @@ func (c *Client) CreateIssueWorkspaceOnHostWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueWorkspaceOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueWorkspaceOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21741,10 +23958,22 @@ func (c *Client) GetPullOnHostWithResponse(ctx context.Context, options *GetPull
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21798,10 +24027,22 @@ func (c *Client) EditPrContentOnHostWithResponse(ctx context.Context, options *E
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrContentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrContentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21855,10 +24096,22 @@ func (c *Client) ApprovePullOnHostWithResponse(ctx context.Context, options *App
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApprovePullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApprovePullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21911,10 +24164,22 @@ func (c *Client) ApprovePullWorkflowsOnHostWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApprovePullWorkflowsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApprovePullWorkflowsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -21968,10 +24233,22 @@ func (c *Client) UpdatePrAssigneesOnHostWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePrAssigneesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrAssigneesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22025,10 +24302,22 @@ func (c *Client) SetPrAssigneesOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrAssigneesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrAssigneesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22081,10 +24370,22 @@ func (c *Client) RefreshPullCiOnHostWithResponse(ctx context.Context, options *R
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshPullCiOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshPullCiOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22138,10 +24439,22 @@ func (c *Client) PostPrCommentOnHostWithResponse(ctx context.Context, options *P
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PostPrCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PostPrCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22180,10 +24493,22 @@ func (c *Client) DeletePrCommentOnHostWithResponse(ctx context.Context, options 
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePrCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePrCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22237,10 +24562,22 @@ func (c *Client) EditPrCommentOnHostWithResponse(ctx context.Context, options *E
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22293,10 +24630,22 @@ func (c *Client) GetPullCommitsOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullCommitsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullCommitsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22356,10 +24705,22 @@ func (c *Client) GetPullDiffOnHostWithResponse(ctx context.Context, options *Get
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullDiffOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullDiffOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22413,10 +24774,22 @@ func (c *Client) ReplyToDiscussionOnHostWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReplyToDiscussionOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReplyToDiscussionOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22456,10 +24829,22 @@ func (c *Client) ResolveDiscussionOnHostWithResponse(ctx context.Context, option
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolveDiscussionOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolveDiscussionOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22518,10 +24903,22 @@ func (c *Client) GetPullExternalContextOnHostWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullExternalContextOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullExternalContextOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22575,10 +24972,22 @@ func (c *Client) RunPullExternalContextActionOnHostWithResponse(ctx context.Cont
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RunPullExternalContextActionOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunPullExternalContextActionOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22639,10 +25048,22 @@ func (c *Client) GetPullFilePreviewOnHostWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullFilePreviewOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullFilePreviewOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22695,10 +25116,22 @@ func (c *Client) GetPullFilesOnHostWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullFilesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullFilesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22752,10 +25185,22 @@ func (c *Client) SetPrGithubStateOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrGithubStateOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrGithubStateOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22808,10 +25253,22 @@ func (c *Client) GetPullImportMetadataOnHostWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullImportMetadataOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullImportMetadataOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22864,10 +25321,22 @@ func (c *Client) ListPullRequestKataLinksOnHostWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListPullRequestKataLinksOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListPullRequestKataLinksOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22921,10 +25390,22 @@ func (c *Client) CreatePullRequestKataLinkOnHostWithResponse(ctx context.Context
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreatePullRequestKataLinkOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreatePullRequestKataLinkOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -22963,10 +25444,22 @@ func (c *Client) DeletePullRequestKataLinkOnHostWithResponse(ctx context.Context
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePullRequestKataLinkOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePullRequestKataLinkOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23020,10 +25513,22 @@ func (c *Client) UpdatePrLabelsOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePrLabelsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrLabelsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23077,10 +25582,22 @@ func (c *Client) SetPrLabelsOnHostWithResponse(ctx context.Context, options *Set
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrLabelsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrLabelsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23134,10 +25651,22 @@ func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *Merge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MergePullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MergePullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23191,10 +25720,22 @@ func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeferMergePullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeferMergePullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23247,10 +25788,22 @@ func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MarkPullReadyForReviewOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MarkPullReadyForReviewOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23304,10 +25857,22 @@ func (c *Client) RequestPullChangesOnHostWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RequestPullChangesOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RequestPullChangesOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23346,10 +25911,22 @@ func (c *Client) DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DiscardPrReviewDraftOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DiscardPrReviewDraftOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23402,10 +25979,22 @@ func (c *Client) GetPrReviewDraftOnHostWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPrReviewDraftOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewDraftOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23459,10 +26048,22 @@ func (c *Client) CreatePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreatePrReviewDraftCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreatePrReviewDraftCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23501,10 +26102,22 @@ func (c *Client) DeletePrReviewDraftCommentOnHostWithResponse(ctx context.Contex
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePrReviewDraftCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePrReviewDraftCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23558,10 +26171,22 @@ func (c *Client) EditPrReviewDraftCommentOnHostWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrReviewDraftCommentOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrReviewDraftCommentOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23615,10 +26240,22 @@ func (c *Client) PublishPrReviewDraftOnHostWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PublishPrReviewDraftOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PublishPrReviewDraftOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23672,10 +26309,22 @@ func (c *Client) ApplyPrReviewSuggestionsOnHostWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApplyPrReviewSuggestionsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApplyPrReviewSuggestionsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23714,10 +26363,22 @@ func (c *Client) ResolvePrReviewThreadOnHostWithResponse(ctx context.Context, op
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolvePrReviewThreadOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolvePrReviewThreadOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23756,10 +26417,22 @@ func (c *Client) UnresolvePrReviewThreadOnHostWithResponse(ctx context.Context, 
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UnresolvePrReviewThreadOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UnresolvePrReviewThreadOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23812,10 +26485,22 @@ func (c *Client) GetPrReviewerAccountsOnHostWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPrReviewerAccountsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewerAccountsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23869,10 +26554,22 @@ func (c *Client) SetPrReviewersOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrReviewersOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrReviewersOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23925,10 +26622,22 @@ func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullStackOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullStackOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -23968,10 +26677,22 @@ func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetKanbanStateOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetKanbanStateOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24024,10 +26745,22 @@ func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPu
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SyncPullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SyncPullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24066,10 +26799,22 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EnqueuePrSyncOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnqueuePrSyncOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24108,10 +26853,22 @@ func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *Dele
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteRepoOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteRepoOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24164,10 +26921,22 @@ func (c *Client) GetRepoOnHostWithResponse(ctx context.Context, options *GetRepo
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24220,10 +26989,22 @@ func (c *Client) GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, opti
 			XContentTypeOptions: resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserAssetOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserAssetOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24284,10 +27065,22 @@ func (c *Client) GetRepoBrowserBlobOnHostWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserBlobOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserBlobOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24349,10 +27142,22 @@ func (c *Client) GetRepoBrowserCommitOnHostWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserCommitOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserCommitOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24413,10 +27218,22 @@ func (c *Client) GetRepoBrowserHistoryOnHostWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserHistoryOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserHistoryOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24476,10 +27293,22 @@ func (c *Client) GetRepoBrowserLastChangedOnHostWithResponse(ctx context.Context
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserLastChangedOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserLastChangedOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24536,10 +27365,22 @@ func (c *Client) ListRepoBrowserRefsOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoBrowserRefsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoBrowserRefsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24599,10 +27440,22 @@ func (c *Client) ListRepoBrowserTreeOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoBrowserTreeOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoBrowserTreeOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24661,10 +27514,22 @@ func (c *Client) GetCommentAutocompleteOnHostWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetCommentAutocompleteOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetCommentAutocompleteOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24721,10 +27586,22 @@ func (c *Client) GetRepoCommitDiffOnHostWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoCommitDiffOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoCommitDiffOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24777,10 +27654,22 @@ func (c *Client) ListRepoLabelsOnHostWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoLabelsOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoLabelsOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24830,10 +27719,22 @@ func (c *Client) GetMarkdownImageOnHostWithResponse(ctx context.Context, options
 			XContentTypeOptions:   resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetMarkdownImageOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetMarkdownImageOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24925,10 +27826,22 @@ func (c *Client) RefreshRepoOnHostWithResponse(ctx context.Context, options *Ref
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshRepoOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshRepoOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -24985,10 +27898,22 @@ func (c *Client) ResolveRepoItemOnHostWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolveRepoItemOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolveRepoItemOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25042,10 +27967,22 @@ func (c *Client) UpdateRepoUIVisibilityOnHostWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateRepoUIVisibilityOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateRepoUIVisibilityOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25099,10 +28036,22 @@ func (c *Client) CreateRepoWorkspaceOnHostWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateRepoWorkspaceOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateRepoWorkspaceOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25156,10 +28105,22 @@ func (c *Client) UpdateRepoWorktreeBaseOnHostWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateRepoWorktreeBaseOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateRepoWorktreeBaseOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25225,10 +28186,22 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListIssuesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListIssuesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25282,10 +28255,22 @@ func (c *Client) CreateIssueWithResponse(ctx context.Context, options *CreateIss
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25338,10 +28323,22 @@ func (c *Client) GetIssueWithResponse(ctx context.Context, options *GetIssueRequ
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetIssueErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetIssueErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25395,10 +28392,22 @@ func (c *Client) EditIssueContentWithResponse(ctx context.Context, options *Edit
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditIssueContentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditIssueContentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25452,10 +28461,22 @@ func (c *Client) UpdateIssueAssigneesWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateIssueAssigneesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueAssigneesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25509,10 +28530,22 @@ func (c *Client) SetIssueAssigneesWithResponse(ctx context.Context, options *Set
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueAssigneesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueAssigneesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25566,10 +28599,22 @@ func (c *Client) PostIssueCommentWithResponse(ctx context.Context, options *Post
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PostIssueCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PostIssueCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25608,10 +28653,22 @@ func (c *Client) DeleteIssueCommentWithResponse(ctx context.Context, options *De
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteIssueCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteIssueCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25665,10 +28722,22 @@ func (c *Client) EditIssueCommentWithResponse(ctx context.Context, options *Edit
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditIssueCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditIssueCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25722,10 +28791,22 @@ func (c *Client) SetIssueGithubStateWithResponse(ctx context.Context, options *S
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueGithubStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueGithubStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25778,10 +28859,22 @@ func (c *Client) ListIssueKataLinksWithResponse(ctx context.Context, options *Li
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListIssueKataLinksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListIssueKataLinksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25835,10 +28928,22 @@ func (c *Client) CreateIssueKataLinkWithResponse(ctx context.Context, options *C
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25877,10 +28982,22 @@ func (c *Client) DeleteIssueKataLinkWithResponse(ctx context.Context, options *D
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteIssueKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteIssueKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25934,10 +29051,22 @@ func (c *Client) UpdateIssueLabelsWithResponse(ctx context.Context, options *Upd
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateIssueLabelsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateIssueLabelsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -25991,10 +29120,22 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetIssueLabelsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetIssueLabelsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26047,10 +29188,22 @@ func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SyncIssueErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SyncIssueErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26089,10 +29242,22 @@ func (c *Client) EnqueueIssueSyncWithResponse(ctx context.Context, options *Enqu
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EnqueueIssueSyncErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnqueueIssueSyncErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26146,10 +29311,22 @@ func (c *Client) CreateIssueWorkspaceWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateIssueWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateIssueWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26201,10 +29378,22 @@ func (c *Client) ListKataDaemonsWithResponse(ctx context.Context, reqEditors ...
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListKataDaemonsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListKataDaemonsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26262,10 +29451,22 @@ func (c *Client) ResolveKataIssueReferenceWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolveKataIssueReferenceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolveKataIssueReferenceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26318,10 +29519,22 @@ func (c *Client) GetKataIssueDetailWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetKataIssueDetailErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetKataIssueDetailErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26374,10 +29587,22 @@ func (c *Client) GetKataLaunchTargetWithResponse(ctx context.Context, options *G
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetKataLaunchTargetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetKataLaunchTargetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26436,10 +29661,22 @@ func (c *Client) ListKataReferencesWithResponse(ctx context.Context, options *Li
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListKataReferencesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListKataReferencesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26495,10 +29732,22 @@ func (c *Client) GetKataProjectMappingsWithResponse(ctx context.Context, options
 			Vary: resp.Headers.Get("Vary"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetKataProjectMappingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetKataProjectMappingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26552,10 +29801,22 @@ func (c *Client) CreateKataWorkspaceWithResponse(ctx context.Context, options *C
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateKataWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateKataWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26609,10 +29870,22 @@ func (c *Client) CallMcpAppToolWithResponse(ctx context.Context, options *CallMc
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CallMcpAppToolErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CallMcpAppToolErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26664,10 +29937,22 @@ func (c *Client) GetMcpAppResourceWithResponse(ctx context.Context, reqEditors .
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetMcpAppResourceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetMcpAppResourceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26731,10 +30016,22 @@ func (c *Client) ListNotificationsWithResponse(ctx context.Context, options *Lis
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListNotificationsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListNotificationsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26788,10 +30085,22 @@ func (c *Client) MarkNotificationsDoneWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MarkNotificationsDoneErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MarkNotificationsDoneErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26845,10 +30154,22 @@ func (c *Client) MarkNotificationsReadWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MarkNotificationsReadErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MarkNotificationsReadErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26886,10 +30207,22 @@ func (c *Client) SyncNotificationsWithResponse(ctx context.Context, reqEditors .
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SyncNotificationsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SyncNotificationsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -26943,10 +30276,22 @@ func (c *Client) MarkNotificationsUndoneWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MarkNotificationsUndoneErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MarkNotificationsUndoneErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27005,10 +30350,22 @@ func (c *Client) ListUserRepositoriesWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListUserRepositoriesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListUserRepositoriesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27060,10 +30417,22 @@ func (c *Client) ListProjectsWithResponse(ctx context.Context, reqEditors ...run
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListProjectsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListProjectsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27117,10 +30486,22 @@ func (c *Client) RegisterProjectWithResponse(ctx context.Context, options *Regis
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RegisterProjectErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RegisterProjectErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27174,10 +30555,22 @@ func (c *Client) CloneProjectWithResponse(ctx context.Context, options *ClonePro
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CloneProjectErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CloneProjectErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27216,10 +30609,22 @@ func (c *Client) DeleteProjectWithResponse(ctx context.Context, options *DeleteP
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteProjectErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteProjectErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27272,10 +30677,22 @@ func (c *Client) GetProjectWithResponse(ctx context.Context, options *GetProject
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetProjectErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetProjectErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27328,10 +30745,22 @@ func (c *Client) ListProjectBranchesWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListProjectBranchesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListProjectBranchesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27384,10 +30813,22 @@ func (c *Client) ListLaunchTargetsWithResponse(ctx context.Context, options *Lis
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListLaunchTargetsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListLaunchTargetsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27440,10 +30881,22 @@ func (c *Client) ListWorktreesWithResponse(ctx context.Context, options *ListWor
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorktreesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorktreesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27497,10 +30950,22 @@ func (c *Client) RegisterWorktreeWithResponse(ctx context.Context, options *Regi
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RegisterWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RegisterWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27554,10 +31019,22 @@ func (c *Client) CreateWorktreeFromMergeRequestWithResponse(ctx context.Context,
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateWorktreeFromMergeRequestErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateWorktreeFromMergeRequestErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27596,10 +31073,22 @@ func (c *Client) DeleteWorktreeWithResponse(ctx context.Context, options *Delete
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27639,10 +31128,22 @@ func (c *Client) RemoveWorktreeWithResponse(ctx context.Context, options *Remove
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RemoveWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RemoveWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27696,10 +31197,22 @@ func (c *Client) SetWorktreeHiddenWithResponse(ctx context.Context, options *Set
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetWorktreeHiddenErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetWorktreeHiddenErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27752,10 +31265,22 @@ func (c *Client) InspectProjectWorktreeWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(InspectProjectWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "InspectProjectWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27809,10 +31334,22 @@ func (c *Client) SetWorktreeLinksWithResponse(ctx context.Context, options *SetW
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetWorktreeLinksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetWorktreeLinksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27865,10 +31402,22 @@ func (c *Client) RefreshWorktreeStatsWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshWorktreeStatsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshWorktreeStatsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27921,10 +31470,22 @@ func (c *Client) GetProjectWorktreeRuntimeWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetProjectWorktreeRuntimeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetProjectWorktreeRuntimeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -27978,10 +31539,22 @@ func (c *Client) LaunchProjectWorktreeRuntimeSessionWithResponse(ctx context.Con
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchProjectWorktreeRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchProjectWorktreeRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28020,10 +31593,22 @@ func (c *Client) StopProjectWorktreeRuntimeSessionWithResponse(ctx context.Conte
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StopProjectWorktreeRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopProjectWorktreeRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28076,10 +31661,22 @@ func (c *Client) GetProjectWorktreeRuntimeSessionAttachSpecWithResponse(ctx cont
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28132,10 +31729,22 @@ func (c *Client) EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Conte
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EnsureProjectWorktreeRuntimeShellErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnsureProjectWorktreeRuntimeShellErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28189,10 +31798,22 @@ func (c *Client) SetWorktreeSessionBackendWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetWorktreeSessionBackendErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetWorktreeSessionBackendErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28259,10 +31880,22 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListPullsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListPullsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28315,10 +31948,22 @@ func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullReques
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28372,10 +32017,22 @@ func (c *Client) EditPrContentWithResponse(ctx context.Context, options *EditPrC
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrContentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrContentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28429,10 +32086,22 @@ func (c *Client) ApprovePullWithResponse(ctx context.Context, options *ApprovePu
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApprovePullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApprovePullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28485,10 +32154,22 @@ func (c *Client) ApprovePullWorkflowsWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApprovePullWorkflowsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApprovePullWorkflowsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28542,10 +32223,22 @@ func (c *Client) UpdatePrAssigneesWithResponse(ctx context.Context, options *Upd
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePrAssigneesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrAssigneesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28599,10 +32292,22 @@ func (c *Client) SetPrAssigneesWithResponse(ctx context.Context, options *SetPrA
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrAssigneesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrAssigneesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28655,10 +32360,22 @@ func (c *Client) RefreshPullCiWithResponse(ctx context.Context, options *Refresh
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshPullCiErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshPullCiErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28712,10 +32429,22 @@ func (c *Client) PostPrCommentWithResponse(ctx context.Context, options *PostPrC
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PostPrCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PostPrCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28754,10 +32483,22 @@ func (c *Client) DeletePrCommentWithResponse(ctx context.Context, options *Delet
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePrCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePrCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28811,10 +32552,22 @@ func (c *Client) EditPrCommentWithResponse(ctx context.Context, options *EditPrC
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28867,10 +32620,22 @@ func (c *Client) GetPullCommitsWithResponse(ctx context.Context, options *GetPul
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullCommitsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullCommitsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28930,10 +32695,22 @@ func (c *Client) GetPullDiffWithResponse(ctx context.Context, options *GetPullDi
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -28987,10 +32764,22 @@ func (c *Client) ReplyToDiscussionWithResponse(ctx context.Context, options *Rep
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ReplyToDiscussionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ReplyToDiscussionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29030,10 +32819,22 @@ func (c *Client) ResolveDiscussionWithResponse(ctx context.Context, options *Res
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolveDiscussionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolveDiscussionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29092,10 +32893,22 @@ func (c *Client) GetPullExternalContextWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullExternalContextErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullExternalContextErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29149,10 +32962,22 @@ func (c *Client) RunPullExternalContextActionWithResponse(ctx context.Context, o
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RunPullExternalContextActionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunPullExternalContextActionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29213,10 +33038,22 @@ func (c *Client) GetPullFilePreviewWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullFilePreviewErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullFilePreviewErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29269,10 +33106,22 @@ func (c *Client) GetPullFilesWithResponse(ctx context.Context, options *GetPullF
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullFilesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullFilesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29326,10 +33175,22 @@ func (c *Client) SetPrGithubStateWithResponse(ctx context.Context, options *SetP
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrGithubStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrGithubStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29382,10 +33243,22 @@ func (c *Client) GetPullImportMetadataWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullImportMetadataErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullImportMetadataErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29438,10 +33311,22 @@ func (c *Client) ListPullRequestKataLinksWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListPullRequestKataLinksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListPullRequestKataLinksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29495,10 +33380,22 @@ func (c *Client) CreatePullRequestKataLinkWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreatePullRequestKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreatePullRequestKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29537,10 +33434,22 @@ func (c *Client) DeletePullRequestKataLinkWithResponse(ctx context.Context, opti
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePullRequestKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePullRequestKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29594,10 +33503,22 @@ func (c *Client) UpdatePrLabelsWithResponse(ctx context.Context, options *Update
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePrLabelsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePrLabelsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29651,10 +33572,22 @@ func (c *Client) SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrLabelsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrLabelsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29708,10 +33641,22 @@ func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MergePullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MergePullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29765,10 +33710,22 @@ func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferM
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeferMergePullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeferMergePullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29821,10 +33778,22 @@ func (c *Client) MarkPullReadyForReviewWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(MarkPullReadyForReviewErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "MarkPullReadyForReviewErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29878,10 +33847,22 @@ func (c *Client) RequestPullChangesWithResponse(ctx context.Context, options *Re
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RequestPullChangesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RequestPullChangesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29920,10 +33901,22 @@ func (c *Client) DiscardPrReviewDraftWithResponse(ctx context.Context, options *
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DiscardPrReviewDraftErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DiscardPrReviewDraftErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -29976,10 +33969,22 @@ func (c *Client) GetPrReviewDraftWithResponse(ctx context.Context, options *GetP
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPrReviewDraftErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewDraftErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30033,10 +34038,22 @@ func (c *Client) CreatePrReviewDraftCommentWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreatePrReviewDraftCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreatePrReviewDraftCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30075,10 +34092,22 @@ func (c *Client) DeletePrReviewDraftCommentWithResponse(ctx context.Context, opt
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeletePrReviewDraftCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeletePrReviewDraftCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30132,10 +34161,22 @@ func (c *Client) EditPrReviewDraftCommentWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EditPrReviewDraftCommentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EditPrReviewDraftCommentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30189,10 +34230,22 @@ func (c *Client) PublishPrReviewDraftWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PublishPrReviewDraftErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PublishPrReviewDraftErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30246,10 +34299,22 @@ func (c *Client) ApplyPrReviewSuggestionsWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ApplyPrReviewSuggestionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ApplyPrReviewSuggestionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30288,10 +34353,22 @@ func (c *Client) ResolvePrReviewThreadWithResponse(ctx context.Context, options 
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolvePrReviewThreadErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolvePrReviewThreadErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30330,10 +34407,22 @@ func (c *Client) UnresolvePrReviewThreadWithResponse(ctx context.Context, option
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UnresolvePrReviewThreadErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UnresolvePrReviewThreadErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30386,10 +34475,22 @@ func (c *Client) GetPrReviewerAccountsWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPrReviewerAccountsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPrReviewerAccountsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30443,10 +34544,22 @@ func (c *Client) SetPrReviewersWithResponse(ctx context.Context, options *SetPrR
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetPrReviewersErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetPrReviewersErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30499,10 +34612,22 @@ func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullS
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetPullStackErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetPullStackErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30542,10 +34667,22 @@ func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKan
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetKanbanStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetKanbanStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30598,10 +34735,22 @@ func (c *Client) SyncPullWithResponse(ctx context.Context, options *SyncPullRequ
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SyncPullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SyncPullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30640,10 +34789,22 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EnqueuePrSyncErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EnqueuePrSyncErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30695,10 +34856,22 @@ func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...ru
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRateLimitsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRateLimitsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30737,10 +34910,22 @@ func (c *Client) DeleteRepoWithResponse(ctx context.Context, options *DeleteRepo
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteRepoErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteRepoErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30793,10 +34978,22 @@ func (c *Client) GetRepoWithResponse(ctx context.Context, options *GetRepoReques
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30849,10 +35046,22 @@ func (c *Client) GetRepoBrowserAssetWithResponse(ctx context.Context, options *G
 			XContentTypeOptions: resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserAssetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserAssetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30913,10 +35122,22 @@ func (c *Client) GetRepoBrowserBlobWithResponse(ctx context.Context, options *Ge
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserBlobErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserBlobErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -30978,10 +35199,22 @@ func (c *Client) GetRepoBrowserCommitWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserCommitErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserCommitErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31042,10 +35275,22 @@ func (c *Client) GetRepoBrowserHistoryWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserHistoryErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserHistoryErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31105,10 +35350,22 @@ func (c *Client) GetRepoBrowserLastChangedWithResponse(ctx context.Context, opti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoBrowserLastChangedErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoBrowserLastChangedErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31165,10 +35422,22 @@ func (c *Client) ListRepoBrowserRefsWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoBrowserRefsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoBrowserRefsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31228,10 +35497,22 @@ func (c *Client) ListRepoBrowserTreeWithResponse(ctx context.Context, options *L
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoBrowserTreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoBrowserTreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31292,10 +35573,22 @@ func (c *Client) GetCommentAutocompleteWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetCommentAutocompleteErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetCommentAutocompleteErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31352,10 +35645,22 @@ func (c *Client) GetRepoCommitDiffWithResponse(ctx context.Context, options *Get
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRepoCommitDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRepoCommitDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31408,10 +35713,22 @@ func (c *Client) ListRepoLabelsWithResponse(ctx context.Context, options *ListRe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoLabelsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoLabelsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31461,10 +35778,22 @@ func (c *Client) GetMarkdownImageWithResponse(ctx context.Context, options *GetM
 			XContentTypeOptions:   resp.Headers.Get("X-Content-Type-Options"),
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetMarkdownImageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetMarkdownImageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31556,10 +35885,22 @@ func (c *Client) RefreshRepoWithResponse(ctx context.Context, options *RefreshRe
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshRepoErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshRepoErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31616,10 +35957,22 @@ func (c *Client) ResolveRepoItemWithResponse(ctx context.Context, options *Resol
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ResolveRepoItemErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ResolveRepoItemErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31673,10 +36026,22 @@ func (c *Client) UpdateRepoUIVisibilityWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateRepoUIVisibilityErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateRepoUIVisibilityErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31730,10 +36095,22 @@ func (c *Client) CreateRepoWorkspaceWithResponse(ctx context.Context, options *C
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateRepoWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateRepoWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31787,10 +36164,22 @@ func (c *Client) UpdateRepoWorktreeBaseWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateRepoWorktreeBaseErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateRepoWorktreeBaseErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31842,10 +36231,22 @@ func (c *Client) ListReposWithResponse(ctx context.Context, reqEditors ...runtim
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListReposErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListReposErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31899,10 +36300,22 @@ func (c *Client) AddRepoWithResponse(ctx context.Context, options *AddRepoReques
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(AddRepoErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "AddRepoErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -31956,10 +36369,22 @@ func (c *Client) BulkAddReposWithResponse(ctx context.Context, options *BulkAddR
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(BulkAddReposErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "BulkAddReposErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32013,10 +36438,22 @@ func (c *Client) PreviewReposWithResponse(ctx context.Context, options *PreviewR
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PreviewReposErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PreviewReposErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32068,10 +36505,22 @@ func (c *Client) ListRepoSummariesWithResponse(ctx context.Context, reqEditors .
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRepoSummariesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRepoSummariesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32123,10 +36572,22 @@ func (c *Client) ListRoborevConfiguredRepositoriesWithResponse(ctx context.Conte
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListRoborevConfiguredRepositoriesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListRoborevConfiguredRepositoriesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32178,10 +36639,22 @@ func (c *Client) GetRoborevStatusWithResponse(ctx context.Context, reqEditors ..
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetRoborevStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetRoborevStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32233,10 +36706,22 @@ func (c *Client) ListHostRuntimeSessionsWithResponse(ctx context.Context, reqEdi
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListHostRuntimeSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListHostRuntimeSessionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32290,10 +36775,22 @@ func (c *Client) LaunchHostRuntimeSessionWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchHostRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchHostRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32332,10 +36829,22 @@ func (c *Client) StopHostRuntimeSessionWithResponse(ctx context.Context, options
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StopHostRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopHostRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32388,10 +36897,22 @@ func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetHostRuntimeSessionAttachSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetHostRuntimeSessionAttachSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32443,10 +36964,22 @@ func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32500,10 +37033,22 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32557,10 +37102,22 @@ func (c *Client) TestAcpAgentWithResponse(ctx context.Context, options *TestAcpA
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(TestAcpAgentErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "TestAcpAgentErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32612,10 +37169,22 @@ func (c *Client) GetFleetSettingsWithResponse(ctx context.Context, reqEditors ..
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetFleetSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetFleetSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32669,10 +37238,22 @@ func (c *Client) UpdateFleetSettingsWithResponse(ctx context.Context, options *U
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateFleetSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateFleetSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32724,10 +37305,22 @@ func (c *Client) GetLocalSettingsWithResponse(ctx context.Context, reqEditors ..
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetLocalSettingsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetLocalSettingsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32781,10 +37374,22 @@ func (c *Client) CreateRepoPresetWithResponse(ctx context.Context, options *Crea
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateRepoPresetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateRepoPresetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32837,10 +37442,22 @@ func (c *Client) DeleteRepoPresetWithResponse(ctx context.Context, options *Dele
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteRepoPresetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteRepoPresetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32894,10 +37511,22 @@ func (c *Client) UpdateRepoPresetWithResponse(ctx context.Context, options *Upda
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateRepoPresetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateRepoPresetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -32954,10 +37583,22 @@ func (c *Client) GetSnapshotWithResponse(ctx context.Context, options *GetSnapsh
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetSnapshotErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSnapshotErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33014,10 +37655,22 @@ func (c *Client) GetSnapshotAggregateWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetSnapshotAggregateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSnapshotAggregateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33069,10 +37722,22 @@ func (c *Client) GetSnapshotRawWithResponse(ctx context.Context, reqEditors ...r
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetSnapshotRawErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSnapshotRawErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33124,10 +37789,22 @@ func (c *Client) RefreshFleetStatsWithResponse(ctx context.Context, reqEditors .
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshFleetStatsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshFleetStatsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33184,10 +37861,22 @@ func (c *Client) ListStacksWithResponse(ctx context.Context, options *ListStacks
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListStacksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListStacksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33235,10 +37924,22 @@ func (c *Client) UnsetStarredWithResponse(ctx context.Context, options *UnsetSta
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UnsetStarredErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UnsetStarredErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33278,10 +37979,22 @@ func (c *Client) SetStarredWithResponse(ctx context.Context, options *SetStarred
 	switch resp.StatusCode {
 	case 200:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetStarredErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetStarredErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33325,10 +38038,22 @@ func (c *Client) TriggerSyncWithResponse(ctx context.Context, options *TriggerSy
 	switch resp.StatusCode {
 	case 202:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(TriggerSyncErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "TriggerSyncErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33380,10 +38105,22 @@ func (c *Client) GetSyncStatusWithResponse(ctx context.Context, reqEditors ...ru
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetSyncStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSyncStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33437,10 +38174,22 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CaptureTelemetryEventErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CaptureTelemetryEventErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33479,10 +38228,22 @@ func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(WriteTerminalClipboardErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WriteTerminalClipboardErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33536,10 +38297,22 @@ func (c *Client) StoreTerminalPasteImageWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StoreTerminalPasteImageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StoreTerminalPasteImageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33591,10 +38364,22 @@ func (c *Client) GetToolingStatusWithResponse(ctx context.Context, reqEditors ..
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetToolingStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetToolingStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33634,10 +38419,22 @@ func (c *Client) SetActiveWorktreeWithResponse(ctx context.Context, options *Set
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetActiveWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetActiveWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33689,10 +38486,22 @@ func (c *Client) GetVersionWithResponse(ctx context.Context, reqEditors ...runti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetVersionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetVersionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33744,10 +38553,22 @@ func (c *Client) GetExecutionWorkerWithResponse(ctx context.Context, reqEditors 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetExecutionWorkerErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetExecutionWorkerErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33799,10 +38620,22 @@ func (c *Client) GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors .
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkerSnapshotErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerSnapshotErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33856,10 +38689,22 @@ func (c *Client) CreateWorkerWorkspaceWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateWorkerWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateWorkerWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33899,10 +38744,22 @@ func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshWorkerContextErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshWorkerContextErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -33942,10 +38799,22 @@ func (c *Client) UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, op
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateWorkerWorkspaceTargetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateWorkerWorkspaceTargetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34002,10 +38871,22 @@ func (c *Client) ListWorklistsWithResponse(ctx context.Context, options *ListWor
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorklistsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorklistsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34058,10 +38939,22 @@ func (c *Client) GetWorklistWithResponse(ctx context.Context, options *GetWorkli
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34114,10 +39007,22 @@ func (c *Client) DismissWorklistWithResponse(ctx context.Context, options *Dismi
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DismissWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DismissWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34171,10 +39076,22 @@ func (c *Client) SetWorklistItemsHandledWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SetWorklistItemsHandledErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SetWorklistItemsHandledErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34227,10 +39144,22 @@ func (c *Client) UndismissWorklistWithResponse(ctx context.Context, options *Und
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UndismissWorklistErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UndismissWorklistErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34282,10 +39211,22 @@ func (c *Client) ListWorkspacesWithResponse(ctx context.Context, reqEditors ...r
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkspacesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspacesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34339,10 +39280,22 @@ func (c *Client) CreateWorkspaceWithResponse(ctx context.Context, options *Creat
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34385,10 +39338,22 @@ func (c *Client) DeleteWorkspaceWithResponse(ctx context.Context, options *Delet
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34441,10 +39406,22 @@ func (c *Client) GetWorkspaceWithResponse(ctx context.Context, options *GetWorks
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34497,10 +39474,22 @@ func (c *Client) ListWorkspaceAgentSessionsWithResponse(ctx context.Context, opt
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkspaceAgentSessionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspaceAgentSessionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34553,10 +39542,22 @@ func (c *Client) GetWorkspaceCommitsWithResponse(ctx context.Context, options *G
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceCommitsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceCommitsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34619,10 +39620,22 @@ func (c *Client) GetWorkspaceDiffWithResponse(ctx context.Context, options *GetW
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34679,10 +39692,22 @@ func (c *Client) WatchWorkspaceDiffWithResponse(ctx context.Context, options *Wa
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(WatchWorkspaceDiffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "WatchWorkspaceDiffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34746,10 +39771,22 @@ func (c *Client) GetWorkspaceFilePreviewWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceFilePreviewErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceFilePreviewErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34810,10 +39847,22 @@ func (c *Client) GetWorkspaceFilesWithResponse(ctx context.Context, options *Get
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceFilesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceFilesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34866,10 +39915,22 @@ func (c *Client) ListWorkspaceKataLinksWithResponse(ctx context.Context, options
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkspaceKataLinksErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspaceKataLinksErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34923,10 +39984,22 @@ func (c *Client) CreateWorkspaceKataLinkWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(CreateWorkspaceKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CreateWorkspaceKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -34965,10 +40038,22 @@ func (c *Client) DeleteWorkspaceKataLinkWithResponse(ctx context.Context, option
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DeleteWorkspaceKataLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DeleteWorkspaceKataLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35021,10 +40106,22 @@ func (c *Client) PullWorkspaceBranchWithResponse(ctx context.Context, options *P
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PullWorkspaceBranchErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PullWorkspaceBranchErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35077,10 +40174,22 @@ func (c *Client) PushWorkspaceBranchWithResponse(ctx context.Context, options *P
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PushWorkspaceBranchErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PushWorkspaceBranchErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35133,10 +40242,22 @@ func (c *Client) RefreshWorkspaceWithResponse(ctx context.Context, options *Refr
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RefreshWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35189,10 +40310,22 @@ func (c *Client) RetryWorkspaceWithResponse(ctx context.Context, options *RetryW
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RetryWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RetryWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35231,10 +40364,22 @@ func (c *Client) RevealWorkspaceWithResponse(ctx context.Context, options *Revea
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RevealWorkspaceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RevealWorkspaceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35291,10 +40436,22 @@ func (c *Client) GetWorkspaceRuntimeWithResponse(ctx context.Context, options *G
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceRuntimeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceRuntimeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35348,10 +40505,22 @@ func (c *Client) LaunchWorkspaceAgentHandoffWithResponse(ctx context.Context, op
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchWorkspaceAgentHandoffErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchWorkspaceAgentHandoffErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35405,10 +40574,22 @@ func (c *Client) LaunchWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(LaunchWorkspaceRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "LaunchWorkspaceRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35447,10 +40628,22 @@ func (c *Client) StopWorkspaceRuntimeSessionWithResponse(ctx context.Context, op
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(StopWorkspaceRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "StopWorkspaceRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35504,10 +40697,22 @@ func (c *Client) RenameWorkspaceRuntimeSessionWithResponse(ctx context.Context, 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RenameWorkspaceRuntimeSessionErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RenameWorkspaceRuntimeSessionErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35560,10 +40765,22 @@ func (c *Client) GetWorkspaceRuntimeSessionAttachSpecWithResponse(ctx context.Co
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceRuntimeSessionAttachSpecErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceRuntimeSessionAttachSpecErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35621,10 +40838,22 @@ func (c *Client) GetWorkspaceChatWithResponse(ctx context.Context, options *GetW
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceChatErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceChatErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35678,10 +40907,22 @@ func (c *Client) RunWorkspaceChatCommandWithResponse(ctx context.Context, option
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RunWorkspaceChatCommandErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RunWorkspaceChatCommandErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35734,10 +40975,22 @@ func (c *Client) RestoreWorkspaceChatWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RestoreWorkspaceChatErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RestoreWorkspaceChatErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35790,10 +41043,22 @@ func (c *Client) GetWorkspaceRuntimeSessionInitialMessageWithResponse(ctx contex
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceRuntimeSessionInitialMessageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceRuntimeSessionInitialMessageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35847,10 +41112,22 @@ func (c *Client) SubmitWorkspaceRuntimeSessionInitialMessageWithResponse(ctx con
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35903,10 +41180,22 @@ func (c *Client) ListWorkspaceTargetsWithResponse(ctx context.Context, options *
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(ListWorkspaceTargetsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ListWorkspaceTargetsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -35946,10 +41235,22 @@ func (c *Client) UpdateWorkspaceTargetWithResponse(ctx context.Context, options 
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateWorkspaceTargetErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateWorkspaceTargetErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -36002,10 +41303,22 @@ func (c *Client) GetWorkspaceViewStateWithResponse(ctx context.Context, options 
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -36059,10 +41372,22 @@ func (c *Client) UpdateWorkspaceViewStateWithResponse(ctx context.Context, optio
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(UpdateWorkspaceViewStateErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdateWorkspaceViewStateErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -36116,10 +41441,22 @@ func (c *Client) RemoveStaleWorktreeWithResponse(ctx context.Context, options *R
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(RemoveStaleWorktreeErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RemoveStaleWorktreeErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -56198,397 +61535,447 @@ type RemoveStaleWorktreeResponse = RemoveStaleWorktreeOutputBody
 type RemoveStaleWorktreeErrorResponse = ProblemError
 
 type ListWorkflowRunsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowRunsErrorResponse
-	JSON200      *ListWorkflowRunsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowRunsErrorResponse
+	JSON200                           *ListWorkflowRunsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowRunsErrorResponse
 }
 
 type ListWorkflowRunJobsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowRunJobsErrorResponse
-	JSON200      *ListWorkflowRunJobsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowRunJobsErrorResponse
+	JSON200                           *ListWorkflowRunJobsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowRunJobsErrorResponse
 }
 
 type ListWorkflowsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowsErrorResponse
-	JSON200      *ListWorkflowsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowsErrorResponse
+	JSON200                           *ListWorkflowsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowsErrorResponse
 }
 
 type DispatchWorkflowResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DispatchWorkflowErrorResponse
-	JSON202      *DispatchWorkflowResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DispatchWorkflowErrorResponse
+	JSON202                           *DispatchWorkflowResponse
+	ApplicationProblemPlusJSONDefault *DispatchWorkflowErrorResponse
 }
 
 type ListActivityResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListActivityErrorResponse
-	JSON200      *ListActivityResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListActivityErrorResponse
+	JSON200                           *ListActivityResponse
+	ApplicationProblemPlusJSONDefault *ListActivityErrorResponse
 }
 
 type ListActivityAuthorsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListActivityAuthorsErrorResponse
-	JSON200      *ListActivityAuthorsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListActivityAuthorsErrorResponse
+	JSON200                           *ListActivityAuthorsResponse
+	ApplicationProblemPlusJSONDefault *ListActivityAuthorsErrorResponse
 }
 
 type ListActivityThreadEventsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListActivityThreadEventsErrorResponse
-	JSON200      *ListActivityThreadEventsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListActivityThreadEventsErrorResponse
+	JSON200                           *ListActivityThreadEventsResponse
+	ApplicationProblemPlusJSONDefault *ListActivityThreadEventsErrorResponse
 }
 
 type ReceiveAgentHookResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReceiveAgentHookErrorResponse
-	JSON200      *ReceiveAgentHookResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReceiveAgentHookErrorResponse
+	JSON200                           *ReceiveAgentHookResponse
+	ApplicationProblemPlusJSONDefault *ReceiveAgentHookErrorResponse
 }
 
 type ListArchivePacingResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListArchivePacingErrorResponse
-	JSON200      *ListArchivePacingResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListArchivePacingErrorResponse
+	JSON200                           *ListArchivePacingResponse
+	ApplicationProblemPlusJSONDefault *ListArchivePacingErrorResponse
 }
 
 type PauseArchivesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PauseArchivesErrorResponse
-	JSON200      *PauseArchivesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PauseArchivesErrorResponse
+	JSON200                           *PauseArchivesResponse
+	ApplicationProblemPlusJSONDefault *PauseArchivesErrorResponse
 }
 
 type GetArchiveReportResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetArchiveReportErrorResponse
-	JSON200      *GetArchiveReportResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetArchiveReportErrorResponse
+	JSON200                           *GetArchiveReportResponse
+	ApplicationProblemPlusJSONDefault *GetArchiveReportErrorResponse
 }
 
 type GetArchiveSnapshotResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetArchiveSnapshotErrorResponse
-	JSON200      *GetArchiveSnapshotResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetArchiveSnapshotErrorResponse
+	JSON200                           *GetArchiveSnapshotResponse
+	ApplicationProblemPlusJSONDefault *GetArchiveSnapshotErrorResponse
 }
 
 type StartArchivesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StartArchivesErrorResponse
-	JSON200      *StartArchivesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StartArchivesErrorResponse
+	JSON200                           *StartArchivesResponse
+	ApplicationProblemPlusJSONDefault *StartArchivesErrorResponse
 }
 
 type ListArchiveStatusResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListArchiveStatusErrorResponse
-	JSON200      *ListArchiveStatusResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListArchiveStatusErrorResponse
+	JSON200                           *ListArchiveStatusResponse
+	ApplicationProblemPlusJSONDefault *ListArchiveStatusErrorResponse
 }
 
 type ListDevboxConnectionsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListDevboxConnectionsErrorResponse
-	JSON200      *ListDevboxConnectionsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDevboxConnectionsErrorResponse
+	JSON200                           *ListDevboxConnectionsResponse
+	ApplicationProblemPlusJSONDefault *ListDevboxConnectionsErrorResponse
 }
 
 type ConnectDevboxResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ConnectDevboxErrorResponse
-	JSON200      *ConnectDevboxResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ConnectDevboxErrorResponse
+	JSON200                           *ConnectDevboxResponse
+	ApplicationProblemPlusJSONDefault *ConnectDevboxErrorResponse
 }
 
 type DiscoverDevboxesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DiscoverDevboxesErrorResponse
-	JSON200      *DiscoverDevboxesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DiscoverDevboxesErrorResponse
+	JSON200                           *DiscoverDevboxesResponse
+	ApplicationProblemPlusJSONDefault *DiscoverDevboxesErrorResponse
 }
 
 type DisconnectDevboxResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DisconnectDevboxErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DisconnectDevboxErrorResponse
+	ApplicationProblemPlusJSONDefault *DisconnectDevboxErrorResponse
 }
 
 type ReconnectDevboxResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReconnectDevboxErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReconnectDevboxErrorResponse
+	ApplicationProblemPlusJSONDefault *ReconnectDevboxErrorResponse
 }
 
 type StoreDevboxPasteImageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StoreDevboxPasteImageErrorResponse
-	JSON201      *StoreDevboxPasteImageResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StoreDevboxPasteImageErrorResponse
+	JSON201                           *StoreDevboxPasteImageResponse
+	ApplicationProblemPlusJSONDefault *StoreDevboxPasteImageErrorResponse
 }
 
 type ListDevboxWorkspacesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListDevboxWorkspacesErrorResponse
-	JSON200      *ListDevboxWorkspacesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDevboxWorkspacesErrorResponse
+	JSON200                           *ListDevboxWorkspacesResponse
+	ApplicationProblemPlusJSONDefault *ListDevboxWorkspacesErrorResponse
 }
 
 type CreateDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateDevboxWorkspaceErrorResponse
-	JSON200      *CreateDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateDevboxWorkspaceErrorResponse
+	JSON200                           *CreateDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateDevboxWorkspaceErrorResponse
 }
 
 type DeleteDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteDevboxWorkspaceErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteDevboxWorkspaceErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteDevboxWorkspaceErrorResponse
 }
 
 type GetDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxWorkspaceErrorResponse
-	JSON200      *GetDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxWorkspaceErrorResponse
+	JSON200                           *GetDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxWorkspaceErrorResponse
 }
 
 type ListDevboxAgentSessionsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListDevboxAgentSessionsErrorResponse
-	JSON200      *ListDevboxAgentSessionsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDevboxAgentSessionsErrorResponse
+	JSON200                           *ListDevboxAgentSessionsResponse
+	ApplicationProblemPlusJSONDefault *ListDevboxAgentSessionsErrorResponse
 }
 
 type GetDevboxCommitsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxCommitsErrorResponse
-	JSON200      *GetDevboxCommitsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxCommitsErrorResponse
+	JSON200                           *GetDevboxCommitsResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxCommitsErrorResponse
 }
 
 type GetDevboxDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxDiffErrorResponse
-	JSON200      *GetDevboxDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxDiffErrorResponse
+	JSON200                           *GetDevboxDiffResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxDiffErrorResponse
 }
 
 type WatchDevboxDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *WatchDevboxDiffErrorResponse
-	JSON200      *WatchDevboxDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *WatchDevboxDiffErrorResponse
+	JSON200                           *WatchDevboxDiffResponse
+	ApplicationProblemPlusJSONDefault *WatchDevboxDiffErrorResponse
 }
 
 type GetDevboxFilePreviewResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxFilePreviewErrorResponse
-	JSON200      *GetDevboxFilePreviewResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxFilePreviewErrorResponse
+	JSON200                           *GetDevboxFilePreviewResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxFilePreviewErrorResponse
 }
 
 type GetDevboxFilesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxFilesErrorResponse
-	JSON200      *GetDevboxFilesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxFilesErrorResponse
+	JSON200                           *GetDevboxFilesResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxFilesErrorResponse
 }
 
 type PullDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PullDevboxWorkspaceErrorResponse
-	JSON200      *PullDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PullDevboxWorkspaceErrorResponse
+	JSON200                           *PullDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *PullDevboxWorkspaceErrorResponse
 }
 
 type PushDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PushDevboxWorkspaceErrorResponse
-	JSON200      *PushDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PushDevboxWorkspaceErrorResponse
+	JSON200                           *PushDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *PushDevboxWorkspaceErrorResponse
 }
 
 type RefreshDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshDevboxWorkspaceErrorResponse
-	JSON200      *RefreshDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshDevboxWorkspaceErrorResponse
+	JSON200                           *RefreshDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *RefreshDevboxWorkspaceErrorResponse
 }
 
 type RetryDevboxWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RetryDevboxWorkspaceErrorResponse
-	JSON202      *RetryDevboxWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RetryDevboxWorkspaceErrorResponse
+	JSON202                           *RetryDevboxWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *RetryDevboxWorkspaceErrorResponse
 }
 
 type GetDevboxRuntimeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxRuntimeErrorResponse
-	JSON200      *GetDevboxRuntimeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxRuntimeErrorResponse
+	JSON200                           *GetDevboxRuntimeResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxRuntimeErrorResponse
 }
 
 type LaunchDevboxHandoffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchDevboxHandoffErrorResponse
-	JSON200      *LaunchDevboxHandoffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchDevboxHandoffErrorResponse
+	JSON200                           *LaunchDevboxHandoffResponse
+	ApplicationProblemPlusJSONDefault *LaunchDevboxHandoffErrorResponse
 }
 
 type LaunchDevboxSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchDevboxSessionErrorResponse
-	JSON200      *LaunchDevboxSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchDevboxSessionErrorResponse
+	JSON200                           *LaunchDevboxSessionResponse
+	ApplicationProblemPlusJSONDefault *LaunchDevboxSessionErrorResponse
 }
 
 type StopDevboxSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StopDevboxSessionErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StopDevboxSessionErrorResponse
+	ApplicationProblemPlusJSONDefault *StopDevboxSessionErrorResponse
 }
 
 type RenameDevboxSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RenameDevboxSessionErrorResponse
-	JSON200      *RenameDevboxSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RenameDevboxSessionErrorResponse
+	JSON200                           *RenameDevboxSessionResponse
+	ApplicationProblemPlusJSONDefault *RenameDevboxSessionErrorResponse
 }
 
 type GetDevboxAttachSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxAttachSpecErrorResponse
-	JSON200      *GetDevboxAttachSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxAttachSpecErrorResponse
+	JSON200                           *GetDevboxAttachSpecResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxAttachSpecErrorResponse
 }
 
 type SendDevboxInitialMessageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SendDevboxInitialMessageErrorResponse
-	JSON200      *SendDevboxInitialMessageResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SendDevboxInitialMessageErrorResponse
+	JSON200                           *SendDevboxInitialMessageResponse
+	ApplicationProblemPlusJSONDefault *SendDevboxInitialMessageErrorResponse
 }
 
 type ListDevboxWorkspaceTargetsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListDevboxWorkspaceTargetsErrorResponse
-	JSON200      *ListDevboxWorkspaceTargetsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDevboxWorkspaceTargetsErrorResponse
+	JSON200                           *ListDevboxWorkspaceTargetsResponse
+	ApplicationProblemPlusJSONDefault *ListDevboxWorkspaceTargetsErrorResponse
 }
 
 type UpdateDevboxWorkspaceTargetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateDevboxWorkspaceTargetErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateDevboxWorkspaceTargetErrorResponse
+	ApplicationProblemPlusJSONDefault *UpdateDevboxWorkspaceTargetErrorResponse
 }
 
 type GetDevboxWorkspaceViewStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDevboxWorkspaceViewStateErrorResponse
-	JSON200      *GetDevboxWorkspaceViewStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDevboxWorkspaceViewStateErrorResponse
+	JSON200                           *GetDevboxWorkspaceViewStateResponse
+	ApplicationProblemPlusJSONDefault *GetDevboxWorkspaceViewStateErrorResponse
 }
 
 type UpdateDevboxWorkspaceViewStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateDevboxWorkspaceViewStateErrorResponse
-	JSON200      *UpdateDevboxWorkspaceViewStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateDevboxWorkspaceViewStateErrorResponse
+	JSON200                           *UpdateDevboxWorkspaceViewStateResponse
+	ApplicationProblemPlusJSONDefault *UpdateDevboxWorkspaceViewStateErrorResponse
 }
 
 type BrowseDocsFoldersResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *BrowseDocsFoldersErrorResponse
-	JSON200      *BrowseDocsFoldersResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *BrowseDocsFoldersErrorResponse
+	JSON200                           *BrowseDocsFoldersResponse
+	ApplicationProblemPlusJSONDefault *BrowseDocsFoldersErrorResponse
 }
 
 type ListDocsFoldersResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListDocsFoldersErrorResponse
-	JSON200      *ListDocsFoldersResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListDocsFoldersErrorResponse
+	JSON200                           *ListDocsFoldersResponse
+	ApplicationProblemPlusJSONDefault *ListDocsFoldersErrorResponse
 }
 
 type CreateDocsFolderResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateDocsFolderErrorResponse
-	JSON201      *CreateDocsFolderResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateDocsFolderErrorResponse
+	JSON201                           *CreateDocsFolderResponse
+	ApplicationProblemPlusJSONDefault *CreateDocsFolderErrorResponse
 }
 
 type DeleteDocsFolderResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteDocsFolderErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteDocsFolderErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteDocsFolderErrorResponse
 }
 
 type UpdateDocsFolderResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateDocsFolderErrorResponse
-	JSON200      *UpdateDocsFolderResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateDocsFolderErrorResponse
+	JSON200                           *UpdateDocsFolderResponse
+	ApplicationProblemPlusJSONDefault *UpdateDocsFolderErrorResponse
 }
 
 type ReadDocsBlobResp200Headers struct {
@@ -56598,632 +61985,723 @@ type ReadDocsBlobResp200Headers struct {
 }
 
 type ReadDocsBlobResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReadDocsBlobErrorResponse
-	Headers200   *ReadDocsBlobResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReadDocsBlobErrorResponse
+	Headers200                        *ReadDocsBlobResp200Headers
+	ApplicationProblemPlusJSONDefault *ReadDocsBlobErrorResponse
 }
 
 type DeleteDocsFileResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteDocsFileErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteDocsFileErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteDocsFileErrorResponse
 }
 
 type ReadDocsFileResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReadDocsFileErrorResponse
-	JSON200      *ReadDocsFileResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReadDocsFileErrorResponse
+	JSON200                           *ReadDocsFileResponse
+	ApplicationProblemPlusJSONDefault *ReadDocsFileErrorResponse
 }
 
 type CreateDocsFileResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateDocsFileErrorResponse
-	JSON201      *CreateDocsFileResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateDocsFileErrorResponse
+	JSON201                           *CreateDocsFileResponse
+	ApplicationProblemPlusJSONDefault *CreateDocsFileErrorResponse
 }
 
 type WriteDocsFileResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *WriteDocsFileErrorResponse
-	JSON200      *WriteDocsFileResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *WriteDocsFileErrorResponse
+	JSON200                           *WriteDocsFileResponse
+	ApplicationProblemPlusJSONDefault *WriteDocsFileErrorResponse
 }
 
 type RenameDocsFileResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RenameDocsFileErrorResponse
-	JSON200      *RenameDocsFileResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RenameDocsFileErrorResponse
+	JSON200                           *RenameDocsFileResponse
+	ApplicationProblemPlusJSONDefault *RenameDocsFileErrorResponse
 }
 
 type GetDocsGitStatusResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDocsGitStatusErrorResponse
-	JSON200      *GetDocsGitStatusResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDocsGitStatusErrorResponse
+	JSON200                           *GetDocsGitStatusResponse
+	ApplicationProblemPlusJSONDefault *GetDocsGitStatusErrorResponse
 }
 
 type GetDocsGitChangesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDocsGitChangesErrorResponse
-	JSON200      *GetDocsGitChangesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDocsGitChangesErrorResponse
+	JSON200                           *GetDocsGitChangesResponse
+	ApplicationProblemPlusJSONDefault *GetDocsGitChangesErrorResponse
 }
 
 type PublishDocsGitResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PublishDocsGitErrorResponse
-	JSON200      *PublishDocsGitResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PublishDocsGitErrorResponse
+	JSON200                           *PublishDocsGitResponse
+	ApplicationProblemPlusJSONDefault *PublishDocsGitErrorResponse
 }
 
 type PullDocsGitResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PullDocsGitErrorResponse
-	JSON200      *PullDocsGitResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PullDocsGitErrorResponse
+	JSON200                           *PullDocsGitResponse
+	ApplicationProblemPlusJSONDefault *PullDocsGitErrorResponse
 }
 
 type SearchDocsFolderResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SearchDocsFolderErrorResponse
-	JSON200      *SearchDocsFolderResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SearchDocsFolderErrorResponse
+	JSON200                           *SearchDocsFolderResponse
+	ApplicationProblemPlusJSONDefault *SearchDocsFolderErrorResponse
 }
 
 type GetDocsTreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetDocsTreeErrorResponse
-	JSON200      *GetDocsTreeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetDocsTreeErrorResponse
+	JSON200                           *GetDocsTreeResponse
+	ApplicationProblemPlusJSONDefault *GetDocsTreeErrorResponse
 }
 
 type SearchDocsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SearchDocsErrorResponse
-	JSON200      *SearchDocsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SearchDocsErrorResponse
+	JSON200                           *SearchDocsResponse
+	ApplicationProblemPlusJSONDefault *SearchDocsErrorResponse
 }
 
 type StreamEventsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StreamEventsErrorResponse
-	Stream200    *runtime.Stream[[]byte]
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StreamEventsErrorResponse
+	Stream200                         *runtime.Stream[[]byte]
+	ApplicationProblemPlusJSONDefault *StreamEventsErrorResponse
 }
 
 type ListExternalContextSourcesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListExternalContextSourcesErrorResponse
-	JSON200      *ListExternalContextSourcesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListExternalContextSourcesErrorResponse
+	JSON200                           *ListExternalContextSourcesResponse
+	ApplicationProblemPlusJSONDefault *ListExternalContextSourcesErrorResponse
 }
 
 type IssueFederationBrowserLoginTicketResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *IssueFederationBrowserLoginTicketErrorResponse
-	JSON200      *IssueFederationBrowserLoginTicketResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *IssueFederationBrowserLoginTicketErrorResponse
+	JSON200                           *IssueFederationBrowserLoginTicketResponse
+	ApplicationProblemPlusJSONDefault *IssueFederationBrowserLoginTicketErrorResponse
 }
 
 type BeginFederationEnrollmentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *BeginFederationEnrollmentErrorResponse
-	JSON201      *BeginFederationEnrollmentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *BeginFederationEnrollmentErrorResponse
+	JSON201                           *BeginFederationEnrollmentResponse
+	ApplicationProblemPlusJSONDefault *BeginFederationEnrollmentErrorResponse
 }
 
 type AbortFederationEnrollmentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *AbortFederationEnrollmentErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *AbortFederationEnrollmentErrorResponse
+	ApplicationProblemPlusJSONDefault *AbortFederationEnrollmentErrorResponse
 }
 
 type ActivateFederationEnrollmentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ActivateFederationEnrollmentErrorResponse
-	JSON200      *ActivateFederationEnrollmentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ActivateFederationEnrollmentErrorResponse
+	JSON200                           *ActivateFederationEnrollmentResponse
+	ApplicationProblemPlusJSONDefault *ActivateFederationEnrollmentErrorResponse
 }
 
 type BeginFederationSpokePreparationResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *BeginFederationSpokePreparationErrorResponse
-	JSON200      *BeginFederationSpokePreparationResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *BeginFederationSpokePreparationErrorResponse
+	JSON200                           *BeginFederationSpokePreparationResponse
+	ApplicationProblemPlusJSONDefault *BeginFederationSpokePreparationErrorResponse
 }
 
 type SealFederationSpokePreparationResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SealFederationSpokePreparationErrorResponse
-	JSON200      *SealFederationSpokePreparationResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SealFederationSpokePreparationErrorResponse
+	JSON200                           *SealFederationSpokePreparationResponse
+	ApplicationProblemPlusJSONDefault *SealFederationSpokePreparationErrorResponse
 }
 
 type StreamFederationProviderEventsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StreamFederationProviderEventsErrorResponse
-	Stream200    *runtime.Stream[[]byte]
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StreamFederationProviderEventsErrorResponse
+	Stream200                         *runtime.Stream[[]byte]
+	ApplicationProblemPlusJSONDefault *StreamFederationProviderEventsErrorResponse
 }
 
 type GetFederationIdentityResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetFederationIdentityErrorResponse
-	JSON200      *GetFederationIdentityResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetFederationIdentityErrorResponse
+	JSON200                           *GetFederationIdentityResponse
+	ApplicationProblemPlusJSONDefault *GetFederationIdentityErrorResponse
 }
 
 type FederationImportReviewDraftResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationImportReviewDraftErrorResponse
-	JSON200      *FederationImportReviewDraftResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationImportReviewDraftErrorResponse
+	JSON200                           *FederationImportReviewDraftResponse
+	ApplicationProblemPlusJSONDefault *FederationImportReviewDraftErrorResponse
 }
 
 type FederationImportWorkflowStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationImportWorkflowStateErrorResponse
-	JSON200      *FederationImportWorkflowStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationImportWorkflowStateErrorResponse
+	JSON200                           *FederationImportWorkflowStateResponse
+	ApplicationProblemPlusJSONDefault *FederationImportWorkflowStateErrorResponse
 }
 
 type FederationFilterUnassignedActivitySubjectsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationFilterUnassignedActivitySubjectsErrorResponse
-	JSON200      *FederationFilterUnassignedActivitySubjectsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationFilterUnassignedActivitySubjectsErrorResponse
+	JSON200                           *FederationFilterUnassignedActivitySubjectsResponse
+	ApplicationProblemPlusJSONDefault *FederationFilterUnassignedActivitySubjectsErrorResponse
 }
 
 type FederationGetDiffDescriptorResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationGetDiffDescriptorErrorResponse
-	JSON200      *FederationGetDiffDescriptorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationGetDiffDescriptorErrorResponse
+	JSON200                           *FederationGetDiffDescriptorResponse
+	ApplicationProblemPlusJSONDefault *FederationGetDiffDescriptorErrorResponse
 }
 
 type FederationResolveGithubRepositoryIDResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationResolveGithubRepositoryIDErrorResponse
-	JSON200      *FederationResolveGithubRepositoryIDResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationResolveGithubRepositoryIDErrorResponse
+	JSON200                           *FederationResolveGithubRepositoryIDResponse
+	ApplicationProblemPlusJSONDefault *FederationResolveGithubRepositoryIDErrorResponse
 }
 
 type FederationGetRepositoryDescriptorResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationGetRepositoryDescriptorErrorResponse
-	JSON200      *FederationGetRepositoryDescriptorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationGetRepositoryDescriptorErrorResponse
+	JSON200                           *FederationGetRepositoryDescriptorResponse
+	ApplicationProblemPlusJSONDefault *FederationGetRepositoryDescriptorErrorResponse
 }
 
 type FederationGetProviderSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationGetProviderSettingsErrorResponse
-	JSON200      *FederationGetProviderSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationGetProviderSettingsErrorResponse
+	JSON200                           *FederationGetProviderSettingsResponse
+	ApplicationProblemPlusJSONDefault *FederationGetProviderSettingsErrorResponse
 }
 
 type FederationUpdateProviderSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationUpdateProviderSettingsErrorResponse
-	JSON200      *FederationUpdateProviderSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationUpdateProviderSettingsErrorResponse
+	JSON200                           *FederationUpdateProviderSettingsResponse
+	ApplicationProblemPlusJSONDefault *FederationUpdateProviderSettingsErrorResponse
 }
 
 type FederationSetWorkflowStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationSetWorkflowStateErrorResponse
-	JSON200      *FederationSetWorkflowStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationSetWorkflowStateErrorResponse
+	JSON200                           *FederationSetWorkflowStateResponse
+	ApplicationProblemPlusJSONDefault *FederationSetWorkflowStateErrorResponse
 }
 
 type FederationListWorkflowStatesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationListWorkflowStatesErrorResponse
-	JSON200      *FederationListWorkflowStatesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationListWorkflowStatesErrorResponse
+	JSON200                           *FederationListWorkflowStatesResponse
+	ApplicationProblemPlusJSONDefault *FederationListWorkflowStatesErrorResponse
 }
 
 type FederationPutWorklistResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationPutWorklistErrorResponse
-	JSON200      *FederationPutWorklistResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationPutWorklistErrorResponse
+	JSON200                           *FederationPutWorklistResponse
+	ApplicationProblemPlusJSONDefault *FederationPutWorklistErrorResponse
 }
 
 type FederationClearWorklistMarksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationClearWorklistMarksErrorResponse
-	JSON200      *FederationClearWorklistMarksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationClearWorklistMarksErrorResponse
+	JSON200                           *FederationClearWorklistMarksResponse
+	ApplicationProblemPlusJSONDefault *FederationClearWorklistMarksErrorResponse
 }
 
 type FederationAutoAssignWorkspaceItemResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationAutoAssignWorkspaceItemErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationAutoAssignWorkspaceItemErrorResponse
+	ApplicationProblemPlusJSONDefault *FederationAutoAssignWorkspaceItemErrorResponse
 }
 
 type FederationResolveWorkspaceLaunchSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationResolveWorkspaceLaunchSpecErrorResponse
-	JSON200      *FederationResolveWorkspaceLaunchSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationResolveWorkspaceLaunchSpecErrorResponse
+	JSON200                           *FederationResolveWorkspaceLaunchSpecResponse
+	ApplicationProblemPlusJSONDefault *FederationResolveWorkspaceLaunchSpecErrorResponse
 }
 
 type FederationRefreshWorkspaceLaunchSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationRefreshWorkspaceLaunchSpecErrorResponse
-	JSON200      *FederationRefreshWorkspaceLaunchSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationRefreshWorkspaceLaunchSpecErrorResponse
+	JSON200                           *FederationRefreshWorkspaceLaunchSpecResponse
+	ApplicationProblemPlusJSONDefault *FederationRefreshWorkspaceLaunchSpecErrorResponse
 }
 
 type FederationQueryWorkspaceProviderStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *FederationQueryWorkspaceProviderStateErrorResponse
-	JSON200      *FederationQueryWorkspaceProviderStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *FederationQueryWorkspaceProviderStateErrorResponse
+	JSON200                           *FederationQueryWorkspaceProviderStateResponse
+	ApplicationProblemPlusJSONDefault *FederationQueryWorkspaceProviderStateErrorResponse
 }
 
 type QueueFederationWorkspaceCleanupResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *QueueFederationWorkspaceCleanupErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *QueueFederationWorkspaceCleanupErrorResponse
+	ApplicationProblemPlusJSONDefault *QueueFederationWorkspaceCleanupErrorResponse
 }
 
 type CompleteFilesystemPathResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CompleteFilesystemPathErrorResponse
-	JSON200      *CompleteFilesystemPathResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CompleteFilesystemPathErrorResponse
+	JSON200                           *CompleteFilesystemPathResponse
+	ApplicationProblemPlusJSONDefault *CompleteFilesystemPathErrorResponse
 }
 
 type ValidateFilesystemRepoResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ValidateFilesystemRepoErrorResponse
-	JSON200      *ValidateFilesystemRepoResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ValidateFilesystemRepoErrorResponse
+	JSON200                           *ValidateFilesystemRepoResponse
+	ApplicationProblemPlusJSONDefault *ValidateFilesystemRepoErrorResponse
 }
 
 type CreateFleetEnrollmentTokenResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateFleetEnrollmentTokenErrorResponse
-	JSON201      *CreateFleetEnrollmentTokenResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateFleetEnrollmentTokenErrorResponse
+	JSON201                           *CreateFleetEnrollmentTokenResponse
+	ApplicationProblemPlusJSONDefault *CreateFleetEnrollmentTokenErrorResponse
 }
 
 type RevokeFederationEnrollmentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RevokeFederationEnrollmentErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RevokeFederationEnrollmentErrorResponse
+	ApplicationProblemPlusJSONDefault *RevokeFederationEnrollmentErrorResponse
 }
 
 type CompleteFleetFilesystemPathResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CompleteFleetFilesystemPathResponse
 }
 
 type ValidateFleetFilesystemRepoResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *ValidateFleetFilesystemRepoResponse
 }
 
 type CreateFleetIssueWorkspaceOnPlatformHostResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetIssueWorkspaceOnPlatformHostResponse
 }
 
 type CreateFleetRepoWorkspaceOnPlatformHostResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetRepoWorkspaceOnPlatformHostResponse
 }
 
 type CreateFleetIssueWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetIssueWorkspaceResponse
 }
 
 type RegisterFleetProjectResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RegisterFleetProjectResponse
 }
 
 type CloneFleetProjectResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CloneFleetProjectResponse
 }
 
 type DeleteFleetProjectResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *DeleteFleetProjectResponse
 }
 
 type GetFleetProjectResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetProjectResponse
 }
 
 type ListFleetProjectBranchesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *ListFleetProjectBranchesResponse
 }
 
 type ListFleetProjectWorktreesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *ListFleetProjectWorktreesResponse
 }
 
 type CreateFleetProjectWorktreeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetProjectWorktreeResponse
 }
 
 type CreateFleetProjectWorktreeFromMergeRequestResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetProjectWorktreeFromMergeRequestResponse
 }
 
 type RemoveFleetProjectWorktreeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RemoveFleetProjectWorktreeResponse
 }
 
 type InspectFleetProjectWorktreeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *InspectFleetProjectWorktreeResponse
 }
 
 type SetFleetProjectWorktreeLinksResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *SetFleetProjectWorktreeLinksResponse
 }
 
 type RefreshFleetProjectWorktreeStatsResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RefreshFleetProjectWorktreeStatsResponse
 }
 
 type GetFleetProjectWorktreeRuntimeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetProjectWorktreeRuntimeResponse
 }
 
 type LaunchFleetProjectWorktreeRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *LaunchFleetProjectWorktreeRuntimeSessionResponse
 }
 
 type StopFleetProjectWorktreeRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *StopFleetProjectWorktreeRuntimeSessionResponse
 }
 
 type GetFleetProjectWorktreeRuntimeSessionAttachSpecResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetProjectWorktreeRuntimeSessionAttachSpecResponse
 }
 
 type EnsureFleetProjectWorktreeRuntimeShellResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *EnsureFleetProjectWorktreeRuntimeShellResponse
 }
 
 type SetFleetProjectWorktreeSessionBackendResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *SetFleetProjectWorktreeSessionBackendResponse
 }
 
 type CreateFleetRepoWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetRepoWorkspaceResponse
 }
 
 type LaunchFleetHostRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *LaunchFleetHostRuntimeSessionResponse
 }
 
 type StopFleetHostRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *StopFleetHostRuntimeSessionResponse
 }
 
 type GetFleetHostRuntimeSessionAttachSpecResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetHostRuntimeSessionAttachSpecResponse
 }
 
 type StoreFleetTerminalPasteImageResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *StoreFleetTerminalPasteImageResponse
 }
 
 type ListFleetWorkspacesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *ListFleetWorkspacesResponse
 }
 
 type CreateFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *CreateFleetWorkspaceResponse
 }
 
 type DeleteFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *DeleteFleetWorkspaceResponse
 }
 
 type GetFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceResponse
 }
 
 type GetFleetWorkspaceCommitsResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceCommitsResponse
 }
 
 type GetFleetWorkspaceDiffResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceDiffResponse
 }
 
 type WatchFleetWorkspaceDiffResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *WatchFleetWorkspaceDiffResponse
 }
 
 type GetFleetWorkspaceFilePreviewResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceFilePreviewResponse
 }
 
 type GetFleetWorkspaceFilesResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceFilesResponse
 }
 
 type PullFleetWorkspaceBranchResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *PullFleetWorkspaceBranchResponse
 }
 
 type PushFleetWorkspaceBranchResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *PushFleetWorkspaceBranchResponse
 }
 
 type RefreshFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RefreshFleetWorkspaceResponse
 }
 
 type RetryFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RetryFleetWorkspaceResponse
 }
 
 type RevealFleetWorkspaceResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RevealFleetWorkspaceResponse
 }
 
 type GetFleetWorkspaceRuntimeResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceRuntimeResponse
 }
 
 type LaunchFleetWorkspaceRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *LaunchFleetWorkspaceRuntimeSessionResponse
 }
 
 type StopFleetWorkspaceRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *StopFleetWorkspaceRuntimeSessionResponse
 }
 
 type RenameFleetWorkspaceRuntimeSessionResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *RenameFleetWorkspaceRuntimeSessionResponse
 }
 
 type GetFleetWorkspaceRuntimeSessionAttachSpecResp struct {
 	HTTPResponse *http.Response
 	Body         []byte
 	StatusCode   int
+	JSONDefault  *GetFleetWorkspaceRuntimeSessionAttachSpecResponse
 }
 
 type ListFleetWorkspaceTargetsResp struct {
@@ -57232,6 +62710,7 @@ type ListFleetWorkspaceTargetsResp struct {
 	StatusCode   int
 	Error        *ListFleetWorkspaceTargetsErrorResponse
 	JSON200      *ListFleetWorkspaceTargetsResponse
+	JSONDefault  *ListFleetWorkspaceTargetsErrorResponse
 }
 
 type UpdateFleetWorkspaceTargetResp struct {
@@ -57239,6 +62718,7 @@ type UpdateFleetWorkspaceTargetResp struct {
 	Body         []byte
 	StatusCode   int
 	Error        *UpdateFleetWorkspaceTargetErrorResponse
+	JSONDefault  *UpdateFleetWorkspaceTargetErrorResponse
 }
 
 type GetFleetWorkspaceViewStateResp struct {
@@ -57247,6 +62727,7 @@ type GetFleetWorkspaceViewStateResp struct {
 	StatusCode   int
 	Error        *GetFleetWorkspaceViewStateErrorResponse
 	JSON200      *GetFleetWorkspaceViewStateResponse
+	JSONDefault  *GetFleetWorkspaceViewStateErrorResponse
 }
 
 type UpdateFleetWorkspaceViewStateResp struct {
@@ -57255,569 +62736,642 @@ type UpdateFleetWorkspaceViewStateResp struct {
 	StatusCode   int
 	Error        *UpdateFleetWorkspaceViewStateErrorResponse
 	JSON200      *UpdateFleetWorkspaceViewStateResponse
+	JSONDefault  *UpdateFleetWorkspaceViewStateErrorResponse
 }
 
 type CreateFleetBrowserLoginResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateFleetBrowserLoginErrorResponse
-	JSON200      *CreateFleetBrowserLoginResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateFleetBrowserLoginErrorResponse
+	JSON200                           *CreateFleetBrowserLoginResponse
+	ApplicationProblemPlusJSONDefault *CreateFleetBrowserLoginErrorResponse
 }
 
 type JoinFederationResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *JoinFederationErrorResponse
-	JSON200      *JoinFederationResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *JoinFederationErrorResponse
+	JSON200                           *JoinFederationResponse
+	ApplicationProblemPlusJSONDefault *JoinFederationErrorResponse
 }
 
 type PrepareFederationSpokeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PrepareFederationSpokeErrorResponse
-	JSON200      *PrepareFederationSpokeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PrepareFederationSpokeErrorResponse
+	JSON200                           *PrepareFederationSpokeResponse
+	ApplicationProblemPlusJSONDefault *PrepareFederationSpokeErrorResponse
 }
 
 type AbortFederationSpokePreparationResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *AbortFederationSpokePreparationErrorResponse
-	JSON200      *AbortFederationSpokePreparationResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *AbortFederationSpokePreparationErrorResponse
+	JSON200                           *AbortFederationSpokePreparationResponse
+	ApplicationProblemPlusJSONDefault *AbortFederationSpokePreparationErrorResponse
 }
 
 type QueryGhResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *QueryGhErrorResponse
-	JSON200      *QueryGhResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *QueryGhErrorResponse
+	JSON200                           *QueryGhResponse
+	ApplicationProblemPlusJSONDefault *QueryGhErrorResponse
 }
 
 type ListWorkflowRunsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowRunsOnHostErrorResponse
-	JSON200      *ListWorkflowRunsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowRunsOnHostErrorResponse
+	JSON200                           *ListWorkflowRunsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowRunsOnHostErrorResponse
 }
 
 type ListWorkflowRunJobsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowRunJobsOnHostErrorResponse
-	JSON200      *ListWorkflowRunJobsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowRunJobsOnHostErrorResponse
+	JSON200                           *ListWorkflowRunJobsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowRunJobsOnHostErrorResponse
 }
 
 type ListWorkflowsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkflowsOnHostErrorResponse
-	JSON200      *ListWorkflowsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkflowsOnHostErrorResponse
+	JSON200                           *ListWorkflowsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListWorkflowsOnHostErrorResponse
 }
 
 type DispatchWorkflowOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DispatchWorkflowOnHostErrorResponse
-	JSON202      *DispatchWorkflowOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DispatchWorkflowOnHostErrorResponse
+	JSON202                           *DispatchWorkflowOnHostResponse
+	ApplicationProblemPlusJSONDefault *DispatchWorkflowOnHostErrorResponse
 }
 
 type CreateIssueOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueOnHostErrorResponse
-	JSON201      *CreateIssueOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueOnHostErrorResponse
+	JSON201                           *CreateIssueOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueOnHostErrorResponse
 }
 
 type GetIssueOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetIssueOnHostErrorResponse
-	JSON200      *GetIssueOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetIssueOnHostErrorResponse
+	JSON200                           *GetIssueOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetIssueOnHostErrorResponse
 }
 
 type EditIssueContentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditIssueContentOnHostErrorResponse
-	JSON200      *EditIssueContentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditIssueContentOnHostErrorResponse
+	JSON200                           *EditIssueContentOnHostResponse
+	ApplicationProblemPlusJSONDefault *EditIssueContentOnHostErrorResponse
 }
 
 type UpdateIssueAssigneesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateIssueAssigneesOnHostErrorResponse
-	JSON200      *UpdateIssueAssigneesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateIssueAssigneesOnHostErrorResponse
+	JSON200                           *UpdateIssueAssigneesOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdateIssueAssigneesOnHostErrorResponse
 }
 
 type SetIssueAssigneesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueAssigneesOnHostErrorResponse
-	JSON200      *SetIssueAssigneesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueAssigneesOnHostErrorResponse
+	JSON200                           *SetIssueAssigneesOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetIssueAssigneesOnHostErrorResponse
 }
 
 type PostIssueCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PostIssueCommentOnHostErrorResponse
-	JSON201      *PostIssueCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PostIssueCommentOnHostErrorResponse
+	JSON201                           *PostIssueCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *PostIssueCommentOnHostErrorResponse
 }
 
 type DeleteIssueCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteIssueCommentOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteIssueCommentOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteIssueCommentOnHostErrorResponse
 }
 
 type EditIssueCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditIssueCommentOnHostErrorResponse
-	JSON200      *EditIssueCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditIssueCommentOnHostErrorResponse
+	JSON200                           *EditIssueCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *EditIssueCommentOnHostErrorResponse
 }
 
 type SetIssueGithubStateOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueGithubStateOnHostErrorResponse
-	JSON200      *SetIssueGithubStateOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueGithubStateOnHostErrorResponse
+	JSON200                           *SetIssueGithubStateOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetIssueGithubStateOnHostErrorResponse
 }
 
 type ListIssueKataLinksOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListIssueKataLinksOnHostErrorResponse
-	JSON200      *ListIssueKataLinksOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListIssueKataLinksOnHostErrorResponse
+	JSON200                           *ListIssueKataLinksOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListIssueKataLinksOnHostErrorResponse
 }
 
 type CreateIssueKataLinkOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueKataLinkOnHostErrorResponse
-	JSON200      *CreateIssueKataLinkOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueKataLinkOnHostErrorResponse
+	JSON200                           *CreateIssueKataLinkOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueKataLinkOnHostErrorResponse
 }
 
 type DeleteIssueKataLinkOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteIssueKataLinkOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteIssueKataLinkOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteIssueKataLinkOnHostErrorResponse
 }
 
 type UpdateIssueLabelsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateIssueLabelsOnHostErrorResponse
-	JSON200      *UpdateIssueLabelsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateIssueLabelsOnHostErrorResponse
+	JSON200                           *UpdateIssueLabelsOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdateIssueLabelsOnHostErrorResponse
 }
 
 type SetIssueLabelsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueLabelsOnHostErrorResponse
-	JSON200      *SetIssueLabelsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueLabelsOnHostErrorResponse
+	JSON200                           *SetIssueLabelsOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetIssueLabelsOnHostErrorResponse
 }
 
 type SyncIssueOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SyncIssueOnHostErrorResponse
-	JSON200      *SyncIssueOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SyncIssueOnHostErrorResponse
+	JSON200                           *SyncIssueOnHostResponse
+	ApplicationProblemPlusJSONDefault *SyncIssueOnHostErrorResponse
 }
 
 type EnqueueIssueSyncOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EnqueueIssueSyncOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EnqueueIssueSyncOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *EnqueueIssueSyncOnHostErrorResponse
 }
 
 type CreateIssueWorkspaceOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueWorkspaceOnHostErrorResponse
-	JSON202      *CreateIssueWorkspaceOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueWorkspaceOnHostErrorResponse
+	JSON202                           *CreateIssueWorkspaceOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueWorkspaceOnHostErrorResponse
 }
 
 type GetPullOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullOnHostErrorResponse
-	JSON200      *GetPullOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullOnHostErrorResponse
+	JSON200                           *GetPullOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullOnHostErrorResponse
 }
 
 type EditPrContentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrContentOnHostErrorResponse
-	JSON200      *EditPrContentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrContentOnHostErrorResponse
+	JSON200                           *EditPrContentOnHostResponse
+	ApplicationProblemPlusJSONDefault *EditPrContentOnHostErrorResponse
 }
 
 type ApprovePullOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApprovePullOnHostErrorResponse
-	JSON200      *ApprovePullOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApprovePullOnHostErrorResponse
+	JSON200                           *ApprovePullOnHostResponse
+	ApplicationProblemPlusJSONDefault *ApprovePullOnHostErrorResponse
 }
 
 type ApprovePullWorkflowsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApprovePullWorkflowsOnHostErrorResponse
-	JSON200      *ApprovePullWorkflowsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApprovePullWorkflowsOnHostErrorResponse
+	JSON200                           *ApprovePullWorkflowsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ApprovePullWorkflowsOnHostErrorResponse
 }
 
 type UpdatePrAssigneesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdatePrAssigneesOnHostErrorResponse
-	JSON200      *UpdatePrAssigneesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePrAssigneesOnHostErrorResponse
+	JSON200                           *UpdatePrAssigneesOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdatePrAssigneesOnHostErrorResponse
 }
 
 type SetPrAssigneesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrAssigneesOnHostErrorResponse
-	JSON200      *SetPrAssigneesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrAssigneesOnHostErrorResponse
+	JSON200                           *SetPrAssigneesOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetPrAssigneesOnHostErrorResponse
 }
 
 type RefreshPullCiOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshPullCiOnHostErrorResponse
-	JSON200      *RefreshPullCiOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshPullCiOnHostErrorResponse
+	JSON200                           *RefreshPullCiOnHostResponse
+	ApplicationProblemPlusJSONDefault *RefreshPullCiOnHostErrorResponse
 }
 
 type PostPrCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PostPrCommentOnHostErrorResponse
-	JSON201      *PostPrCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PostPrCommentOnHostErrorResponse
+	JSON201                           *PostPrCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *PostPrCommentOnHostErrorResponse
 }
 
 type DeletePrCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePrCommentOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePrCommentOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePrCommentOnHostErrorResponse
 }
 
 type EditPrCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrCommentOnHostErrorResponse
-	JSON200      *EditPrCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrCommentOnHostErrorResponse
+	JSON200                           *EditPrCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *EditPrCommentOnHostErrorResponse
 }
 
 type GetPullCommitsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullCommitsOnHostErrorResponse
-	JSON200      *GetPullCommitsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullCommitsOnHostErrorResponse
+	JSON200                           *GetPullCommitsOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullCommitsOnHostErrorResponse
 }
 
 type GetPullDiffOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullDiffOnHostErrorResponse
-	JSON200      *GetPullDiffOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullDiffOnHostErrorResponse
+	JSON200                           *GetPullDiffOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullDiffOnHostErrorResponse
 }
 
 type ReplyToDiscussionOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReplyToDiscussionOnHostErrorResponse
-	JSON201      *ReplyToDiscussionOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReplyToDiscussionOnHostErrorResponse
+	JSON201                           *ReplyToDiscussionOnHostResponse
+	ApplicationProblemPlusJSONDefault *ReplyToDiscussionOnHostErrorResponse
 }
 
 type ResolveDiscussionOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolveDiscussionOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolveDiscussionOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *ResolveDiscussionOnHostErrorResponse
 }
 
 type GetPullExternalContextOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullExternalContextOnHostErrorResponse
-	JSON200      *GetPullExternalContextOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullExternalContextOnHostErrorResponse
+	JSON200                           *GetPullExternalContextOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullExternalContextOnHostErrorResponse
 }
 
 type RunPullExternalContextActionOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RunPullExternalContextActionOnHostErrorResponse
-	JSON200      *RunPullExternalContextActionOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RunPullExternalContextActionOnHostErrorResponse
+	JSON200                           *RunPullExternalContextActionOnHostResponse
+	ApplicationProblemPlusJSONDefault *RunPullExternalContextActionOnHostErrorResponse
 }
 
 type GetPullFilePreviewOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullFilePreviewOnHostErrorResponse
-	JSON200      *GetPullFilePreviewOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullFilePreviewOnHostErrorResponse
+	JSON200                           *GetPullFilePreviewOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullFilePreviewOnHostErrorResponse
 }
 
 type GetPullFilesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullFilesOnHostErrorResponse
-	JSON200      *GetPullFilesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullFilesOnHostErrorResponse
+	JSON200                           *GetPullFilesOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullFilesOnHostErrorResponse
 }
 
 type SetPrGithubStateOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrGithubStateOnHostErrorResponse
-	JSON200      *SetPrGithubStateOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrGithubStateOnHostErrorResponse
+	JSON200                           *SetPrGithubStateOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetPrGithubStateOnHostErrorResponse
 }
 
 type GetPullImportMetadataOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullImportMetadataOnHostErrorResponse
-	JSON200      *GetPullImportMetadataOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullImportMetadataOnHostErrorResponse
+	JSON200                           *GetPullImportMetadataOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullImportMetadataOnHostErrorResponse
 }
 
 type ListPullRequestKataLinksOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListPullRequestKataLinksOnHostErrorResponse
-	JSON200      *ListPullRequestKataLinksOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListPullRequestKataLinksOnHostErrorResponse
+	JSON200                           *ListPullRequestKataLinksOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListPullRequestKataLinksOnHostErrorResponse
 }
 
 type CreatePullRequestKataLinkOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreatePullRequestKataLinkOnHostErrorResponse
-	JSON200      *CreatePullRequestKataLinkOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreatePullRequestKataLinkOnHostErrorResponse
+	JSON200                           *CreatePullRequestKataLinkOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreatePullRequestKataLinkOnHostErrorResponse
 }
 
 type DeletePullRequestKataLinkOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePullRequestKataLinkOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePullRequestKataLinkOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePullRequestKataLinkOnHostErrorResponse
 }
 
 type UpdatePrLabelsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdatePrLabelsOnHostErrorResponse
-	JSON200      *UpdatePrLabelsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePrLabelsOnHostErrorResponse
+	JSON200                           *UpdatePrLabelsOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdatePrLabelsOnHostErrorResponse
 }
 
 type SetPrLabelsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrLabelsOnHostErrorResponse
-	JSON200      *SetPrLabelsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrLabelsOnHostErrorResponse
+	JSON200                           *SetPrLabelsOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetPrLabelsOnHostErrorResponse
 }
 
 type MergePullOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MergePullOnHostErrorResponse
-	JSON200      *MergePullOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MergePullOnHostErrorResponse
+	JSON200                           *MergePullOnHostResponse
+	ApplicationProblemPlusJSONDefault *MergePullOnHostErrorResponse
 }
 
 type DeferMergePullOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeferMergePullOnHostErrorResponse
-	JSON202      *DeferMergePullOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeferMergePullOnHostErrorResponse
+	JSON202                           *DeferMergePullOnHostResponse
+	ApplicationProblemPlusJSONDefault *DeferMergePullOnHostErrorResponse
 }
 
 type MarkPullReadyForReviewOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MarkPullReadyForReviewOnHostErrorResponse
-	JSON200      *MarkPullReadyForReviewOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MarkPullReadyForReviewOnHostErrorResponse
+	JSON200                           *MarkPullReadyForReviewOnHostResponse
+	ApplicationProblemPlusJSONDefault *MarkPullReadyForReviewOnHostErrorResponse
 }
 
 type RequestPullChangesOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RequestPullChangesOnHostErrorResponse
-	JSON200      *RequestPullChangesOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RequestPullChangesOnHostErrorResponse
+	JSON200                           *RequestPullChangesOnHostResponse
+	ApplicationProblemPlusJSONDefault *RequestPullChangesOnHostErrorResponse
 }
 
 type DiscardPrReviewDraftOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DiscardPrReviewDraftOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DiscardPrReviewDraftOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DiscardPrReviewDraftOnHostErrorResponse
 }
 
 type GetPrReviewDraftOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPrReviewDraftOnHostErrorResponse
-	JSON200      *GetPrReviewDraftOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPrReviewDraftOnHostErrorResponse
+	JSON200                           *GetPrReviewDraftOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPrReviewDraftOnHostErrorResponse
 }
 
 type CreatePrReviewDraftCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreatePrReviewDraftCommentOnHostErrorResponse
-	JSON201      *CreatePrReviewDraftCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreatePrReviewDraftCommentOnHostErrorResponse
+	JSON201                           *CreatePrReviewDraftCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreatePrReviewDraftCommentOnHostErrorResponse
 }
 
 type DeletePrReviewDraftCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePrReviewDraftCommentOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePrReviewDraftCommentOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePrReviewDraftCommentOnHostErrorResponse
 }
 
 type EditPrReviewDraftCommentOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrReviewDraftCommentOnHostErrorResponse
-	JSON200      *EditPrReviewDraftCommentOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrReviewDraftCommentOnHostErrorResponse
+	JSON200                           *EditPrReviewDraftCommentOnHostResponse
+	ApplicationProblemPlusJSONDefault *EditPrReviewDraftCommentOnHostErrorResponse
 }
 
 type PublishPrReviewDraftOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PublishPrReviewDraftOnHostErrorResponse
-	JSON200      *PublishPrReviewDraftOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PublishPrReviewDraftOnHostErrorResponse
+	JSON200                           *PublishPrReviewDraftOnHostResponse
+	ApplicationProblemPlusJSONDefault *PublishPrReviewDraftOnHostErrorResponse
 }
 
 type ApplyPrReviewSuggestionsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApplyPrReviewSuggestionsOnHostErrorResponse
-	JSON200      *ApplyPrReviewSuggestionsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApplyPrReviewSuggestionsOnHostErrorResponse
+	JSON200                           *ApplyPrReviewSuggestionsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ApplyPrReviewSuggestionsOnHostErrorResponse
 }
 
 type ResolvePrReviewThreadOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolvePrReviewThreadOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolvePrReviewThreadOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *ResolvePrReviewThreadOnHostErrorResponse
 }
 
 type UnresolvePrReviewThreadOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UnresolvePrReviewThreadOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UnresolvePrReviewThreadOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *UnresolvePrReviewThreadOnHostErrorResponse
 }
 
 type GetPrReviewerAccountsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPrReviewerAccountsOnHostErrorResponse
-	JSON200      *GetPrReviewerAccountsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPrReviewerAccountsOnHostErrorResponse
+	JSON200                           *GetPrReviewerAccountsOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPrReviewerAccountsOnHostErrorResponse
 }
 
 type SetPrReviewersOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrReviewersOnHostErrorResponse
-	JSON200      *SetPrReviewersOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrReviewersOnHostErrorResponse
+	JSON200                           *SetPrReviewersOnHostResponse
+	ApplicationProblemPlusJSONDefault *SetPrReviewersOnHostErrorResponse
 }
 
 type GetPullStackOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullStackOnHostErrorResponse
-	JSON200      *GetPullStackOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullStackOnHostErrorResponse
+	JSON200                           *GetPullStackOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetPullStackOnHostErrorResponse
 }
 
 type SetKanbanStateOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetKanbanStateOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetKanbanStateOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *SetKanbanStateOnHostErrorResponse
 }
 
 type SyncPullOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SyncPullOnHostErrorResponse
-	JSON200      *SyncPullOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SyncPullOnHostErrorResponse
+	JSON200                           *SyncPullOnHostResponse
+	ApplicationProblemPlusJSONDefault *SyncPullOnHostErrorResponse
 }
 
 type EnqueuePrSyncOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EnqueuePrSyncOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EnqueuePrSyncOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *EnqueuePrSyncOnHostErrorResponse
 }
 
 type DeleteRepoOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteRepoOnHostErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteRepoOnHostErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteRepoOnHostErrorResponse
 }
 
 type GetRepoOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoOnHostErrorResponse
-	JSON200      *GetRepoOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoOnHostErrorResponse
+	JSON200                           *GetRepoOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoOnHostErrorResponse
 }
 
 type GetRepoBrowserAssetOnHostResp200Headers struct {
@@ -57828,83 +63382,93 @@ type GetRepoBrowserAssetOnHostResp200Headers struct {
 }
 
 type GetRepoBrowserAssetOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserAssetOnHostErrorResponse
-	Headers200   *GetRepoBrowserAssetOnHostResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserAssetOnHostErrorResponse
+	Headers200                        *GetRepoBrowserAssetOnHostResp200Headers
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserAssetOnHostErrorResponse
 }
 
 type GetRepoBrowserBlobOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserBlobOnHostErrorResponse
-	JSON200      *GetRepoBrowserBlobOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserBlobOnHostErrorResponse
+	JSON200                           *GetRepoBrowserBlobOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserBlobOnHostErrorResponse
 }
 
 type GetRepoBrowserCommitOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserCommitOnHostErrorResponse
-	JSON200      *GetRepoBrowserCommitOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserCommitOnHostErrorResponse
+	JSON200                           *GetRepoBrowserCommitOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserCommitOnHostErrorResponse
 }
 
 type GetRepoBrowserHistoryOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserHistoryOnHostErrorResponse
-	JSON200      *GetRepoBrowserHistoryOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserHistoryOnHostErrorResponse
+	JSON200                           *GetRepoBrowserHistoryOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserHistoryOnHostErrorResponse
 }
 
 type GetRepoBrowserLastChangedOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserLastChangedOnHostErrorResponse
-	JSON200      *GetRepoBrowserLastChangedOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserLastChangedOnHostErrorResponse
+	JSON200                           *GetRepoBrowserLastChangedOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserLastChangedOnHostErrorResponse
 }
 
 type ListRepoBrowserRefsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoBrowserRefsOnHostErrorResponse
-	JSON200      *ListRepoBrowserRefsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoBrowserRefsOnHostErrorResponse
+	JSON200                           *ListRepoBrowserRefsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListRepoBrowserRefsOnHostErrorResponse
 }
 
 type ListRepoBrowserTreeOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoBrowserTreeOnHostErrorResponse
-	JSON200      *ListRepoBrowserTreeOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoBrowserTreeOnHostErrorResponse
+	JSON200                           *ListRepoBrowserTreeOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListRepoBrowserTreeOnHostErrorResponse
 }
 
 type GetCommentAutocompleteOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetCommentAutocompleteOnHostErrorResponse
-	JSON200      *GetCommentAutocompleteOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetCommentAutocompleteOnHostErrorResponse
+	JSON200                           *GetCommentAutocompleteOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetCommentAutocompleteOnHostErrorResponse
 }
 
 type GetRepoCommitDiffOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoCommitDiffOnHostErrorResponse
-	JSON200      *GetRepoCommitDiffOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoCommitDiffOnHostErrorResponse
+	JSON200                           *GetRepoCommitDiffOnHostResponse
+	ApplicationProblemPlusJSONDefault *GetRepoCommitDiffOnHostErrorResponse
 }
 
 type ListRepoLabelsOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoLabelsOnHostErrorResponse
-	JSON200      *ListRepoLabelsOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoLabelsOnHostErrorResponse
+	JSON200                           *ListRepoLabelsOnHostResponse
+	ApplicationProblemPlusJSONDefault *ListRepoLabelsOnHostErrorResponse
 }
 
 type GetMarkdownImageOnHostResp200Headers struct {
@@ -57916,11 +63480,12 @@ type GetMarkdownImageOnHostResp200Headers struct {
 }
 
 type GetMarkdownImageOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetMarkdownImageOnHostErrorResponse
-	Headers200   *GetMarkdownImageOnHostResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetMarkdownImageOnHostErrorResponse
+	Headers200                        *GetMarkdownImageOnHostResp200Headers
+	ApplicationProblemPlusJSONDefault *GetMarkdownImageOnHostErrorResponse
 }
 
 type GetMarkdownMediaOnHostResp struct {
@@ -57930,224 +63495,252 @@ type GetMarkdownMediaOnHostResp struct {
 }
 
 type RefreshRepoOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshRepoOnHostErrorResponse
-	JSON200      *RefreshRepoOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshRepoOnHostErrorResponse
+	JSON200                           *RefreshRepoOnHostResponse
+	ApplicationProblemPlusJSONDefault *RefreshRepoOnHostErrorResponse
 }
 
 type ResolveRepoItemOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolveRepoItemOnHostErrorResponse
-	JSON200      *ResolveRepoItemOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolveRepoItemOnHostErrorResponse
+	JSON200                           *ResolveRepoItemOnHostResponse
+	ApplicationProblemPlusJSONDefault *ResolveRepoItemOnHostErrorResponse
 }
 
 type UpdateRepoUIVisibilityOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateRepoUIVisibilityOnHostErrorResponse
-	JSON200      *UpdateRepoUIVisibilityOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateRepoUIVisibilityOnHostErrorResponse
+	JSON200                           *UpdateRepoUIVisibilityOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityOnHostErrorResponse
 }
 
 type CreateRepoWorkspaceOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateRepoWorkspaceOnHostErrorResponse
-	JSON202      *CreateRepoWorkspaceOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateRepoWorkspaceOnHostErrorResponse
+	JSON202                           *CreateRepoWorkspaceOnHostResponse
+	ApplicationProblemPlusJSONDefault *CreateRepoWorkspaceOnHostErrorResponse
 }
 
 type UpdateRepoWorktreeBaseOnHostResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateRepoWorktreeBaseOnHostErrorResponse
-	JSON200      *UpdateRepoWorktreeBaseOnHostResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateRepoWorktreeBaseOnHostErrorResponse
+	JSON200                           *UpdateRepoWorktreeBaseOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdateRepoWorktreeBaseOnHostErrorResponse
 }
 
 type ListIssuesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListIssuesErrorResponse
-	JSON200      *ListIssuesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListIssuesErrorResponse
+	JSON200                           *ListIssuesResponse
+	ApplicationProblemPlusJSONDefault *ListIssuesErrorResponse
 }
 
 type CreateIssueResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueErrorResponse
-	JSON201      *CreateIssueResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueErrorResponse
+	JSON201                           *CreateIssueResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueErrorResponse
 }
 
 type GetIssueResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetIssueErrorResponse
-	JSON200      *GetIssueResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetIssueErrorResponse
+	JSON200                           *GetIssueResponse
+	ApplicationProblemPlusJSONDefault *GetIssueErrorResponse
 }
 
 type EditIssueContentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditIssueContentErrorResponse
-	JSON200      *EditIssueContentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditIssueContentErrorResponse
+	JSON200                           *EditIssueContentResponse
+	ApplicationProblemPlusJSONDefault *EditIssueContentErrorResponse
 }
 
 type UpdateIssueAssigneesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateIssueAssigneesErrorResponse
-	JSON200      *UpdateIssueAssigneesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateIssueAssigneesErrorResponse
+	JSON200                           *UpdateIssueAssigneesResponse
+	ApplicationProblemPlusJSONDefault *UpdateIssueAssigneesErrorResponse
 }
 
 type SetIssueAssigneesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueAssigneesErrorResponse
-	JSON200      *SetIssueAssigneesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueAssigneesErrorResponse
+	JSON200                           *SetIssueAssigneesResponse
+	ApplicationProblemPlusJSONDefault *SetIssueAssigneesErrorResponse
 }
 
 type PostIssueCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PostIssueCommentErrorResponse
-	JSON201      *PostIssueCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PostIssueCommentErrorResponse
+	JSON201                           *PostIssueCommentResponse
+	ApplicationProblemPlusJSONDefault *PostIssueCommentErrorResponse
 }
 
 type DeleteIssueCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteIssueCommentErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteIssueCommentErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteIssueCommentErrorResponse
 }
 
 type EditIssueCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditIssueCommentErrorResponse
-	JSON200      *EditIssueCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditIssueCommentErrorResponse
+	JSON200                           *EditIssueCommentResponse
+	ApplicationProblemPlusJSONDefault *EditIssueCommentErrorResponse
 }
 
 type SetIssueGithubStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueGithubStateErrorResponse
-	JSON200      *SetIssueGithubStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueGithubStateErrorResponse
+	JSON200                           *SetIssueGithubStateResponse
+	ApplicationProblemPlusJSONDefault *SetIssueGithubStateErrorResponse
 }
 
 type ListIssueKataLinksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListIssueKataLinksErrorResponse
-	JSON200      *ListIssueKataLinksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListIssueKataLinksErrorResponse
+	JSON200                           *ListIssueKataLinksResponse
+	ApplicationProblemPlusJSONDefault *ListIssueKataLinksErrorResponse
 }
 
 type CreateIssueKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueKataLinkErrorResponse
-	JSON200      *CreateIssueKataLinkResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueKataLinkErrorResponse
+	JSON200                           *CreateIssueKataLinkResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueKataLinkErrorResponse
 }
 
 type DeleteIssueKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteIssueKataLinkErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteIssueKataLinkErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteIssueKataLinkErrorResponse
 }
 
 type UpdateIssueLabelsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateIssueLabelsErrorResponse
-	JSON200      *UpdateIssueLabelsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateIssueLabelsErrorResponse
+	JSON200                           *UpdateIssueLabelsResponse
+	ApplicationProblemPlusJSONDefault *UpdateIssueLabelsErrorResponse
 }
 
 type SetIssueLabelsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetIssueLabelsErrorResponse
-	JSON200      *SetIssueLabelsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetIssueLabelsErrorResponse
+	JSON200                           *SetIssueLabelsResponse
+	ApplicationProblemPlusJSONDefault *SetIssueLabelsErrorResponse
 }
 
 type SyncIssueResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SyncIssueErrorResponse
-	JSON200      *SyncIssueResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SyncIssueErrorResponse
+	JSON200                           *SyncIssueResponse
+	ApplicationProblemPlusJSONDefault *SyncIssueErrorResponse
 }
 
 type EnqueueIssueSyncResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EnqueueIssueSyncErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EnqueueIssueSyncErrorResponse
+	ApplicationProblemPlusJSONDefault *EnqueueIssueSyncErrorResponse
 }
 
 type CreateIssueWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateIssueWorkspaceErrorResponse
-	JSON202      *CreateIssueWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateIssueWorkspaceErrorResponse
+	JSON202                           *CreateIssueWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateIssueWorkspaceErrorResponse
 }
 
 type ListKataDaemonsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListKataDaemonsErrorResponse
-	JSON200      *ListKataDaemonsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListKataDaemonsErrorResponse
+	JSON200                           *ListKataDaemonsResponse
+	ApplicationProblemPlusJSONDefault *ListKataDaemonsErrorResponse
 }
 
 type ResolveKataIssueReferenceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolveKataIssueReferenceErrorResponse
-	JSON200      *ResolveKataIssueReferenceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolveKataIssueReferenceErrorResponse
+	JSON200                           *ResolveKataIssueReferenceResponse
+	ApplicationProblemPlusJSONDefault *ResolveKataIssueReferenceErrorResponse
 }
 
 type GetKataIssueDetailResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetKataIssueDetailErrorResponse
-	JSON200      *GetKataIssueDetailResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetKataIssueDetailErrorResponse
+	JSON200                           *GetKataIssueDetailResponse
+	ApplicationProblemPlusJSONDefault *GetKataIssueDetailErrorResponse
 }
 
 type GetKataLaunchTargetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetKataLaunchTargetErrorResponse
-	JSON200      *GetKataLaunchTargetResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetKataLaunchTargetErrorResponse
+	JSON200                           *GetKataLaunchTargetResponse
+	ApplicationProblemPlusJSONDefault *GetKataLaunchTargetErrorResponse
 }
 
 type ListKataReferencesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListKataReferencesErrorResponse
-	JSON200      *ListKataReferencesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListKataReferencesErrorResponse
+	JSON200                           *ListKataReferencesResponse
+	ApplicationProblemPlusJSONDefault *ListKataReferencesErrorResponse
 }
 
 type GetKataProjectMappingsResp200Headers struct {
@@ -58155,629 +63748,709 @@ type GetKataProjectMappingsResp200Headers struct {
 }
 
 type GetKataProjectMappingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetKataProjectMappingsErrorResponse
-	JSON200      *GetKataProjectMappingsResponse
-	Headers200   *GetKataProjectMappingsResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetKataProjectMappingsErrorResponse
+	JSON200                           *GetKataProjectMappingsResponse
+	Headers200                        *GetKataProjectMappingsResp200Headers
+	ApplicationProblemPlusJSONDefault *GetKataProjectMappingsErrorResponse
 }
 
 type CreateKataWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateKataWorkspaceErrorResponse
-	JSON202      *CreateKataWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateKataWorkspaceErrorResponse
+	JSON202                           *CreateKataWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateKataWorkspaceErrorResponse
 }
 
 type CallMcpAppToolResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CallMcpAppToolErrorResponse
-	JSON200      *CallMcpAppToolResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CallMcpAppToolErrorResponse
+	JSON200                           *CallMcpAppToolResponse
+	ApplicationProblemPlusJSONDefault *CallMcpAppToolErrorResponse
 }
 
 type GetMcpAppResourceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetMcpAppResourceErrorResponse
-	JSON200      *GetMcpAppResourceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetMcpAppResourceErrorResponse
+	JSON200                           *GetMcpAppResourceResponse
+	ApplicationProblemPlusJSONDefault *GetMcpAppResourceErrorResponse
 }
 
 type ListNotificationsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListNotificationsErrorResponse
-	JSON200      *ListNotificationsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListNotificationsErrorResponse
+	JSON200                           *ListNotificationsResponse
+	ApplicationProblemPlusJSONDefault *ListNotificationsErrorResponse
 }
 
 type MarkNotificationsDoneResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MarkNotificationsDoneErrorResponse
-	JSON200      *MarkNotificationsDoneResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MarkNotificationsDoneErrorResponse
+	JSON200                           *MarkNotificationsDoneResponse
+	ApplicationProblemPlusJSONDefault *MarkNotificationsDoneErrorResponse
 }
 
 type MarkNotificationsReadResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MarkNotificationsReadErrorResponse
-	JSON200      *MarkNotificationsReadResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MarkNotificationsReadErrorResponse
+	JSON200                           *MarkNotificationsReadResponse
+	ApplicationProblemPlusJSONDefault *MarkNotificationsReadErrorResponse
 }
 
 type SyncNotificationsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SyncNotificationsErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SyncNotificationsErrorResponse
+	ApplicationProblemPlusJSONDefault *SyncNotificationsErrorResponse
 }
 
 type MarkNotificationsUndoneResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MarkNotificationsUndoneErrorResponse
-	JSON200      *MarkNotificationsUndoneResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MarkNotificationsUndoneErrorResponse
+	JSON200                           *MarkNotificationsUndoneResponse
+	ApplicationProblemPlusJSONDefault *MarkNotificationsUndoneErrorResponse
 }
 
 type ListUserRepositoriesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListUserRepositoriesErrorResponse
-	JSON200      *ListUserRepositoriesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListUserRepositoriesErrorResponse
+	JSON200                           *ListUserRepositoriesResponse
+	ApplicationProblemPlusJSONDefault *ListUserRepositoriesErrorResponse
 }
 
 type ListProjectsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListProjectsErrorResponse
-	JSON200      *ListProjectsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListProjectsErrorResponse
+	JSON200                           *ListProjectsResponse
+	ApplicationProblemPlusJSONDefault *ListProjectsErrorResponse
 }
 
 type RegisterProjectResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RegisterProjectErrorResponse
-	JSON201      *RegisterProjectResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RegisterProjectErrorResponse
+	JSON201                           *RegisterProjectResponse
+	ApplicationProblemPlusJSONDefault *RegisterProjectErrorResponse
 }
 
 type CloneProjectResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CloneProjectErrorResponse
-	JSON201      *CloneProjectResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CloneProjectErrorResponse
+	JSON201                           *CloneProjectResponse
+	ApplicationProblemPlusJSONDefault *CloneProjectErrorResponse
 }
 
 type DeleteProjectResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteProjectErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteProjectErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteProjectErrorResponse
 }
 
 type GetProjectResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetProjectErrorResponse
-	JSON200      *GetProjectResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetProjectErrorResponse
+	JSON200                           *GetProjectResponse
+	ApplicationProblemPlusJSONDefault *GetProjectErrorResponse
 }
 
 type ListProjectBranchesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListProjectBranchesErrorResponse
-	JSON200      *ListProjectBranchesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListProjectBranchesErrorResponse
+	JSON200                           *ListProjectBranchesResponse
+	ApplicationProblemPlusJSONDefault *ListProjectBranchesErrorResponse
 }
 
 type ListLaunchTargetsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListLaunchTargetsErrorResponse
-	JSON200      *ListLaunchTargetsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListLaunchTargetsErrorResponse
+	JSON200                           *ListLaunchTargetsResponse
+	ApplicationProblemPlusJSONDefault *ListLaunchTargetsErrorResponse
 }
 
 type ListWorktreesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorktreesErrorResponse
-	JSON200      *ListWorktreesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorktreesErrorResponse
+	JSON200                           *ListWorktreesResponse
+	ApplicationProblemPlusJSONDefault *ListWorktreesErrorResponse
 }
 
 type RegisterWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RegisterWorktreeErrorResponse
-	JSON201      *RegisterWorktreeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RegisterWorktreeErrorResponse
+	JSON201                           *RegisterWorktreeResponse
+	ApplicationProblemPlusJSONDefault *RegisterWorktreeErrorResponse
 }
 
 type CreateWorktreeFromMergeRequestResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateWorktreeFromMergeRequestErrorResponse
-	JSON201      *CreateWorktreeFromMergeRequestResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateWorktreeFromMergeRequestErrorResponse
+	JSON201                           *CreateWorktreeFromMergeRequestResponse
+	ApplicationProblemPlusJSONDefault *CreateWorktreeFromMergeRequestErrorResponse
 }
 
 type DeleteWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteWorktreeErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteWorktreeErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteWorktreeErrorResponse
 }
 
 type RemoveWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RemoveWorktreeErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RemoveWorktreeErrorResponse
+	ApplicationProblemPlusJSONDefault *RemoveWorktreeErrorResponse
 }
 
 type SetWorktreeHiddenResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetWorktreeHiddenErrorResponse
-	JSON200      *SetWorktreeHiddenResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetWorktreeHiddenErrorResponse
+	JSON200                           *SetWorktreeHiddenResponse
+	ApplicationProblemPlusJSONDefault *SetWorktreeHiddenErrorResponse
 }
 
 type InspectProjectWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *InspectProjectWorktreeErrorResponse
-	JSON200      *InspectProjectWorktreeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *InspectProjectWorktreeErrorResponse
+	JSON200                           *InspectProjectWorktreeResponse
+	ApplicationProblemPlusJSONDefault *InspectProjectWorktreeErrorResponse
 }
 
 type SetWorktreeLinksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetWorktreeLinksErrorResponse
-	JSON200      *SetWorktreeLinksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetWorktreeLinksErrorResponse
+	JSON200                           *SetWorktreeLinksResponse
+	ApplicationProblemPlusJSONDefault *SetWorktreeLinksErrorResponse
 }
 
 type RefreshWorktreeStatsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshWorktreeStatsErrorResponse
-	JSON200      *RefreshWorktreeStatsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshWorktreeStatsErrorResponse
+	JSON200                           *RefreshWorktreeStatsResponse
+	ApplicationProblemPlusJSONDefault *RefreshWorktreeStatsErrorResponse
 }
 
 type GetProjectWorktreeRuntimeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetProjectWorktreeRuntimeErrorResponse
-	JSON200      *GetProjectWorktreeRuntimeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetProjectWorktreeRuntimeErrorResponse
+	JSON200                           *GetProjectWorktreeRuntimeResponse
+	ApplicationProblemPlusJSONDefault *GetProjectWorktreeRuntimeErrorResponse
 }
 
 type LaunchProjectWorktreeRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchProjectWorktreeRuntimeSessionErrorResponse
-	JSON200      *LaunchProjectWorktreeRuntimeSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchProjectWorktreeRuntimeSessionErrorResponse
+	JSON200                           *LaunchProjectWorktreeRuntimeSessionResponse
+	ApplicationProblemPlusJSONDefault *LaunchProjectWorktreeRuntimeSessionErrorResponse
 }
 
 type StopProjectWorktreeRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StopProjectWorktreeRuntimeSessionErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StopProjectWorktreeRuntimeSessionErrorResponse
+	ApplicationProblemPlusJSONDefault *StopProjectWorktreeRuntimeSessionErrorResponse
 }
 
 type GetProjectWorktreeRuntimeSessionAttachSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse
-	JSON200      *GetProjectWorktreeRuntimeSessionAttachSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse
+	JSON200                           *GetProjectWorktreeRuntimeSessionAttachSpecResponse
+	ApplicationProblemPlusJSONDefault *GetProjectWorktreeRuntimeSessionAttachSpecErrorResponse
 }
 
 type EnsureProjectWorktreeRuntimeShellResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EnsureProjectWorktreeRuntimeShellErrorResponse
-	JSON200      *EnsureProjectWorktreeRuntimeShellResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EnsureProjectWorktreeRuntimeShellErrorResponse
+	JSON200                           *EnsureProjectWorktreeRuntimeShellResponse
+	ApplicationProblemPlusJSONDefault *EnsureProjectWorktreeRuntimeShellErrorResponse
 }
 
 type SetWorktreeSessionBackendResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetWorktreeSessionBackendErrorResponse
-	JSON200      *SetWorktreeSessionBackendResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetWorktreeSessionBackendErrorResponse
+	JSON200                           *SetWorktreeSessionBackendResponse
+	ApplicationProblemPlusJSONDefault *SetWorktreeSessionBackendErrorResponse
 }
 
 type ListPullsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListPullsErrorResponse
-	JSON200      *ListPullsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListPullsErrorResponse
+	JSON200                           *ListPullsResponse
+	ApplicationProblemPlusJSONDefault *ListPullsErrorResponse
 }
 
 type GetPullResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullErrorResponse
-	JSON200      *GetPullResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullErrorResponse
+	JSON200                           *GetPullResponse
+	ApplicationProblemPlusJSONDefault *GetPullErrorResponse
 }
 
 type EditPrContentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrContentErrorResponse
-	JSON200      *EditPrContentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrContentErrorResponse
+	JSON200                           *EditPrContentResponse
+	ApplicationProblemPlusJSONDefault *EditPrContentErrorResponse
 }
 
 type ApprovePullResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApprovePullErrorResponse
-	JSON200      *ApprovePullResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApprovePullErrorResponse
+	JSON200                           *ApprovePullResponse
+	ApplicationProblemPlusJSONDefault *ApprovePullErrorResponse
 }
 
 type ApprovePullWorkflowsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApprovePullWorkflowsErrorResponse
-	JSON200      *ApprovePullWorkflowsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApprovePullWorkflowsErrorResponse
+	JSON200                           *ApprovePullWorkflowsResponse
+	ApplicationProblemPlusJSONDefault *ApprovePullWorkflowsErrorResponse
 }
 
 type UpdatePrAssigneesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdatePrAssigneesErrorResponse
-	JSON200      *UpdatePrAssigneesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePrAssigneesErrorResponse
+	JSON200                           *UpdatePrAssigneesResponse
+	ApplicationProblemPlusJSONDefault *UpdatePrAssigneesErrorResponse
 }
 
 type SetPrAssigneesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrAssigneesErrorResponse
-	JSON200      *SetPrAssigneesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrAssigneesErrorResponse
+	JSON200                           *SetPrAssigneesResponse
+	ApplicationProblemPlusJSONDefault *SetPrAssigneesErrorResponse
 }
 
 type RefreshPullCiResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshPullCiErrorResponse
-	JSON200      *RefreshPullCiResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshPullCiErrorResponse
+	JSON200                           *RefreshPullCiResponse
+	ApplicationProblemPlusJSONDefault *RefreshPullCiErrorResponse
 }
 
 type PostPrCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PostPrCommentErrorResponse
-	JSON201      *PostPrCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PostPrCommentErrorResponse
+	JSON201                           *PostPrCommentResponse
+	ApplicationProblemPlusJSONDefault *PostPrCommentErrorResponse
 }
 
 type DeletePrCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePrCommentErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePrCommentErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePrCommentErrorResponse
 }
 
 type EditPrCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrCommentErrorResponse
-	JSON200      *EditPrCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrCommentErrorResponse
+	JSON200                           *EditPrCommentResponse
+	ApplicationProblemPlusJSONDefault *EditPrCommentErrorResponse
 }
 
 type GetPullCommitsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullCommitsErrorResponse
-	JSON200      *GetPullCommitsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullCommitsErrorResponse
+	JSON200                           *GetPullCommitsResponse
+	ApplicationProblemPlusJSONDefault *GetPullCommitsErrorResponse
 }
 
 type GetPullDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullDiffErrorResponse
-	JSON200      *GetPullDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullDiffErrorResponse
+	JSON200                           *GetPullDiffResponse
+	ApplicationProblemPlusJSONDefault *GetPullDiffErrorResponse
 }
 
 type ReplyToDiscussionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ReplyToDiscussionErrorResponse
-	JSON201      *ReplyToDiscussionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ReplyToDiscussionErrorResponse
+	JSON201                           *ReplyToDiscussionResponse
+	ApplicationProblemPlusJSONDefault *ReplyToDiscussionErrorResponse
 }
 
 type ResolveDiscussionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolveDiscussionErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolveDiscussionErrorResponse
+	ApplicationProblemPlusJSONDefault *ResolveDiscussionErrorResponse
 }
 
 type GetPullExternalContextResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullExternalContextErrorResponse
-	JSON200      *GetPullExternalContextResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullExternalContextErrorResponse
+	JSON200                           *GetPullExternalContextResponse
+	ApplicationProblemPlusJSONDefault *GetPullExternalContextErrorResponse
 }
 
 type RunPullExternalContextActionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RunPullExternalContextActionErrorResponse
-	JSON200      *RunPullExternalContextActionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RunPullExternalContextActionErrorResponse
+	JSON200                           *RunPullExternalContextActionResponse
+	ApplicationProblemPlusJSONDefault *RunPullExternalContextActionErrorResponse
 }
 
 type GetPullFilePreviewResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullFilePreviewErrorResponse
-	JSON200      *GetPullFilePreviewResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullFilePreviewErrorResponse
+	JSON200                           *GetPullFilePreviewResponse
+	ApplicationProblemPlusJSONDefault *GetPullFilePreviewErrorResponse
 }
 
 type GetPullFilesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullFilesErrorResponse
-	JSON200      *GetPullFilesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullFilesErrorResponse
+	JSON200                           *GetPullFilesResponse
+	ApplicationProblemPlusJSONDefault *GetPullFilesErrorResponse
 }
 
 type SetPrGithubStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrGithubStateErrorResponse
-	JSON200      *SetPrGithubStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrGithubStateErrorResponse
+	JSON200                           *SetPrGithubStateResponse
+	ApplicationProblemPlusJSONDefault *SetPrGithubStateErrorResponse
 }
 
 type GetPullImportMetadataResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullImportMetadataErrorResponse
-	JSON200      *GetPullImportMetadataResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullImportMetadataErrorResponse
+	JSON200                           *GetPullImportMetadataResponse
+	ApplicationProblemPlusJSONDefault *GetPullImportMetadataErrorResponse
 }
 
 type ListPullRequestKataLinksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListPullRequestKataLinksErrorResponse
-	JSON200      *ListPullRequestKataLinksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListPullRequestKataLinksErrorResponse
+	JSON200                           *ListPullRequestKataLinksResponse
+	ApplicationProblemPlusJSONDefault *ListPullRequestKataLinksErrorResponse
 }
 
 type CreatePullRequestKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreatePullRequestKataLinkErrorResponse
-	JSON200      *CreatePullRequestKataLinkResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreatePullRequestKataLinkErrorResponse
+	JSON200                           *CreatePullRequestKataLinkResponse
+	ApplicationProblemPlusJSONDefault *CreatePullRequestKataLinkErrorResponse
 }
 
 type DeletePullRequestKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePullRequestKataLinkErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePullRequestKataLinkErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePullRequestKataLinkErrorResponse
 }
 
 type UpdatePrLabelsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdatePrLabelsErrorResponse
-	JSON200      *UpdatePrLabelsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePrLabelsErrorResponse
+	JSON200                           *UpdatePrLabelsResponse
+	ApplicationProblemPlusJSONDefault *UpdatePrLabelsErrorResponse
 }
 
 type SetPrLabelsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrLabelsErrorResponse
-	JSON200      *SetPrLabelsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrLabelsErrorResponse
+	JSON200                           *SetPrLabelsResponse
+	ApplicationProblemPlusJSONDefault *SetPrLabelsErrorResponse
 }
 
 type MergePullResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MergePullErrorResponse
-	JSON200      *MergePullResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MergePullErrorResponse
+	JSON200                           *MergePullResponse
+	ApplicationProblemPlusJSONDefault *MergePullErrorResponse
 }
 
 type DeferMergePullResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeferMergePullErrorResponse
-	JSON202      *DeferMergePullResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeferMergePullErrorResponse
+	JSON202                           *DeferMergePullResponse
+	ApplicationProblemPlusJSONDefault *DeferMergePullErrorResponse
 }
 
 type MarkPullReadyForReviewResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *MarkPullReadyForReviewErrorResponse
-	JSON200      *MarkPullReadyForReviewResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *MarkPullReadyForReviewErrorResponse
+	JSON200                           *MarkPullReadyForReviewResponse
+	ApplicationProblemPlusJSONDefault *MarkPullReadyForReviewErrorResponse
 }
 
 type RequestPullChangesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RequestPullChangesErrorResponse
-	JSON200      *RequestPullChangesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RequestPullChangesErrorResponse
+	JSON200                           *RequestPullChangesResponse
+	ApplicationProblemPlusJSONDefault *RequestPullChangesErrorResponse
 }
 
 type DiscardPrReviewDraftResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DiscardPrReviewDraftErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DiscardPrReviewDraftErrorResponse
+	ApplicationProblemPlusJSONDefault *DiscardPrReviewDraftErrorResponse
 }
 
 type GetPrReviewDraftResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPrReviewDraftErrorResponse
-	JSON200      *GetPrReviewDraftResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPrReviewDraftErrorResponse
+	JSON200                           *GetPrReviewDraftResponse
+	ApplicationProblemPlusJSONDefault *GetPrReviewDraftErrorResponse
 }
 
 type CreatePrReviewDraftCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreatePrReviewDraftCommentErrorResponse
-	JSON201      *CreatePrReviewDraftCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreatePrReviewDraftCommentErrorResponse
+	JSON201                           *CreatePrReviewDraftCommentResponse
+	ApplicationProblemPlusJSONDefault *CreatePrReviewDraftCommentErrorResponse
 }
 
 type DeletePrReviewDraftCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeletePrReviewDraftCommentErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeletePrReviewDraftCommentErrorResponse
+	ApplicationProblemPlusJSONDefault *DeletePrReviewDraftCommentErrorResponse
 }
 
 type EditPrReviewDraftCommentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EditPrReviewDraftCommentErrorResponse
-	JSON200      *EditPrReviewDraftCommentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EditPrReviewDraftCommentErrorResponse
+	JSON200                           *EditPrReviewDraftCommentResponse
+	ApplicationProblemPlusJSONDefault *EditPrReviewDraftCommentErrorResponse
 }
 
 type PublishPrReviewDraftResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PublishPrReviewDraftErrorResponse
-	JSON200      *PublishPrReviewDraftResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PublishPrReviewDraftErrorResponse
+	JSON200                           *PublishPrReviewDraftResponse
+	ApplicationProblemPlusJSONDefault *PublishPrReviewDraftErrorResponse
 }
 
 type ApplyPrReviewSuggestionsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ApplyPrReviewSuggestionsErrorResponse
-	JSON200      *ApplyPrReviewSuggestionsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ApplyPrReviewSuggestionsErrorResponse
+	JSON200                           *ApplyPrReviewSuggestionsResponse
+	ApplicationProblemPlusJSONDefault *ApplyPrReviewSuggestionsErrorResponse
 }
 
 type ResolvePrReviewThreadResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolvePrReviewThreadErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolvePrReviewThreadErrorResponse
+	ApplicationProblemPlusJSONDefault *ResolvePrReviewThreadErrorResponse
 }
 
 type UnresolvePrReviewThreadResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UnresolvePrReviewThreadErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UnresolvePrReviewThreadErrorResponse
+	ApplicationProblemPlusJSONDefault *UnresolvePrReviewThreadErrorResponse
 }
 
 type GetPrReviewerAccountsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPrReviewerAccountsErrorResponse
-	JSON200      *GetPrReviewerAccountsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPrReviewerAccountsErrorResponse
+	JSON200                           *GetPrReviewerAccountsResponse
+	ApplicationProblemPlusJSONDefault *GetPrReviewerAccountsErrorResponse
 }
 
 type SetPrReviewersResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetPrReviewersErrorResponse
-	JSON200      *SetPrReviewersResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetPrReviewersErrorResponse
+	JSON200                           *SetPrReviewersResponse
+	ApplicationProblemPlusJSONDefault *SetPrReviewersErrorResponse
 }
 
 type GetPullStackResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetPullStackErrorResponse
-	JSON200      *GetPullStackResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetPullStackErrorResponse
+	JSON200                           *GetPullStackResponse
+	ApplicationProblemPlusJSONDefault *GetPullStackErrorResponse
 }
 
 type SetKanbanStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetKanbanStateErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetKanbanStateErrorResponse
+	ApplicationProblemPlusJSONDefault *SetKanbanStateErrorResponse
 }
 
 type SyncPullResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SyncPullErrorResponse
-	JSON200      *SyncPullResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SyncPullErrorResponse
+	JSON200                           *SyncPullResponse
+	ApplicationProblemPlusJSONDefault *SyncPullErrorResponse
 }
 
 type EnqueuePrSyncResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EnqueuePrSyncErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EnqueuePrSyncErrorResponse
+	ApplicationProblemPlusJSONDefault *EnqueuePrSyncErrorResponse
 }
 
 type GetRateLimitsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRateLimitsErrorResponse
-	JSON200      *GetRateLimitsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRateLimitsErrorResponse
+	JSON200                           *GetRateLimitsResponse
+	ApplicationProblemPlusJSONDefault *GetRateLimitsErrorResponse
 }
 
 type DeleteRepoResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteRepoErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteRepoErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteRepoErrorResponse
 }
 
 type GetRepoResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoErrorResponse
-	JSON200      *GetRepoResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoErrorResponse
+	JSON200                           *GetRepoResponse
+	ApplicationProblemPlusJSONDefault *GetRepoErrorResponse
 }
 
 type GetRepoBrowserAssetResp200Headers struct {
@@ -58788,83 +64461,93 @@ type GetRepoBrowserAssetResp200Headers struct {
 }
 
 type GetRepoBrowserAssetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserAssetErrorResponse
-	Headers200   *GetRepoBrowserAssetResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserAssetErrorResponse
+	Headers200                        *GetRepoBrowserAssetResp200Headers
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserAssetErrorResponse
 }
 
 type GetRepoBrowserBlobResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserBlobErrorResponse
-	JSON200      *GetRepoBrowserBlobResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserBlobErrorResponse
+	JSON200                           *GetRepoBrowserBlobResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserBlobErrorResponse
 }
 
 type GetRepoBrowserCommitResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserCommitErrorResponse
-	JSON200      *GetRepoBrowserCommitResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserCommitErrorResponse
+	JSON200                           *GetRepoBrowserCommitResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserCommitErrorResponse
 }
 
 type GetRepoBrowserHistoryResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserHistoryErrorResponse
-	JSON200      *GetRepoBrowserHistoryResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserHistoryErrorResponse
+	JSON200                           *GetRepoBrowserHistoryResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserHistoryErrorResponse
 }
 
 type GetRepoBrowserLastChangedResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoBrowserLastChangedErrorResponse
-	JSON200      *GetRepoBrowserLastChangedResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoBrowserLastChangedErrorResponse
+	JSON200                           *GetRepoBrowserLastChangedResponse
+	ApplicationProblemPlusJSONDefault *GetRepoBrowserLastChangedErrorResponse
 }
 
 type ListRepoBrowserRefsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoBrowserRefsErrorResponse
-	JSON200      *ListRepoBrowserRefsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoBrowserRefsErrorResponse
+	JSON200                           *ListRepoBrowserRefsResponse
+	ApplicationProblemPlusJSONDefault *ListRepoBrowserRefsErrorResponse
 }
 
 type ListRepoBrowserTreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoBrowserTreeErrorResponse
-	JSON200      *ListRepoBrowserTreeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoBrowserTreeErrorResponse
+	JSON200                           *ListRepoBrowserTreeResponse
+	ApplicationProblemPlusJSONDefault *ListRepoBrowserTreeErrorResponse
 }
 
 type GetCommentAutocompleteResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetCommentAutocompleteErrorResponse
-	JSON200      *GetCommentAutocompleteResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetCommentAutocompleteErrorResponse
+	JSON200                           *GetCommentAutocompleteResponse
+	ApplicationProblemPlusJSONDefault *GetCommentAutocompleteErrorResponse
 }
 
 type GetRepoCommitDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRepoCommitDiffErrorResponse
-	JSON200      *GetRepoCommitDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRepoCommitDiffErrorResponse
+	JSON200                           *GetRepoCommitDiffResponse
+	ApplicationProblemPlusJSONDefault *GetRepoCommitDiffErrorResponse
 }
 
 type ListRepoLabelsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoLabelsErrorResponse
-	JSON200      *ListRepoLabelsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoLabelsErrorResponse
+	JSON200                           *ListRepoLabelsResponse
+	ApplicationProblemPlusJSONDefault *ListRepoLabelsErrorResponse
 }
 
 type GetMarkdownImageResp200Headers struct {
@@ -58876,11 +64559,12 @@ type GetMarkdownImageResp200Headers struct {
 }
 
 type GetMarkdownImageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetMarkdownImageErrorResponse
-	Headers200   *GetMarkdownImageResp200Headers
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetMarkdownImageErrorResponse
+	Headers200                        *GetMarkdownImageResp200Headers
+	ApplicationProblemPlusJSONDefault *GetMarkdownImageErrorResponse
 }
 
 type GetMarkdownMediaResp struct {
@@ -58890,662 +64574,746 @@ type GetMarkdownMediaResp struct {
 }
 
 type RefreshRepoResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshRepoErrorResponse
-	JSON200      *RefreshRepoResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshRepoErrorResponse
+	JSON200                           *RefreshRepoResponse
+	ApplicationProblemPlusJSONDefault *RefreshRepoErrorResponse
 }
 
 type ResolveRepoItemResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ResolveRepoItemErrorResponse
-	JSON200      *ResolveRepoItemResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ResolveRepoItemErrorResponse
+	JSON200                           *ResolveRepoItemResponse
+	ApplicationProblemPlusJSONDefault *ResolveRepoItemErrorResponse
 }
 
 type UpdateRepoUIVisibilityResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateRepoUIVisibilityErrorResponse
-	JSON200      *UpdateRepoUIVisibilityResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateRepoUIVisibilityErrorResponse
+	JSON200                           *UpdateRepoUIVisibilityResponse
+	ApplicationProblemPlusJSONDefault *UpdateRepoUIVisibilityErrorResponse
 }
 
 type CreateRepoWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateRepoWorkspaceErrorResponse
-	JSON202      *CreateRepoWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateRepoWorkspaceErrorResponse
+	JSON202                           *CreateRepoWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateRepoWorkspaceErrorResponse
 }
 
 type UpdateRepoWorktreeBaseResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateRepoWorktreeBaseErrorResponse
-	JSON200      *UpdateRepoWorktreeBaseResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateRepoWorktreeBaseErrorResponse
+	JSON200                           *UpdateRepoWorktreeBaseResponse
+	ApplicationProblemPlusJSONDefault *UpdateRepoWorktreeBaseErrorResponse
 }
 
 type ListReposResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListReposErrorResponse
-	JSON200      *ListReposResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListReposErrorResponse
+	JSON200                           *ListReposResponse
+	ApplicationProblemPlusJSONDefault *ListReposErrorResponse
 }
 
 type AddRepoResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *AddRepoErrorResponse
-	JSON201      *AddRepoResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *AddRepoErrorResponse
+	JSON201                           *AddRepoResponse
+	ApplicationProblemPlusJSONDefault *AddRepoErrorResponse
 }
 
 type BulkAddReposResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *BulkAddReposErrorResponse
-	JSON201      *BulkAddReposResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *BulkAddReposErrorResponse
+	JSON201                           *BulkAddReposResponse
+	ApplicationProblemPlusJSONDefault *BulkAddReposErrorResponse
 }
 
 type PreviewReposResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PreviewReposErrorResponse
-	JSON200      *PreviewReposResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PreviewReposErrorResponse
+	JSON200                           *PreviewReposResponse
+	ApplicationProblemPlusJSONDefault *PreviewReposErrorResponse
 }
 
 type ListRepoSummariesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRepoSummariesErrorResponse
-	JSON200      *ListRepoSummariesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRepoSummariesErrorResponse
+	JSON200                           *ListRepoSummariesResponse
+	ApplicationProblemPlusJSONDefault *ListRepoSummariesErrorResponse
 }
 
 type ListRoborevConfiguredRepositoriesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListRoborevConfiguredRepositoriesErrorResponse
-	JSON200      *ListRoborevConfiguredRepositoriesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListRoborevConfiguredRepositoriesErrorResponse
+	JSON200                           *ListRoborevConfiguredRepositoriesResponse
+	ApplicationProblemPlusJSONDefault *ListRoborevConfiguredRepositoriesErrorResponse
 }
 
 type GetRoborevStatusResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetRoborevStatusErrorResponse
-	JSON200      *GetRoborevStatusResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetRoborevStatusErrorResponse
+	JSON200                           *GetRoborevStatusResponse
+	ApplicationProblemPlusJSONDefault *GetRoborevStatusErrorResponse
 }
 
 type ListHostRuntimeSessionsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListHostRuntimeSessionsErrorResponse
-	JSON200      *ListHostRuntimeSessionsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListHostRuntimeSessionsErrorResponse
+	JSON200                           *ListHostRuntimeSessionsResponse
+	ApplicationProblemPlusJSONDefault *ListHostRuntimeSessionsErrorResponse
 }
 
 type LaunchHostRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchHostRuntimeSessionErrorResponse
-	JSON200      *LaunchHostRuntimeSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchHostRuntimeSessionErrorResponse
+	JSON200                           *LaunchHostRuntimeSessionResponse
+	ApplicationProblemPlusJSONDefault *LaunchHostRuntimeSessionErrorResponse
 }
 
 type StopHostRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StopHostRuntimeSessionErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StopHostRuntimeSessionErrorResponse
+	ApplicationProblemPlusJSONDefault *StopHostRuntimeSessionErrorResponse
 }
 
 type GetHostRuntimeSessionAttachSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetHostRuntimeSessionAttachSpecErrorResponse
-	JSON200      *GetHostRuntimeSessionAttachSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetHostRuntimeSessionAttachSpecErrorResponse
+	JSON200                           *GetHostRuntimeSessionAttachSpecResponse
+	ApplicationProblemPlusJSONDefault *GetHostRuntimeSessionAttachSpecErrorResponse
 }
 
 type GetSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetSettingsErrorResponse
-	JSON200      *GetSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSettingsErrorResponse
+	JSON200                           *GetSettingsResponse
+	ApplicationProblemPlusJSONDefault *GetSettingsErrorResponse
 }
 
 type UpdateSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateSettingsErrorResponse
-	JSON200      *UpdateSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateSettingsErrorResponse
+	JSON200                           *UpdateSettingsResponse
+	ApplicationProblemPlusJSONDefault *UpdateSettingsErrorResponse
 }
 
 type TestAcpAgentResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *TestAcpAgentErrorResponse
-	JSON200      *TestAcpAgentResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *TestAcpAgentErrorResponse
+	JSON200                           *TestAcpAgentResponse
+	ApplicationProblemPlusJSONDefault *TestAcpAgentErrorResponse
 }
 
 type GetFleetSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetFleetSettingsErrorResponse
-	JSON200      *GetFleetSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetFleetSettingsErrorResponse
+	JSON200                           *GetFleetSettingsResponse
+	ApplicationProblemPlusJSONDefault *GetFleetSettingsErrorResponse
 }
 
 type UpdateFleetSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateFleetSettingsErrorResponse
-	JSON200      *UpdateFleetSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateFleetSettingsErrorResponse
+	JSON200                           *UpdateFleetSettingsResponse
+	ApplicationProblemPlusJSONDefault *UpdateFleetSettingsErrorResponse
 }
 
 type GetLocalSettingsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetLocalSettingsErrorResponse
-	JSON200      *GetLocalSettingsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetLocalSettingsErrorResponse
+	JSON200                           *GetLocalSettingsResponse
+	ApplicationProblemPlusJSONDefault *GetLocalSettingsErrorResponse
 }
 
 type CreateRepoPresetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateRepoPresetErrorResponse
-	JSON201      *CreateRepoPresetResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateRepoPresetErrorResponse
+	JSON201                           *CreateRepoPresetResponse
+	ApplicationProblemPlusJSONDefault *CreateRepoPresetErrorResponse
 }
 
 type DeleteRepoPresetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteRepoPresetErrorResponse
-	JSON200      *DeleteRepoPresetResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteRepoPresetErrorResponse
+	JSON200                           *DeleteRepoPresetResponse
+	ApplicationProblemPlusJSONDefault *DeleteRepoPresetErrorResponse
 }
 
 type UpdateRepoPresetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateRepoPresetErrorResponse
-	JSON200      *UpdateRepoPresetResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateRepoPresetErrorResponse
+	JSON200                           *UpdateRepoPresetResponse
+	ApplicationProblemPlusJSONDefault *UpdateRepoPresetErrorResponse
 }
 
 type GetSnapshotResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetSnapshotErrorResponse
-	JSON200      *GetSnapshotResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSnapshotErrorResponse
+	JSON200                           *GetSnapshotResponse
+	ApplicationProblemPlusJSONDefault *GetSnapshotErrorResponse
 }
 
 type GetSnapshotAggregateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetSnapshotAggregateErrorResponse
-	JSON200      *GetSnapshotAggregateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSnapshotAggregateErrorResponse
+	JSON200                           *GetSnapshotAggregateResponse
+	ApplicationProblemPlusJSONDefault *GetSnapshotAggregateErrorResponse
 }
 
 type GetSnapshotRawResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetSnapshotRawErrorResponse
-	JSON200      *GetSnapshotRawResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSnapshotRawErrorResponse
+	JSON200                           *GetSnapshotRawResponse
+	ApplicationProblemPlusJSONDefault *GetSnapshotRawErrorResponse
 }
 
 type RefreshFleetStatsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshFleetStatsErrorResponse
-	JSON200      *RefreshFleetStatsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshFleetStatsErrorResponse
+	JSON200                           *RefreshFleetStatsResponse
+	ApplicationProblemPlusJSONDefault *RefreshFleetStatsErrorResponse
 }
 
 type ListStacksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListStacksErrorResponse
-	JSON200      *ListStacksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListStacksErrorResponse
+	JSON200                           *ListStacksResponse
+	ApplicationProblemPlusJSONDefault *ListStacksErrorResponse
 }
 
 type UnsetStarredResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UnsetStarredErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UnsetStarredErrorResponse
+	ApplicationProblemPlusJSONDefault *UnsetStarredErrorResponse
 }
 
 type SetStarredResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetStarredErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetStarredErrorResponse
+	ApplicationProblemPlusJSONDefault *SetStarredErrorResponse
 }
 
 type TriggerSyncResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *TriggerSyncErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *TriggerSyncErrorResponse
+	ApplicationProblemPlusJSONDefault *TriggerSyncErrorResponse
 }
 
 type GetSyncStatusResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetSyncStatusErrorResponse
-	JSON200      *GetSyncStatusResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSyncStatusErrorResponse
+	JSON200                           *GetSyncStatusResponse
+	ApplicationProblemPlusJSONDefault *GetSyncStatusErrorResponse
 }
 
 type CaptureTelemetryEventResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CaptureTelemetryEventErrorResponse
-	JSON202      *CaptureTelemetryEventResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CaptureTelemetryEventErrorResponse
+	JSON202                           *CaptureTelemetryEventResponse
+	ApplicationProblemPlusJSONDefault *CaptureTelemetryEventErrorResponse
 }
 
 type WriteTerminalClipboardResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *WriteTerminalClipboardErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *WriteTerminalClipboardErrorResponse
+	ApplicationProblemPlusJSONDefault *WriteTerminalClipboardErrorResponse
 }
 
 type StoreTerminalPasteImageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StoreTerminalPasteImageErrorResponse
-	JSON201      *StoreTerminalPasteImageResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StoreTerminalPasteImageErrorResponse
+	JSON201                           *StoreTerminalPasteImageResponse
+	ApplicationProblemPlusJSONDefault *StoreTerminalPasteImageErrorResponse
 }
 
 type GetToolingStatusResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetToolingStatusErrorResponse
-	JSON200      *GetToolingStatusResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetToolingStatusErrorResponse
+	JSON200                           *GetToolingStatusResponse
+	ApplicationProblemPlusJSONDefault *GetToolingStatusErrorResponse
 }
 
 type SetActiveWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetActiveWorktreeErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetActiveWorktreeErrorResponse
+	ApplicationProblemPlusJSONDefault *SetActiveWorktreeErrorResponse
 }
 
 type GetVersionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetVersionErrorResponse
-	JSON200      *GetVersionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetVersionErrorResponse
+	JSON200                           *GetVersionResponse
+	ApplicationProblemPlusJSONDefault *GetVersionErrorResponse
 }
 
 type GetExecutionWorkerResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetExecutionWorkerErrorResponse
-	JSON200      *GetExecutionWorkerResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetExecutionWorkerErrorResponse
+	JSON200                           *GetExecutionWorkerResponse
+	ApplicationProblemPlusJSONDefault *GetExecutionWorkerErrorResponse
 }
 
 type GetWorkerSnapshotResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkerSnapshotErrorResponse
-	JSON200      *GetWorkerSnapshotResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkerSnapshotErrorResponse
+	JSON200                           *GetWorkerSnapshotResponse
+	ApplicationProblemPlusJSONDefault *GetWorkerSnapshotErrorResponse
 }
 
 type CreateWorkerWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateWorkerWorkspaceErrorResponse
-	JSON202      *CreateWorkerWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateWorkerWorkspaceErrorResponse
+	JSON202                           *CreateWorkerWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateWorkerWorkspaceErrorResponse
 }
 
 type RefreshWorkerContextResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshWorkerContextErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshWorkerContextErrorResponse
+	ApplicationProblemPlusJSONDefault *RefreshWorkerContextErrorResponse
 }
 
 type UpdateWorkerWorkspaceTargetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateWorkerWorkspaceTargetErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateWorkerWorkspaceTargetErrorResponse
+	ApplicationProblemPlusJSONDefault *UpdateWorkerWorkspaceTargetErrorResponse
 }
 
 type ListWorklistsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorklistsErrorResponse
-	JSON200      *ListWorklistsResponseJSON
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorklistsErrorResponse
+	JSON200                           *ListWorklistsResponseJSON
+	ApplicationProblemPlusJSONDefault *ListWorklistsErrorResponse
 }
 
 type GetWorklistResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorklistErrorResponse
-	JSON200      *GetWorklistResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorklistErrorResponse
+	JSON200                           *GetWorklistResponse
+	ApplicationProblemPlusJSONDefault *GetWorklistErrorResponse
 }
 
 type DismissWorklistResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DismissWorklistErrorResponse
-	JSON200      *DismissWorklistResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DismissWorklistErrorResponse
+	JSON200                           *DismissWorklistResponse
+	ApplicationProblemPlusJSONDefault *DismissWorklistErrorResponse
 }
 
 type SetWorklistItemsHandledResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SetWorklistItemsHandledErrorResponse
-	JSON200      *SetWorklistItemsHandledResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SetWorklistItemsHandledErrorResponse
+	JSON200                           *SetWorklistItemsHandledResponse
+	ApplicationProblemPlusJSONDefault *SetWorklistItemsHandledErrorResponse
 }
 
 type UndismissWorklistResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UndismissWorklistErrorResponse
-	JSON200      *UndismissWorklistResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UndismissWorklistErrorResponse
+	JSON200                           *UndismissWorklistResponse
+	ApplicationProblemPlusJSONDefault *UndismissWorklistErrorResponse
 }
 
 type ListWorkspacesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkspacesErrorResponse
-	JSON200      *ListWorkspacesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkspacesErrorResponse
+	JSON200                           *ListWorkspacesResponse
+	ApplicationProblemPlusJSONDefault *ListWorkspacesErrorResponse
 }
 
 type CreateWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateWorkspaceErrorResponse
-	JSON202      *CreateWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateWorkspaceErrorResponse
+	JSON202                           *CreateWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *CreateWorkspaceErrorResponse
 }
 
 type DeleteWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteWorkspaceErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteWorkspaceErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteWorkspaceErrorResponse
 }
 
 type GetWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceErrorResponse
-	JSON200      *GetWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceErrorResponse
+	JSON200                           *GetWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceErrorResponse
 }
 
 type ListWorkspaceAgentSessionsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkspaceAgentSessionsErrorResponse
-	JSON200      *ListWorkspaceAgentSessionsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkspaceAgentSessionsErrorResponse
+	JSON200                           *ListWorkspaceAgentSessionsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkspaceAgentSessionsErrorResponse
 }
 
 type GetWorkspaceCommitsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceCommitsErrorResponse
-	JSON200      *GetWorkspaceCommitsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceCommitsErrorResponse
+	JSON200                           *GetWorkspaceCommitsResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceCommitsErrorResponse
 }
 
 type GetWorkspaceDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceDiffErrorResponse
-	JSON200      *GetWorkspaceDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceDiffErrorResponse
+	JSON200                           *GetWorkspaceDiffResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceDiffErrorResponse
 }
 
 type WatchWorkspaceDiffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *WatchWorkspaceDiffErrorResponse
-	JSON200      *WatchWorkspaceDiffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *WatchWorkspaceDiffErrorResponse
+	JSON200                           *WatchWorkspaceDiffResponse
+	ApplicationProblemPlusJSONDefault *WatchWorkspaceDiffErrorResponse
 }
 
 type GetWorkspaceFilePreviewResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceFilePreviewErrorResponse
-	JSON200      *GetWorkspaceFilePreviewResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceFilePreviewErrorResponse
+	JSON200                           *GetWorkspaceFilePreviewResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceFilePreviewErrorResponse
 }
 
 type GetWorkspaceFilesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceFilesErrorResponse
-	JSON200      *GetWorkspaceFilesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceFilesErrorResponse
+	JSON200                           *GetWorkspaceFilesResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceFilesErrorResponse
 }
 
 type ListWorkspaceKataLinksResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkspaceKataLinksErrorResponse
-	JSON200      *ListWorkspaceKataLinksResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkspaceKataLinksErrorResponse
+	JSON200                           *ListWorkspaceKataLinksResponse
+	ApplicationProblemPlusJSONDefault *ListWorkspaceKataLinksErrorResponse
 }
 
 type CreateWorkspaceKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *CreateWorkspaceKataLinkErrorResponse
-	JSON200      *CreateWorkspaceKataLinkResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CreateWorkspaceKataLinkErrorResponse
+	JSON200                           *CreateWorkspaceKataLinkResponse
+	ApplicationProblemPlusJSONDefault *CreateWorkspaceKataLinkErrorResponse
 }
 
 type DeleteWorkspaceKataLinkResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DeleteWorkspaceKataLinkErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DeleteWorkspaceKataLinkErrorResponse
+	ApplicationProblemPlusJSONDefault *DeleteWorkspaceKataLinkErrorResponse
 }
 
 type PullWorkspaceBranchResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PullWorkspaceBranchErrorResponse
-	JSON200      *PullWorkspaceBranchResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PullWorkspaceBranchErrorResponse
+	JSON200                           *PullWorkspaceBranchResponse
+	ApplicationProblemPlusJSONDefault *PullWorkspaceBranchErrorResponse
 }
 
 type PushWorkspaceBranchResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PushWorkspaceBranchErrorResponse
-	JSON200      *PushWorkspaceBranchResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PushWorkspaceBranchErrorResponse
+	JSON200                           *PushWorkspaceBranchResponse
+	ApplicationProblemPlusJSONDefault *PushWorkspaceBranchErrorResponse
 }
 
 type RefreshWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RefreshWorkspaceErrorResponse
-	JSON200      *RefreshWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshWorkspaceErrorResponse
+	JSON200                           *RefreshWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *RefreshWorkspaceErrorResponse
 }
 
 type RetryWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RetryWorkspaceErrorResponse
-	JSON202      *RetryWorkspaceResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RetryWorkspaceErrorResponse
+	JSON202                           *RetryWorkspaceResponse
+	ApplicationProblemPlusJSONDefault *RetryWorkspaceErrorResponse
 }
 
 type RevealWorkspaceResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RevealWorkspaceErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RevealWorkspaceErrorResponse
+	ApplicationProblemPlusJSONDefault *RevealWorkspaceErrorResponse
 }
 
 type GetWorkspaceRuntimeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceRuntimeErrorResponse
-	JSON200      *GetWorkspaceRuntimeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceRuntimeErrorResponse
+	JSON200                           *GetWorkspaceRuntimeResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceRuntimeErrorResponse
 }
 
 type LaunchWorkspaceAgentHandoffResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchWorkspaceAgentHandoffErrorResponse
-	JSON200      *LaunchWorkspaceAgentHandoffResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchWorkspaceAgentHandoffErrorResponse
+	JSON200                           *LaunchWorkspaceAgentHandoffResponse
+	ApplicationProblemPlusJSONDefault *LaunchWorkspaceAgentHandoffErrorResponse
 }
 
 type LaunchWorkspaceRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *LaunchWorkspaceRuntimeSessionErrorResponse
-	JSON200      *LaunchWorkspaceRuntimeSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *LaunchWorkspaceRuntimeSessionErrorResponse
+	JSON200                           *LaunchWorkspaceRuntimeSessionResponse
+	ApplicationProblemPlusJSONDefault *LaunchWorkspaceRuntimeSessionErrorResponse
 }
 
 type StopWorkspaceRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *StopWorkspaceRuntimeSessionErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *StopWorkspaceRuntimeSessionErrorResponse
+	ApplicationProblemPlusJSONDefault *StopWorkspaceRuntimeSessionErrorResponse
 }
 
 type RenameWorkspaceRuntimeSessionResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RenameWorkspaceRuntimeSessionErrorResponse
-	JSON200      *RenameWorkspaceRuntimeSessionResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RenameWorkspaceRuntimeSessionErrorResponse
+	JSON200                           *RenameWorkspaceRuntimeSessionResponse
+	ApplicationProblemPlusJSONDefault *RenameWorkspaceRuntimeSessionErrorResponse
 }
 
 type GetWorkspaceRuntimeSessionAttachSpecResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceRuntimeSessionAttachSpecErrorResponse
-	JSON200      *GetWorkspaceRuntimeSessionAttachSpecResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceRuntimeSessionAttachSpecErrorResponse
+	JSON200                           *GetWorkspaceRuntimeSessionAttachSpecResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceRuntimeSessionAttachSpecErrorResponse
 }
 
 type GetWorkspaceChatResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceChatErrorResponse
-	JSON200      *GetWorkspaceChatResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceChatErrorResponse
+	JSON200                           *GetWorkspaceChatResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceChatErrorResponse
 }
 
 type RunWorkspaceChatCommandResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RunWorkspaceChatCommandErrorResponse
-	JSON200      *RunWorkspaceChatCommandResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RunWorkspaceChatCommandErrorResponse
+	JSON200                           *RunWorkspaceChatCommandResponse
+	ApplicationProblemPlusJSONDefault *RunWorkspaceChatCommandErrorResponse
 }
 
 type RestoreWorkspaceChatResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RestoreWorkspaceChatErrorResponse
-	JSON200      *RestoreWorkspaceChatResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RestoreWorkspaceChatErrorResponse
+	JSON200                           *RestoreWorkspaceChatResponse
+	ApplicationProblemPlusJSONDefault *RestoreWorkspaceChatErrorResponse
 }
 
 type GetWorkspaceRuntimeSessionInitialMessageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceRuntimeSessionInitialMessageErrorResponse
-	JSON200      *GetWorkspaceRuntimeSessionInitialMessageResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceRuntimeSessionInitialMessageErrorResponse
+	JSON200                           *GetWorkspaceRuntimeSessionInitialMessageResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceRuntimeSessionInitialMessageErrorResponse
 }
 
 type SubmitWorkspaceRuntimeSessionInitialMessageResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse
-	JSON200      *SubmitWorkspaceRuntimeSessionInitialMessageResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse
+	JSON200                           *SubmitWorkspaceRuntimeSessionInitialMessageResponse
+	ApplicationProblemPlusJSONDefault *SubmitWorkspaceRuntimeSessionInitialMessageErrorResponse
 }
 
 type ListWorkspaceTargetsResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *ListWorkspaceTargetsErrorResponse
-	JSON200      *ListWorkspaceTargetsResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ListWorkspaceTargetsErrorResponse
+	JSON200                           *ListWorkspaceTargetsResponse
+	ApplicationProblemPlusJSONDefault *ListWorkspaceTargetsErrorResponse
 }
 
 type UpdateWorkspaceTargetResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateWorkspaceTargetErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateWorkspaceTargetErrorResponse
+	ApplicationProblemPlusJSONDefault *UpdateWorkspaceTargetErrorResponse
 }
 
 type GetWorkspaceViewStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetWorkspaceViewStateErrorResponse
-	JSON200      *GetWorkspaceViewStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkspaceViewStateErrorResponse
+	JSON200                           *GetWorkspaceViewStateResponse
+	ApplicationProblemPlusJSONDefault *GetWorkspaceViewStateErrorResponse
 }
 
 type UpdateWorkspaceViewStateResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *UpdateWorkspaceViewStateErrorResponse
-	JSON200      *UpdateWorkspaceViewStateResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdateWorkspaceViewStateErrorResponse
+	JSON200                           *UpdateWorkspaceViewStateResponse
+	ApplicationProblemPlusJSONDefault *UpdateWorkspaceViewStateErrorResponse
 }
 
 type RemoveStaleWorktreeResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *RemoveStaleWorktreeErrorResponse
-	JSON200      *RemoveStaleWorktreeResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RemoveStaleWorktreeErrorResponse
+	JSON200                           *RemoveStaleWorktreeResponse
+	ApplicationProblemPlusJSONDefault *RemoveStaleWorktreeErrorResponse
 }
 
 type ACP struct {
@@ -60797,7 +66565,7 @@ type ExternalContextRecommendation struct {
 type ExternalContextResult struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string              `json:"$schema,omitempty"`
-	Card   *ExternalContextCard `json:"card,omitempty"`
+	Card   *ExternalContextCard `json:"card"`
 }
 
 type ExternalContextSourceInfo struct {
@@ -61408,10 +67176,10 @@ type InspectProjectWorktreeOutputBody struct {
 type Issue struct {
 	Author             string              `json:"Author"`
 	Body               string              `json:"Body"`
-	ClosedAt           *time.Time          `json:"ClosedAt,omitempty"`
+	ClosedAt           *time.Time          `json:"ClosedAt"`
 	CommentCount       int64               `json:"CommentCount"`
 	CreatedAt          time.Time           `json:"CreatedAt"`
-	DetailFetchedAt    *time.Time          `json:"DetailFetchedAt,omitempty"`
+	DetailFetchedAt    *time.Time          `json:"DetailFetchedAt"`
 	ID                 int64               `json:"ID"`
 	LastActivityAt     time.Time           `json:"LastActivityAt"`
 	Number             int64               `json:"Number"`
@@ -61456,9 +67224,9 @@ type IssueEvent struct {
 	IssueID            int64     `json:"IssueID"`
 	MetadataJSON       string    `json:"MetadataJSON"`
 	PlatformExternalID string    `json:"PlatformExternalID"`
-	PlatformID         *int64    `json:"PlatformID,omitempty"`
+	PlatformID         *int64    `json:"PlatformID"`
 	Summary            string    `json:"Summary"`
-	ThreadID           *string   `json:"ThreadID,omitempty"`
+	ThreadID           *string   `json:"ThreadID"`
 }
 
 type IssueResponse struct {
@@ -61466,7 +67234,7 @@ type IssueResponse struct {
 	Schema                  *string                     `json:"$schema,omitempty"`
 	Author                  string                      `json:"Author"`
 	Body                    string                      `json:"Body"`
-	ClosedAt                *time.Time                  `json:"ClosedAt,omitempty"`
+	ClosedAt                *time.Time                  `json:"ClosedAt"`
 	CommentCount            int64                       `json:"CommentCount"`
 	CreatedAt               time.Time                   `json:"CreatedAt"`
 	ID                      int64                       `json:"ID"`
@@ -61934,12 +67702,12 @@ type MergeRequest struct {
 	CIChecksJSON             string                   `json:"CIChecksJSON"`
 	CIHadPending             bool                     `json:"CIHadPending"`
 	CIStatus                 string                   `json:"CIStatus"`
-	ClosedAt                 *time.Time               `json:"ClosedAt,omitempty"`
+	ClosedAt                 *time.Time               `json:"ClosedAt"`
 	CommentCount             int64                    `json:"CommentCount"`
 	CreatedAt                time.Time                `json:"CreatedAt"`
 	Deletions                int64                    `json:"Deletions"`
-	DetailFetchedAt          *time.Time               `json:"DetailFetchedAt,omitempty"`
-	FilesChanged             *int64                   `json:"FilesChanged,omitempty"`
+	DetailFetchedAt          *time.Time               `json:"DetailFetchedAt"`
+	FilesChanged             *int64                   `json:"FilesChanged"`
 	HeadBranch               string                   `json:"HeadBranch"`
 	HeadRepoCloneURL         string                   `json:"HeadRepoCloneURL"`
 	ID                       int64                    `json:"ID"`
@@ -61949,7 +67717,7 @@ type MergeRequest struct {
 	LastActivityAt           time.Time                `json:"LastActivityAt"`
 	MergeCommitSHA           string                   `json:"MergeCommitSHA"`
 	MergeableState           string                   `json:"MergeableState"`
-	MergedAt                 *time.Time               `json:"MergedAt,omitempty"`
+	MergedAt                 *time.Time               `json:"MergedAt"`
 	Number                   int64                    `json:"Number"`
 	PlatformExternalID       string                   `json:"PlatformExternalID"`
 	PlatformID               int64                    `json:"PlatformID"`
@@ -62011,11 +67779,11 @@ type MergeRequestEventResponse struct {
 	MergeRequestID     int64                     `json:"MergeRequestID"`
 	MetadataJSON       string                    `json:"MetadataJSON"`
 	PlatformExternalID string                    `json:"PlatformExternalID"`
-	PlatformID         *int64                    `json:"PlatformID,omitempty"`
+	PlatformID         *int64                    `json:"PlatformID"`
 	Resolvable         bool                      `json:"Resolvable"`
 	Resolved           bool                      `json:"Resolved"`
 	Summary            string                    `json:"Summary"`
-	ThreadID           *string                   `json:"ThreadID,omitempty"`
+	ThreadID           *string                   `json:"ThreadID"`
 	DiffThread         *DiffReviewThreadResponse `json:"diff_thread,omitempty"`
 }
 
@@ -62028,11 +67796,11 @@ type MergeRequestResponse struct {
 	CIChecksJSON             string                           `json:"CIChecksJSON"`
 	CIHadPending             bool                             `json:"CIHadPending"`
 	CIStatus                 string                           `json:"CIStatus"`
-	ClosedAt                 *time.Time                       `json:"ClosedAt,omitempty"`
+	ClosedAt                 *time.Time                       `json:"ClosedAt"`
 	CommentCount             int64                            `json:"CommentCount"`
 	CreatedAt                time.Time                        `json:"CreatedAt"`
 	Deletions                int64                            `json:"Deletions"`
-	FilesChanged             *int64                           `json:"FilesChanged,omitempty"`
+	FilesChanged             *int64                           `json:"FilesChanged"`
 	HeadBranch               string                           `json:"HeadBranch"`
 	HeadRepoCloneURL         string                           `json:"HeadRepoCloneURL"`
 	ID                       int64                            `json:"ID"`
@@ -62042,7 +67810,7 @@ type MergeRequestResponse struct {
 	LastActivityAt           time.Time                        `json:"LastActivityAt"`
 	MergeCommitSHA           string                           `json:"MergeCommitSHA"`
 	MergeableState           string                           `json:"MergeableState"`
-	MergedAt                 *time.Time                       `json:"MergedAt,omitempty"`
+	MergedAt                 *time.Time                       `json:"MergedAt"`
 	Number                   int64                            `json:"Number"`
 	PlatformExternalID       string                           `json:"PlatformExternalID"`
 	PlatformID               int64                            `json:"PlatformID"`
@@ -62926,9 +68694,9 @@ type RepoCatalogResponse struct {
 	BitbucketRepositoryUUID *string    `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time  `json:"CreatedAt"`
 	ID                      int64      `json:"ID"`
-	LastSyncCompletedAt     *time.Time `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncCompletedAt     *time.Time `json:"LastSyncCompletedAt"`
 	LastSyncError           string     `json:"LastSyncError"`
-	LastSyncStartedAt       *time.Time `json:"LastSyncStartedAt,omitempty"`
+	LastSyncStartedAt       *time.Time `json:"LastSyncStartedAt"`
 	Name                    string     `json:"Name"`
 	Owner                   string     `json:"Owner"`
 	Platform                string     `json:"Platform"`
@@ -63011,14 +68779,14 @@ type RepoPreviewResponse struct {
 
 type RepoPreviewRow struct {
 	AlreadyConfigured bool    `json:"already_configured"`
-	Description       *string `json:"description,omitempty"`
+	Description       *string `json:"description"`
 	Fork              bool    `json:"fork"`
 	Name              string  `json:"name"`
 	Owner             string  `json:"owner"`
 	PlatformHost      string  `json:"platform_host"`
 	Private           bool    `json:"private"`
 	Provider          string  `json:"provider"`
-	PushedAt          *string `json:"pushed_at,omitempty"`
+	PushedAt          *string `json:"pushed_at"`
 	RepoPath          string  `json:"repo_path"`
 }
 
@@ -63044,9 +68812,9 @@ type RepoResponse struct {
 	BitbucketRepositoryUUID *string                      `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time                    `json:"CreatedAt"`
 	ID                      int64                        `json:"ID"`
-	LastSyncCompletedAt     *time.Time                   `json:"LastSyncCompletedAt,omitempty"`
+	LastSyncCompletedAt     *time.Time                   `json:"LastSyncCompletedAt"`
 	LastSyncError           string                       `json:"LastSyncError"`
-	LastSyncStartedAt       *time.Time                   `json:"LastSyncStartedAt,omitempty"`
+	LastSyncStartedAt       *time.Time                   `json:"LastSyncStartedAt"`
 	Name                    string                       `json:"Name"`
 	Owner                   string                       `json:"Owner"`
 	Platform                string                       `json:"Platform"`
@@ -63383,7 +69151,7 @@ type SetWorktreeLinkedIssuesInputBody struct {
 type SetWorktreeSessionBackendInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema         *string `json:"$schema,omitempty"`
-	SessionBackend *string `json:"session_backend,omitempty"`
+	SessionBackend *string `json:"session_backend"`
 }
 
 type SettingsResponse struct {
@@ -63458,17 +69226,17 @@ type SnapshotCoverage struct {
 type SnapshotItem struct {
 	Assignees         []string   `json:"assignees,omitempty"`
 	Author            string     `json:"author"`
-	AuthorAssociation *string    `json:"author_association,omitempty"`
+	AuthorAssociation *string    `json:"author_association"`
 	Body              string     `json:"body"`
 	BodyTruncated     bool       `json:"body_truncated"`
 	ClosedAt          *time.Time `json:"closed_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
-	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	ID              string     `json:"id"`
 	Labels          []string   `json:"labels"`
-	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
+	LastActivityAt  *time.Time `json:"last_activity_at"`
 	Number          int64      `json:"number"`
 	RepositoryID    string     `json:"repository_id"`
 	State           string     `json:"state"`
@@ -63478,33 +69246,33 @@ type SnapshotItem struct {
 }
 
 type SnapshotPullRequest struct {
-	Additions         *int64          `json:"additions,omitempty"`
+	Additions         *int64          `json:"additions"`
 	Assignees         []string        `json:"assignees,omitempty"`
 	Author            string          `json:"author"`
-	AuthorAssociation *string         `json:"author_association,omitempty"`
+	AuthorAssociation *string         `json:"author_association"`
 	BaseBranch        string          `json:"base_branch"`
 	Body              string          `json:"body"`
 	BodyTruncated     bool            `json:"body_truncated"`
-	ChangedFiles      *int64          `json:"changed_files,omitempty"`
+	ChangedFiles      *int64          `json:"changed_files"`
 	CheckState        string          `json:"check_state"`
 	Checks            []SnapshotCheck `json:"checks"`
 	ClosedAt          *time.Time      `json:"closed_at,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
-	Deletions         *int64          `json:"deletions,omitempty"`
+	Deletions         *int64          `json:"deletions"`
 
 	// DetailFetchedAt Time of the latest completed detail fetch. May be cleared after incomplete refreshes; does not date every readiness fact.
-	DetailFetchedAt *time.Time `json:"detail_fetched_at,omitempty"`
+	DetailFetchedAt *time.Time `json:"detail_fetched_at"`
 	Draft           bool       `json:"draft"`
 	Gaps            []string   `json:"gaps"`
 	HeadBranch      string     `json:"head_branch"`
 
 	// HeadInSameRepository Null when either repository identity is unavailable or the head identity is stale; false means a known different repository.
-	HeadInSameRepository  *bool            `json:"head_in_same_repository,omitempty"`
+	HeadInSameRepository  *bool            `json:"head_in_same_repository"`
 	HeadSha               string           `json:"head_sha"`
 	ID                    string           `json:"id"`
 	Labels                []string         `json:"labels"`
-	LastActivityAt        *time.Time       `json:"last_activity_at,omitempty"`
-	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at,omitempty"`
+	LastActivityAt        *time.Time       `json:"last_activity_at"`
+	MergeStatusObservedAt *time.Time       `json:"merge_status_observed_at"`
 	MergeableState        string           `json:"mergeable_state"`
 	Number                int64            `json:"number"`
 	RepositoryID          string           `json:"repository_id"`
@@ -63528,11 +69296,11 @@ type SnapshotRelation struct {
 
 type SnapshotRepository struct {
 	BitbucketRepositoryUUID *string           `json:"bitbucket_repository_uuid,omitempty"`
-	Coverage                *SnapshotCoverage `json:"coverage,omitempty"`
+	Coverage                *SnapshotCoverage `json:"coverage"`
 	DefaultBranch           string            `json:"default_branch"`
 	Host                    string            `json:"host"`
 	ID                      string            `json:"id"`
-	LastSyncAt              *time.Time        `json:"last_sync_at,omitempty"`
+	LastSyncAt              *time.Time        `json:"last_sync_at"`
 	Path                    string            `json:"path"`
 	Provider                string            `json:"provider"`
 	ProviderID              int64             `json:"provider_id"`
@@ -63541,7 +69309,7 @@ type SnapshotRepository struct {
 
 type SnapshotReview struct {
 	Author            string    `json:"author"`
-	AuthorAssociation *string   `json:"author_association,omitempty"`
+	AuthorAssociation *string   `json:"author_association"`
 	Body              string    `json:"body"`
 	BodyTruncated     bool      `json:"body_truncated"`
 	CreatedAt         time.Time `json:"created_at"`
@@ -63607,7 +69375,7 @@ type StackContextResponse struct {
 
 type StackMemberResponse struct {
 	BaseBranch     string `json:"base_branch"`
-	BlockedBy      *int64 `json:"blocked_by,omitempty"`
+	BlockedBy      *int64 `json:"blocked_by"`
 	CiStatus       string `json:"ci_status"`
 	IsDraft        bool   `json:"is_draft"`
 	MergeableState string `json:"mergeable_state"`
@@ -64005,7 +69773,7 @@ type WorklistHandledResponse struct {
 }
 
 type WorklistItemMarkResponse struct {
-	HandledAt *time.Time                       `json:"handled_at,omitempty"`
+	HandledAt *time.Time                       `json:"handled_at"`
 	ItemType  WorklistItemMarkResponseItemType `json:"item_type"`
 	Number    int64                            `json:"number"`
 	Repo      RepoRefResponse                  `json:"repo"`
@@ -64026,22 +69794,22 @@ type WorklistItemResponse struct {
 	Freshness WorklistItemResponseFreshness `json:"freshness"`
 
 	// HandledAt When the maintainer marked the item handled; null when unhandled. Independent of freshness.
-	HandledAt *time.Time `json:"handled_at,omitempty"`
+	HandledAt *time.Time `json:"handled_at"`
 
 	// Issue Issue list row; null unless the item is a visible issue.
-	Issue    *IssueResponse               `json:"issue,omitempty"`
+	Issue    *IssueResponse               `json:"issue"`
 	ItemType WorklistItemResponseItemType `json:"item_type"`
 
 	// Live Current synced state; null once the item is no longer visible.
-	Live     *WorklistItemStateResponse `json:"live,omitempty"`
+	Live     *WorklistItemStateResponse `json:"live"`
 	Note     string                     `json:"note"`
 	Number   int64                      `json:"number"`
 	Position int64                      `json:"position"`
 
 	// Pull Pull request list row; null unless the item is a visible pull request.
-	Pull      *MergeRequestResponse     `json:"pull,omitempty"`
+	Pull      *MergeRequestResponse     `json:"pull"`
 	Repo      RepoRefResponse           `json:"repo"`
-	Score     *int64                    `json:"score,omitempty"`
+	Score     *int64                    `json:"score"`
 	Section   string                    `json:"section"`
 	Snapshot  WorklistItemStateResponse `json:"snapshot"`
 	Title     string                    `json:"title"`
@@ -64053,7 +69821,7 @@ type WorklistItemStateResponse struct {
 	CiStatus       string     `json:"ci_status"`
 	CommentCount   int64      `json:"comment_count"`
 	HeadSha        string     `json:"head_sha"`
-	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	LastActivityAt *time.Time `json:"last_activity_at"`
 	ReviewDecision string     `json:"review_decision"`
 	State          string     `json:"state"`
 }
@@ -64078,7 +69846,7 @@ type WorklistResponse struct {
 	Schema      *string                `json:"$schema,omitempty"`
 	CreatedAt   time.Time              `json:"created_at"`
 	CreatedBy   string                 `json:"created_by"`
-	DismissedAt *time.Time             `json:"dismissed_at,omitempty"`
+	DismissedAt *time.Time             `json:"dismissed_at"`
 	ID          int64                  `json:"id"`
 	Items       []WorklistItemResponse `json:"items"`
 	Recipe      string                 `json:"recipe"`
@@ -64097,7 +69865,7 @@ type WorklistSummaryResponse struct {
 
 	// CreatedBy Label of the agent that last wrote the list; may be empty.
 	CreatedBy   string     `json:"created_by"`
-	DismissedAt *time.Time `json:"dismissed_at,omitempty"`
+	DismissedAt *time.Time `json:"dismissed_at"`
 	GoneCount   int64      `json:"gone_count"`
 
 	// HandledCount Items the maintainer marked handled.
@@ -64118,16 +69886,16 @@ type WorklistSummaryResponse struct {
 }
 
 type Workspace struct {
-	AssociatedPRNumber *int64                `json:"AssociatedPRNumber,omitempty"`
+	AssociatedPRNumber *int64                `json:"AssociatedPRNumber"`
 	CreatedAt          time.Time             `json:"CreatedAt"`
-	ErrorMessage       *string               `json:"ErrorMessage,omitempty"`
+	ErrorMessage       *string               `json:"ErrorMessage"`
 	GitHeadRef         string                `json:"GitHeadRef"`
 	ID                 string                `json:"ID"`
 	ItemKey            string                `json:"ItemKey"`
 	ItemNumber         int64                 `json:"ItemNumber"`
 	ItemType           string                `json:"ItemType"`
 	KataMetadata       WorkspaceKataMetadata `json:"KataMetadata"`
-	MRHeadRepo         *string               `json:"MRHeadRepo,omitempty"`
+	MRHeadRepo         *string               `json:"MRHeadRepo"`
 	Platform           string                `json:"Platform"`
 	PlatformHost       string                `json:"PlatformHost"`
 	RepoID             int64                 `json:"RepoID"`
@@ -64420,7 +70188,7 @@ type WorkspaceResponse struct {
 	RepoOwner          string                           `json:"repo_owner"`
 	Status             string                           `json:"status"`
 	TmuxActivitySource string                           `json:"tmux_activity_source"`
-	TmuxLastOutputAt   *string                          `json:"tmux_last_output_at,omitempty"`
+	TmuxLastOutputAt   *string                          `json:"tmux_last_output_at"`
 	TmuxPaneTitle      *string                          `json:"tmux_pane_title,omitempty"`
 	TmuxSession        string                           `json:"tmux_session"`
 	TmuxWorking        bool                             `json:"tmux_working"`
@@ -64481,7 +70249,7 @@ type WorkspaceSummary struct {
 	SourceItemVisible     bool                       `json:"source_item_visible"`
 	Status                string                     `json:"status"`
 	TmuxActivitySource    string                     `json:"tmux_activity_source"`
-	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at,omitempty"`
+	TmuxLastOutputAt      *string                    `json:"tmux_last_output_at"`
 	TmuxPaneTitle         *string                    `json:"tmux_pane_title,omitempty"`
 	TmuxSession           *string                    `json:"tmux_session,omitempty"`
 	TmuxWorking           bool                       `json:"tmux_working"`

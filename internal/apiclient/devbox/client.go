@@ -173,10 +173,22 @@ func (c *Client) GetAPIV1DevboxesWithResponse(ctx context.Context, reqEditors ..
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetAPIV1DevboxesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetAPIV1DevboxesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -229,10 +241,22 @@ func (c *Client) PostAPIV1DevboxesByHostIDConnectWithResponse(ctx context.Contex
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(PostAPIV1DevboxesByHostIDConnectErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PostAPIV1DevboxesByHostIDConnectErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -284,10 +308,22 @@ func (c *Client) GetHealthzWithResponse(ctx context.Context, reqEditors ...runti
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(GetHealthzErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetHealthzErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -329,10 +365,22 @@ func (c *Client) EraseDevboxCredentialWithResponse(ctx context.Context, options 
 	switch resp.StatusCode {
 	case 204:
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(EraseDevboxCredentialErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "EraseDevboxCredentialErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -385,10 +433,22 @@ func (c *Client) DevboxCredentialWithResponse(ctx context.Context, options *Devb
 			}
 		}
 		return out, nil
-	case 500:
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	default:
-		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+		out.ApplicationProblemPlusJSONDefault = new(DevboxCredentialErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DevboxCredentialErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
 	}
 }
 
@@ -637,42 +697,47 @@ type DevboxCredentialResponse = Credential
 type DevboxCredentialErrorResponse = ProblemError
 
 type GetAPIV1DevboxesResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetAPIV1DevboxesErrorResponse
-	JSON200      *GetAPIV1DevboxesResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetAPIV1DevboxesErrorResponse
+	JSON200                           *GetAPIV1DevboxesResponse
+	ApplicationProblemPlusJSONDefault *GetAPIV1DevboxesErrorResponse
 }
 
 type PostAPIV1DevboxesByHostIDConnectResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *PostAPIV1DevboxesByHostIDConnectErrorResponse
-	JSON200      *PostAPIV1DevboxesByHostIDConnectResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *PostAPIV1DevboxesByHostIDConnectErrorResponse
+	JSON200                           *PostAPIV1DevboxesByHostIDConnectResponse
+	ApplicationProblemPlusJSONDefault *PostAPIV1DevboxesByHostIDConnectErrorResponse
 }
 
 type GetHealthzResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *GetHealthzErrorResponse
-	JSON200      *GetHealthzResponseJSON
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetHealthzErrorResponse
+	JSON200                           *GetHealthzResponseJSON
+	ApplicationProblemPlusJSONDefault *GetHealthzErrorResponse
 }
 
 type EraseDevboxCredentialResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *EraseDevboxCredentialErrorResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *EraseDevboxCredentialErrorResponse
+	ApplicationProblemPlusJSONDefault *EraseDevboxCredentialErrorResponse
 }
 
 type DevboxCredentialResp struct {
-	HTTPResponse *http.Response
-	Body         []byte
-	StatusCode   int
-	Error        *DevboxCredentialErrorResponse
-	JSON200      *DevboxCredentialResponse
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DevboxCredentialErrorResponse
+	JSON200                           *DevboxCredentialResponse
+	ApplicationProblemPlusJSONDefault *DevboxCredentialErrorResponse
 }
 
 type Assignment struct {

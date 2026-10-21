@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/json/v2"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -28,13 +27,6 @@ type Client struct {
 	permissionCredential [sha256.Size]byte
 	permissionExpires    time.Time
 	writableRepos        map[int64]struct{}
-}
-
-// HTTPError reports an HTTP status that has no platform error code.
-type HTTPError struct{ StatusCode int }
-
-func (e *HTTPError) Error() string {
-	return fmt.Sprintf("bitbucket data center: %d %s", e.StatusCode, http.StatusText(e.StatusCode))
 }
 
 func NewClient(host string, source platform.CredentialSource, transport http.RoundTripper, rate platform.RateObserver) (*Client, error) {
@@ -120,7 +112,7 @@ func request[T any](ctx context.Context, c *Client, method, path string, body an
 		case 429:
 			code = platform.ErrCodeRateLimited
 		default:
-			return result, &HTTPError{StatusCode: resp.StatusCode}
+			return result, errors.New("bitbucket data center: " + resp.Status)
 		}
 		return result, &platform.Error{Code: code, Provider: c.Platform(), PlatformHost: c.host, Err: errors.New(resp.Status)}
 	}

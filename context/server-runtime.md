@@ -6,8 +6,9 @@
 - Observe repository, list, and checks reads; exclude local filesystem/capacity
   errors, budget waits, disabled features, and item reads.
   HTTP 304 counts as success (`internal/github/sync_outcomes.go::syncPass.observe`).
-- Unread repositories retain in-memory outage state; recovery, cooldown seen by
-  a full pass, archival, or untracking clears it. Report fixed values without identifiers
+- Unread repositories retain in-memory outage state; recovery, cooldown,
+  archival, or untracking clears it. Reasons are `auth`, `rate_limited`,
+  `not_found`, or `other`, without identifiers
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

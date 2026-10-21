@@ -4,18 +4,14 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"net"
 	"slices"
 	"sync"
 	"syscall"
 	"time"
 
 	gh "github.com/google/go-github/v92/github"
-	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
-	"go.kenn.io/forge/platform/gitealike"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
@@ -168,45 +164,29 @@ func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	priority := []string{telemetry.SyncReasonRateLimited, telemetry.SyncReasonAuth, telemetry.SyncReasonNotFound, telemetry.SyncReasonNetwork, telemetry.SyncReasonProvider, telemetry.SyncReasonOther}
+	priority := []string{telemetry.SyncReasonRateLimited, telemetry.SyncReasonAuth, telemetry.SyncReasonNotFound, telemetry.SyncReasonOther}
 	return reason != "" && (current == "" || slices.Index(priority, reason) < slices.Index(priority, current))
 }
 
-// syscall.Errno satisfies net.Error, so callers must rule out local
-// filesystem failures before treating a net.Error as a network one.
+// Local filesystem and capacity failures do not describe provider availability.
 func isLocalFilesystemFailure(err error) bool {
 	_, pathErr := errors.AsType[*fs.PathError](err)
 	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE)
 }
 
-// providerStatusCode returns the HTTP status carried by a provider error
-// that has no platform error code.
-func providerStatusCode(err error) int {
-	if response, ok := errors.AsType[*bitbucket.UnexpectedResponseStatusError](err); ok {
-		return response.StatusCode
-	}
-	if response, ok := errors.AsType[*bitbucketdc.HTTPError](err); ok {
-		return response.StatusCode
-	}
-	if response, ok := errors.AsType[*gitealike.HTTPError](err); ok {
-		return response.StatusCode
-	}
-	return platformgithub.StatusCode(err)
-}
-
 func syncFailureReason(err error) string {
-	_, networkError := errors.AsType[net.Error](err)
+	if gitAccessFailureReason(err) == GitAccessCredentialUnavailable {
+		return telemetry.SyncReasonAuth
+	}
 	switch {
 	case errors.Is(err, platform.ErrRateLimited):
 		return telemetry.SyncReasonRateLimited
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) == GitAccessCredentialUnavailable:
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken):
 		return telemetry.SyncReasonAuth
 	case errors.Is(err, platform.ErrNotFound):
 		return telemetry.SyncReasonNotFound
-	case errors.Is(err, platform.ErrProviderContract):
-		return telemetry.SyncReasonProvider
 	}
-	status := providerStatusCode(err)
+	status := platformgithub.StatusCode(err)
 	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	switch {
@@ -216,12 +196,6 @@ func syncFailureReason(err error) string {
 		return telemetry.SyncReasonAuth
 	case status == 404:
 		return telemetry.SyncReasonNotFound
-	case status >= 400 && status < 500:
-		return telemetry.SyncReasonOther
-	case status >= 500 && status < 600:
-		return telemetry.SyncReasonProvider
-	case errors.Is(err, context.DeadlineExceeded), networkError:
-		return telemetry.SyncReasonNetwork
 	default:
 		return telemetry.SyncReasonOther
 	}

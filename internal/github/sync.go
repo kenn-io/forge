@@ -5111,7 +5111,9 @@ func (s *Syncer) syncRepoIdentity(
 	}
 	identity = platformdb.DBRepositoryIdentity(resolved)
 	if !resolved.Ref.Identity().Valid() {
-		return db.RepoIdentity{}, nil, errors.New("provider returned no repo id")
+		err := &platform.Error{Code: platform.ErrCodeProviderContract, Provider: repoPlatform(repo), PlatformHost: repoHost(repo), Err: errors.New("provider returned no repo id")}
+		s.observeRepoFailure(ctx, repo, err)
+		return db.RepoIdentity{}, nil, err
 	}
 	return identity, &resolved, nil
 }

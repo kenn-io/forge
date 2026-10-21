@@ -7,20 +7,16 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	gh "github.com/google/go-github/v92/github"
-	bitbucket "github.com/ktrysmt/go-bitbucket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
-	"go.kenn.io/forge/platform/bitbucketdc"
-	"go.kenn.io/forge/platform/gitealike"
 )
 
 func TestSyncFailedSourceRecovery(t *testing.T) {
@@ -246,7 +242,7 @@ func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 				if i == 0 {
 					assert.Empty(t, events)
 				} else {
-					assert.Equal(t, [][2]string{{"checks", "provider"}}, events)
+					assert.Equal(t, [][2]string{{"checks", "other"}}, events)
 				}
 			}
 		})
@@ -263,23 +259,13 @@ func TestSyncFailureReason(t *testing.T) {
 	}{
 		{"github primary limit", &gh.RateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
 		{"github secondary limit", &gh.AbuseRateLimitError{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "rate_limited"},
-		{"github", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusServiceUnavailable, Request: req}}, "provider"},
 		{"github unauthorized", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusUnauthorized, Request: req}}, "auth"},
 		{"github forbidden", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden, Request: req}}, "auth"},
 		{"github rate limit status", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusTooManyRequests, Request: req}}, "rate_limited"},
 		{"not found", platform.ErrNotFound, "not_found"},
-		{"forgejo and gitea", &gitealike.HTTPError{StatusCode: 404}, "not_found"},
-		{"bitbucket", &bitbucket.UnexpectedResponseStatusError{StatusCode: 429}, "rate_limited"},
-		{"bitbucket DC", &bitbucketdc.HTTPError{StatusCode: 503}, "provider"},
-		{"network", &net.DNSError{Err: "unavailable"}, "network"},
-		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, "network"},
-		{"deadline", context.DeadlineExceeded, "network"},
-		{"contract", platform.ErrProviderContract, "provider"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
 		{"empty managed token", tokenauth.ErrMissingToken, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
-		{"normalized permission takes precedence", &platform.Error{Code: platform.ErrCodePermissionDenied, Err: &gitealike.HTTPError{StatusCode: 429}}, "auth"},
-		{"normalized contract takes precedence", &platform.Error{Code: platform.ErrCodeProviderContract, Err: &gitealike.HTTPError{StatusCode: 404}}, "provider"},
 		{"unknown", errors.New("private error details"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
@@ -306,8 +292,9 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 
 func TestSyncFailedRepositoryFailures(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		setup func(t *testing.T) *Syncer
+		name   string
+		setup  func(t *testing.T) *Syncer
+		reason string
 	}{
 		{"repository lookup", func(t *testing.T) *Syncer {
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -321,7 +308,18 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 				return nil, platform.ErrPermissionDenied
 			}
 			return NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		}},
+		}, "auth"},
+		{"missing repository ID", func(t *testing.T) *Syncer {
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			d := openTestDB(t)
+			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+			require.NoError(t, err)
+			client := &partialFailureMock{}
+			client.getRepositoryFn = func(context.Context, string, string) (*gh.Repository, error) {
+				return &gh.Repository{Name: new("widget")}, nil
+			}
+			return NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+		}, "other"},
 		{"keyless credential route", func(t *testing.T) *Syncer {
 			d := openTestDB(t)
 			repo := RepoRef{Owner: "unrouted", Name: "widget", PlatformHost: "github.com"}
@@ -332,14 +330,14 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			require.NoError(t, err)
 			s.SetGitHubRouters(map[string]*HostRouter{"github.com": router})
 			return s
-		}},
+		}, "auth"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := tc.setup(t)
 			var events [][2]string
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
-			assert.Equal(t, [][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
+			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
 		})
 	}
 }
@@ -381,7 +379,9 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 			if !tc.failing {
 				s.observeRepoFailure(context.WithValue(t.Context(), syncPassKey{}, pass), repo, platform.ErrPermissionDenied)
 			}
-			s.finishSyncPass(pass, []RepoRef{repo})
+			if !tc.failing || tc.source != "issues" {
+				s.finishSyncPass(pass, []RepoRef{repo})
+			}
 			assert.Equal(tc.want, events)
 			// A repository that leaves the cooldown still failing reports again.
 			now = now.Add(repositoryFeatureProbeInterval)
@@ -412,23 +412,4 @@ func TestSyncFailedMixedReads(t *testing.T) {
 			assert.Empty(t, events)
 		})
 	}
-}
-
-func TestSyncFailedBitbucketDCUnavailable(t *testing.T) {
-	var reads atomic.Int32
-	client, err := bitbucketdc.NewClient("bitbucket.example.com", testTokenSource("test-token"), platform.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		assert.Equal(t, "/rest/api/latest/projects/ACME/repos/widget", req.URL.Path)
-		reads.Add(1)
-		return &http.Response{StatusCode: http.StatusServiceUnavailable, Status: "503 Service Unavailable", Body: http.NoBody, Header: make(http.Header), Request: req}, nil
-	}), nil)
-	require.NoError(t, err)
-	registry, err := platform.NewRegistry(client)
-	require.NoError(t, err)
-	repo := RepoRef{Platform: "bitbucket", PlatformHost: "bitbucket.example.com", Owner: "ACME", Name: "widget"}
-	s := NewSyncerWithRegistry(registry, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	require.Positive(t, reads.Load())
-	assert.Equal(t, [][2]string{{"merge_requests", "provider"}}, events)
 }

@@ -125,7 +125,7 @@ func TestSyncFailedProperties(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, daemon.Close()) })
 	for _, tc := range []struct{ source, reason, wantSource, wantReason string }{
-		{"issues", "provider", "issues", "provider"},
+		{"issues", "auth", "issues", "auth"},
 		{"issues", "private provider message", "issues", "other"},
 	} {
 		properties, err := daemon.SanitizeProperties("sync_failed", map[string]any{

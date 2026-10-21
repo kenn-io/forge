@@ -677,11 +677,11 @@ repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass sends at most one `sync_failed` event per source, when a
 repository newly fails that source. A repository that keeps failing stays quiet
-until recovery, a full pass observing cooldown, archival, or untracking clears
+until recovery, cooldown, archival, or untracking clears
 its failure state. Checks count as a repository failure only when none of its
 CI reads succeeds during the pass.
 The event sends only `sync_source` (`merge_requests`, `issues`, or `checks`)
-and `reason` (`auth`, `rate_limited`, `not_found`, `network`, `provider`, or `other`).
+and `reason` (`auth`, `rate_limited`, `not_found`, or `other`).
 These properties identify no repository. A restart can count one outage twice.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,

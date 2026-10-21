@@ -59,8 +59,6 @@ const (
 	SyncReasonRateLimited   = "rate_limited"
 	SyncReasonAuth          = "auth"
 	SyncReasonNotFound      = "not_found"
-	SyncReasonNetwork       = "network"
-	SyncReasonProvider      = "provider"
 	SyncReasonOther         = "other"
 )
 
@@ -69,7 +67,7 @@ var syncSources = []string{SyncSourceMergeRequests, SyncSourceIssues, SyncSource
 // SyncSources returns the sources reported by full sync passes.
 func SyncSources() []string { return slices.Clone(syncSources) }
 
-var syncReasons = []string{SyncReasonRateLimited, SyncReasonAuth, SyncReasonNotFound, SyncReasonNetwork, SyncReasonProvider, SyncReasonOther}
+var syncReasons = []string{SyncReasonRateLimited, SyncReasonAuth, SyncReasonNotFound, SyncReasonOther}
 
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",

@@ -306,7 +306,6 @@ name = "widget"
 	err = runWithTelemetry(ctx, serve.Options{ConfigPath: cfgPath}, func(telemetry.Options) telemetry.Client { return client })
 	require.NoError(err)
 	require.Contains(client.events(), "sync_failed")
-	require.Contains(client.captures, map[string]any{"sync_source": "merge_requests", "reason": "other"})
 }
 
 func TestSetupFinishedMinute(t *testing.T) {

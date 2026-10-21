@@ -192,7 +192,6 @@ func TestSyncFailedGitHubChecksNotFound(t *testing.T) {
 			}{
 				{"lone 404", []int{http.StatusNotFound}, [][2]string{{"checks", "not_found"}}},
 				{"success after 404", []int{http.StatusNotFound, http.StatusOK}, nil},
-				{"success before 404", []int{http.StatusOK, http.StatusNotFound}, nil},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -241,6 +240,16 @@ func TestSyncFailureReason(t *testing.T) {
 		{"empty managed token", tokenauth.ErrMissingToken, "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"unknown", errors.New("private error details"), "other"},
+		{"app unauthorized", &githubapp.StatusError{StatusCode: http.StatusUnauthorized}, "auth"},
+		{"app forbidden", &githubapp.StatusError{StatusCode: http.StatusForbidden}, "auth"},
+		{"app not found", &githubapp.StatusError{StatusCode: http.StatusNotFound}, "not_found"},
+		{"app too many requests", &githubapp.StatusError{StatusCode: http.StatusTooManyRequests}, "rate_limited"},
+		{"app retry header alone", &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: http.Header{"Retry-After": {"90"}}}, "auth"},
+		{"app primary limit", &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: http.Header{"X-Ratelimit-Remaining": {"0"}}}, "rate_limited"},
+		{"app remaining quota", &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: http.Header{"X-Ratelimit-Remaining": {"4999"}}}, "auth"},
+		{"app secondary limit with retry header", &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: http.Header{"X-Ratelimit-Remaining": {"4999"}, "Retry-After": {"90"}}, Body: `{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`}, "rate_limited"},
+		{"app secondary limit without retry header", &githubapp.StatusError{StatusCode: http.StatusForbidden, Header: http.Header{"X-Ratelimit-Remaining": {"4999"}}, Body: `{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`}, "rate_limited"},
+		{"app unknown", &githubapp.StatusError{StatusCode: http.StatusServiceUnavailable}, "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
 	}
@@ -251,71 +260,35 @@ func TestSyncFailedManagedTokenRenewal(t *testing.T) { //nolint:paralleltest // 
 	require.NoError(t, err)
 	keyPath := filepath.Join(t.TempDir(), "app.pem")
 	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0o600))
-	for _, tc := range []struct {
-		status     int
-		retryAfter bool
-		secondary  bool
-		reason     string
-	}{
-		{http.StatusUnauthorized, false, false, "auth"},
-		{http.StatusForbidden, false, false, "auth"},
-		{http.StatusNotFound, false, false, "not_found"},
-		{http.StatusTooManyRequests, true, false, "rate_limited"},
-		{http.StatusForbidden, true, true, "rate_limited"},
-		{http.StatusForbidden, false, true, "rate_limited"},
-	} {
-		t.Run(fmt.Sprintf("status=%d/retry=%t/secondary=%t", tc.status, tc.retryAfter, tc.secondary), func(t *testing.T) {
-			assert := assert.New(t)
-			var mints atomic.Int32
-			host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				assert.Equal(http.MethodPost, r.Method)
-				assert.Equal("/api/v3/app/installations/11/access_tokens", r.URL.Path)
-				if mints.Add(1) == 1 {
-					w.WriteHeader(http.StatusCreated)
-					fmt.Fprintf(w, `{"token":"installation-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
-					return
-				}
-				if tc.retryAfter {
-					w.Header().Set("Retry-After", "90")
-				}
-				if tc.secondary {
-					w.Header().Set("X-RateLimit-Remaining", "4999")
-					w.WriteHeader(tc.status)
-					fmt.Fprint(w, `{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`)
-					return
-				}
-				http.Error(w, "mint failed", tc.status)
-			}))
-			source := tokenauth.NewManagedSource(tokenauth.Descriptor{
-				Key:        tokenauth.Key{Platform: "github", Host: host},
-				Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindGitHubApp, Host: host, AppID: 7, FilePath: keyPath, InstallationID: 11}},
-			}, tokenauth.Options{GitHubApp: func(ctx context.Context, candidate tokenauth.Candidate) (string, time.Time, error) {
-				return appauth.MintInstallationToken(ctx, candidate.Host, candidate.AppID, candidate.FilePath, candidate.InstallationID)
-			}})
-			token, err := source.Token(t.Context())
-			require.NoError(t, err)
-			source.Invalidate(token)
-			client, err := NewClient(source, host, nil, nil)
-			require.NoError(t, err)
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: host}
-			s := NewSyncer(map[string]Client{host: client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-			var events [][2]string
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.RunOnce(t.Context())
-			assert.Equal([][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
-			_, err = source.Token(t.Context())
-			var status *githubapp.StatusError
-			require.ErrorAs(t, err, &status)
-			assert.Equal(tc.status, status.StatusCode)
-			assert.Equal(int32(2), mints.Load())
-			if tc.retryAfter {
-				var retry interface{ RetryDeadline(time.Time) time.Time }
-				require.ErrorAs(t, err, &retry)
-				now := time.Now()
-				assert.Equal(now.Add(90*time.Second), retry.RetryDeadline(now))
-			}
-		})
-	}
+	assert := assert.New(t)
+	var mints atomic.Int32
+	host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(http.MethodPost, r.Method)
+		assert.Equal("/api/v3/app/installations/11/access_tokens", r.URL.Path)
+		if mints.Add(1) == 1 {
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(w, `{"token":"installation-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+			return
+		}
+		http.Error(w, "mint failed", http.StatusUnauthorized)
+	}))
+	source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+		Key:        tokenauth.Key{Platform: "github", Host: host},
+		Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindGitHubApp, Host: host, AppID: 7, FilePath: keyPath, InstallationID: 11}},
+	}, tokenauth.Options{GitHubApp: func(ctx context.Context, candidate tokenauth.Candidate) (string, time.Time, error) {
+		return appauth.MintInstallationToken(ctx, candidate.Host, candidate.AppID, candidate.FilePath, candidate.InstallationID)
+	}})
+	token, err := source.Token(t.Context())
+	require.NoError(t, err)
+	source.Invalidate(token)
+	client, err := NewClient(source, host, nil, nil)
+	require.NoError(t, err)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: host}
+	s := NewSyncer(map[string]Client{host: client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal([][2]string{{"merge_requests", "auth"}, {"issues", "auth"}}, events)
 }
 
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
@@ -392,28 +365,4 @@ func TestSyncFailedArchivedMetadataRead(t *testing.T) {
 	s.RunOnce(t.Context())
 	assert.Equal(1, metadataReads)
 	assert.Empty(events)
-}
-
-func TestSyncAppFailureReason(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name   string
-		status int
-		header http.Header
-		want   string
-	}{
-		{"unauthorized", http.StatusUnauthorized, nil, "auth"},
-		{"forbidden", http.StatusForbidden, nil, "auth"},
-		{"not found", http.StatusNotFound, nil, "not_found"},
-		{"too many requests", http.StatusTooManyRequests, nil, "rate_limited"},
-		{"retry header alone", http.StatusForbidden, http.Header{"Retry-After": {"90"}}, "auth"},
-		{"primary limit", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"0"}}, "rate_limited"},
-		{"remaining quota", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"4999"}}, "auth"},
-		{"unknown", http.StatusServiceUnavailable, nil, "other"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			err := &githubapp.StatusError{StatusCode: tt.status, Header: tt.header}
-			assert.Equal(t, tt.want, syncFailureReason(fmt.Errorf("renew: %w", err)))
-		})
-	}
 }

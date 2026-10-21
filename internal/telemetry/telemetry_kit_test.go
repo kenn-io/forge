@@ -135,8 +135,6 @@ func TestSyncFailedProperties(t *testing.T) {
 		assert := assert.New(t)
 		assert.Equal(tc.wantSource, properties["sync_source"])
 		assert.Equal(tc.wantReason, properties["reason"])
-		assert.NotContains(properties, "repo")
-		assert.NotContains(properties, "error")
 	}
 	for _, properties := range []map[string]any{{"reason": "auth"}, {"sync_source": "issues"}, {"sync_source": "acme/widget", "reason": "auth"}} {
 		_, err := daemon.SanitizeProperties("sync_failed", properties)

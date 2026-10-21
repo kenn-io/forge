@@ -1,6 +1,7 @@
 package github
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"io/fs"
@@ -30,6 +31,7 @@ type syncFailureKey struct {
 type syncPass struct {
 	mu      sync.Mutex
 	results map[string]map[string]string
+	routes  map[string]string // resolved route to the route it replaced
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
@@ -83,6 +85,19 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	}
 }
 
+// observeSyncRoute lets finalization find an outage recorded before a rename.
+func (s *Syncer) observeSyncRoute(ctx context.Context, previous, resolved RepoRef) RepoRef {
+	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
+		pass.mu.Lock()
+		defer pass.mu.Unlock()
+		if pass.routes == nil {
+			pass.routes = make(map[string]string)
+		}
+		pass.routes[repoFailKey(resolved)] = repoFailKey(previous)
+	}
+	return resolved
+}
+
 // finishSyncPass runs under the run slot after all observations have finished.
 func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
@@ -94,7 +109,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	for _, source := range telemetry.SyncSources() {
 		for _, repo := range tracked {
 			// Resolving identity re-keys a repository without ending its outage.
-			key := syncFailureKey{source, repoFailKey(repo)}
+			key := syncFailureKey{source, cmp.Or(pass.routes[repoFailKey(repo)], repoFailKey(repo))}
 			if s.syncFailures[key] {
 				delete(s.syncFailures, key)
 				s.syncFailures[syncFailureKey{source, mergeQueueRepoKey(repo)}] = true

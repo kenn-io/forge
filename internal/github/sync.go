@@ -5130,7 +5130,7 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 	if err != nil {
 		return RepoRef{}, 0, nil, err
 	}
-	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
+	authoritative := s.observeSyncRoute(ctx, repo, repoRefFromCatalog(repo, entry.Repository, resolved))
 	if published, ok := s.publishResolvedRepository(
 		repo, authoritative, resolved != nil,
 	); ok {

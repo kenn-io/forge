@@ -250,6 +250,22 @@ describe("browser telemetry", () => {
     );
   });
 
+  it("keeps core actions waiting for a receipt instead of arming their own backoff retry", async () => {
+    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
+    let failing = false;
+    const { sent, runtime } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    failing = true;
+    reportPRViewed(runtime, "github");
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    reportWorkspaceOpened(runtime, "adhoc");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "pr_viewed"]);
+  });
+
   it("sends fresh outcomes after backoff without replaying failed outcomes", async () => {
     vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
     let failing = false;

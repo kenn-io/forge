@@ -1,6 +1,6 @@
 <script lang="ts">
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportOutcome, reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { Modal, SelectDropdown, Spinner, type SelectDropdownOption } from "@kenn-io/kit-ui";
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
@@ -334,7 +334,7 @@
     if (!launchTarget || (launchTarget.kind !== "agent" && launchTarget.kind !== "acp") || !launchTarget.available) {
       if (discardWorkspaceLaunch(workspaceId, hostKey) !== null) {
         showFlash(`Agent "${pending.targetKey}" could not launch: ${launchTarget?.disabled_reason ?? "not available"}`, { tone: "danger" });
-        if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+        reportWorkspaceOpenError(appRuntime);
       }
       return;
     }
@@ -495,7 +495,7 @@
   ): void {
     const message = failureMessage(state.error, fallback);
     showFlash(message, { tone: "danger" });
-    if (state.operation === "Launch" && documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+    if (state.operation === "Launch") reportWorkspaceOpenError(appRuntime);
   }
 
   function requestRuntimeRefresh(): void {
@@ -657,7 +657,7 @@
           launchingTarget = null;
           if (launchClaim) failWorkspaceLaunch(launchClaim);
           showFlash(failureMessage(failure, "Launch failed"), { tone: "danger" });
-          if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+          reportWorkspaceOpenError(appRuntime);
         },
       },
     );
@@ -683,7 +683,7 @@
           onExpired: Effect.sync(() => {
             if (workspaceId === launchClaim.workspaceId && hostKey === launchClaim.workspaceHostKey) {
               showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
-              if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+              reportWorkspaceOpenError(appRuntime);
             }
           }),
         });

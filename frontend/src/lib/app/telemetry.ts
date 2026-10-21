@@ -7,7 +7,8 @@ import {
 import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
 import { orvalRequest } from "../api/runtime.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
-import { canonicalProvider, resolvedPlatformHost } from "../api/provider-routes.js";
+import { canonicalProvider } from "../api/provider-routes.js";
+import { documentVisible } from "../browser/document-visible.svelte.js";
 import type { AppRuntime } from "./runtime.js";
 import type { Page, Route } from "../stores/router.svelte.js";
 
@@ -70,9 +71,6 @@ type CoreAction =
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
 export type Outcome = { event: "search_empty" } | { event: "error_shown"; kind: CoreAction["event"] };
-
-export const prErrorScope = (provider: string, host: string | undefined, repoPath: string, number: number) =>
-  `${canonicalProvider(provider)}:${resolvedPlatformHost(provider, host)}:${repoPath}#${number}`;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const coreKey = (action: VisitEvent) =>
@@ -183,8 +181,7 @@ export function startRuntimeTelemetry(
   options: Partial<Pick<BrowserTelemetryOptions, "storageKey" | "post">> = {},
 ) {
   const reportedDay = new Map<string, string>();
-  const pending = new Map<string, { action: VisitEvent; day: string }>();
-  const pendingOutcomes = new Map<VisitEvent, string>();
+  const pending = new Map<string | VisitEvent, { action: VisitEvent; day: string }>();
   let retry: ReturnType<typeof setTimeout> | undefined;
   let quiet = true;
   const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
@@ -198,8 +195,7 @@ export function startRuntimeTelemetry(
     post: async (route, event, visitOptions) => {
       const key = coreKey(event);
       const day = today();
-      if (key) pending.delete(key);
-      else pendingOutcomes.delete(event);
+      pending.delete(key ?? event);
       if (key) {
         reportedDay.set(key, day);
       }
@@ -216,7 +212,6 @@ export function startRuntimeTelemetry(
           if (status === "disabled") {
             stored.forget();
             pending.clear();
-            pendingOutcomes.clear();
           } else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
           setTimeout(flush, 0);
         });
@@ -240,12 +235,8 @@ export function startRuntimeTelemetry(
       if (day === today()) send(action);
       else pending.delete(key);
     }
-    for (const [outcome, day] of pendingOutcomes) {
-      if (day === today()) send(outcome);
-      else pendingOutcomes.delete(outcome);
-    }
     // Kit drops visits during backoff and only wakes its own pending daily events.
-    if (!quiet && (pending.size > 0 || pendingOutcomes.size > 0)) retry = setTimeout(flush, 1_000);
+    if (!quiet && pending.size > 0) retry = setTimeout(flush, 1_000);
   };
   const unsubscribe = reporter.onQuietChange((value) => {
     quiet = value;
@@ -259,13 +250,13 @@ export function startRuntimeTelemetry(
         event: outcome.event,
         properties: { surface: "web", ...(outcome.event === "error_shown" ? { kind: outcome.kind } : {}) },
       };
-      pendingOutcomes.set(visit, today());
+      pending.set(visit, { action: visit, day: today() });
       flush();
     },
     reportAction: (action) => {
       const visit = { event: action.event, properties: { ...action.properties, surface: "web" } };
       pending.set(coreKey(action)!, { action: visit, day: today() });
-      flush();
+      send(visit);
     },
   });
   return {
@@ -274,7 +265,6 @@ export function startRuntimeTelemetry(
       reporters.delete(runtime);
       clearTimeout(retry);
       pending.clear();
-      pendingOutcomes.clear();
       unsubscribe();
       reporter.stop();
     },
@@ -300,6 +290,10 @@ export function reportWorkspaceOpened(runtime: AppRuntime, itemType: WorkspaceDe
 
 export function reportOutcome(runtime: AppRuntime, outcome: Outcome): void {
   reporters.get(runtime)?.reportOutcome(outcome);
+}
+
+export function reportWorkspaceOpenError(runtime: AppRuntime): void {
+  if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
 }
 
 export function searchEmptyReporter(runtime: AppRuntime) {

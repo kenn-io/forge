@@ -14,8 +14,7 @@
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { prErrorScope, reportOutcome } from "../../app/telemetry.js";
-  import { documentVisible } from "../../browser/document-visible.svelte.js";
+  import { reportWorkspaceOpenError } from "../../app/telemetry.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
@@ -37,6 +36,7 @@
     getNavigate,
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
+  import { providerItemKey } from "../../stores/provider-key.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
   import type { WorkflowDispatchRequest } from "../actions/WorkflowDispatchForm.svelte";
@@ -1916,7 +1916,7 @@
             ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
             : "Could not reach Kenn Forge";
         showFlash(message, { tone: "danger" });
-        if ((launchTargetKey || quickAction) && documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+        if (launchTargetKey || quickAction) reportWorkspaceOpenError(runtime);
       },
     });
   }
@@ -2217,7 +2217,7 @@
 <svelte:document onmousedown={onDocumentMousedown} />
 
 {#if !detailStore.isDetailLoading() && detailStore.getDetailError() !== null && (detailStore.getDetail() === null || detailMismatch)}
-  <ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:detail`} shown={visible} />
+  <ErrorShown kind="pr_viewed" scope={`${providerItemKey({ provider, platformHost: platformHost ?? "", owner, name, number })}:detail`} shown={visible} />
 {/if}
 
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}

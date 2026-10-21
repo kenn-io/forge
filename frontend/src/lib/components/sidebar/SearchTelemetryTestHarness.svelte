@@ -4,9 +4,12 @@
   import { setAppRuntime } from "../../app/runtime-context.js";
   import PullList from "./PullList.svelte";
   import IssueList from "./IssueList.svelte";
+  import FocusListView from "../../views/FocusListView.svelte";
 
-  const { runtime, issues }: { runtime: AppRuntime; issues: boolean } = $props();
+  const { runtime, issues, presentation = "sidebar" }: { runtime: AppRuntime; issues: boolean; presentation?: "sidebar" | "focus" | "phone" } = $props();
   setAppRuntime(untrack(() => runtime));
 </script>
 
-{#if issues}<IssueList />{:else}<PullList />{/if}
+{#if presentation !== "sidebar"}
+  <FocusListView listType={issues ? "issues" : "mrs"} phonePresentation={presentation === "phone"} routeFamily={presentation === "phone" ? "canonical" : "focus"} />
+{:else if issues}<IssueList />{:else}<PullList />{/if}

@@ -4,13 +4,13 @@
   import { Effect } from "effect";
   import { onMount, tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
-  import { prErrorScope } from "../../app/telemetry.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { ReviewThread } from "./review-thread-context.js";
+  import { providerItemKey } from "../../stores/provider-key.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
 
   const stores = getStores();
@@ -647,7 +647,7 @@
         <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
-      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={`${prErrorScope(provider, platformHost, repoPath, number)}:diff`} />{/if}
+      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={`${providerItemKey({ provider, platformHost: platformHost ?? "", owner, name, number })}:diff`} />{/if}
       <div class="diff-state">
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>

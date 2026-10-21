@@ -1,7 +1,6 @@
 <script lang="ts">
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { documentVisible } from "../../browser/document-visible.svelte.js";
-  import { reportOutcome } from "../../app/telemetry.js";
+  import { reportWorkspaceOpenError } from "../../app/telemetry.js";
   import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -963,7 +962,7 @@
         if (options.fromConflictDialog && branchConflict) branchConflict.error = message;
         else {
           showFlash(message, { tone: "danger" });
-          if ((launchTargetKey || quickAction) && documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+          if (launchTargetKey || quickAction) reportWorkspaceOpenError(runtime);
         }
       },
     });

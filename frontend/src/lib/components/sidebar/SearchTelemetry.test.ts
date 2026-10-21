@@ -8,7 +8,14 @@ import { startTestTelemetry } from "../../testing/telemetry.js";
 import { createMockApiFetch } from "../../../test/mockApiFetch.js";
 import Harness from "./SearchTelemetryTestHarness.svelte";
 
-it.each([false, true])("counts Enter through the real sidebar search, issues=%s", async (issues) => {
+it.each([
+  [false, "sidebar"],
+  [true, "sidebar"],
+  [false, "focus"],
+  [true, "focus"],
+  [false, "phone"],
+  [true, "phone"],
+] as const)("counts Enter through the real search, issues=%s, presentation=%s", async (issues, presentation) => {
   const api = createMockApiFetch([
     ({ url }) => (url.pathname === (issues ? "/api/v1/issues" : "/api/v1/pulls") ? Response.json([]) : undefined),
   ]);
@@ -18,7 +25,7 @@ it.each([false, true])("counts Enter through the real sidebar search, issues=%s"
   const sent = vi.fn();
   await startTestTelemetry(runtime, sent).ready;
   render(Harness, {
-    props: { runtime, issues },
+    props: { runtime, issues, presentation },
     context: new Map<symbol, unknown>([
       [STORES_KEY, stores],
       [NAVIGATE_KEY, vi.fn()],

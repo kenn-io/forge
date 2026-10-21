@@ -2,8 +2,7 @@ import { Deferred, Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { LaunchTarget, QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
-import { reportWorkspaceOpened, reportOutcome } from "../app/telemetry.js";
-import { documentVisible } from "../browser/document-visible.svelte.js";
+import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -184,7 +183,7 @@ export function runWorkspaceQuickAction(
           if (outcome.type === "started") return;
           if (outcome.type === "failed") {
             showFlash(outcome.message, { tone: "danger" });
-            if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+            reportWorkspaceOpenError(runtime);
           } else showFlash(outcome.message, { tone: "warning" });
         }),
       ),
@@ -194,7 +193,7 @@ export function runWorkspaceQuickAction(
       safeContext: { workspaceId, agent: action.agent },
       onFailure: () => {
         showFlash(`"${action.label}" could not start.`, { tone: "danger" });
-        if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+        reportWorkspaceOpenError(runtime);
       },
     },
   );

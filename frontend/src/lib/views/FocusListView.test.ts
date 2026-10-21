@@ -56,6 +56,7 @@ vi.mock("../context.js", () => ({
       isIssuesLoading: () => false,
       isIssueListCapped: () => issueListCapped.value,
       loadIssues,
+      searchTextChanged: vi.fn(),
       setHideBots: vi.fn(),
       setInvolvesMe: (value: boolean) => {
         setIssuesInvolvesMe(value);
@@ -85,6 +86,7 @@ vi.mock("../context.js", () => ({
       isLoading: () => false,
       isListCapped: () => pullListCapped.value,
       loadPulls,
+      searchTextChanged: vi.fn(),
       setFilterState: vi.fn(),
       setInvolvesMe: (value: boolean) => {
         setPullsInvolvesMe(value);

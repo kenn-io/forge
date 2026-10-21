@@ -1,6 +1,6 @@
 <script lang="ts">
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportOutcome, reportWorkspaceOpened } from "../../app/telemetry.js";
+  import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -2731,7 +2731,7 @@
         if (current) {
           const message = workspaceMutationFailureMessage(state.error, fallback);
           showFlash(message, { tone: "danger" });
-          if (state.operation === "Launch" && documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+          if (state.operation === "Launch") reportWorkspaceOpenError(appRuntime);
         }
         clearRuntimeMutationPending(state);
         return true;
@@ -3044,7 +3044,7 @@
         acceptedAt,
         onExpired: Effect.sync(() => {
           showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
-          if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+          reportWorkspaceOpenError(appRuntime);
         }),
       });
     });
@@ -4519,7 +4519,7 @@
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       showFlash(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`, { tone: "danger" });
-      if (documentVisible()) reportOutcome(appRuntime, { event: "error_shown", kind: "workspace_opened" });
+      reportWorkspaceOpenError(appRuntime);
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);

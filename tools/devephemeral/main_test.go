@@ -106,13 +106,18 @@ func TestPrepareEphemeralConfigSharesDefaultMCPListener(t *testing.T) {
 
 func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		mcp        config.MCP
-		mcpPortSet bool
+		name          string
+		mcp           config.MCP
+		mcpPortSet    bool
+		requestedPort int
+		expectedPort  int
 	}{
-		{name: "explicit flag", mcpPortSet: true},
-		{name: "explicit enable", mcp: config.MCP{Enabled: new(true)}},
-		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
+		{name: "explicit flag", mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
+		{name: "explicit enable", mcp: config.MCP{Enabled: new(true)}, requestedPort: 39103, expectedPort: 39103},
+		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}, requestedPort: 39103, expectedPort: 39103},
+		{name: "explicit zero flag", mcpPortSet: true},
+		{name: "explicit enable free port", mcp: config.MCP{Enabled: new(true)}},
+		{name: "source port free port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -140,7 +145,7 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 				workDir:          workDir,
 				backendPort:      39101,
 				frontendPort:     39102,
-				mcpPort:          39103,
+				mcpPort:          tc.requestedPort,
 				mcpPortSet:       tc.mcpPortSet,
 				freshDB:          true,
 			})
@@ -152,57 +157,17 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 			require.NotNil(reloaded.MCP.Enabled)
 			assert.True(*reloaded.MCP.Enabled)
 			assert.False(reloaded.MCPSharesMainListener())
-			assert.Equal(39103, reloaded.MCP.Port)
-			assert.Equal("127.0.0.1:39103", reloaded.MCPListenAddr())
-			assert.Equal(39103, prepared.mcpPort)
-			assert.Equal("http://127.0.0.1:39103", prepared.mcpURL)
-		})
-	}
-}
-
-func TestPrepareEphemeralConfigSelectsFreeDedicatedMCPPort(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		mcp        config.MCP
-		mcpPortSet bool
-	}{
-		{name: "explicit zero flag", mcpPortSet: true},
-		{name: "explicit enable", mcp: config.MCP{Enabled: new(true)}},
-		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert := assert.New(t)
-			dir := t.TempDir()
-			sourcePath := filepath.Join(dir, "source.toml")
-			source := config.Config{
-				SyncInterval:        "5m",
-				GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
-				DefaultPlatformHost: "github.com",
-				Host:                "127.0.0.1",
-				Port:                8091,
-				DataDir:             filepath.Join(dir, "source-data"),
-				Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
-				MCP:                 tc.mcp,
+			if tc.expectedPort != 0 {
+				assert.Equal(tc.expectedPort, reloaded.MCP.Port)
+			} else {
+				assert.Positive(reloaded.MCP.Port)
+				assert.NotEqual(6661, reloaded.MCP.Port)
+				assert.NotEqual(39101, reloaded.MCP.Port)
+				assert.NotEqual(39102, reloaded.MCP.Port)
 			}
-			require.NoError(t, source.Save(sourcePath))
-			prepared, err := prepareEphemeralConfig(ephemeralOptions{
-				sourceConfigPath: sourcePath,
-				workDir:          filepath.Join(dir, "run"),
-				backendPort:      39101,
-				frontendPort:     39102,
-				mcpPortSet:       tc.mcpPortSet,
-				freshDB:          true,
-			})
-			require.NoError(t, err)
-			reloaded, err := config.Load(prepared.configPath)
-			require.NoError(t, err)
-			require.NotNil(t, reloaded.MCP.Enabled)
-			assert.True(*reloaded.MCP.Enabled)
-			assert.Positive(reloaded.MCP.Port)
-			assert.NotEqual(6661, reloaded.MCP.Port)
-			assert.NotEqual(39101, reloaded.MCP.Port)
-			assert.NotEqual(39102, reloaded.MCP.Port)
+			assert.Equal(fmt.Sprintf("127.0.0.1:%d", reloaded.MCP.Port), reloaded.MCPListenAddr())
 			assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
+			assert.Equal(fmt.Sprintf("http://127.0.0.1:%d", reloaded.MCP.Port), prepared.mcpURL)
 		})
 	}
 }

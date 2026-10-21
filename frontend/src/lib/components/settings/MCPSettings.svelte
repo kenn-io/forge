@@ -136,7 +136,7 @@
         aria-invalid={!portValid}
       />
       <span class="field-help">
-        Leave blank to share Forge's port, or use port + 1 when MCP is enabled in the config file.
+        Blank uses the default: Forge's own port, or port + 1 if enabled is set in the config file.
       </span>
     </label>
 

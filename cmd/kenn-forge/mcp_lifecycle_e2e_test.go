@@ -21,9 +21,9 @@ import (
 )
 
 // TestDaemonServesMCPEndpointThroughLifecycleE2E covers the daemon-owned MCP
-// boundary end to end: the default companion publishes the listener address through
+// boundary end to end: enabling [mcp] publishes the listener address through
 // runtime discovery, the endpoint swaps from startup-unavailable to serving a
-// real worklist call, and daemon shutdown releases the shared listener.
+// real tool call, and daemon shutdown releases both listeners.
 func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
@@ -33,8 +33,13 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	dataDir := filepath.Join(root, "data")
 	require.NoError(os.MkdirAll(dataDir, 0o700))
 	cfgPath := filepath.Join(root, "config.toml")
-	appPort := reserveFreePort(t)
+	appPort, mcpPort := reserveAdjacentPorts(t)
 	writeMinimalConfig(t, cfgPath, dataDir, appPort)
+	existing, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	require.NoError(os.WriteFile(
+		cfgPath, append(existing, []byte("\n[mcp]\nenabled = true\n")...), 0o600,
+	))
 
 	serve := procutil.Command(bin, "serve", "--config", cfgPath)
 	serve.Stdout = os.Stderr
@@ -57,23 +62,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(status.Metadata)
 	mcpAddr := status.Metadata.MCPListenAddr
-	assert.Equal(net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort)), mcpAddr)
-	var ping struct {
-		MCPURL string `json:"mcp_url"`
-	}
-	require.Eventually(func() bool {
-		req, requestErr := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+mcpAddr+"/api/ping", nil)
-		if requestErr != nil {
-			return false
-		}
-		response, requestErr := http.DefaultClient.Do(req)
-		if requestErr != nil {
-			return false
-		}
-		defer response.Body.Close()
-		return json.NewDecoder(response.Body).Decode(&ping) == nil && ping.MCPURL != ""
-	}, 30*time.Second, 100*time.Millisecond)
-	assert.Equal("http://"+mcpAddr+"/mcp", ping.MCPURL)
+	assert.Equal(net.JoinHostPort("127.0.0.1", strconv.Itoa(mcpPort)), mcpAddr)
 
 	// The published endpoint returns 503 until the full server swaps in;
 	// a session eventually initializes against the discovered address.
@@ -84,7 +73,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		cs, connectErr := client.Connect(
 			t.Context(),
-			&mcp.StreamableClientTransport{Endpoint: ping.MCPURL},
+			&mcp.StreamableClientTransport{Endpoint: "http://" + mcpAddr + "/mcp"},
 			nil,
 		)
 		if connectErr != nil {
@@ -95,7 +84,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	}, 30*time.Second, 100*time.Millisecond)
 
 	result, err := session.CallTool(
-		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_worklists"},
+		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
 	)
 	require.NoError(err)
 	require.NotNil(result)
@@ -121,82 +110,103 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	require.NoError(serve.Wait())
 	stopped = true
 
-	assert.Eventually(func() bool {
-		ln, listenErr := (&net.ListenConfig{}).Listen(t.Context(), "tcp", mcpAddr)
-		if listenErr != nil {
-			return false
-		}
-		return ln.Close() == nil
-	}, 5*time.Second, 50*time.Millisecond, "listener %s not released", mcpAddr)
+	for _, port := range []int{appPort, mcpPort} {
+		addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+		assert.Eventually(func() bool {
+			ln, listenErr := (&net.ListenConfig{}).Listen(t.Context(), "tcp", addr)
+			if listenErr != nil {
+				return false
+			}
+			return ln.Close() == nil
+		}, 5*time.Second, 50*time.Millisecond, "listener %s not released", addr)
+	}
 }
 
 // TestDaemonServesMCPOnSharedBackendPortE2E covers configuring the companion
 // on the backend port: the main listener serves the loopback companion
 // policy at /mcp without a bearer, and discovery reports that endpoint.
 func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
 	bin := buildForge(t)
 
-	root := t.TempDir()
-	dataDir := filepath.Join(root, "data")
-	require.NoError(os.MkdirAll(dataDir, 0o700))
-	cfgPath := filepath.Join(root, "config.toml")
-	appPort := reserveFreePort(t)
-	writeMinimalConfig(t, cfgPath, dataDir, appPort)
-	existing, err := os.ReadFile(cfgPath)
-	require.NoError(err)
-	require.NoError(os.WriteFile(cfgPath, append(existing, fmt.Appendf(nil,
-		"\n[mcp]\nenabled = true\nport = %d\n", appPort,
-	)...), 0o600))
+	for _, name := range []string{"explicit shared port", "omitted MCP config"} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
 
-	serve := procutil.Command(bin, "serve", "--config", cfgPath)
-	serve.Stdout = os.Stderr
-	serve.Stderr = os.Stderr
-	serve.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
-	require.NoError(serve.Start())
-	t.Cleanup(func() {
-		_ = serve.Process.Signal(syscall.SIGKILL)
-		_ = serve.Wait()
-	})
+			root := t.TempDir()
+			dataDir := filepath.Join(root, "data")
+			require.NoError(os.MkdirAll(dataDir, 0o700))
+			cfgPath := filepath.Join(root, "config.toml")
+			appPort := reserveFreePort(t)
+			writeMinimalConfig(t, cfgPath, dataDir, appPort)
+			if name == "explicit shared port" {
+				existing, err := os.ReadFile(cfgPath)
+				require.NoError(err)
+				require.NoError(os.WriteFile(cfgPath, append(existing, fmt.Appendf(nil,
+					"\n[mcp]\nenabled = true\nport = %d\n", appPort,
+				)...), 0o600))
+			}
 
-	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
-	status, err := runtimelock.Read(dataDir)
-	require.NoError(err)
-	require.NotNil(status.Metadata)
-	appAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
-	assert.Equal(appAddr, status.Metadata.MCPListenAddr)
+			serve := procutil.Command(bin, "serve", "--config", cfgPath)
+			serve.Stdout = os.Stderr
+			serve.Stderr = os.Stderr
+			serve.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
+			require.NoError(serve.Start())
+			t.Cleanup(func() {
+				_ = serve.Process.Signal(syscall.SIGKILL)
+				_ = serve.Wait()
+			})
 
-	client := mcp.NewClient(
-		&mcp.Implementation{Name: "shared-port-test", Version: "test"}, nil,
-	)
-	var session *mcp.ClientSession
-	require.Eventually(func() bool {
-		cs, connectErr := client.Connect(
-			t.Context(),
-			&mcp.StreamableClientTransport{Endpoint: "http://" + appAddr + "/mcp"},
-			nil,
-		)
-		if connectErr != nil {
-			return false
-		}
-		session = cs
-		return true
-	}, 30*time.Second, 100*time.Millisecond)
-	t.Cleanup(func() { _ = session.Close() })
+			waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
+			status, err := runtimelock.Read(dataDir)
+			require.NoError(err)
+			require.NotNil(status.Metadata)
+			appAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
+			assert.Equal(appAddr, status.Metadata.MCPListenAddr)
 
-	result, err := session.CallTool(
-		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
-	)
-	require.NoError(err)
-	assert.False(result.IsError)
+			client := mcp.NewClient(
+				&mcp.Implementation{Name: "shared-port-test", Version: "test"}, nil,
+			)
+			var session *mcp.ClientSession
+			require.Eventually(func() bool {
+				cs, connectErr := client.Connect(
+					t.Context(),
+					&mcp.StreamableClientTransport{Endpoint: "http://" + appAddr + "/mcp"},
+					nil,
+				)
+				if connectErr != nil {
+					return false
+				}
+				session = cs
+				return true
+			}, 30*time.Second, 100*time.Millisecond)
+			t.Cleanup(func() { _ = session.Close() })
 
-	quickstartOutput, err := procutil.Command(
-		bin, "mcp", "quickstart", "--config", cfgPath, "--json",
-	).Output()
-	require.NoError(err)
-	var connection mcpQuickstartInfo
-	require.NoError(json.Unmarshal(quickstartOutput, &connection))
-	assert.True(connection.Active)
-	assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
+			result, err := session.CallTool(
+				t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
+			)
+			require.NoError(err)
+			assert.False(result.IsError)
+
+			quickstartOutput, err := procutil.Command(
+				bin, "mcp", "quickstart", "--config", cfgPath, "--json",
+			).Output()
+			require.NoError(err)
+			var connection mcpQuickstartInfo
+			require.NoError(json.Unmarshal(quickstartOutput, &connection))
+			assert.True(connection.Active)
+			assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
+
+			var ping struct {
+				MCPURL string `json:"mcp_url"`
+			}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+appAddr+"/api/ping", nil)
+			require.NoError(err)
+			response, err := http.DefaultClient.Do(req)
+			require.NoError(err)
+			defer response.Body.Close()
+			require.NoError(json.NewDecoder(response.Body).Decode(&ping))
+			assert.Equal("http://"+appAddr+"/mcp", ping.MCPURL)
+		})
+	}
 }

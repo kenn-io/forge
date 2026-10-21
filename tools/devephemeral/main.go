@@ -120,7 +120,7 @@ func run(ctx context.Context, args []string) error {
 	stop := fs.Bool("stop", false, "stop an ephemeral dev stack using its status JSON")
 	backendPort := fs.Int("backend-port", 0, "backend port (0 selects a free port)")
 	frontendPort := fs.Int("frontend-port", 0, "frontend port (0 selects a free port)")
-	mcpPort := fs.Int("mcp-port", 0, "MCP listener port when the source config enables MCP (0 selects a free port)")
+	mcpPort := fs.Int("mcp-port", 0, "dedicated MCP listener port (0 selects a free port); without this flag, a source using the default shares the backend port")
 	freshDB := fs.Bool("fresh-db", false, "start with an empty ephemeral database instead of copying the source database")
 	syncEnabled := fs.Bool("sync", false, "enable provider synchronization")
 	if err := fs.Parse(args); err != nil {
@@ -323,7 +323,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	mcpURL := ""
 	if cfg.MCPEnabled() {
 		mcpPath := cfg.BasePath + "mcp"
-		if opts.mcpPortSet || cfg.MCP.Enabled != nil || cfg.MCP.Port != 0 {
+		if opts.mcpPortSet || cfg.MCP.Enabled != nil {
 			// A dedicated source listener belongs to the live daemon; choose a new port.
 			cfg.MCP.Port, err = resolvePort(opts.mcpPort)
 			if err != nil {

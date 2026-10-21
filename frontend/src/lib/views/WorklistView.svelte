@@ -176,14 +176,19 @@
   const visibleOrders = new WeakMap<Worklist, readonly string[]>();
   let previousWorklist: Worklist | null = null;
 
-  // The last order that showed the open item. Once the item merges or closes
-  // it leaves the rail, and j and k step from where it was.
-  let orderWithSelected: readonly string[] = [];
+  // The last reported order that showed each item of the open list. Once an
+  // item merges or closes it leaves the rail; j, k, and a rewrite that drops
+  // it still find where it was.
+  let lastOrderOf = new Map<string, readonly string[]>();
+  let lastOrderListId: number | null = null;
 
   function recordVisibleOrder(list: Worklist, keys: readonly string[]): void {
     visibleOrders.set(list, keys);
-    const left = selectedKey !== null && !keys.includes(selectedKey) && orderWithSelected.includes(selectedKey);
-    if (!left) orderWithSelected = keys;
+    if (list.id !== lastOrderListId) {
+      lastOrderOf = new Map();
+      lastOrderListId = list.id;
+    }
+    for (const key of keys) lastOrderOf.set(key, keys);
   }
 
   // A collapsed rail is unmounted and reopens with its filter and sections
@@ -197,7 +202,8 @@
   // An agent rewrite can drop the open item. Move to the item that now takes
   // its place in the visible order, else the one before it, else close it.
   function replacementFor(previous: Worklist, next: Worklist, removedKey: string): WorklistItem | null {
-    const order = visibleKeys(previous);
+    const visible = visibleKeys(previous);
+    const order = visible.includes(removedKey) ? visible : (lastOrderOf.get(removedKey) ?? visible);
     const surviving = new Map(next.items.map((item) => [worklistItemKey(item), item]));
     const at = order.indexOf(removedKey);
     const after = order.slice(at + 1).find((key) => surviving.has(key));
@@ -286,10 +292,12 @@
   // The open item is no longer shown, so step to the nearest shown row on
   // the given side of where it last was.
   function stepFromHidden(delta: 1 | -1, keys: readonly string[]): string | undefined {
-    const at = selectedKey === null ? -1 : orderWithSelected.indexOf(selectedKey);
-    if (at === -1) return undefined;
+    if (selectedKey === null) return undefined;
+    const order = lastOrderOf.get(selectedKey);
+    if (!order) return undefined;
+    const at = order.indexOf(selectedKey);
     const shown = new Set(keys);
-    const side = delta === 1 ? orderWithSelected.slice(at + 1) : orderWithSelected.slice(0, at).reverse();
+    const side = delta === 1 ? order.slice(at + 1) : order.slice(0, at).reverse();
     return side.find((key) => shown.has(key));
   }
 

@@ -225,7 +225,8 @@ stateDiagram-v2
   button visible even when a search or state filter leaves no changed rows
   (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemMatchesSearch`).
 - When the open item leaves the rail, for example because it merged, the
-  detail stays open and `j` and `k` step from where its row was
+  detail stays open. `j` and `k` step from where its row was, and an agent
+  rewrite that then drops it replaces it from that position too
   (`frontend/src/lib/views/WorklistView.svelte::stepFromHidden`).
 - Each row shows the score, the title, `owner/name#number` with the pull
   request's `+/-` line counts (omitted when the provider reports none), the

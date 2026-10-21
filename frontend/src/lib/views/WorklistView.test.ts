@@ -303,6 +303,28 @@ describe("WorklistView", () => {
     expect(screen.queryByRole("region", { name: "Worklist item context" })).toBeNull();
   });
 
+  it("moves to the next row when a rewrite drops an open item that had already merged", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(row("Mirror host stub PR"));
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A84"));
+
+    server.lists[0]!.items = server.lists[0]!.items.map((item) =>
+      item.number === 84 ? { ...item, freshness: "gone", live: { ...item.live!, state: "merged" } } : item,
+    );
+    await rewriteLists(stores);
+    await waitFor(() =>
+      expect(rowTitles()).toEqual(["Add browser regression coverage", "Theme toggle does not stick"]),
+    );
+    expect(currentPath()).toContain("selected=pr%3A84");
+
+    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 84);
+    await rewriteLists(stores);
+
+    // #84 sat between #42 and #7, so the rewrite lands on #7, not the top row.
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=issue%3A7&/));
+  });
+
   it("keeps the title, recipe, and Dismiss on a list with no items left", async () => {
     server.lists = [worklistResponse(5, "Review queue", [])];
     renderView("/worklists/5", server);

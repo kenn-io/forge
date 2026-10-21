@@ -4753,7 +4753,7 @@ dispatch:
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 	if !canceled.Load() && ctx.Err() == nil {
-		s.finishSyncPass(pass, s.TrackedRepos())
+		s.finishSyncPass(pass)
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
@@ -5130,7 +5130,7 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 	if err != nil {
 		return RepoRef{}, 0, nil, err
 	}
-	authoritative := s.observeSyncRoute(ctx, repo, repoRefFromCatalog(repo, entry.Repository, resolved))
+	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
 	if published, ok := s.publishResolvedRepository(
 		repo, authoritative, resolved != nil,
 	); ok {

@@ -6,9 +6,11 @@
 - Observe repository, list, and checks reads; exclude local filesystem/capacity
   errors, budget waits, disabled features, and non-check item reads.
   HTTP 304 counts as success (`internal/github/sync_outcomes.go::syncPass.observe`).
-- A full pass must read the repository and source successfully to clear its
-  in-memory outage state. Reasons are `auth`, `rate_limited`,
+- A successful source read in a full pass clears its in-memory outage state.
+  Reasons are `auth`, `rate_limited`,
   `not_found`, or `other`, without identifiers
+  (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
+- An outage may report again after restart or first repository ID resolution
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

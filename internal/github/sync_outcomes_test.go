@@ -2,11 +2,18 @@ package github
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -14,6 +21,8 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/githubapp"
+	appauth "go.kenn.io/forge/internal/githubapp"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -22,8 +31,6 @@ import (
 func TestSyncFailedPass(t *testing.T) {
 	a := RepoRef{Owner: "acme", Name: "a"}
 	b := RepoRef{Owner: "acme", Name: "b"}
-	resolved := a
-	resolved.Key = platform.RepositoryIDKey(42)
 	initialFailure := [][2]string{{"issues", "not_found"}}
 	additionalFailure := [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}
 	type observation struct {
@@ -32,9 +39,8 @@ func TestSyncFailedPass(t *testing.T) {
 		err    error
 	}
 	type step struct {
-		reads   []observation
-		tracked []RepoRef
-		want    [][2]string
+		reads []observation
+		want  [][2]string
 	}
 	type scenario struct {
 		name  string
@@ -44,26 +50,24 @@ func TestSyncFailedPass(t *testing.T) {
 	for _, tc := range []struct {
 		name                  string
 		next                  []observation
-		tracked               []RepoRef
 		later                 RepoRef
 		wantAfterNextPass     [][2]string
 		wantAfterLaterFailure [][2]string
 	}{
-		{"another repository starts failing", []observation{{a, "issues", platform.ErrNotFound}, {b, "issues", platform.ErrNotFound}}, []RepoRef{a, b}, b, additionalFailure, additionalFailure},
-		{"no reads", nil, []RepoRef{a, b}, a, initialFailure, initialFailure},
-		{"not modified", []observation{{a, "issues", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, initialFailure, additionalFailure},
-		{"resolved identity keeps outage", []observation{{resolved, "issues", platform.ErrNotFound}}, []RepoRef{resolved}, resolved, initialFailure, initialFailure},
+		{"another repository starts failing", []observation{{a, "issues", platform.ErrNotFound}, {b, "issues", platform.ErrNotFound}}, b, additionalFailure, additionalFailure},
+		{"no reads", nil, a, initialFailure, initialFailure},
+		{"not modified", []observation{{a, "issues", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, a, initialFailure, additionalFailure},
 	} {
 		cases = append(cases, scenario{tc.name, []step{
-			{[]observation{{a, "issues", platform.ErrNotFound}}, []RepoRef{a, b}, initialFailure},
-			{tc.next, tc.tracked, tc.wantAfterNextPass},
-			{[]observation{{tc.later, "issues", platform.ErrNotFound}}, []RepoRef{tc.later, b}, tc.wantAfterLaterFailure},
+			{[]observation{{a, "issues", platform.ErrNotFound}}, initialFailure},
+			{tc.next, tc.wantAfterNextPass},
+			{[]observation{{tc.later, "issues", platform.ErrNotFound}}, tc.wantAfterLaterFailure},
 		}})
 	}
 	cases = append(cases, scenario{"sources recover independently", []step{
-		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
-		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", nil}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
-		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}, {"checks", "auth"}}},
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", nil}}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, [][2]string{{"issues", "auth"}, {"checks", "auth"}, {"checks", "auth"}}},
 	}})
 	for _, acrossRepos := range []bool{false, true} {
 		for _, authFirst := range []bool{false, true} {
@@ -76,7 +80,7 @@ func TestSyncFailedPass(t *testing.T) {
 				other = b
 			}
 			cases = append(cases, scenario{fmt.Sprintf("reason priority/acrossRepos=%t/authFirst=%t", acrossRepos, authFirst), []step{
-				{[]observation{{a, "issues", first}, {other, "issues", second}}, []RepoRef{a, b}, [][2]string{{"issues", "auth"}}},
+				{[]observation{{a, "issues", first}, {other, "issues", second}}, [][2]string{{"issues", "auth"}}},
 			}})
 		}
 	}
@@ -86,7 +90,7 @@ func TestSyncFailedPass(t *testing.T) {
 			first, second = second, first
 		}
 		cases = append(cases, scenario{fmt.Sprintf("mixed reads/failureFirst=%t", failureFirst), []step{
-			{[]observation{{a, "issues", first}, {a, "issues", second}}, []RepoRef{a}, nil},
+			{[]observation{{a, "issues", first}, {a, "issues", second}}, nil},
 		}})
 	}
 	for _, tc := range []struct {
@@ -107,7 +111,7 @@ func TestSyncFailedPass(t *testing.T) {
 		{"disabled feature", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
 	} {
 		cases = append(cases, scenario{tc.name, []step{
-			{[]observation{{a, tc.source, tc.err}}, []RepoRef{a}, nil},
+			{[]observation{{a, tc.source, tc.err}}, nil},
 		}})
 	}
 	for _, tc := range cases {
@@ -120,7 +124,7 @@ func TestSyncFailedPass(t *testing.T) {
 				for _, read := range step.reads {
 					pass.observe(read.repo, read.source, read.err)
 				}
-				s.finishSyncPass(pass, step.tracked)
+				s.finishSyncPass(pass)
 				require.Equal(t, step.want, events, "pass %d", i+1)
 			}
 		})
@@ -197,7 +201,7 @@ func TestSyncFailedGitHubChecksIgnores404(t *testing.T) {
 				ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
 				_, err := s.fetchGitHubCIStatus(ctx, repo, 7, "head")
 				require.NoError(t, err)
-				s.finishSyncPass(pass, []RepoRef{repo})
+				s.finishSyncPass(pass)
 				if i == 0 {
 					assert.Empty(t, events)
 				} else {
@@ -231,6 +235,70 @@ func TestSyncFailureReason(t *testing.T) {
 	}
 }
 
+func TestSyncFailedManagedTokenRenewal(t *testing.T) { //nolint:paralleltest // swaps http.DefaultTransport
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	keyPath := filepath.Join(t.TempDir(), "app.pem")
+	require.NoError(t, os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}), 0o600))
+	for _, tc := range []struct {
+		status     int
+		retryAfter bool
+		reason     string
+	}{
+		{http.StatusUnauthorized, false, "auth"},
+		{http.StatusForbidden, false, "auth"},
+		{http.StatusNotFound, false, "not_found"},
+		{http.StatusTooManyRequests, true, "rate_limited"},
+		{http.StatusForbidden, true, "rate_limited"},
+	} {
+		t.Run(fmt.Sprintf("status=%d/retry=%t", tc.status, tc.retryAfter), func(t *testing.T) {
+			assert := assert.New(t)
+			var mints atomic.Int32
+			host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(http.MethodPost, r.Method)
+				assert.Equal("/api/v3/app/installations/11/access_tokens", r.URL.Path)
+				if mints.Add(1) == 1 {
+					w.WriteHeader(http.StatusCreated)
+					fmt.Fprintf(w, `{"token":"installation-token","expires_at":%q}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+					return
+				}
+				if tc.retryAfter {
+					w.Header().Set("Retry-After", "90")
+				}
+				http.Error(w, "mint failed", tc.status)
+			}))
+			source := tokenauth.NewManagedSource(tokenauth.Descriptor{
+				Key:        tokenauth.Key{Platform: "github", Host: host},
+				Candidates: []tokenauth.Candidate{{Kind: tokenauth.SourceKindGitHubApp, Host: host, AppID: 7, FilePath: keyPath, InstallationID: 11}},
+			}, tokenauth.Options{GitHubApp: func(ctx context.Context, candidate tokenauth.Candidate) (string, time.Time, error) {
+				return appauth.MintInstallationToken(ctx, candidate.Host, candidate.AppID, candidate.FilePath, candidate.InstallationID)
+			}})
+			token, err := source.Token(t.Context())
+			require.NoError(t, err)
+			source.Invalidate(token)
+			client, err := NewClient(source, host, nil, nil)
+			require.NoError(t, err)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: host}
+			s := NewSyncer(map[string]Client{host: client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			assert.Equal([][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
+			_, err = source.Token(t.Context())
+			var status *githubapp.StatusError
+			require.ErrorAs(t, err, &status)
+			assert.Equal(tc.status, status.StatusCode)
+			assert.Equal(int32(2), mints.Load())
+			if tc.retryAfter {
+				var retry interface{ RetryDeadline(time.Time) time.Time }
+				require.ErrorAs(t, err, &retry)
+				now := time.Now()
+				assert.Equal(now.Add(90*time.Second), retry.RetryDeadline(now))
+			}
+		})
+	}
+}
+
 func TestSyncFailedBulkCIRecovery(t *testing.T) {
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -245,7 +313,7 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 	require.NoError(t, s.syncOpenMRFromBulk(ctx, repo, id, time.Time{}, &BulkPR{
 		PR: buildOpenPR(7, time.Now().UTC()), CIComplete: true,
 	}, false))
-	s.finishSyncPass(pass, []RepoRef{repo})
+	s.finishSyncPass(pass)
 	assert.Empty(t, events)
 }
 

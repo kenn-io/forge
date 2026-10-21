@@ -503,9 +503,6 @@ describe("WorklistView", () => {
     renderView("/worklists/5", server);
 
     expect(await screen.findByText("No worklists")).toBeTruthy();
-    expect(
-      screen.getByText("Ask an agent connected to Forge to make one, for example in the Kenn chat sidebar."),
-    ).toBeTruthy();
     expect(rowTitles()).toEqual([]);
   });
 

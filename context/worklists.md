@@ -7,8 +7,7 @@ through.
 ## Ownership
 
 - Agents author worklists through the Forge MCP server, or hand the
-  maintainer a worklist link that the UI imports only after they confirm. The
-  UI reads, dismisses, marks items handled, and acts on worklists but never
+  maintainer a worklist link that creates the list when opened. The UI reads, dismisses, marks items handled, and acts on worklists but never
   writes or reorders items itself.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
   score, a section, a note, and a caveat. Readiness is a section, not part of
@@ -133,8 +132,8 @@ stateDiagram-v2
   (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP reads, dismisses, restores, marks, and creates a list from a confirmed
-  link; only MCP replaces a list. Each
+- HTTP reads, dismisses, restores, marks, and creates a list from a link;
+  only MCP replaces a list. Each
   item embeds the same row the pull request or issue list returns, or null once
   the item is no longer a visible synced row. A dismissed list stays readable
   by ID with `dismissed_at` set.
@@ -169,20 +168,19 @@ stateDiagram-v2
 - `kenn://kenn-forge/worklists/import#…` works only once the Kenn desktop
   app's link allowlist, kept outside this repository, admits the path.
   `/worklists/import#…` works on any Forge origin.
-- Opening a link never writes; any page can link there, so only the
-  maintainer's confirm creates the list (`internal/server/worklistapi/import.go`).
-- Untracked, unsynced, or repeated items are skipped, never added; every
-  import creates a new list.
+- Opening a link creates a new list with no confirm step, then replaces the
+  link in history with the list, so reload and Back never import twice. Any
+  page can link there; an unwanted list is dismissed like any other.
+- Untracked, unsynced, or repeated items are skipped, never added, and the UI
+  reports how many (`internal/server/worklistapi/import.go::Handler.importableRepos`).
 
 ## UI
 
 - Worklists appear as a header tab only while at least one exists, or while
   the worklists page is open so the tab survives dismissing the last list
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
-- An import that finishes after the maintainer left or reopened the page does
-  not navigate. When its outcome is unknown, Create stays off; reopening the
-  link is the deliberate retry
-  (`frontend/src/lib/views/WorklistImportView.svelte`).
+- An import that finishes after the maintainer left the page does not
+  navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and

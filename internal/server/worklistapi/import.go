@@ -13,27 +13,10 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/httpapi"
-	"go.kenn.io/forge/internal/server/issueapi"
-	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/worklist"
 )
 
-// Import statuses name what happens to each item of a worklist link.
-const (
-	ImportStatusImportable     = "importable"
-	ImportStatusRepoNotTracked = "repo_not_tracked"
-	ImportStatusItemNotFound   = "item_not_found"
-	ImportStatusDuplicate      = "duplicate"
-)
-
 func (h *Handler) registerImport(api huma.API) {
-	huma.Register(api, huma.Operation{
-		OperationID: "preview-worklist-import",
-		Method:      http.MethodPost,
-		Path:        "/worklists/import/preview",
-		Summary:     "Preview the worklist a link carries",
-		Tags:        []string{"Worklists"},
-	}, h.previewImport)
 	huma.Register(api, huma.Operation{
 		OperationID: "import-worklist",
 		Method:      http.MethodPost,
@@ -47,43 +30,20 @@ type importWorklistInput struct {
 	Body ImportWorklistBody
 }
 
-func (h *Handler) previewImport(
-	ctx context.Context, input *importWorklistInput,
-) (*httpapi.BodyOutput[WorklistImportPreviewResponse], error) {
-	list, err := parseImportFragment(input.Body.Fragment)
-	if err != nil {
-		return nil, err
-	}
-	resolved, err := h.resolveImport(ctx, list)
-	if err != nil {
-		return nil, err
-	}
-	preview := WorklistImportPreviewResponse{
-		Title: strings.TrimSpace(list.Title), Recipe: list.Recipe, CreatedBy: strings.TrimSpace(list.CreatedBy),
-		Items: make([]WorklistImportItemResponse, 0, len(list.Items)),
-	}
-	for i, item := range list.Items {
-		preview.Items = append(preview.Items, WorklistImportItemResponse{
-			Position: i, Provider: item.Item.Provider, PlatformHost: item.Item.PlatformHost,
-			Owner: item.Item.Owner, Name: item.Item.Name, ItemType: item.Item.Type, Number: item.Item.Number,
-			Score: item.Score, Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
-			Status: resolved[i].status, Pull: resolved[i].pull, Issue: resolved[i].issue,
-		})
-		if resolved[i].status == ImportStatusImportable {
-			preview.ImportableCount++
-		}
-	}
-	return &httpapi.BodyOutput[WorklistImportPreviewResponse]{Body: preview}, nil
-}
-
+// importWorklist creates a new list from a link's fragment. Items this Forge
+// does not track or has not synced, and repeats of an earlier item, are
+// skipped rather than rejecting the list.
 func (h *Handler) importWorklist(
 	ctx context.Context, input *importWorklistInput,
 ) (*httpapi.BodyOutput[WorklistImportResponse], error) {
-	list, err := parseImportFragment(input.Body.Fragment)
-	if err != nil {
-		return nil, err
+	list, err := worklist.ParseFragment(input.Body.Fragment)
+	if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
+		return nil, httpapi.Validation("body.fragment", fmt.Sprintf("the link's %s", fieldErr.Error()))
 	}
-	resolved, err := h.resolveImport(ctx, list)
+	if err != nil {
+		return nil, httpapi.Validation("body.fragment", err.Error())
+	}
+	repos, err := h.importableRepos(ctx, list)
 	if err != nil {
 		return nil, err
 	}
@@ -91,15 +51,14 @@ func (h *Handler) importWorklist(
 		Title: strings.TrimSpace(list.Title), Recipe: list.Recipe, CreatedBy: strings.TrimSpace(list.CreatedBy),
 	}
 	for i, item := range list.Items {
-		if resolved[i].status != ImportStatusImportable {
+		if repos[i] == nil {
 			continue
 		}
-		identity := resolved[i].repo.Identity()
+		identity := repos[i].Identity()
 		put.Items = append(put.Items, mcpserver.WorklistPutItem{
 			Item: mcpserver.ItemIdentity{
 				Type: item.Item.Type, Provider: identity.Provider, PlatformHost: identity.PlatformHost,
-				RepoKey: identity.Key, Owner: resolved[i].repo.Owner, Name: resolved[i].repo.Name,
-				Number: item.Item.Number,
+				RepoKey: identity.Key, Owner: repos[i].Owner, Name: repos[i].Name, Number: item.Item.Number,
 			},
 			Score: item.Score, Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
 		})
@@ -117,48 +76,28 @@ func (h *Handler) importWorklist(
 	}}, nil
 }
 
-func parseImportFragment(fragment string) (worklist.List, error) {
-	list, err := worklist.ParseFragment(fragment)
-	if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
-		return worklist.List{}, httpapi.Validation("body.fragment", fmt.Sprintf("the link's %s", fieldErr.Error()))
-	}
-	if err != nil {
-		return worklist.List{}, httpapi.Validation("body.fragment", err.Error())
-	}
-	return list, nil
-}
-
-type importResolution struct {
-	status string
-	repo   *db.ActiveRepo
-	pull   *pullapi.MergeRequestResponse
-	issue  *issueapi.IssueResponse
-}
-
-// resolveImport finds each item's tracked repository by its route, or by its
-// stable key when the link carries one, and its visible list row. Items that
-// resolve to the same pull request or issue import once, at the first rank.
-func (h *Handler) resolveImport(ctx context.Context, list worklist.List) ([]importResolution, error) {
+// importableRepos returns, per item, the tracked repository it names, or nil
+// when the item is skipped: its repository is not tracked, the pull request
+// or issue is not a visible synced row, or an earlier item names it.
+func (h *Handler) importableRepos(ctx context.Context, list worklist.List) ([]*db.ActiveRepo, error) {
 	tracked, err := h.TrackedRepoIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	resolved := make([]importResolution, len(list.Items))
+	repos := make([]*db.ActiveRepo, len(list.Items))
 	var pullItems, issueItems []db.RepoItemNumber
 	for i, item := range list.Items {
 		repo, err := h.lookupImportRepo(ctx, item.Item)
 		if errors.Is(err, errImportRepoNotFound) {
-			resolved[i].status = ImportStatusRepoNotTracked
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
 		if tracked != nil && !slices.Contains(tracked, repo.ID) {
-			resolved[i].status = ImportStatusRepoNotTracked
 			continue
 		}
-		resolved[i].repo = repo
+		repos[i] = repo
 		key := db.RepoItemNumber{RepoID: repo.ID, Number: item.Item.Number}
 		if item.Item.Type == db.ItemTypePR {
 			pullItems = append(pullItems, key)
@@ -174,37 +113,26 @@ func (h *Handler) resolveImport(ctx context.Context, list worklist.List) ([]impo
 	if err != nil {
 		return nil, err
 	}
-	pullRows := make(map[db.RepoItemNumber]*pullapi.MergeRequestResponse, len(pulls))
-	for i := range pulls {
-		pullRows[db.RepoItemNumber{RepoID: pulls[i].RepoID, Number: pulls[i].Number}] = &pulls[i]
+	visible := make(map[db.WorkspaceSubjectKey]bool, len(pulls)+len(issues))
+	for _, pull := range pulls {
+		visible[db.WorkspaceSubjectKey{RepoID: pull.RepoID, ItemType: db.ItemTypePR, ItemNumber: pull.Number}] = true
 	}
-	issueRows := make(map[db.RepoItemNumber]*issueapi.IssueResponse, len(issues))
-	for i := range issues {
-		issueRows[db.RepoItemNumber{RepoID: issues[i].RepoID, Number: issues[i].Number}] = &issues[i]
+	for _, issue := range issues {
+		visible[db.WorkspaceSubjectKey{RepoID: issue.RepoID, ItemType: db.ItemTypeIssue, ItemNumber: issue.Number}] = true
 	}
-	seen := make(map[db.WorkspaceSubjectKey]bool, len(list.Items))
 	for i, item := range list.Items {
-		if resolved[i].repo == nil {
+		if repos[i] == nil {
 			continue
 		}
-		key := db.RepoItemNumber{RepoID: resolved[i].repo.ID, Number: item.Item.Number}
-		if item.Item.Type == db.ItemTypePR {
-			resolved[i].pull = pullRows[key]
-		} else {
-			resolved[i].issue = issueRows[key]
+		subject := db.WorkspaceSubjectKey{RepoID: repos[i].ID, ItemType: item.Item.Type, ItemNumber: item.Item.Number}
+		if !visible[subject] {
+			repos[i] = nil
+			continue
 		}
-		subject := db.WorkspaceSubjectKey{RepoID: key.RepoID, ItemType: item.Item.Type, ItemNumber: key.Number}
-		switch {
-		case resolved[i].pull == nil && resolved[i].issue == nil:
-			resolved[i].status = ImportStatusItemNotFound
-		case seen[subject]:
-			resolved[i].status = ImportStatusDuplicate
-		default:
-			resolved[i].status = ImportStatusImportable
-			seen[subject] = true
-		}
+		// The first item naming a pull request or issue keeps it.
+		visible[subject] = false
 	}
-	return resolved, nil
+	return repos, nil
 }
 
 var errImportRepoNotFound = errors.New("no active repository at the link's route or key")

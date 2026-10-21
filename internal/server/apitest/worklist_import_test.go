@@ -13,7 +13,7 @@ import (
 	"go.kenn.io/forge/worklist"
 )
 
-func TestAPIWorklistImportPreviewsThenCreatesTrackedItems(t *testing.T) {
+func TestAPIWorklistImportCreatesTrackedItemsAndSkipsTheRest(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -36,40 +36,10 @@ func TestAPIWorklistImportPreviewsThenCreatesTrackedItems(t *testing.T) {
 		},
 	})
 	require.NoError(err)
-	body := &generated.ImportWorklistBody{Fragment: fragment}
-	listCount := func() int {
-		listed, err := client.HTTP.ListWorklistsWithResponse(ctx, &generated.ListWorklistsRequestOptions{})
-		require.NoError(err)
-		require.NotNil(listed.JSON200, string(listed.Body))
-		return len(listed.JSON200.Worklists)
-	}
 
-	preview, err := client.HTTP.PreviewWorklistImportWithResponse(ctx, &generated.PreviewWorklistImportRequestOptions{Body: body})
-
-	require.NoError(err)
-	require.NotNil(preview.JSON200, string(preview.Body))
-	assert.Equal("Merge today", preview.JSON200.Title)
-	assert.Equal("triage-bot", preview.JSON200.CreatedBy)
-	assert.EqualValues(2, preview.JSON200.ImportableCount)
-	statuses := []generated.WorklistImportItemResponseStatus{}
-	for _, item := range preview.JSON200.Items {
-		statuses = append(statuses, item.Status)
-	}
-	assert.Equal([]generated.WorklistImportItemResponseStatus{
-		generated.WorklistImportItemResponseStatusImportable,
-		generated.WorklistImportItemResponseStatusRepoNotTracked,
-		generated.WorklistImportItemResponseStatusImportable,
-		generated.WorklistImportItemResponseStatusItemNotFound,
-		generated.WorklistImportItemResponseStatusDuplicate,
-	}, statuses)
-	require.NotNil(preview.JSON200.Items[0].Pull, "a tracked item carries its list row")
-	assert.EqualValues(42, preview.JSON200.Items[0].Pull.Number)
-	assert.Nil(preview.JSON200.Items[0].Issue, "a pull request item carries no issue row")
-	assert.Nil(preview.JSON200.Items[1].Pull, "an untracked item carries no row")
-	assert.Equal("repository this Forge does not track", preview.JSON200.Items[1].Note)
-	assert.Zero(listCount(), "a preview writes nothing")
-
-	imported, err := client.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{Body: body})
+	imported, err := client.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{
+		Body: &generated.ImportWorklistBody{Fragment: fragment},
+	})
 
 	require.NoError(err)
 	require.NotNil(imported.JSON200, string(imported.Body))

@@ -32,12 +32,6 @@ actions:
     update:
       x-go-type: any
       x-go-type-skip-optional-pointer: true
-  - target: $.components.schemas.WorklistImportItemResponse.properties.issue
-    update:
-      nullable: true
-  - target: $.components.schemas.WorklistImportItemResponse.properties.pull
-    update:
-      nullable: true
   - target: $.components.schemas.WorklistItemResponse.properties.issue
     update:
       nullable: true

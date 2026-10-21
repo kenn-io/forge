@@ -11,7 +11,6 @@ import type {
   SetWorklistItemsHandledPathParameters,
   UndismissWorklistPathParameters,
   WorklistHandledResponse,
-  WorklistImportPreviewResponse,
   WorklistImportResponse,
   WorklistResponse,
   WorklistSummaryResponse,
@@ -81,31 +80,6 @@ export const importWorklist = async (
     return h;
   };
   return orvalFetch<WorklistImportResponse>(getImportWorklistUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(importWorklistBody),
-  });
-};
-
-export const getPreviewWorklistImportUrl = () => {
-  return `/worklists/import/preview`;
-};
-
-/**
- * @summary Preview the worklist a link carries
- */
-export const previewWorklistImport = async (
-  importWorklistBody: NonReadonly<ImportWorklistBody>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<WorklistImportPreviewResponse> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-  return orvalFetch<WorklistImportPreviewResponse>(getPreviewWorklistImportUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },

@@ -1,208 +1,87 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
-import { createMockApiFetch, jsonResponse, type MockRequest } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, jsonResponse } from "../../test/mockApiFetch.js";
 import { worklistRoutes } from "../../test/worklistFixtures.js";
-import type { WorklistImportPreview } from "../api/worklists.js";
 import { STORES_KEY } from "../context.js";
+import { dismissFlash, getFlashes } from "../stores/flash.svelte.js";
 import { navigate } from "../stores/router.svelte.js";
 import { createWorklistsStore } from "../stores/worklists.svelte.js";
 import WorklistImportView from "./WorklistImportViewTestHarness.svelte";
 
 const originalFetch = globalThis.fetch;
 
-const preview: WorklistImportPreview = {
-  title: "Merge today",
-  recipe: "open PRs with green CI",
-  created_by: "triage-bot",
-  importable_count: 1,
-  items: [
-    {
-      position: 0,
-      provider: "github",
-      platform_host: "",
-      owner: "acme",
-      name: "widgets",
-      item_type: "pr",
-      number: 42,
-      score: 9,
-      section: "Ready",
-      note: "small fix",
-      caveat: "check the migration",
-      status: "importable",
-      pull: null,
-      issue: null,
-    },
-    {
-      position: 1,
-      provider: "github",
-      platform_host: "",
-      owner: "other",
-      name: "repo",
-      item_type: "issue",
-      number: 7,
-      score: null,
-      section: "",
-      note: "",
-      caveat: "",
-      status: "repo_not_tracked",
-      pull: null,
-      issue: null,
-    },
-  ],
-};
-
-interface ImportServer {
-  previews: string[];
-  imports: string[];
-  importResponse: () => Response | Promise<Response>;
-}
-
-function renderImport(path: string, server: ImportServer): void {
-  const importRoutes = (request: MockRequest): Response | null => {
-    if (request.method !== "POST") return null;
-    const { fragment } = JSON.parse(request.bodyText) as { fragment: string };
-    if (request.url.pathname === "/api/v1/worklists/import/preview") {
-      server.previews.push(fragment);
-      return jsonResponse(preview);
-    }
-    if (request.url.pathname === "/api/v1/worklists/import") {
-      server.imports.push(fragment);
-      return null;
-    }
-    return null;
-  };
-  const handle = createMockApiFetch([importRoutes, worklistRoutes({ lists: [], requests: [] })]);
-  globalThis.fetch = async (input, init) => {
-    const request = input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
-    if (request.method === "POST" && new URL(request.url).pathname === "/api/v1/worklists/import") {
-      server.imports.push(((await request.clone().json()) as { fragment: string }).fragment);
-      return server.importResponse();
-    }
-    return handle.fetch(input, init);
-  };
-  navigate(path);
-  render(WorklistImportView, {
-    context: new Map<symbol, unknown>([[STORES_KEY, { worklists: createWorklistsStore() }]]),
-  });
-}
-
 describe("WorklistImportView", () => {
-  let server: ImportServer;
+  let imports: string[];
+  let importResponse: () => Response | Promise<Response>;
+
+  function openLink(path: string): void {
+    const handle = createMockApiFetch([worklistRoutes({ lists: [], requests: [] })]);
+    globalThis.fetch = async (input, init) => {
+      const request =
+        input instanceof Request ? input : new Request(new URL(String(input), window.location.href), init);
+      if (request.method === "POST" && new URL(request.url).pathname === "/api/v1/worklists/import") {
+        imports.push(((await request.clone().json()) as { fragment: string }).fragment);
+        return importResponse();
+      }
+      return handle.fetch(input, init);
+    };
+    navigate(path);
+    render(WorklistImportView, {
+      context: new Map<symbol, unknown>([[STORES_KEY, { worklists: createWorklistsStore() }]]),
+    });
+  }
 
   beforeEach(() => {
-    server = {
-      previews: [],
-      imports: [],
-      importResponse: () => jsonResponse({ worklist_id: 7, item_count: 1, skipped_count: 1 }),
-    };
+    imports = [];
+    importResponse = () => jsonResponse({ worklist_id: 7, item_count: 2, skipped_count: 1 });
   });
 
   afterEach(() => {
     cleanup();
     globalThis.fetch = originalFetch;
+    for (const flash of getFlashes()) dismissFlash(flash.id);
     navigate("/");
   });
 
-  it("previews the link's list without creating it", async () => {
-    renderImport("/worklists/import#v1.abc", server);
-
-    expect(await screen.findByRole("heading", { name: "Merge today" })).toBeTruthy();
-    expect(server.previews).toEqual(["v1.abc"]);
-    expect(screen.getByText("acme/widgets#42")).toBeTruthy();
-    expect(screen.getByText("Not tracked")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create with 1 of 2" })).toBeTruthy();
-    expect(server.imports).toEqual([]);
-  });
-
-  it("creates the list on confirm and replaces the link with the new list", async () => {
-    renderImport("/worklists/import#v1.abc", server);
+  it("creates the link's list on open and replaces the link with it", async () => {
+    navigate("/pulls");
     const historyLength = window.history.length;
 
-    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
+    openLink("/worklists/import#v1.abc");
 
     await waitFor(() => expect(window.location.pathname).toBe("/worklists/7"));
-    expect(server.imports).toEqual(["v1.abc"]);
+    expect(imports).toEqual(["v1.abc"]);
     expect(window.location.hash).toBe("");
-    expect(window.history.length).toBe(historyLength);
+    expect(window.history.length).toBe(historyLength + 1);
+    expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
+      ["Left out 1 of 3 items: not tracked, not synced, or listed twice.", "warning"],
+    ]);
   });
 
   it("stays where the maintainer went when the import finishes after they left", async () => {
     let respond: (response: Response) => void = () => {};
-    server.importResponse = () => new Promise<Response>((resolve) => (respond = resolve));
-    renderImport("/worklists/import#v1.abc", server);
-    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
-    await waitFor(() => expect(server.imports).toEqual(["v1.abc"]));
+    importResponse = () => new Promise<Response>((resolve) => (respond = resolve));
+    openLink("/worklists/import#v1.abc");
+    await waitFor(() => expect(imports).toEqual(["v1.abc"]));
 
     navigate("/pulls");
-    respond(jsonResponse({ worklist_id: 7, item_count: 1, skipped_count: 1 }));
+    respond(jsonResponse({ worklist_id: 7, item_count: 2, skipped_count: 0 }));
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(window.location.pathname).toBe("/pulls");
   });
 
-  it("does not navigate a reopened link when the earlier import finishes", async () => {
-    let respond: (response: Response) => void = () => {};
-    server.importResponse = () => new Promise<Response>((resolve) => (respond = resolve));
-    renderImport("/worklists/import#v1.abc", server);
-    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
-    await waitFor(() => expect(server.imports).toEqual(["v1.abc"]));
-    navigate("/pulls");
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Merge today" })).toBeNull());
-    navigate("/worklists/import#v1.abc");
-    await screen.findByRole("button", { name: "Create with 1 of 2" });
+  it("shows why Forge refused the link", async () => {
+    importResponse = () =>
+      jsonResponse(
+        { title: "Bad Request", status: 400, detail: "not a worklist link: unknown version", code: "validationError" },
+        400,
+      );
 
-    respond(jsonResponse({ worklist_id: 7, item_count: 1, skipped_count: 1 }));
+    openLink("/worklists/import#v9.abc");
 
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await screen.findByText(/not a worklist link/)).toBeTruthy();
     expect(window.location.pathname).toBe("/worklists/import");
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("keeps Create off when the import's response is lost", async () => {
-    server.importResponse = () => Promise.reject(new TypeError("Failed to fetch"));
-    renderImport("/worklists/import#v1.abc", server);
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
-
-    expect(await screen.findByText("Forge may have created this worklist.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create with 1 of 2" }).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: "Open worklists" })).toBeTruthy();
-    expect(server.imports).toEqual(["v1.abc"]);
-  });
-
-  it("lets the maintainer retry when Forge rejects the import", async () => {
-    server.importResponse = () =>
-      jsonResponse({ title: "Bad Request", status: 400, detail: "no item is tracked", code: "validationError" }, 400);
-    renderImport("/worklists/import#v1.abc", server);
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Create with 1 of 2" }));
-
-    expect(await screen.findByText(/no item is tracked/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Create with 1 of 2" }).hasAttribute("disabled")).toBe(false);
-  });
-
-  it("shows why an unreadable link cannot be imported", async () => {
-    globalThis.fetch = createMockApiFetch([
-      (request) =>
-        request.url.pathname === "/api/v1/worklists/import/preview"
-          ? jsonResponse(
-              {
-                title: "Bad Request",
-                status: 400,
-                detail: "not a worklist link: unknown version",
-                code: "validationError",
-              },
-              400,
-            )
-          : null,
-    ]).fetch;
-    navigate("/worklists/import#v9.abc");
-    render(WorklistImportView, {
-      context: new Map<symbol, unknown>([[STORES_KEY, { worklists: createWorklistsStore() }]]),
-    });
-
-    expect(await screen.findByRole("alert")).toBeTruthy();
-    expect(screen.getByText(/not a worklist link/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /Create/ })).toBeNull();
   });
 });

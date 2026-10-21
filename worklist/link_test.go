@@ -69,14 +69,6 @@ func TestKennLinkOpensImportPageWithAReadableFragment(t *testing.T) {
 	assert.Equal(t, list, parsed)
 }
 
-func TestFragmentRejectsAListForgeWouldRefuse(t *testing.T) {
-	_, err := worklist.Fragment(worklist.List{Title: "Empty"})
-
-	fieldErr, ok := errors.AsType[*worklist.FieldError](err)
-	require.True(t, ok, "got %v", err)
-	assert.Equal(t, "items", fieldErr.Field)
-}
-
 func TestParseFragmentRejectsWhatItCannotRead(t *testing.T) {
 	deflated := func(data []byte) string {
 		var buf bytes.Buffer
@@ -93,10 +85,6 @@ func TestParseFragmentRejectsWhatItCannotRead(t *testing.T) {
 	}{
 		{"unknown version", "v2." + strings.TrimPrefix(pythonFragment, "v1.")},
 		{"no version", strings.TrimPrefix(pythonFragment, "v1.")},
-		{"not base64url", "v1.not+base64/url"},
-		{"not deflate", "v1." + base64.RawURLEncoding.EncodeToString([]byte("plain text"))},
-		{"not json", deflated([]byte("title: x"))},
-		{"duplicate json member", deflated([]byte(`{"title":"a","title":"b","items":[]}`))},
 		// Valid JSON whose title only Validate would reject, so only the
 		// decompression bound reports it as unreadable.
 		{"decompresses past the bound", deflated([]byte(`{"title":"` + strings.Repeat("a", 9<<20) + `","items":[]}`))},

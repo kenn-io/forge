@@ -70,9 +70,6 @@ export const schemaConstraints = {
   WorkerWorkspaceTargetRequest: {
     number: { minimum: 1 },
   },
-  WorklistImportItemResponse: {
-    score: { minimum: 1, maximum: 10 },
-  },
   WorklistItemRef: {
     number: { minimum: 1 },
   },

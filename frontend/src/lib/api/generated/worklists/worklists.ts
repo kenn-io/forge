@@ -4,12 +4,15 @@
 import type {
   DismissWorklistPathParameters,
   GetWorklistPathParameters,
+  ImportWorklistBody,
   ListWorklistsParams,
   ListWorklistsResponse,
   SetWorklistItemsHandledBody,
   SetWorklistItemsHandledPathParameters,
   UndismissWorklistPathParameters,
   WorklistHandledResponse,
+  WorklistImportPreviewResponse,
+  WorklistImportResponse,
   WorklistResponse,
   WorklistSummaryResponse,
 } from "../models";
@@ -57,6 +60,56 @@ export const listWorklists = async (
   return orvalFetch<ListWorklistsResponse>(getListWorklistsUrl(params), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getImportWorklistUrl = () => {
+  return `/worklists/import`;
+};
+
+/**
+ * @summary Create the worklist a link carries
+ */
+export const importWorklist = async (
+  importWorklistBody: NonReadonly<ImportWorklistBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorklistImportResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorklistImportResponse>(getImportWorklistUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(importWorklistBody),
+  });
+};
+
+export const getPreviewWorklistImportUrl = () => {
+  return `/worklists/import/preview`;
+};
+
+/**
+ * @summary Preview the worklist a link carries
+ */
+export const previewWorklistImport = async (
+  importWorklistBody: NonReadonly<ImportWorklistBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorklistImportPreviewResponse> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+  return orvalFetch<WorklistImportPreviewResponse>(getPreviewWorklistImportUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(importWorklistBody),
   });
 };
 

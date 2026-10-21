@@ -11464,6 +11464,56 @@ func (o *ListWorklistsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ImportWorklistRequestOptions is the options needed to make a request to ImportWorklist.
+type ImportWorklistRequestOptions struct {
+	Body *ImportWorklistBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ImportWorklistRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ImportWorklistRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ImportWorklistRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ImportWorklistRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// PreviewWorklistImportRequestOptions is the options needed to make a request to PreviewWorklistImport.
+type PreviewWorklistImportRequestOptions struct {
+	Body *PreviewWorklistImportBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *PreviewWorklistImportRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *PreviewWorklistImportRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *PreviewWorklistImportRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *PreviewWorklistImportRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetWorklistRequestOptions is the options needed to make a request to GetWorklist.
 type GetWorklistRequestOptions struct {
 	PathParams *GetWorklistPath
@@ -13197,6 +13247,8 @@ type ClientInterface interface {
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
 	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
 	ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error)
+	ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error)
+	PreviewWorklistImportWithResponse(ctx context.Context, options *PreviewWorklistImportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewWorklistImportResp, error)
 	GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error)
 	DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error)
 	SetWorklistItemsHandledWithResponse(ctx context.Context, options *SetWorklistItemsHandledRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorklistItemsHandledResp, error)
@@ -38890,6 +38942,120 @@ func (c *Client) ListWorklistsWithResponse(ctx context.Context, options *ListWor
 	}
 }
 
+// ImportWorklist Create the worklist a link carries
+func (c *Client) ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/import")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ImportWorklistResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ImportWorklistErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ImportWorklistResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ImportWorklistResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// PreviewWorklistImport Preview the worklist a link carries
+func (c *Client) PreviewWorklistImportWithResponse(ctx context.Context, options *PreviewWorklistImportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*PreviewWorklistImportResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import/preview",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/import/preview")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &PreviewWorklistImportResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(PreviewWorklistImportErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(PreviewWorklistImportResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "PreviewWorklistImportResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	case 500:
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	default:
+		return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetWorklist Get worklist
 func (c *Client) GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error) {
 	var err error
@@ -47966,6 +48132,38 @@ func (c *Client) ListWorklistsRaw(ctx context.Context, httpClient *http.Client, 
 	return httpClient.Do(req)
 }
 
+// ImportWorklistRaw returns an unread response. The caller must close its body.
+func (c *Client) ImportWorklistRaw(ctx context.Context, httpClient *http.Client, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// PreviewWorklistImportRaw returns an unread response. The caller must close its body.
+func (c *Client) PreviewWorklistImportRaw(ctx context.Context, httpClient *http.Client, options *PreviewWorklistImportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import/preview",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetWorklistRaw returns an unread response. The caller must close its body.
 func (c *Client) GetWorklistRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55491,6 +55689,40 @@ func NewListWorklistsRequest(ctx context.Context, baseURL string, options *ListW
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewImportWorklistRequest constructs a typed request for a caller-owned transport.
+func NewImportWorklistRequest(ctx context.Context, baseURL string, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewPreviewWorklistImportRequest constructs a typed request for a caller-owned transport.
+func NewPreviewWorklistImportRequest(ctx context.Context, baseURL string, options *PreviewWorklistImportRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/worklists/import/preview",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetWorklistRequest constructs a typed request for a caller-owned transport.
 func NewGetWorklistRequest(ctx context.Context, baseURL string, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -56561,6 +56793,23 @@ const (
 	WorkflowStateMetaResponseStatusNew           WorkflowStateMetaResponseStatus = "new"
 	WorkflowStateMetaResponseStatusReviewing     WorkflowStateMetaResponseStatus = "reviewing"
 	WorkflowStateMetaResponseStatusWaiting       WorkflowStateMetaResponseStatus = "waiting"
+)
+
+type WorklistImportItemResponseItemType string
+
+const (
+	WorklistImportItemResponseItemTypeIssue WorklistImportItemResponseItemType = "issue"
+	WorklistImportItemResponseItemTypePr    WorklistImportItemResponseItemType = "pr"
+)
+
+// WorklistImportItemResponseStatus importable, or why an import skips the item: its repository is not tracked here, the pull request or issue is not synced, or an earlier item names the same one.
+type WorklistImportItemResponseStatus string
+
+const (
+	WorklistImportItemResponseStatusDuplicate      WorklistImportItemResponseStatus = "duplicate"
+	WorklistImportItemResponseStatusImportable     WorklistImportItemResponseStatus = "importable"
+	WorklistImportItemResponseStatusItemNotFound   WorklistImportItemResponseStatus = "item_not_found"
+	WorklistImportItemResponseStatusRepoNotTracked WorklistImportItemResponseStatus = "repo_not_tracked"
 )
 
 type WorklistItemMarkResponseItemType string
@@ -59221,6 +59470,8 @@ type RefreshWorkerContextBody = WorkspaceLaunchSpec
 
 type UpdateWorkerWorkspaceTargetBody = WorkerWorkspaceTargetRequest
 
+type PreviewWorklistImportBody = ImportWorklistBody
+
 type CreateWorkspaceBody = CreateWorkspaceInputBody
 
 type CreateWorkspaceKataLinkBody = KataCreateLinkRequest
@@ -61391,6 +61642,14 @@ type UpdateWorkerWorkspaceTargetErrorResponse = ProblemError
 type ListWorklistsResponseJSON = ListWorklistsResponse
 
 type ListWorklistsErrorResponse = ProblemError
+
+type ImportWorklistResponse = WorklistImportResponse
+
+type ImportWorklistErrorResponse = ProblemError
+
+type PreviewWorklistImportResponse = WorklistImportPreviewResponse
+
+type PreviewWorklistImportErrorResponse = ProblemError
 
 type GetWorklistResponse = WorklistResponse
 
@@ -64979,6 +65238,22 @@ type ListWorklistsResp struct {
 	ApplicationProblemPlusJSONDefault *ListWorklistsErrorResponse
 }
 
+type ImportWorklistResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *ImportWorklistErrorResponse
+	JSON200      *ImportWorklistResponse
+}
+
+type PreviewWorklistImportResp struct {
+	HTTPResponse *http.Response
+	Body         []byte
+	StatusCode   int
+	Error        *PreviewWorklistImportErrorResponse
+	JSON200      *PreviewWorklistImportResponse
+}
+
 type GetWorklistResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -67160,6 +67435,14 @@ type Hunk struct {
 	OldCount int64   `json:"old_count"`
 	OldStart int64   `json:"old_start"`
 	Section  *string `json:"section,omitempty"`
+}
+
+type ImportWorklistBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Fragment The link's fragment without '#': v1. followed by the encoded list.
+	Fragment string `json:"fragment"`
 }
 
 type InspectProjectWorktreeOutputBody struct {
@@ -69773,6 +70056,51 @@ type WorklistHandledResponse struct {
 	Schema   *string                    `json:"$schema,omitempty"`
 	Items    []WorklistItemMarkResponse `json:"items"`
 	Worklist WorklistSummaryResponse    `json:"worklist"`
+}
+
+type WorklistImportItemResponse struct {
+	Caveat string `json:"caveat"`
+
+	// Issue Issue list row; null unless the item is a visible issue.
+	Issue        IssueResponse                      `json:"issue"`
+	ItemType     WorklistImportItemResponseItemType `json:"item_type"`
+	Name         string                             `json:"name"`
+	Note         string                             `json:"note"`
+	Number       int64                              `json:"number"`
+	Owner        string                             `json:"owner"`
+	PlatformHost string                             `json:"platform_host"`
+	Position     int64                              `json:"position"`
+	Provider     string                             `json:"provider"`
+
+	// Pull Pull request list row; null unless the item is a visible pull request.
+	Pull    MergeRequestResponse `json:"pull"`
+	Score   *int64               `json:"score,omitempty"`
+	Section string               `json:"section"`
+
+	// Status importable, or why an import skips the item: its repository is not tracked here, the pull request or issue is not synced, or an earlier item names the same one.
+	Status WorklistImportItemResponseStatus `json:"status"`
+}
+
+type WorklistImportPreviewResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	CreatedBy string  `json:"created_by"`
+
+	// ImportableCount Items an import would put on the list.
+	ImportableCount int64                        `json:"importable_count"`
+	Items           []WorklistImportItemResponse `json:"items"`
+	Recipe          string                       `json:"recipe"`
+	Title           string                       `json:"title"`
+}
+
+type WorklistImportResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	ItemCount int64   `json:"item_count"`
+
+	// SkippedCount Items of the link the new list leaves out.
+	SkippedCount int64 `json:"skipped_count"`
+	WorklistID   int64 `json:"worklist_id"`
 }
 
 type WorklistItemMarkResponse struct {

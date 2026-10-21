@@ -2,37 +2,21 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/worklist"
 )
 
-const (
-	worklistMaxTitle   = 200
-	worklistMaxRecipe  = 10000
-	worklistMaxItems   = 200
-	worklistMaxSection = 80
-	worklistMaxText    = 4000
-)
-
-type putWorklistItemInput struct {
-	Item    itemRefInput `json:"item"`
-	Score   *int         `json:"score,omitempty" jsonschema:"importance from 1 to 10; omit when unscored"`
-	Section string       `json:"section,omitempty" jsonschema:"group label such as Ready or Needs review; readiness belongs here, not in the score"`
-	Note    string       `json:"note,omitempty" jsonschema:"why the item is on the list"`
-	Caveat  string       `json:"caveat,omitempty" jsonschema:"what the maintainer should check before acting"`
-}
-
+// putWorklistInput is the shared worklist shape that links also carry,
+// plus the list to replace.
 type putWorklistInput struct {
-	WorklistID int64                  `json:"worklist_id,omitempty" jsonschema:"existing worklist to replace; omit to create a new worklist"`
-	Title      string                 `json:"title"`
-	Recipe     string                 `json:"recipe" jsonschema:"the criteria in plain text and the searches you ran, so a later agent can refresh or copy the list"`
-	CreatedBy  string                 `json:"created_by,omitempty" jsonschema:"short label for the agent writing the list"`
-	Items      []putWorklistItemInput `json:"items" jsonschema:"items in rank order, 1 to 200"`
+	WorklistID int64 `json:"worklist_id,omitempty" jsonschema:"existing worklist to replace; omit to create a new worklist"`
+	worklist.List
 }
 
 type worklistIDInput struct {
@@ -100,7 +84,7 @@ func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (Worklist
 		put.WorkspaceID = scoped
 	}
 	for i, item := range in.Items {
-		identity, err := item.Item.itemIdentity()
+		identity, err := itemRefInput(item.Item).itemIdentity()
 		if err != nil {
 			return WorklistPutResult{}, worklistFieldError(fmt.Sprintf("items[%d].item", i), err.Error())
 		}
@@ -154,43 +138,34 @@ func worklistFieldError(field, message string) *Error {
 	}
 }
 
+// ValidateWorklistPut checks a resolved put against the shared worklist
+// limits and rejects an item that appears twice under one repository
+// identity.
 func ValidateWorklistPut(put WorklistPut) error {
 	if put.WorklistID < 0 {
 		return worklistFieldError("worklist_id", "worklist_id must be positive")
 	}
-	if strings.TrimSpace(put.Title) == "" {
-		return worklistFieldError("title", "title is required")
+	list := worklist.List{Title: put.Title, Recipe: put.Recipe, Items: make([]worklist.Item, 0, len(put.Items))}
+	for _, item := range put.Items {
+		list.Items = append(list.Items, worklist.Item{
+			Item: worklist.ItemRef{
+				Type: item.Item.Type, Provider: item.Item.Provider, PlatformHost: item.Item.PlatformHost,
+				Owner: item.Item.Owner, Name: item.Item.Name, Number: item.Item.Number,
+			},
+			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+		})
 	}
-	if utf8.RuneCountInString(put.Title) > worklistMaxTitle {
-		return worklistFieldError("title", fmt.Sprintf("title must be at most %d characters", worklistMaxTitle))
-	}
-	if utf8.RuneCountInString(put.Recipe) > worklistMaxRecipe {
-		return worklistFieldError("recipe", fmt.Sprintf("recipe must be at most %d characters", worklistMaxRecipe))
-	}
-	if len(put.Items) == 0 || len(put.Items) > worklistMaxItems {
-		return worklistFieldError("items", fmt.Sprintf("items must contain 1 to %d entries", worklistMaxItems))
+	if err := list.Validate(); err != nil {
+		if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
+			return worklistFieldError(fieldErr.Field, fieldErr.Message)
+		}
+		return err
 	}
 	seen := make(map[worklistItemKey]int, len(put.Items))
 	for i, item := range put.Items {
-		field := fmt.Sprintf("items[%d]", i)
-		if item.Item.Type != "pr" && item.Item.Type != "issue" {
-			return worklistFieldError(field+".item.type", "item type must be pr or issue")
-		}
-		if item.Score != nil && (*item.Score < 1 || *item.Score > 10) {
-			return worklistFieldError(field+".score", "score must be from 1 to 10")
-		}
-		if utf8.RuneCountInString(item.Section) > worklistMaxSection {
-			return worklistFieldError(field+".section", fmt.Sprintf("section must be at most %d characters", worklistMaxSection))
-		}
-		if utf8.RuneCountInString(item.Note) > worklistMaxText {
-			return worklistFieldError(field+".note", fmt.Sprintf("note must be at most %d characters", worklistMaxText))
-		}
-		if utf8.RuneCountInString(item.Caveat) > worklistMaxText {
-			return worklistFieldError(field+".caveat", fmt.Sprintf("caveat must be at most %d characters", worklistMaxText))
-		}
 		key := newWorklistItemKey(item.Item)
 		if first, ok := seen[key]; ok {
-			err := worklistFieldError(field+".item", "item appears more than once")
+			err := worklistFieldError(fmt.Sprintf("items[%d].item", i), "item appears more than once")
 			err.Details["duplicate_of"] = first
 			return err
 		}

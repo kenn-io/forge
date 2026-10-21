@@ -592,6 +592,13 @@ describe("router /worklists routes", () => {
     expect(getRoute()).toEqual({ page: "worklists", worklistId: 7 });
   });
 
+  it("parses a worklist link as an import carrying its fragment", () => {
+    navigate("/worklists/import#v1.ZY9Ba8Mw-_x");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: null, importFragment: "v1.ZY9Ba8Mw-_x" });
+    navigate("/worklists/import");
+    expect(getRoute()).toEqual({ page: "worklists", worklistId: null, importFragment: "" });
+  });
+
   it("treats a malformed id as no list chosen", () => {
     navigate("/worklists/0");
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });

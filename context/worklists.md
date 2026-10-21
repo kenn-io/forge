@@ -6,9 +6,10 @@ through.
 
 ## Ownership
 
-- Agents author worklists only through the Forge MCP server. The UI reads,
-  dismisses, marks items handled, and acts on worklists but never authors or
-  reorders items.
+- Agents author worklists through the Forge MCP server, or hand the
+  maintainer a worklist link that the UI imports only after they confirm. The
+  UI reads, dismisses, marks items handled, and acts on worklists but never
+  writes or reorders items itself.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
   score, a section, a note, and a caveat. Readiness is a section, not part of
   the score.
@@ -155,11 +156,26 @@ stateDiagram-v2
 - The hub broadcasts `worklists_changed` with `{"worklist_id": N}` after every
   put, dismissal, restore, mark, or clear (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
 
+## Links
+
+- Other tools build links with the public `worklist` package, the shape the MCP
+  put tool takes; never copy the shape (`worklist/link.go::Fragment`).
+- The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd:
+  browsers and scripts build links too. It never reaches a request line.
+- `kenn://kenn-forge/worklists/import#…` routes through the Kenn desktop app,
+  whose link allowlist lives outside this repository.
+- Opening a link never writes; any page can link there, so only the
+  maintainer's confirm creates the list (`internal/server/worklistapi/import.go`).
+- Untracked, unsynced, or repeated items are skipped, never added; every
+  import creates a new list.
+
 ## UI
 
 - Worklists appear as a header tab only while at least one exists, or while
   the worklists page is open so the tab survives dismissing the last list
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
+- An import that finishes after the maintainer left the page does not
+  navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
 - `/worklists` opens the newest list; the selected item lives in the query
   string as on Activity, so a reload keeps it (`frontend/src/lib/routes.ts`).
   The query carries the repository's stable identity, and rows, selection, and

@@ -11,6 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"go.kenn.io/forge/worklist"
 )
 
 func TestPutWorklistForwardsTypedInputWithACPWorkspaceOverHTTP(t *testing.T) {
@@ -65,18 +67,18 @@ func TestPutWorklistRejectsInvalidInputWithFieldDetails(t *testing.T) {
 		calls++
 		return WorklistPutResult{}, nil
 	}})
-	pull := func(number int) putWorklistItemInput {
-		return putWorklistItemInput{Item: itemRefInput{
+	pull := func(number int) worklist.Item {
+		return worklist.Item{Item: worklist.ItemRef{
 			Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001,
 			Owner: "acme", Name: "widget", Number: number,
 		}}
 	}
 	valid := func(mutate func(*putWorklistInput)) putWorklistInput {
-		in := putWorklistInput{Title: "List", Recipe: "criteria", Items: []putWorklistItemInput{pull(1)}}
+		in := putWorklistInput{Title: "List", Recipe: "criteria", Items: []worklist.Item{pull(1)}}
 		mutate(&in)
 		return in
 	}
-	tooMany := make([]putWorklistItemInput, 0, 201)
+	tooMany := make([]worklist.Item, 0, 201)
 	for number := 1; number <= 201; number++ {
 		tooMany = append(tooMany, pull(number))
 	}

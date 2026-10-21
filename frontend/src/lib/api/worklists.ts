@@ -4,6 +4,9 @@ import { executeGeneratedApiRequest, type GeneratedApi } from "./generated-api.j
 import type {
   WorklistChangesResponse,
   WorklistHandledResponse,
+  WorklistImportItemResponse,
+  WorklistImportPreviewResponse,
+  WorklistImportResponse,
   WorklistItemMarkResponse,
   WorklistItemRef,
   WorklistItemResponse,
@@ -21,6 +24,9 @@ export type WorklistItem = WorklistItemResponse;
 export type WorklistChanges = WorklistChangesResponse;
 export type WorklistMarks = WorklistHandledResponse;
 export type WorklistItemMark = WorklistItemMarkResponse;
+export type WorklistImportPreview = WorklistImportPreviewResponse;
+export type WorklistImportItem = WorklistImportItemResponse;
+export type WorklistImport = WorklistImportResponse;
 
 export type WorklistFailure = ApiProblemError | TransientTransportError;
 
@@ -48,6 +54,22 @@ export function dismissWorklist(id: number) {
 export function undismissWorklist(id: number) {
   return executeGeneratedApiRequest("undismiss worklist", (client, signal) =>
     client.WorklistsService.undismissWorklist({ id }, { signal }),
+  );
+}
+
+/** Reads the list a worklist link's fragment carries. Nothing is written. */
+export function previewWorklistImport(
+  fragment: string,
+): Effect.Effect<WorklistImportPreview, WorklistFailure, GeneratedApi> {
+  return executeGeneratedApiRequest("preview worklist import", (client, signal) =>
+    client.WorklistsService.previewWorklistImport({ fragment }, { signal }),
+  ).pipe(retryIdempotentRead);
+}
+
+/** Creates the list a worklist link's fragment carries. Each call creates a new list. */
+export function importWorklist(fragment: string): Effect.Effect<WorklistImport, WorklistFailure, GeneratedApi> {
+  return executeGeneratedApiRequest("import worklist", (client, signal) =>
+    client.WorklistsService.importWorklist({ fragment }, { signal }),
   );
 }
 

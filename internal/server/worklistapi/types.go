@@ -143,3 +143,61 @@ type WorklistHandledResponse struct {
 	Worklist WorklistSummaryResponse    `json:"worklist"`
 	Items    []WorklistItemMarkResponse `json:"items"`
 }
+
+// ImportWorklistBody carries the fragment of a worklist link. The SPA reads
+// it from its own URL, so the encoded list never reaches a request line.
+type ImportWorklistBody struct {
+	Fragment string `json:"fragment" minLength:"1" maxLength:"524288" doc:"The link's fragment without '#': v1. followed by the encoded list."`
+}
+
+// WorklistImportPreviewResponse is the list a link carries, with what Forge
+// would do with each item. Nothing is written.
+type WorklistImportPreviewResponse struct {
+	Title           string                       `json:"title"`
+	Recipe          string                       `json:"recipe"`
+	CreatedBy       string                       `json:"created_by"`
+	ImportableCount int                          `json:"importable_count" doc:"Items an import would put on the list."`
+	Items           []WorklistImportItemResponse `json:"items"`
+}
+
+// WorklistImportItemResponse is one item of a link in rank order. Pull or
+// Issue carries the list row of an item this Forge tracks; both are null
+// otherwise.
+type WorklistImportItemResponse struct {
+	Position     int                           `json:"position"`
+	Provider     string                        `json:"provider"`
+	PlatformHost string                        `json:"platform_host"`
+	Owner        string                        `json:"owner"`
+	Name         string                        `json:"name"`
+	ItemType     string                        `json:"item_type" enum:"pr,issue"`
+	Number       int                           `json:"number"`
+	Score        *int                          `json:"score" minimum:"1" maximum:"10"`
+	Section      string                        `json:"section"`
+	Note         string                        `json:"note"`
+	Caveat       string                        `json:"caveat"`
+	Status       string                        `json:"status" enum:"importable,repo_not_tracked,item_not_found,duplicate" doc:"importable, or why an import skips the item: its repository is not tracked here, the pull request or issue is not synced, or an earlier item names the same one."`
+	Pull         *pullapi.MergeRequestResponse `json:"pull" doc:"Pull request list row; null unless the item is a visible pull request."`
+	Issue        *issueapi.IssueResponse       `json:"issue" doc:"Issue list row; null unless the item is a visible issue."`
+}
+
+// TransformSchema declares the null branch of the row references, as
+// WorklistItemResponse does.
+func (*WorklistImportItemResponse) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	for _, name := range []string{"pull", "issue"} {
+		property := schema.Properties[name]
+		if property == nil || property.Ref == "" {
+			continue
+		}
+		schema.Properties[name] = &huma.Schema{
+			Description: property.Description,
+			AnyOf:       []*huma.Schema{{Ref: property.Ref}, {Type: "null"}},
+		}
+	}
+	return schema
+}
+
+type WorklistImportResponse struct {
+	WorklistID   int64 `json:"worklist_id"`
+	ItemCount    int   `json:"item_count"`
+	SkippedCount int   `json:"skipped_count" doc:"Items of the link the new list leaves out."`
+}

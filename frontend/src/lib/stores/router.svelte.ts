@@ -50,7 +50,13 @@ export type Route =
       anchor?: string | undefined;
     }
   | { page: "workspaces" }
-  | { page: "worklists"; worklistId: number | null; selected?: WorklistItemSelection }
+  | {
+      page: "worklists";
+      worklistId: number | null;
+      selected?: WorklistItemSelection;
+      // The fragment of a worklist link opened at /worklists/import.
+      importFragment?: string;
+    }
   | {
       page: "pulls";
       view: "list";
@@ -380,6 +386,7 @@ function parseRoute(fullPath: string): Route {
     return { page: "workspaces" };
   }
   if (path === "/worklists") return { page: "worklists", worklistId: null };
+  if (path === "/worklists/import") return { page: "worklists", worklistId: null, importFragment: anchor ?? "" };
   const worklistMatch = path.match(/^\/worklists\/([1-9]\d*)$/);
   if (worklistMatch) {
     const selected = parseWorklistSelection(search);

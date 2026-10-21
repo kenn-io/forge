@@ -49,6 +49,7 @@ type ephemeralOptions struct {
 	backendPort      int
 	frontendPort     int
 	mcpPort          int
+	mcpPortSet       bool
 	freshDB          bool
 }
 
@@ -155,11 +156,13 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve frontend port: %w", err)
 	}
-	resolvedMCPPort, err := resolvePort(*mcpPort)
-	if err != nil {
-		return fmt.Errorf("resolve mcp port: %w", err)
-	}
-	if err := requireDistinctPorts(resolvedBackendPort, resolvedFrontendPort, resolvedMCPPort); err != nil {
+	mcpPortSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "mcp-port" {
+			mcpPortSet = true
+		}
+	})
+	if err := requireDistinctPorts(resolvedBackendPort, resolvedFrontendPort, 0); err != nil {
 		return err
 	}
 
@@ -196,7 +199,8 @@ func run(ctx context.Context, args []string) error {
 		workDir:          resolvedWorkDir,
 		backendPort:      resolvedBackendPort,
 		frontendPort:     resolvedFrontendPort,
-		mcpPort:          resolvedMCPPort,
+		mcpPort:          *mcpPort,
+		mcpPortSet:       mcpPortSet,
 		freshDB:          *freshDB,
 	})
 	if err != nil {
@@ -315,16 +319,24 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	cfg.Port = opts.backendPort
 	cfg.DataDir = dataDir
 	cfg.TrustReverseProxy = false
-	// The source config's MCP port belongs to the developer's live daemon, so
-	// the ephemeral backend must never inherit it. The launcher resolves a free
-	// port; enabling explicitly preserves it when the source used the shared default.
 	mcpPort := 0
 	mcpURL := ""
 	if cfg.MCPEnabled() {
-		cfg.MCP.Enabled = new(true)
-		cfg.MCP.Port = opts.mcpPort
+		mcpPath := cfg.BasePath + "mcp"
+		if opts.mcpPortSet || cfg.MCP.Enabled != nil || cfg.MCP.Port != 0 {
+			// A dedicated source listener belongs to the live daemon; choose a new port.
+			cfg.MCP.Port, err = resolvePort(opts.mcpPort)
+			if err != nil {
+				return ephemeralRun{}, fmt.Errorf("resolve mcp port: %w", err)
+			}
+			if err := requireDistinctPorts(opts.backendPort, opts.frontendPort, cfg.MCP.Port); err != nil {
+				return ephemeralRun{}, err
+			}
+			cfg.MCP.Enabled = new(true)
+			mcpPath = "/"
+		}
 		mcpPort = cfg.MCPPort()
-		mcpURL, err = serverURL(cfg.Host, mcpPort, "/")
+		mcpURL, err = serverURL(cfg.Host, mcpPort, mcpPath)
 		if err != nil {
 			return ephemeralRun{}, err
 		}

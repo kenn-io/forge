@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG BUN_IMAGE=oven/bun:1.4.0@sha256:5ff609364c049b54eb0ff560ec96319729a972078ef2c755d758f0c6ef89c2d6
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS bun
-FROM --platform=$BUILDPLATFORM node:24.16.0-bookworm-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim AS frontend
 WORKDIR /src
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 ENV UV_THREADPOOL_SIZE=2 RAYON_NUM_THREADS=2
@@ -12,7 +12,7 @@ RUN bun install --frozen-lockfile \
     && node scripts/build-frontend.mjs \
     && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn
 
-FROM --platform=$BUILDPLATFORM golang:1.27.1-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.2-bookworm AS build
 WORKDIR /src
 # "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
 ENV CGO_ENABLED=0 GOFLAGS=-p=2 GOMAXPROCS=2 GOPROXY="https://proxy.golang.org|direct"

@@ -52,12 +52,24 @@ func RepoCountBucket(count int) string {
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
-var syncSources = []string{"merge_requests", "issues", "checks"}
+const (
+	SyncSourceMergeRequests = "merge_requests"
+	SyncSourceIssues        = "issues"
+	SyncSourceChecks        = "checks"
+	SyncReasonRateLimited   = "rate_limited"
+	SyncReasonAuth          = "auth"
+	SyncReasonNotFound      = "not_found"
+	SyncReasonNetwork       = "network"
+	SyncReasonProvider      = "provider"
+	SyncReasonOther         = "other"
+)
+
+var syncSources = []string{SyncSourceMergeRequests, SyncSourceIssues, SyncSourceChecks}
 
 // SyncSources returns the sources reported by full sync passes.
 func SyncSources() []string { return slices.Clone(syncSources) }
 
-var syncReasons = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+var syncReasons = []string{SyncReasonRateLimited, SyncReasonAuth, SyncReasonNotFound, SyncReasonNetwork, SyncReasonProvider, SyncReasonOther}
 
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",

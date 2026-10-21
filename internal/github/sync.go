@@ -18,6 +18,7 @@ import (
 
 	"github.com/cenkalti/backoff/v7"
 	"go.kenn.io/forge/internal/platformdb"
+	"go.kenn.io/forge/internal/telemetry"
 
 	gh "github.com/google/go-github/v92/github"
 	"go.kenn.io/forge/internal/archive"
@@ -4319,7 +4320,6 @@ func (s *Syncer) runWorker(
 		}
 		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
 		if bucketErr != nil {
-			s.observeRepoFailure(ctx, repo, bucketErr)
 			errMessage := bucketErr.Error()
 			s.recordRunError(state, repo, bucketErr, errMessage)
 			state.results[item.index].Error = errMessage
@@ -5402,7 +5402,6 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
-		s.observeRepoFailure(ctx, repo, err)
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
@@ -6298,7 +6297,7 @@ func (s *Syncer) indexSyncRepo(
 		attemptedScope |= failMR
 		mrReader, err := s.mergeRequestReaderFor(repo)
 		if err != nil {
-			s.observeSync(ctx, repo, "merge_requests", err)
+			s.observeSync(ctx, repo, telemetry.SyncSourceMergeRequests, err)
 			return fmt.Errorf("resolve merge request reader for %s/%s: %w", repo.Owner, repo.Name, err)
 		}
 		mrProviderAttempted = true
@@ -6316,7 +6315,7 @@ func (s *Syncer) indexSyncRepo(
 		} else {
 			openMRs, err = mrReader.ListOpenMergeRequests(listCtx, platformRef)
 		}
-		s.observeSync(ctx, repo, "merge_requests", err)
+		s.observeSync(ctx, repo, telemetry.SyncSourceMergeRequests, err)
 		mrListBlocked := false
 		if err != nil {
 			// 304 Not Modified means the open-PR list is byte-identical
@@ -6474,7 +6473,7 @@ func (s *Syncer) indexSyncRepo(
 			if failedScope != 0 {
 				s.markRepoFailed(repo, failedScope)
 			}
-			s.observeSync(ctx, repo, "issues", err)
+			s.observeSync(ctx, repo, telemetry.SyncSourceIssues, err)
 			return joinPartialFailureCause(
 				partialCause,
 				fmt.Errorf("resolve issue reader for %s/%s: %w", repo.Owner, repo.Name, err),
@@ -6500,7 +6499,7 @@ func (s *Syncer) indexSyncRepo(
 		} else {
 			openIssues, issueListErr = issueReader.ListOpenIssues(issueListCtx, platformRef)
 		}
-		s.observeSync(ctx, repo, "issues", issueListErr)
+		s.observeSync(ctx, repo, telemetry.SyncSourceIssues, issueListErr)
 		if issueListErr != nil {
 			if platformgithub.IsNotModified(issueListErr) {
 				// 304: open issue list unchanged, skip.
@@ -8170,7 +8169,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	var ciChecks []db.CICheck
 	var ciJSON []byte
 	if bulk.CIComplete {
-		s.observeSync(ctx, repo, "checks", nil)
+		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
 		ciChecks = normalizeBulkCI(bulk)
 		if ciChecks == nil {
 			ciChecks = []db.CICheck{}
@@ -8864,7 +8863,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return calls, pending, nil
 	}
-	s.observeSync(ctx, repo, "checks", err)
+	s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
 	if err != nil {
 		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
@@ -9533,7 +9532,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 	requestedAt := s.nowUTC()
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSync(ctx, repo, "checks", err)
+		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9544,7 +9543,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSync(ctx, repo, "checks", err)
+		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
 		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9553,7 +9552,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
-	s.observeSync(ctx, repo, "checks", nil)
+	s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
 	return ciStatusFetchResult{
 		Status:      DeriveOverallCIStatus(checkRuns, combined),
 		ChecksJSON:  NormalizeCIChecks(checkRuns, combined),

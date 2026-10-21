@@ -18,7 +18,7 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var syncScopeSources = map[failScope]string{failMR: "merge_requests", failIssues: "issues"}
+var syncScopeSources = map[failScope]string{failMR: telemetry.SyncSourceMergeRequests, failIssues: telemetry.SyncSourceIssues}
 
 type syncPassKey struct{}
 
@@ -36,7 +36,7 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
-	if source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
+	if source == telemetry.SyncSourceChecks && reason == telemetry.SyncReasonNotFound {
 		return
 	}
 	p.mu.Lock()
@@ -82,7 +82,7 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 // syncSourceFeature names the feature whose cooldown governs a source. The
 // detail drain skips CI reads under the merge request cooldown.
 func syncSourceFeature(source string) string {
-	if source == "checks" {
+	if source == telemetry.SyncSourceChecks {
 		return platform.RepositoryFeatureMergeRequests
 	}
 	return source
@@ -153,7 +153,7 @@ func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	priority := []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+	priority := []string{telemetry.SyncReasonRateLimited, telemetry.SyncReasonAuth, telemetry.SyncReasonNotFound, telemetry.SyncReasonNetwork, telemetry.SyncReasonProvider, telemetry.SyncReasonOther}
 	return reason != "" && (current == "" || slices.Index(priority, reason) < slices.Index(priority, current))
 }
 
@@ -183,31 +183,31 @@ func syncFailureReason(err error) string {
 	_, networkError := errors.AsType[net.Error](err)
 	switch {
 	case errors.Is(err, platform.ErrRateLimited):
-		return "rate_limited"
+		return telemetry.SyncReasonRateLimited
 	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) == GitAccessCredentialUnavailable:
-		return "auth"
+		return telemetry.SyncReasonAuth
 	case errors.Is(err, platform.ErrNotFound):
-		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError:
-		return "network"
+		return telemetry.SyncReasonNotFound
 	case errors.Is(err, platform.ErrProviderContract):
-		return "provider"
+		return telemetry.SyncReasonProvider
 	}
 	status := providerStatusCode(err)
 	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
 	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
 	switch {
 	case primaryLimit, secondaryLimit, status == 429:
-		return "rate_limited"
+		return telemetry.SyncReasonRateLimited
 	case status == 401, status == 403:
-		return "auth"
+		return telemetry.SyncReasonAuth
 	case status == 404:
-		return "not_found"
+		return telemetry.SyncReasonNotFound
 	case status >= 400 && status < 500:
-		return "other"
+		return telemetry.SyncReasonOther
 	case status >= 500 && status < 600:
-		return "provider"
+		return telemetry.SyncReasonProvider
+	case errors.Is(err, context.DeadlineExceeded), networkError:
+		return telemetry.SyncReasonNetwork
 	default:
-		return "other"
+		return telemetry.SyncReasonOther
 	}
 }

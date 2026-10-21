@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -217,6 +218,9 @@ func TestSyncFailedUntrackAndReaddBeforeFullPass(t *testing.T) {
 	s.RunOnce(t.Context())
 	require.Len(t, events, 1)
 	tracked := s.TrackedRepos()
+	require.NoError(t, s.SetReposWithContext(t.Context(), tracked, false))
+	s.RunOnce(t.Context())
+	require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
 	require.NoError(t, s.SetReposWithContext(t.Context(), nil, false))
 	require.NoError(t, s.SetReposWithContext(t.Context(), tracked, false))
 	s.RunOnce(t.Context())
@@ -280,6 +284,24 @@ func TestSyncFailureReason(t *testing.T) {
 		{"unknown", errors.New("private error details"), "other"},
 	} {
 		t.Run(tc.name, func(t *testing.T) { assert.Equal(t, tc.want, syncFailureReason(fmt.Errorf("read: %w", tc.err))) })
+	}
+}
+
+func TestSyncFailureReasonWrappedHTTPStatus(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   string
+	}{
+		{401, "auth"},
+		{403, "auth"},
+		{404, "not_found"},
+		{429, "rate_limited"},
+		{503, "provider"},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			err := &url.Error{Op: "Get", URL: "https://api.github.com/repos/acme/widget", Err: &gh.ErrorResponse{Response: &http.Response{StatusCode: tc.status}}}
+			assert.Equal(t, tc.want, syncFailureReason(err))
+		})
 	}
 }
 

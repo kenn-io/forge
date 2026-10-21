@@ -1622,7 +1622,7 @@ func isNotFoundError(stderr string) bool {
 // IsAuthenticationFailure reports whether a networked Git error means the
 // remote rejected or never received credentials.
 func IsAuthenticationFailure(err error) bool {
-	return matchesGitError(err, authGitErrorSubstrings, false)
+	return isAuthGitError(err)
 }
 
 // Wait blocks until every in-flight EnsureClone fetch finishes. A fetch

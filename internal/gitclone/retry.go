@@ -36,18 +36,23 @@ var networkGitErrorSubstrings = []gitErrorPattern{
 	{"early eof", true},
 	{"ssl_read", true},
 	{"tls connection", true},
+	{"certificate verification failed", false},
+	{"ssl certificate problem", false},
 }
 
 var authGitErrorSubstrings = []gitErrorPattern{
 	{"authentication failed", true},
 	{"could not read username", true},
 	{"terminal prompts disabled", true},
-	{"returned error: 401", false},
-	{"returned error: 403", false},
 }
 
 var rateLimitGitErrorSubstrings = []gitErrorPattern{
 	{"returned error: 429", false},
+}
+
+var httpAuthGitErrorSubstrings = []gitErrorPattern{
+	{"returned error: 401", false},
+	{"returned error: 403", false},
 }
 
 // IsTransientGitError reports whether the stderr captured from git looks
@@ -72,6 +77,11 @@ func IsNetworkGitError(err error) bool {
 // IsRateLimitedGitError reports whether git stderr indicates HTTP rate limiting.
 func IsRateLimitedGitError(err error) bool {
 	return matchesGitError(err, rateLimitGitErrorSubstrings, false)
+}
+
+// IsHTTPAuthGitError recognizes denied HTTP reads for sync telemetry only.
+func IsHTTPAuthGitError(err error) bool {
+	return matchesGitError(err, httpAuthGitErrorSubstrings, false)
 }
 
 func isAuthGitError(err error) bool {

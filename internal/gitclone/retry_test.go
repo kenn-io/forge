@@ -101,7 +101,7 @@ func TestGitHTTPAuthentication(t *testing.T) {
 	for _, status := range []int{401, 403} {
 		t.Run(fmt.Sprint(status), func(t *testing.T) {
 			err := fmt.Errorf("fatal: The requested URL returned error: %d", status)
-			assert.True(t, IsAuthenticationFailure(err))
+			assert.False(t, IsAuthenticationFailure(err), "HTTP status alone must leave Git access unchanged")
 			assert.False(t, isAuthGitError(err), "HTTP status alone must not trigger a credential retry")
 		})
 	}

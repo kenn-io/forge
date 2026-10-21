@@ -166,12 +166,16 @@ func providerStatusCode(err error) int {
 	return platformgithub.StatusCode(err)
 }
 
+func syncAuthenticationFailure(err error) bool {
+	return gitAccessFailureReason(err) != "" || gitclone.IsHTTPAuthGitError(err)
+}
+
 func syncFailureReason(err error) string {
 	_, networkError := errors.AsType[net.Error](err)
 	switch {
 	case errors.Is(err, platform.ErrRateLimited), gitclone.IsRateLimitedGitError(err):
 		return "rate_limited"
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "":
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), syncAuthenticationFailure(err):
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"

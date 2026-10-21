@@ -37,25 +37,27 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 	resolved.Key = platform.RepositoryIDKey(42)
 	renamed := resolved
 	renamed.Name = "renamed"
+	initialFailure := [][2]string{{"issues", "not_found"}}
+	additionalFailure := [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}
 	type observation struct {
 		repo RepoRef
 		err  error
 	}
 	for _, tc := range []struct {
-		name      string
-		first     RepoRef
-		next      []observation
-		tracked   []RepoRef
-		later     RepoRef
-		wantNow   int
-		wantLater int
+		name                  string
+		first                 RepoRef
+		next                  []observation
+		tracked               []RepoRef
+		later                 RepoRef
+		wantAfterNextPass     [][2]string
+		wantAfterLaterFailure [][2]string
 	}{
-		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, 2, 2},
-		{"no reads", a, nil, []RepoRef{a, b}, a, 1, 1},
-		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, 1, 2},
-		{"untracked without reads", a, nil, []RepoRef{b}, a, 1, 2},
-		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, 1, 2},
-		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, 1, 1},
+		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, additionalFailure, additionalFailure},
+		{"no reads", a, nil, []RepoRef{a, b}, a, initialFailure, initialFailure},
+		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, initialFailure, additionalFailure},
+		{"untracked without reads", a, nil, []RepoRef{b}, a, initialFailure, additionalFailure},
+		{"archived without reads", a, nil, []RepoRef{{Owner: "acme", Name: "a", Archived: true}, b}, a, initialFailure, additionalFailure},
+		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, initialFailure, initialFailure},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var events [][2]string
@@ -68,12 +70,12 @@ func TestSyncFailedSourceRecovery(t *testing.T) {
 				second.observe(observation.repo, "issues", observation.err)
 			}
 			s.finishSyncPass(second, tc.tracked)
-			require.Len(t, events, tc.wantNow)
+			require.Equal(t, tc.wantAfterNextPass, events)
 			later := &syncPass{}
 			later.observe(tc.later, "issues", platform.ErrNotFound)
 			// Resume reads from the later repository.
 			s.finishSyncPass(later, []RepoRef{tc.later, b})
-			assert.Len(t, events, tc.wantLater)
+			assert.Equal(t, tc.wantAfterLaterFailure, events)
 		})
 	}
 }
@@ -255,6 +257,8 @@ func TestSyncFailureReason(t *testing.T) {
 		{"deadline", context.DeadlineExceeded, "network"},
 		{"contract", platform.ErrProviderContract, "provider"},
 		{"authentication", platform.ErrPermissionDenied, "auth"},
+		{"git 401", errors.New("fatal: The requested URL returned error: 401"), "auth"},
+		{"git 403", errors.New("fatal: The requested URL returned error: 403"), "auth"},
 		{"rate limit", platform.ErrRateLimited, "rate_limited"},
 		{"normalized permission takes precedence", &platform.Error{Code: platform.ErrCodePermissionDenied, Err: &gitealike.HTTPError{StatusCode: 429}}, "auth"},
 		{"normalized contract takes precedence", &platform.Error{Code: platform.ErrCodeProviderContract, Err: &gitealike.HTTPError{StatusCode: 404}}, "provider"},
@@ -443,6 +447,7 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
 			assert.Equal([][2]string{{"refs", tc.reason}}, events)
+			assert.Empty(s.Status().GitAccess, "HTTP status alone must leave Git access unchanged")
 			s.RunOnce(t.Context())
 			assert.Len(events, 1)
 			assert.Equal(int32(2), reads.Load(), "HTTP failures must retain their single-attempt policy")
@@ -456,9 +461,27 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 			remote = repo.CloneURL
 			s.RunOnce(t.Context())
 			assert.Equal([][2]string{{"refs", tc.reason}, {"refs", tc.reason}}, events)
+			assert.Empty(s.Status().GitAccess, "HTTP status alone must leave Git access unchanged after fetch")
 			assert.Equal(int32(3), reads.Load())
 		})
 	}
+}
+
+func TestSyncFailedGitTLSCertificate(t *testing.T) {
+	server := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(server.Close)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
+	clones := gitclone.New(t.TempDir(), nil)
+	t.Cleanup(clones.Wait)
+	err := clones.EnsureClone(t.Context(), "github", repo.PlatformHost, repo.Owner, repo.Name, repo.CloneURL)
+	require.ErrorContains(t, err, "certificate")
+	assert.False(t, gitclone.IsTransientGitError(err), "certificate verification must retain its permanent-error retry policy")
+	pass := &syncPass{}
+	pass.observe(repo, "refs", err)
+	var events [][2]string
+	s := &Syncer{onSyncFailed: func(source, reason string) { events = append(events, [2]string{source, reason}) }}
+	s.finishSyncPass(pass, []RepoRef{repo})
+	assert.Equal(t, [][2]string{{"refs", "network"}}, events, "Git error: %v", err)
 }
 
 func TestSyncFailedMixedReads(t *testing.T) {

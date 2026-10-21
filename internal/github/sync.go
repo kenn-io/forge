@@ -2576,9 +2576,7 @@ func (s *Syncer) ensureClone(ctx context.Context, repo RepoRef) error {
 		cloneRemoteURL(repo),
 		nil,
 	)
-	if err == nil || syncFailureReason(err) != "other" {
-		s.observeSync(ctx, repo, "refs", err)
-	}
+	s.observeSync(ctx, repo, "refs", err)
 	return s.recordGitAccess(repo, err)
 }
 
@@ -8857,7 +8855,7 @@ func (s *Syncer) syncProviderMRDetailExtras(
 	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return calls, pending, nil
 	}
-	s.observeSyncItem(ctx, repo, "checks", err)
+	s.observeSync(ctx, repo, "checks", err)
 	if err != nil {
 		return calls, false, fmt.Errorf("list CI checks for MR #%d: %w", number, err)
 	}
@@ -9526,7 +9524,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 	requestedAt := s.nowUTC()
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSyncItem(ctx, repo, "checks", err)
+		s.observeSync(ctx, repo, "checks", err)
 		slog.Warn("list check runs failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
@@ -9537,7 +9535,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		s.observeSyncItem(ctx, repo, "checks", err)
+		s.observeSync(ctx, repo, "checks", err)
 		slog.Warn("get combined status failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,

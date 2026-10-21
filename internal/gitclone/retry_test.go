@@ -42,6 +42,11 @@ func TestIsTransientGitError(t *testing.T) {
 			errors.New("fatal: The requested URL returned error: 504"),
 			true, true, false,
 		},
+		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false, false, false},
+		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false, false, false},
+		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false, false, false},
+		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false, true, false},
+		{"HTTP 599 is permanent", errors.New("fatal: The requested URL returned error: 599"), false, true, false},
 		{
 			"connection reset",
 			errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"),
@@ -88,6 +93,16 @@ func TestIsTransientGitError(t *testing.T) {
 			assert.Equal(t, tc.want, IsTransientGitError(tc.err))
 			assert.Equal(t, tc.wantServer, IsServerGitError(tc.err))
 			assert.Equal(t, tc.wantNetwork, IsNetworkGitError(tc.err))
+		})
+	}
+}
+
+func TestGitHTTPAuthentication(t *testing.T) {
+	for _, status := range []int{401, 403} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			err := fmt.Errorf("fatal: The requested URL returned error: %d", status)
+			assert.True(t, IsAuthenticationFailure(err))
+			assert.False(t, isAuthGitError(err), "HTTP status alone must not trigger a credential retry")
 		})
 	}
 }

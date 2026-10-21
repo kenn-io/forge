@@ -30,14 +30,14 @@ type syncPass struct {
 }
 
 func (p *syncPass) observe(repo RepoRef, source string, err error) {
-	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
+	if errors.Is(err, platform.ErrRepositoryFeatureDisabled) || isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
 		return
 	}
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
-	if isLocalFilesystemFailure(err) || syncBudgetWait(err) || errors.Is(err, context.Canceled) {
+	if source == "refs" && reason == "other" || source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
 		return
 	}
 	p.mu.Lock()
@@ -49,12 +49,12 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 		p.results[source] = make(map[string]string)
 	}
 	key := mergeQueueRepoKey(repo)
-	// One successful CI read establishes repository availability for the pass.
-	if current, observed := p.results[source][key]; source == "checks" && (reason == "" || observed && current == "") {
+	// One successful read establishes repository availability for the pass.
+	if current, observed := p.results[source][key]; reason == "" || observed && current == "" {
 		p.results[source][key] = ""
 		return
 	}
-	if higherSyncFailureReason(reason, p.results[source][key]) || p.results[source][key] == "" {
+	if higherSyncFailureReason(reason, p.results[source][key]) {
 		p.results[source][key] = reason
 	}
 }
@@ -62,14 +62,6 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, err error) {
 	if pass, ok := ctx.Value(syncPassKey{}).(*syncPass); ok {
 		pass.observe(repo, source, err)
-	}
-}
-
-// observeSyncItem skips items the provider reports as missing or as
-// individually inaccessible; neither says the source itself is failing.
-func (s *Syncer) observeSyncItem(ctx context.Context, repo RepoRef, source string, err error) {
-	if syncFailureReason(err) != "not_found" && !errors.Is(err, platform.ErrLookupInaccessible) {
-		s.observeSync(ctx, repo, source, err)
 	}
 }
 
@@ -177,13 +169,13 @@ func providerStatusCode(err error) int {
 func syncFailureReason(err error) string {
 	_, networkError := errors.AsType[net.Error](err)
 	switch {
-	case errors.Is(err, platform.ErrRateLimited):
+	case errors.Is(err, platform.ErrRateLimited), gitclone.IsRateLimitedGitError(err):
 		return "rate_limited"
 	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "":
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
-	case errors.Is(err, context.DeadlineExceeded), networkError && !isLocalFilesystemFailure(err):
+	case errors.Is(err, context.DeadlineExceeded), networkError:
 		return "network"
 	case errors.Is(err, platform.ErrProviderContract):
 		return "provider"

@@ -12,23 +12,42 @@ import (
 // re-issued before surfacing the error to the caller.
 const retryAttempts = internalretry.DefaultMaxTries
 
-var serverGitErrorSubstrings = []string{
-	"internal server error",
-	"returned error: 500",
-	"returned error: 502",
-	"returned error: 503",
-	"returned error: 504",
+type gitErrorPattern struct {
+	text  string
+	retry bool
 }
 
-var networkGitErrorSubstrings = []string{
-	"connection reset",
-	"connection refused",
-	"could not resolve host",
-	"operation timed out",
-	"operation too slow",
-	"early eof",
-	"ssl_read",
-	"tls connection",
+var serverGitErrorSubstrings = []gitErrorPattern{
+	{"internal server error", true},
+	{"returned error: 500", true},
+	{"returned error: 502", true},
+	{"returned error: 503", true},
+	{"returned error: 504", true},
+	// Other 5xx failures count as provider outages without changing retries.
+	{"returned error: 5", false},
+}
+
+var networkGitErrorSubstrings = []gitErrorPattern{
+	{"connection reset", true},
+	{"connection refused", true},
+	{"could not resolve host", true},
+	{"operation timed out", true},
+	{"operation too slow", true},
+	{"early eof", true},
+	{"ssl_read", true},
+	{"tls connection", true},
+}
+
+var authGitErrorSubstrings = []gitErrorPattern{
+	{"authentication failed", true},
+	{"could not read username", true},
+	{"terminal prompts disabled", true},
+	{"returned error: 401", false},
+	{"returned error: 403", false},
+}
+
+var rateLimitGitErrorSubstrings = []gitErrorPattern{
+	{"returned error: 429", false},
 }
 
 // IsTransientGitError reports whether the stderr captured from git looks
@@ -37,26 +56,35 @@ var networkGitErrorSubstrings = []string{
 // repo is healthy; retrying inside the same sync cycle usually succeeds and
 // avoids dropping a full sync window.
 func IsTransientGitError(err error) bool {
-	return IsServerGitError(err) || IsNetworkGitError(err)
+	return matchesGitError(err, serverGitErrorSubstrings, true) || matchesGitError(err, networkGitErrorSubstrings, true)
 }
 
 // IsServerGitError reports whether git stderr indicates an HTTP server failure.
 func IsServerGitError(err error) bool {
-	return matchesGitError(err, serverGitErrorSubstrings)
+	return matchesGitError(err, serverGitErrorSubstrings, false)
 }
 
 // IsNetworkGitError reports whether git stderr indicates a network failure.
 func IsNetworkGitError(err error) bool {
-	return matchesGitError(err, networkGitErrorSubstrings)
+	return matchesGitError(err, networkGitErrorSubstrings, false)
 }
 
-func matchesGitError(err error, substrings []string) bool {
+// IsRateLimitedGitError reports whether git stderr indicates HTTP rate limiting.
+func IsRateLimitedGitError(err error) bool {
+	return matchesGitError(err, rateLimitGitErrorSubstrings, false)
+}
+
+func isAuthGitError(err error) bool {
+	return matchesGitError(err, authGitErrorSubstrings, true)
+}
+
+func matchesGitError(err error, patterns []gitErrorPattern, retryOnly bool) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	for _, needle := range substrings {
-		if strings.Contains(msg, needle) {
+	for _, pattern := range patterns {
+		if (!retryOnly || pattern.retry) && strings.Contains(msg, pattern.text) {
 			return true
 		}
 	}

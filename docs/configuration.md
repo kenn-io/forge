@@ -677,12 +677,14 @@ repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass reports `sync_failed` when repositories start failing a
 source, at most once per source per pass. A repository that keeps failing
-reports nothing more until it recovers. The event sends only `sync_source`
-(`merge_requests`, `issues`, `checks`, or `refs`) and `reason` (`auth`,
+reports nothing more until it recovers. Each event counts the newly failing
+repository group in that pass, so a staggered outage can count more than once.
+The event sends only `sync_source` (`merge_requests`, `issues`, `checks`, or
+`refs`) and `reason` (`auth`,
 `rate_limited`, `not_found`, `network`, `provider`, or `other`), with unlisted
-reasons sent as `other`. List and repository failures count. `checks` counts a
-repository only when none of its CI reads succeeded. `refs` counts only auth,
-rate-limit, network, and provider failures during clone or fetch.
+reasons sent as `other`. List and repository failures count. For each source,
+any successful read in a repository wins over failures in that pass. `refs`
+counts only auth, rate-limit, network, and provider failures during clone or fetch.
 Local filesystem failures and individual PR, issue, and child reads don't count.
 Skipped reads keep prior state; observed recovery or disablement clears it, and
 archived or untracked repositories drop out. Counts are approximate: state stays

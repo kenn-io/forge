@@ -487,6 +487,44 @@ graphics = false
 	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 
+func TestConfigReload_MCPRestartRequiredOnDefaultHostChange(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tt := range []struct {
+		name    string
+		before  string
+		after   string
+		enabled bool
+	}{
+		{name: "enable", before: "0.0.0.0", after: "127.0.0.1", enabled: true},
+		{name: "disable", before: "127.0.0.1", after: "0.0.0.0", enabled: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
+			assert := assert.New(t)
+			content := validReloadConfig + "\n[api]\nrequire_auth = true\n"
+			srv, _, _, _ := setupTestServerWithConfigContent(
+				t, strings.Replace(content, "127.0.0.1", tt.before, 1), &serverfake.MockGH{},
+			)
+			reloadPath := filepath.Join(t.TempDir(), "reload.toml")
+			srv.cfgPath = reloadPath
+			for _, host := range []string{tt.after, tt.before} {
+				writeConfigToml(t, reloadPath, strings.Replace(content, "127.0.0.1", host, 1))
+				event := srv.configreload.ApplyConfigChange(t.Context())
+				require.True(t, event.Valid, event.Error)
+				rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+				require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+				var response spokeapi.SettingsResponse
+				require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+				changed := host == tt.after
+				assert.Equal(changed, response.MCP.RestartRequired)
+				assert.Equal(changed, event.RestartRequired)
+				assert.Equal(tt.enabled == changed, response.MCP.Enabled)
+				assert.Nil(srv.cfg.MCP.Enabled)
+			}
+		})
+	}
+}
+
 func TestConfigReloadPublishesPullConfigOnlyAfterSuccessfulReload(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

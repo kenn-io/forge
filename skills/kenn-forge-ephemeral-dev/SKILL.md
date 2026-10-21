@@ -44,10 +44,10 @@ Use `make dev-ephemeral` when the user wants a local kenn-forge dev stack withou
 - The launcher starts both backend and frontend.
 - The backend disables provider sync by default; `-sync` explicitly enables it.
 - It writes a generated config at `<work-dir>/config.toml`.
-- When the source config enables MCP, the generated config moves the MCP
-  listener to a free port (or `-mcp-port`) so the ephemeral backend never
-  fights the live daemon for the configured one; the status JSON reports it as
-  `mcp_port` and `mcp_url`, omitted when MCP is disabled.
+- MCP using the source default shares the ephemeral backend port. Enabled MCP
+  uses a dedicated free port when `-mcp-port` is supplied or the source explicitly
+  enables it or sets its own port. Status JSON reports `mcp_port` and `mcp_url`
+  when MCP is enabled.
 - It copies the configured source SQLite DB by default into `<work-dir>/data/forge.db`.
 - It passes `KENN_FORGE_CONFIG=<work-dir>/config.toml` to both processes.
 - It passes `KENN_FORGE_API_URL=<backend-url>` to the frontend.

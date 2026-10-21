@@ -127,7 +127,7 @@ func (s *Server) buildLocalSettingsResponse(
 			Enabled:            mcpEnabled,
 			Port:               mcp.Port,
 			DiffCacheMB:        mcp.DiffCacheMB,
-			RestartRequired:    !reflect.DeepEqual(mcp, s.bootCfgSnapshot.MCP),
+			RestartRequired:    !reflect.DeepEqual(mcp, s.bootCfgSnapshot.MCP) || mcpEnabled != s.bootCfgSnapshot.MCPEnabled,
 			ActiveURL:          s.options.MCPURL,
 			ActiveRequiresAuth: s.bootCfgSnapshot.RequireAuth,
 		},

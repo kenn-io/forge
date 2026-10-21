@@ -196,9 +196,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.12.11"
+          version: "0.13.1"
           enable-cache: false
 
       - name: Restore Bun package cache
@@ -242,7 +242,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
-          version: "1.1.0"
+          version: "1.2.0"
           node-version-file: package.json
           cache: false
           run-install: true
@@ -321,7 +321,7 @@ jobs:
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Go unit tests
           path: tmp/test-output.json
@@ -339,7 +339,7 @@ jobs:
 
       - name: Publish live GraphQL test report
         if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Go live GraphQL tests
           path: tmp/test-graphql-output.json
@@ -353,7 +353,7 @@ jobs:
 
       - name: Publish integration test report
         if: ${{ !cancelled() && hashFiles('tmp/test-integration-output.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Go integration tests
           path: tmp/test-integration-output.json
@@ -379,7 +379,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
-          version: "1.1.0"
+          version: "1.2.0"
           node-version-file: package.json
           cache: false
           run-install: true
@@ -390,7 +390,7 @@ jobs:
       - name: Upload frontend unit diagnostics
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: frontend-unit-diagnostics
           path: tmp/frontend-unit-diagnostics/
@@ -590,7 +590,7 @@ jobs:
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
           name: Go race tests (${{ matrix.shard }})
           path: tmp/test-race-output.json
@@ -599,7 +599,7 @@ jobs:
 
       - name: Upload race timing artifacts
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: go-race-timing-${{ matrix.shard }}
           path: |
@@ -628,7 +628,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
-          version: "1.1.0"
+          version: "1.2.0"
           node-version-file: package.json
           cache: false
           run-install: true
@@ -686,7 +686,7 @@ jobs:
 
       - name: Upload mock Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-mock-report-${{ matrix.browser }}
           path: frontend/test-results/
@@ -772,7 +772,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-report-${{ matrix.browser }}
           path: frontend/test-results/
@@ -780,7 +780,7 @@ jobs:
 
       - name: Upload GitHub App setup UI Playwright report
         if: failure() && matrix.browser == 'chromium'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: github-app-ui-e2e-report
           path: packages/github-app-ui/playwright-report/
@@ -822,7 +822,7 @@ jobs:
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
-          version: "1.1.0"
+          version: "1.2.0"
           node-version-file: package.json
           cache: false
           run-install: true
@@ -844,7 +844,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: roborev-e2e-report
           path: frontend/test-results/

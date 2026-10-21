@@ -12,7 +12,9 @@ import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } f
 // repository, so a blocked action is disabled with its reason instead of
 // failing after the click. An absent entry means "no verdict yet": callers
 // fall back to capability gating and the server stays authoritative.
+// The same read carries the merge methods the repository allows.
 const operationsByRepo = new SvelteMap<string, RepoOperations>();
+const mergeMethodsByRepo = new SvelteMap<string, MergeMethod[]>();
 const inFlight = new Set<string>();
 
 type RepoIdentity = Pick<RepoRefResponse, "provider" | "platform_host" | "owner" | "name" | "repo_path">;
@@ -23,6 +25,13 @@ function repoKey(repo: RepoIdentity): string {
 
 export function repoOperations(repo: RepoIdentity): RepoOperations | undefined {
   return operationsByRepo.get(repoKey(repo));
+}
+
+export type MergeMethod = "squash" | "merge" | "rebase";
+
+/** The merge methods the repository allows, in the merge dialog's order. */
+export function repoMergeMethods(repo: RepoIdentity): readonly MergeMethod[] | undefined {
+  return mergeMethodsByRepo.get(repoKey(repo));
 }
 
 /** Refreshes availability for each repository; a failed read keeps the last verdict. */
@@ -44,7 +53,16 @@ export function refreshRepoOperations(runtime: AppRuntime, repos: readonly RepoI
           ? client.RepositoriesService.getRepoOnHost(providerHostRouteParams(ref), { signal })
           : client.RepositoriesService.getRepo(providerRouteParams(ref), { signal }),
       ).pipe(
-        Effect.tap((response) => Effect.sync(() => operationsByRepo.set(key, response.operations))),
+        Effect.tap((response) =>
+          Effect.sync(() => {
+            operationsByRepo.set(key, response.operations);
+            mergeMethodsByRepo.set(key, [
+              ...(response.AllowSquashMerge ? (["squash"] as const) : []),
+              ...(response.AllowMergeCommit ? (["merge"] as const) : []),
+              ...(response.AllowRebaseMerge ? (["rebase"] as const) : []),
+            ]);
+          }),
+        ),
         Effect.ensuring(Effect.sync(() => inFlight.delete(key))),
       ),
       {

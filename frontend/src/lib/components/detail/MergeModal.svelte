@@ -15,6 +15,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import type { RepositoryKey } from "../../api/repository-key.js";
+  import { defaultMergeCommit } from "./merge-policy.js";
 
   const { detail } = getStores();
 
@@ -130,25 +131,18 @@
 
   const methods = buildMethods();
 
-  function initialCommitTitle(): string {
-    return `${prTitle} (#${number})`;
-  }
-
-  function initialCoAuthor(): string {
-    const coAuthorName = prAuthorDisplayName || prAuthor;
-    return `Co-authored-by: ${coAuthorName} <${prAuthor}@users.noreply.github.com>`;
-  }
-
-  function initialCommitMessage(): string {
-    const coAuthor = initialCoAuthor();
-    return prBody ? `${prBody}\n\n${coAuthor}` : coAuthor;
-  }
-
   // Props are stable for the lifetime of this modal, so these
   // editable fields intentionally capture their initial values.
   let selectedMethod = $state<Method>(methods[0]?.value ?? "squash");
-  let commitTitle = $state(initialCommitTitle());
-  let commitMessage = $state(initialCommitMessage());
+  const initialCommit = untrack(() => defaultMergeCommit({
+    number,
+    title: prTitle,
+    body: prBody,
+    author: prAuthor,
+    authorDisplayName: prAuthorDisplayName,
+  }));
+  let commitTitle = $state(initialCommit.title);
+  let commitMessage = $state(initialCommit.message);
   let deleteWorkspaceAfterMerge = $state(true);
 
   function mergeParams(): MergeParams {

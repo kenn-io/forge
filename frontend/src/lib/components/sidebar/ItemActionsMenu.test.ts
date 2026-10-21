@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { Issue, PullRequest } from "../../api/types.js";
 import { createMockApiFetch, mockIssueFixture, mockPullFixture } from "../../../test/mockApiFetch.js";
@@ -18,13 +18,22 @@ const mixed: ListItemTarget[] = [
 
 describe("ItemActionsMenu with a mixed selection", () => {
   const originalFetch = globalThis.fetch;
-  const setKanbanState = vi.fn();
-  const setKanbanStateOnHost = vi.fn();
+  const mergePull = vi.fn();
+  const mergePullOnHost = vi.fn();
+  const getRepo = vi.fn();
+  const getRepoOnHost = vi.fn();
 
   beforeEach(() => {
     globalThis.fetch = createMockApiFetch().fetch;
-    setKanbanState.mockReset().mockResolvedValue({});
-    setKanbanStateOnHost.mockReset().mockResolvedValue({});
+    mergePull.mockReset().mockResolvedValue({ merged: true, sha: "", message: "" });
+    mergePullOnHost.mockReset().mockResolvedValue({ merged: true, sha: "", message: "" });
+    // The two repositories share only rebase merges.
+    getRepo
+      .mockReset()
+      .mockResolvedValue({ AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: true, operations: {} });
+    getRepoOnHost
+      .mockReset()
+      .mockResolvedValue({ AllowSquashMerge: false, AllowMergeCommit: true, AllowRebaseMerge: true, operations: {} });
   });
 
   afterEach(() => {
@@ -35,7 +44,10 @@ describe("ItemActionsMenu with a mixed selection", () => {
   function renderMenu(targets: readonly ListItemTarget[]) {
     return render(ItemActionsMenu, {
       props: {
-        client: makeGeneratedClient({ PullRequestsService: { setKanbanState, setKanbanStateOnHost } }),
+        client: makeGeneratedClient({
+          PullRequestsService: { mergePull, mergePullOnHost },
+          RepositoriesService: { getRepo, getRepoOnHost },
+        }),
         anchor: { x: 10, y: 10 },
         returnFocus: undefined,
         targets,
@@ -53,21 +65,41 @@ describe("ItemActionsMenu with a mixed selection", () => {
     expect(screen.getByRole("menuitem", { name: "Star 3 items" })).toBeTruthy();
   });
 
-  it("sets workflow status only on the pull requests in the selection", async () => {
+  it("merges only the pull requests in the selection, with a method both repositories allow", async () => {
     renderMenu(mixed);
 
-    expect(screen.getByRole("group", { name: "Workflow status for 2 PRs" })).toBeTruthy();
-    await fireEvent.click(screen.getByRole("menuitemradio", { name: "Waiting" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Merge 2 of 3 items..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Merge 2 PRs?" });
+    const confirm = await waitFor(() => {
+      const button = within(dialog).getByRole("button", { name: "Merge 2 PRs" });
+      expect(button.hasAttribute("disabled")).toBe(false);
+      return button;
+    });
+    // With one shared method there is nothing to choose.
+    expect(within(dialog).queryByRole("radiogroup", { name: "Merge method" })).toBeNull();
+    await fireEvent.click(confirm);
 
-    await waitFor(() => expect(setKanbanState.mock.calls.length + setKanbanStateOnHost.mock.calls.length).toBe(2));
-    const numbers = [...setKanbanState.mock.calls, ...setKanbanStateOnHost.mock.calls].map((call) => call[0].number);
-    expect(numbers.sort()).toEqual([42, 84]);
-    expect(setKanbanState.mock.calls[0]?.[1]).toEqual({ status: "waiting" });
+    await waitFor(() => expect(mergePull.mock.calls.length + mergePullOnHost.mock.calls.length).toBe(2));
+    const calls = [...mergePull.mock.calls, ...mergePullOnHost.mock.calls];
+    expect(calls.map((call) => call[0].number).sort()).toEqual([42, 84]);
+    expect(calls.map((call) => call[1].method)).toEqual(["rebase", "rebase"]);
+    expect(mergePull.mock.calls[0]?.[1]).toMatchObject({
+      commit_title: "Add browser regression coverage (#42)",
+      expected_head_sha: pullOnGitHub.platform_head_sha,
+    });
   });
 
-  it("offers no workflow status for issues alone", () => {
+  it("explains why a pull request with failed CI cannot be merged from the list", () => {
+    renderMenu([{ kind: "pull", item: { ...pullOnGitHub, CIStatus: "failure" } }]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("CI failed");
+  });
+
+  it("offers no merge for issues alone", () => {
     renderMenu([mixed[1]!]);
 
-    expect(screen.queryByRole("menuitemradio", { name: "Waiting" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /^Merge/ })).toBeNull();
   });
 });

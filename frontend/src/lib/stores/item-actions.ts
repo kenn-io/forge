@@ -1,12 +1,16 @@
 import { Effect, Result } from "effect";
-import type { Issue, KanbanStatus, PullRequest, RepoOperations } from "../api/types.js";
+import type { Issue, MergeParams, PullRequest, RepoOperations } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { ApiProblemError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
+import { ProblemCodes } from "../api/problems.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
+import { ciStatusHasFailed, defaultMergeCommit, shouldDeferMergeForCI } from "../components/detail/merge-policy.js";
 import { firstUnavailableGate, type OperationGate } from "../components/detail/operation-gates.js";
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { providerMutationKey } from "./provider-key.js";
+import type { MergeMethod } from "./repo-operations.svelte.js";
 
 /** A PR or issue row from a sidebar list. */
 export type ListItemTarget = { kind: "pull"; item: PullRequest } | { kind: "issue"; item: Issue };
@@ -60,7 +64,7 @@ export type ListItemAction =
   | { type: "draft" }
   | { type: "ready" }
   | { type: "star"; starred: boolean }
-  | { type: "kanban"; status: KanbanStatus }
+  | { type: "merge"; method: MergeMethod; deleteWorkspaces: boolean }
   | { type: "labels"; add: readonly string[]; remove: readonly string[] }
   | { type: "assignees"; add: readonly string[]; remove: readonly string[] };
 
@@ -73,6 +77,10 @@ export type Eligibility = { eligible: true } | { eligible: false; hidden: boolea
 
 const eligible: Eligibility = { eligible: true };
 const notOffered: Eligibility = { eligible: false, hidden: true, reason: "" };
+
+function blocked(reason: string): Eligibility {
+  return { eligible: false, hidden: false, reason };
+}
 
 function gated(gate: OperationGate): Eligibility {
   return gate.unavailable ? { eligible: false, hidden: false, reason: gate.reason } : eligible;
@@ -89,8 +97,16 @@ export function actionEligibility(
   switch (action) {
     case "star":
       return eligible;
-    case "kanban":
-      return isPull ? eligible : notOffered;
+    case "merge": {
+      if (target.kind !== "pull" || !open || target.item.IsDraft || !caps.merge_mutation) return notOffered;
+      const pr = target.item;
+      if (pr.merge_queue) return blocked("Already in the merge queue");
+      if (pr.MergeableState === "dirty") return blocked("Has conflicts");
+      // Merging over failed CI is a per-PR decision made from its detail.
+      if (ciStatusHasFailed(pr.CIStatus)) return blocked("CI failed");
+      if (caps.mutation_head_binding && !pr.platform_head_sha) return blocked("Head not synced yet");
+      return gated(firstUnavailableGate(operations?.merge_pr));
+    }
     case "close":
       if (!open || !caps.state_mutation) return notOffered;
       return gated(firstUnavailableGate(isPull ? operations?.close_pr : operations?.close_issue));
@@ -134,16 +150,28 @@ const mutationFamily: Record<ListItemAction["type"], string> = {
   reopen: "actions",
   draft: "actions",
   ready: "actions",
+  merge: "actions",
   star: "star",
-  kanban: "kanban",
   labels: "labels",
   assignees: "assignees",
 };
 
-/** Runs one action on one item through the shared provider mutation queue. */
+/**
+ * What a merge did: merged now, waiting for pending CI before merging, or
+ * added to the base branch's merge queue.
+ */
+type MergeOutcome = "merged" | "deferred" | "enqueued";
+
+/**
+ * Runs one action on one item through the shared provider mutation queue,
+ * returning the merge outcome for merges.
+ */
 function submitAction(target: ListItemTarget, action: ListItemAction) {
-  const commit = actionRequest(target, action);
-  if (commit === null) return Effect.void;
+  let outcome: MergeOutcome | undefined;
+  const commit = actionRequest(target, action, (result) => {
+    outcome = result;
+  });
+  if (commit === null) return Effect.succeed(outcome);
   const { item } = target;
   return Effect.gen(function* () {
     const mutations = yield* ProviderMutations;
@@ -166,11 +194,30 @@ function submitAction(target: ListItemTarget, action: ListItemAction) {
       // The lists and any open detail reload once the batch settles.
       refreshOnStale: Effect.void,
     });
+    return outcome;
   });
 }
 
+function mergeParams(pr: PullRequest, action: Extract<ListItemAction, { type: "merge" }>): MergeParams {
+  const commit = defaultMergeCommit({
+    number: pr.Number,
+    title: pr.Title,
+    body: pr.Body,
+    author: pr.Author,
+    authorDisplayName: pr.AuthorDisplayName,
+  });
+  return {
+    commit_title: commit.title,
+    commit_message: commit.message,
+    method: action.method,
+    // Pin the head the list showed so a later push is not merged unseen.
+    ...(pr.platform_head_sha && { expected_head_sha: pr.platform_head_sha }),
+    ...(action.deleteWorkspaces && pr.workspace?.id && { delete_workspace_id: pr.workspace.id }),
+  };
+}
+
 /** The request for one action on one item, or null when nothing would change. */
-function actionRequest(target: ListItemTarget, action: ListItemAction) {
+function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: (outcome: MergeOutcome) => void) {
   const route = itemParams(target);
   const operation = `${action.type} ${target.kind}`;
   const isPull = target.kind === "pull";
@@ -196,12 +243,45 @@ function actionRequest(target: ListItemTarget, action: ListItemAction) {
           ? client.PullRequestsService.markPullReadyForReviewOnHost(route.params, { signal })
           : client.PullRequestsService.markPullReadyForReview(route.params, { signal }),
       ).pipe(Effect.asVoid);
-    case "kanban":
+    case "merge": {
+      if (target.kind !== "pull") return null;
+      const params = mergeParams(target.item, action);
+      // Pending CI queues a merge that runs once the checks pass, as the
+      // detail view's "Merge after CI is complete" does.
+      if (shouldDeferMergeForCI(target.item.CIStatus, target.item.CIChecksJSON)) {
+        return executeGeneratedApiRequest(operation, (client, signal) =>
+          route.onHost
+            ? client.PullRequestsService.deferMergePullOnHost(route.params, params, { signal })
+            : client.PullRequestsService.deferMergePull(route.params, params, { signal }),
+        ).pipe(
+          Effect.tap(() => Effect.sync(() => onMerge("deferred"))),
+          Effect.asVoid,
+        );
+      }
       return executeGeneratedApiRequest(operation, (client, signal) =>
         route.onHost
-          ? client.PullRequestsService.setKanbanStateOnHost(route.params, { status: action.status }, { signal })
-          : client.PullRequestsService.setKanbanState(route.params, { status: action.status }, { signal }),
-      ).pipe(Effect.asVoid);
+          ? client.PullRequestsService.mergePullOnHost(route.params, params, { signal })
+          : client.PullRequestsService.mergePull(route.params, params, { signal }),
+      ).pipe(
+        Effect.flatMap((result) => {
+          if (result.merged) return Effect.sync(() => onMerge("merged"));
+          if (result.queued === true) return Effect.sync(() => onMerge("enqueued"));
+          return Effect.fail(
+            new ApiProblemError({
+              operation,
+              problem: {
+                code: ProblemCodes.conflict,
+                detail: result.message || "The pull request could not be merged",
+                details: { reason: "conflict" },
+                status: 409,
+                title: "Merge did not complete",
+                type: "about:blank",
+              },
+            }),
+          );
+        }),
+      );
+    }
     case "star":
       if (target.item.Starred === action.starred) return null;
       return executeGeneratedApiRequest(operation, (client, signal) =>
@@ -248,8 +328,8 @@ const doneVerbs: Record<ListItemAction["type"], string> = {
   reopen: "Reopened",
   draft: "Converted to draft:",
   ready: "Marked ready for review:",
+  merge: "Merged",
   star: "Updated stars on",
-  kanban: "Updated status on",
   labels: "Updated labels on",
   assignees: "Updated assignees on",
 };
@@ -259,11 +339,26 @@ const failVerbs: Record<ListItemAction["type"], string> = {
   reopen: "reopen",
   draft: "convert",
   ready: "mark ready",
+  merge: "merge",
   star: "star",
-  kanban: "update the status of",
   labels: "update labels on",
   assignees: "update assignees on",
 };
+
+function mergeSummary(outcomes: readonly MergeOutcome[]): string {
+  const count = (outcome: MergeOutcome) => outcomes.filter((candidate) => candidate === outcome).length;
+  const prs = (n: number) => `${n} ${listItemNoun("pull", n)}`;
+  const merged = count("merged");
+  const deferred = count("deferred");
+  const enqueued = count("enqueued");
+  return [
+    merged > 0 ? `Merged ${prs(merged)}.` : "",
+    deferred > 0 ? `${prs(deferred)} will merge once CI passes.` : "",
+    enqueued > 0 ? `Added ${prs(enqueued)} to the merge queue.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
 
 /**
  * Applies an action to every target, a few at a time, then reloads the
@@ -297,13 +392,21 @@ export function runListItemAction(
               : [],
           );
           const done = outcomes.length - failures.length;
+          const summary =
+            action.type === "merge"
+              ? mergeSummary(
+                  outcomes.flatMap(({ result }) =>
+                    Result.isSuccess(result) && result.success ? [result.success] : [],
+                  ),
+                )
+              : `${doneVerbs[action.type]} ${done} ${listTargetsNoun(targets, done)}.`;
           if (failures.length === 0) {
-            if (action.type === "star" || action.type === "kanban") return;
-            showFlash(`${doneVerbs[action.type]} ${done} ${listTargetsNoun(targets, done)}.`, { tone: "success" });
+            if (action.type === "star") return;
+            showFlash(summary, { tone: "success" });
             return;
           }
           showFlash(
-            `Could not ${failVerbs[action.type]} ${failures.length} of ${outcomes.length} ${listTargetsNoun(targets, outcomes.length)}. ${failures.join(" ")}`,
+            `${done > 0 ? `${summary} ` : ""}Could not ${failVerbs[action.type]} ${failures.length} of ${outcomes.length} ${listTargetsNoun(targets, outcomes.length)}. ${failures.join(" ")}`,
             { tone: done > 0 ? "warning" : "danger" },
           );
         }),

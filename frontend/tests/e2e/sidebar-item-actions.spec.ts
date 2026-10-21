@@ -16,6 +16,7 @@ const repo = {
     read_labels: true,
     label_mutation: true,
     assignee_mutation: true,
+    merge_mutation: true,
   },
 };
 
@@ -83,7 +84,13 @@ async function mockQuickActions(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ capabilities: repo.capabilities, operations: options.operations ?? {} }),
+      body: JSON.stringify({
+        capabilities: repo.capabilities,
+        operations: options.operations ?? {},
+        AllowSquashMerge: true,
+        AllowMergeCommit: false,
+        AllowRebaseMerge: true,
+      }),
     });
   });
   await page.route("**/api/v1/repo/github/acme/widgets/labels", async (route) => {
@@ -101,14 +108,13 @@ async function mockQuickActions(
     });
   });
   await page.route(
-    /\/api\/v1\/(pulls|issues)\/github\/acme\/widgets\/\d+\/(github-state|labels|assignees|state)$/,
+    /\/api\/v1\/(pulls|issues)\/github\/acme\/widgets\/\d+\/(github-state|labels|assignees|merge|merge\/deferred)$/,
     async (route) => {
       const request = route.request();
-      recorded.mutations.push({
-        request: `${request.method()} ${new URL(request.url()).pathname}`,
-        body: request.postDataJSON() as unknown,
-      });
-      await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+      const path = new URL(request.url()).pathname;
+      recorded.mutations.push({ request: `${request.method()} ${path}`, body: request.postDataJSON() as unknown });
+      const body = path.endsWith("/merge") ? { merged: true, sha: "abc", message: "" } : {};
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
     },
   );
   await page.route("**/api/v1/settings", async (route) => {
@@ -153,6 +159,7 @@ async function mockQuickActions(
         }),
         pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
           labels: [{ name: "infra", color: "5319e7", is_default: false }],
+          CIStatus: "pending",
         }),
         pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
       ]),
@@ -511,16 +518,28 @@ test("adds an assignee to every selected pull request", async ({ page }) => {
   }
 });
 
-test("sets the workflow status of a single pull request from its menu", async ({ page }) => {
+test("merges a selection of pull requests, waiting for pending CI where needed", async ({ page }) => {
   const recorded = await mockQuickActions(page);
   await page.goto("/pulls");
+  await selectFirstThreePulls(page);
 
-  await page.locator(".pr-list-row").filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
-  await page.getByRole("menuitemradio", { name: "Reviewing" }).click();
+  await page.locator(".pr-list-row").filter({ hasText: "Retry flaky upload" }).click({ button: "right" });
+  // The draft cannot be merged.
+  await page.getByRole("menuitem", { name: "Merge 2 of 3 PRs..." }).click();
 
-  await expect
-    .poll(() => mutation(recorded, "PUT /api/v1/pulls/github/acme/widgets/24/state"))
-    .toEqual([{ status: "reviewing" }]);
+  const dialog = page.getByRole("dialog", { name: "Merge 2 PRs?" });
+  await expect(dialog).toContainText("1 has pending CI and will merge once the checks pass.");
+  await dialog.getByText("Rebase and merge").click();
+  await dialog.getByRole("button", { name: "Merge 2 PRs" }).click();
+
+  await expect(page.locator(".kit-flash-stack")).toContainText("Merged 1 PR. 1 PR will merge once CI passes.");
+  expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/21/merge")).toEqual([
+    expect.objectContaining({ method: "rebase", commit_title: "Retry flaky upload (#21)" }),
+  ]);
+  expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/23/merge/deferred")).toEqual([
+    expect.objectContaining({ method: "rebase" }),
+  ]);
+  expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/22/merge")).toEqual([]);
 });
 
 test("disables actions the repository cannot perform and shows why", async ({ page }) => {

@@ -1,3 +1,6 @@
+import { showFlash as kitShowFlash } from "@kenn-io/kit-ui";
+import WorkspaceErrorFlashes from "../shared/WorkspaceErrorFlashes.svelte";
+import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -274,9 +277,10 @@ vi.mock("../../api/workspace-runtime.js", () => ({
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
 }));
 
-vi.mock("../../stores/flash.svelte.js", () => ({
-  showFlash: mocks.showFlash,
-}));
+vi.mock("../../stores/flash.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/flash.svelte.js")>();
+  return { ...actual, showFlash: mocks.showFlash.mockImplementation(actual.showFlash) };
+});
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
   default: (await import("../../views/PRListViewTestPullDetail.svelte")).default,
@@ -739,6 +743,7 @@ describe("WorkspaceTerminalView", () => {
     delete window.__BASE_PATH__;
     localStorage.clear();
     await startTestTelemetry(mocks.runtime, coreActions).ready;
+    render(WorkspaceErrorFlashes);
     resetSessionHostForTest();
     resetPaneLayoutStoresForTest();
     resetWorkspaceHostForTest();
@@ -757,7 +762,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.renameWorkspaceSession.mockReset();
     mocks.selectWorkspace.mockReset();
     mocks.selectWorkspace.mockReturnValue(() => undefined);
-    mocks.showFlash.mockReset();
+    mocks.showFlash.mockReset().mockImplementation(kitShowFlash);
     mocks.renameWorkspaceSession.mockImplementation(
       async (_workspaceId: string, sessionKey: string, label: string) => ({
         ...(sessionKey === duplicateAgentSession.key ? duplicateAgentSession : runningSession),
@@ -826,6 +831,7 @@ describe("WorkspaceTerminalView", () => {
 
   afterEach(async () => {
     cleanup();
+    dismissFlash();
     await Effect.runPromise(mocks.runtime.disposeEffect);
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -2276,6 +2282,25 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
+  it.each([false, true])("counts embedded runtime failures only for queued launches: %s", async (launch) => {
+    claimForPrs();
+    noteWorkspacePaneRendered("prs");
+    if (launch) queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockRejectedValue(new Error("runtime unavailable"));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
+    await screen.findByText("runtime unavailable");
+    const errors = () =>
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown");
+    if (launch)
+      await waitFor(() =>
+        expect(errors()).toEqual([
+          [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+        ]),
+      );
+    else expect(errors()).toEqual([]);
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
@@ -2308,6 +2333,11 @@ describe("WorkspaceTerminalView", () => {
     });
 
     expect(await screen.findByText("runtime unavailable")).toBeTruthy();
+    await waitFor(() =>
+      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
+        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+      ]),
+    );
     await waitFor(() => expect(loadWorkspaceDiff).toHaveBeenCalledWith("ws-1", "head", false, expect.anything()));
     expect(screen.queryByText("Loading workspace details...")).toBeNull();
   });

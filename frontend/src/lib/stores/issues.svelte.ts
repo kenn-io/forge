@@ -443,6 +443,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /issues", (client, signal) =>
       client.IssuesService.listIssues(query, { signal }),
     ).pipe(
@@ -462,7 +463,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           issues = reuseUnchanged(issues, result, (item) => item.ID);
-          if (options?.submitted && result.length === 0) emptySearch.empty(query.q);
+          if (result.length === 0) reportEmpty?.();
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),

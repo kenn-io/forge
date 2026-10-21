@@ -1,7 +1,7 @@
 <script lang="ts">
   import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import ErrorShown from "../shared/ErrorShown.svelte";
-  import { reportWorkspaceOpened, workspaceErrorScope } from "../../app/telemetry.js";
+  import { reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -2729,7 +2729,7 @@
                       : "Delete failed";
         if (current) {
           const message = workspaceMutationFailureMessage(state.error, fallback);
-          if (state.operation === "Launch") showWorkspaceLaunchError(appRuntime, message);
+          if (state.operation === "Launch") showWorkspaceLaunchError(message);
           else showFlash(message, { tone: "danger" });
         }
         clearRuntimeMutationPending(state);
@@ -3042,7 +3042,7 @@
         sessionKey: acceptedSessionKey,
         acceptedAt,
         onExpired: Effect.sync(() => {
-          showWorkspaceLaunchError(appRuntime, `${label} launched, but its session did not become available`);
+          showWorkspaceLaunchError(`${label} launched, but its session did not become available`);
         }),
       });
     });
@@ -4516,7 +4516,7 @@
     const target = admissionRuntime.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
-      showWorkspaceLaunchError(appRuntime, `Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`);
+      showWorkspaceLaunchError(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`);
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
@@ -4633,7 +4633,7 @@
           </div>
         {/if}
       {:else if loadError && !workspaceLive}
-        <ErrorShown kind="workspace_opened" scope={workspaceErrorScope(workspaceHostKey, workspaceId)} shown={!embeddedWorkspace && hostVisible && loadError.report} />
+        <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={!embeddedWorkspace && hostVisible && loadError.report} />
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4671,7 +4671,7 @@
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
-        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={workspaceErrorScope(workspaceHostKey, workspaceId)} shown={!embeddedWorkspace && hostVisible} />{/if}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={!embeddedWorkspace && hostVisible} />{/if}
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4933,6 +4933,7 @@
           <div class="terminal-area">
             <div class="workspace-surface">
               {#if runtimeError}
+                <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={interactionVisible && (!embeddedWorkspace || pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null)} />
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
               <div

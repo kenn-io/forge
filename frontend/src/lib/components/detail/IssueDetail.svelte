@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { reportWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
+  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -951,7 +952,6 @@
           if (options.fromConflictDialog && options.reuseExistingBranch && branchConflict) {
             branchConflict.error =
               "This branch is already checked out in another worktree. Create a new branch instead.";
-            reportWorkspaceLaunchError(runtime);
             return;
           }
           branchConflict = conflict;
@@ -960,8 +960,8 @@
         const message = problem?.detail ?? problem?.title ??
           (failure._tag === "ApiProblemError" ? "failed to create workspace" : "Could not reach Kenn Forge");
         if (options.fromConflictDialog && branchConflict) branchConflict.error = message;
+        else if (launchTargetKey || quickAction) showWorkspaceLaunchError(message);
         else showFlash(message, { tone: "danger" });
-        reportWorkspaceLaunchError(runtime);
       },
     });
   }
@@ -1637,6 +1637,9 @@
 
     {#if branchConflict}
       {@const conflict = branchConflict}
+      {#if conflict.error && !workspaceCreating && (pendingWorkspaceLaunchTarget || pendingWorkspaceQuickAction)}
+        <ErrorShown kind="workspace_opened" scope={`issue-create:${owner}/${name}#${number}`} />
+      {/if}
       <Modal
         title={conflict.existingDirectory
           ? "Existing Workspace Directory"

@@ -1,3 +1,4 @@
+import ErrorHarness from "../shared/ErrorShownTestHarness.svelte";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -3668,6 +3669,36 @@ describe("PullDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
 
     await vi.waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+  });
+
+  it.each(["create", "agent", "quick action"])("reports rejected creation only for launches: %s", async (intent) => {
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn().mockResolvedValue({ error: { status: 403, title: "Create denied" } }),
+    };
+    const { settings } = renderPullDetail(pullDetail(), undefined, apiClient, { hideWorkspaceAction: false });
+    settings.setQuickActions([{ label: "Review", agent: "codex", prompt: "Review this change" }]);
+    const telemetry = vi.fn();
+    await startTestTelemetry(detailRuntime!, (event) => telemetry(event)).ready;
+    render(ErrorHarness, { runtime: detailRuntime!, flashesOnly: true });
+    if (intent === "agent") {
+      await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace options" })[0]!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    } else if (intent === "quick action") {
+      await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: /Review/ }));
+    } else await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace" })[0]!);
+    await waitFor(() =>
+      expect(getFlashes()).toEqual(expect.arrayContaining([expect.objectContaining({ message: "Create denied" })])),
+    );
+    if (intent === "create") expect(telemetry).not.toHaveBeenCalled();
+    else
+      await waitFor(() =>
+        expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+          event: "error_shown",
+          properties: { surface: "web", kind: "workspace_opened" },
+        }),
+      );
   });
 
   it("keeps the primary workspace create action launch-free", async () => {

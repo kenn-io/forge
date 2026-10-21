@@ -1,12 +1,12 @@
-import type { AppRuntime } from "./runtime.js";
-import { reportOutcome } from "./telemetry.js";
-import { showFlash } from "../stores/flash.svelte.js";
+import { getFlash, showFlash } from "../stores/flash.svelte.js";
 
-export function showWorkspaceLaunchError(runtime: AppRuntime, message: string): void {
-  showFlash(message, { tone: "danger" });
-  reportWorkspaceLaunchError(runtime);
+const launchErrors = new WeakSet<object>();
+
+export function showWorkspaceLaunchError(message: string, tone: "danger" | "warning" | "success" = "danger"): void {
+  showFlash(message, { tone });
+  launchErrors.add(getFlash()!);
 }
 
-export function reportWorkspaceLaunchError(runtime: AppRuntime): void {
-  reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+export function isWorkspaceLaunchError(flash: object): boolean {
+  return launchErrors.has(flash);
 }

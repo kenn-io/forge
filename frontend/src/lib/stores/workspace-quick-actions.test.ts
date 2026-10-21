@@ -1,3 +1,6 @@
+import { dismissFlash } from "./flash.svelte.js";
+import { cleanup, render } from "@testing-library/svelte";
+import ErrorHarness from "../components/shared/ErrorShownTestHarness.svelte";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { VisitEvent } from "@kenn-io/kit-ui/utils/browser-telemetry";
 import { startTestTelemetry } from "../testing/telemetry.js";
@@ -43,9 +46,12 @@ describe("quick-action launch serialization", () => {
       }),
     );
     await startTestTelemetry(runtime, telemetry).ready;
+    render(ErrorHarness, { runtime, flashesOnly: true });
   });
 
   afterEach(async () => {
+    cleanup();
+    dismissFlash();
     await Effect.runPromise(runtime.disposeEffect);
     quickActionLaunches.clear();
     quickActionWorkspaces.clear();

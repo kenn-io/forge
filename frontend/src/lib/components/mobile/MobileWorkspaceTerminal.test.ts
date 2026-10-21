@@ -1,3 +1,5 @@
+import WorkspaceErrorFlashes from "../shared/WorkspaceErrorFlashes.svelte";
+import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -116,6 +118,7 @@ describe("MobileWorkspaceTerminal", () => {
     );
     localStorage.clear();
     await startTestTelemetry(runtimeState.appRuntime, coreActions).ready;
+    render(WorkspaceErrorFlashes);
     quickActionWorkspaces.clear();
     quickActionLaunches.clear();
     resetWorkspaceHostForTest();
@@ -126,6 +129,7 @@ describe("MobileWorkspaceTerminal", () => {
 
   afterEach(async () => {
     cleanup();
+    dismissFlash();
     if (runtimeState.appRuntime) await Effect.runPromise(runtimeState.appRuntime.disposeEffect);
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
@@ -180,6 +184,28 @@ describe("MobileWorkspaceTerminal", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
     await screen.findByText("Read denied");
     await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
+  it("reports runtime reads that block a queued launch, including reconnect failures", async () => {
+    mocks.runtimeClient.getWorkspaceRuntime.mockRejectedValue(
+      new GeneratedProblemResponse({ title: "Runtime denied", status: 403 }, new Response(null, { status: 403 })),
+    );
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Runtime denied");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Retry runtime sessions" }));
+    await screen.findByText("Runtime denied");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
   });
 
   it.each(["creating", "error"])("counts another setup failure after retry returns %s", async (status) => {

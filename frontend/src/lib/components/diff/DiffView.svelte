@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { prErrorScope } from "../../app/telemetry.js";
-  import ErrorShown from "../shared/ErrorShown.svelte";
   import { Spinner } from "@kenn-io/kit-ui";
   import { Virtualizer } from "@pierre/diffs";
   import { Effect } from "effect";
   import { onMount, tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { prErrorScope } from "../../app/telemetry.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { getStores } from "../../context.js";
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { ReviewThread } from "./review-thread-context.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
 
   const stores = getStores();
   const diffStore = stores.diff;

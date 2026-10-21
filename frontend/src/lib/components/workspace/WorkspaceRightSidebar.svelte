@@ -76,8 +76,7 @@
   const appRuntime = getAppRuntime();
   const { detail } = getStores();
   $effect(() => {
-    if (!visible || activeTab !== "pr" || !documentVisible()) return;
-    if (displayedPR && pullDetailMatchesRef(detail.getDetail(), displayedPR)) {
+    if (visible && activeTab === "pr" && displayedPR && pullDetailMatchesRef(detail.getDetail(), displayedPR) && documentVisible()) {
       reportPRViewed(appRuntime, displayedPR.provider);
     }
   });
@@ -110,7 +109,6 @@
   );
   const workspaceRepo = $derived({ provider, platformHost, repositoryKey, owner: repoOwner, name: repoName, repoPath });
   const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
-
   const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"

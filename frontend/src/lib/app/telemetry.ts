@@ -74,9 +74,6 @@ export type Outcome = { event: "search_empty" } | { event: "error_shown"; kind: 
 export const prErrorScope = (provider: string, host: string | undefined, repoPath: string, number: number) =>
   `${canonicalProvider(provider)}:${resolvedPlatformHost(provider, host)}:${repoPath}#${number}`;
 
-export const workspaceErrorScope = (hostKey: string | undefined, workspaceId: string) =>
-  JSON.stringify([hostKey, workspaceId]);
-
 const today = () => new Date().toISOString().slice(0, 10);
 const coreKey = (action: VisitEvent) =>
   action.event === "pr_viewed"
@@ -186,7 +183,8 @@ export function startRuntimeTelemetry(
   options: Partial<Pick<BrowserTelemetryOptions, "storageKey" | "post">> = {},
 ) {
   const reportedDay = new Map<string, string>();
-  const pending = new Map<string | VisitEvent, { action: VisitEvent; day: string }>();
+  const pending = new Map<string, { action: VisitEvent; day: string }>();
+  const pendingOutcomes = new Map<VisitEvent, string>();
   const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
   const stored = actionClaims(storageKey);
   const post = options.post ?? postReceipt;
@@ -198,7 +196,8 @@ export function startRuntimeTelemetry(
     post: async (route, event, visitOptions) => {
       const key = coreKey(event);
       const day = today();
-      pending.delete(key ?? event);
+      if (key) pending.delete(key);
+      else pendingOutcomes.delete(event);
       if (key) {
         reportedDay.set(key, day);
       }
@@ -215,6 +214,7 @@ export function startRuntimeTelemetry(
           if (status === "disabled") {
             stored.forget();
             pending.clear();
+            pendingOutcomes.clear();
           } else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
           setTimeout(flush, 0);
         });
@@ -236,6 +236,10 @@ export function startRuntimeTelemetry(
       if (day === today()) send(action);
       else pending.delete(key);
     }
+    for (const [outcome, day] of pendingOutcomes) {
+      if (day === today()) send(outcome);
+      else pendingOutcomes.delete(outcome);
+    }
   };
   const unsubscribe = reporter.onQuietChange((value) => {
     if (!value) flush();
@@ -247,9 +251,7 @@ export function startRuntimeTelemetry(
         event: outcome.event,
         properties: { surface: "web", ...(outcome.event === "error_shown" ? { kind: outcome.kind } : {}) },
       };
-      pending.set(visit, { action: visit, day: today() });
-      const outcomes = [...pending.keys()].filter((key) => typeof key !== "string");
-      if (outcomes.length > 32) pending.delete(outcomes[0]!);
+      pendingOutcomes.set(visit, today());
       send(visit);
     },
     reportAction: (action) => {
@@ -263,6 +265,7 @@ export function startRuntimeTelemetry(
     stop: () => {
       reporters.delete(runtime);
       pending.clear();
+      pendingOutcomes.clear();
       unsubscribe();
       reporter.stop();
     },
@@ -291,15 +294,18 @@ export function reportOutcome(runtime: AppRuntime, outcome: Outcome): void {
 }
 
 export function searchEmptyReporter(runtime: AppRuntime) {
-  let lastQuery: string | undefined;
+  let attempt: { lastQuery?: string } = {};
   return {
     textChanged: () => {
-      lastQuery = undefined;
+      attempt = {};
     },
-    empty: (query: string | undefined) => {
-      if (query === undefined || query === lastQuery) return;
-      lastQuery = query;
-      reportOutcome(runtime, { event: "search_empty" });
+    submission: (query: string | undefined) => {
+      const submitted = attempt;
+      return () => {
+        if (query === undefined || query === submitted.lastQuery) return;
+        submitted.lastQuery = query;
+        reportOutcome(runtime, { event: "search_empty" });
+      };
     },
   };
 }

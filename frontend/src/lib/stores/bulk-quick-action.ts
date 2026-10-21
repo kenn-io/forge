@@ -1,7 +1,7 @@
-import { reportWorkspaceLaunchError, showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
 import { Effect } from "effect";
 import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
@@ -189,15 +189,15 @@ export function runQuickActionOnItems(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
           const { message, tone } = summary(action, outcomes);
-          showFlash(message, { tone });
-          if (outcomes.some(({ outcome }) => outcome.type === "failed")) reportWorkspaceLaunchError(runtime);
+          if (outcomes.some(({ outcome }) => outcome.type === "failed")) showWorkspaceLaunchError(message, tone);
+          else showFlash(message, { tone });
         }),
       ),
     ),
     {
       operation: "run quick action on items",
       safeContext: { count: targets.length, agent: action.agent },
-      onFailure: () => showWorkspaceLaunchError(runtime, `"${action.label}" could not start.`),
+      onFailure: () => showWorkspaceLaunchError(`"${action.label}" could not start.`),
     },
   );
 }

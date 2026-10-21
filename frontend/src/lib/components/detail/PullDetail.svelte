@@ -3,9 +3,6 @@
 </script>
 
 <script lang="ts">
-  import ErrorShown from "../shared/ErrorShown.svelte";
-  import { prErrorScope } from "../../app/telemetry.js";
-  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
@@ -17,6 +14,8 @@
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { prErrorScope } from "../../app/telemetry.js";
+  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
@@ -38,6 +37,7 @@
     getNavigate,
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
+  import ErrorShown from "../shared/ErrorShown.svelte";
   import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
   import type { WorkflowDispatchRequest } from "../actions/WorkflowDispatchForm.svelte";
   import { workflowDispatchPresentation } from "../actions/workflow-dispatch-presentation.js";
@@ -1911,11 +1911,12 @@
       },
       onFailure: (failure) => {
         if (responseIsStale()) return;
-        showWorkspaceLaunchError(runtime,
+        const message =
           failure._tag === "ApiProblemError"
             ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
-            : "Could not reach Kenn Forge",
-        );
+            : "Could not reach Kenn Forge";
+        if (launchTargetKey || quickAction) showWorkspaceLaunchError(message);
+        else showFlash(message, { tone: "danger" });
       },
     });
   }

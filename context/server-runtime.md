@@ -50,7 +50,7 @@
 - `error_shown` counts a failed core action when its error comes on screen, once
   until that error unmounts; retry starts another attempt
   (`frontend/src/lib/components/shared/ErrorShown.svelte`).
-- Outcomes share the core-action pending queue through permission checks and backoff;
+- Outcomes wait through permission checks and backoff;
   posted failures aren't replayed (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens

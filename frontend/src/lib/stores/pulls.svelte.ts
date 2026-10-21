@@ -587,6 +587,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /pulls", (client, signal) =>
       client.PullRequestsService.listPulls(query, { signal }),
     ).pipe(
@@ -606,7 +607,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           pulls = reuseUnchanged(pulls, result, (item) => item.ID);
-          if (options?.submitted && result.length === 0) emptySearch.empty(query.q);
+          if (result.length === 0) reportEmpty?.();
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),

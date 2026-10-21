@@ -226,14 +226,15 @@ describe("browser telemetry", () => {
     }
   });
 
-  it("keeps only the newest 32 outcomes while permission is pending", async () => {
+  it("retains distinct outcomes while permission is pending", async () => {
     const receipt = Promise.withResolvers<Response>();
     const { sent, runtime } = setup(() => receipt.promise);
     reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
     for (let i = 0; i < 32; i++) reportOutcome(runtime, { event: "search_empty" });
     receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-    await vi.waitFor(() => expect(sent).toHaveLength(33));
-    expect(sent.slice(1).every((event) => event.event === "search_empty")).toBe(true);
+    await vi.waitFor(() => expect(sent).toHaveLength(34));
+    expect(sent[1]?.event).toBe("error_shown");
+    expect(sent.slice(2).every((event) => event.event === "search_empty")).toBe(true);
   });
 
   it("labels shown errors with the failed core action", async () => {

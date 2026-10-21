@@ -43,3 +43,55 @@ it.each([false, true])("counts Enter through the real sidebar search, issues=%s"
     vi.unstubAllGlobals();
   }
 });
+
+it.each([false, true])("counts separate submissions sharing a pending read, issues=%s", async (issues) => {
+  const response = Promise.withResolvers<Response>();
+  const api = createMockApiFetch();
+  let reads = 0;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+    if (url.pathname === (issues ? "/api/v1/issues" : "/api/v1/pulls") && url.searchParams.get("q") === "missing") {
+      reads++;
+      return response.promise.then((value) => value.clone());
+    }
+    return api.fetch(input, init);
+  });
+  const runtime = makeAppRuntime();
+  const { stores } = createAppStores({ runtime });
+  const sent = vi.fn();
+  await startTestTelemetry(runtime, sent).ready;
+  render(Harness, {
+    props: { runtime, issues },
+    context: new Map<symbol, unknown>([
+      [STORES_KEY, stores],
+      [NAVIGATE_KEY, vi.fn()],
+      [SIDEBAR_KEY, { toggleSidebar: vi.fn() }],
+      [HOST_STATE_KEY, {}],
+    ]),
+  });
+  try {
+    const input = screen.getByRole("searchbox", { name: issues ? "Search issues" : "Search PRs" });
+    await fireEvent.input(input, { target: { value: "missing" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(reads).toBe(1));
+    await fireEvent.input(input, { target: { value: "different" } });
+    await fireEvent.input(input, { target: { value: "missing" } });
+    await fireEvent.keyDown(input, { key: "Enter" });
+    expect(reads).toBe(1);
+    response.resolve(Response.json([]));
+    await waitFor(() =>
+      expect(sent.mock.calls.map(([event]) => event)).toEqual([
+        { event: "search_empty", properties: { surface: "web" } },
+        { event: "search_empty", properties: { surface: "web" } },
+      ]),
+    );
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(reads).toBe(2));
+    await waitFor(() => expect(issues ? stores.issues.isIssuesLoading() : stores.pulls.isLoading()).toBe(false));
+    expect(sent).toHaveBeenCalledTimes(2);
+  } finally {
+    cleanup();
+    await Effect.runPromise(runtime.disposeEffect);
+    vi.unstubAllGlobals();
+  }
+});

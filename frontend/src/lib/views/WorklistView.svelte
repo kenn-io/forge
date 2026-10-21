@@ -588,7 +588,7 @@
     </div>
   {:else if routedListMissing && worklists.summariesLoaded() && summaries.length === 0}
     <div class="worklist-empty">
-      <EmptyState title="No worklists" description="Agents write them with the kenn_forge_put_worklist MCP tool.">
+      <EmptyState title="No worklists" description="Ask an agent connected to Forge to make one, for example in the Kenn chat sidebar.">
         {#snippet icon()}<ListChecksIcon size={24} aria-hidden="true" />{/snippet}
       </EmptyState>
     </div>

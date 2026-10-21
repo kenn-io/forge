@@ -185,8 +185,7 @@ stateDiagram-v2
 
 ## UI
 
-- Worklists appear as a header tab only while at least one exists, or while
-  the worklists page is open so the tab survives dismissing the last list
+- Worklists always appear as a header tab, including before any list exists
   (`frontend/src/lib/components/layout/AppHeader.svelte`).
 - An import that finishes after the maintainer left the page does not
   navigate (`frontend/src/lib/views/WorklistImportView.svelte`).

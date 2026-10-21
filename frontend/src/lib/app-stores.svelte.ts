@@ -229,9 +229,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     return effect.pipe(Effect.tapError((failure) => Effect.sync(() => noteHubFailure(failure))));
   }
 
-  // Summaries only decide whether the header offers the Worklists tab. The
-  // store records a failed read and reports a hub outage, so it must not fail
-  // the refresh it rides on.
+  // The store records a failed read and reports a hub outage, so it must not
+  // fail the refresh it rides on.
   function refreshWorklistSummaries() {
     return worklistsStore.refreshSummariesEffect().pipe(Effect.ignore);
   }

@@ -16,10 +16,6 @@ const mockedSync = vi.hoisted(() => ({
   triggerRepoSync: vi.fn((_repo: string) => Promise.resolve()),
 }));
 
-const mockedWorklists = vi.hoisted(() => ({
-  summaries: [] as Array<{ id: number; title: string }>,
-}));
-
 const mockedSettings = vi.hoisted(() => ({
   value: undefined as
     | {
@@ -59,7 +55,6 @@ vi.mock("../../context.js", async (importOriginal) => {
         triggerRepoSync: mockedSync.triggerRepoSync,
       },
       settings: mockedSettings.value,
-      worklists: { getSummaries: () => mockedWorklists.summaries },
     }),
   };
 });
@@ -135,7 +130,6 @@ describe("AppHeader", () => {
     mockedSync.triggerRepoSync.mockClear();
     setGlobalRepo(undefined);
     mockedSettings.value = createSettingsStore();
-    mockedWorklists.summaries = [];
     resetPaletteState();
   });
 
@@ -355,16 +349,15 @@ describe("AppHeader", () => {
     view.unmount();
   });
 
-  it("offers Worklists only while an agent has written one", () => {
+  it("offers Worklists before an agent has written one", () => {
     initTheme();
     render(AppHeader);
 
-    expect(screen.queryByRole("button", { name: "Worklists" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Worklists" })).toBeTruthy();
   });
 
-  it("navigates to the newest worklist from the Worklists tab", async () => {
+  it("navigates to worklists from the Worklists tab", async () => {
     initTheme();
-    mockedWorklists.summaries = [{ id: 4, title: "Review queue" }];
     render(AppHeader);
 
     await fireEvent.click(screen.getByRole("button", { name: "Worklists" }));

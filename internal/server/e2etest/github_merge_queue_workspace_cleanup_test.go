@@ -30,7 +30,7 @@ func setupMergeQueueWorkspaceE2E(t *testing.T) mergeQueueWorkspaceE2E {
 	fixture := seedGitHubAsyncMergeE2E(t, githubMergeQueueEnqueued)
 	seedMergeQueue(t, fixture.database, fixture.repoID, true)
 	// A clean checkout, so deletion's uncommitted-changes check passes.
-	worktree := t.TempDir()
+	worktree := gitfixture.ScratchDir(t)
 	gitfixture.Run(t, worktree, "init", "--initial-branch=feature")
 	gitfixture.Run(t, worktree, "-c", "user.name=Test", "-c", "user.email=test@test.com",
 		"commit", "--allow-empty", "-m", "feature")

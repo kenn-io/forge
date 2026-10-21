@@ -398,6 +398,8 @@ Workspace deletion is intentionally conservative.
   and periodically: merged deletes on the owning daemon and retries a refusal; closed, or
   a queue read newer than the request showing it unqueued, drops it
   (`internal/server/pullapi/workspace_cleanup.go::Handler.resolveMergeWorkspaceCleanups`).
+  Accepted by the maintainer: a later enqueue without deletion does not cancel a kept
+  request, and a failed save is only logged, without a warning to the user.
 
 This ordering prevents a rejected delete from silently killing the user's live
 workspace sessions.

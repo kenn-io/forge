@@ -135,7 +135,9 @@
         disabled={saving}
         aria-invalid={!portValid}
       />
-      <span class="field-help">Leave blank for the default port.</span>
+      <span class="field-help">
+        Leave blank to share Forge's port, or use port + 1 when MCP is enabled in the config file.
+      </span>
     </label>
 
     <label class="field">

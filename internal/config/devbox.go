@@ -62,7 +62,7 @@ func (c *Config) validateDevboxes() error {
 		return errors.New("config: execution worker requires its own absolute data_dir, separate from the default Forge directory")
 	}
 	if !c.API.RequireAuth || c.API.TailscaleServe.Enabled || !IsLoopbackHostname(c.Host) ||
-		c.Fleet.Enabled || c.Fleet.RoleOrDefault() == FleetRoleSpoke || (c.MCP.Enabled != nil && *c.MCP.Enabled) || c.BasePath != "/" {
+		c.Fleet.Enabled || c.Fleet.RoleOrDefault() == FleetRoleSpoke || c.MCPEnabled() || c.BasePath != "/" {
 		return errors.New("config: execution worker requires loopback, bearer auth, base_path=/, and no fleet, MCP, or Tailscale header authentication")
 	}
 	if worker.UID == 0 || worker.GitHubUserID <= 0 || !filepath.IsAbs(worker.BrokerSocket) {

@@ -635,7 +635,8 @@ proxy and use HTTPS origins for federation.
 
 The companion is on by default on Forge's own port when `host` is a loopback IP,
 `mcp.enabled` and `mcp.port` are omitted, and Forge isn't an execution worker.
-Wildcard addresses and `localhost` require explicit enabling. To turn it off:
+Loopback IP hosts include `127.0.0.1`; other hosts, such as `0.0.0.0` or a
+tailnet IP, require `enabled = true`. To turn it off:
 
 ```toml
 [mcp]

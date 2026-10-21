@@ -406,18 +406,17 @@ func (s *Server) commitLocalSettings(
 		s.cfg.KataProjects = slices.Clone(*input.Body.KataProjects)
 	}
 	if input.Body.MCP != nil {
+		want := s.cfg.MCPEnabled()
 		if input.Body.MCP.Enabled != nil {
-			s.cfg.SetMCPEnabled(*input.Body.MCP.Enabled)
+			want = *input.Body.MCP.Enabled
 		}
 		if input.Body.MCP.Port != nil {
-			if *input.Body.MCP.Port != 0 && s.cfg.MCP.Enabled == nil && s.cfg.MCPEnabled() {
-				s.cfg.MCP.Enabled = new(true)
-			}
 			s.cfg.MCP.Port = *input.Body.MCP.Port
 		}
 		if input.Body.MCP.DiffCacheMB != nil {
 			s.cfg.MCP.DiffCacheMB = *input.Body.MCP.DiffCacheMB
 		}
+		s.cfg.SetMCPEnabled(want)
 	}
 	if input.Body.Roborev != nil && input.Body.Roborev.InitManagedClones != nil {
 		s.cfg.Roborev.InitManagedClones = *input.Body.Roborev.InitManagedClones

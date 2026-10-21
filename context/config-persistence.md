@@ -79,8 +79,8 @@ back to TOML.
 - Omitted `mcp.enabled` defaults on only for loopback-IP non-workers without a saved port;
   explicit false must survive saves, since older omitted opt-outs cannot be recovered
   (`internal/config/config.go::Config.MCPEnabled`).
-- Settings preserves an unchanged MCP enable choice and stores departures from its default;
-  selecting a dedicated port from the shared default also records explicit true
+- Settings resolves the requested or prior effective MCP enable choice after merging port
+  and cache changes, so clearing a port preserves an opt-out
   (`internal/server/settings_handlers.go::Server.commitLocalSettings`).
 - `modes.actions` is false by default and controls presentation only; provider
   workflow HTTP access remains available (`internal/config/config.go::ModeVisibility`).

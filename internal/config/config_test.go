@@ -122,28 +122,35 @@ func TestMCPDisabledRoundTrip(t *testing.T) {
 }
 
 func TestSetMCPEnabled(t *testing.T) {
-	for _, port := range []int{0, 9192} {
-		for _, current := range []*bool{nil, new(false), new(true)} {
-			for _, want := range []bool{false, true} {
-				t.Run(fmt.Sprintf("port=%d/current=%v/want=%t", port, current, want), func(t *testing.T) {
-					cfg := Config{Host: "127.0.0.1", MCP: MCP{Enabled: current, Port: port}}
-					before := cfg.MCPEnabled()
-					expected := current
-					if want != before {
-						expected = new(want)
-						if want == (port == 0) {
-							expected = nil
-						}
-					}
-					cfg.SetMCPEnabled(want)
-					assert.Equal(t, expected, cfg.MCP.Enabled)
-					assert.Equal(t, want, cfg.MCPEnabled())
-					if current != nil {
-						assert.Equal(t, before, *current, "startup snapshot pointer must stay unchanged")
-					}
-				})
+	for _, tt := range []struct {
+		name     string
+		input    MCP
+		want     bool
+		expected *bool
+	}{
+		{"default on stays on", MCP{}, true, nil},
+		{"default on turns off", MCP{}, false, new(false)},
+		{"explicit off stays off", MCP{Enabled: new(false)}, false, new(false)},
+		{"explicit off returns to default", MCP{Enabled: new(false)}, true, nil},
+		{"explicit on stays on", MCP{Enabled: new(true)}, true, new(true)},
+		{"explicit on turns off", MCP{Enabled: new(true)}, false, new(false)},
+		{"saved port stays off", MCP{Port: 9192}, false, nil},
+		{"saved port turns on", MCP{Port: 9192}, true, new(true)},
+		{"saved port explicit off stays off", MCP{Enabled: new(false), Port: 9192}, false, new(false)},
+		{"saved port explicit off turns on", MCP{Enabled: new(false), Port: 9192}, true, new(true)},
+		{"saved port explicit on stays on", MCP{Enabled: new(true), Port: 9192}, true, new(true)},
+		{"saved port explicit on returns to default", MCP{Enabled: new(true), Port: 9192}, false, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Host: "127.0.0.1", MCP: tt.input}
+			before := cfg.MCPEnabled()
+			cfg.SetMCPEnabled(tt.want)
+			assert.Equal(t, tt.expected, cfg.MCP.Enabled)
+			assert.Equal(t, tt.want, cfg.MCPEnabled())
+			if tt.input.Enabled != nil {
+				assert.Equal(t, before, *tt.input.Enabled, "startup snapshot pointer must stay unchanged")
 			}
-		}
+		})
 	}
 }
 

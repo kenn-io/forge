@@ -9,8 +9,8 @@ or add provider mutations.
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own
 port when `host` is a loopback IP, such as `127.0.0.1` or `::1`, and Forge
-isn't an execution worker. Wildcard addresses and `localhost` require explicit
-enabling. With the default backend port, the endpoint is:
+isn't an execution worker. Other hosts, such as `0.0.0.0` or a tailnet IP,
+require `enabled = true`. With the default backend port, the endpoint is:
 
 ```text
 http://127.0.0.1:8091/mcp
@@ -29,8 +29,9 @@ omitted keeps the companion off. Existing explicit `enabled = true` configuratio
 keep their endpoint. Re-enabling in Settings uses the default endpoint for the
 saved host and port.
 
-Older versions omitted `enabled = false` when saving, so those opt-outs can't
-be distinguished from fresh configurations. Set it again to keep MCP off.
+Older versions dropped `enabled = false` when saving. Configurations with no
+`enabled` key and no MCP port start serving `/mcp` after upgrade when the default
+applies, so set `enabled = false` to keep it off.
 
 Restart the daemon after changing either setting:
 
@@ -43,6 +44,10 @@ authentication is enabled, send the daemon bearer token; when it is disabled,
 the MCP endpoint does not require a token. Runtime discovery publishes the
 resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
 the listener address and the token file path.
+
+While MCP is on, `/mcp` on the main listener also accepts daemon bearer holders
+and, with `[api.tailscale_serve]`, allowlisted Serve users. This access also
+applies to explicit `enabled = true` configurations.
 
 For a machine-readable listener list, run:
 

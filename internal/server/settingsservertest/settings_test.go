@@ -371,19 +371,89 @@ func TestHandleUpdateSettingsPreservesMCPDefault(t *testing.T) {
 	}
 }
 
-func TestHandleUpdateSettingsMCPPortEnablesDedicatedListener(t *testing.T) {
+func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	for _, enabled := range []*bool{nil, new(true)} {
-		t.Run(fmt.Sprintf("enabled=%v", enabled), func(t *testing.T) {
-			srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
+	for _, tt := range []struct {
+		name     string
+		initial  string
+		update   spokeapi.McpSettingsUpdate
+		stored   config.MCP
+		fileMCP  string
+		enabled  bool
+		endpoint string
+	}{
+		{
+			name:     "default on selects port without enabled",
+			update:   spokeapi.McpSettingsUpdate{Port: new(9192)},
+			stored:   config.MCP{Enabled: new(true), Port: 9192},
+			fileMCP:  "[mcp]\n  enabled = true\n  port = 9192\n  diff_cache_mb = 0",
+			enabled:  true,
+			endpoint: "127.0.0.1:9192",
+		},
+		{
+			name:     "default on selects port with enabled",
+			update:   spokeapi.McpSettingsUpdate{Enabled: new(true), Port: new(9192)},
+			stored:   config.MCP{Enabled: new(true), Port: 9192},
+			fileMCP:  "[mcp]\n  enabled = true\n  port = 9192\n  diff_cache_mb = 0",
+			enabled:  true,
+			endpoint: "127.0.0.1:9192",
+		},
+		{
+			name:    "uncheck and clear explicit enabled port",
+			initial: "[mcp]\nenabled = true\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Enabled: new(false), Port: new(0)},
+			stored:  config.MCP{Enabled: new(false)},
+			fileMCP: "[mcp]\n  enabled = false\n  port = 0\n  diff_cache_mb = 0",
+		},
+		{
+			name:    "leave unchecked and clear legacy port",
+			initial: "[mcp]\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Enabled: new(false), Port: new(0)},
+			stored:  config.MCP{Enabled: new(false)},
+			fileMCP: "[mcp]\n  enabled = false\n  port = 0\n  diff_cache_mb = 0",
+		},
+		{
+			name:    "clear legacy port without enabled preserves off",
+			initial: "[mcp]\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Port: new(0)},
+			stored:  config.MCP{Enabled: new(false)},
+			fileMCP: "[mcp]\n  enabled = false\n  port = 0\n  diff_cache_mb = 0",
+		},
+		{
+			name:     "check and clear disabled port returns to shared default",
+			initial:  "[mcp]\nenabled = false\nport = 9192\n",
+			update:   spokeapi.McpSettingsUpdate{Enabled: new(true), Port: new(0)},
+			stored:   config.MCP{},
+			fileMCP:  "",
+			enabled:  true,
+			endpoint: "127.0.0.1:8091",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t,
+				"host = \"127.0.0.1\"\nport = 8091\n"+tt.initial, &serverfake.MockGH{})
 			rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
-				MCP: &spokeapi.McpSettingsUpdate{Enabled: enabled, Port: new(9192)},
+				MCP: &tt.update,
 			})
 			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			var response spokeapi.SettingsResponse
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+			assert.Equal(tt.enabled, response.MCP.Enabled)
 			reloaded, err := config.Load(cfgPath)
 			require.NoError(t, err)
-			assert.Equal(t, new(true), reloaded.MCP.Enabled)
-			assert.Equal(t, "127.0.0.1:9192", reloaded.MCPListenAddr())
+			assert.Equal(tt.stored, reloaded.MCP)
+			assert.Equal(tt.enabled, reloaded.MCPEnabled())
+			assert.Equal(tt.endpoint, reloaded.MCPListenAddr())
+			contents, err := os.ReadFile(cfgPath)
+			require.NoError(t, err)
+			_, section, _ := strings.Cut(string(contents), "[mcp]")
+			section, _, _ = strings.Cut(section, "\n[")
+			if tt.fileMCP == "" {
+				assert.NotContains(string(contents), "[mcp]")
+			} else {
+				assert.Equal(tt.fileMCP, "[mcp]"+strings.TrimRight(section, "\n\r"))
+			}
 		})
 	}
 }

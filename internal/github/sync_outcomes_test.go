@@ -401,44 +401,55 @@ func TestSyncFailedDisabledFeatureCooldown(t *testing.T) {
 }
 
 func TestSyncFailedGitHTTP(t *testing.T) {
-	assert := assert.New(t)
-	fixture := setupSyncBranchActivityFixture(t, "main")
-	syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
-	var reads atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		assert.Equal("/acme/widget.git/info/refs", req.URL.Path)
-		assert.Equal("git-upload-pack", req.URL.Query().Get("service"))
-		reads.Add(1)
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	t.Cleanup(server.Close)
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
-	remote := repo.CloneURL
-	client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-		return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(remote), DefaultBranch: new("main")}, nil
-	}}
-	clones := gitclone.New(t.TempDir(), nil)
-	t.Cleanup(clones.Wait)
-	clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
-	s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
-	var events [][2]string
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	s.RunOnce(t.Context())
-	assert.Equal([][2]string{{"refs", "auth"}}, events)
-	s.RunOnce(t.Context())
-	assert.Len(events, 1)
-	assert.Equal(int32(2), reads.Load(), "HTTP failures must retain their single-attempt policy")
-	remote = fixture.Remote
-	s.RunOnce(t.Context())
-	assert.Len(events, 1)
-	repo.Key = platform.RepositoryIDKey(42)
-	clone, err := clones.ClonePathForContext(withCloneRepositoryIdentity(t.Context(), repo), "github", repo.PlatformHost, repo.Owner, repo.Name)
-	require.NoError(t, err)
-	syncActivityGitRun(t, clone, "remote", "set-url", "origin", repo.CloneURL)
-	remote = repo.CloneURL
-	s.RunOnce(t.Context())
-	assert.Equal([][2]string{{"refs", "auth"}, {"refs", "auth"}}, events)
-	assert.Equal(int32(3), reads.Load())
+	for _, tc := range []struct {
+		status int
+		reason string
+	}{
+		{http.StatusForbidden, "auth"},
+		{http.StatusNotFound, "not_found"},
+		{http.StatusGone, "not_found"},
+	} {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			assert := assert.New(t)
+			fixture := setupSyncBranchActivityFixture(t, "main")
+			syncActivityCommitAndPush(t, fixture.Work, "seed.md", "seed\n", "seed", "main")
+			var reads atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				assert.Equal("/acme/widget.git/info/refs", req.URL.Path)
+				assert.Equal("git-upload-pack", req.URL.Query().Get("service"))
+				reads.Add(1)
+				w.WriteHeader(tc.status)
+			}))
+			t.Cleanup(server.Close)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
+			remote := repo.CloneURL
+			client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+				return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(remote), DefaultBranch: new("main")}, nil
+			}}
+			clones := gitclone.New(t.TempDir(), nil)
+			t.Cleanup(clones.Wait)
+			clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
+			s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+			var events [][2]string
+			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+			s.RunOnce(t.Context())
+			assert.Equal([][2]string{{"refs", tc.reason}}, events)
+			s.RunOnce(t.Context())
+			assert.Len(events, 1)
+			assert.Equal(int32(2), reads.Load(), "HTTP failures must retain their single-attempt policy")
+			remote = fixture.Remote
+			s.RunOnce(t.Context())
+			assert.Len(events, 1)
+			repo.Key = platform.RepositoryIDKey(42)
+			clone, err := clones.ClonePathForContext(withCloneRepositoryIdentity(t.Context(), repo), "github", repo.PlatformHost, repo.Owner, repo.Name)
+			require.NoError(t, err)
+			syncActivityGitRun(t, clone, "remote", "set-url", "origin", repo.CloneURL)
+			remote = repo.CloneURL
+			s.RunOnce(t.Context())
+			assert.Equal([][2]string{{"refs", tc.reason}, {"refs", tc.reason}}, events)
+			assert.Equal(int32(3), reads.Load())
+		})
+	}
 }
 
 func TestSyncFailedRefsProcessCapacity(t *testing.T) {

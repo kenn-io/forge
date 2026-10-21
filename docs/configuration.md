@@ -679,12 +679,12 @@ A full sync pass reports `sync_failed` once per source when any repository
 newly starts failing it. A repository that keeps failing reports nothing more
 until it recovers.
 The event sends only `sync_source` (`merge_requests`, `issues`, `checks`, or
-`refs`) and `reason` (`auth`,
-`rate_limited`, `not_found`, `network`, `provider`, or `other`), with unlisted
-reasons sent as `other`. List and repository failures count. For each source,
-any successful read in a repository wins over failures in that pass. `refs`
-counts only failures Git reports as auth, rate-limit, network, or server errors during clone or fetch.
-Local filesystem failures and individual PR, issue, and child reads don't count.
+`refs`) and `reason` (`auth`, `rate_limited`, `not_found`, `network`, `provider`,
+or `other`), with unlisted reasons sent as `other`. List and repository failures
+count. For each source, any successful read in a repository wins over failures
+in that pass. `refs` counts only failures Git reports as auth, rate-limit,
+not-found, network, or server errors during clone or fetch. Local filesystem
+failures and individual PR, issue, and child reads don't count.
 Skipped reads keep prior state; observed recovery or disablement clears it, and
 archived or untracked repositories drop out. Counts are approximate: state stays
 in memory, so a restart can count a failing repository twice. These properties

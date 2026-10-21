@@ -35,12 +35,16 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	}
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
-		reason = syncFailureReason(err)
 		if source == "refs" {
-			reason = refsFailureReason(err)
+			reason = gitclone.FailureReason(err)
+			if reason == "" {
+				return
+			}
+		} else {
+			reason = syncFailureReason(err)
 		}
 	}
-	if source == "refs" && reason == "other" || source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
+	if source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
 		return
 	}
 	p.mu.Lock()
@@ -181,31 +185,13 @@ func providerStatusCode(err error) int {
 	return platformgithub.StatusCode(err)
 }
 
-func syncAuthenticationFailure(err error) bool {
-	return gitAccessFailureReason(err) != "" || gitclone.IsHTTPAuthGitError(err)
-}
-
-func refsFailureReason(err error) string {
-	switch {
-	case gitclone.IsRateLimitedGitError(err):
-		return "rate_limited"
-	case gitclone.IsAuthenticationFailure(err), gitclone.IsHTTPAuthGitError(err):
-		return "auth"
-	case gitclone.IsNetworkGitError(err):
-		return "network"
-	case gitclone.IsServerGitError(err):
-		return "provider"
-	default:
-		return "other"
-	}
-}
-
 func syncFailureReason(err error) string {
 	_, networkError := errors.AsType[net.Error](err)
+	gitReason := gitclone.FailureReason(err)
 	switch {
-	case errors.Is(err, platform.ErrRateLimited), gitclone.IsRateLimitedGitError(err):
+	case errors.Is(err, platform.ErrRateLimited), gitReason == "rate_limited":
 		return "rate_limited"
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), syncAuthenticationFailure(err):
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "", gitReason == "auth":
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
@@ -224,13 +210,16 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case status == 404:
 		return "not_found"
-	case gitclone.IsNetworkGitError(err):
+	case gitReason == "network":
 		return "network"
 	case status >= 400 && status < 500:
 		return "other"
-	case status >= 500 && status < 600, gitclone.IsServerGitError(err):
+	case status >= 500 && status < 600:
 		return "provider"
 	default:
+		if gitReason != "" {
+			return gitReason
+		}
 		return "other"
 	}
 }

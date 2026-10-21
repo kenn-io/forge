@@ -13,87 +13,85 @@ import (
 
 func TestIsTransientGitError(t *testing.T) {
 	cases := []struct {
-		name        string
-		err         error
-		want        bool
-		wantServer  bool
-		wantNetwork bool
+		name       string
+		err        error
+		want       bool
+		wantReason string
 	}{
-		{"nil", nil, false, false, false},
-		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true, false, true},
-		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true, false, true},
+		{"nil", nil, false, ""},
+		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true, "network"},
+		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true, "network"},
 		{
 			"github 500 with internal server error preamble",
 			fmt.Errorf("exit status 128: %s", "remote: Internal Server Error\nfatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 500"),
-			true, true, false,
+			true, "provider",
 		},
 		{
 			"bare 502",
 			errors.New("fatal: The requested URL returned error: 502"),
-			true, true, false,
+			true, "provider",
 		},
 		{
 			"bare 503",
 			errors.New("fatal: The requested URL returned error: 503"),
-			true, true, false,
+			true, "provider",
 		},
 		{
 			"bare 504",
 			errors.New("fatal: The requested URL returned error: 504"),
-			true, true, false,
+			true, "provider",
 		},
-		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false, false, false},
-		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false, false, false},
-		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false, false, false},
-		{"certificate verification is permanent", errors.New("fatal: unable to access remote: server certificate verification failed"), false, false, true},
-		{"SSL certificate problem is permanent", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), false, false, true},
-		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false, true, false},
+		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false, "auth"},
+		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false, "auth"},
+		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false, "rate_limited"},
+		{"certificate verification is permanent", errors.New("fatal: unable to access remote: server certificate verification failed"), false, "network"},
+		{"SSL certificate problem is permanent", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), false, "network"},
+		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false, "provider"},
 		{
 			"connection reset",
 			errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"),
-			true, false, true,
+			true, "network",
 		},
 		{
 			"stalled HTTP transfer",
 			errors.New("fatal: unable to access 'https://example.com/repo.git/': Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds"),
-			true, false, true,
+			true, "network",
 		},
 		{
 			"could not resolve host",
 			errors.New("fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com"),
-			true, false, true,
+			true, "network",
 		},
 		{
 			"case insensitive",
 			errors.New("REMOTE: INTERNAL SERVER ERROR"),
-			true, true, false,
+			true, "provider",
 		},
 		{
 			"early eof",
 			errors.New("fatal: early EOF\nfatal: index-pack failed"),
-			true, false, true,
+			true, "network",
 		},
 		{
 			"auth failure is permanent",
 			errors.New("fatal: Authentication failed for 'https://github.com/x/y.git/'"),
-			false, false, false,
+			false, "auth",
 		},
 		{
 			"not found is permanent",
 			errors.New("fatal: repository 'https://github.com/x/y.git/' not found"),
-			false, false, false,
+			false, "not_found",
 		},
 		{
 			"bad ref is permanent",
 			errors.New("fatal: couldn't find remote ref refs/heads/nope"),
-			false, false, false,
+			false, "",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, IsTransientGitError(tc.err))
-			assert.Equal(t, tc.wantServer, IsServerGitError(tc.err))
-			assert.Equal(t, tc.wantNetwork, IsNetworkGitError(tc.err))
+			assert.Equal(t, tc.want, isTransientGitError(tc.err))
+			assert.Equal(t, tc.wantReason, FailureReason(tc.err))
 		})
 	}
 }

@@ -1625,6 +1625,16 @@ func IsAuthenticationFailure(err error) bool {
 	return isAuthGitError(err)
 }
 
+func isAuthGitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "authentication failed") ||
+		strings.Contains(msg, "could not read username") ||
+		strings.Contains(msg, "terminal prompts disabled")
+}
+
 // Wait blocks until every in-flight EnsureClone fetch finishes. A fetch
 // deliberately outlives the callers that started it, so an owner that is about
 // to remove the clone directory calls Wait first.

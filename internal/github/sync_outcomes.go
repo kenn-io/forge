@@ -70,7 +70,7 @@ func (s *Syncer) observeSync(ctx context.Context, repo RepoRef, source string, e
 
 func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error) {
 	caps, capsErr := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
-	if capsErr != nil {
+	if capsErr != nil || repo.Archived {
 		return
 	}
 	for scope, names := range syncScopeSources {

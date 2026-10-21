@@ -341,3 +341,30 @@ func TestSyncFailedMixedReads(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncFailedArchivedMetadataRead(t *testing.T) {
+	assert := assert.New(t)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com", Key: platform.RepositoryIDKey(42), Archived: true}
+	client := &partialFailureMock{}
+	metadataReads := 0
+	client.getRepositoryByIDFn = func(_ context.Context, owner string, id int64) (*gh.Repository, error) {
+		assert.Equal("acme", owner)
+		assert.Equal(int64(42), id)
+		metadataReads++
+		return nil, platform.ErrPermissionDenied
+	}
+	client.listOpenPRsFn = func(context.Context, string, string) ([]*gh.PullRequest, error) {
+		assert.Fail("archived repository must skip merge requests")
+		return nil, nil
+	}
+	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
+		assert.Fail("archived repository must skip issues")
+		return nil, nil
+	}
+	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	assert.Equal(1, metadataReads)
+	assert.Empty(events)
+}

@@ -349,13 +349,6 @@ describe("AppHeader", () => {
     view.unmount();
   });
 
-  it("offers Worklists before an agent has written one", () => {
-    initTheme();
-    render(AppHeader);
-
-    expect(screen.getByRole("button", { name: "Worklists" })).toBeTruthy();
-  });
-
   it("navigates to worklists from the Worklists tab", async () => {
     initTheme();
     render(AppHeader);

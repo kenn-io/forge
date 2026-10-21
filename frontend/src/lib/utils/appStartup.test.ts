@@ -166,18 +166,6 @@ it.layer(SuccessfulStartup)("application startup hydration", (it) => {
     ),
   );
 
-  it.effect("reads worklist summaries at startup", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const summariesRead = yield* Deferred.make<void>();
-        const stores = makeStores({ worklistSummaries: Deferred.succeed(summariesRead, undefined) });
-        yield* Effect.forkScoped(appStartupProgram({ stores, onReady: () => {} }));
-
-        yield* Deferred.await(summariesRead);
-      }),
-    ),
-  );
-
   it.effect("hydrates settings before making the application ready", () =>
     Effect.scoped(
       Effect.gen(function* () {

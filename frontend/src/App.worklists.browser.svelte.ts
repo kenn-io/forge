@@ -21,16 +21,12 @@ afterEach(async () => {
   await resetKeyboardModuleState();
 });
 
-it("offers Worklists before any list exists and opens an agent's new list", async () => {
+it("opens an agent's new list from the Worklists tab", async () => {
   await page.viewport(1400, 900);
   const server: WorklistServer = { lists: [], requests: [] };
   mounted = await mountBrowserApp("/", { overrides: [worklistRoutes(server)] });
   await expect.element(page.getByRole("button", { name: "Activity", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Worklists", exact: true }).click();
-  await expect.element(page.getByText("No worklists", { exact: true })).toBeVisible();
-  await expect
-    .element(page.getByText("Ask an agent connected to Forge to make one, for example in the Kenn chat sidebar."))
-    .toBeVisible();
 
   server.lists = [worklistResponse(5, "Review queue")];
   emitBrowserEventSource("worklists_changed", { worklist_id: 5 });

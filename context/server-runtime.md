@@ -1,7 +1,7 @@
 # Server Runtime
 
-- Full sync passes emit at most one `sync_failed` per source when any repository
-  starts failing it. Any successful read wins within that repository/source.
+- A full sync pass sends at most one `sync_failed` event per source, when a
+  repository newly fails that source. Any successful read wins within that repository/source.
   Observe list/repository reads and refs credential or recognized Git failures;
   exclude local filesystem/capacity errors, budget waits, and individual item reads.
   Unread repositories retain state; recovery, cooldown, archival, or untracking

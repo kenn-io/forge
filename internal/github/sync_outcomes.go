@@ -36,10 +36,9 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
 		if source == "refs" {
-			if gitAccessFailureReason(err) != "" {
+			reason = gitclone.FailureReason(err)
+			if reason == "" && gitAccessFailureReason(err) == GitAccessCredentialUnavailable {
 				reason = "auth"
-			} else {
-				reason = gitclone.FailureReason(err)
 			}
 			if reason == "" {
 				return
@@ -105,13 +104,13 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
 	}
+	pass.mu.Lock()
+	defer pass.mu.Unlock()
 	if s.syncFailures == nil {
 		s.syncFailures = make(map[string]map[string]bool)
 	}
 	for _, source := range telemetry.SyncSources() {
 		live, failures := s.liveSyncFailures(source, tracked)
-		// Only repositories that start failing count, so one repository that
-		// keeps failing does not hide outages in the others.
 		reason := ""
 		for key, result := range pass.results[source] {
 			if !live[key] {
@@ -191,11 +190,10 @@ func providerStatusCode(err error) int {
 
 func syncFailureReason(err error) string {
 	_, networkError := errors.AsType[net.Error](err)
-	gitReason := gitclone.FailureReason(err)
 	switch {
-	case errors.Is(err, platform.ErrRateLimited), gitReason == "rate_limited":
+	case errors.Is(err, platform.ErrRateLimited):
 		return "rate_limited"
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) != "", gitReason == "auth":
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), gitAccessFailureReason(err) == GitAccessCredentialUnavailable:
 		return "auth"
 	case errors.Is(err, platform.ErrNotFound):
 		return "not_found"
@@ -214,16 +212,11 @@ func syncFailureReason(err error) string {
 		return "auth"
 	case status == 404:
 		return "not_found"
-	case gitReason == "network":
-		return "network"
 	case status >= 400 && status < 500:
 		return "other"
 	case status >= 500 && status < 600:
 		return "provider"
 	default:
-		if gitReason != "" {
-			return gitReason
-		}
 		return "other"
 	}
 }

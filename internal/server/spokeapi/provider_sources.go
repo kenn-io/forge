@@ -488,7 +488,7 @@ func (s *HubProviderSource) GetPullStack(
 	return pullapi.StackContext{
 		ID: response.StackID, Name: response.StackName,
 		Position: response.Position, Size: response.Size,
-		Health: response.Health, Members: members,
+		Health: response.Health, Native: response.Native, Members: members,
 	}, nil
 }
 
@@ -498,6 +498,7 @@ type hubStackResponse struct {
 	Position  int                      `json:"position"`
 	Size      int                      `json:"size"`
 	Health    string                   `json:"health"`
+	Native    bool                     `json:"native"`
 	Members   []hubStackMemberResponse `json:"members"`
 }
 

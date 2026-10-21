@@ -260,5 +260,6 @@ type stackContextResponse struct {
 	Position  int                   `json:"position"`
 	Size      int                   `json:"size"`
 	Health    string                `json:"health"`
+	Native    bool                  `json:"native" doc:"Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it"`
 	Members   []stackMemberResponse `json:"members"`
 }

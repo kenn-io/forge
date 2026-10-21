@@ -59,13 +59,15 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 }
 
 // UpsertStack inserts or updates a stack keyed by (repo_id, base_number).
-func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name string) (int64, error) {
+// native marks a stack projected from the provider's native stack feature.
+func (d *DB) UpsertStack(ctx context.Context, repoID int64, baseNumber int, name string, native bool) (int64, error) {
 	_, err := d.execContext(ctx, `
-		INSERT INTO forge_stacks (repo_id, base_number, name)
-		VALUES (?, ?, ?)
+		INSERT INTO forge_stacks (repo_id, base_number, name, native)
+		VALUES (?, ?, ?, ?)
 		ON CONFLICT(repo_id, base_number) DO UPDATE SET
-			name = excluded.name, updated_at = datetime('now')`,
-		repoID, baseNumber, name,
+			name = excluded.name, native = excluded.native,
+			updated_at = datetime('now')`,
+		repoID, baseNumber, name, native,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert stack: %w", err)
@@ -164,7 +166,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	where := "WHERE " + strings.Join(conds, " AND ")
 
 	stackQuery := fmt.Sprintf(`
-		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at,
+		SELECT s.id, s.repo_id, s.base_number, s.name, s.native, s.created_at, s.updated_at,
 		       r.owner, r.name
 		FROM forge_stacks s
 		JOIN forge_repos r ON r.id = s.repo_id
@@ -182,7 +184,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	for rows.Next() {
 		var s StackWithRepo
 		if err := rows.Scan(
-			&s.ID, &s.RepoID, &s.BaseNumber, &s.Name, &s.CreatedAt, &s.UpdatedAt,
+			&s.ID, &s.RepoID, &s.BaseNumber, &s.Name, &s.Native, &s.CreatedAt, &s.UpdatedAt,
 			&s.RepoOwner, &s.RepoName,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack: %w", err)
@@ -309,14 +311,17 @@ func (d *DB) GetStackForPRByRepoID(ctx context.Context, repoID int64, number int
 func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) (*Stack, []StackMemberWithPR, error) {
 	var stack Stack
 	err := d.roQueryRowContext(ctx, `
-		SELECT s.id, s.repo_id, s.base_number, s.name, s.created_at, s.updated_at
+		SELECT s.id, s.repo_id, s.base_number, s.name, s.native, s.created_at, s.updated_at
 		FROM forge_stacks s
 		JOIN forge_stack_members sm ON sm.stack_id = s.id
 		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		JOIN forge_repos r ON r.id = p.repo_id
 		`+where,
 		args...,
-	).Scan(&stack.ID, &stack.RepoID, &stack.BaseNumber, &stack.Name, &stack.CreatedAt, &stack.UpdatedAt)
+	).Scan(
+		&stack.ID, &stack.RepoID, &stack.BaseNumber, &stack.Name, &stack.Native,
+		&stack.CreatedAt, &stack.UpdatedAt,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, nil
 	}

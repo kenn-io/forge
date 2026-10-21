@@ -1217,8 +1217,12 @@ type Stack struct {
 	RepoID     int64
 	BaseNumber int
 	Name       string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// Native is true when the provider's native stack feature owns the
+	// membership; merging a member there also merges every unmerged member
+	// below it.
+	Native    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // StackMember links a merge request to a stack with a position.

@@ -1283,7 +1283,7 @@ func TestProviderCanonicalReadPathsUseLookupKeys(t *testing.T) {
 	require.Len(activity, 2)
 	assert.ElementsMatch([]int{7, 8}, []int{activity[0].ItemNumber, activity[1].ItemNumber})
 
-	stackID, err := d.UpsertStack(ctx, repoID, 7, "stack")
+	stackID, err := d.UpsertStack(ctx, repoID, 7, "stack", false)
 	require.NoError(err)
 	require.NoError(d.ReplaceStackMembers(ctx, stackID, []StackMember{{
 		MergeRequestID: mrID,

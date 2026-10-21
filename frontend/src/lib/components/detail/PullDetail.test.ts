@@ -2660,6 +2660,59 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
   });
 
+  it("tells the merge modal which native stack members stay open", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 1;
+    detail.stack = {
+      stack_id: 1,
+      stack_name: "feature",
+      position: 1,
+      size: 2,
+      health: "ready",
+      native: true,
+      members: [
+        {
+          number: 1,
+          title: "base",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 1,
+          is_draft: false,
+          base_branch: "main",
+          blocked_by: null,
+        },
+        {
+          number: 2,
+          title: "follow-up",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 2,
+          is_draft: false,
+          base_branch: "feature/base",
+          blocked_by: null,
+        },
+      ],
+    };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Merge Pull Request" });
+    expect(within(dialog).getByText("Only this pull request merges.")).toBeTruthy();
+    expect(within(dialog).getByText(/#2\s+stays open/)).toBeTruthy();
+  });
+
   it("does not offer a merge action when no merge method is enabled", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

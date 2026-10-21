@@ -53,6 +53,7 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import { nativeStackMergeScope } from "./stack-merge.js";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
   import MergeQueueChip from "./MergeQueueChip.svelte";
@@ -3329,6 +3330,7 @@
           stackNote={midStackBlocker
             ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
             : undefined}
+          nativeStackMerge={nativeStackMergeScope(d.stack, number)}
           onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}
         />

@@ -106,7 +106,7 @@ func TestAPIPullsHideRemovedUpstreamArchiveRows(t *testing.T) {
 	require.Error(err)
 	require.Equal(http.StatusNotFound, detail.StatusCode)
 
-	stackID, err := database.UpsertStack(ctx, repo.ID, 1, "Synthetic stack")
+	stackID, err := database.UpsertStack(ctx, repo.ID, 1, "Synthetic stack", false)
 	require.NoError(err)
 	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
 		{MergeRequestID: inaccessiblePRID, Position: 1},

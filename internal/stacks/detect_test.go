@@ -364,13 +364,70 @@ func TestRunDetectionWithNativeStacksClaimsMembersBeforeInference(t *testing.T) 
 	require.NoError(err)
 	require.NotNil(nativeStack)
 	assert.Equal(102, nativeStack.BaseNumber)
+	assert.True(nativeStack.Native)
 	assert.Equal([]int{102, 101}, stackNumbersFromMembers(nativeMembers))
-	_, inferredMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 200)
+	inferredStack, inferredMembers, err := database.GetStackForPRByRepoID(ctx, repoID, 200)
 	require.NoError(err)
+	require.NotNil(inferredStack)
+	assert.False(inferredStack.Native)
 	assert.Equal([]int{200, 201}, stackNumbersFromMembers(inferredMembers))
 	stack, _, err := database.GetStackForPRByRepoID(ctx, repoID, 100)
 	require.NoError(err)
 	assert.Nil(stack)
+}
+
+func TestRunDetectionClearsNativeWhenBranchInferenceReclaimsStack(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := reposeed.Seed(ctx, database, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{
+		CloneURL: testRepoCloneURL, DefaultBranch: "main",
+	}, nil, nil))
+	now := time.Now().UTC()
+	for i, pr := range []struct {
+		number     int
+		head, base string
+	}{
+		{100, "feature/a", "main"},
+		{101, "feature/b", "feature/a"},
+	} {
+		_, err := database.UpsertMergeRequest(ctx, &realdb.MergeRequest{
+			RepoID: repoID, PlatformID: int64(i + 1), Number: pr.number,
+			Title: "PR " + pr.head, Author: "a", State: prOpen,
+			HeadBranch: pr.head, BaseBranch: pr.base,
+			HeadRepoCloneURL: testRepoCloneURL,
+			CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
+	require.NoError(database.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+		RepoID: repoID, GitHubID: 9001, Number: 42, Size: 2,
+		BaseRef: "main", IsOpen: true, GitHubCreatedAt: now,
+		ContentFingerprint: "native", LastObservedAt: now,
+		Members: []realdb.GitHubNativeStackMember{
+			{Position: 1, PullRequestNumber: 100, State: "open", HeadRef: "feature/a", HeadSHA: "aaa"},
+			{Position: 2, PullRequestNumber: 101, State: "open", HeadRef: "feature/b", HeadSHA: "bbb"},
+		},
+	}))
+	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
+	nativeStack, _, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
+	require.NoError(err)
+	require.NotNil(nativeStack)
+	require.True(nativeStack.Native)
+
+	// Without confirmation, branch inference projects the same chain onto
+	// the same stack row, which must no longer claim native merge semantics.
+	require.NoError(RunDetection(ctx, database, repoID))
+
+	inferredStack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 101)
+	require.NoError(err)
+	require.NotNil(inferredStack)
+	assert.Equal(nativeStack.ID, inferredStack.ID)
+	assert.False(inferredStack.Native)
+	assert.Equal([]int{100, 101}, stackNumbersFromMembers(members))
 }
 
 func TestRunDetectionWithNativeStacksKeepsStackWithClosedMember(t *testing.T) {

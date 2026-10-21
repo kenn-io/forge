@@ -47,6 +47,7 @@ type StackContext struct {
 	Position int
 	Size     int
 	Health   string
+	Native   bool
 	Members  []StackMember
 }
 
@@ -286,6 +287,7 @@ func (s *Handler) GetStackService(
 	stack := StackContext{
 		ID: output.Body.StackID, Name: output.Body.StackName,
 		Position: output.Body.Position, Size: output.Body.Size, Health: output.Body.Health,
+		Native:  output.Body.Native,
 		Members: make([]StackMember, 0, len(output.Body.Members)),
 	}
 	for _, member := range output.Body.Members {
@@ -297,7 +299,7 @@ func (s *Handler) GetStackService(
 func (stack StackContext) routeResponse() stackContextResponse {
 	response := stackContextResponse{
 		StackID: stack.ID, StackName: stack.Name, Position: stack.Position,
-		Size: stack.Size, Health: stack.Health,
+		Size: stack.Size, Health: stack.Health, Native: stack.Native,
 		Members: make([]stackMemberResponse, 0, len(stack.Members)),
 	}
 	for _, member := range stack.Members {

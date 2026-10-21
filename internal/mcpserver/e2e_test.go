@@ -49,7 +49,7 @@ func TestMCPToolsUseTheInProcessForgeBackend(t *testing.T) {
 		Body: "cache follow-up needs a look", CreatedAt: now.Add(-20 * time.Minute),
 		DedupeKey: "mcp-e2e-issue-comment",
 	}}))
-	stackID, err := database.UpsertStack(ctx, repoID, 2, "cache-stack")
+	stackID, err := database.UpsertStack(ctx, repoID, 2, "cache-stack", false)
 	require.NoError(err)
 	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
 		{StackID: stackID, MergeRequestID: basePullID, Position: 1},

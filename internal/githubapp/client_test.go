@@ -184,7 +184,7 @@ func TestStatusErrorRetryDeadline(t *testing.T) {
 	}
 }
 
-func TestStatusErrorPlatformErrorCode(t *testing.T) {
+func TestPlatformErrorCode(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name   string
@@ -196,14 +196,14 @@ func TestStatusErrorPlatformErrorCode(t *testing.T) {
 		{"forbidden", http.StatusForbidden, nil, platform.ErrCodePermissionDenied},
 		{"not found", http.StatusNotFound, nil, platform.ErrCodeNotFound},
 		{"too many requests", http.StatusTooManyRequests, nil, platform.ErrCodeRateLimited},
-		{"secondary limit", http.StatusForbidden, http.Header{"Retry-After": {"90"}}, platform.ErrCodeRateLimited},
-		{"primary limit", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {" 0 "}}, platform.ErrCodeRateLimited},
+		{"retry header alone", http.StatusForbidden, http.Header{"Retry-After": {"90"}}, platform.ErrCodePermissionDenied},
+		{"primary limit", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"0"}}, platform.ErrCodeRateLimited},
 		{"remaining quota", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"4999"}}, platform.ErrCodePermissionDenied},
 		{"unknown", http.StatusServiceUnavailable, nil, ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			err := &githubapp.StatusError{StatusCode: tt.status, Header: tt.header}
-			assert.Equal(t, tt.want, err.PlatformErrorCode())
+			assert.Equal(t, tt.want, platformErrorCode(err))
 		})
 	}
 }

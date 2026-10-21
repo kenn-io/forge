@@ -82,6 +82,8 @@ func (s *Syncer) finishSyncPass(pass *syncPass) {
 	if pass == nil {
 		return
 	}
+	pass.mu.Lock()
+	defer pass.mu.Unlock()
 	if s.syncFailures == nil {
 		s.syncFailures = make(map[syncFailureKey]bool)
 	}

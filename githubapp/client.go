@@ -253,24 +253,6 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("github api status %d: %s", e.StatusCode, msg)
 }
 
-// PlatformErrorCode classifies known App API failures for provider callers.
-func (e *StatusError) PlatformErrorCode() platform.PlatformErrorCode {
-	switch {
-	case e.StatusCode == http.StatusTooManyRequests || e.StatusCode == http.StatusForbidden && (strings.TrimSpace(e.Header.Get("Retry-After")) != "" || e.rateLimitExhausted()):
-		return platform.ErrCodeRateLimited
-	case e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden:
-		return platform.ErrCodePermissionDenied
-	case e.StatusCode == http.StatusNotFound:
-		return platform.ErrCodeNotFound
-	default:
-		return ""
-	}
-}
-
-func (e *StatusError) rateLimitExhausted() bool {
-	return e.StatusCode == http.StatusTooManyRequests || strings.TrimSpace(e.Header.Get("X-RateLimit-Remaining")) == "0"
-}
-
 // RetryDeadline returns the server-provided time when a rate-limited request
 // may be retried. Retry-After takes precedence over the primary rate-limit
 // reset header when both are present.
@@ -286,8 +268,10 @@ func (e *StatusError) RetryDeadline(now time.Time) time.Time {
 			return at
 		}
 	}
+	rateExhausted := strings.TrimSpace(e.Header.Get("X-RateLimit-Remaining")) == "0"
 	reset := strings.TrimSpace(e.Header.Get("X-RateLimit-Reset"))
-	if e.rateLimitExhausted() && reset != "" {
+	if (e.StatusCode == http.StatusTooManyRequests || rateExhausted) &&
+		reset != "" {
 		if epoch, err := strconv.ParseInt(reset, 10, 64); err == nil {
 			return time.Unix(epoch, 0).UTC()
 		}

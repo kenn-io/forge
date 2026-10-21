@@ -254,15 +254,17 @@ func TestSyncFailedManagedTokenRenewal(t *testing.T) { //nolint:paralleltest // 
 	for _, tc := range []struct {
 		status     int
 		retryAfter bool
+		secondary  bool
 		reason     string
 	}{
-		{http.StatusUnauthorized, false, "auth"},
-		{http.StatusForbidden, false, "auth"},
-		{http.StatusNotFound, false, "not_found"},
-		{http.StatusTooManyRequests, true, "rate_limited"},
-		{http.StatusForbidden, true, "rate_limited"},
+		{http.StatusUnauthorized, false, false, "auth"},
+		{http.StatusForbidden, false, false, "auth"},
+		{http.StatusNotFound, false, false, "not_found"},
+		{http.StatusTooManyRequests, true, false, "rate_limited"},
+		{http.StatusForbidden, true, true, "rate_limited"},
+		{http.StatusForbidden, false, true, "rate_limited"},
 	} {
-		t.Run(fmt.Sprintf("status=%d/retry=%t", tc.status, tc.retryAfter), func(t *testing.T) {
+		t.Run(fmt.Sprintf("status=%d/retry=%t/secondary=%t", tc.status, tc.retryAfter, tc.secondary), func(t *testing.T) {
 			assert := assert.New(t)
 			var mints atomic.Int32
 			host := withGitHubAuthTLSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -275,6 +277,12 @@ func TestSyncFailedManagedTokenRenewal(t *testing.T) { //nolint:paralleltest // 
 				}
 				if tc.retryAfter {
 					w.Header().Set("Retry-After", "90")
+				}
+				if tc.secondary {
+					w.Header().Set("X-RateLimit-Remaining", "4999")
+					w.WriteHeader(tc.status)
+					fmt.Fprint(w, `{"message":"You have exceeded a secondary rate limit.","documentation_url":"https://docs.github.com/rest/using-the-rest-api/rate-limits-for-the-rest-api#about-secondary-rate-limits"}`)
+					return
 				}
 				http.Error(w, "mint failed", tc.status)
 			}))

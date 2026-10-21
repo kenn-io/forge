@@ -683,7 +683,7 @@ The event sends only `sync_source` (`merge_requests`, `issues`, `checks`, or
 `rate_limited`, `not_found`, `network`, `provider`, or `other`), with unlisted
 reasons sent as `other`. List and repository failures count. For each source,
 any successful read in a repository wins over failures in that pass. `refs`
-counts only auth, rate-limit, network, and provider failures during clone or fetch.
+counts only failures Git reports as auth, rate-limit, network, or server errors during clone or fetch.
 Local filesystem failures and individual PR, issue, and child reads don't count.
 Skipped reads keep prior state; observed recovery or disablement clears it, and
 archived or untracked repositories drop out. Counts are approximate: state stays

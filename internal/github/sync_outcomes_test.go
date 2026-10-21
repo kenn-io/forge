@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/gitclone"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -438,6 +439,38 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 	s.RunOnce(t.Context())
 	assert.Equal([][2]string{{"refs", "auth"}, {"refs", "auth"}}, events)
 	assert.Equal(int32(3), reads.Load())
+}
+
+func TestSyncFailedRefsProcessCapacity(t *testing.T) {
+	assert := assert.New(t)
+	var reads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reads.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(server.Close)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: server.Listener.Addr().String(), CloneURL: server.URL + "/acme/widget.git"}
+	client := &mockClient{getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		return &gh.Repository{ID: new(int64(42)), Owner: &gh.User{Login: new(owner)}, Name: new(name), CloneURL: new(repo.CloneURL), DefaultBranch: new("main")}, nil
+	}}
+	clones := gitclone.New(t.TempDir(), nil)
+	t.Cleanup(clones.Wait)
+	clones.SetAllowInsecureHTTP("github", repo.PlatformHost, true)
+	s := NewSyncer(map[string]Client{repo.PlatformHost: client}, openTestDB(t), clones, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	limiter := procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond)
+	t.Cleanup(procutil.SetDefaultLimiterForTest(limiter))
+	release, err := limiter.TryAcquire(t.Context(), "test")
+	require.NoError(t, err)
+	t.Cleanup(release)
+	s.RunOnce(t.Context())
+	assert.Empty(events)
+	assert.Zero(reads.Load(), "capacity exhaustion must prevent Git from starting")
+	release()
+	s.RunOnce(t.Context())
+	assert.Positive(reads.Load())
+	assert.Equal([][2]string{{"refs", "provider"}}, events)
 }
 
 func TestSyncFailedMixedReads(t *testing.T) {

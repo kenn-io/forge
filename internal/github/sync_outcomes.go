@@ -36,6 +36,9 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	reason := ""
 	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
+		if source == "refs" {
+			reason = refsFailureReason(err)
+		}
 	}
 	if source == "refs" && reason == "other" || source == "checks" && (reason == "not_found" || errors.Is(err, platform.ErrLookupInaccessible)) {
 		return
@@ -180,6 +183,21 @@ func providerStatusCode(err error) int {
 
 func syncAuthenticationFailure(err error) bool {
 	return gitAccessFailureReason(err) != "" || gitclone.IsHTTPAuthGitError(err)
+}
+
+func refsFailureReason(err error) string {
+	switch {
+	case gitclone.IsRateLimitedGitError(err):
+		return "rate_limited"
+	case gitclone.IsAuthenticationFailure(err), gitclone.IsHTTPAuthGitError(err):
+		return "auth"
+	case gitclone.IsNetworkGitError(err):
+		return "network"
+	case gitclone.IsServerGitError(err):
+		return "provider"
+	default:
+		return "other"
+	}
 }
 
 func syncFailureReason(err error) string {

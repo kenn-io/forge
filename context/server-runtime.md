@@ -4,8 +4,8 @@
   starts failing it; a repository that keeps failing doesn't report again or
   hide other repositories' new failures.
   List and repository failures count; for each source, any successful read in a
-  repository wins over failures in that pass. `refs` counts only auth,
-  rate-limit, network, and provider clone/fetch failures.
+  repository wins over failures in that pass. `refs` counts only failures Git
+  reports as auth, rate-limit, network, or server errors during clone/fetch.
   Local filesystem failures and individual PR, issue, and child
   reads don't. Unread repositories keep their state; recovery or disablement
   clears it, archived or untracked repositories drop out, and restart can count

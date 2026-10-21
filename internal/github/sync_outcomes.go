@@ -108,7 +108,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if s.syncFailures == nil {
 		s.syncFailures = make(map[string]map[string]bool)
 	}
-	for _, source := range telemetry.SyncSources {
+	for _, source := range telemetry.SyncSources() {
 		live, failures := s.liveSyncFailures(source, tracked)
 		// Only repositories that start failing count, so one repository that
 		// keeps failing does not hide outages in the others.
@@ -164,14 +164,14 @@ func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	return reason != "" && (current == "" || slices.Index(telemetry.SyncReasons, reason) < slices.Index(telemetry.SyncReasons, current))
+	return reason != "" && (current == "" || slices.Index(telemetry.SyncReasons(), reason) < slices.Index(telemetry.SyncReasons(), current))
 }
 
 // syscall.Errno satisfies net.Error, so callers must rule out local
 // filesystem failures before treating a net.Error as a network one.
 func isLocalFilesystemFailure(err error) bool {
 	_, pathErr := errors.AsType[*fs.PathError](err)
-	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS)
+	return pathErr || errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EROFS) || errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE)
 }
 
 // providerStatusCode returns the HTTP status carried by a provider error

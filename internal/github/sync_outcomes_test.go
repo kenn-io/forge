@@ -139,6 +139,8 @@ func TestSyncFailedIgnoredErrors(t *testing.T) {
 		{"local operation denied", "issues", fmt.Errorf("read: %w", syscall.EPERM)},
 		{"local full disk", "issues", fmt.Errorf("write: %w", syscall.ENOSPC)},
 		{"local read-only disk", "issues", fmt.Errorf("write: %w", syscall.EROFS)},
+		{"local process file limit", "issues", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.EMFILE}},
+		{"local system file limit", "issues", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ENFILE}},
 		{"budget refused", "issues", platform.ErrSyncBudgetExhausted},
 		{"disabled feature without cooldown", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
 		{"refs token file error", "refs", fmt.Errorf("%w: %w", gitclone.ErrCredentialUnavailable, &fs.PathError{Op: "open", Path: "token", Err: fs.ErrNotExist})},
@@ -408,15 +410,19 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 		status     int
 		reason     string
 		emptyToken bool
+		emptyReply bool
 	}{
-		{http.StatusForbidden, "auth", false},
-		{http.StatusNotFound, "not_found", false},
-		{http.StatusGone, "not_found", false},
-		{0, "auth", true},
+		{http.StatusForbidden, "auth", false, false},
+		{http.StatusNotFound, "not_found", false, false},
+		{http.StatusGone, "not_found", false, false},
+		{0, "auth", true, false},
+		{0, "network", false, true},
 	} {
 		name := fmt.Sprint(tc.status)
 		if tc.emptyToken {
 			name = "empty managed token"
+		} else if tc.emptyReply {
+			name = "empty reply"
 		}
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -427,6 +433,13 @@ func TestSyncFailedGitHTTP(t *testing.T) {
 				assert.Equal("/acme/widget.git/info/refs", req.URL.Path)
 				assert.Equal("git-upload-pack", req.URL.Query().Get("service"))
 				reads.Add(1)
+				if tc.emptyReply {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if assert.NoError(err) {
+						assert.NoError(conn.Close())
+					}
+					return
+				}
 				w.WriteHeader(tc.status)
 			}))
 			t.Cleanup(server.Close)

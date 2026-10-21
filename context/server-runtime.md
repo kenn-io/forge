@@ -1,18 +1,12 @@
 # Server Runtime
 
 - Full sync passes emit at most one `sync_failed` per source when any repository
-  starts failing it; a repository that keeps failing doesn't report again or
-  hide other repositories' new failures.
-  List and repository failures count; for each source, any successful read in a
-  repository wins over failures in that pass. `refs` counts credential resolution
-  failures and failures Git reports as auth, rate-limit, not-found, network, or
-  server errors during clone/fetch.
-  Local filesystem failures and individual PR, issue, and child
-  reads don't. Unread repositories keep their state; recovery or disablement
-  clears it, archived or untracked repositories drop out, and restart can count
-  a failing repository twice. Disabled-feature responses observe nothing; 304
-  counts as success. Report only fixed `sync_source` and `reason` values,
-  without repository identifiers
+  starts failing it. Any successful read wins within that repository/source.
+  Observe list/repository reads and refs credential or recognized Git failures;
+  exclude local filesystem/capacity errors, budget waits, and individual item reads.
+  Unread repositories retain state; recovery, cooldown, archival, or untracking
+  clears it. Disabled-feature responses observe nothing; 304 counts as success.
+  State is in memory. Report only fixed source/reason values, without identifiers
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - Startup and daily daemon telemetry send tracked repository counts only in the
   ranges documented in [Telemetry](../docs/configuration.md#telemetry)

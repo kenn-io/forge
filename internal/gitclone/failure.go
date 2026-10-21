@@ -18,18 +18,16 @@ func FailureReason(err error) string {
 		return "not_found"
 	case strings.Contains(msg, "fatal: repository '") && strings.Contains(msg, "' not found"):
 		return "not_found"
+	case strings.Contains(msg, "internal server error"), strings.Contains(msg, "returned error: 5"):
+		return "provider"
 	}
-	for _, needle := range []string{
-		"connection reset", "connection refused", "could not resolve host",
-		"operation timed out", "operation too slow", "early eof", "ssl_read",
-		"tls connection", "certificate verification failed", "ssl certificate problem",
-	} {
+	for _, needle := range transientGitErrorSubstrings {
 		if strings.Contains(msg, needle) {
 			return "network"
 		}
 	}
-	if strings.Contains(msg, "internal server error") || strings.Contains(msg, "returned error: 5") {
-		return "provider"
+	if strings.Contains(msg, "unable to access 'http://") || strings.Contains(msg, "unable to access 'https://") || strings.Contains(msg, "rpc failed; curl ") || strings.Contains(msg, "certificate verification failed") || strings.Contains(msg, "ssl certificate problem") {
+		return "network"
 	}
 	return ""
 }

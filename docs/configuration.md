@@ -676,20 +676,12 @@ At startup and daily while running, the daemon reports the number of tracked
 repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass reports `sync_failed` once per source when any repository
-newly starts failing it. A repository that keeps failing reports nothing more
-until it recovers.
+starts failing it, and again if it recovers and fails later.
 The event sends only `sync_source` (`merge_requests`, `issues`, `checks`, or
 `refs`) and `reason` (`auth`, `rate_limited`, `not_found`, `network`, `provider`,
-or `other`), with unlisted reasons sent as `other`. List and repository failures
-count. For each source, any successful read in a repository wins over failures
-in that pass. `refs` counts credential resolution failures and failures Git
-reports as auth, rate-limit, not-found, network, or server errors during clone or
-fetch. Local filesystem
-failures and individual PR, issue, and child reads don't count.
-Skipped reads keep prior state; observed recovery or disablement clears it, and
-archived or untracked repositories drop out. Counts are approximate: state stays
-in memory, so a restart can count a failing repository twice. These properties
-identify no repository.
+or `other`). `refs` covers credential failures and Git auth, rate-limit,
+not-found, network, and server failures during clone or fetch.
+These properties identify no repository. A restart can count one outage twice.
 Closing a tab or leaving it hidden for 30 minutes reports `session_ended` with
 `surface: web` and a `duration_bucket` of `under_1m`, `1_to_5m`, `5_to_30m`,
 `30m_to_2h`, or `over_2h`.

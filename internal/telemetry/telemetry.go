@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,11 +52,15 @@ func RepoCountBucket(count int) string {
 
 var ErrUnsupportedEvent = errors.New("unsupported telemetry event")
 
-// SyncSources lists the sources reported by full sync passes.
-var SyncSources = []string{"merge_requests", "issues", "checks", "refs"}
+var syncSources = []string{"merge_requests", "issues", "checks", "refs"}
 
-// SyncReasons lists failure reasons in descending priority.
-var SyncReasons = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+// SyncSources returns the sources reported by full sync passes.
+func SyncSources() []string { return slices.Clone(syncSources) }
+
+var syncReasons = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+
+// SyncReasons returns failure reasons in descending priority.
+func SyncReasons() []string { return slices.Clone(syncReasons) }
 
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
@@ -91,8 +96,8 @@ func stringValuesOrOther(values ...string) posthog.PropertyFilter {
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
 	"sync_failed": {
-		"sync_source": posthog.AllowStringValues(SyncSources...),
-		"reason":      stringValuesOrOther(SyncReasons...),
+		"sync_source": posthog.AllowStringValues(syncSources...),
+		"reason":      stringValuesOrOther(syncReasons...),
 	},
 	"setup_finished": {},
 	"pr_viewed": {

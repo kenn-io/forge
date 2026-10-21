@@ -867,7 +867,8 @@ type Syncer struct {
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	onSyncFailed     func(source, reason string)
-	syncFailures     map[string]map[string]bool
+	syncFailuresMu   sync.Mutex
+	syncFailures     map[string]map[string]bool // guarded by syncFailuresMu
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
@@ -3044,9 +3045,7 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 func (s *Syncer) SetRepos(repos []RepoRef) {
 	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
-		s.reposMu.Lock()
-		s.repos = slices.Clone(repos)
-		s.reposMu.Unlock()
+		s.replaceTrackedRepos(repos)
 		s.refreshGitAccessStatus()
 		s.WakeArchive()
 	}
@@ -3073,12 +3072,21 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 			}
 		}
 	}
-	s.reposMu.Lock()
-	s.repos = slices.Clone(repos)
-	s.reposMu.Unlock()
+	s.replaceTrackedRepos(repos)
 	s.refreshGitAccessStatus()
 	s.WakeArchive()
 	return nil
+}
+
+func (s *Syncer) replaceTrackedRepos(repos []RepoRef) {
+	s.syncFailuresMu.Lock()
+	defer s.syncFailuresMu.Unlock()
+	s.reposMu.Lock()
+	s.repos = slices.Clone(repos)
+	s.reposMu.Unlock()
+	for source := range s.syncFailures {
+		s.liveSyncFailures(source, repos)
+	}
 }
 
 // Start runs an immediate sync then launches a background ticker.
@@ -4753,7 +4761,9 @@ dispatch:
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 	if !canceled.Load() && ctx.Err() == nil {
+		s.syncFailuresMu.Lock()
 		s.finishSyncPass(pass, s.TrackedRepos())
+		s.syncFailuresMu.Unlock()
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at

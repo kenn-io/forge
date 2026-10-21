@@ -59,9 +59,6 @@ func SyncSources() []string { return slices.Clone(syncSources) }
 
 var syncReasons = []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
 
-// SyncReasons returns failure reasons in descending priority.
-func SyncReasons() []string { return slices.Clone(syncReasons) }
-
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
 	"workspaces", "terminal", "workspace-item", "settings", "project-intake",

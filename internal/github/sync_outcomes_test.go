@@ -205,6 +205,24 @@ func TestSyncFailedProviderChecks(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
+func TestSyncFailedUntrackAndReaddBeforeFullPass(t *testing.T) {
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	client := &partialFailureMock{}
+	client.listOpenIssuesErr = platform.ErrNotFound
+	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+	var events [][2]string
+	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+	s.RunOnce(t.Context())
+	require.Equal(t, [][2]string{{"issues", "not_found"}}, events)
+	s.RunOnce(t.Context())
+	require.Len(t, events, 1)
+	tracked := s.TrackedRepos()
+	require.NoError(t, s.SetReposWithContext(t.Context(), nil, false))
+	require.NoError(t, s.SetReposWithContext(t.Context(), tracked, false))
+	s.RunOnce(t.Context())
+	assert.Equal(t, [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}, events)
+}
+
 func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
 	for _, endpoint := range []string{"check runs", "combined status"} {
 		t.Run(endpoint, func(t *testing.T) {

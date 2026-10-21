@@ -88,7 +88,8 @@ func syncSourceFeature(source string) string {
 	return source
 }
 
-// finishSyncPass runs under the run slot after all observations have finished.
+// finishSyncPass runs under the run slot and syncFailuresMu after all
+// observations have finished.
 func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
@@ -152,7 +153,8 @@ func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	return reason != "" && (current == "" || slices.Index(telemetry.SyncReasons(), reason) < slices.Index(telemetry.SyncReasons(), current))
+	priority := []string{"rate_limited", "auth", "not_found", "network", "provider", "other"}
+	return reason != "" && (current == "" || slices.Index(priority, reason) < slices.Index(priority, current))
 }
 
 // syscall.Errno satisfies net.Error, so callers must rule out local

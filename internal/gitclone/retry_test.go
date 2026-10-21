@@ -13,94 +13,83 @@ import (
 
 func TestIsTransientGitError(t *testing.T) {
 	cases := []struct {
-		name       string
-		err        error
-		want       bool
-		wantReason string
+		name string
+		err  error
+		want bool
 	}{
-		{"nil", nil, false, ""},
-		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true, "network"},
-		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true, "network"},
+		{"nil", nil, false},
+		{"git refused", errors.New("fatal: unable to access remote: Connection refused"), true},
+		{"git timeout", errors.New("fatal: unable to access remote: Operation timed out"), true},
 		{
 			"github 500 with internal server error preamble",
 			fmt.Errorf("exit status 128: %s", "remote: Internal Server Error\nfatal: unable to access 'https://github.com/x/y.git/': The requested URL returned error: 500"),
-			true, "provider",
+			true,
 		},
 		{
 			"bare 502",
 			errors.New("fatal: The requested URL returned error: 502"),
-			true, "provider",
+			true,
 		},
 		{
 			"bare 503",
 			errors.New("fatal: The requested URL returned error: 503"),
-			true, "provider",
+			true,
 		},
 		{
 			"bare 504",
 			errors.New("fatal: The requested URL returned error: 504"),
-			true, "provider",
+			true,
 		},
-		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false, "auth"},
-		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false, "auth"},
-		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false, "rate_limited"},
-		{"certificate verification is permanent", errors.New("fatal: unable to access remote: server certificate verification failed"), false, "network"},
-		{"SSL certificate problem is permanent", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), false, "network"},
-		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false, "provider"},
+		{"HTTP 401 is permanent", errors.New("fatal: The requested URL returned error: 401"), false},
+		{"HTTP 403 is permanent", errors.New("fatal: The requested URL returned error: 403"), false},
+		{"HTTP 429 is permanent", errors.New("fatal: The requested URL returned error: 429"), false},
+		{"certificate verification is permanent", errors.New("fatal: unable to access remote: server certificate verification failed"), false},
+		{"SSL certificate problem is permanent", errors.New("fatal: unable to access remote: SSL certificate problem: self-signed certificate"), false},
+		{"HTTP 501 is permanent", errors.New("fatal: The requested URL returned error: 501"), false},
 		{
 			"connection reset",
 			errors.New("error: RPC failed; curl 56 Recv failure: Connection reset by peer"),
-			true, "network",
+			true,
 		},
 		{
 			"stalled HTTP transfer",
 			errors.New("fatal: unable to access 'https://example.com/repo.git/': Operation too slow. Less than 1 bytes/sec transferred the last 30 seconds"),
-			true, "network",
+			true,
 		},
 		{
 			"could not resolve host",
 			errors.New("fatal: unable to access 'https://github.com/x/y.git/': Could not resolve host: github.com"),
-			true, "network",
+			true,
 		},
 		{
 			"case insensitive",
 			errors.New("REMOTE: INTERNAL SERVER ERROR"),
-			true, "provider",
+			true,
 		},
 		{
 			"early eof",
 			errors.New("fatal: early EOF\nfatal: index-pack failed"),
-			true, "network",
+			true,
 		},
 		{
 			"auth failure is permanent",
 			errors.New("fatal: Authentication failed for 'https://github.com/x/y.git/'"),
-			false, "auth",
+			false,
 		},
 		{
 			"not found is permanent",
 			errors.New("fatal: repository 'https://github.com/x/y.git/' not found"),
-			false, "not_found",
+			false,
 		},
 		{
 			"bad ref is permanent",
 			errors.New("fatal: couldn't find remote ref refs/heads/nope"),
-			false, "",
+			false,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.want, isTransientGitError(tc.err))
-			assert.Equal(t, tc.wantReason, FailureReason(tc.err))
-		})
-	}
-}
-
-func TestGitHTTPAuthentication(t *testing.T) {
-	for _, status := range []int{401, 403} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			err := fmt.Errorf("fatal: The requested URL returned error: %d", status)
-			assert.False(t, IsAuthenticationFailure(err), "HTTP status alone must leave Git access unchanged")
 		})
 	}
 }

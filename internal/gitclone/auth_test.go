@@ -490,6 +490,15 @@ done
 	}
 }
 
+func TestGitHTTPAuthentication(t *testing.T) {
+	for _, status := range []int{401, 403} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			err := fmt.Errorf("fatal: The requested URL returned error: %d", status)
+			assert.False(t, IsAuthenticationFailure(err), "HTTP status alone must leave Git access unchanged")
+		})
+	}
+}
+
 func TestGitRetriesAuthFailureAfterInvalidatingTokenSource(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

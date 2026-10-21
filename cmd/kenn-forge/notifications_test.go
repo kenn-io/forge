@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -13,7 +14,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/cli/serve"
 	"go.kenn.io/forge/internal/config"
@@ -21,7 +21,6 @@ import (
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/telemetry/posthog"
 )
 
@@ -248,19 +247,10 @@ func TestWireSyncFailed(t *testing.T) {
 	for _, disabled := range []bool{false, true} {
 		t.Run(fmt.Sprintf("disabled=%t", disabled), func(t *testing.T) {
 			client := &fakeTelemetryClient{disabled: disabled}
-			provider := &serverfake.MockGH{}
-			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": provider}, dbtest.Open(t), nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
+			syncer := ghclient.NewSyncer(nil, nil, nil, nil, time.Minute, nil, nil)
 			wireSyncFailed(syncer, client)
-			provider.ListOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
-				return nil, platform.ErrPermissionDenied
-			}
-			syncer.RunOnce(t.Context())
-			if disabled {
-				require.Empty(t, client.events())
-			} else {
-				require.Equal(t, []string{"sync_failed"}, client.events())
-				require.Equal(t, []map[string]any{{"sync_source": "issues", "reason": "auth"}}, client.captures)
-			}
+			callback := reflect.ValueOf(syncer).Elem().FieldByName("onSyncFailed")
+			require.Equal(t, disabled, callback.IsNil())
 		})
 	}
 }

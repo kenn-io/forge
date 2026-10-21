@@ -7,6 +7,7 @@ import { retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { searchEmptyReporter } from "../app/telemetry.js";
 import {
   providerDefaultHost,
   providerRouteParams,
@@ -366,7 +367,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return searchQuery;
   }
 
+  const emptySearch = searchEmptyReporter(runtime);
+
   function setSearchQuery(q: string | undefined): void {
+    if (q !== searchQuery) emptySearch.textChanged();
     searchQuery = q;
   }
 
@@ -568,7 +572,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPullsEffect(params: PullsParams | undefined = activeListParams) {
+  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
     const globalRepo = getGlobalRepo();
     const query: PullsParams = {
       state: filterState,
@@ -603,6 +607,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+          if (options?.submitted && result.length === 0) emptySearch.empty(query.q);
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
@@ -651,9 +656,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPulls(params?: PullsParams): void {
+  function loadPulls(params?: PullsParams, options?: { submitted?: boolean }): void {
     activeListParams = params;
-    runtime.runCommand(loadPullsEffect(params), {
+    runtime.runCommand(loadPullsEffect(params, options), {
       operation: "load pull requests",
       safeContext: {},
       onFailure: (failure) => {

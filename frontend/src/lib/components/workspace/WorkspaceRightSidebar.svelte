@@ -76,7 +76,8 @@
   const appRuntime = getAppRuntime();
   const { detail } = getStores();
   $effect(() => {
-    if (visible && activeTab === "pr" && displayedPR && pullDetailMatchesRef(detail.getDetail(), displayedPR) && documentVisible()) {
+    if (!visible || activeTab !== "pr" || !documentVisible()) return;
+    if (displayedPR && pullDetailMatchesRef(detail.getDetail(), displayedPR)) {
       reportPRViewed(appRuntime, displayedPR.provider);
     }
   });
@@ -109,6 +110,7 @@
   );
   const workspaceRepo = $derived({ provider, platformHost, repositoryKey, owner: repoOwner, name: repoName, repoPath });
   const displayedPR = $derived(viewedPR ?? (hasPR && associatedPRNumber !== null ? { ...workspaceRepo, number: associatedPRNumber } : null));
+
   const displayedIssue = $derived(viewedIssue ?? (hasIssue ? { ...workspaceRepo, number: ownerItemNumber } : null));
   const hasMergeTarget = $derived(
     ownerItemType === "pull_request"
@@ -155,6 +157,7 @@
       {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
+            {visible}
             {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}

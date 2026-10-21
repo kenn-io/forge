@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { searchEmptyReporter } from "../app/telemetry.js";
 import { TransientTransportError } from "../api/effect-errors.js";
 import type { ApiProblemError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
@@ -370,7 +371,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     referencedByPR = value;
     writeIssuePRReferenceFilter(value);
   }
+  const emptySearch = searchEmptyReporter(runtime);
+
   function setIssueSearchQuery(q: string | undefined): void {
+    if (q !== searchQuery) emptySearch.textChanged();
     searchQuery = q;
   }
   function getIssueFilterState(): string {
@@ -428,7 +432,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectedIssue = null;
   }
 
-  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams) {
+  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams, options?: { submitted?: boolean }) {
     const globalRepo = getGlobalRepo();
     const query: IssuesParams = {
       state: filterState,
@@ -459,6 +463,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           issues = reuseUnchanged(issues, result, (item) => item.ID);
+          if (options?.submitted && result.length === 0) emptySearch.empty(query.q);
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
@@ -503,9 +508,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     });
   }
 
-  function loadIssues(params?: IssuesParams): void {
+  function loadIssues(params?: IssuesParams, options?: { submitted?: boolean }): void {
     activeListParams = params;
-    runtime.runCommand(loadIssuesEffect(params), {
+    runtime.runCommand(loadIssuesEffect(params, options), {
       operation: "load issues",
       safeContext: {},
       onFailure: (failure) => {

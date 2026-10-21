@@ -67,7 +67,8 @@
 
   const appRuntime = getAppRuntime();
   $effect(() => {
-    if (visible && documentVisible() && (detail || tabKey === "files")) reportPRViewed(appRuntime, pr.provider);
+    if (!visible || !documentVisible()) return;
+    if (detail || tabKey === "files") reportPRViewed(appRuntime, pr.provider);
   });
 
   // Provider capabilities are unknown until the detail lands. Assuming the
@@ -123,6 +124,7 @@
 
 {#if tabKey === "conversation"}
   <PullDetail
+    {visible}
     owner={pr.owner}
     name={pr.name}
     number={pr.number}
@@ -146,6 +148,7 @@
        leak across pull requests. -->
   {#key scrollKey}
     <DiffFilesLayout
+      reportErrors={true}
       owner={pr.owner}
       name={pr.name}
       number={pr.number}

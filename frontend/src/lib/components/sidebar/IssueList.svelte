@@ -83,6 +83,16 @@
 
   onDestroy(() => searchExecution?.interrupt());
 
+  function applySearch(value: string, submitted = false): void {
+    issues.setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
+    issues.loadIssues(undefined, { submitted });
+  }
+
+  function submitSearch(value: string): void {
+    searchExecution?.interrupt();
+    applySearch(value, value.trim() !== "");
+  }
+
   function onSearchInput(value: string): void {
     searchInput = value;
 
@@ -90,8 +100,7 @@
     searchExecution = runtime.runCommand(
       Effect.sleep("300 millis").pipe(
         Effect.andThen(Effect.sync(() => {
-          issues.setIssueSearchQuery(value.trim() === "" ? undefined : value.trim());
-          issues.loadIssues();
+          applySearch(value);
         })),
       ),
       { operation: "debounce issue sidebar search", safeContext: {}, onFailure: () => {} },
@@ -425,6 +434,7 @@
         placeholder="Search issues..."
         ariaLabel="Search issues"
         oninput={onSearchInput}
+        onsubmit={submitSearch}
       />
     </div>
     <button

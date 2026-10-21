@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
@@ -501,4 +502,36 @@ describe("pulls store display order", () => {
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 2, 3]);
   });
+});
+
+it("counts settled empty submissions while excluding previews and failures", async () => {
+  const get = vi.fn().mockResolvedValue([]);
+  const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+  const sent = vi.fn();
+  await startTestTelemetry(runtime!, sent).ready;
+  const search = async (query: string, submitted = true) => {
+    store.setSearchQuery(query);
+    store.loadPulls(undefined, { submitted });
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+  };
+  await search("preview", false);
+  expect(sent).not.toHaveBeenCalled();
+  for (const query of ["A", "A", "B", "A"]) await search(query);
+  expect(sent).toHaveBeenCalledTimes(3);
+  expect(sent).toHaveBeenLastCalledWith({ event: "search_empty", properties: { surface: "web" } }, {});
+  get.mockResolvedValueOnce([pull(1, "widgets", "2026-10-01T00:00:00Z")]);
+  await search("found");
+  get.mockRejectedValueOnce(
+    new GeneratedProblemResponse({ detail: "unavailable" }, new Response(null, { status: 403 })),
+  );
+  await search("failed");
+  expect(sent).toHaveBeenCalledTimes(3);
+
+  get.mockResolvedValue([pull(1, "widgets", "2026-10-01T00:00:00Z")]);
+  store.toggleAttributeFilter("draft");
+  store.setSearchQuery("widgets");
+  store.loadPulls(undefined, { submitted: true });
+  await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+  expect(store.getFilteredPulls()).toEqual([]);
+  expect(sent).toHaveBeenCalledTimes(3);
 });

@@ -1329,12 +1329,12 @@ describe("WorkspaceTerminalView", () => {
         return;
       }
       await waitFor(() =>
-        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-          event: "workspace_opened",
-          properties: { item_type: "pull_request" },
-        }),
+        expect(coreActions).toHaveBeenCalledWith(
+          { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+          {},
+        ),
       );
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(coreActions).toHaveBeenCalledTimes(status === "error" ? 2 : 1);
     },
   );
 
@@ -2585,6 +2585,9 @@ describe("WorkspaceTerminalView", () => {
     );
     await rerender({ workspaceId: "ws-1" });
     await screen.findByText("Workspace removed");
+    expect(
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+    ).toHaveLength(0);
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
 
     await rerender({ workspaceId: "ws-2" });
@@ -5058,6 +5061,61 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
+  it("counts setup failures again after retry", async () => {
+    const events = installEventSourceRecorder();
+    capturePollingIntervals([]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const path = new URL(input instanceof Request ? input.url : String(input), "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1/retry")) return Response.json({ ...workspaceResponse, status: "creating" });
+        if (path.endsWith("/workspaces/ws-1")) return Response.json({ ...workspaceResponse, status: "error" });
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Setting up workspace...");
+    latestWorkspaceEventListeners(events).workspace_status?.(
+      new MessageEvent("workspace_status", {
+        data: JSON.stringify({ id: "ws-1", status: "error" }),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("counts failed workspace reads again on retry", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        return new URL(url, "http://localhost").pathname.endsWith("/workspaces/ws-1")
+          ? Response.json({ code: "forbidden", title: "Read denied", status: 403 }, { status: 403 })
+          : Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    await screen.findByText("Read denied");
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Read denied");
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
   it("consumes unavailable explicit intent and flashes its reason", async () => {
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
@@ -5067,6 +5125,12 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("Codex is not configured"), {
       tone: "danger",
     });
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
     expect(discardWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 

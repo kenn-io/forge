@@ -1,3 +1,5 @@
+import { GeneratedProblemResponse } from "../api/runtime.js";
+import type { VisitEvent } from "@kenn-io/kit-ui/utils/browser-telemetry";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -26,7 +28,7 @@ describe("quick-action launch serialization", () => {
   let runtime: OwnedAppRuntime;
   const launchHandoff = vi.fn();
   const launchDevboxHandoff = vi.fn();
-  const telemetry = vi.fn(async () => ({ status: "queued" }));
+  const telemetry = vi.fn(async (_event: VisitEvent, _options?: unknown) => ({ status: "queued" }));
 
   beforeEach(async () => {
     quickActionLaunches.clear();
@@ -75,6 +77,26 @@ describe("quick-action launch serialization", () => {
     // A finished launch never blocks a later one.
     runWorkspaceQuickAction(runtime, "ws-a", "pull_request", firstAction);
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
+  });
+
+  it("reports each rejected quick-action launch as a failed workspace open", async () => {
+    launchHandoff.mockRejectedValue(
+      new GeneratedProblemResponse(
+        { code: "forbidden", title: "Launch denied", status: 403 },
+        new Response(null, { status: 403 }),
+      ),
+    );
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", action);
+      await vi.waitFor(() =>
+        expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toHaveLength(attempt),
+      );
+    }
+    expect(telemetry).toHaveBeenCalledWith(
+      { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+      {},
+    );
   });
 
   it("allows another action after the previous request fails", async () => {

@@ -118,6 +118,41 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 	}
 	_, valid := allowedEvents["app_opened"]["surface"]("owner/repo")
 	assert.False(valid)
+
+	for _, tc := range []struct {
+		event      string
+		properties map[string]any
+		surface    string
+		kind       string
+	}{
+		{"search_empty", map[string]any{"surface": "web", "query": "example"}, "web", ""},
+		{"error_shown", map[string]any{"surface": "web", "kind": "pr_viewed", "error": "example"}, "web", "pr_viewed"},
+		{"error_shown", map[string]any{"surface": "web", "kind": "unknown"}, "web", "other"},
+	} {
+		assert.True(backend.EventAllowed(tc.event))
+		assert.True(UIEventAllowed(tc.event))
+		properties, err := backend.SanitizeProperties(tc.event, tc.properties)
+		require.NoError(err, tc.event)
+		assert.Equal(tc.surface, properties["surface"], tc.event)
+		if tc.kind != "" {
+			assert.Equal(tc.kind, properties["kind"], tc.event)
+		}
+		for _, key := range []string{"query", "error"} {
+			assert.NotContains(properties, key, tc.event)
+		}
+	}
+	for _, tc := range []struct {
+		event      string
+		properties map[string]any
+	}{
+		{"search_empty", nil},
+		{"error_shown", map[string]any{"kind": "pr_viewed"}},
+		{"error_shown", map[string]any{"surface": "web"}},
+		{"search_empty", map[string]any{"surface": "cli"}},
+	} {
+		_, err := backend.SanitizeProperties(tc.event, tc.properties)
+		require.ErrorIs(err, posthog.ErrInvalidProperty)
+	}
 }
 
 func TestSyncFailedProperties(t *testing.T) {

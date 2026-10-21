@@ -88,6 +88,8 @@ func SessionDuration(value any) (any, bool) {
 
 var requiredProperties = map[string]map[string]bool{
 	"sync_failed":      {"sync_source": true, "reason": true},
+	"search_empty":     {"surface": true},
+	"error_shown":      {"surface": true, "kind": true},
 	"screen_viewed":    {"screen": true},
 	"session_ended":    {"duration_bucket": true},
 	"pr_viewed":        {"provider": true, "surface": true},
@@ -105,6 +107,13 @@ func stringValuesOrOther(values ...string) posthog.PropertyFilter {
 }
 
 var allowedEvents = map[string]map[string]posthog.PropertyFilter{
+	"search_empty": {
+		"surface": posthog.AllowStringValues("web"),
+	},
+	"error_shown": {
+		"surface": posthog.AllowStringValues("web"),
+		"kind":    stringValuesOrOther("pr_viewed", "workspace_opened"),
+	},
 	"sync_failed": {
 		"sync_source": posthog.AllowStringValues(syncSources...),
 		"reason":      stringValuesOrOther(syncReasons...),

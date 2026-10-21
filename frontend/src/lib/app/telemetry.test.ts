@@ -6,6 +6,7 @@ import { makeGeneratedClient } from "../testing/generated-client.js";
 import {
   startRuntimeTelemetry,
   reportPRViewed,
+  reportOutcome,
   reportScreen,
   reportWorkspaceOpened,
   visibleScreen,
@@ -205,6 +206,84 @@ describe("browser telemetry", () => {
     await vi.waitFor(() =>
       expect(sent).toContainEqual({ event: "screen_viewed", properties: { surface: "web", screen: "docs" } }),
     );
+  });
+
+  it.each(["queued", "disabled"])("holds outcomes until the permission receipt is %s", async (status) => {
+    const receipt = Promise.withResolvers<Response>();
+    const { sent, runtime, quiet } = setup(() => receipt.promise);
+    reportOutcome(runtime, { event: "search_empty" });
+    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
+    reportPRViewed(runtime, "github");
+    reportPRViewed(runtime, "github");
+    await vi.waitFor(() => expect(sent.map((event) => event.event)).toEqual(["app_opened"]));
+    receipt.resolve(Response.json({ status }, { status: 202 }));
+    if (status === "queued") {
+      await vi.waitFor(() =>
+        expect(sent.map((event) => event.event)).toEqual(["app_opened", "search_empty", "error_shown", "pr_viewed"]),
+      );
+    } else {
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(sent.map((event) => event.event)).toEqual(["app_opened"]);
+    }
+  });
+
+  it("keeps only the newest 32 outcomes while permission is pending", async () => {
+    const receipt = Promise.withResolvers<Response>();
+    const { sent, runtime } = setup(() => receipt.promise);
+    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
+    for (let i = 0; i < 32; i++) reportOutcome(runtime, { event: "search_empty" });
+    receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
+    await vi.waitFor(() => expect(sent).toHaveLength(33));
+    expect(sent.slice(1).every((event) => event.event === "search_empty")).toBe(true);
+  });
+
+  it("holds an outcome during screen backoff until an enabled receipt", async () => {
+    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
+    let failing = false;
+    const { sent, runtime, reporter } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    failing = true;
+    reporter.reportScreen("docs");
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    reportOutcome(runtime, { event: "search_empty" });
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed"]);
+    await vi.advanceTimersByTimeAsync(1001);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed", "screen_viewed", "search_empty"]);
+  });
+
+  it("labels shown errors with the failed core action", async () => {
+    const { sent, runtime, quiet } = setup();
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
+    reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+    await vi.waitFor(() =>
+      expect(sent.filter((event) => event.event === "error_shown")).toEqual([
+        { event: "error_shown", properties: { surface: "web", kind: "pr_viewed" } },
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+      ]),
+    );
+  });
+
+  it("sends fresh outcomes after backoff without replaying failed outcomes", async () => {
+    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
+    let failing = false;
+    const { sent, runtime, quiet } = setup(async () =>
+      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(quiet).toHaveBeenLastCalledWith(false);
+    failing = true;
+    reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
+    await vi.advanceTimersByTimeAsync(0);
+    failing = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    reportOutcome(runtime, { event: "search_empty" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.map((event) => event.event)).toEqual(["app_opened", "error_shown", "search_empty"]);
   });
 
   it("retains a core action through screen backoff and sends it after the gate's retry succeeds", async () => {

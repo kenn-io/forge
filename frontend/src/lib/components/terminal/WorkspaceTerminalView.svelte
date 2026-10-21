@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
@@ -406,7 +408,7 @@
   let runtimeSnapshotAuthoritative = $state(false);
   let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
   const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>(100);
-  let loadError = $state<string | null>(null);
+  let loadError = $state<{ message: string; report: boolean } | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
   type DeletingWorkspaceTarget = {
@@ -2500,10 +2502,11 @@
         Effect.sync(() => {
           recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, { error: true });
           if (!isCurrentWorkspace(id, hostKey)) return null;
+          const gone = workspaceLive && failure._tag === "ApiProblemError" && failure.problem.status === 404;
           if (failure._tag === "ApiProblemError" && failure.problem.status === 404) {
             handleWorkspaceGone(id, hostKey);
           }
-          loadError = workspaceReadFailureMessage(failure);
+          loadError = { message: workspaceReadFailureMessage(failure), report: !gone };
           return null;
         }),
       ),
@@ -2725,7 +2728,9 @@
                       ? "Retry failed"
                       : "Delete failed";
         if (current) {
-          showFlash(workspaceMutationFailureMessage(state.error, fallback), { tone: "danger" });
+          const message = workspaceMutationFailureMessage(state.error, fallback);
+          if (state.operation === "Launch") showWorkspaceLaunchError(appRuntime, message);
+          else showFlash(message, { tone: "danger" });
         }
         clearRuntimeMutationPending(state);
         return true;
@@ -3037,7 +3042,7 @@
         sessionKey: acceptedSessionKey,
         acceptedAt,
         onExpired: Effect.sync(() => {
-          showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+          showWorkspaceLaunchError(appRuntime, `${label} launched, but its session did not become available`);
         }),
       });
     });
@@ -4511,7 +4516,7 @@
     const target = admissionRuntime.launch_targets.find((candidate) => candidate.key === pending.targetKey);
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
-      showFlash(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`, { tone: "danger" });
+      showWorkspaceLaunchError(appRuntime, `Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`);
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
@@ -4628,6 +4633,7 @@
           </div>
         {/if}
       {:else if loadError && !workspaceLive}
+        <ErrorShown kind="workspace_opened" scope={JSON.stringify([workspaceHostKey, workspaceId])} shown={!embeddedWorkspace && hostVisible && loadError.report} />
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4641,7 +4647,7 @@
               aria-hidden="true"
             />
           </span>
-          <span>{loadError}</span>
+          <span>{loadError.message}</span>
           <button
             class="retry-btn"
             onclick={() => {
@@ -4665,6 +4671,7 @@
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={JSON.stringify([workspaceHostKey, workspaceId])} shown={!embeddedWorkspace && hostVisible} />{/if}
         <div class="state-message error">
           <span
             class="error-icon-badge"

@@ -69,6 +69,8 @@ type CoreAction =
   | { event: "pr_viewed"; properties: { provider: (typeof PR_PROVIDERS)[number] } }
   | { event: "workspace_opened"; properties: { item_type: WorkspaceDetail["item_type"] } };
 
+export type Outcome = { event: "search_empty" } | { event: "error_shown"; kind: CoreAction["event"] };
+
 const today = () => new Date().toISOString().slice(0, 10);
 const coreKey = (action: VisitEvent) =>
   action.event === "pr_viewed"
@@ -169,6 +171,7 @@ const reporters = new WeakMap<
   {
     reportScreen: (screen: ScreenName) => void;
     reportAction: (action: CoreAction) => void;
+    reportOutcome: (outcome: Outcome) => void;
   }
 >();
 
@@ -177,7 +180,7 @@ export function startRuntimeTelemetry(
   options: Partial<Pick<BrowserTelemetryOptions, "storageKey" | "post">> = {},
 ) {
   const reportedDay = new Map<string, string>();
-  const pending = new Map<string, { action: CoreAction; day: string }>();
+  const pending = new Map<string | VisitEvent, { action: VisitEvent; day: string }>();
   const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
   const stored = actionClaims(storageKey);
   const post = options.post ?? postReceipt;
@@ -189,6 +192,7 @@ export function startRuntimeTelemetry(
     post: async (route, event, visitOptions) => {
       const key = coreKey(event);
       const day = today();
+      pending.delete(key ?? event);
       if (key) {
         reportedDay.set(key, day);
         pending.delete(key);
@@ -203,8 +207,10 @@ export function startRuntimeTelemetry(
         // Actions dropped during backoff resend once the gate has applied this receipt.
         return observeReceipt(response, (data) => {
           const status = replyStatus(data);
-          if (status === "disabled") stored.forget();
-          else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
+          if (status === "disabled") {
+            stored.forget();
+            pending.clear();
+          } else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
           setTimeout(flush, 0);
         });
       } catch (error) {
@@ -215,9 +221,10 @@ export function startRuntimeTelemetry(
   });
   // Pending actions stay queued until posted; the post wrapper removes them.
   const claimed = (key: string) => reportedDay.get(key) === today() || stored.has(key, today());
-  const send = (action: CoreAction) => {
-    if (claimed(coreKey(action)!)) return void pending.delete(coreKey(action)!);
-    reporter.reportVisit({ event: action.event, properties: { ...action.properties, surface: "web" } });
+  const send = (action: VisitEvent) => {
+    const key = coreKey(action);
+    if (key && claimed(key)) return void pending.delete(key);
+    reporter.reportVisit(action);
   };
   const flush = () => {
     for (const [key, { action, day }] of pending) {
@@ -230,9 +237,20 @@ export function startRuntimeTelemetry(
   });
   reporters.set(runtime, {
     reportScreen: (screen) => reporter.reportScreen(screen),
+    reportOutcome: (outcome) => {
+      const visit: VisitEvent = {
+        event: outcome.event,
+        properties: { surface: "web", ...(outcome.event === "error_shown" ? { kind: outcome.kind } : {}) },
+      };
+      pending.set(visit, { action: visit, day: today() });
+      const outcomes = [...pending.keys()].filter((key) => typeof key !== "string");
+      if (outcomes.length > 32) pending.delete(outcomes[0]!);
+      send(visit);
+    },
     reportAction: (action) => {
-      pending.set(coreKey(action)!, { action, day: today() });
-      send(action);
+      const visit = { event: action.event, properties: { ...action.properties, surface: "web" } };
+      pending.set(coreKey(action)!, { action: visit, day: today() });
+      send(visit);
     },
   });
   return {
@@ -261,4 +279,22 @@ export function reportPRViewed(runtime: AppRuntime, rawProvider: string): void {
 
 export function reportWorkspaceOpened(runtime: AppRuntime, itemType: WorkspaceDetail["item_type"]): void {
   reportCoreAction(runtime, { event: "workspace_opened", properties: { item_type: itemType } });
+}
+
+export function reportOutcome(runtime: AppRuntime, outcome: Outcome): void {
+  reporters.get(runtime)?.reportOutcome(outcome);
+}
+
+export function searchEmptyReporter(runtime: AppRuntime) {
+  let lastQuery: string | undefined;
+  return {
+    textChanged: () => {
+      lastQuery = undefined;
+    },
+    empty: (query: string | undefined) => {
+      if (query === undefined || query === lastQuery) return;
+      lastQuery = query;
+      reportOutcome(runtime, { event: "search_empty" });
+    },
+  };
 }

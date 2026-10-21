@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     getWorkspaceRuntime: vi.fn(),
     launchWorkspaceRuntimeSession: vi.fn(),
     launchWorkspaceAgentHandoff: vi.fn(),
+    retryWorkspace: vi.fn(),
     getFleetWorkspace: vi.fn(),
     getFleetWorkspaceRuntime: vi.fn(),
     launchFleetWorkspaceRuntimeSession: vi.fn(),
@@ -149,14 +150,126 @@ describe("MobileWorkspaceTerminal", () => {
         endWorkspaceDeletion("ws-a", undefined);
       }
       await waitFor(() =>
-        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        expect(
+          coreActions.mock.calls.find(([event]) => (event as { event: string }).event === "workspace_opened")?.[0],
+        ).toMatchObject({
           event: "workspace_opened",
           properties: { item_type: "pull_request" },
         }),
       );
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "workspace_opened"),
+      ).toHaveLength(1);
     },
   );
+
+  it("reports a hidden failed open when shown and counts a failed retry", async () => {
+    mocks.runtimeClient.getWorkspace.mockRejectedValue(
+      new GeneratedProblemResponse({ title: "Read denied", status: 403 }, new Response(null, { status: 403 })),
+    );
+    render(MobileWorkspaceTerminalTestHarness, { props: { ...props, initialVisible: false } });
+    await screen.findByText("Read denied");
+    expect(coreActions).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Read denied");
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
+  it("counts a setup failure once when it becomes visible", async () => {
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, status: "error" });
+    render(MobileWorkspaceTerminalTestHarness, { props: { ...props, initialVisible: false } });
+    await screen.findByText("Workspace setup failed");
+    expect(coreActions).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    expect(
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+    ).toHaveLength(1);
+  });
+
+  it.each(["creating", "error"])("counts another setup failure after retry returns %s", async (status) => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, status: "error" });
+    mocks.runtimeClient.retryWorkspace.mockResolvedValue({ ...workspace, status });
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Workspace setup failed");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    if (status === "creating") {
+      await screen.findByText("Setting up workspace…");
+      notify?.({ type: "workspace_status", payload: { id: "ws-a", status: "error" } });
+    }
+    await screen.findByText("Workspace setup failed");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it.each(["denied", "failed", "unavailable"])("reports one shown mobile launch error: %s", async (failure) => {
+    if (failure === "unavailable") {
+      mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...runtime, launch_targets: [] });
+    } else {
+      const status = failure === "denied" ? 403 : 400;
+      mocks.runtimeClient.launchWorkspaceRuntimeSession.mockRejectedValue(
+        new GeneratedProblemResponse({ title: "Launch refused", status }, new Response(null, { status })),
+      );
+    }
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() =>
+      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
+        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+      ]),
+    );
+    if (failure === "unavailable") expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    else expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce();
+  });
+
+  it("reports one launch error when an accepted mobile session expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockResolvedValue({
+      key: "helper-session",
+      workspace_id: "ws-a",
+      target_key: "helper",
+      label: "Helper",
+      kind: "agent",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    });
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(pendingWorkspaceLaunch("ws-a", undefined)?.phase).toBe("awaiting_session"));
+    await vi.advanceTimersByTimeAsync(15_000);
+    await waitFor(() =>
+      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
+        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+      ]),
+    );
+  });
 
   it("reports mobile workspace use again when the tab returns after the UTC day changes", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });

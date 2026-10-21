@@ -667,8 +667,9 @@ stacks. Mid-stack merges stay blocked by default.
 Forge sends limited anonymous telemetry by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), `pr_viewed`, `workspace_opened`, `sync_failed`,
-version, commit, OS and architecture, and an anonymous install ID. The browser
-reports app opens to the daemon, never to the analytics service.
+`search_empty`, `error_shown`, version, commit, OS and architecture, and an
+anonymous install ID. The browser reports app opens to the daemon, never to
+the analytics service.
 Once per installation, the daemon reports `setup_finished` with no properties
 the first time Forge has a ready workspace or a pull request or issue it can
 show. Installations that already had work when they upgraded are not reported.
@@ -715,6 +716,12 @@ TELEMETRY_ENABLED=0 kenn-forge daemon restart
 Once the daemon reports telemetry as disabled, the web UI stops sending events.
 If you turn telemetry back on, the web UI resumes on the next UTC day, even if
 you reload the page sooner.
+
+`search_empty` counts each distinct submitted query that returns no results from
+the server, resetting when the text changes. Typing previews send nothing.
+`error_shown` counts failed PR views and workspace opens or launches once per
+attempt when the error comes on screen, with `kind` set to `pr_viewed` or
+`workspace_opened`. Queries and error text stay on your machine.
 
 ## Container startup
 

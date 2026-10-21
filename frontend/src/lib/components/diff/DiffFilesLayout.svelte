@@ -13,6 +13,7 @@
   import type { ReviewThread } from "./review-thread-context.js";
 
   interface Props {
+    reportErrors?: boolean;
     provider: string;
     platformHost?: string | undefined;
     owner: string;
@@ -38,6 +39,7 @@
   const {
     provider,
     platformHost,
+    reportErrors = false,
     owner,
     name,
     repoPath,
@@ -212,6 +214,7 @@
     {/if}
     <div class="files-main">
       <DiffView
+        {reportErrors}
         {provider}
         {platformHost}
         {owner}

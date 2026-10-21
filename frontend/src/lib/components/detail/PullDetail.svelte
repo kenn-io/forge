@@ -3,6 +3,8 @@
 </script>
 
 <script lang="ts">
+  import ErrorShown from "../shared/ErrorShown.svelte";
+  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
@@ -247,6 +249,7 @@
   }
 
   interface Props {
+    visible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -272,6 +275,7 @@
   }
 
   const {
+    visible = true,
     owner,
     name,
     number,
@@ -1906,11 +1910,10 @@
       },
       onFailure: (failure) => {
         if (responseIsStale()) return;
-        showFlash(
+        showWorkspaceLaunchError(runtime,
           failure._tag === "ApiProblemError"
             ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
             : "Could not reach Kenn Forge",
-          { tone: "danger" },
         );
       },
     });
@@ -2214,6 +2217,7 @@
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
 {:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
+  <ErrorShown kind="pr_viewed" scope={`${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platformHost)}:${repoPath}#${number}`} shown={visible} />
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
@@ -2243,6 +2247,7 @@
     )}
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
       {#if detailLoadError}
+        {#if detailMismatch}<ErrorShown kind="pr_viewed" scope={`${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platformHost)}:${repoPath}#${number}`} shown={visible} />{/if}
         <div class="detail-load-error" data-testid="detail-load-error">
           {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
           {detailStore.getDetailError()}

@@ -1,3 +1,4 @@
+import { showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
 import { Deferred, Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { LaunchTarget, QuickAction, RuntimeSession } from "../api/types.js";
@@ -181,14 +182,17 @@ export function runWorkspaceQuickAction(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;
-          showFlash(outcome.message, { tone: outcome.type === "failed" ? "danger" : "warning" });
+          if (outcome.type === "failed") showWorkspaceLaunchError(runtime, outcome.message);
+          else showFlash(outcome.message, { tone: "warning" });
         }),
       ),
     ),
     {
       operation: "run workspace quick action",
       safeContext: { workspaceId, agent: action.agent },
-      onFailure: () => showFlash(`"${action.label}" could not start.`, { tone: "danger" }),
+      onFailure: () => {
+        showWorkspaceLaunchError(runtime, `"${action.label}" could not start.`);
+      },
     },
   );
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { showWorkspaceLaunchError } from "../../app/workspace-telemetry.js";
   import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -961,7 +962,7 @@
           branchConflict.error = message;
           return;
         }
-        showFlash(message, { tone: "danger" });
+        showWorkspaceLaunchError(runtime, message);
       },
     });
   }

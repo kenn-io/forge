@@ -1,3 +1,4 @@
+import { showWorkspaceLaunchError } from "../app/workspace-telemetry.js";
 import { Effect } from "effect";
 import type { QuickAction } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
@@ -188,14 +189,15 @@ export function runQuickActionOnItems(
       Effect.flatMap((outcomes) =>
         Effect.sync(() => {
           const { message, tone } = summary(action, outcomes);
-          showFlash(message, { tone });
+          if (tone === "danger") showWorkspaceLaunchError(runtime, message);
+          else showFlash(message, { tone });
         }),
       ),
     ),
     {
       operation: "run quick action on items",
       safeContext: { count: targets.length, agent: action.agent },
-      onFailure: () => showFlash(`"${action.label}" could not start.`, { tone: "danger" }),
+      onFailure: () => showWorkspaceLaunchError(runtime, `"${action.label}" could not start.`),
     },
   );
 }

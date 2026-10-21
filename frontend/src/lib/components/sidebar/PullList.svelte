@@ -132,6 +132,16 @@
 
   onDestroy(() => searchExecution?.interrupt());
 
+  function applySearch(value: string, submitted = false): void {
+    pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
+    pulls.loadPulls(undefined, { submitted });
+  }
+
+  function submitSearch(value: string): void {
+    searchExecution?.interrupt();
+    applySearch(value, value.trim() !== "");
+  }
+
   function onSearchInput(value: string): void {
     searchInput = value;
 
@@ -139,8 +149,7 @@
     searchExecution = runtime.runCommand(
       Effect.sleep("300 millis").pipe(
         Effect.andThen(Effect.sync(() => {
-          pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
-          pulls.loadPulls();
+          applySearch(value);
         })),
       ),
       { operation: "debounce pull request sidebar search", safeContext: {}, onFailure: () => {} },
@@ -677,6 +686,7 @@
         placeholder="Search PRs..."
         ariaLabel="Search PRs"
         oninput={onSearchInput}
+        onsubmit={submitSearch}
       />
     </div>
     <button

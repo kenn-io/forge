@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
   import { Spinner } from "@kenn-io/kit-ui";
   import { Virtualizer } from "@pierre/diffs";
   import { Effect } from "effect";
@@ -21,6 +23,7 @@
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
   interface Props {
+    reportErrors?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -48,6 +51,7 @@
   }
 
   const {
+    reportErrors = false,
     owner,
     name,
     number,
@@ -643,6 +647,7 @@
         <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
+      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={`${canonicalProvider(provider)}:${resolvedPlatformHost(provider, platformHost)}:${repoPath}#${number}`} />{/if}
       <div class="diff-state">
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>

@@ -154,6 +154,28 @@ type PutWorklistResult struct {
 	Created   bool
 }
 
+// ReopenLinkedWorklist restores the worklist a link created, whatever its
+// items now are, or returns ErrWorklistNotFound when no list came from it.
+func (d *DB) ReopenLinkedWorklist(ctx context.Context, linkKey string) (PutWorklistResult, error) {
+	return reopenLinkedWorklist(ctx, d.rw, linkKey)
+}
+
+func reopenLinkedWorklist(ctx context.Context, q rowQueryer, linkKey string) (PutWorklistResult, error) {
+	var result PutWorklistResult
+	err := q.QueryRowContext(ctx, `
+		UPDATE forge_worklists SET dismissed_at = NULL WHERE link_key = ?
+		RETURNING id, (SELECT COUNT(*) FROM forge_worklist_items WHERE worklist_id = forge_worklists.id)`,
+		linkKey,
+	).Scan(&result.ID, &result.ItemCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PutWorklistResult{}, ErrWorklistNotFound
+	}
+	if err != nil {
+		return PutWorklistResult{}, fmt.Errorf("reopen linked worklist: %w", err)
+	}
+	return result, nil
+}
+
 // PutWorklist creates or replaces a worklist in one transaction. Replacing
 // resets every item's recorded state and written time and clears a dismissal,
 // so an agent rewrite brings a dismissed list back. Creating from a link that
@@ -174,16 +196,13 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var handled map[WorklistItemKey]time.Time
 		if p.ID == 0 && p.LinkKey != "" {
-			err := tx.QueryRowContext(ctx, `
-				UPDATE forge_worklists SET dismissed_at = NULL WHERE link_key = ?
-				RETURNING id, (SELECT COUNT(*) FROM forge_worklist_items WHERE worklist_id = forge_worklists.id)`,
-				p.LinkKey,
-			).Scan(&result.ID, &result.ItemCount)
+			reopened, err := reopenLinkedWorklist(ctx, tx, p.LinkKey)
 			if err == nil {
+				result = reopened
 				return nil
 			}
-			if !errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("find linked worklist: %w", err)
+			if !errors.Is(err, ErrWorklistNotFound) {
+				return err
 			}
 		}
 		if p.ID == 0 {

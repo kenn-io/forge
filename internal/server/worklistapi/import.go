@@ -73,16 +73,27 @@ func (h *Handler) importWorklist(
 			Score: item.Score, Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
 		})
 	}
-	if len(put.Items) == 0 {
-		return nil, httpapi.Validation("body.fragment", "no item in the link is a pull request or issue this Forge tracks")
-	}
-	result, err := h.put(ctx, put)
-	if err != nil {
-		return nil, err
+	var worklistID int64
+	if len(put.Items) > 0 {
+		result, err := h.put(ctx, put)
+		if err != nil {
+			return nil, err
+		}
+		worklistID = result.WorklistID
+	} else {
+		// A list made from this link stays reachable after its items go away.
+		reopened, err := h.db.ReopenLinkedWorklist(ctx, put.LinkKey)
+		if errors.Is(err, db.ErrWorklistNotFound) {
+			return nil, httpapi.Validation("body.fragment", "no item in the link is a pull request or issue this Forge tracks")
+		}
+		if err != nil {
+			return nil, httpapi.Internal("reopen linked worklist failed")
+		}
+		h.PublishChanged(reopened.ID)
+		worklistID = reopened.ID
 	}
 	return &httpapi.BodyOutput[WorklistImportResponse]{Body: WorklistImportResponse{
-		WorklistID: result.WorklistID, ItemCount: result.ItemCount,
-		SkippedCount: max(len(list.Items)-result.ItemCount, 0),
+		WorklistID: worklistID, ItemCount: len(put.Items), SkippedCount: len(list.Items) - len(put.Items),
 	}}, nil
 }
 

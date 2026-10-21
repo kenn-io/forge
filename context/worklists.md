@@ -175,9 +175,13 @@ stateDiagram-v2
   list's JSON, not of the fragment text, is the key, so encodings agree
   (`internal/db/worklists.go::DB.PutWorklist`). Any page can link there; an
   unwanted list is dismissed like any other.
+- The link follows its worklist, not its contents (maintainer decision): after
+  an agent rewrites the list, or its items go away, the link still opens it.
 - Untracked, unsynced, or repeated items are skipped, never added, and the UI
-  reports how many (`internal/server/worklistapi/import.go::Handler.importableRepos`).
-  A link with no usable item creates nothing; the page shows why.
+  reports how many, counted from the link alone
+  (`internal/server/worklistapi/import.go::Handler.importableRepos`). A link
+  with no usable item and no earlier worklist creates nothing; the page shows
+  why.
 
 ## UI
 

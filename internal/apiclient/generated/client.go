@@ -69913,10 +69913,12 @@ type WorklistHandledResponse struct {
 
 type WorklistImportResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	ItemCount int64   `json:"item_count"`
+	Schema *string `json:"$schema,omitempty"`
 
-	// SkippedCount Items of the link the new list leaves out.
+	// ItemCount Items of the link this Forge can show now.
+	ItemCount int64 `json:"item_count"`
+
+	// SkippedCount Items of the link this Forge cannot show now.
 	SkippedCount int64 `json:"skipped_count"`
 	WorklistID   int64 `json:"worklist_id"`
 }

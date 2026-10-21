@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
+	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/mcpserver"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/worklist"
 )
@@ -119,6 +121,70 @@ func TestAPIWorklistImportReturnsTheSameListForTheSameLink(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(listed.JSON200, string(listed.Body))
 	assert.Len(listed.JSON200.Worklists, 2)
+}
+
+func TestAPIWorklistImportReopensItsListAfterTheListChanges(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42)
+	seedPR(t, database, "acme", "widget", 7)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	ref := func(number int) worklist.ItemRef {
+		return worklist.ItemRef{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: number}
+	}
+	fragment, err := worklist.Fragment(worklist.List{
+		Title: "Merge today", Items: []worklist.Item{{Item: ref(42)}, {Item: ref(7)}},
+	})
+	require.NoError(err)
+	importLink := func() generated.WorklistImportResponse {
+		imported, err := client.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{
+			Body: &generated.ImportWorklistBody{Fragment: fragment},
+		})
+		require.NoError(err)
+		require.NotNil(imported.JSON200, string(imported.Body))
+		return *imported.JSON200
+	}
+	first := importLink()
+	_, err = srv.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
+		WorklistID: first.WorklistID, Title: "Merge today",
+		Items: []mcpserver.WorklistPutItem{{Item: mcpserver.ItemIdentity{
+			Type: "pr", Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: 42,
+		}}},
+	})
+	require.NoError(err)
+
+	rewritten := importLink()
+
+	assert.Equal(first.WorklistID, rewritten.WorklistID, "the link follows its list after an agent rewrite")
+	assert.EqualValues(2, rewritten.ItemCount, "counts describe the link, not the rewritten list")
+	assert.EqualValues(0, rewritten.SkippedCount)
+
+	dismissed, err := client.HTTP.DismissWorklistWithResponse(ctx, &generated.DismissWorklistRequestOptions{
+		PathParams: &generated.DismissWorklistPath{ID: first.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(dismissed.JSON200, string(dismissed.Body))
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 42, db.ArchiveLifecycleStateRemovedUpstream)
+	markArchiveItemLifecycle(t, database, repo.ID, db.ArchiveItemTypeMergeRequest, 7, db.ArchiveLifecycleStateRemovedUpstream)
+
+	gone := importLink()
+
+	assert.Equal(first.WorklistID, gone.WorklistID, "a link whose items are gone still opens its list")
+	assert.EqualValues(0, gone.ItemCount)
+	assert.EqualValues(2, gone.SkippedCount)
+	got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: first.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(got.JSON200, string(got.Body))
+	assert.Nil(got.JSON200.DismissedAt, "reopening the link restores the dismissed list")
 }
 
 func TestAPIWorklistImportRejectsLinksItCannotUse(t *testing.T) {

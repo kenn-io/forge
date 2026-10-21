@@ -5,8 +5,9 @@
 export interface WorklistImportResponse {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** Items of the link this Forge can show now. */
   item_count: number;
-  /** Items of the link the new list leaves out. */
+  /** Items of the link this Forge cannot show now. */
   skipped_count: number;
   worklist_id: number;
 }

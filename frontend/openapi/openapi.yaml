@@ -11562,10 +11562,11 @@ components:
           readOnly: true
           type: string
         item_count:
+          description: Items of the link this Forge can show now.
           format: int64
           type: integer
         skipped_count:
-          description: Items of the link the new list leaves out.
+          description: Items of the link this Forge cannot show now.
           format: int64
           type: integer
         worklist_id:

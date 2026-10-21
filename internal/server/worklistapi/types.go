@@ -150,9 +150,9 @@ type ImportWorklistBody struct {
 	Fragment string `json:"fragment" minLength:"1" maxLength:"524288" doc:"The link's fragment without '#': v1. followed by the encoded list."`
 }
 
-// WorklistImportResponse names the list an import created.
+// WorklistImportResponse names the list an import created or reopened.
 type WorklistImportResponse struct {
 	WorklistID   int64 `json:"worklist_id"`
-	ItemCount    int   `json:"item_count"`
-	SkippedCount int   `json:"skipped_count" doc:"Items of the link the new list leaves out."`
+	ItemCount    int   `json:"item_count" doc:"Items of the link this Forge can show now."`
+	SkippedCount int   `json:"skipped_count" doc:"Items of the link this Forge cannot show now."`
 }

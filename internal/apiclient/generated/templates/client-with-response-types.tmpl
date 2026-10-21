@@ -27,22 +27,17 @@ imports / package decl - those come from the surrounding file.
 {{- $config := $args.config -}}
 
 {{- range $operations }}{{ $op := . }}
-{{- range $rcd := $op.Response.Successes }}
+{{- range $rcd := $op.Response.EnvelopeResponses }}
 {{- if gt (len $rcd.Headers) 0 }}
-type {{ index $op.HeaderTypeNames $rcd.StatusCode }} struct {
+type {{ $op.HeaderTypeName $rcd }} struct {
     {{- range $hName, $hSchema := $rcd.Headers }}
     {{ genTypeName $hName }} string `header:"{{ escapeGoString $hName }}"`
     {{- end }}
 }
 {{ end -}}
-{{- end -}}
-{{- range $rcd := $op.Response.Errors }}
-{{- if gt (len $rcd.Headers) 0 }}
-type {{ index $op.HeaderTypeNames $rcd.StatusCode }} struct {
-    {{- range $hName, $hSchema := $rcd.Headers }}
-    {{ genTypeName $hName }} string `header:"{{ escapeGoString $hName }}"`
-    {{- end }}
-}
+{{- if $op.Response.HasLegacyHeaders $rcd }}
+// Deprecated: Use {{ $op.HeaderTypeName $rcd }}.
+type {{ index $op.HeaderTypeNames $rcd.StatusCode }} = {{ $op.HeaderTypeName $rcd }}
 {{ end -}}
 {{- end }}
 
@@ -53,26 +48,28 @@ type {{$op.WithResponseTypeName}} struct {
     {{- if .Response.Error }}
     Error *{{.Response.Error.ResponseName}}
     {{- end }}
-    {{- range $rcd := $op.Response.Successes }}
+    {{- range $rcd := $op.Response.EnvelopeResponses }}
         {{- if and (ne $rcd.ResponseName "struct{}") (not $rcd.IsRaw) (ne $rcd.NameTag "") }}
-    {{$rcd.NameTag}}{{$rcd.StatusCode}} *{{$rcd.ResponseName}}
+    {{$rcd.NameTag}}{{$rcd.StatusName}} *{{$rcd.ResponseName}}
+        {{- end }}
+        {{- /* Earlier versions named a range's field after its stand-in
+               code, such as JSON400 for 4XX. Kept so their callers compile. */ -}}
+        {{- with $op.Response.LegacyBodyField $rcd }}
+    // Deprecated: Use {{$rcd.NameTag}}{{$rcd.StatusName}}, which this always equals.
+    {{.}} *{{$rcd.ResponseName}}
         {{- end }}
         {{- /* Populated by the streaming sibling, never by the same call as
                the buffered body field. */ -}}
         {{- if $config.Generate.ClientStreaming }}
-        {{- with $op.Response.StreamAt $rcd.StatusCode }}
+        {{- with $op.Response.StreamFor $rcd }}
     Stream{{.StatusCode}} *runtime.Stream[{{.ItemName}}]
         {{- end }}
         {{- end }}
         {{- if gt (len $rcd.Headers) 0 }}
-    Headers{{$rcd.StatusCode}} *{{ index $op.HeaderTypeNames $rcd.StatusCode }}
+    Headers{{$rcd.StatusName}} *{{ $op.HeaderTypeName $rcd }}
         {{- end }}
-    {{- end }}
-    {{- range $rcd := $op.Response.Errors }}
-        {{- if and (ne $rcd.ResponseName "struct{}") (not $rcd.IsRaw) (ne $rcd.NameTag "") }}
-    {{$rcd.NameTag}}{{$rcd.StatusCode}} *{{$rcd.ResponseName}}
-        {{- end }}
-        {{- if gt (len $rcd.Headers) 0 }}
+        {{- if $op.Response.HasLegacyHeaders $rcd }}
+    // Deprecated: Use Headers{{$rcd.StatusName}}, which this always equals.
     Headers{{$rcd.StatusCode}} *{{ index $op.HeaderTypeNames $rcd.StatusCode }}
         {{- end }}
     {{- end }}

@@ -417,6 +417,12 @@ through float64 and sends large IDs in exponent form. Cover new integer
 parameters with real-size values (`internal/apiclient/generated/templates/client-options.tmpl`,
 `internal/apiclient/generated/client_query_test.go`).
 
+The client-with-response templates are local copies of upstream oapi-codegen-dd
+templates and still call its built-in ones, such as `decodeBody`. A generator
+version bump must rebase those copies onto the new upstream versions and
+regenerate in the same change; otherwise the generated clients stop compiling
+(`internal/apiclient/generated/templates/client-with-response.tmpl`).
+
 Health routes on the separate health Huma API intentionally disable OpenAPI and
 docs output. Terminal and proxy routes registered through `Adapter().Handle`
 must stay hidden or on a docs-disabled API unless they are promoted to public

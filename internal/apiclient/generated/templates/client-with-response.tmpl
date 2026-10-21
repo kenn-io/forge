@@ -95,30 +95,25 @@ func (c *{{$clientName}}) {{$op.ID}}WithResponse(ctx context.Context{{ if $op.Ha
     switch resp.StatusCode {
     {{- range $rcd := $op.Response.Successes }}
     case {{ $rcd.StatusCode }}:
-        {{- template "decodeBody" (dict "rcd" $rcd) }}
-        {{- if gt (len $rcd.Headers) 0 }}
-        out.Headers{{$rcd.StatusCode}} = &{{ index $op.HeaderTypeNames $rcd.StatusCode }}{
-            {{- range $hName, $hSchema := $rcd.Headers }}
-            {{ genTypeName $hName }}: resp.Headers.Get("{{ escapeGoString $hName }}"),
-            {{- end }}
-        }
-        {{- end }}
-        return out, nil
+        {{- template "envelopeResponse" (dict "op" $op "rcd" $rcd) }}
     {{- end }}
     {{- range $rcd := $op.Response.Errors }}
     case {{ $rcd.StatusCode }}:
-        {{- template "decodeBody" (dict "rcd" $rcd) }}
-        {{- if gt (len $rcd.Headers) 0 }}
-        out.Headers{{$rcd.StatusCode}} = &{{ index $op.HeaderTypeNames $rcd.StatusCode }}{
-            {{- range $hName, $hSchema := $rcd.Headers }}
-            {{ genTypeName $hName }}: resp.Headers.Get("{{ escapeGoString $hName }}"),
-            {{- end }}
-        }
-        {{- end }}
-        return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+        {{- template "envelopeResponse" (dict "op" $op "rcd" $rcd) }}
     {{- end }}
     default:
+        {{- /* Only reached when no exact code matched, so the exact codes
+               take precedence over ranges, and ranges over `default`. */ -}}
+        {{- range $rcd := $op.Response.StatusRanges }}
+        if resp.StatusCode/100 == {{ $rcd.StatusRange }} {
+            {{- template "envelopeResponse" (dict "op" $op "rcd" $rcd) }}
+        }
+        {{- end }}
+        {{- with $op.Response.Default }}
+            {{- template "envelopeResponse" (dict "op" $op "rcd" .) }}
+        {{- else }}
         return out, runtime.NewClientAPIError(fmt.Errorf("unexpected status code: %d", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+        {{- end }}
     }
 }
 
@@ -154,3 +149,31 @@ func New{{$op.ID}}Request(ctx context.Context, baseURL string{{ if $op.HasReques
     return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 {{ end }}
+{{- /* Populates the envelope from one documented response and returns it.
+       A `default` standing in for the success also covers error statuses,
+       so it only reports success for a 2xx. */ -}}
+{{- define "envelopeResponse" }}
+{{- $op := .op }}
+{{- $rcd := .rcd }}
+        {{- template "decodeBody" (dict "rcd" $rcd "alias" ($op.Response.LegacyBodyField $rcd)) }}
+        {{- if gt (len $rcd.Headers) 0 }}
+        out.Headers{{$rcd.StatusName}} = &{{ $op.HeaderTypeName $rcd }}{
+            {{- range $hName, $hSchema := $rcd.Headers }}
+            {{ genTypeName $hName }}: resp.Headers.Get("{{ escapeGoString $hName }}"),
+            {{- end }}
+        }
+        {{- if $op.Response.HasLegacyHeaders $rcd }}
+        out.Headers{{$rcd.StatusCode}} = out.Headers{{$rcd.StatusName}}
+        {{- end }}
+        {{- end }}
+        {{- if and $rcd.IsSuccess $rcd.IsDefault }}
+        if resp.StatusCode/100 == 2 {
+            return out, nil
+        }
+        {{- end }}
+        {{- if and $rcd.IsSuccess (not $rcd.IsDefault) }}
+        return out, nil
+        {{- else }}
+        return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+        {{- end }}
+{{- end }}

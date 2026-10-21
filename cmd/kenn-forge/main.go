@@ -955,7 +955,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
 	switcher.Swap(srv)
-	if mcpListenAddr != "" {
+	if cfg.MCP.Enabled != nil && *cfg.MCP.Enabled {
 		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
 	}
 	if mcpSwitcher != nil {

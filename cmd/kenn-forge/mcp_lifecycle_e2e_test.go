@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -139,13 +140,16 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 			cfgPath := filepath.Join(root, "config.toml")
 			appPort := reserveFreePort(t)
 			writeMinimalConfig(t, cfgPath, dataDir, appPort)
+			publicHost := net.JoinHostPort("forge.example.test", strconv.Itoa(appPort))
+			existing, err := os.ReadFile(cfgPath)
+			require.NoError(err)
+			existing = append(fmt.Appendf(nil, "allowed_hosts = [%q]\n", publicHost), existing...)
 			if name == "explicit shared port" {
-				existing, err := os.ReadFile(cfgPath)
-				require.NoError(err)
-				require.NoError(os.WriteFile(cfgPath, append(existing, fmt.Appendf(nil,
+				existing = append(existing, fmt.Appendf(nil,
 					"\n[mcp]\nenabled = true\nport = %d\n", appPort,
-				)...), 0o600))
+				)...)
 			}
+			require.NoError(os.WriteFile(cfgPath, existing, 0o600))
 
 			serve := procutil.Command(bin, "serve", "--config", cfgPath)
 			serve.Stdout = os.Stderr
@@ -187,6 +191,26 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 			)
 			require.NoError(err)
 			assert.False(result.IsError)
+
+			// The public authority uses the main-listener policy even on loopback.
+			token, err := os.ReadFile(runtimelock.AuthTokenPath(dataDir))
+			require.NoError(err)
+			bearerRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+appAddr+"/mcp", strings.NewReader(
+				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+			))
+			require.NoError(err)
+			bearerRequest.Host = publicHost
+			bearerRequest.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+			bearerRequest.Header.Set("Content-Type", "application/json")
+			bearerRequest.Header.Set("Accept", "application/json, text/event-stream")
+			bearerResponse, err := http.DefaultClient.Do(bearerRequest)
+			require.NoError(err)
+			defer bearerResponse.Body.Close()
+			expectedStatus := http.StatusNotFound
+			if name == "explicit shared port" {
+				expectedStatus = http.StatusOK
+			}
+			assert.Equal(expectedStatus, bearerResponse.StatusCode)
 
 			quickstartOutput, err := procutil.Command(
 				bin, "mcp", "quickstart", "--config", cfgPath, "--json",

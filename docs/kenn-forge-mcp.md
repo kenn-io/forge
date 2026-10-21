@@ -39,15 +39,14 @@ Restart the daemon after changing either setting:
 kenn-forge daemon restart
 ```
 
-The listener is loopback-only. It follows `[api].require_auth`: when API
-authentication is enabled, send the daemon bearer token; when it is disabled,
-the MCP endpoint does not require a token. Runtime discovery publishes the
-resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
+Loopback MCP follows `[api].require_auth`, same as the HTTP API.
+When authentication is enabled, send the daemon bearer token.
+Runtime discovery publishes the resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
 the listener address and the token file path.
 
-While MCP is on, `/mcp` on the main listener also accepts daemon bearer holders
-and, with `[api.tailscale_serve]`, allowlisted Serve users. This access also
-applies to explicit `enabled = true` configurations.
+With explicit `[mcp].enabled = true`, `/mcp` on the main listener also accepts
+daemon bearer holders and, with `[api.tailscale_serve]`, allowlisted Serve users.
+The omitted default enables only the direct loopback companion.
 
 For a machine-readable listener list, run:
 
@@ -100,6 +99,7 @@ Set the referenced environment variable from the token file, for example
 `export KENN_FORGE_API_TOKEN="$(cat ~/.kenn/forge/auth_token)"`, using the
 `token_path` reported by `kenn-forge daemon status --json`.
 
+For Tailscale Serve access, set explicit `[mcp].enabled = true`.
 If Forge is published with Tailscale Serve and your Tailscale login is allowed
 (see [Federated Forge](federated-fleet.md)), point the client at the Serve origin
 instead. No token is needed:

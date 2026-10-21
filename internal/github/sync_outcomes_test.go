@@ -393,3 +393,27 @@ func TestSyncFailedArchivedMetadataRead(t *testing.T) {
 	assert.Equal(1, metadataReads)
 	assert.Empty(events)
 }
+
+func TestSyncAppFailureReason(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		status int
+		header http.Header
+		want   string
+	}{
+		{"unauthorized", http.StatusUnauthorized, nil, "auth"},
+		{"forbidden", http.StatusForbidden, nil, "auth"},
+		{"not found", http.StatusNotFound, nil, "not_found"},
+		{"too many requests", http.StatusTooManyRequests, nil, "rate_limited"},
+		{"retry header alone", http.StatusForbidden, http.Header{"Retry-After": {"90"}}, "auth"},
+		{"primary limit", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"0"}}, "rate_limited"},
+		{"remaining quota", http.StatusForbidden, http.Header{"X-Ratelimit-Remaining": {"4999"}}, "auth"},
+		{"unknown", http.StatusServiceUnavailable, nil, "other"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := &githubapp.StatusError{StatusCode: tt.status, Header: tt.header}
+			assert.Equal(t, tt.want, syncFailureReason(fmt.Errorf("renew: %w", err)))
+		})
+	}
+}

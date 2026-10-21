@@ -2,15 +2,9 @@ package githubapp
 
 import (
 	"context"
-	"errors"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
 	"go.kenn.io/forge/githubapp"
-	"go.kenn.io/forge/platform"
 )
 
 // MintInstallationToken signs an app JWT with the key at keyPath and
@@ -44,34 +38,7 @@ func mintInstallationToken(
 	}
 	token, err := githubapp.NewClientWithBase(apiBase).CreateInstallationToken(ctx, appJWT, installationID, nil)
 	if err != nil {
-		if status, ok := errors.AsType[*githubapp.StatusError](err); ok {
-			if code := platformErrorCode(status); code != "" {
-				err = &platform.Error{Code: code, Provider: platform.KindGitHub, Err: err}
-			}
-		}
 		return "", time.Time{}, err
 	}
 	return token.Token, token.ExpiresAt, nil
-}
-
-func platformErrorCode(status *githubapp.StatusError) platform.PlatformErrorCode {
-	// Use the same rate-limit decoding as repository reads, while keeping the
-	// original StatusError and its retry metadata in the returned error chain.
-	err := gh.CheckResponse(&http.Response{
-		StatusCode: status.StatusCode,
-		Header:     status.Header,
-		Body:       io.NopCloser(strings.NewReader(status.Body)),
-	})
-	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
-	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
-	switch {
-	case primaryLimit, secondaryLimit, status.StatusCode == http.StatusTooManyRequests:
-		return platform.ErrCodeRateLimited
-	case status.StatusCode == http.StatusUnauthorized, status.StatusCode == http.StatusForbidden:
-		return platform.ErrCodePermissionDenied
-	case status.StatusCode == http.StatusNotFound:
-		return platform.ErrCodeNotFound
-	default:
-		return ""
-	}
 }

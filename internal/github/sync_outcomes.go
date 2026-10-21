@@ -3,12 +3,16 @@ package github
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
+	"net/http"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 
 	gh "github.com/google/go-github/v92/github"
+	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -108,7 +112,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass) {
 
 // An empty reason represents success and ranks below every failure.
 func higherSyncFailureReason(reason, current string) bool {
-	priority := []string{telemetry.SyncReasonRateLimited, telemetry.SyncReasonAuth, telemetry.SyncReasonNotFound, telemetry.SyncReasonOther}
+	priority := telemetry.SyncReasons()
 	return reason != "" && (current == "" || slices.Index(priority, reason) < slices.Index(priority, current))
 }
 
@@ -119,26 +123,26 @@ func isLocalFilesystemFailure(err error) bool {
 }
 
 func syncFailureReason(err error) string {
-	if gitAccessFailureReason(err) == GitAccessCredentialUnavailable {
-		return telemetry.SyncReasonAuth
-	}
-	switch {
-	case errors.Is(err, platform.ErrRateLimited):
-		return telemetry.SyncReasonRateLimited
-	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken):
-		return telemetry.SyncReasonAuth
-	case errors.Is(err, platform.ErrNotFound):
-		return telemetry.SyncReasonNotFound
-	}
 	status := platformgithub.StatusCode(err)
-	_, primaryLimit := errors.AsType[*gh.RateLimitError](err)
-	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](err)
+	decoded := err
+	if appStatus, ok := errors.AsType[*githubapp.StatusError](err); ok {
+		status = appStatus.StatusCode
+		decoded = gh.CheckResponse(&http.Response{
+			StatusCode: status,
+			Header:     appStatus.Header,
+			Body:       io.NopCloser(strings.NewReader(appStatus.Body)),
+		})
+	}
+	_, primaryLimit := errors.AsType[*gh.RateLimitError](decoded)
+	_, secondaryLimit := errors.AsType[*gh.AbuseRateLimitError](decoded)
 	switch {
-	case primaryLimit, secondaryLimit, status == 429:
-		return telemetry.SyncReasonRateLimited
-	case status == 401, status == 403:
+	case gitAccessFailureReason(err) == GitAccessCredentialUnavailable:
 		return telemetry.SyncReasonAuth
-	case status == 404:
+	case errors.Is(err, platform.ErrRateLimited), primaryLimit, secondaryLimit, status == 429:
+		return telemetry.SyncReasonRateLimited
+	case errors.Is(err, platform.ErrPermissionDenied), errors.Is(err, platform.ErrMissingToken), status == 401, status == 403:
+		return telemetry.SyncReasonAuth
+	case errors.Is(err, platform.ErrNotFound), status == 404:
 		return telemetry.SyncReasonNotFound
 	default:
 		return telemetry.SyncReasonOther

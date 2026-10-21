@@ -40,9 +40,6 @@ func (p *syncPass) observe(repo RepoRef, source string, err error) {
 	if err != nil && !platformgithub.IsNotModified(err) {
 		reason = syncFailureReason(err)
 	}
-	if source == telemetry.SyncSourceChecks && reason == telemetry.SyncReasonNotFound {
-		return
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.results == nil {

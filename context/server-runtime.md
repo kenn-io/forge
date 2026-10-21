@@ -1,7 +1,7 @@
 # Server Runtime
 
 - Full sync passes report `sync_failed` once per source when a repository newly
-  fails; a successful read wins within each repository/source
+  fails; checks 404s count as `not_found`. A successful read wins within each repository/source
   (`internal/github/sync_outcomes.go::syncPass.observe`).
 - Observe repository, list, and checks reads; exclude local filesystem/capacity
   errors, budget waits, disabled features, and non-check item reads.

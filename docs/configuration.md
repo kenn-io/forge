@@ -677,8 +677,8 @@ repositories as `repo_count`: `0-5`, `6-20`, `21-100`, or `over-100`.
 Earlier events retain exact numeric values; newer events use string ranges.
 A full sync pass sends at most one `sync_failed` event per source, when a
 repository newly fails that source. A repository that keeps failing stays quiet
-until a full pass reads that repository and source successfully. Checks count
-as a repository failure only when none of its CI reads succeeds during the pass.
+until a full pass reads that repository and source successfully. A failed CI read,
+including a 404, counts as a repository failure only when none of its CI reads succeeds during the pass.
 The event sends only `sync_source` (`merge_requests`, `issues`, or `checks`)
 and `reason` (`auth`, `rate_limited`, `not_found`, or `other`).
 These properties identify no repository. A restart can count one outage twice.

@@ -182,31 +182,42 @@ func TestSyncFailedProviderChecks(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
-func TestSyncFailedGitHubChecksIgnores404(t *testing.T) {
+func TestSyncFailedGitHubChecksNotFound(t *testing.T) {
 	for _, endpoint := range []string{"check runs", "combined status"} {
 		t.Run(endpoint, func(t *testing.T) {
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			client := &mockClient{}
-			var events [][2]string
-			s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			for i, status := range []int{http.StatusNotFound, http.StatusServiceUnavailable} {
-				failure := &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
-				if endpoint == "check runs" {
-					client.checkRunsErr = failure
-				} else {
-					client.ciStatusErr = failure
-				}
-				pass := &syncPass{}
-				ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-				_, err := s.fetchGitHubCIStatus(ctx, repo, 7, "head")
-				require.NoError(t, err)
-				s.finishSyncPass(pass)
-				if i == 0 {
-					assert.Empty(t, events)
-				} else {
-					assert.Equal(t, [][2]string{{"checks", "other"}}, events)
-				}
+			for _, tc := range []struct {
+				name     string
+				statuses []int
+				want     [][2]string
+			}{
+				{"lone 404", []int{http.StatusNotFound}, [][2]string{{"checks", "not_found"}}},
+				{"success after 404", []int{http.StatusNotFound, http.StatusOK}, nil},
+				{"success before 404", []int{http.StatusOK, http.StatusNotFound}, nil},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+					client := &mockClient{}
+					var events [][2]string
+					s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
+					s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
+					pass := &syncPass{}
+					ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
+					for i, status := range tc.statuses {
+						var failure error
+						if status != http.StatusOK {
+							failure = &gh.ErrorResponse{Response: &http.Response{StatusCode: status}}
+						}
+						if endpoint == "check runs" {
+							client.checkRunsErr = failure
+						} else {
+							client.ciStatusErr = failure
+						}
+						_, err := s.fetchGitHubCIStatus(ctx, repo, 7+i, fmt.Sprintf("head-%d", i))
+						require.NoError(t, err)
+					}
+					s.finishSyncPass(pass)
+					assert.Equal(t, tc.want, events)
+				})
 			}
 		})
 	}

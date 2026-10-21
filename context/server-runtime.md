@@ -1,20 +1,20 @@
 # Server Runtime
 
+- Startup and daily daemon telemetry send tracked repository counts only in the
+  ranges documented in [Telemetry](../docs/configuration.md#telemetry)
+  (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
 - Full sync passes report `sync_failed` once per source when a repository newly
-  fails; checks 404s count as `not_found`. A successful read wins within each repository/source
+  fails; checks 404s count as `not_found`. A successful read wins within each
+  repository/source
   (`internal/github/sync_outcomes.go::syncPass.observe`).
 - Observe repository, list, and checks reads; exclude local filesystem/capacity
   errors, budget waits, disabled features, and non-check item reads.
   HTTP 304 counts as success (`internal/github/sync_outcomes.go::syncPass.observe`).
 - A successful source read in a full pass clears its in-memory outage state.
-  Reasons are `auth`, `rate_limited`,
-  `not_found`, or `other`, without identifiers
+  Reasons are `auth`, `rate_limited`, `not_found`, or `other`, without identifiers
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
 - An outage may report again after restart or first repository ID resolution
   (`internal/github/sync_outcomes.go::Syncer.finishSyncPass`).
-- Startup and daily daemon telemetry send tracked repository counts only in the
-  ranges documented in [Telemetry](../docs/configuration.md#telemetry)
-  (`cmd/kenn-forge/notifications.go::captureDaemonActive`).
 - Setup checks run on non-worker daemons with telemetry enabled at startup:
   at startup, each minute, and at shutdown (bounded to 900 ms). A ready
   workspace or a readable PR or issue qualifies: tracked local DB rows without

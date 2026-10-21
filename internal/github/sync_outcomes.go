@@ -104,7 +104,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass) {
 				}
 			}
 		}
-		if reason != "" && s.onSyncFailed != nil {
+		if reason != "" {
 			s.onSyncFailed(source, reason)
 		}
 	}

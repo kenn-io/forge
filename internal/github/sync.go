@@ -868,8 +868,7 @@ type Syncer struct {
 	onRelayRefresh   func(context.Context, int64, string, int)
 	onSyncCompleted  func(results []RepoSyncResult)
 	onSyncFailed     func(source, reason string)
-	syncFailuresMu   sync.Mutex
-	syncFailures     map[string]map[string]bool // guarded by syncFailuresMu
+	syncFailures     map[syncFailureKey]bool // guarded by the run slot
 	// onWatchedMRSyncCompleted fires once after a watched-MR fast-sync
 	// pass refreshes at least one MR.
 	onWatchedMRSyncCompleted func()
@@ -4754,9 +4753,7 @@ dispatch:
 		s.drainPendingCommentSyncs(ctx, eligibleBuckets)
 	}
 	if !canceled.Load() && ctx.Err() == nil {
-		s.syncFailuresMu.Lock()
 		s.finishSyncPass(pass, s.TrackedRepos())
-		s.syncFailuresMu.Unlock()
 	}
 
 	// Use a latched flag (set by the dispatch loop and workers at
@@ -5104,7 +5101,7 @@ func (s *Syncer) syncRepoIdentity(
 	}
 	identity = platformdb.DBRepositoryIdentity(resolved)
 	if !resolved.Ref.Identity().Valid() {
-		err := &platform.Error{Code: platform.ErrCodeProviderContract, Provider: repoPlatform(repo), PlatformHost: repoHost(repo), Err: errors.New("provider returned no repo id")}
+		err := errors.New("provider returned no repo id")
 		s.observeRepoFailure(ctx, repo, err)
 		return db.RepoIdentity{}, nil, err
 	}

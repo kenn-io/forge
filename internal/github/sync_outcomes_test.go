@@ -315,6 +315,9 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
 			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
+			if tc.name == "missing repository ID" {
+				assert.Equal(t, "resolve repo identity acme/widget: provider returned no repo id", s.Status().LastError)
+			}
 		})
 	}
 }

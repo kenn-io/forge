@@ -21,6 +21,11 @@ var syncScopeSources = map[failScope]struct{ source, feature string }{
 
 type syncPassKey struct{}
 
+type syncFailureKey struct {
+	source string
+	repo   string
+}
+
 // A missing result means no read; an empty reason means a successful read.
 type syncPass struct {
 	mu      sync.Mutex
@@ -78,35 +83,30 @@ func (s *Syncer) observeRepoFailure(ctx context.Context, repo RepoRef, err error
 	}
 }
 
-// finishSyncPass runs under the run slot and syncFailuresMu after all
-// observations have finished.
+// finishSyncPass runs under the run slot after all observations have finished.
 func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 	if pass == nil {
 		return
 	}
-	pass.mu.Lock()
-	defer pass.mu.Unlock()
 	if s.syncFailures == nil {
-		s.syncFailures = make(map[string]map[string]bool)
+		s.syncFailures = make(map[syncFailureKey]bool)
 	}
 	for _, source := range telemetry.SyncSources() {
-		if s.syncFailures[source] == nil {
-			s.syncFailures[source] = make(map[string]bool)
-		}
-		failures := s.syncFailures[source]
 		for _, repo := range tracked {
 			// Resolving identity re-keys a repository without ending its outage.
-			if failures[repoFailKey(repo)] {
-				delete(failures, repoFailKey(repo))
-				failures[mergeQueueRepoKey(repo)] = true
+			key := syncFailureKey{source, repoFailKey(repo)}
+			if s.syncFailures[key] {
+				delete(s.syncFailures, key)
+				s.syncFailures[syncFailureKey{source, mergeQueueRepoKey(repo)}] = true
 			}
 		}
 		reason := ""
 		for key, result := range pass.results[source] {
+			failureKey := syncFailureKey{source, key}
 			if result == "" {
-				delete(failures, key)
-			} else if !failures[key] {
-				failures[key] = true
+				delete(s.syncFailures, failureKey)
+			} else if !s.syncFailures[failureKey] {
+				s.syncFailures[failureKey] = true
 				if higherSyncFailureReason(result, reason) {
 					reason = result
 				}

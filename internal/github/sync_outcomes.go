@@ -98,25 +98,7 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 		s.syncFailures = make(map[string]map[string]bool)
 	}
 	for _, source := range telemetry.SyncSources {
-		live := make(map[string]bool, len(tracked))
-		s.featureCooldowns.mu.Lock()
-		for _, repo := range tracked {
-			_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, syncSourceFeature(source)))
-			if !repo.Archived && !state.nextProbe.After(s.nowUTC()) {
-				live[mergeQueueRepoKey(repo)] = true
-			}
-		}
-		s.featureCooldowns.mu.Unlock()
-		failures := s.syncFailures[source]
-		if failures == nil {
-			failures = make(map[string]bool)
-			s.syncFailures[source] = failures
-		}
-		for key := range failures {
-			if !live[key] {
-				delete(failures, key)
-			}
-		}
+		live, failures := s.liveSyncFailures(source, tracked)
 		// Only repositories that start failing count, so one repository that
 		// keeps failing does not hide outages in the others.
 		reason := ""
@@ -137,6 +119,36 @@ func (s *Syncer) finishSyncPass(pass *syncPass, tracked []RepoRef) {
 			s.onSyncFailed(source, reason)
 		}
 	}
+}
+
+// liveSyncFailures returns the source's live repositories and its failure
+// state, pruned to them.
+func (s *Syncer) liveSyncFailures(source string, tracked []RepoRef) (map[string]bool, map[string]bool) {
+	if s.syncFailures[source] == nil {
+		s.syncFailures[source] = make(map[string]bool)
+	}
+	failures := s.syncFailures[source]
+	live := make(map[string]bool, len(tracked))
+	s.featureCooldowns.mu.Lock()
+	for _, repo := range tracked {
+		key := mergeQueueRepoKey(repo)
+		// Resolving identity re-keys a repository without ending its outage.
+		if failures[repoFailKey(repo)] {
+			delete(failures, repoFailKey(repo))
+			failures[key] = true
+		}
+		_, state, _ := s.featureCooldowns.lookupState(repositoryFeatureKeys(repo, syncSourceFeature(source)))
+		if !repo.Archived && !state.nextProbe.After(s.nowUTC()) {
+			live[key] = true
+		}
+	}
+	s.featureCooldowns.mu.Unlock()
+	for key := range failures {
+		if !live[key] {
+			delete(failures, key)
+		}
+	}
+	return live, failures
 }
 
 // An empty reason represents success and ranks below every failure.

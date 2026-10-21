@@ -11,6 +11,10 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Keep the app visually coherent.
 - Reuse shared primitives by default; one-off styling is a last resort.
 - Extend semantic tokens and components instead of duplicating UI geometry.
+- Hand-styled controls in existing code are not precedent. Use kit controls such
+  as `SegmentedControl` and `Checkbox`; a confirmation that needs choices passes
+  them as `ConfirmDialog` children, with no local CSS
+  (`frontend/src/lib/components/sidebar/BulkMergeDialog.svelte`).
 
 ## Design intent
 

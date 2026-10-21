@@ -529,7 +529,7 @@ test("merges a selection of pull requests, waiting for pending CI where needed",
 
   const dialog = page.getByRole("dialog", { name: "Merge 2 PRs?" });
   await expect(dialog).toContainText("1 has pending CI and will merge once the checks pass.");
-  await dialog.getByText("Rebase and merge").click();
+  await dialog.getByRole("radio", { name: "Rebase and merge" }).click();
   await dialog.getByRole("button", { name: "Merge 2 PRs" }).click();
 
   await expect(page.locator(".kit-flash-stack")).toContainText("Merged 1 PR. 1 PR will merge once CI passes.");

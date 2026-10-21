@@ -337,6 +337,11 @@ fallback repository listing.
 - Native projections use the bottom PR number as the neutral stack key; GitHub's
   independent stack number remains cache-only.
   (`internal/stacks/detect.go::persistStackChain`)
+- Merging a native stack member also merges every unmerged member below it, so
+  projections record `native` and the merge UI names every PR that lands; a branch
+  projection of the same row must clear it (`frontend/src/lib/components/detail/stack-merge.ts`).
+- Native member `mergeable`/`mergeStateStatus` compare each PR with its parent branch,
+  not the stack base; a stack can conflict on `main` while every member is `CLEAN`.
 - Disabling the preference synchronously restores branch-derived projections;
   cached native rows remain dormant. The syncer's preference is the transition
   authority — every server binds it to the boot config and reconciles on the

@@ -10459,6 +10459,9 @@ components:
           items:
             $ref: "#/components/schemas/StackMemberResponse"
           type: array
+        native:
+          description: Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it
+          type: boolean
         position:
           format: int64
           type: integer
@@ -10476,6 +10479,7 @@ components:
         - position
         - size
         - health
+        - native
         - members
       type: object
     StackMemberResponse:

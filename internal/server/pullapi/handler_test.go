@@ -178,14 +178,14 @@ func TestListPullsReportsStackPlacementForMultiMemberStacks(t *testing.T) {
 	insert(4, "solo", "main")
 	loneID := insert(5, "lone", "main")
 
-	stackID, err := database.UpsertStack(ctx, repoID, 1, "feature")
+	stackID, err := database.UpsertStack(ctx, repoID, 1, "feature", false)
 	require.NoError(err)
 	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
 		{StackID: stackID, MergeRequestID: firstID, Position: 1},
 		{StackID: stackID, MergeRequestID: secondID, Position: 2},
 		{StackID: stackID, MergeRequestID: thirdID, Position: 3},
 	}))
-	loneStackID, err := database.UpsertStack(ctx, repoID, 5, "lone")
+	loneStackID, err := database.UpsertStack(ctx, repoID, 5, "lone", false)
 	require.NoError(err)
 	require.NoError(database.ReplaceStackMembers(ctx, loneStackID, []db.StackMember{
 		{StackID: loneStackID, MergeRequestID: loneID, Position: 1},

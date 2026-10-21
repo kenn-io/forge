@@ -14,6 +14,7 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
+  import type { NativeStackMergeScope } from "./stack-merge.js";
   import type { RepositoryKey } from "../../api/repository-key.js";
 
   const { detail } = getStores();
@@ -55,6 +56,11 @@
     /** Stack context shown when merging a pull request. */
     stackNote?: string | undefined;
     /**
+     * Set when the provider owns the stack: the merge also lands every
+     * unmerged pull request below this one, so the modal names them all.
+     */
+    nativeStackMerge?: NativeStackMergeScope | undefined;
+    /**
      * Set when the base branch uses a merge queue: submitting adds the
      * pull request to the queue, which merges it with its own configured
      * method, so method, commit text, and workspace cleanup do not apply.
@@ -78,7 +84,7 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     ciFailed = false,
-    alreadyQueued = false, workspaceId, stackNote, mergeQueue,
+    alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue,
     onclose, onstateconflict,
   }: Props = $props();
 
@@ -97,6 +103,23 @@
       ? ` using ${queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod}`
       : "",
   );
+
+  // More than one pull request lands, so the action is a stack merge.
+  const stackLandingCount = $derived.by(() => {
+    const count = nativeStackMerge?.landing.length ?? 0;
+    return count > 1 ? count : 0;
+  });
+
+  function numberList(numbers: number[]): string {
+    const refs = numbers.map(n => `#${n}`);
+    if (refs.length <= 2) return refs.join(" and ");
+    return `${refs.slice(0, -1).join(", ")}, and ${refs.at(-1)}`;
+  }
+
+  function modalTitle(): string {
+    if (mergeQueue) return stackLandingCount ? "Add Stack to Merge Queue" : "Add to Merge Queue";
+    return stackLandingCount ? "Merge Stack" : "Merge Pull Request";
+  }
 
   // Captured once when the modal opens: a background detail refresh
   // must not silently rebind the pin to a head the user has not seen
@@ -211,19 +234,48 @@
       return offerDeferredMerge ? "Add to merge queue after CI is complete" : "Add to merge queue";
     }
     if (offerDeferredMerge) return "Merge after CI is complete";
-    return ciFailed ? "Merge Anyway" : methodLabel();
+    if (ciFailed) return "Merge Anyway";
+    return stackLandingCount ? `${methodLabel()} ${stackLandingCount} pull requests` : methodLabel();
   }
 
 </script>
 
 <Modal
-  title={mergeQueue ? "Add to Merge Queue" : "Merge Pull Request"}
+  title={modalTitle()}
   width="min(560px, 92vw)"
   maxWidth="min(560px, 92vw)"
   {onclose}
 >
   <div class="merge-body">
-      {#if stackNote}
+      {#if nativeStackMerge}
+        <div class="stack-merge-note">
+          {#if stackLandingCount}
+            <p>
+              {#if mergeQueue}
+                This adds {stackLandingCount} pull requests to the merge queue as one
+                group: {numberList(nativeStackMerge.landing)}.
+              {:else}
+                This merges {stackLandingCount} pull requests into
+                <code>{nativeStackMerge.baseBranch}</code> as one GitHub stack
+                merge: {numberList(nativeStackMerge.landing)}.
+              {/if}
+            </p>
+            {#if !mergeQueue}
+              <p>GitHub merges the stack asynchronously. Forge shows the result when GitHub finishes.</p>
+            {/if}
+          {:else}
+            <p>Only this pull request merges.</p>
+          {/if}
+          {#if nativeStackMerge.remaining.length > 0}
+            <p>
+              {numberList(nativeStackMerge.remaining)}
+              {nativeStackMerge.remaining.length === 1 ? "stays" : "stay"} open and
+              GitHub rebases {nativeStackMerge.remaining.length === 1 ? "it" : "them"}
+              onto <code>{nativeStackMerge.baseBranch}</code>.
+            </p>
+          {/if}
+        </div>
+      {:else if stackNote}
         <p class="stack-note">{stackNote}</p>
       {/if}
       {#if mergeQueue}
@@ -366,6 +418,27 @@
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.4;
+  }
+
+  .stack-merge-note {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--accent-blue) 40%, transparent);
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+  }
+
+  .stack-merge-note p {
+    margin: 0;
+  }
+
+  .stack-merge-note code {
+    font-family: var(--font-mono);
   }
 
   .ci-defer-note {

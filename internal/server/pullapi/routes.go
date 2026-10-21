@@ -3018,6 +3018,7 @@ func stackContextForPR(number int, stack *db.Stack, members []db.StackMemberWith
 		Position:  position,
 		Size:      len(members),
 		Health:    computeStackHealth(members),
+		Native:    stack.Native,
 		Members:   toStackMemberResponses(members),
 	}
 }

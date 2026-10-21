@@ -8,6 +8,8 @@ export interface StackContextResponse {
   readonly $schema?: string;
   health: string;
   members: StackMemberResponse[];
+  /** Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it */
+  native: boolean;
   position: number;
   size: number;
   stack_id: number;

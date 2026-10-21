@@ -34,6 +34,10 @@ const baseProps = {
   onclose: () => {},
 };
 
+function normalized(text: string | null): string {
+  return (text ?? "").replace(/\s+/g, " ").trim();
+}
+
 describe("MergeModal modal frame integration", () => {
   beforeEach(() => {
     resetModalStack();
@@ -63,6 +67,58 @@ describe("MergeModal modal frame integration", () => {
     });
 
     expect(screen.getByText("Stack position 2 of 3.").tagName).toBe("P");
+  });
+
+  it("names every pull request a native stack merge lands and the ones that stay open", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 12,
+        stackNote: "Stack position 2 of 3.",
+        nativeStackMerge: { baseBranch: "main", landing: [11, 12], remaining: [13] },
+      },
+    });
+
+    expect(screen.getByRole("dialog", { name: "Merge Stack" })).toBeTruthy();
+    expect(normalized(screen.getByText(/This merges 2 pull requests into/).textContent)).toBe(
+      "This merges 2 pull requests into main as one GitHub stack merge: #11 and #12.",
+    );
+    expect(screen.getByText(/GitHub merges the stack asynchronously/)).toBeTruthy();
+    expect(screen.getByText(/#13\s+stays open/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Squash and merge 2 pull requests" })).toBeTruthy();
+    expect(screen.queryByText("Stack position 2 of 3.")).toBeNull();
+  });
+
+  it("says only the bottom pull request merges when nothing below it is unmerged", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 11,
+        nativeStackMerge: { baseBranch: "main", landing: [11], remaining: [12, 13] },
+      },
+    });
+
+    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
+    expect(screen.getByText("Only this pull request merges.")).toBeTruthy();
+    expect(screen.getByText(/#12 and #13\s+stay open/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
+  });
+
+  it("describes a native stack entering the merge queue as one group", () => {
+    render(MergeModal, {
+      props: {
+        ...baseProps,
+        number: 13,
+        mergeQueue: { branch: "main", mergeMethod: "squash" },
+        nativeStackMerge: { baseBranch: "main", landing: [11, 12, 13], remaining: [] },
+      },
+    });
+
+    expect(screen.getByRole("dialog", { name: "Add Stack to Merge Queue" })).toBeTruthy();
+    expect(normalized(screen.getByText(/This adds 3 pull requests to the merge queue/).textContent)).toBe(
+      "This adds 3 pull requests to the merge queue as one group: #11, #12, and #13.",
+    );
+    expect(screen.queryByText(/asynchronously/)).toBeNull();
   });
 });
 

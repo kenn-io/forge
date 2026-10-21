@@ -69364,13 +69364,16 @@ type SpokePreparationSeal struct {
 
 type StackContextResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string               `json:"$schema,omitempty"`
-	Health    string                `json:"health"`
-	Members   []StackMemberResponse `json:"members"`
-	Position  int64                 `json:"position"`
-	Size      int64                 `json:"size"`
-	StackID   int64                 `json:"stack_id"`
-	StackName string                `json:"stack_name"`
+	Schema  *string               `json:"$schema,omitempty"`
+	Health  string                `json:"health"`
+	Members []StackMemberResponse `json:"members"`
+
+	// Native Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it
+	Native    bool   `json:"native"`
+	Position  int64  `json:"position"`
+	Size      int64  `json:"size"`
+	StackID   int64  `json:"stack_id"`
+	StackName string `json:"stack_name"`
 }
 
 type StackMemberResponse struct {

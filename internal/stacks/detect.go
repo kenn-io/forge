@@ -328,7 +328,7 @@ func RunDetectionWithNativeStacks(
 		}
 		if !overlapping {
 			for _, chain := range chains {
-				stackID, err := persistStackChain(ctx, database, repoID, chain)
+				stackID, err := persistStackChain(ctx, database, repoID, chain, true)
 				if err != nil {
 					return err
 				}
@@ -349,7 +349,7 @@ func RunDetectionWithNativeStacks(
 		if !hasOpenMember(chain) {
 			continue
 		}
-		stackID, err := persistStackChain(ctx, database, repoID, chain)
+		stackID, err := persistStackChain(ctx, database, repoID, chain, false)
 		if err != nil {
 			return err
 		}
@@ -364,9 +364,10 @@ func persistStackChain(
 	database *db.DB,
 	repoID int64,
 	chain []db.MergeRequest,
+	native bool,
 ) (int64, error) {
 	stackID, err := database.UpsertStack(
-		ctx, repoID, chain[0].Number, DeriveStackName(chain),
+		ctx, repoID, chain[0].Number, DeriveStackName(chain), native,
 	)
 	if err != nil {
 		return 0, err

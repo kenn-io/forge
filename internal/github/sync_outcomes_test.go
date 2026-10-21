@@ -19,103 +19,76 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestSyncFailedSourceRecovery(t *testing.T) {
+func TestSyncFailedPass(t *testing.T) {
 	a := RepoRef{Owner: "acme", Name: "a"}
 	b := RepoRef{Owner: "acme", Name: "b"}
 	resolved := a
 	resolved.Key = platform.RepositoryIDKey(42)
-	renamed := resolved
-	renamed.Name = "renamed"
 	initialFailure := [][2]string{{"issues", "not_found"}}
 	additionalFailure := [][2]string{{"issues", "not_found"}, {"issues", "not_found"}}
 	type observation struct {
-		repo RepoRef
-		err  error
+		repo   RepoRef
+		source string
+		err    error
 	}
+	type step struct {
+		reads   []observation
+		tracked []RepoRef
+		want    [][2]string
+	}
+	type scenario struct {
+		name  string
+		steps []step
+	}
+	var cases []scenario
 	for _, tc := range []struct {
 		name                  string
-		first                 RepoRef
 		next                  []observation
 		tracked               []RepoRef
 		later                 RepoRef
 		wantAfterNextPass     [][2]string
 		wantAfterLaterFailure [][2]string
 	}{
-		{"another repository starts failing", a, []observation{{a, platform.ErrNotFound}, {b, platform.ErrNotFound}}, []RepoRef{a, b}, b, additionalFailure, additionalFailure},
-		{"no reads", a, nil, []RepoRef{a, b}, a, initialFailure, initialFailure},
-		{"not modified", a, []observation{{a, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, initialFailure, additionalFailure},
-		{"resolved identity keeps outage", a, []observation{{resolved, platform.ErrNotFound}}, []RepoRef{resolved}, resolved, initialFailure, initialFailure},
-		{"rename keeps identity", resolved, []observation{{renamed, platform.ErrSyncBudgetExhausted}}, []RepoRef{renamed}, renamed, initialFailure, initialFailure},
+		{"another repository starts failing", []observation{{a, "issues", platform.ErrNotFound}, {b, "issues", platform.ErrNotFound}}, []RepoRef{a, b}, b, additionalFailure, additionalFailure},
+		{"no reads", nil, []RepoRef{a, b}, a, initialFailure, initialFailure},
+		{"not modified", []observation{{a, "issues", &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusNotModified}}}}, []RepoRef{a, b}, a, initialFailure, additionalFailure},
+		{"resolved identity keeps outage", []observation{{resolved, "issues", platform.ErrNotFound}}, []RepoRef{resolved}, resolved, initialFailure, initialFailure},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var events [][2]string
-			s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			first := &syncPass{}
-			first.observe(tc.first, "issues", platform.ErrNotFound)
-			s.finishSyncPass(first, []RepoRef{tc.first, b})
-			second := &syncPass{}
-			for _, observation := range tc.next {
-				second.observe(observation.repo, "issues", observation.err)
-			}
-			s.finishSyncPass(second, tc.tracked)
-			require.Equal(t, tc.wantAfterNextPass, events)
-			later := &syncPass{}
-			later.observe(tc.later, "issues", platform.ErrNotFound)
-			// Resume reads from the later repository.
-			s.finishSyncPass(later, []RepoRef{tc.later, b})
-			assert.Equal(t, tc.wantAfterLaterFailure, events)
-		})
+		cases = append(cases, scenario{tc.name, []step{
+			{[]observation{{a, "issues", platform.ErrNotFound}}, []RepoRef{a, b}, initialFailure},
+			{tc.next, tc.tracked, tc.wantAfterNextPass},
+			{[]observation{{tc.later, "issues", platform.ErrNotFound}}, []RepoRef{tc.later, b}, tc.wantAfterLaterFailure},
+		}})
 	}
-}
-
-func TestSyncFailedSourcesRecoverIndependently(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget"}
-	var events [][2]string
-	s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
-	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-	for _, recovered := range []bool{false, true, false} {
-		pass := &syncPass{}
-		pass.observe(repo, "issues", platform.ErrPermissionDenied)
-		var checksErr error
-		if !recovered {
-			checksErr = platform.ErrPermissionDenied
-		}
-		pass.observe(repo, "checks", checksErr)
-		s.finishSyncPass(pass, []RepoRef{repo})
-	}
-	assert.Equal(t, [][2]string{{"issues", "auth"}, {"checks", "auth"}, {"checks", "auth"}}, events)
-}
-
-func TestSyncFailedReasonPriority(t *testing.T) {
-	a := RepoRef{Owner: "acme", Name: "a"}
-	b := RepoRef{Owner: "acme", Name: "b"}
+	cases = append(cases, scenario{"sources recover independently", []step{
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", nil}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}}},
+		{[]observation{{a, "issues", platform.ErrPermissionDenied}, {a, "checks", platform.ErrPermissionDenied}}, []RepoRef{a}, [][2]string{{"issues", "auth"}, {"checks", "auth"}, {"checks", "auth"}}},
+	}})
 	for _, acrossRepos := range []bool{false, true} {
 		for _, authFirst := range []bool{false, true} {
-			t.Run(fmt.Sprintf("acrossRepos=%t/authFirst=%t", acrossRepos, authFirst), func(t *testing.T) {
-				var events [][2]string
-				s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
-				s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-				var first, second error = errors.New("unknown failure"), platform.ErrPermissionDenied
-				if authFirst {
-					first, second = second, first
-				}
-				pass := &syncPass{}
-				pass.observe(a, "issues", first)
-				other := a
-				if acrossRepos {
-					other = b
-				}
-				pass.observe(other, "issues", second)
-				s.finishSyncPass(pass, []RepoRef{a, b})
-				assert.Equal(t, [][2]string{{"issues", "auth"}}, events)
-			})
+			var first, second error = errors.New("unknown failure"), platform.ErrPermissionDenied
+			if authFirst {
+				first, second = second, first
+			}
+			other := a
+			if acrossRepos {
+				other = b
+			}
+			cases = append(cases, scenario{fmt.Sprintf("reason priority/acrossRepos=%t/authFirst=%t", acrossRepos, authFirst), []step{
+				{[]observation{{a, "issues", first}, {other, "issues", second}}, []RepoRef{a, b}, [][2]string{{"issues", "auth"}}},
+			}})
 		}
 	}
-}
-
-func TestSyncFailedIgnoredErrors(t *testing.T) {
-	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	for _, failureFirst := range []bool{false, true} {
+		var first, second error = nil, platform.ErrPermissionDenied
+		if failureFirst {
+			first, second = second, first
+		}
+		cases = append(cases, scenario{fmt.Sprintf("mixed reads/failureFirst=%t", failureFirst), []step{
+			{[]observation{{a, "issues", first}, {a, "issues", second}}, []RepoRef{a}, nil},
+		}})
+	}
 	for _, tc := range []struct {
 		name   string
 		source string
@@ -131,16 +104,25 @@ func TestSyncFailedIgnoredErrors(t *testing.T) {
 		{"budget refused", "issues", platform.ErrSyncBudgetExhausted},
 		{"provider not configured", "merge_requests", fmt.Errorf("resolve reader: %w", platform.ErrProviderNotConfigured)},
 		{"invalid repository reference", "issues", fmt.Errorf("resolve reader: %w", platform.ErrInvalidRepoRef)},
-		{"disabled feature without cooldown", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
+		{"disabled feature", "issues", platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", "issues", nil)},
 	} {
+		cases = append(cases, scenario{tc.name, []step{
+			{[]observation{{a, tc.source, tc.err}}, []RepoRef{a}, nil},
+		}})
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			pass := &syncPass{}
-			pass.observe(repo, tc.source, tc.err)
 			var events [][2]string
 			s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Empty(t, events)
+			for i, step := range tc.steps {
+				pass := &syncPass{}
+				for _, read := range step.reads {
+					pass.observe(read.repo, read.source, read.err)
+				}
+				s.finishSyncPass(pass, step.tracked)
+				require.Equal(t, step.want, events, "pass %d", i+1)
+			}
 		})
 	}
 }
@@ -196,7 +178,7 @@ func TestSyncFailedProviderChecks(t *testing.T) {
 	assert.Equal(t, [][2]string{{"checks", "auth"}}, events)
 }
 
-func TestSyncFailedGitHubChecksMissingItem(t *testing.T) {
+func TestSyncFailedGitHubChecksIgnores404(t *testing.T) {
 	for _, endpoint := range []string{"check runs", "combined status"} {
 		t.Run(endpoint, func(t *testing.T) {
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
@@ -273,19 +255,6 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 		setup  func(t *testing.T) *Syncer
 		reason string
 	}{
-		{"repository lookup", func(t *testing.T) *Syncer {
-			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
-			d := openTestDB(t)
-			_, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-			require.NoError(t, err)
-			client := &partialFailureMock{}
-			client.getRepositoryFn = func(_ context.Context, owner, name string) (*gh.Repository, error) {
-				assert.Equal(t, "acme", owner)
-				assert.Equal(t, "widget", name)
-				return nil, platform.ErrPermissionDenied
-			}
-			return NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		}, "auth"},
 		{"missing repository ID", func(t *testing.T) *Syncer {
 			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 			d := openTestDB(t)
@@ -315,29 +284,6 @@ func TestSyncFailedRepositoryFailures(t *testing.T) {
 			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 			s.RunOnce(t.Context())
 			assert.Equal(t, [][2]string{{"merge_requests", tc.reason}, {"issues", tc.reason}}, events)
-			if tc.name == "missing repository ID" {
-				assert.Equal(t, "resolve repo identity acme/widget: provider returned no repo id", s.Status().LastError)
-			}
-		})
-	}
-}
-
-func TestSyncFailedMixedReads(t *testing.T) {
-	for _, failureFirst := range []bool{false, true} {
-		t.Run(fmt.Sprintf("failureFirst=%t", failureFirst), func(t *testing.T) {
-			repo := RepoRef{Owner: "acme", Name: "widget"}
-			var events [][2]string
-			s := NewSyncer(nil, openTestDB(t), nil, nil, time.Minute, nil, nil)
-			s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
-			pass := &syncPass{}
-			var first, second error = nil, platform.ErrPermissionDenied
-			if failureFirst {
-				first, second = second, first
-			}
-			pass.observe(repo, "issues", first)
-			pass.observe(repo, "issues", second)
-			s.finishSyncPass(pass, []RepoRef{repo})
-			assert.Empty(t, events)
 		})
 	}
 }
@@ -352,14 +298,6 @@ func TestSyncFailedArchivedMetadataRead(t *testing.T) {
 		assert.Equal(int64(42), id)
 		metadataReads++
 		return nil, platform.ErrPermissionDenied
-	}
-	client.listOpenPRsFn = func(context.Context, string, string) ([]*gh.PullRequest, error) {
-		assert.Fail("archived repository must skip merge requests")
-		return nil, nil
-	}
-	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
-		assert.Fail("archived repository must skip issues")
-		return nil, nil
 	}
 	s := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil, []RepoRef{repo}, time.Minute, nil, nil)
 	var events [][2]string

@@ -296,7 +296,7 @@ owner = "acme"
 name = "widget"
 `, host), 0o600))
 	t.Setenv("SYNC_FAILED_TEST_TOKEN", "test-token")
-	ctx, cancel := context.WithCancel(t.Context())
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	client := &fakeTelemetryClient{onCapture: func(event string) {
 		if event == "sync_failed" {

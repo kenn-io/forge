@@ -2,6 +2,8 @@ package worklistapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
@@ -30,9 +32,10 @@ type importWorklistInput struct {
 	Body ImportWorklistBody
 }
 
-// importWorklist creates a new list from a link's fragment. Items this Forge
-// does not track or has not synced, and repeats of an earlier item, are
-// skipped rather than rejecting the list.
+// importWorklist creates the list a link's fragment carries, or returns the
+// list an earlier import of the same list made. Items this Forge does not
+// track or has not synced, and repeats of an earlier item, are skipped rather
+// than rejecting the list.
 func (h *Handler) importWorklist(
 	ctx context.Context, input *importWorklistInput,
 ) (*httpapi.BodyOutput[WorklistImportResponse], error) {
@@ -47,8 +50,15 @@ func (h *Handler) importWorklist(
 	if err != nil {
 		return nil, err
 	}
+	// Two links carrying the same list are the same link, however their
+	// producers compressed it.
+	encoded, err := json.Marshal(list)
+	if err != nil {
+		return nil, httpapi.Internal("encode worklist link key failed")
+	}
 	put := mcpserver.WorklistPut{
 		Title: strings.TrimSpace(list.Title), Recipe: list.Recipe, CreatedBy: strings.TrimSpace(list.CreatedBy),
+		LinkKey: fmt.Sprintf("%x", sha256.Sum256(encoded)),
 	}
 	for i, item := range list.Items {
 		if repos[i] == nil {
@@ -72,7 +82,7 @@ func (h *Handler) importWorklist(
 	}
 	return &httpapi.BodyOutput[WorklistImportResponse]{Body: WorklistImportResponse{
 		WorklistID: result.WorklistID, ItemCount: result.ItemCount,
-		SkippedCount: len(list.Items) - len(put.Items),
+		SkippedCount: max(len(list.Items)-result.ItemCount, 0),
 	}}, nil
 }
 

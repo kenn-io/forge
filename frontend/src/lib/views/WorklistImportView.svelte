@@ -20,10 +20,10 @@
 
   let failure = $state<string | null>(null);
 
-  // Opening a link creates its list and replaces the link with it, so reload
-  // and Back never create a second copy. The request is not cancelled when the
-  // page is left; the list exists either way, but only the page that is still
-  // open navigates.
+  // Opening a link creates its list, or finds the one this list already made,
+  // and replaces the link with it. The request is not cancelled when the page
+  // is left; the list exists either way, but only the page that is still open
+  // navigates.
   $effect(() => {
     const current = fragment;
     let open = true;

@@ -1,7 +1,11 @@
 package apitest
 
 import (
+	"bytes"
+	"compress/flate"
+	"encoding/base64"
 	"encoding/json"
+	json2 "encoding/json/v2"
 	"net/http"
 	"testing"
 
@@ -59,6 +63,62 @@ func TestAPIWorklistImportCreatesTrackedItemsAndSkipsTheRest(t *testing.T) {
 	assert.Equal("small fix", got.JSON200.Items[0].Note)
 	assert.EqualValues(5, got.JSON200.Items[1].Number)
 	assert.Equal("confirm repro", got.JSON200.Items[1].Caveat)
+}
+
+func TestAPIWorklistImportReturnsTheSameListForTheSameLink(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42)
+	list := worklist.List{Title: "Merge today", Items: []worklist.Item{{
+		Item: worklist.ItemRef{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+	}}}
+	fragment, err := worklist.Fragment(list)
+	require.NoError(err)
+	// The same list as another producer might encode it, without compression.
+	data, err := json2.Marshal(list)
+	require.NoError(err)
+	var stored bytes.Buffer
+	writer, err := flate.NewWriter(&stored, flate.NoCompression)
+	require.NoError(err)
+	_, err = writer.Write(data)
+	require.NoError(err)
+	require.NoError(writer.Close())
+	uncompressed := "v1." + base64.RawURLEncoding.EncodeToString(stored.Bytes())
+	require.NotEqual(fragment, uncompressed)
+	other, err := worklist.Fragment(worklist.List{Title: "Merge tomorrow", Items: list.Items})
+	require.NoError(err)
+	importLink := func(fragment string) int64 {
+		imported, err := client.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{
+			Body: &generated.ImportWorklistBody{Fragment: fragment},
+		})
+		require.NoError(err)
+		require.NotNil(imported.JSON200, string(imported.Body))
+		return imported.JSON200.WorklistID
+	}
+
+	first := importLink(fragment)
+	assert.Equal(first, importLink(fragment), "opening a link again returns its list")
+	dismissed, err := client.HTTP.DismissWorklistWithResponse(ctx, &generated.DismissWorklistRequestOptions{
+		PathParams: &generated.DismissWorklistPath{ID: first},
+	})
+	require.NoError(err)
+	require.NotNil(dismissed.JSON200, string(dismissed.Body))
+	assert.Equal(first, importLink(uncompressed), "the same list encoded differently is the same link")
+	got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: first},
+	})
+	require.NoError(err)
+	require.NotNil(got.JSON200, string(got.Body))
+	assert.Nil(got.JSON200.DismissedAt, "reopening a dismissed list's link restores it")
+	assert.NotEqual(first, importLink(other), "a different list is a new list")
+	listed, err := client.HTTP.ListWorklistsWithResponse(ctx, &generated.ListWorklistsRequestOptions{})
+	require.NoError(err)
+	require.NotNil(listed.JSON200, string(listed.Body))
+	assert.Len(listed.JSON200.Worklists, 2)
 }
 
 func TestAPIWorklistImportRejectsLinksItCannotUse(t *testing.T) {

@@ -178,7 +178,7 @@ func (b mcpBackend) putWorklistLocal(
 	defer release()
 	params := db.PutWorklistParams{
 		ID: put.WorklistID, Title: put.Title, Recipe: put.Recipe,
-		CreatedBy: put.CreatedBy, WorkspaceID: put.WorkspaceID,
+		CreatedBy: put.CreatedBy, WorkspaceID: put.WorkspaceID, LinkKey: put.LinkKey,
 		Items: make([]db.WorklistItemParams, 0, len(put.Items)), Now: b.server.now(),
 	}
 	tracked, err := worklists.TrackedRepoIDs(ctx)

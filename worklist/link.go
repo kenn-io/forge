@@ -80,7 +80,8 @@ func Fragment(l List) (string, error) {
 }
 
 // KennLink returns a kenn:// link that opens the list in the recipient's
-// Forge for them to review and create.
+// Forge. Opening it creates the list, or opens the list an earlier
+// opening of the same list created.
 func KennLink(l List) (string, error) {
 	fragment, err := Fragment(l)
 	if err != nil {

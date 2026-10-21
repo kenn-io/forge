@@ -7,8 +7,9 @@ through.
 ## Ownership
 
 - Agents author worklists through the Forge MCP server, or hand the
-  maintainer a worklist link that creates the list when opened. The UI reads, dismisses, marks items handled, and acts on worklists but never
-  writes or reorders items itself.
+  maintainer a worklist link that creates the list when opened. The UI reads,
+  dismisses, marks items handled, and acts on worklists, and opening a link
+  stores the list it carries, but the UI never edits or reorders items.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
   score, a section, a note, and a caveat. Readiness is a section, not part of
   the score.
@@ -168,11 +169,15 @@ stateDiagram-v2
 - `kenn://kenn-forge/worklists/import#…` works only once the Kenn desktop
   app's link allowlist, kept outside this repository, admits the path.
   `/worklists/import#…` works on any Forge origin.
-- Opening a link creates a new list with no confirm step, then replaces the
-  link in history with the list, so reload and Back never import twice. Any
-  page can link there; an unwanted list is dismissed like any other.
+- Opening a link creates its list with no confirm step. The same list always
+  maps to the same worklist: opening it again, by Back, reload, or a second
+  click, returns that worklist and restores it if dismissed. A hash of the
+  list's JSON, not of the fragment text, is the key, so encodings agree
+  (`internal/db/worklists.go::DB.PutWorklist`). Any page can link there; an
+  unwanted list is dismissed like any other.
 - Untracked, unsynced, or repeated items are skipped, never added, and the UI
   reports how many (`internal/server/worklistapi/import.go::Handler.importableRepos`).
+  A link with no usable item creates nothing; the page shows why.
 
 ## UI
 

@@ -134,13 +134,16 @@ type WorklistItemParams struct {
 }
 
 // PutWorklistParams creates a worklist when ID is zero and replaces the
-// named worklist otherwise.
+// named worklist otherwise. LinkKey identifies the link a new list came
+// from; creating with a key that is already stored writes nothing and
+// returns that list instead.
 type PutWorklistParams struct {
 	ID          int64
 	Title       string
 	Recipe      string
 	CreatedBy   string
 	WorkspaceID string
+	LinkKey     string
 	Items       []WorklistItemParams
 	Now         time.Time
 }
@@ -153,7 +156,8 @@ type PutWorklistResult struct {
 
 // PutWorklist creates or replaces a worklist in one transaction. Replacing
 // resets every item's recorded state and written time and clears a dismissal,
-// so an agent rewrite brings a dismissed list back. Handled marks carry over
+// so an agent rewrite brings a dismissed list back. Creating from a link that
+// already made a list restores that list and leaves its items alone. Handled marks carry over
 // to items that stay on the list. Every item must name a visible synced pull
 // request or issue; otherwise nothing is written.
 func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistResult, error) {
@@ -169,13 +173,26 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 	result := PutWorklistResult{ID: p.ID, ItemCount: len(p.Items)}
 	err := d.Tx(ctx, func(tx *sql.Tx) error {
 		var handled map[WorklistItemKey]time.Time
+		if p.ID == 0 && p.LinkKey != "" {
+			err := tx.QueryRowContext(ctx, `
+				UPDATE forge_worklists SET dismissed_at = NULL WHERE link_key = ?
+				RETURNING id, (SELECT COUNT(*) FROM forge_worklist_items WHERE worklist_id = forge_worklists.id)`,
+				p.LinkKey,
+			).Scan(&result.ID, &result.ItemCount)
+			if err == nil {
+				return nil
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("find linked worklist: %w", err)
+			}
+		}
 		if p.ID == 0 {
 			if err := tx.QueryRowContext(ctx, `
 				INSERT INTO forge_worklists
-				    (title, recipe, created_by, workspace_id, created_at, updated_at, dismissed_at)
-				VALUES (?, ?, ?, ?, ?, ?, NULL)
+				    (title, recipe, created_by, workspace_id, created_at, updated_at, dismissed_at, link_key)
+				VALUES (?, ?, ?, ?, ?, ?, NULL, NULLIF(?, ''))
 				RETURNING id`,
-				p.Title, p.Recipe, p.CreatedBy, p.WorkspaceID, now, now,
+				p.Title, p.Recipe, p.CreatedBy, p.WorkspaceID, now, now, p.LinkKey,
 			).Scan(&result.ID); err != nil {
 				return fmt.Errorf("insert worklist: %w", err)
 			}

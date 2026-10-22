@@ -481,8 +481,8 @@ func (s *Syncer) mergeQueueMergeMethod(ctx context.Context, repo RepoRef, branch
 				known = entry.method
 			}
 		}
-		slog.Warn("merge queue merge method read failed",
-			"repo", repo.Owner+"/"+repo.Name, "branch", branch, "err", err)
+		logSyncFailure(ctx, slog.LevelWarn, "merge queue merge method read failed", err,
+			"repo", repo.Owner+"/"+repo.Name, "branch", branch)
 		s.mergeQueueMethods.Store(key, cachedMergeMethod{method: known, readAt: s.now()})
 		return known
 	}

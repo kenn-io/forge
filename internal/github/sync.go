@@ -6032,8 +6032,8 @@ func (s *Syncer) syncProviderRepoOverview(
 		} else {
 			tags, tagErr := tagReader.ListTags(ctx, platformRepoRef(repo))
 			if tagErr != nil {
-				slog.Warn("list repo tags failed",
-					"repo", repo.Owner+"/"+repo.Name, "err", tagErr,
+				logSyncFailure(ctx, slog.LevelWarn, "list repo tags failed", tagErr,
+					"repo", repo.Owner+"/"+repo.Name,
 				)
 			} else {
 				selectedTags := displayPlatformTags(tags, 3)
@@ -9316,10 +9316,9 @@ func (s *Syncer) refreshTimeline(
 		); disabledErr != nil {
 			return disabledErr
 		}
-		slog.Warn("timeline event fetch failed during timeline refresh",
+		logSyncFailure(ctx, slog.LevelWarn, "timeline event fetch failed during timeline refresh", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		timelineEvents = nil
 	}
@@ -10824,11 +10823,10 @@ func (s *Syncer) drainDetailQueue(
 			if disabled {
 				continue
 			}
-			slog.Warn("detail drain: fetch failed",
+			logSyncFailure(ctx, slog.LevelWarn, "detail drain: fetch failed", err,
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 				"number", qi.Number,
 				"type", qi.Type,
-				"err", err,
 			)
 			continue
 		}

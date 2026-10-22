@@ -47,62 +47,69 @@ export type ItemReferenceResolution =
   | { readonly kind: "providerPage"; readonly url: string }
   | { readonly kind: "unresolved"; readonly message: string };
 
-export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(function* (ref: ResolvableItemReference) {
-  const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
-  const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
-    const routeRef = { provider, platformHost, owner, name, repoPath };
-    // GitLab and Bitbucket number issues and pull requests separately.
-    const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
-    const itemTypeHint = separateNumbers ? itemType : undefined;
-    const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
-    return providerUsesHostRoute(routeRef)
-      ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
-          signal,
-        })
-      : client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
-          signal,
-        });
-  }).pipe(
-    Effect.map((data) => ({ data }) as const),
-    Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
-    Effect.catchTag("TransientTransportError", () => Effect.succeed({ transportFailed: true } as const)),
-  );
-  return yield* Effect.sync((): ItemReferenceResolution => {
-    if ("transportFailed" in result) {
-      return { kind: "unresolved", message: "Failed to resolve item reference. Check your connection." };
-    }
-    if ("problem" in result) {
-      const providerURL = safeExternalURL(ref.externalUrl);
-      if (result.problem.status === 404 && providerURL) {
-        return { kind: "providerPage", url: providerURL };
+export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
+  function* (ref: ResolvableItemReference) {
+    const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
+    const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
+      const routeRef = { provider, platformHost, owner, name, repoPath };
+      // GitLab and Bitbucket number issues and pull requests separately.
+      const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
+      const itemTypeHint = separateNumbers ? itemType : undefined;
+      const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
+      return providerUsesHostRoute(routeRef)
+        ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
+            signal,
+          })
+        : client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
+            signal,
+          });
+    }).pipe(
+      Effect.map((data) => ({ data }) as const),
+      Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
+    );
+    return yield* Effect.sync((): ItemReferenceResolution => {
+      if ("problem" in result) {
+        const providerURL = safeExternalURL(ref.externalUrl);
+        if (result.problem.status === 404 && providerURL) {
+          return { kind: "providerPage", url: providerURL };
+        }
+        return {
+          kind: "unresolved",
+          message:
+            result.problem.status === 404
+              ? `Item ${owner}/${name}#${number} not found.`
+              : `Failed to resolve ${owner}/${name}#${number}. Try again later.`,
+        };
       }
+
+      if (!result.data.repo_tracked) {
+        return { kind: "unresolved", message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.` };
+      }
+
       return {
-        kind: "unresolved",
-        message:
-          result.problem.status === 404
-            ? `Item ${owner}/${name}#${number} not found.`
-            : `Failed to resolve ${owner}/${name}#${number}. Try again later.`,
+        kind: "item",
+        item: {
+          itemType: result.data.item_type === "pr" ? "pr" : "issue",
+          provider,
+          platformHost,
+          owner,
+          name,
+          repoPath,
+          number,
+        },
       };
-    }
-
-    if (!result.data.repo_tracked) {
-      return { kind: "unresolved", message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.` };
-    }
-
-    return {
-      kind: "item",
-      item: {
-        itemType: result.data.item_type === "pr" ? "pr" : "issue",
-        provider,
-        platformHost,
-        owner,
-        name,
-        repoPath,
-        number,
-      },
-    };
-  });
-});
+    });
+  },
+  (effect, ref) =>
+    effect.pipe(
+      Effect.catchTag("TransientTransportError", () =>
+        Effect.succeed<ItemReferenceResolution>({
+          kind: "unresolved",
+          message: `Could not reach Forge to open ${ref.owner}/${ref.name}#${ref.number}. Try again.`,
+        }),
+      ),
+    ),
+);
 
 // Resolves an item reference through the repo resolve endpoint and either
 // navigates to the internal item route or reports that tracking has changed.
@@ -118,10 +125,10 @@ export function resolveItemReference(
     resolveItemReferenceEffect(ref).pipe(
       Effect.tap((resolution) =>
         Effect.sync(() => {
+          if (!stillCurrent()) return;
           if (resolution.kind === "item") onNavigate(resolution.item);
           // The click was cancelled before the lookup, so the provider page
           // opens in this tab; browsers block a tab opened after an await.
-          else if (!stillCurrent()) return;
           else if (resolution.kind === "providerPage") navigateToURL(resolution.url);
           else showFlash(resolution.message, { tone: "danger" });
         }),

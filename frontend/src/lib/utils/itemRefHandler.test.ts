@@ -427,11 +427,13 @@ describe("itemRefHandler", () => {
     expect(mocks.navigateToURL).not.toHaveBeenCalled();
   });
 
-  // Clicks an unsynced Forgejo link from /?selected=pr:12, changes the URL to
-  // each of laterURLs while the lookup is pending, then lets it fail.
-  async function clickWithDelayedFailure(
+  // Clicks a Forgejo link from /?selected=pr:12, changes the URL to each of
+  // laterURLs while the lookup is pending, then lets the lookup finish.
+  async function clickWithDelayedLookup(
     laterURLs: readonly string[],
-    failure: { status: number; code: "notFound" | "upstreamError"; externalUrl?: string },
+    outcome:
+      | { status: 404; code: "notFound"; externalUrl?: string }
+      | { status: 200; body: { repo_tracked: boolean; item_type: string } },
   ): Promise<void> {
     const { initItemRefHandler } = await import("./itemRefHandler.js");
     const runtime = makeAppRuntime(
@@ -444,7 +446,7 @@ describe("itemRefHandler", () => {
       lookupStarted.resolve();
       await releaseLookup.promise;
       lookupSettled = true;
-      return problemResponse(failure.status, failure.code);
+      return outcome.status === 200 ? outcome.body : problemResponse(outcome.status, outcome.code);
     });
     const originURL = window.location.pathname + window.location.search;
     window.history.pushState(null, "", "/?selected=pr:12");
@@ -454,7 +456,7 @@ describe("itemRefHandler", () => {
     anchor.className = "item-ref";
     anchor.href = "/pulls/forgejo/acme/widgets/12";
     const attributes: Record<string, string> = { ...unsyncedForgejoPull };
-    if (failure.externalUrl) attributes["data-external-url"] = failure.externalUrl;
+    if ("externalUrl" in outcome && outcome.externalUrl) attributes["data-external-url"] = outcome.externalUrl;
     for (const [name, value] of Object.entries(attributes)) anchor.setAttribute(name, value);
     document.body.appendChild(anchor);
     try {
@@ -478,20 +480,32 @@ describe("itemRefHandler", () => {
     ["the user left and came back to the same page", ["/settings", "/?selected=pr:12"], false],
   ])("opens the provider page for a late 404 when %s", async (_label, laterURLs, opens) => {
     const externalUrl = "https://forge.example.com/acme/widgets/pulls/12";
-    await clickWithDelayedFailure(laterURLs, { status: 404, code: "notFound", externalUrl });
+    await clickWithDelayedLookup(laterURLs, { status: 404, code: "notFound", externalUrl });
 
     if (opens) expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl);
     else expect(mocks.navigateToURL).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["the user stays on the page", [], true],
+    ["Activity rewrites the same URL", ["/?selected=pr:12"], true],
+    ["the user moved to another page", ["/settings"], false],
+    ["the user selected another Activity item", ["/?selected=pr:13"], false],
+  ])("opens a late resolved item when %s", async (_label, laterURLs, opens) => {
+    await clickWithDelayedLookup(laterURLs, { status: 200, body: { repo_tracked: true, item_type: "pr" } });
+
+    if (opens) expect(mocks.navigate).toHaveBeenCalledWith("/pulls/forgejo/acme/widgets/12");
+    else expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
   it("shows the not-found flash for a late lookup only while the user stays on the page", async () => {
     const notFound = { status: 404, code: "notFound" } as const;
-    await clickWithDelayedFailure([], notFound);
+    await clickWithDelayedLookup([], notFound);
     expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widgets#12 not found.", { tone: "danger" });
 
     mocks.showFlash.mockReset();
-    await clickWithDelayedFailure(["/settings"], notFound);
+    await clickWithDelayedLookup(["/settings"], notFound);
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 

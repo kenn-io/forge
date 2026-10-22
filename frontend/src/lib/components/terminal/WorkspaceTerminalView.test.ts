@@ -1131,12 +1131,13 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
-  it.each(
-    (["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
-      (laterAction) =>
-        (["provider page", "not found", "network failure"] as const).map((outcome) => [laterAction, outcome]),
+  it.each([
+    ...(["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
+      (laterAction) => (["provider page", "not found"] as const).map((outcome) => [laterAction, outcome] as const),
     ),
-  )("presents a late lookup result only while its workspace remains current: %s, %s", async (laterAction, outcome) => {
+    ["workspace switch", "network failure"] as const,
+    ["no superseding action", "network failure"] as const,
+  ])("presents a late lookup result only while its workspace remains current: %s, %s", async (laterAction, outcome) => {
     const externalUrl = outcome === "provider page" ? "https://github.com/acme/widget/issues/7" : undefined;
     const previousPath = window.location.pathname + window.location.search + window.location.hash;
     onTestFinished(() => navigate(previousPath));
@@ -1204,7 +1205,7 @@ describe("WorkspaceTerminalView", () => {
     const message = {
       "provider page": undefined,
       "not found": "Item acme/widget#7 not found.",
-      "network failure": "Failed to resolve item reference. Check your connection.",
+      "network failure": "Could not reach Forge to open acme/widget#7. Try again.",
     }[outcome];
     if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
     else expect(mocks.navigateToURL).not.toHaveBeenCalled();

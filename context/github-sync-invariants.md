@@ -120,13 +120,15 @@ For pull requests, that means:
   Active watched-PR sync must use the same persisted pull-request ETag path as
   detail drain (`internal/github/sync.go::syncMRForRepo`,
   `internal/github/sync.go::getPullRequestForDetail`,
-  `internal/github/sync.go::markUnchangedMRDetailFetched`). PR-page polls use
-  conditional requests while refreshing children on 304; a missing parent,
-  stale diff SHAs, or missing local diff commits force a full fetch (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual
-  refreshes remain unconditional (`internal/github/sync.go::SyncMR`,
-  `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`). Cadence control is still required
-  because changed PRs correctly fall through to comments, reviews, commits, CI,
-  and workflow approval refreshes.
+  `internal/github/sync.go::markUnchangedMRDetailFetched`). PR-page 304s refresh
+  all children: comments, reviews, commits, CI, and workflow approval
+  (`internal/github/sync.go::refreshMRDetailSnapshot`). Background 304s refresh
+  comments and pending CI only
+  (`internal/github/sync.go::markUnchangedMRDetailFetched`). A missing parent,
+  stale diff SHAs, or missing local diff commits force a full page fetch
+  (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual refreshes remain
+  unconditional (`internal/github/sync.go::SyncMROnProvider`). Cadence control is
+  still required because child reads spend provider quota.
 - MR snapshot publication reclassifies workspace head-repository trust from the
   stored row. Provider-ID collisions preserve the destination
   MR ID and merge its dependent review data before applying the newest provider

@@ -2,9 +2,11 @@ package github
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/platform/gitea"
@@ -120,4 +123,73 @@ func TestSyncerBudgetWaitDuringDetailReads(t *testing.T) {
 			assert.NotContains(logs.String(), "level=WARN")
 		})
 	}
+}
+
+func TestSyncerBulkBudgetRefusalKeepsStackDetection(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	budget := NewSyncBudgetWithEssentialReserve(1000)
+	_, spent := budget.TrySpend(budget.BackgroundLimit())
+	require.True(spent)
+	now := time.Now().UTC().Truncate(time.Second)
+	base, child := buildOpenPR(1, now), buildOpenPR(2, now)
+	base.Head.Ref, child.Base.Ref = new("feature-a"), new("feature-a")
+	child.Head.Ref = new("feature-b")
+	var gqlRequests, prOK atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/repos/owner/repo/pulls":
+			w.Header().Set("ETag", `"pulls-v1"`)
+			if r.Header.Get("If-None-Match") == `"pulls-v1"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			prOK.Add(1)
+			_ = json.NewEncoder(w).Encode([]*gh.PullRequest{base, child})
+		case "/api/graphql":
+			gqlRequests.Add(1)
+		case "/api/v3/repos/owner/repo", "/api/v3/repositories/100":
+			_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"has_issues":true,"default_branch":"main"}`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(
+		server.URL+"/api/graphql", &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)},
+	), nil)})
+	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "owner", Name: "repo",
+		Key: platform.RepositoryIDKey(100),
+	})
+	require.NoError(err)
+	var results []RepoSyncResult
+	syncer.SetOnSyncCompleted(func(r []RepoSyncResult) { results = r })
+	logs := captureDefaultLogs(t)
+
+	syncer.RunOnce(ctx)
+
+	assert.Zero(gqlRequests.Load())
+	for _, number := range []int{1, 2} {
+		pr, err := database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", number)
+		require.NoError(err)
+		require.NotNil(pr)
+	}
+	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
+	require.Len(results, 1)
+	require.NotNil(results[0].PartialFailure, "the stack hook skips hard failures")
+	assert.False(results[0].PartialFailure.MergeRequests, "REST indexed both PRs, so stack detection must run")
+
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(1), prOK.Load(), "the refused bulk read keeps the list ETag")
 }

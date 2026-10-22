@@ -553,7 +553,7 @@ type RepoRef struct {
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
-// failed to refresh one or more items in the listed scopes. Budget-only waits
+// failed to refresh one or more items in the listed scopes (none for a refused bulk read). Budget-only waits
 // preserve completed repo health; other failures update it. Consumers that
 // depend only on an unaffected scope (stack detection over merge requests,
 // workspace refresh flows) should proceed instead of treating the repository
@@ -572,10 +572,10 @@ func (e *PartialSyncError) Error() string {
 	if e.Issues {
 		failedPaths = append(failedPaths, "issue")
 	}
-	message := fmt.Sprintf(
-		"one or more %s sync items failed", strings.Join(failedPaths, " and "),
-	)
-	if e.Cause != nil {
+	message := fmt.Sprintf("one or more %s sync items failed", strings.Join(failedPaths, " and "))
+	if e.Cause != nil && failedPaths == nil {
+		return e.Cause.Error()
+	} else if e.Cause != nil {
 		return message + ": " + e.Cause.Error()
 	}
 	return message
@@ -6391,9 +6391,7 @@ func (s *Syncer) indexSyncRepo(
 							disabledScope |= failMR
 							graphQLDone = true
 						} else if syncBudgetWait(gqlErr) {
-							failedScope |= failMR
-							budgetRefusedScope |= failMR
-							partialCause = retainSyncFailureCause(partialCause, gqlErr)
+							partialCause = retainSyncFailureCause(partialCause, gqlErr) // REST indexing below still covers the scope
 						} else {
 							slog.Warn("GraphQL fetch failed, falling back to REST index",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -6556,9 +6554,7 @@ func (s *Syncer) indexSyncRepo(
 							disabledScope |= failIssues
 							graphQLIssuesDone = true
 						} else if syncBudgetWait(gqlErr) {
-							failedScope |= failIssues
-							budgetRefusedScope |= failIssues
-							partialCause = retainSyncFailureCause(partialCause, gqlErr)
+							partialCause = retainSyncFailureCause(partialCause, gqlErr) // REST indexing below still covers the scope
 						} else {
 							slog.Warn("GraphQL issue fetch failed, falling back to REST",
 								"repo", repo.Owner+"/"+repo.Name,
@@ -6661,7 +6657,7 @@ func (s *Syncer) indexSyncRepo(
 		s.queueRepoIssueComments(ctx, repo)
 	}
 
-	if failedScope != 0 {
+	if failedScope != 0 || partialCause != nil {
 		// Surface the partially-failed cycle to the caller so repo
 		// sync health (last_sync_error, sync status) records it;
 		// without this, per-item failures such as a transferred or

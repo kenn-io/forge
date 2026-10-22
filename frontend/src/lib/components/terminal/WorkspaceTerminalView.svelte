@@ -2391,6 +2391,7 @@
       const id = workspaceId;
       const hostKey = workspaceHostKey;
       const selectionGeneration = ++itemSelectionGeneration;
+      const originPath = window.location.pathname;
       const selectionCurrent = () =>
         selectionGeneration === itemSelectionGeneration && isCurrentWorkspace(id, hostKey);
       appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
@@ -2400,7 +2401,8 @@
           platformHost: resolvedPlatformHost(item.provider, item.platformHost),
         });
       }, (url) => {
-        if (selectionCurrent()) navigateToURL(url);
+        // A parked view keeps its workspace, so also require the same page.
+        if (selectionCurrent() && window.location.pathname === originPath) navigateToURL(url);
       }).pipe(Effect.tap(() => Effect.sync(() => {
         if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
       }))), {

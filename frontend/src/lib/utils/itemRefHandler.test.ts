@@ -422,6 +422,53 @@ describe("itemRefHandler", () => {
     expect(mocks.navigateToURL).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["the user stays on the page", false],
+    ["the user moved to another page", true],
+  ])("opens the provider page for a late 404 only while %s", async (_label, moveAway) => {
+    const { initItemRefHandler } = await import("./itemRefHandler.js");
+    const runtime = makeAppRuntime(
+      makeGeneratedClient({ RepositoriesService: { listRepos: mocks.repos, resolveRepoItemOnHost: mocks.post } }),
+    );
+    const lookupStarted = Promise.withResolvers<void>();
+    const releaseLookup = Promise.withResolvers<void>();
+    let lookupSettled = false;
+    mocks.post.mockImplementation(async () => {
+      lookupStarted.resolve();
+      await releaseLookup.promise;
+      lookupSettled = true;
+      return problemResponse(404, "notFound");
+    });
+    const originPath = window.location.pathname;
+    const cleanup = initItemRefHandler(runtime, undefined, document);
+    await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
+    const anchor = document.createElement("a");
+    anchor.className = "item-ref";
+    anchor.href = "/pulls/forgejo/acme/widgets/12";
+    for (const [name, value] of Object.entries({
+      ...unsyncedForgejoPull,
+      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
+    })) {
+      anchor.setAttribute(name, value);
+    }
+    document.body.appendChild(anchor);
+    try {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+      await lookupStarted.promise;
+      if (moveAway) window.history.pushState(null, "", "/settings");
+      releaseLookup.resolve();
+      await vi.waitFor(() => expect(lookupSettled).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (moveAway) expect(mocks.navigateToURL).not.toHaveBeenCalled();
+      else expect(mocks.navigateToURL).toHaveBeenCalledWith("https://forge.example.com/acme/widgets/pulls/12");
+      expect(mocks.showFlash).not.toHaveBeenCalled();
+    } finally {
+      window.history.pushState(null, "", originPath);
+      cleanup();
+      await Effect.runPromise(runtime.disposeEffect);
+    }
+  });
+
   it("keeps the failure flash when the resolver fails for another reason", async () => {
     mocks.post.mockImplementation(() => problemResponse(502, "upstreamError"));
 

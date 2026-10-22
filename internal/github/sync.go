@@ -1083,11 +1083,11 @@ func syncBudgetWait(err error) bool {
 	return errors.Is(err, platform.ErrSyncBudgetExhausted) && !mixed
 }
 
-func logSyncFailure(level slog.Level, msg string, err error, attrs ...any) {
+func logSyncFailure(ctx context.Context, level slog.Level, msg string, err error, attrs ...any) {
 	if syncBudgetWait(err) {
 		return
 	}
-	slog.Log(context.Background(), level, msg, append(attrs, "err", err)...)
+	slog.Log(ctx, level, msg, append(attrs, "err", err)...)
 }
 
 // retainSyncFailureCause keeps the first failure of each kind, so aggregation
@@ -5932,7 +5932,7 @@ func (s *Syncer) syncRepoOverview(
 ) {
 	releases, err := client.ListReleases(ctx, repo.Owner, repo.Name, 10)
 	if err != nil {
-		logSyncFailure(slog.LevelWarn, "list repo releases failed", err,
+		logSyncFailure(ctx, slog.LevelWarn, "list repo releases failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 		)
 		return
@@ -5952,7 +5952,7 @@ func (s *Syncer) syncRepoOverview(
 	if len(selectedReleases) == 0 {
 		tags, err := client.ListTags(ctx, repo.Owner, repo.Name, 3)
 		if err != nil {
-			logSyncFailure(slog.LevelWarn, "list repo tags failed", err,
+			logSyncFailure(ctx, slog.LevelWarn, "list repo tags failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 			)
 		} else {
@@ -6005,7 +6005,7 @@ func (s *Syncer) syncProviderRepoOverview(
 
 	releases, err := releaseReader.ListReleases(ctx, platformRepoRef(repo))
 	if err != nil {
-		logSyncFailure(slog.LevelWarn, "list repo releases failed", err,
+		logSyncFailure(ctx, slog.LevelWarn, "list repo releases failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 		)
 		return
@@ -6433,7 +6433,7 @@ func (s *Syncer) indexSyncRepo(
 						disabledScope |= failMR
 						failedScope |= partialSyncFailureScope(err) & failMR
 					} else {
-						logSyncFailure(slog.LevelError, "merge request sync failed", err,
+						logSyncFailure(ctx, slog.LevelError, "merge request sync failed", err,
 							"repo", repo.Owner+"/"+repo.Name,
 						)
 						failedScope |= failMR
@@ -6588,7 +6588,7 @@ func (s *Syncer) indexSyncRepo(
 							disabledScope |= failIssues
 							failedScope |= partialSyncFailureScope(err) & failIssues
 						} else {
-							logSyncFailure(slog.LevelError, "REST issue sync failed", err,
+							logSyncFailure(ctx, slog.LevelError, "REST issue sync failed", err,
 								"repo", repo.Owner+"/"+repo.Name,
 							)
 							failedScope |= failIssues
@@ -6607,7 +6607,7 @@ func (s *Syncer) indexSyncRepo(
 							disabledScope |= failIssues
 							failedScope |= partialSyncFailureScope(err) & failIssues
 						} else {
-							logSyncFailure(slog.LevelError, "issue sync failed", err,
+							logSyncFailure(ctx, slog.LevelError, "issue sync failed", err,
 								"repo", repo.Owner+"/"+repo.Name,
 							)
 							failedScope |= failIssues
@@ -6692,7 +6692,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "index upsert MR failed", err,
+			logSyncFailure(ctx, slog.LevelError, "index upsert MR failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number,
 			)
@@ -6720,7 +6720,7 @@ func (s *Syncer) syncMergeRequestsFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "update closed MR failed", err,
+			logSyncFailure(ctx, slog.LevelError, "update closed MR failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -6803,7 +6803,7 @@ func (s *Syncer) reconcileMergedActorEvents(
 	for _, candidate := range missing {
 		changed, err := s.backfillMergedActorEvent(ctx, repo, repoID, candidate.Number)
 		if err != nil {
-			logSyncFailure(slog.LevelWarn, "backfill merged actor failed", err,
+			logSyncFailure(ctx, slog.LevelWarn, "backfill merged actor failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", candidate.Number)
 			continue
@@ -7190,7 +7190,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 			if errors.Is(err, errParentSnapshotAdvanced) {
 				return nil
 			}
-			logSyncFailure(slog.LevelWarn, "provider diff snapshot failed", err,
+			logSyncFailure(ctx, slog.LevelWarn, "provider diff snapshot failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", mr.Number,
 			)
@@ -7719,7 +7719,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "update closed MR failed", err,
+			logSyncFailure(ctx, slog.LevelError, "update closed MR failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -7764,7 +7764,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "GraphQL sync issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "GraphQL sync issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -7794,7 +7794,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "update closed issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "update closed issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -9796,10 +9796,9 @@ func (s *Syncer) currentIssueCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
-		slog.Warn("current issue comment visibility fetch failed; preserving stored state",
+		logSyncFailure(ctx, slog.LevelWarn, "current issue comment visibility fetch failed; preserving stored state", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return nil, false
 	}
@@ -9974,7 +9973,7 @@ func (s *Syncer) resolveDisplayName(
 			s.displayNames.putStaleFallback(key, stale.name)
 			return stale.name, true
 		}
-		logSyncFailure(slog.LevelWarn, "get user display name failed", err,
+		logSyncFailure(ctx, slog.LevelWarn, "get user display name failed", err,
 			"login", login,
 		)
 		s.displayNames.putFailure(key)
@@ -10027,7 +10026,7 @@ func (s *Syncer) syncIssuesFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "sync issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "sync issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", ghIssue.GetNumber(),
 			)
@@ -10056,7 +10055,7 @@ func (s *Syncer) syncIssuesFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "update closed issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "update closed issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -10095,7 +10094,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "sync issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "sync issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", issue.Number,
 			)
@@ -10122,7 +10121,7 @@ func (s *Syncer) syncPlatformIssuesFromList(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			logSyncFailure(slog.LevelError, "update closed issue failed", err,
+			logSyncFailure(ctx, slog.LevelError, "update closed issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 			)
@@ -10320,10 +10319,9 @@ func (s *Syncer) refreshIssueTimeline(
 					"list timeline events for issue #%d: %w", number, err,
 				)
 			}
-			slog.Warn("issue timeline event fetch failed during timeline refresh",
+			logSyncFailure(ctx, slog.LevelWarn, "issue timeline event fetch failed during timeline refresh", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
-				"err", err,
 			)
 		} else {
 			otherEvents = normalizeIssueTimelineEvents(issueID, timelineEvents)

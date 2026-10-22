@@ -256,7 +256,7 @@ func (s *Syncer) refreshPullRequestMergeQueue(
 		return false, false
 	}
 	if err != nil {
-		logSyncFailure(slog.LevelWarn, "merge queue read failed", err,
+		logSyncFailure(ctx, slog.LevelWarn, "merge queue read failed", err,
 			"repo", repo.Owner+"/"+repo.Name, "number", number)
 		return false, false
 	}

@@ -150,14 +150,22 @@ func listActivityWithQueryer(
 			"("+strings.Join(itemTypeClauses, " OR ")+")")
 	}
 
-	if cond, condArgs := ParseSearchQuery(opts.Search).sqlCondition(
+	searchQuery := ParseSearchQuery(opts.Search)
+	searchIdentityCondition := ""
+	searchArgsPerTerm := 13
+	if !searchQuery.Empty() {
+		searchIdentityCondition = " OR LOWER(CASE source WHEN 'pre' THEN search_pr.identity " +
+			"WHEN 'bc' THEN " + activityCommitIdentitySQL("search_branch.metadata_author", "CASE WHEN author_name != '' THEN search_branch.actor END") + " END) LIKE ?"
+		searchArgsPerTerm++
+	}
+	if cond, condArgs := searchQuery.sqlCondition(
 		"(item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
 			"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
 			"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
 			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
 			"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
-			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?",
-		13, lowerLikePattern,
+			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?"+searchIdentityCondition,
+		searchArgsPerTerm, lowerLikePattern,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 		args = append(args, condArgs...)
@@ -322,11 +330,36 @@ func listActivityWithQueryer(
 			      )` + notificationScope
 	}
 
-	// Materialize the page before deriving parent recency and commit identity
+	// Materialize the page before deriving parent recency and display identity
 	// so those lookups run once per returned row rather than per candidate row.
-	commitAuthorSQL := `CASE WHEN json_valid(e.metadata_json) THEN NULLIF(json_extract(e.metadata_json, '$.commit_author'), '') END`
+	metadataAuthorSQL := activityCommitMetadataSQL("e.metadata_json")
+	searchCTE, searchJoins := "", ""
+	if !searchQuery.Empty() {
+		searchCTE = fmt.Sprintf(`search_commit_events AS MATERIALIZED (
+		    SELECT e.id AS event_id, p.repo_id AS search_repo_id, e.summary AS search_sha,
+		           %[1]s AS metadata_author, e.author AS actor, %[2]s AS identity
+		    FROM forge_mr_events e
+		    JOIN forge_merge_requests p ON p.id = e.merge_request_id
+		    JOIN forge_repos r ON r.id = p.repo_id
+		    WHERE e.event_type = 'commit' AND r.platform = 'github'
+		), search_branch_identities AS MATERIALIZED (
+		    SELECT search_repo_id, search_sha, metadata_author, actor
+		    FROM (
+		        SELECT search_repo_id, search_sha, metadata_author, actor,
+		               ROW_NUMBER() OVER (PARTITION BY search_repo_id, search_sha ORDER BY %[3]s) AS preference
+		        FROM search_commit_events
+		        WHERE metadata_author IS NOT NULL OR actor != ''
+		    ) WHERE preference = 1
+		), `, metadataAuthorSQL, activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
+			activityCommitPreferenceSQL("metadata_author", "event_id"))
+		searchJoins = `LEFT JOIN search_commit_events search_pr
+		    ON unified.source = 'pre' AND search_pr.event_id = unified.source_id
+		LEFT JOIN search_branch_identities search_branch
+		    ON unified.source = 'bc' AND unified.platform = 'github'
+		   AND search_branch.search_repo_id = unified.repo_id AND search_branch.search_sha = unified.commit_sha`
+	}
 	query := fmt.Sprintf(`
-		WITH page AS MATERIALIZED (
+		WITH %[7]spage AS MATERIALIZED (
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
 		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
 		       item_type, item_number, item_title,
@@ -483,6 +516,7 @@ func listActivityWithQueryer(
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
+		%[8]s
 		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC
 		LIMIT ?
@@ -502,22 +536,25 @@ func listActivityWithQueryer(
 		       authored_at, committed_at, activity_url,
 		       subject_state, CASE
 		           WHEN page.source = 'pre' AND page.platform = 'github' AND page.activity_type = 'commit' THEN COALESCE((
-		               SELECT COALESCE(%[6]s, e.author)
+		               SELECT %[9]s
 		               FROM forge_mr_events e WHERE e.id = page.source_id
 		           ), '')
 		           WHEN page.source = 'bc' AND page.platform = 'github' THEN COALESCE((
-			           SELECT COALESCE(%[6]s, CASE WHEN page.author_name != '' THEN NULLIF(e.author, '') END)
+			           SELECT %[10]s
 			           FROM forge_mr_events e
 			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
 			           WHERE e.event_type = 'commit' AND e.summary = page.commit_sha
 			             AND p.repo_id = page.repo_id
 			             AND (%[6]s IS NOT NULL OR (page.author_name != '' AND e.author != ''))
-			           ORDER BY (%[6]s IS NOT NULL) DESC, e.id DESC LIMIT 1
+			           ORDER BY %[11]s LIMIT 1
 			       ), '') ELSE '' END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"), commitAuthorSQL)
+		prActivityAtExpr("p"), issueActivityAtExpr("i"), metadataAuthorSQL, searchCTE, searchJoins,
+		activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
+		activityCommitIdentitySQL(metadataAuthorSQL, "CASE WHEN page.author_name != '' THEN NULLIF(e.author, '') END"),
+		activityCommitPreferenceSQL(metadataAuthorSQL, "e.id"))
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)
@@ -1134,4 +1171,17 @@ func DecodeCursor(cursor string) (
 
 func lowerLikePattern(term string) string {
 	return "%" + strings.ToLower(term) + "%"
+}
+
+// Metadata records the original author even when the event actor is a committer.
+func activityCommitMetadataSQL(metadata string) string {
+	return "CASE WHEN json_valid(" + metadata + ") THEN NULLIF(json_extract(" + metadata + ", '$.commit_author'), '') END"
+}
+
+func activityCommitIdentitySQL(metadata, actor string) string {
+	return "COALESCE(" + metadata + ", " + actor + ")"
+}
+
+func activityCommitPreferenceSQL(metadata, eventID string) string {
+	return "(" + metadata + " IS NOT NULL) DESC, " + eventID + " DESC"
 }

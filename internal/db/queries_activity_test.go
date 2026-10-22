@@ -2646,22 +2646,23 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	const sha = "1234567890abcdef1234567890abcdef12345678"
 	for _, tc := range []struct {
 		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
-		otherRepo, duplicates                                                                            bool
+		otherRepo, duplicates, newerMetadata                                                             bool
 	}{
-		{name: "original author", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "original-login", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prCommitAuthor: "Git Author", branchCommitAuthor: "Git Author"},
 		{name: "empty identities"},
-		{name: "malformed metadata", metadata: "{broken", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "linked author without git signature", metadata: `{"commit_author":"alice"}`, actor: "integrator", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
-		{name: "bot committer", metadata: `{"commit_author":"alice"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "rewritten sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "alice", branchCommitAuthor: ""},
-		{name: "short sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prCommitAuthor: "alice", branchCommitAuthor: ""},
-		{name: "other repository", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "alice", branchCommitAuthor: ""},
-		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
-		{name: "duplicate pulls", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "malformed metadata", metadata: "{broken", actor: "original-login", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "bot committer", metadata: `{"commit_author":"original-login"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "rewritten sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "original-login", branchCommitAuthor: ""},
+		{name: "short sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prCommitAuthor: "original-login", branchCommitAuthor: ""},
+		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
+		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "duplicate pulls", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "newest metadata wins", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, newerMetadata: true, prCommitAuthor: "original-login", branchCommitAuthor: "replacement-login"},
 		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2689,8 +2690,12 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
 			if tc.duplicates {
 				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
+				metadata := ""
+				if tc.newerMetadata {
+					metadata = `{"commit_author":"replacement-login"}`
+				}
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
-					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", CreatedAt: baseTime(), DedupeKey: "newer"},
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", MetadataJSON: metadata, CreatedAt: baseTime(), DedupeKey: "newer"},
 					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, CreatedAt: baseTime(), DedupeKey: "empty"},
 				}))
 			}
@@ -2716,6 +2721,45 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 					assert.Equal(t, tc.prCommitAuthor, item.CommitAuthor)
 				}
 			}
+			wantSources := []string{}
+			if tc.prCommitAuthor == "original-login" {
+				wantSources = append(wantSources, "pre")
+			}
+			if tc.branchCommitAuthor == "original-login" {
+				wantSources = append(wantSources, "bc")
+			}
+			for _, search := range []string{"original-login", "!original-login"} {
+				searchOpts := opts
+				searchOpts.Search = search
+				matches, err := d.ListActivity(t.Context(), searchOpts)
+				require.NoError(t, err)
+				if search == "original-login" {
+					sources := []string{}
+					for _, item := range matches {
+						sources = append(sources, item.Source)
+					}
+					assert.ElementsMatch(t, wantSources, sources)
+				} else {
+					assert.Len(t, matches, len(items)-len(wantSources))
+				}
+			}
+			if tc.duplicates {
+				searchOpts := opts
+				searchOpts.Search = "newer-author"
+				matches, err := d.ListActivity(t.Context(), searchOpts)
+				require.NoError(t, err)
+				require.Len(t, matches, 1)
+				assert.Equal(t, "pre", matches[0].Source, "branch identity prefers metadata over newer actors")
+				if tc.newerMetadata {
+					searchOpts.Search = "replacement-login"
+					matches, err = d.ListActivity(t.Context(), searchOpts)
+					require.NoError(t, err)
+					require.Len(t, matches, 2)
+					for _, item := range matches {
+						assert.Equal(t, "replacement-login", item.CommitAuthor)
+					}
+				}
+			}
 			raw, err := d.ListMREvents(t.Context(), mrID)
 			require.NoError(t, err)
 			require.Len(t, raw, 1)
@@ -2726,7 +2770,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 				items, err = d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
 				assert.Len(t, items, 1)
-				opts.Search = "Alice Example"
+				opts.Search = `"A. Person"`
 				items, err = d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
 				assert.Len(t, items, 1)
@@ -2765,13 +2809,28 @@ func TestActivityCommitIdentityMigration(t *testing.T) {
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer
-	t  *testing.T
-	ro *sql.DB
+	t      *testing.T
+	ro     *sql.DB
+	search bool
 }
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	q.t.Log(strings.Join(plan, "\n"))
+	materializations := 0
+	for _, step := range plan {
+		if step == "MATERIALIZE search_commit_events" {
+			materializations++
+		}
+	}
+	if q.search {
+		require.Equal(q.t, 1, materializations, "search resolves commit events once")
+		assert.Contains(q.t, strings.Join(plan, "\n"), "SEARCH search_pr USING AUTOMATIC COVERING INDEX (event_id=?) LEFT-JOIN")
+		assert.Contains(q.t, strings.Join(plan, "\n"), "SEARCH search_branch USING AUTOMATIC COVERING INDEX (search_repo_id=? AND search_sha=?) LEFT-JOIN")
+	} else {
+		require.Zero(q.t, materializations, "queries without parsed terms skip search identities")
+	}
+
 	indexPosition, parentPosition, pagePosition, eventPosition := -1, -1, -1, -1
 	for i, step := range plan {
 		if step == "SCAN page" {
@@ -2822,6 +2881,12 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	require.Len(t, items, 1)
 	assert.Equal(t, "integrator", items[0].Author)
 	assert.Equal(t, "alice", items[0].CommitAuthor)
+	for _, search := range []string{"alice", "NOT !"} {
+		items, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), search: search == "alice"}, ListActivityOpts{Types: []string{"commit", "default_branch_commit"}, Search: search, Limit: 1})
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		assert.Equal(t, "alice", items[0].CommitAuthor)
+	}
 }
 
 func TestActivityBranchCommitDoesNotBorrowCommitter(t *testing.T) {
@@ -2843,6 +2908,9 @@ func TestActivityBranchCommitDoesNotBorrowCommitter(t *testing.T) {
 	assert.Empty(t, items[0].Author)
 	assert.Empty(t, items[0].AuthorName)
 	assert.Empty(t, items[0].CommitAuthor)
+	items, err = d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"default_branch_commit"}, Search: "integrator"})
+	require.NoError(t, err)
+	assert.Empty(t, items, "an empty git signature cannot use an actor-only search identity")
 	raw, err := d.ListMREvents(t.Context(), mrID)
 	require.NoError(t, err)
 	require.Len(t, raw, 1)

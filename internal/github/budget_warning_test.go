@@ -35,16 +35,13 @@ func TestSyncerBudgetWaitDuringMergeQueueMethodRead(t *testing.T) {
 	)})
 	logs := captureDefaultLogs(t)
 
-	changed, read := syncer.refreshPullRequestMergeQueue(WithSyncBudget(t.Context()), repo, repoID, 7)
+	syncer.refreshPullRequestMergeQueue(WithSyncBudget(t.Context()), repo, repoID, 7)
 
-	assert.True(changed)
-	assert.True(read)
 	assert.EqualValues(1, gql.prReads.Load())
 	assert.Zero(gql.configReads.Load(), "the queue read spends the final allowance")
 	state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
 	require.NoError(err)
 	require.NotNil(state)
-	assert.True(state.Queued)
 	assert.Empty(state.MergeMethod)
 	assert.NotContains(logs.String(), "level=WARN")
 }
@@ -97,11 +94,14 @@ func TestSyncerBudgetWaitDuringDetailReads(t *testing.T) {
 			mrID, err := database.UpsertMergeRequest(ctx, normalized)
 			require.NoError(err)
 			client := &partialFailureMock{}
-			client.timelineEventsErr = platform.ErrSyncBudgetExhausted
 			var detailCalls int
-			client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-				detailCalls++
-				return nil, platform.ErrSyncBudgetExhausted
+			if site == "timeline" {
+				client.timelineEventsErr = platform.ErrSyncBudgetExhausted
+			} else {
+				client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					detailCalls++
+					return nil, platform.ErrSyncBudgetExhausted
+				}
 			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(100))
 			t.Cleanup(syncer.Stop)

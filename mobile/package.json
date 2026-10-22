@@ -36,7 +36,7 @@
     "typescript": "6.0.3",
     "vite-plugin-singlefile": "^2.3.3"
   },
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "patchedDependencies": {
     "react-native-webview@14.0.1": "patches/react-native-webview@14.0.1.patch"
   }

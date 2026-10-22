@@ -86,9 +86,9 @@
     },
     "runtime": {
       "name": "node",
-      "version": ">=24.0.0",
+      "version": ">=24.22.1 <25",
       "onFail": "download"
     }
   },
-  "packageManager": "bun@1.4.3"
+  "packageManager": "bun@1.4.4"
 }

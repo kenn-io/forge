@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 
-ARG BUN_IMAGE=oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598
+ARG BUN_IMAGE=oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
 ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
 ARG VITE_PLUS_VERSION=1.3.0
 
 FROM ${BUN_IMAGE} AS bun
+FROM node:24.22.1-bookworm-slim AS node
 FROM ${PLAYWRIGHT_BASE_IMAGE}
 
 ARG VITE_PLUS_VERSION
@@ -15,6 +16,7 @@ ENV BUN_INSTALL=/usr/local \
     DEBIAN_FRONTEND=noninteractive
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 
 RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)' \
     && bun --version \

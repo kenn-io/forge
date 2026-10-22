@@ -57,11 +57,20 @@ func (h *Handler) LinkService(ctx context.Context, id int64) (WorklistLinkRespon
 	for _, item := range detail.Items {
 		repo, ok := repos[item.RepoID]
 		if !ok {
-			row, err := h.db.GetRepoByID(ctx, item.RepoID)
-			if err != nil || row == nil {
+			// An inactive repository keeps a route another repository may
+			// now hold, so its items cannot be named by route.
+			active, err := h.db.GetActiveRepoByID(ctx, item.RepoID)
+			if err != nil {
 				return WorklistLinkResponse{}, httpapi.Internal("read worklist repository failed")
 			}
-			repo = h.resolver.Ref(*row)
+			if active == nil {
+				return WorklistLinkResponse{}, httpapi.Conflict(
+					httpapi.CodeConflict,
+					"a repository in this worklist no longer holds its route; sync it and try again",
+					map[string]any{"worklist_id": id, "repo_id": item.RepoID},
+				)
+			}
+			repo = h.resolver.Ref(*active.Row())
 			repos[item.RepoID] = repo
 		}
 		list.Items = append(list.Items, worklist.Item{

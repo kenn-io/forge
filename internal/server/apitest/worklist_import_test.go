@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/worklist"
 )
 
@@ -347,4 +348,41 @@ func TestAPIWorklistLinkRejectsAListWithoutItems(t *testing.T) {
 	require.Error(t, err)
 	require.NotNil(t, linked)
 	assert.Equal(t, http.StatusConflict, linked.StatusCode, string(linked.Body))
+}
+
+func TestAPIWorklistLinkRefusesARepositoryWhoseRouteWasReused(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	ctx := t.Context()
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	seedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	put, err := srv.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
+		Title: "Merge today",
+		Items: []mcpserver.WorklistPutItem{{Item: mcpserver.ItemIdentity{
+			Type: "pr", Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: 42,
+		}}},
+	})
+	require.NoError(err)
+	// Another repository takes acme/widget; the listed one keeps that route
+	// only for display.
+	platformRepoID, ok := repo.Key.ID()
+	require.True(ok)
+	replacement := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	replacement.Key = platform.RepositoryIDKey(platformRepoID + 1)
+	_, err = database.ObserveRepository(ctx, replacement)
+	require.NoError(err)
+
+	linked, err := client.HTTP.GetWorklistLinkWithResponse(ctx, &generated.GetWorklistLinkRequestOptions{
+		PathParams: &generated.GetWorklistLinkPath{ID: put.WorklistID},
+	})
+
+	require.Error(err)
+	require.NotNil(linked)
+	assert.Equal(t, http.StatusConflict, linked.StatusCode, string(linked.Body))
+	assert.Contains(t, string(linked.Body), "no longer holds its route")
 }

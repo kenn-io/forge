@@ -179,7 +179,8 @@ stateDiagram-v2
   an agent rewrites the list, or its items go away, the link still opens it.
 - A copied link carries the title, recipe, author, and items with each
   repository's current route; never handled marks, snapshots, or stable IDs.
-  The server builds it: browsers cannot reproduce Go's DEFLATE
+  The server builds it: browsers cannot reproduce Go's DEFLATE. An inactive
+  repository refuses the link, since another repository may hold its route
   (`internal/server/worklistapi/link.go::Handler.LinkService`).
 - The UI copies only the `kenn://` form, and only when an app embedding Forge
   sets `window.__KENN_EMBEDDED_KENN_LINKS__` before page scripts run: a

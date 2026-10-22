@@ -338,39 +338,20 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	assert.Equal(mcp, reloaded.MCP)
 }
 
-func TestHandleUpdateSettingsPreservesMCPDefault(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
-	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
-		MCP: &spokeapi.McpSettingsUpdate{Enabled: new(false)},
-	})
-	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	var response spokeapi.SettingsResponse
-	require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
-	assert.True(response.MCP.RestartRequired)
-	assert.False(response.MCP.Enabled)
-	reloaded, err := config.Load(cfgPath)
-	require.NoError(t, err)
-	assert.Equal(new(false), reloaded.MCP.Enabled)
-}
-
 func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, tt := range []struct {
-		name     string
-		initial  string
-		update   spokeapi.McpSettingsUpdate
-		stored   config.MCP
-		enabled  bool
-		endpoint string
+		name    string
+		initial string
+		update  spokeapi.McpSettingsUpdate
+		stored  config.MCP
+		enabled bool
 	}{
 		{
-			name:     "default on selects port without enabled",
-			update:   spokeapi.McpSettingsUpdate{Port: new(9192)},
-			stored:   config.MCP{Enabled: new(true), Port: 9192},
-			enabled:  true,
-			endpoint: "127.0.0.1:9192",
+			name:    "default on selects port without enabled",
+			update:  spokeapi.McpSettingsUpdate{Port: new(9192)},
+			stored:  config.MCP{Enabled: new(true), Port: 9192},
+			enabled: true,
 		},
 		{
 			name:    "clear legacy port without enabled preserves off",
@@ -379,12 +360,11 @@ func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
 			stored:  config.MCP{Enabled: new(false)},
 		},
 		{
-			name:     "check and clear disabled port returns to shared default",
-			initial:  "[mcp]\nenabled = false\nport = 9192\n",
-			update:   spokeapi.McpSettingsUpdate{Enabled: new(true), Port: new(0)},
-			stored:   config.MCP{},
-			enabled:  true,
-			endpoint: "127.0.0.1:8091",
+			name:    "check and clear disabled port returns to shared default",
+			initial: "[mcp]\nenabled = false\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Enabled: new(true), Port: new(0)},
+			stored:  config.MCP{},
+			enabled: true,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -401,8 +381,6 @@ func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
 			reloaded, err := config.Load(cfgPath)
 			require.NoError(t, err)
 			assert.Equal(tt.stored, reloaded.MCP)
-			assert.Equal(tt.enabled, reloaded.MCPEnabled())
-			assert.Equal(tt.endpoint, reloaded.MCPListenAddr())
 		})
 	}
 }

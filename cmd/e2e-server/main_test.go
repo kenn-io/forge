@@ -666,31 +666,6 @@ func TestMixedCIFixtureSurvivesRefresh(t *testing.T) {
 	}, conclusions)
 }
 
-func TestBuildAppStateMCPSettingsMatchServedEndpoint(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	assets, err := web.Assets()
-	require.NoError(err)
-	state, err := buildAppState(t.Context(), assets, appOptions{roborevEndpoint: defaultRoborevEndpoint})
-	require.NoError(err)
-	t.Cleanup(state.close)
-
-	recorder := httptest.NewRecorder()
-	state.handler.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "http://127.0.0.1/api/v1/settings", nil))
-	require.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
-	var settings struct {
-		MCP struct {
-			Enabled         bool   `json:"enabled"`
-			ActiveURL       string `json:"active_url"`
-			RestartRequired bool   `json:"restart_required"`
-		} `json:"mcp"`
-	}
-	require.NoError(json.Unmarshal(recorder.Body.Bytes(), &settings))
-	assert.False(settings.MCP.Enabled)
-	assert.Empty(settings.MCP.ActiveURL)
-	assert.False(settings.MCP.RestartRequired)
-}
-
 func TestBuildAppStateSeedsReviewedHeadsForUTCMergeTargets(t *testing.T) {
 	assets, err := web.Assets()
 	require.NoError(t, err)

@@ -123,117 +123,99 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	}
 }
 
-// TestDaemonServesMCPOnSharedBackendPortE2E covers configuring the companion
-// on the backend port: the main listener serves the loopback companion
-// policy at /mcp without a bearer, and discovery reports that endpoint.
+// TestDaemonServesMCPOnSharedBackendPortE2E covers the default companion
+// on the backend port and discovery of that endpoint.
 func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	bin := buildForge(t)
+	require := require.New(t)
+	assert := assert.New(t)
 
-	for _, tt := range []struct {
-		name             string
-		explicitMCP      bool
-		wantBearerStatus int
-	}{
-		{name: "explicit shared port", explicitMCP: true, wantBearerStatus: http.StatusOK},
-		{name: "omitted MCP config", wantBearerStatus: http.StatusNotFound},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			require := require.New(t)
-			assert := assert.New(t)
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	require.NoError(os.MkdirAll(dataDir, 0o700))
+	cfgPath := filepath.Join(root, "config.toml")
+	appPort := reserveFreePort(t)
+	writeMinimalConfig(t, cfgPath, dataDir, appPort)
+	publicHost := net.JoinHostPort("forge.example.test", strconv.Itoa(appPort))
+	existing, err := os.ReadFile(cfgPath)
+	require.NoError(err)
+	existing = append(fmt.Appendf(nil, "allowed_hosts = [%q]\n", publicHost), existing...)
+	require.NoError(os.WriteFile(cfgPath, existing, 0o600))
 
-			root := t.TempDir()
-			dataDir := filepath.Join(root, "data")
-			require.NoError(os.MkdirAll(dataDir, 0o700))
-			cfgPath := filepath.Join(root, "config.toml")
-			appPort := reserveFreePort(t)
-			writeMinimalConfig(t, cfgPath, dataDir, appPort)
-			publicHost := net.JoinHostPort("forge.example.test", strconv.Itoa(appPort))
-			existing, err := os.ReadFile(cfgPath)
-			require.NoError(err)
-			existing = append(fmt.Appendf(nil, "allowed_hosts = [%q]\n", publicHost), existing...)
-			if tt.explicitMCP {
-				existing = append(existing, fmt.Appendf(nil,
-					"\n[mcp]\nenabled = true\nport = %d\n", appPort,
-				)...)
-			}
-			require.NoError(os.WriteFile(cfgPath, existing, 0o600))
+	serve := procutil.Command(bin, "serve", "--config", cfgPath)
+	serve.Stdout = os.Stderr
+	serve.Stderr = os.Stderr
+	serve.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
+	require.NoError(serve.Start())
+	t.Cleanup(func() {
+		_ = serve.Process.Signal(syscall.SIGKILL)
+		_ = serve.Wait()
+	})
 
-			serve := procutil.Command(bin, "serve", "--config", cfgPath)
-			serve.Stdout = os.Stderr
-			serve.Stderr = os.Stderr
-			serve.Env = append(os.Environ(), "KENN_FORGE_LOG_LEVEL=warn")
-			require.NoError(serve.Start())
-			t.Cleanup(func() {
-				_ = serve.Process.Signal(syscall.SIGKILL)
-				_ = serve.Wait()
-			})
+	waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
+	status, err := runtimelock.Read(dataDir)
+	require.NoError(err)
+	require.NotNil(status.Metadata)
+	appAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
+	assert.Equal(appAddr, status.Metadata.MCPListenAddr)
 
-			waitForFile(t, runtimelock.MetadataPath(dataDir), 10*time.Second)
-			status, err := runtimelock.Read(dataDir)
-			require.NoError(err)
-			require.NotNil(status.Metadata)
-			appAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(appPort))
-			assert.Equal(appAddr, status.Metadata.MCPListenAddr)
+	client := mcp.NewClient(
+		&mcp.Implementation{Name: "shared-port-test", Version: "test"}, nil,
+	)
+	var session *mcp.ClientSession
+	require.Eventually(func() bool {
+		cs, connectErr := client.Connect(
+			t.Context(),
+			&mcp.StreamableClientTransport{Endpoint: "http://" + appAddr + "/mcp"},
+			nil,
+		)
+		if connectErr != nil {
+			return false
+		}
+		session = cs
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+	t.Cleanup(func() { _ = session.Close() })
 
-			client := mcp.NewClient(
-				&mcp.Implementation{Name: "shared-port-test", Version: "test"}, nil,
-			)
-			var session *mcp.ClientSession
-			require.Eventually(func() bool {
-				cs, connectErr := client.Connect(
-					t.Context(),
-					&mcp.StreamableClientTransport{Endpoint: "http://" + appAddr + "/mcp"},
-					nil,
-				)
-				if connectErr != nil {
-					return false
-				}
-				session = cs
-				return true
-			}, 30*time.Second, 100*time.Millisecond)
-			t.Cleanup(func() { _ = session.Close() })
+	result, err := session.CallTool(
+		t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
+	)
+	require.NoError(err)
+	assert.False(result.IsError)
 
-			result, err := session.CallTool(
-				t.Context(), &mcp.CallToolParams{Name: "kenn_forge_list_repos"},
-			)
-			require.NoError(err)
-			assert.False(result.IsError)
+	// The public authority uses the main-listener policy even on loopback.
+	token, err := os.ReadFile(runtimelock.AuthTokenPath(dataDir))
+	require.NoError(err)
+	bearerRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+appAddr+"/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+	))
+	require.NoError(err)
+	bearerRequest.Host = publicHost
+	bearerRequest.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	bearerRequest.Header.Set("Content-Type", "application/json")
+	bearerRequest.Header.Set("Accept", "application/json, text/event-stream")
+	bearerResponse, err := http.DefaultClient.Do(bearerRequest)
+	require.NoError(err)
+	defer bearerResponse.Body.Close()
+	assert.Equal(http.StatusNotFound, bearerResponse.StatusCode)
 
-			// The public authority uses the main-listener policy even on loopback.
-			token, err := os.ReadFile(runtimelock.AuthTokenPath(dataDir))
-			require.NoError(err)
-			bearerRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+appAddr+"/mcp", strings.NewReader(
-				`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
-			))
-			require.NoError(err)
-			bearerRequest.Host = publicHost
-			bearerRequest.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
-			bearerRequest.Header.Set("Content-Type", "application/json")
-			bearerRequest.Header.Set("Accept", "application/json, text/event-stream")
-			bearerResponse, err := http.DefaultClient.Do(bearerRequest)
-			require.NoError(err)
-			defer bearerResponse.Body.Close()
-			assert.Equal(tt.wantBearerStatus, bearerResponse.StatusCode)
+	quickstartOutput, err := procutil.Command(
+		bin, "mcp", "quickstart", "--config", cfgPath, "--json",
+	).Output()
+	require.NoError(err)
+	var connection mcpQuickstartInfo
+	require.NoError(json.Unmarshal(quickstartOutput, &connection))
+	assert.True(connection.Active)
+	assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
 
-			quickstartOutput, err := procutil.Command(
-				bin, "mcp", "quickstart", "--config", cfgPath, "--json",
-			).Output()
-			require.NoError(err)
-			var connection mcpQuickstartInfo
-			require.NoError(json.Unmarshal(quickstartOutput, &connection))
-			assert.True(connection.Active)
-			assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
-
-			var ping struct {
-				MCPURL string `json:"mcp_url"`
-			}
-			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+appAddr+"/api/ping", nil)
-			require.NoError(err)
-			response, err := http.DefaultClient.Do(req)
-			require.NoError(err)
-			defer response.Body.Close()
-			require.NoError(json.NewDecoder(response.Body).Decode(&ping))
-			assert.Equal("http://"+appAddr+"/mcp", ping.MCPURL)
-		})
+	var ping struct {
+		MCPURL string `json:"mcp_url"`
 	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+appAddr+"/api/ping", nil)
+	require.NoError(err)
+	response, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.NoError(json.NewDecoder(response.Body).Decode(&ping))
+	assert.Equal("http://"+appAddr+"/mcp", ping.MCPURL)
 }

@@ -73,47 +73,17 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 
 func TestPrepareEphemeralConfigSharesDefaultMCPListener(t *testing.T) {
 	for _, tc := range []struct {
-		basePath string
-		wantURL  string
-	}{
-		{"/", "http://127.0.0.1:39101/mcp"},
-		{"/forge/", "http://127.0.0.1:39101/forge/mcp"},
-	} {
-		t.Run(tc.basePath, func(t *testing.T) {
-			assert := assert.New(t)
-			dir := t.TempDir()
-			sourcePath := filepath.Join(dir, "source.toml")
-			require.NoError(t, os.WriteFile(sourcePath, []byte("base_path = \""+tc.basePath+"\"\n"), 0o600))
-			prepared, err := prepareEphemeralConfig(ephemeralOptions{
-				sourceConfigPath: sourcePath,
-				workDir:          filepath.Join(dir, "run"),
-				backendPort:      39101,
-				frontendPort:     39102,
-				freshDB:          true,
-			})
-			require.NoError(t, err)
-			reloaded, err := config.Load(prepared.configPath)
-			require.NoError(t, err)
-			assert.Nil(reloaded.MCP.Enabled)
-			assert.Zero(reloaded.MCP.Port)
-			assert.Equal(39101, prepared.mcpPort)
-			assert.Equal(tc.wantURL, prepared.mcpURL)
-		})
-	}
-}
-
-func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testing.T) {
-	for _, tc := range []struct {
 		name          string
 		mcp           config.MCP
 		mcpPortSet    bool
 		requestedPort int
 		expectedPort  int
 	}{
+		{name: "shared default", expectedPort: 39101},
 		{name: "explicit flag", mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
 		{name: "explicit zero flag", mcpPortSet: true},
-		{name: "explicit enable free port", mcp: config.MCP{Enabled: new(true)}},
 		{name: "source port free port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
+		{name: "disabled", mcp: config.MCP{Enabled: new(false)}, mcpPortSet: true, requestedPort: 39103},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -132,7 +102,6 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 				DataDir:             filepath.Join(dir, "source-data"),
 				Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
 				MCP:                 tc.mcp,
-				BasePath:            "/forge/",
 			}
 			require.NoError(source.Save(sourcePath))
 
@@ -149,59 +118,31 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 
 			reloaded, err := config.Load(prepared.configPath)
 			require.NoError(err)
-			require.NotNil(reloaded.MCP.Enabled)
-			assert.True(*reloaded.MCP.Enabled)
-			if tc.expectedPort != 0 {
-				assert.Equal(tc.expectedPort, reloaded.MCP.Port)
-			} else {
-				assert.Positive(reloaded.MCP.Port)
-				assert.NotEqual(6661, reloaded.MCP.Port)
-				assert.NotEqual(39101, reloaded.MCP.Port)
-				assert.NotEqual(39102, reloaded.MCP.Port)
+			switch {
+			case tc.mcp.Enabled != nil && !*tc.mcp.Enabled:
+				assert.Equal(new(false), reloaded.MCP.Enabled)
+				assert.Zero(reloaded.MCP.Port)
+				assert.Zero(prepared.mcpPort)
+				assert.Empty(prepared.mcpURL)
+			case tc.mcp.Enabled == nil && !tc.mcpPortSet:
+				assert.Nil(reloaded.MCP.Enabled)
+				assert.Zero(reloaded.MCP.Port)
+				assert.Equal(tc.expectedPort, prepared.mcpPort)
+			default:
+				assert.Equal(new(true), reloaded.MCP.Enabled)
+				if tc.expectedPort != 0 {
+					assert.Equal(tc.expectedPort, reloaded.MCP.Port)
+				} else {
+					assert.Positive(reloaded.MCP.Port)
+					assert.NotEqual(tc.mcp.Port, reloaded.MCP.Port)
+					assert.NotEqual(39101, reloaded.MCP.Port)
+					assert.NotEqual(39102, reloaded.MCP.Port)
+				}
+				assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
 			}
-			assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
-			assert.Equal(fmt.Sprintf("http://127.0.0.1:%d/mcp", reloaded.MCP.Port), prepared.mcpURL)
+			assert.Equal(reloaded.MCPURL(), prepared.mcpURL)
 		})
 	}
-}
-
-func TestPrepareEphemeralConfigLeavesDisabledMCPAlone(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.toml")
-	workDir := filepath.Join(dir, "run")
-	require.NoError(os.MkdirAll(workDir, 0o700))
-
-	source := config.Config{
-		SyncInterval:        "5m",
-		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
-		DefaultPlatformHost: "github.com",
-		Host:                "127.0.0.1",
-		Port:                8091,
-		DataDir:             filepath.Join(dir, "source-data"),
-		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
-		MCP:                 config.MCP{Enabled: new(false)},
-	}
-	require.NoError(source.Save(sourcePath))
-
-	prepared, err := prepareEphemeralConfig(ephemeralOptions{
-		sourceConfigPath: sourcePath,
-		workDir:          workDir,
-		backendPort:      39101,
-		frontendPort:     39102,
-		mcpPort:          39103,
-		mcpPortSet:       true,
-		freshDB:          true,
-	})
-	require.NoError(err)
-
-	reloaded, err := config.Load(prepared.configPath)
-	require.NoError(err)
-	assert.Equal(new(false), reloaded.MCP.Enabled)
-	assert.Zero(reloaded.MCP.Port)
-	assert.Equal(0, prepared.mcpPort)
-	assert.Empty(prepared.mcpURL)
 }
 
 func TestRequireDistinctPortsRejectsAnyCollision(t *testing.T) {

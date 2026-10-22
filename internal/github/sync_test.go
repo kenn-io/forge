@@ -4953,7 +4953,7 @@ func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) 
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -5014,7 +5014,7 @@ func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t 
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
 
 	pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
@@ -5100,7 +5100,7 @@ func TestSyncAssignsStableCommitOrderKeysAcrossForcePushReplacement(t *testing.T
 
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 1), buildOpenPR(1, now), ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
 
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -8590,7 +8590,7 @@ func TestRefreshTimelineSkipsMergedEventWhenAuthoredMergedEventAlreadyExists(t *
 	)
 
 	require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
-		mergeRequestSnapshotRevision(t, d, repoID, 7), pr, ""))
+		mergeRequestSnapshotRevision(t, d, repoID, 7), pr.GetNumber(), ""))
 
 	events, err := d.ListMREvents(ctx, mrID)
 	require.NoError(err)
@@ -11417,7 +11417,7 @@ func TestSyncMRForRepoHydratesArchivedRepoUnderArchiveBudget(t *testing.T) {
 		time.Hour, nil, nil,
 	)
 
-	err := syncer.syncMRForRepo(WithArchiveSyncBudget(ctx), repo, 7, false, nil)
+	err := syncer.syncMRForRepo(WithArchiveSyncBudget(ctx), repo, 7, mrDetailFull, nil)
 	require.NoError(err)
 
 	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "frozen", 7)
@@ -12717,7 +12717,7 @@ func TestSyncArchiveMRRepairsMetricsFromMergedAtOnlyRejectedSnapshot(t *testing.
 		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
 	)
 	require.NoError(syncer.syncMRForRepo(
-		WithArchiveSyncBudget(ctx), repo, 7, false, nil,
+		WithArchiveSyncBudget(ctx), repo, 7, mrDetailFull, nil,
 	))
 	after, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
@@ -21884,7 +21884,7 @@ func TestSyncMRForRepoPersistsSettingsForReplacementRepository(t *testing.T) {
 		mustRegistry(t, provider), d, nil, []RepoRef{repo}, time.Minute, nil, nil,
 	)
 
-	require.NoError(syncer.syncMRForRepo(ctx, repo, 7, false, nil))
+	require.NoError(syncer.syncMRForRepo(ctx, repo, 7, mrDetailFull, nil))
 
 	entry, err := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
 		Provider: "gitlab", PlatformHost: "gitlab.example.com", Key: platform.RepositoryIDKey(99),

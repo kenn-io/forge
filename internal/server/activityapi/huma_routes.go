@@ -581,7 +581,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 			if removed {
 				return nil
 			}
-			return (*s.Syncer).SyncMROnProvider(
+			return (*s.Syncer).SyncMROnProviderIfChanged(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)
 		},

@@ -1210,7 +1210,7 @@ func TestSyncMRForRepoComputesCommitLivenessWithTimeline(t *testing.T) {
 	)
 	t.Cleanup(syncer.Stop)
 
-	require.NoError(t, syncer.syncMRForRepo(t.Context(), fixture.repo, 1, false, nil))
+	require.NoError(t, syncer.syncMRForRepo(t.Context(), fixture.repo, 1, mrDetailFull, nil))
 	assertLivenessCommitFlags(t, fixture, map[string]bool{
 		h.a1: true, h.a2: true, h.a3: true,
 	})

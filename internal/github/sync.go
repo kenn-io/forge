@@ -8462,7 +8462,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 	}
 
 	if err := s.refreshTimeline(
-		ctx, repo, mrID, revision, fullPR,
+		ctx, repo, mrID, revision, number,
 		livenessHeadForRound(normalized, existing),
 	); err != nil {
 		// Timeline = 4 base calls (comments + reviews + commits + force-push);
@@ -9270,13 +9270,9 @@ func (s *Syncer) refreshTimeline(
 	repo RepoRef,
 	mrID int64,
 	expectedRevision int64,
-	ghPR *gh.PullRequest,
+	number int,
 	livenessHeadSHA string,
 ) error {
-	if ghPR == nil {
-		return errors.New("nil pull request")
-	}
-	number := ghPR.GetNumber()
 	client, err := s.clientFor(repo)
 	if err != nil {
 		return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -11096,6 +11092,34 @@ func (s *Syncer) SyncMROnProvider(
 	host, owner, name string,
 	number int,
 ) error {
+	return s.syncMROnProvider(ctx, kind, host, owner, name, number, mrDetailFull)
+}
+
+// SyncMROnProviderIfChanged refreshes a PR page, retaining child freshness on a parent 304.
+func (s *Syncer) SyncMROnProviderIfChanged(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+) error {
+	return s.syncMROnProvider(ctx, kind, host, owner, name, number, mrDetailPage)
+}
+
+type mrDetailMode uint8
+
+const (
+	mrDetailFull mrDetailMode = iota
+	mrDetailBackground
+	mrDetailPage
+)
+
+func (s *Syncer) syncMROnProvider(
+	ctx context.Context,
+	kind platform.Kind,
+	host, owner, name string,
+	number int,
+	mode mrDetailMode,
+) error {
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
 		host = repoHost(RepoRef{Platform: kind, PlatformHost: host})
@@ -11107,7 +11131,7 @@ func (s *Syncer) SyncMROnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number, false, nil)
+	return s.syncMRForRepo(ctx, repo, number, mode, nil)
 }
 
 // SyncMRForRepository refreshes an MR only while repoID still owns repo's
@@ -11120,7 +11144,7 @@ func (s *Syncer) SyncMRForRepository(
 	number int,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, false, nil, nil, nil, nil, &repoID,
+		ctx, repo, number, mrDetailFull, nil, nil, nil, nil, &repoID,
 	)
 }
 
@@ -11159,7 +11183,7 @@ func (s *Syncer) syncMRWithHost(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncMRForRepo(ctx, repo, number, false, nil)
+	return s.syncMRForRepo(ctx, repo, number, mrDetailFull, nil)
 }
 
 func (s *Syncer) syncMRWithWatchedRef(
@@ -11185,18 +11209,18 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
-	return s.syncMRForRepo(ctx, repo, mr.Number, true, providerAttempted)
+	return s.syncMRForRepo(ctx, repo, mr.Number, mrDetailBackground, providerAttempted)
 }
 
 func (s *Syncer) syncMRForRepo(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	useConditionalPRDetail bool,
+	mode mrDetailMode,
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, useConditionalPRDetail, providerAttempted, nil, nil, nil, nil,
+		ctx, repo, number, mode, providerAttempted, nil, nil, nil, nil,
 	)
 }
 
@@ -11223,11 +11247,93 @@ type mergeRequestFetchEvidence struct {
 	filesChanged   *int
 }
 
+// refreshMRDetailSnapshot shares child refreshes between full responses and page 304s.
+func (s *Syncer) refreshMRDetailSnapshot(
+	ctx context.Context,
+	repo RepoRef,
+	repoID, mrID, revision int64,
+	number int,
+	normalized, existing *db.MergeRequest,
+	ghPR *gh.PullRequest,
+	lifecyclePersisted *bool,
+) (bool, error) {
+	if err := s.refreshTimeline(
+		ctx, repo, mrID, revision, number,
+		livenessHeadForRound(normalized, existing),
+	); err != nil {
+		return false, fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
+	}
+	if ghPR != nil {
+		if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
+			return false, fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
+		}
+		if lifecyclePersisted != nil {
+			*lifecyclePersisted = true
+		}
+	}
+
+	syncMRHeadSHA := normalized.PlatformHeadSHA
+	ciApplied, err := s.refreshCIStatusSnapshot(
+		ctx, repo, mrID, revision, number, syncMRHeadSHA,
+	)
+	if err != nil {
+		return false, err
+	}
+	if !ciApplied {
+		return false, nil
+	}
+
+	// Refresh workflow approval state for the current head SHA.
+	// Persisting it here (instead of computing live on every GET)
+	// means the DB-only detail path the frontend uses by default
+	// can show the Approve Workflows button without a foreground
+	// sync round-trip. The result is tied to syncMRHeadSHA so a
+	// later read can detect a stale snapshot after force-push.
+	approvalApplied, _ := s.refreshWorkflowApproval(
+		ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
+	)
+	if !approvalApplied {
+		return false, nil
+	}
+
+	// Update ci_had_pending after refreshing CI status.
+	fresh, freshErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if freshErr == nil && fresh != nil {
+		pending := ciHasPending(fresh.CIChecksJSON)
+		detailApplied, detailErr := s.db.MarkMergeRequestDetailFetchedSnapshot(
+			ctx, mrID, revision, pending, nil,
+		)
+		if detailErr != nil {
+			return false, fmt.Errorf("mark detail fetched for MR #%d: %w", number, detailErr)
+		}
+		if !detailApplied {
+			return false, nil
+		}
+	}
+	s.notifyMRDetailSynced(ctx, repo, repoID, number)
+	return true, nil
+}
+
+func (s *Syncer) notifyMRDetailSynced(ctx context.Context, repo RepoRef, repoID int64, number int) {
+	if s.onMRSynced != nil {
+		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+		if err != nil {
+			slog.Warn("get MR for onMRSynced hook in SyncMR",
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+				"err", err,
+			)
+		} else {
+			s.onMRSynced(repo.Owner, repo.Name, fresh)
+		}
+	}
+}
+
 func (s *Syncer) syncMRForRepoResolved(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	useConditionalPRDetail bool,
+	mode mrDetailMode,
 	providerAttempted *bool,
 	resolvedRepoID *int64,
 	fetchedEvidence *mergeRequestFetchEvidence,
@@ -11308,6 +11414,14 @@ func (s *Syncer) syncMRForRepoResolved(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
+		useConditionalPRDetail := mode == mrDetailBackground || mode == mrDetailPage
+		if mode == mrDetailPage && existing != nil && s.clones != nil {
+			diffSHAs, diffErr := s.db.GetDiffSHAsByRepoID(ctx, repoID, number)
+			if diffErr != nil {
+				return diffErr
+			}
+			useConditionalPRDetail = diffSHAs != nil && !diffSHAs.Stale()
+		}
 		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
 			var notModified bool
 			if providerAttempted != nil {
@@ -11327,6 +11441,13 @@ func (s *Syncer) syncMRForRepoResolved(
 			}
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
+					if mode == mrDetailPage {
+						_, err := s.refreshMRDetailSnapshot(ctx, repo, repoID, existing.ID, existing.SnapshotRevision, number, existing, existing, nil, nil)
+						if errors.Is(err, errParentSnapshotAdvanced) {
+							return nil
+						}
+						return err
+					}
 					_, err := s.markUnchangedMRDetailFetched(
 						ctx, repo, repoID, number, existing, 1,
 					)
@@ -11506,62 +11627,14 @@ func (s *Syncer) syncMRForRepoResolved(
 			return nil
 		}
 
-		if err := s.refreshTimeline(
-			ctx, repo, mrID, revision, ghPR,
-			livenessHeadForRound(normalized, existing),
-		); err != nil {
-			if errors.Is(err, errParentSnapshotAdvanced) {
-				return nil
-			}
-			return fmt.Errorf("refresh timeline for MR #%d: %w", number, err)
-		}
-		if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
-			return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", number, err)
-		}
-		if lifecyclePersisted != nil {
-			*lifecyclePersisted = true
-		}
-
-		syncMRHeadSHA := ""
-		if ghPR.GetHead() != nil {
-			syncMRHeadSHA = ghPR.GetHead().GetSHA()
-		}
-		ciApplied, err := s.refreshCIStatusSnapshot(
-			ctx, repo, mrID, revision, number, syncMRHeadSHA,
+		applied, err := s.refreshMRDetailSnapshot(
+			ctx, repo, repoID, mrID, revision, number, normalized, existing, ghPR, lifecyclePersisted,
 		)
-		if err != nil {
+		if errors.Is(err, errParentSnapshotAdvanced) {
+			return nil
+		}
+		if err != nil || !applied {
 			return err
-		}
-		if !ciApplied {
-			return nil
-		}
-
-		// Refresh workflow approval state for the current head SHA.
-		// Persisting it here (instead of computing live on every GET)
-		// means the DB-only detail path the frontend uses by default
-		// can show the Approve Workflows button without a foreground
-		// sync round-trip. The result is tied to syncMRHeadSHA so a
-		// later read can detect a stale snapshot after force-push.
-		approvalApplied, _ := s.refreshWorkflowApproval(
-			ctx, repo, repoID, number, syncMRHeadSHA, ghPR, normalized,
-		)
-		if !approvalApplied {
-			return nil
-		}
-
-		// Update ci_had_pending after refreshing CI status.
-		fresh, freshErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-		if freshErr == nil && fresh != nil {
-			pending := ciHasPending(fresh.CIChecksJSON)
-			detailApplied, detailErr := s.db.MarkMergeRequestDetailFetchedSnapshot(
-				ctx, mrID, revision, pending, nil,
-			)
-			if detailErr != nil {
-				return fmt.Errorf("mark detail fetched for MR #%d: %w", number, detailErr)
-			}
-			if !detailApplied {
-				return nil
-			}
 		}
 	} else {
 		// Record the reviewed diff snapshot for non-GitHub providers
@@ -11605,17 +11678,8 @@ func (s *Syncer) syncMRForRepoResolved(
 		}
 	}
 
-	if s.onMRSynced != nil {
-		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-		if err != nil {
-			slog.Warn("get MR for onMRSynced hook in SyncMR",
-				"repo", owner+"/"+name,
-				"number", number,
-				"err", err,
-			)
-		} else {
-			s.onMRSynced(owner, name, fresh)
-		}
+	if ghPR == nil {
+		s.notifyMRDetailSynced(ctx, repo, repoID, number)
 	}
 
 	if err := s.markClosedLinkedPRNotificationsDone(ctx, repoID, number); err != nil {
@@ -12037,7 +12101,7 @@ func (s *Syncer) SyncArchiveItem(
 		var fetchedEvidence mergeRequestFetchEvidence
 		var lifecyclePersisted bool
 		err := s.syncMRForRepoResolved(
-			ctx, repo, number, false, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
+			ctx, repo, number, mrDetailFull, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
 			&lifecyclePersisted, nil,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate

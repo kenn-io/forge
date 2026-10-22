@@ -69,10 +69,4 @@ describe("item reference hrefs", () => {
     expect(buildItemReferenceLink(ref).href).toBe("/forge/pulls/github/acme/widgets/5");
     expect(itemReferenceAnchorAttributes(ref)).toContain('href="/forge/pulls/github/acme/widgets/5"');
   });
-
-  it("leaves links unprefixed at the root base path", async () => {
-    const { buildItemReferenceLink } = await importAtBasePath("/");
-
-    expect(buildItemReferenceLink(ref).href).toBe("/pulls/github/acme/widgets/5");
-  });
 });

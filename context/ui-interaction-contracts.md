@@ -57,7 +57,9 @@ Interactive surfaces must agree on which item is selected.
 - Explicit link targets other than `_self` retain native browser navigation, including widget links.
 - Untracked provider links retain native browser navigation; decide from the loaded
   repository catalog before cancelling the click, not by opening a popup after a
-  lookup (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
+  lookup. Modifier clicks, middle clicks, and the context menu also get the
+  provider URL for an untracked item, since its Forge route has nothing to show
+  (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
 - Modified terminal links open in the client browser, including provider item URLs;
   keep opening synchronous with the gesture, without a daemon lookup
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).

@@ -183,7 +183,7 @@ for await (const line of createInterface({ input: process.stdin })) {
           sessionUpdate: "agent_message_chunk",
           content: {
             type: "text",
-            text: "The fix is in [the tools PR](https://github.com/acme/tools/pull/1). See also [the guide](https://example.com/guide).",
+            text: "The fix is in [the tools PR](https://github.com/acme/tools/pull/1). See also [the guide](https://example.com/guide) and [an upstream issue](https://github.com/example-org/library/issues/3).",
           },
         });
         write({ id: prompt, result: { stopReason: "end_turn" } });

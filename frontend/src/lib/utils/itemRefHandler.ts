@@ -137,59 +137,57 @@ export function initItemRefHandler(
     },
   );
 
-  function handleClick(e: Event): void {
-    if (
-      !(e instanceof MouseEvent) ||
-      e.defaultPrevented ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey ||
-      e.button !== 0
-    )
-      return;
-
-    const anchor = findAnchor(e.target);
-    if (!anchor || anchor.hasAttribute("download")) return;
-    if (anchor.target && anchor.target.toLowerCase() !== "_self") return;
-
+  function anchorReference(anchor: HTMLAnchorElement): ResolvableItemReference | null {
     const provider = anchor.dataset.provider;
-    const platformHost = anchor.dataset.platformHost;
     const owner = anchor.dataset.owner;
     const name = anchor.dataset.name;
     const repoPath = anchor.dataset.repoPath;
     const numberStr = anchor.dataset.number;
-    const itemType =
-      anchor.dataset.itemType === "pr" || anchor.dataset.itemType === "issue" ? anchor.dataset.itemType : undefined;
-    const externalUrl = anchor.dataset.externalUrl;
-    let ref: ResolvableItemReference | null = null;
     if (anchor.classList.contains("item-ref") && provider && owner && name && repoPath && numberStr) {
-      ref = {
+      const itemType = anchor.dataset.itemType;
+      return {
         provider,
-        platformHost,
+        platformHost: anchor.dataset.platformHost,
         owner,
         name,
         repoPath,
         number: parseInt(numberStr, 10),
-        itemType,
-        externalUrl,
+        itemType: itemType === "pr" || itemType === "issue" ? itemType : undefined,
+        externalUrl: anchor.dataset.externalUrl,
       };
-    } else {
-      ref = parseKnownProviderItemURL(anchor.href, getProviderContexts());
     }
-    if (!ref) return;
+    return parseKnownProviderItemURL(anchor.href, getProviderContexts());
+  }
 
-    const tracked = getRepositories().some(
+  function isTracked(ref: ResolvableItemReference): boolean {
+    return getRepositories().some(
       (repo) =>
         canonicalProvider(repo.Platform) === canonicalProvider(ref.provider) &&
         resolvedPlatformHost(repo.Platform, repo.PlatformHost).toLowerCase() ===
           resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase() &&
         `${repo.Owner}/${repo.Name}`.toLowerCase() === ref.repoPath.toLowerCase(),
     );
-    const browserURL = safeExternalURL(ref.externalUrl);
-    if (!tracked && browserURL) {
+  }
+
+  function handleClick(e: Event): void {
+    if (!(e instanceof MouseEvent) || e.defaultPrevented) return;
+    const anchor = findAnchor(e.target);
+    if (!anchor || anchor.hasAttribute("download")) return;
+    const ref = anchorReference(anchor);
+    if (!ref) return;
+
+    // Every way of opening an untracked item, including new-tab clicks and the
+    // context menu's open and copy entries, uses the provider URL; Forge has no
+    // page for it.
+    const browserURL = isTracked(ref) ? null : safeExternalURL(ref.externalUrl);
+    if (browserURL) anchor.href = browserURL;
+
+    const plainClick =
+      e.type === "click" && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+    if (!plainClick || (anchor.target && anchor.target.toLowerCase() !== "_self")) return;
+
+    if (browserURL) {
       // Keep the real click and target; no popup after an asynchronous lookup.
-      anchor.href = browserURL;
       if (anchor.classList.contains("item-ref") && !anchor.target) {
         anchor.target = "_blank";
         anchor.relList.add("noopener", "noreferrer");
@@ -202,10 +200,11 @@ export function initItemRefHandler(
     execution = resolveReference(ref) ?? null;
   }
 
-  target.addEventListener("click", handleClick);
+  const openEvents = ["click", "auxclick", "contextmenu"] as const;
+  for (const type of openEvents) target.addEventListener(type, handleClick);
   return () => {
     catalogExecution.interrupt();
     execution?.interrupt();
-    target.removeEventListener("click", handleClick);
+    for (const type of openEvents) target.removeEventListener(type, handleClick);
   };
 }

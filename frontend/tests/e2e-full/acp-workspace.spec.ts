@@ -357,8 +357,8 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
       await phone.close();
     }
     // A provider link the agent writes opens the item in Forge, even from
-    // another repository; other links open a browser tab, and a modifier
-    // click opens the Forge item in one.
+    // another repository; other links open a browser tab, a modifier click
+    // opens the Forge item in one, and an untracked item opens at the provider.
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Link a pull request");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     const conversation = chat.getByRole("log", { name: "Conversation" });
@@ -385,6 +385,21 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     const modified = await modifiedTab;
     await expect(modified).toHaveURL(`${origin}/pulls/github/acme/tools/1`);
     await modified.close();
+    // Playwright reports no URL for this cross-origin tab, so the routed
+    // request is the evidence of where it went.
+    const upstreamURL = "https://github.com/example-org/library/issues/3";
+    const upstreamRequested = new Promise<void>((resolve) => {
+      void page.context().route(upstreamURL, (route) => {
+        resolve();
+        return route.fulfill({ contentType: "text/html", body: "Upstream destination" });
+      });
+    });
+    const upstreamTab = page.context().waitForEvent("page");
+    await conversation.getByRole("link", { name: "an upstream issue" }).click({ button: "middle" });
+    const upstream = await upstreamTab;
+    await upstreamRequested;
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+    await upstream.close();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);

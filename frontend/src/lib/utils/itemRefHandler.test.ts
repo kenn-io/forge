@@ -36,6 +36,7 @@ vi.mock("../stores/flash.svelte.js", () => ({
 async function clickItemRef(
   attributes: Record<string, string>,
   contexts: Array<{ provider: string; platformHost?: string }> = [],
+  event: { type: string; init: MouseEventInit } = { type: "click", init: { button: 0 } },
 ): Promise<{ captured: boolean; href: string; target: string }> {
   const { initItemRefHandler } = await import("./itemRefHandler.js");
   const runtime = makeAppRuntime(
@@ -64,18 +65,12 @@ async function clickItemRef(
     captured = event.defaultPrevented;
     event.preventDefault();
   };
-  document.addEventListener("click", observe);
-  anchor.dispatchEvent(
-    new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      button: 0,
-    }),
-  );
+  document.addEventListener(event.type, observe);
+  anchor.dispatchEvent(new MouseEvent(event.type, { bubbles: true, cancelable: true, ...event.init }));
   if (captured) await vi.waitFor(() => expect(mocks.post).toHaveBeenCalled());
   await new Promise((resolve) => setTimeout(resolve, 0));
   cleanup();
-  document.removeEventListener("click", observe);
+  document.removeEventListener(event.type, observe);
   await Effect.runPromise(runtime.disposeEffect);
   return { captured, href: anchor.href, target: anchor.target };
 }
@@ -293,6 +288,40 @@ describe("itemRefHandler", () => {
     expect(open).not.toHaveBeenCalled();
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  const untrackedReference = {
+    "data-provider": "github",
+    "data-platform-host": "github.com",
+    "data-owner": "other",
+    "data-name": "repo",
+    "data-repo-path": "other/repo",
+    "data-number": "77",
+    "data-external-url": "https://github.com/other/repo/issues/77",
+  };
+
+  it.each([
+    ["ctrl-click", "click", { button: 0, ctrlKey: true }],
+    ["cmd-click", "click", { button: 0, metaKey: true }],
+    ["shift-click", "click", { button: 0, shiftKey: true }],
+    ["middle click", "auxclick", { button: 1 }],
+    ["context menu", "contextmenu", { button: 2 }],
+  ])("opens an untracked reference at the provider on %s", async (_label, type, init) => {
+    const click = await clickItemRef(untrackedReference, [], { type, init });
+
+    expect(click).toEqual({ captured: false, href: "https://github.com/other/repo/issues/77", target: "" });
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Forge route of a tracked reference on ctrl-click", async () => {
+    const click = await clickItemRef(
+      { ...untrackedReference, "data-owner": "acme", "data-name": "widgets", "data-repo-path": "acme/widgets" },
+      [],
+      { type: "click", init: { button: 0, ctrlKey: true } },
+    );
+
+    expect(click).toEqual({ captured: false, href: "http://localhost:3000/issues/github/acme/widgets/12", target: "" });
   });
 
   it("rejects non-http external fallbacks for untracked references", async () => {

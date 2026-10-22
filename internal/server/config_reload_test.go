@@ -487,38 +487,46 @@ graphics = false
 	}, readSettingsTmuxGraphicsCommands(t, record))
 }
 
-func TestConfigReload_MCPRestartRequiredOnDefaultHostChange(t *testing.T) {
+func TestConfigReload_MCPRestartRequiredOnDefaultListenerChange(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, tt := range []struct {
-		name    string
-		before  string
-		after   string
-		enabled bool
+		name          string
+		setting       string
+		before        string
+		after         string
+		enabledBefore bool
+		enabledAfter  bool
 	}{
-		{name: "enable", before: "0.0.0.0", after: "127.0.0.1", enabled: true},
-		{name: "disable", before: "127.0.0.1", after: "0.0.0.0", enabled: false},
+		{name: "enable", setting: "127.0.0.1", before: "0.0.0.0", after: "127.0.0.1", enabledAfter: true},
+		{name: "disable", setting: "127.0.0.1", before: "127.0.0.1", after: "0.0.0.0", enabledBefore: true},
+		{name: "loopback host", setting: "127.0.0.1", before: "127.0.0.1", after: "127.0.0.2", enabledBefore: true, enabledAfter: true},
+		{name: "backend port", setting: "8091", before: "8091", after: "8092", enabledBefore: true, enabledAfter: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			assert := assert.New(t)
 			content := validReloadConfig + "\n[api]\nrequire_auth = true\n"
 			srv, _, _, _ := setupTestServerWithConfigContent(
-				t, strings.Replace(content, "127.0.0.1", tt.before, 1), &serverfake.MockGH{},
+				t, strings.Replace(content, tt.setting, tt.before, 1), &serverfake.MockGH{},
 			)
 			reloadPath := filepath.Join(t.TempDir(), "reload.toml")
 			srv.cfgPath = reloadPath
-			for _, host := range []string{tt.after, tt.before} {
-				writeConfigToml(t, reloadPath, strings.Replace(content, "127.0.0.1", host, 1))
+			for _, value := range []string{tt.after, tt.before} {
+				writeConfigToml(t, reloadPath, strings.Replace(content, tt.setting, value, 1))
 				event := srv.configreload.ApplyConfigChange(t.Context())
 				require.True(t, event.Valid, event.Error)
 				rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
 				require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 				var response spokeapi.SettingsResponse
 				require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
-				changed := host == tt.after
+				changed := value == tt.after
 				assert.Equal(changed, response.MCP.RestartRequired)
 				assert.Equal(changed, event.RestartRequired)
-				assert.Equal(tt.enabled == changed, response.MCP.Enabled)
+				if changed {
+					assert.Equal(tt.enabledAfter, response.MCP.Enabled)
+				} else {
+					assert.Equal(tt.enabledBefore, response.MCP.Enabled)
+				}
 				assert.Nil(srv.cfg.MCP.Enabled)
 			}
 		})

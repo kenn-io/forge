@@ -47,6 +47,7 @@ func (s *Server) buildLocalSettingsResponse(
 	kataProjects := slices.Clone(s.cfg.KataProjects)
 	mcp := s.cfg.MCP
 	mcpEnabled := s.cfg.MCPEnabled()
+	mcpListenAddr := s.cfg.MCPListenAddr()
 	roborev := s.cfg.Roborev
 	if kataProjects == nil {
 		// kata_projects is a required non-null array in the API schema, so a
@@ -127,7 +128,7 @@ func (s *Server) buildLocalSettingsResponse(
 			Enabled:            mcpEnabled,
 			Port:               mcp.Port,
 			DiffCacheMB:        mcp.DiffCacheMB,
-			RestartRequired:    !reflect.DeepEqual(mcp, s.bootCfgSnapshot.MCP) || mcpEnabled != s.bootCfgSnapshot.MCPEnabled,
+			RestartRequired:    !reflect.DeepEqual(mcp, s.bootCfgSnapshot.MCP) || mcpListenAddr != s.bootCfgSnapshot.MCPListenAddr,
 			ActiveURL:          s.options.MCPURL,
 			ActiveRequiresAuth: s.bootCfgSnapshot.RequireAuth,
 		},

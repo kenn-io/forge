@@ -68,6 +68,8 @@ async function mockPulls(page: Page) {
         }),
         pull(11, "Draft parser cleanup", {
           IsDraft: true,
+          CIStatus: "pending",
+          CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
           KanbanStatus: "waiting",
         }),
         pull(12, "Ready failed workflow", {
@@ -132,4 +134,9 @@ test("PR filters match any selected attribute and allow multiple kanban statuses
   await filterPanel.getByRole("button", { name: "Merge conflicts" }).click();
 
   await expect(rows).toHaveText([/Ready conflict resolver/]);
+
+  await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
+  await filterPanel.getByRole("button", { name: "Passing CI" }).click();
+
+  await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
 });

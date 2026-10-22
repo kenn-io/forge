@@ -9094,7 +9094,11 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		if number == 3 {
 			status = "failure"
 		}
-		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ? WHERE id = ?", assignees, status, id)
+		checks := `[{"name":"test","status":"completed","conclusion":"success"}]`
+		if number == 4 {
+			checks = `[{"name":"test","status":"completed","conclusion":"success"},{"name":"lint","status":"in_progress","conclusion":""}]`
+		}
+		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ?, ci_checks_json = ? WHERE id = ?", assignees, status, checks, id)
 		require.NoError(t, err)
 	}
 	for _, tc := range []struct {
@@ -9104,6 +9108,8 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		{"involves_me=true&unassigned=true&attributes=failed_ci", []int{3, 2, 1}},
 		{"involves_me=true&unassigned=true&attributes=failed_ci&limit=2&offset=1", []int{2, 1}},
 		{"attributes=failed_ci,draft", []int{3}},
+		{"attributes=passed_ci", []int{2, 1}},
+		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)

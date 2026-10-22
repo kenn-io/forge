@@ -59997,7 +59997,7 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
-	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.

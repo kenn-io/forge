@@ -67,6 +67,7 @@ it.each([
     let hidden = false;
     const writes: unknown[] = [];
     const resolved: number[] = [];
+    const providerPages: string[] = [];
     const api = createMockApiFetch([
       (request) => {
         if (request.url.pathname === "/api/v1/repos") return Response.json(hidden ? [] : [repo]);
@@ -87,11 +88,16 @@ it.each([
         yield* reads.refresh;
         hidden = true;
         const result = yield* Effect.exit(
-          visitWorkspaceTargetReference("ws-links", undefined, { ...routeItem, provider, platformHost }, (item) =>
-            resolved.push(item.number),
+          visitWorkspaceTargetReference(
+            "ws-links",
+            undefined,
+            { ...routeItem, provider, platformHost },
+            (item) => resolved.push(item.number),
+            (url) => providerPages.push(url),
           ),
         );
         expect(resolved).toEqual([7]);
+        expect(providerPages).toEqual([]);
         expect(writes).toEqual([
           { repository: { provider, platform_host: platformHost, ...wire }, type: "issue", number: 7, hidden: false },
         ]);

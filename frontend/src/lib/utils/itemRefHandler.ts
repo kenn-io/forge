@@ -39,6 +39,13 @@ function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
+// A reference resolves to an in-app item, or to its provider page when Forge has
+// not synced the item. Callers decide whether the result is still current
+// before acting on either.
+export type ItemReferenceResolution =
+  | { readonly kind: "item"; readonly item: RoutableItemRef }
+  | { readonly kind: "providerPage"; readonly url: string };
+
 export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(function* (ref: ResolvableItemReference) {
   const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
   const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
@@ -58,15 +65,13 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
     Effect.map((data) => ({ data }) as const),
     Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
   );
-  return yield* Effect.sync(() => {
+  return yield* Effect.sync((): ItemReferenceResolution | undefined => {
     if ("problem" in result) {
       const providerURL = safeExternalURL(ref.externalUrl);
       if (result.problem.status === 404 && providerURL) {
-        // Forge has not synced this item. The click was cancelled before the
-        // lookup, so leave for the provider page in this tab; a new tab opened
-        // after an awaited request would be popup-blocked.
-        navigateToURL(providerURL);
-      } else if (result.problem.status === 404) {
+        return { kind: "providerPage", url: providerURL };
+      }
+      if (result.problem.status === 404) {
         showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
       } else {
         showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
@@ -80,14 +85,17 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
     }
 
     return {
-      itemType: result.data.item_type === "pr" ? "pr" : "issue",
-      provider,
-      platformHost,
-      owner,
-      name,
-      repoPath,
-      number,
-    } satisfies RoutableItemRef;
+      kind: "item",
+      item: {
+        itemType: result.data.item_type === "pr" ? "pr" : "issue",
+        provider,
+        platformHost,
+        owner,
+        name,
+        repoPath,
+        number,
+      },
+    };
   });
 });
 
@@ -100,9 +108,12 @@ export function resolveItemReference(
 ): AppExecution<void, unknown> {
   return runtime.runCommand(
     resolveItemReferenceEffect(ref).pipe(
-      Effect.tap((item) =>
+      Effect.tap((resolution) =>
         Effect.sync(() => {
-          if (item) onNavigate(item);
+          if (resolution?.kind === "item") onNavigate(resolution.item);
+          // The click was cancelled before the lookup, so the provider page
+          // opens in this tab; browsers block a tab opened after an await.
+          else if (resolution?.kind === "providerPage") navigateToURL(resolution.url);
         }),
       ),
       Effect.asVoid,

@@ -30,6 +30,7 @@ interface WorkspaceTargetReferenceVisit {
   readonly hostKey: string | undefined;
   readonly reference: ResolvableItemReference;
   readonly onResolved: (item: RoutableItemRef) => void;
+  readonly onProviderPage: (url: string) => void;
 }
 
 type WorkspaceTargetCommand = WorkspaceTargetUpdate | WorkspaceTargetReferenceVisit;
@@ -90,8 +91,12 @@ export const WorkspaceTargetMutationsLive = Layer.effect(WorkspaceTargetMutation
     "workspace target mutations",
     Effect.fn("executeWorkspaceTargetCommand")(function* (command: WorkspaceTargetCommand) {
       if (!("reference" in command)) return yield* persistWorkspaceTarget(command);
-      const item = yield* resolveItemReferenceEffect(command.reference);
-      if (!item) return;
+      const resolution = yield* resolveItemReferenceEffect(command.reference);
+      if (!resolution) return;
+      if (resolution.kind === "providerPage") {
+        return yield* invokeMutationCallback(() => command.onProviderPage(resolution.url));
+      }
+      const { item } = resolution;
       yield* invokeMutationCallback(() => command.onResolved(item));
       yield* persistWorkspaceTarget({
         id: command.id,
@@ -109,9 +114,10 @@ export const visitWorkspaceTargetReference = Effect.fn("visitWorkspaceTargetRefe
   hostKey: string | undefined,
   reference: ResolvableItemReference,
   onResolved: (item: RoutableItemRef) => void,
+  onProviderPage: (url: string) => void,
 ) {
   const mutations = yield* WorkspaceTargetMutations;
-  yield* mutations.submit({ id, hostKey, reference, onResolved });
+  yield* mutations.submit({ id, hostKey, reference, onResolved, onProviderPage });
 });
 
 export const updateWorkspaceTarget = Effect.fn("updateWorkspaceTarget")(function* (

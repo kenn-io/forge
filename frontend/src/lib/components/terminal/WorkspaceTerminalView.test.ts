@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
     options: Record<string, unknown>;
   }>,
   mockUpdateSettings: vi.fn(),
+  navigateToURL: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   runtime: undefined as unknown as OwnedAppRuntime,
   selectWorkspace: vi.fn(),
@@ -279,6 +280,11 @@ vi.mock("../../api/workspace-runtime.js", () => ({
 vi.mock("../../stores/flash.svelte.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/flash.svelte.js")>();
   return { ...actual, showFlash: mocks.showFlash.mockImplementation(actual.showFlash) };
+});
+
+vi.mock("../../utils/pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/pageNavigation.js")>();
+  return { ...actual, navigateToURL: mocks.navigateToURL };
 });
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
@@ -1122,6 +1128,76 @@ describe("WorkspaceTerminalView", () => {
           expect(JSON.parse(localStorage.getItem(storageKey)!)).toEqual({ pr: null, issue: null });
         }
       }
+    },
+  );
+
+  it.each(["workspace switch", "unmount", "no superseding action"] as const)(
+    "opens the provider page for an unsynced link only while its workspace remains current: %s",
+    async (laterAction) => {
+      const previousPath = window.location.pathname + window.location.search + window.location.hash;
+      onTestFinished(() => navigate(previousPath));
+      navigate("/terminal/ws-1");
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      mocks.navigateToURL.mockReset();
+      const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+      const resolveStarted = Promise.withResolvers<void>();
+      const releaseResolution = Promise.withResolvers<void>();
+      onTestFinished(() => releaseResolution.resolve());
+      let resolveSettled = false;
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/api/v1/workspaces/ws-1" || path === "/api/v1/workspaces/ws-2")
+          return Response.json({ ...workspaceResponse, id: path.split("/").at(-1), repo });
+        if (path === "/api/v1/repos")
+          return Response.json([
+            { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+          ]);
+        if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+          resolveStarted.resolve();
+          await releaseResolution.promise;
+          resolveSettled = true;
+          return Response.json(
+            { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+            { status: 404 },
+          );
+        }
+        return originalFetch(input, init);
+      });
+      const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+      await screen.findByRole("button", { name: "Search PRs and issues" });
+      const link = document.createElement("a");
+      link.className = "item-ref";
+      link.textContent = "Related issue";
+      Object.assign(link.dataset, {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widget",
+        repoPath: "acme/widget",
+        number: "7",
+        externalUrl: "https://github.com/acme/widget/issues/7",
+      });
+      view.container.querySelector(".terminal-view")!.append(link);
+      await fireEvent.click(link);
+      await resolveStarted.promise;
+      if (laterAction === "workspace switch") {
+        await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
+      } else if (laterAction === "unmount") {
+        view.unmount();
+      }
+      releaseResolution.resolve();
+      if (laterAction === "no superseding action") {
+        await waitFor(() =>
+          expect(mocks.navigateToURL).toHaveBeenCalledWith("https://github.com/acme/widget/issues/7"),
+        );
+      } else {
+        await waitFor(() => expect(resolveSettled).toBe(true));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(mocks.navigateToURL).not.toHaveBeenCalled();
+      }
+      expect(mocks.showFlash).not.toHaveBeenCalledWith("Item acme/widget#7 not found.", { tone: "danger" });
     },
   );
 

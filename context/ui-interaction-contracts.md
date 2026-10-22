@@ -64,7 +64,8 @@ Interactive surfaces must agree on which item is selected.
   reference's http(s) provider URL in the current tab; the click was already
   cancelled and a new tab opened after the lookup would be popup-blocked. Keep the
   not-found flash only when the reference has no valid provider URL, and the
-  failure flash for other errors
+  failure flash for other errors. The resolver returns that URL; each caller
+  applies its own stale-selection guard before leaving the page
   (`frontend/src/lib/utils/itemRefHandler.ts::resolveItemReferenceEffect`).
 - Modified terminal links open in the client browser, including provider item URLs;
   keep opening synchronous with the gesture, without a daemon lookup

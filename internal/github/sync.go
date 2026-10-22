@@ -11414,8 +11414,8 @@ func (s *Syncer) syncMRForRepoResolved(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		useConditionalPRDetail := mode == mrDetailBackground || (mode == mrDetailPage && existing != nil)
-		if mode == mrDetailPage && existing != nil && s.clones != nil {
+		useConditionalPRDetail := mode == mrDetailBackground || (mode == mrDetailPage && existing != nil && existing.State == "open")
+		if mode == mrDetailPage && existing != nil && existing.State == "open" && s.clones != nil {
 			diffSHAs, diffErr := s.db.GetDiffSHAsByRepoID(ctx, repoID, number)
 			if diffErr != nil {
 				return diffErr

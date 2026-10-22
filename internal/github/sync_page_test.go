@@ -117,22 +117,44 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 				assert.Positive(mc.getPRCalls.Load())
 
 			case "merged page":
-				mergedAt := time.Now().UTC()
-				_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged', merged_at = ?, closed_at = ? WHERE id = ?", mergedAt, mergedAt, before.ID)
+				syncActivityGitRun(t, work, "checkout", "-B", "main", base)
+				syncActivityGitRun(t, work, "merge", "--no-ff", head, "-m", "Merge feature")
+				merge := syncActivityGitRun(t, work, "rev-parse", "HEAD")
+				syncActivityGitRun(t, work, "push", "origin", "main", head+":refs/pull/1/head")
+				mc.singlePR.State = new("closed")
+				mc.singlePR.Merged = new(true)
+				mc.singlePR.MergedAt = makeTimestamp(time.Now().UTC())
+				mc.singlePR.MergeCommitSHA = &merge
+				mc.singlePR.Base.SHA = &merge
+				mc.notModified = false
+				mc.nextETag = `"merged-v1"`
+				require.NoError(syncer.ensureClone(withCloneRepositoryIdentity(ctx, repo), repo))
+				_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, true)
 				require.NoError(err)
-				require.NoError(os.Rename(remote, remote+".unavailable"))
-				mc.comments = []*gh.IssueComment{{ID: new(int64(6)), Body: new("Comment after merging"), CreatedAt: mc.singlePR.UpdatedAt}}
+				diff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
+				require.NoError(err)
+				require.Equal("merged", diff.State)
+				require.Equal(head, diff.MergeBaseSHA)
+				require.Equal(head, diff.DiffHeadSHA)
+				require.False(diff.Stale())
+				etag, err := d.GetHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1)
+				require.NoError(err)
+				require.Equal(`"merged-v1"`, etag)
+				mc.notModified = true
+				mc.receivedETag = ""
+				mc.getPRCalls.Store(0)
 				require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-				events, err := d.ListMREvents(ctx, before.ID)
+				assert.Empty(mc.receivedETag, "merged page polls send no If-None-Match")
+				assert.Positive(mc.getPRCalls.Load())
+				diff, err = d.GetDiffSHAsByRepoID(ctx, repoID, 1)
 				require.NoError(err)
-				var bodies []string
-				for _, event := range events {
-					if event.EventType == "issue_comment" {
-						bodies = append(bodies, event.Body)
-					}
-				}
-				assert.Equal([]string{"Comment after merging"}, bodies)
-				assert.Zero(mc.getPRCalls.Load(), "unchanged merged page polls do not download the PR")
+				assert.Equal(head, diff.DiffHeadSHA)
+				assert.Equal(base, diff.DiffBaseSHA)
+				assert.Equal(base, diff.MergeBaseSHA)
+				recoveredDiff, err := clones.Diff(withCloneRepositoryIdentity(ctx, repo), "github", "github.com", "owner", "repo", diff.MergeBaseSHA, diff.DiffHeadSHA, false)
+				require.NoError(err)
+				require.Len(recoveredDiff.Files, 1)
+				assert.Equal("feature.txt", recoveredDiff.Files[0].Path)
 			}
 		})
 	}

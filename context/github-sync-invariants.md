@@ -120,11 +120,11 @@ For pull requests, that means:
   Active watched-PR sync must use the same persisted pull-request ETag path as
   detail drain (`internal/github/sync.go::syncMRForRepo`,
   `internal/github/sync.go::getPullRequestForDetail`,
-  `internal/github/sync.go::markUnchangedMRDetailFetched`). PR-page 304s refresh
+  `internal/github/sync.go::markUnchangedMRDetailFetched`). Open PR-page 304s refresh
   all children: comments, reviews, commits, CI, and workflow approval
   (`internal/github/sync.go::refreshMRDetailSnapshot`). Background 304s refresh
   comments and pending CI only
-  (`internal/github/sync.go::markUnchangedMRDetailFetched`). A missing parent,
+  (`internal/github/sync.go::markUnchangedMRDetailFetched`). Merged or closed PRs, a missing parent,
   stale diff SHAs, or missing local diff commits force a full page fetch
   (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual refreshes remain
   unconditional (`internal/github/sync.go::SyncMROnProvider`). Cadence control is

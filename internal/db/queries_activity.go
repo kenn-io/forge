@@ -294,7 +294,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       COALESCE(NULLIF(mr.url, ''), NULLIF(iss.url, ''), n.web_url),
-			       COALESCE(mr.state, iss.state, ''), ''
+			       COALESCE(mr.state, iss.state, '')
 			FROM forge_notification_items n
 			JOIN forge_repos r
 			       ON r.lifecycle_state = 'active'
@@ -335,7 +335,7 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state, commit_author
+		       subject_state
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
@@ -353,7 +353,7 @@ func listActivityWithQueryer(
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
-			       '' AS subject_state, '' AS commit_author
+			       '' AS subject_state
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -377,7 +377,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       '', ''
+			       ''
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -406,7 +406,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       '', ''
+			       ''
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -433,7 +433,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       '', ''
+			       ''
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -461,7 +461,7 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       '', ''
+			       ''
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -478,7 +478,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       '', ''
+			       ''
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s

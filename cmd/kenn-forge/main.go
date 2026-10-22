@@ -954,7 +954,6 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		return fmt.Errorf("initialize MCP server: %w", err)
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
-	switcher.Swap(srv)
 	if cfg.MCP.Enabled != nil && *cfg.MCP.Enabled {
 		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
 	}
@@ -963,6 +962,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	} else if mcpListenAddr != "" {
 		srv.SetLocalMCPHandler(mainMCPGate.Wrap(mcpSrv.HTTPHandler()), mcpGuard)
 	}
+	switcher.Swap(srv)
 
 	if syncer != nil && !opts.DisableSync {
 		backgroundLoops.start(func(runCtx context.Context) {

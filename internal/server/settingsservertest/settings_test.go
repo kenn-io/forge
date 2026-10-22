@@ -431,6 +431,17 @@ func TestHandleUpdateSettingsMCPDisableSurvivesPortRemoval(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(config.MCP{Enabled: new(false), Port: 9192}, reloaded.MCP)
 	assert.False(reloaded.MCPEnabled())
+
+	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+		MCP: &spokeapi.McpSettingsUpdate{Port: new(0)},
+	})
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	reloaded, err = config.Load(cfgPath)
+	require.NoError(t, err)
+	assert.Equal(config.MCP{Enabled: new(false)}, reloaded.MCP)
+	assert.False(reloaded.MCPEnabled())
+	assert.Empty(reloaded.MCPListenAddr())
 }
 
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {

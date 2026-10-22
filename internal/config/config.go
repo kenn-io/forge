@@ -1168,8 +1168,7 @@ func (c *Config) MCPEnabled() bool {
 }
 
 func (c *Config) mcpDefaultOn() bool {
-	ip := net.ParseIP(c.Host)
-	return c.MCP.Port == 0 && !c.ExecutionWorker.Enabled && ip != nil && ip.IsLoopback()
+	return c.MCP.Port == 0 && !c.ExecutionWorker.Enabled && IsLoopbackHostname(c.Host)
 }
 
 func (c *Config) SetMCPEnabled(want bool) {

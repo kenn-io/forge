@@ -25,15 +25,16 @@ enabled = false
 
 For a separate listener, set `enabled = true`. Its port defaults to the backend
 port plus one; set `port` to choose another. A saved `port` with `enabled`
-omitted keeps the companion off. Existing explicit `enabled = true` configurations
-keep their endpoint. Re-enabling in Settings uses the default endpoint for the
-saved host and port.
+omitted keeps the companion off. Existing explicit `enabled = true`
+configurations keep their endpoint. Re-enabling in Settings uses the default
+endpoint for the saved host and port. It also leaves out main-listener bearer
+and Tailscale Serve access until you set `enabled = true` in the config file.
 
 Older versions dropped `enabled = false` when saving. Configurations with no
 `enabled` key and no MCP port start serving `/mcp` after upgrade when the default
 applies, so set `enabled = false` to keep it off.
 
-Restart the daemon after changing either setting:
+Restart the daemon after changing MCP enablement or its listener port:
 
 ```sh
 kenn-forge daemon restart

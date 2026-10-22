@@ -119,7 +119,6 @@ commit_email = "developer-a@example.org"
 		{name: "IPv6 loopback", cfg: Config{Host: "::1"}, want: true},
 		{name: "network", cfg: Config{Host: "192.0.2.10"}},
 		{name: "wildcard", cfg: Config{Host: "0.0.0.0"}},
-		{name: "hostname", cfg: Config{Host: "localhost"}},
 		{name: "worker", cfg: *worker},
 		{name: "saved port", cfg: Config{Host: "127.0.0.1", MCP: MCP{Port: 9192}}},
 		{name: "cache override", cfg: Config{Host: "127.0.0.1", MCP: MCP{DiffCacheMB: 256}}, want: true},

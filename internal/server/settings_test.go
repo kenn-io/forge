@@ -217,6 +217,53 @@ diff_cache_mb = 256
 	assert.True(resp.MCP.ActiveRequiresAuth)
 }
 
+func TestHandleGetSettingsMCPRestartRequiredAfterEndpointReload(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tt := range []struct {
+		name            string
+		from            string
+		to              string
+		restartRequired bool
+	}{
+		{name: "unchanged"},
+		{name: "host", from: `host = "127.0.0.1"`, to: `host = "0.0.0.0"`, restartRequired: true},
+		{name: "backend port", from: "port = 8091", to: "port = 8093", restartRequired: true},
+		{name: "base path", from: "port = 8091", to: "port = 8091\nbase_path = \"/forge\"", restartRequired: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			serverfake.RunParallelServerTest(t)
+			require := require.New(t)
+			assert := assert.New(t)
+			const bootURL = "http://127.0.0.1:8091/mcp"
+			const bootConfig = validReloadConfig + "\n[api]\nrequire_auth = true\n"
+			srv, _, cfgPath, _ := setupTestServerWithConfigContentAndOptions(t, bootConfig, &serverfake.MockGH{}, ServerOptions{
+				HostCheckAllowLoopbackAnyPort: true,
+				MCPURL:                        bootURL,
+			})
+			checkSettings := func(restartRequired bool) {
+				t.Helper()
+				rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/settings", nil)
+				require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+				var resp spokeapi.SettingsResponse
+				require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+				assert.Equal(restartRequired, resp.MCP.RestartRequired)
+				assert.Equal(bootURL, resp.MCP.ActiveURL)
+			}
+
+			checkSettings(false)
+			writeConfigToml(t, cfgPath, strings.Replace(bootConfig, tt.from, tt.to, 1))
+			event := srv.configreload.ApplyConfigChange(t.Context())
+			require.True(event.Valid, event.Error)
+			checkSettings(tt.restartRequired)
+
+			writeConfigToml(t, cfgPath, bootConfig)
+			event = srv.configreload.ApplyConfigChange(t.Context())
+			require.True(event.Valid, event.Error)
+			checkSettings(false)
+		})
+	}
+}
+
 func TestAirplaneModeSettingsPersistAndReload(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

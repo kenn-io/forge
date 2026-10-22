@@ -47,7 +47,9 @@ Interactive surfaces must agree on which item is selected.
   and pasted provider item URLs on the rendering repository's host all render as
   `item-ref` anchors that resolve through the shared click handler, with the
   provider URL kept as the untracked-repo fallback
-  (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+  (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`). Agent chat
+  has no rendering repository, so its links accept any configured or public provider
+  host (`frontend/src/lib/components/acp/ChatMessageView.svelte::decorate`).
 - `item-ref` hrefs carry the configured base path so modifier clicks, new tabs,
   and copied links work; plain clicks route from the anchor's data attributes,
   never its href, so the prefix is applied once

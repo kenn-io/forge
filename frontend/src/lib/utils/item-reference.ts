@@ -147,6 +147,21 @@ export function parseProviderItemURL(
   };
 }
 
+export type ProviderContext = { provider: string; platformHost?: string | undefined };
+
+// Tries each known provider host, then the providers' public hosts, so a
+// link to any repository on a host Forge knows about becomes a reference.
+export function parseKnownProviderItemURL(
+  raw: string,
+  contexts: ReadonlyArray<ProviderContext>,
+): ResolvableItemReference | null {
+  for (const context of [...contexts, { provider: "github" }, { provider: "gitlab" }, { provider: "bitbucket" }]) {
+    const ref = parseProviderItemURL(raw, context);
+    if (ref) return ref;
+  }
+  return null;
+}
+
 // The href carries the base path so modifier clicks, new tabs, and copied
 // links reach Forge. Plain clicks route from the data attributes instead.
 export function buildItemReferenceHref(ref: ResolvableItemReference): string {

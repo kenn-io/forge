@@ -12,7 +12,7 @@ import type { RepoCatalog } from "../api/types.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
-import { parseProviderItemURL, type ResolvableItemReference } from "./item-reference.js";
+import { parseKnownProviderItemURL, type ProviderContext, type ResolvableItemReference } from "./item-reference.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -118,7 +118,7 @@ export function initItemRefHandler(
   runtime: AppRuntime,
   onNavigate?: (ref: RoutableItemRef) => void,
   target: HTMLElement | Document = document,
-  getProviderContexts: () => ReadonlyArray<{ provider: string; platformHost?: string | undefined }> = () => [],
+  getProviderContexts: () => ReadonlyArray<ProviderContext> = () => [],
   resolveReference: (ref: ResolvableItemReference) => AppExecution<void, unknown> | undefined = (ref) =>
     resolveItemReference(runtime, ref, onNavigate),
 ): () => void {
@@ -175,15 +175,7 @@ export function initItemRefHandler(
         externalUrl,
       };
     } else {
-      for (const context of [
-        ...getProviderContexts(),
-        { provider: "github" },
-        { provider: "gitlab" },
-        { provider: "bitbucket" },
-      ]) {
-        ref = parseProviderItemURL(anchor.href, context);
-        if (ref) break;
-      }
+      ref = parseKnownProviderItemURL(anchor.href, getProviderContexts());
     }
     if (!ref) return;
 

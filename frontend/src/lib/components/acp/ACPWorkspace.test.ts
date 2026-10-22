@@ -879,6 +879,40 @@ describe("ACPWorkspace chat status and transcript", () => {
   });
 });
 
+describe("ACPWorkspace message links", () => {
+  it("points pull request links on a configured host at Forge and keeps other links external", async () => {
+    settings.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "git.example.com",
+        owner: "team",
+        name: "app",
+        repo_path: "team/app",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    await openChat({
+      messages: [
+        {
+          role: "assistant",
+          text: "See [the fix](https://git.example.com/other/service/pull/5) and [the notes](https://example.com/notes).",
+        },
+      ],
+    });
+
+    const article = screen.getByRole("article", { name: "Assistant" });
+    const fix = await within(article).findByRole("link", { name: "the fix" });
+    expect(fix.getAttribute("href")).toBe("/host/git.example.com/pulls/github/other/service/5");
+    expect(fix.hasAttribute("target")).toBe(false);
+    expect(fix.getAttribute("title")).toBe("https://git.example.com/other/service/pull/5");
+    const notes = within(article).getByRole("link", { name: "the notes" });
+    expect(notes.getAttribute("href")).toBe("https://example.com/notes");
+    expect(notes.getAttribute("target")).toBe("_blank");
+  });
+});
+
 describe("ACPWorkspace message gutter", () => {
   const createdAt = "2026-09-28T21:10:00Z";
 

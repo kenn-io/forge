@@ -54,7 +54,7 @@ type StartupConfigSnapshot struct {
 	Host                            string
 	Port                            int
 	MCP                             config.MCP
-	MCPListenAddr                   string
+	MCPURL                          string
 	BasePath                        string
 	DataDir                         string
 	AllowedHosts                    []config.HostKey
@@ -121,7 +121,7 @@ func SnapshotStartupConfig(cfg *config.Config) StartupConfigSnapshot {
 		Host:                            cfg.Host,
 		Port:                            cfg.Port,
 		MCP:                             cfg.MCP,
-		MCPListenAddr:                   cfg.MCPListenAddr(),
+		MCPURL:                          cfg.MCPURL(),
 		BasePath:                        cfg.BasePath,
 		DataDir:                         cfg.DataDir,
 		AllowedHosts:                    startupAllowedHosts(cfg),

@@ -501,11 +501,12 @@ func TestConfigReload_MCPRestartRequiredOnDefaultListenerChange(t *testing.T) {
 		{name: "disable", setting: "127.0.0.1", before: "127.0.0.1", after: "0.0.0.0", enabledBefore: true},
 		{name: "loopback host", setting: "127.0.0.1", before: "127.0.0.1", after: "127.0.0.2", enabledBefore: true, enabledAfter: true},
 		{name: "backend port", setting: "8091", before: "8091", after: "8092", enabledBefore: true, enabledAfter: true},
+		{name: "base path", setting: `base_path = "/"`, before: `base_path = "/"`, after: `base_path = "/forge/"`, enabledBefore: true, enabledAfter: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			serverfake.RunParallelServerTest(t)
 			assert := assert.New(t)
-			content := validReloadConfig + "\n[api]\nrequire_auth = true\n"
+			content := "base_path = \"/\"\n" + validReloadConfig + "\n[api]\nrequire_auth = true\n"
 			srv, _, _, _ := setupTestServerWithConfigContent(
 				t, strings.Replace(content, tt.setting, tt.before, 1), &serverfake.MockGH{},
 			)

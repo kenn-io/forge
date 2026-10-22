@@ -320,9 +320,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	cfg.DataDir = dataDir
 	cfg.TrustReverseProxy = false
 	mcpPort := 0
-	mcpURL := ""
 	if cfg.MCPEnabled() {
-		mcpPath := cfg.BasePath + "mcp"
 		if opts.mcpPortSet || cfg.MCP.Enabled != nil {
 			// A dedicated source listener belongs to the live daemon; choose a new port.
 			cfg.MCP.Port, err = resolvePort(opts.mcpPort)
@@ -333,13 +331,8 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 				return ephemeralRun{}, err
 			}
 			cfg.MCP.Enabled = new(true)
-			mcpPath = "/"
 		}
 		mcpPort = cfg.MCPPort()
-		mcpURL, err = serverURL(cfg.Host, mcpPort, mcpPath)
-		if err != nil {
-			return ephemeralRun{}, err
-		}
 	}
 
 	configPath := filepath.Join(opts.workDir, "config.toml")
@@ -363,7 +356,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 		logDir:       logDir,
 		backendURL:   backendURL,
 		frontendURL:  frontendURL,
-		mcpURL:       mcpURL,
+		mcpURL:       cfg.MCPURL(),
 		backendPort:  opts.backendPort,
 		frontendPort: opts.frontendPort,
 		mcpPort:      mcpPort,

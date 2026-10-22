@@ -166,7 +166,7 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 			}
 			assert.Equal(fmt.Sprintf("127.0.0.1:%d", reloaded.MCP.Port), reloaded.MCPListenAddr())
 			assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
-			assert.Equal(fmt.Sprintf("http://127.0.0.1:%d", reloaded.MCP.Port), prepared.mcpURL)
+			assert.Equal(fmt.Sprintf("http://127.0.0.1:%d/mcp", reloaded.MCP.Port), prepared.mcpURL)
 		})
 	}
 }

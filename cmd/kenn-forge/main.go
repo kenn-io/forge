@@ -458,16 +458,8 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if err != nil {
 		return err
 	}
-	mcpListenAddr := ""
-	mcpURL := ""
-	if mcpLn != nil {
-		mcpListenAddr = mcpLn.Addr().String()
-		mcpURL = "http://" + mcpListenAddr + "/mcp"
-	} else if cfg.MCPEnabled() {
-		// The main listener already accepts the companion's loopback address.
-		mcpListenAddr = cfg.MCPListenAddr()
-		mcpURL = "http://" + mcpListenAddr + cfg.BasePath + "mcp"
-	}
+	mcpListenAddr := cfg.MCPListenAddr()
+	mcpURL := cfg.MCPURL()
 	if cfg.MCP.Enabled == nil && cfg.MCPEnabled() {
 		slog.Info("MCP companion enabled by default; set [mcp] enabled = false to disable", "url", mcpURL)
 	}

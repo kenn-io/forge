@@ -91,6 +91,7 @@ func TestMCPOnByDefault(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(cfg.MCPEnabled())
 	assert.Equal("127.0.0.1:8091", cfg.MCPListenAddr())
+	assert.Equal("http://127.0.0.1:8091/mcp", cfg.MCPURL())
 	assert.True(cfg.MCPSharesMainListener())
 }
 
@@ -130,10 +131,12 @@ commit_email = "developer-a@example.org"
 }
 
 func TestMCPDisabledRoundTrip(t *testing.T) {
+	assert := assert.New(t)
 	cfg, saved := roundTripConfigString(t, "host = \"127.0.0.1\"\n[mcp]\nenabled = false\n")
-	assert.False(t, cfg.MCPEnabled())
-	assert.Equal(t, new(false), saved.MCP.Enabled)
-	assert.Empty(t, saved.MCPListenAddr())
+	assert.False(cfg.MCPEnabled())
+	assert.Equal(new(false), saved.MCP.Enabled)
+	assert.Empty(saved.MCPListenAddr())
+	assert.Empty(saved.MCPURL())
 }
 
 func TestSetMCPEnabled(t *testing.T) {
@@ -195,6 +198,7 @@ func TestMCPListenAddrStaysLoopback(t *testing.T) {
 			cfg, err := Load(writeConfig(t, content))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, cfg.MCPListenAddr())
+			assert.Equal(t, "http://"+tt.want+"/mcp", cfg.MCPURL())
 		})
 	}
 }

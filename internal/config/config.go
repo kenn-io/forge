@@ -1208,6 +1208,19 @@ func (c *Config) MCPListenAddr() string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
+// MCPURL returns the effective companion endpoint, or an empty string when off.
+func (c *Config) MCPURL() string {
+	addr := c.MCPListenAddr()
+	if addr == "" {
+		return ""
+	}
+	path := "/mcp"
+	if c.MCPSharesMainListener() {
+		path = c.BasePath + "mcp"
+	}
+	return "http://" + addr + path
+}
+
 // MCPSharesMainListener reports whether the companion's loopback address is
 // already served by the main listener, so /mcp is served there instead of
 // binding a second socket on the same port.

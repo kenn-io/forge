@@ -110,6 +110,7 @@ func (h *Handler) Register(api huma.API) {
 		Tags:        []string{"Worklists"},
 	}, h.setItemsHandled)
 	h.registerImport(api)
+	h.registerLink(api)
 }
 
 type setItemsHandledInput struct {

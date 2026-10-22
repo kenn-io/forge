@@ -3,6 +3,7 @@
   import {
     Button,
     formatRelativeTime,
+    IconButton,
     ScrollBox,
     SegmentedControl,
     SelectDropdown,
@@ -12,6 +13,7 @@
   } from "@kenn-io/kit-ui";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import LinkIcon from "@lucide/svelte/icons/link";
   import type { Worklist, WorklistItem, WorklistSummary } from "../../api/worklists.js";
   import { getSidebar } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
@@ -53,6 +55,8 @@
     onDismiss: () => void;
     onItemsChanged: () => void;
     onSetHandled: (items: readonly WorklistItem[], handled: boolean) => void;
+    /** Copies a link that opens this list in another Forge; omitted when links are off. */
+    onCopyLink?: (() => void) | undefined;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
     onVisibleOrder?: (worklist: Worklist, keys: readonly string[]) => void;
   }
@@ -68,6 +72,7 @@
     onDismiss,
     onItemsChanged,
     onSetHandled,
+    onCopyLink = undefined,
     onVisibleOrder = undefined,
   }: Props = $props();
 
@@ -278,6 +283,11 @@
           {worklist.title}
         {/if}
       </h2>
+      {#if onCopyLink}
+        <IconButton size="sm" ariaLabel="Copy link" title="Copy a link that opens this list in another Forge" onclick={onCopyLink}>
+          <LinkIcon size={14} aria-hidden="true" />
+        </IconButton>
+      {/if}
       <Button size="sm" label={dismissing ? "Dismissing" : "Dismiss"} disabled={dismissing} onclick={onDismiss} />
       <SidebarToggle state="expanded" label="sidebar" onclick={toggleSidebar} class="kit-sidebar-toggle--push" />
     </div>

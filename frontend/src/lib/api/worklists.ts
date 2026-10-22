@@ -60,6 +60,16 @@ export function importWorklist(fragment: string): Effect.Effect<WorklistImport, 
   );
 }
 
+/** Returns a kenn:// link that opens an equivalent list in another Forge. */
+export function getWorklistLink(id: number): Effect.Effect<string, WorklistFailure, GeneratedApi> {
+  return executeGeneratedApiRequest("get worklist link", (client, signal) =>
+    client.WorklistsService.getWorklistLink({ id }, { signal }),
+  ).pipe(
+    retryIdempotentRead,
+    Effect.map((response) => response.link),
+  );
+}
+
 export function worklistItemRef(item: WorklistItem): WorklistItemRef {
   return {
     provider: item.repo.provider,

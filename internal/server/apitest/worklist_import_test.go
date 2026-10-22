@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	json2 "encoding/json/v2"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/mcpserver"
@@ -227,4 +229,122 @@ func TestAPIWorklistImportRejectsLinksItCannotUse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, listed.JSON200, string(listed.Body))
 	assert.Empty(t, listed.JSON200.Worklists, "a rejected import writes nothing")
+}
+
+func TestAPIWorklistLinkOpensAnEquivalentListInAnotherForge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	sender, senderDB := setupTestServer(t)
+	senderClient := setupTestClient(t, sender)
+	seedPR(t, senderDB, "acme", "widget", 42)
+	seedIssue(t, senderDB, "acme", "widget", 5, "open")
+	repo, err := senderDB.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	identity := func(itemType string, number int) mcpserver.ItemIdentity {
+		return mcpserver.ItemIdentity{
+			Type: itemType, Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: number,
+		}
+	}
+	put, err := sender.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
+		Title: "Merge today", Recipe: "open PRs with green CI", CreatedBy: "triage-bot",
+		Items: []mcpserver.WorklistPutItem{
+			{Item: identity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "check the migration"},
+			{Item: identity("issue", 5), Section: "Triage", Note: "needs a repro"},
+		},
+	})
+	require.NoError(err)
+	platformRepoID, ok := repo.Key.ID()
+	require.True(ok)
+	marked, err := senderClient.HTTP.SetWorklistItemsHandledWithResponse(ctx, &generated.SetWorklistItemsHandledRequestOptions{
+		PathParams: &generated.SetWorklistItemsHandledPath{ID: put.WorklistID},
+		Body: &generated.SetWorklistItemsHandledBody{Handled: true, Items: []generated.WorklistItemRef{{
+			Provider: "github", PlatformHost: "github.com", PlatformRepoID: &platformRepoID,
+			ItemType: generated.WorklistItemRefItemTypePr, Number: 42,
+		}}},
+	})
+	require.NoError(err)
+	require.NotNil(marked.JSON200, string(marked.Body))
+
+	linked, err := senderClient.HTTP.GetWorklistLinkWithResponse(ctx, &generated.GetWorklistLinkRequestOptions{
+		PathParams: &generated.GetWorklistLinkPath{ID: put.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(linked.JSON200, string(linked.Body))
+	fragment, ok := strings.CutPrefix(linked.JSON200.Link, worklist.KennImportURL+"#")
+	require.True(ok, linked.JSON200.Link)
+	carried, err := worklist.ParseFragment(fragment)
+	require.NoError(err)
+	assert.Equal(worklist.ItemRef{
+		Type: "pr", Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget", Number: 42,
+	}, carried.Items[0].Item, "a link names the repository by route, not by this Forge's identity")
+
+	recipient, recipientDB := setupTestServer(t)
+	recipientClient := setupTestClient(t, recipient)
+	seedPR(t, recipientDB, "acme", "widget", 42)
+	seedIssue(t, recipientDB, "acme", "widget", 5, "open")
+	imported, err := recipientClient.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{
+		Body: &generated.ImportWorklistBody{Fragment: fragment},
+	})
+	require.NoError(err)
+	require.NotNil(imported.JSON200, string(imported.Body))
+	assert.EqualValues(2, imported.JSON200.ItemCount)
+	assert.EqualValues(0, imported.JSON200.SkippedCount)
+
+	read := func(client *apiclient.Client, id int64) generated.WorklistResponse {
+		got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+			PathParams: &generated.GetWorklistPath{ID: id},
+		})
+		require.NoError(err)
+		require.NotNil(got.JSON200, string(got.Body))
+		return *got.JSON200
+	}
+	original, copied := read(senderClient, put.WorklistID), read(recipientClient, imported.JSON200.WorklistID)
+	assert.Equal(original.Title, copied.Title)
+	assert.Equal(original.Recipe, copied.Recipe)
+	assert.Equal(original.CreatedBy, copied.CreatedBy)
+	require.Len(copied.Items, len(original.Items))
+	for i, item := range copied.Items {
+		want := original.Items[i]
+		assert.Equal(want.ItemType, item.ItemType)
+		assert.Equal(want.Number, item.Number)
+		assert.Equal(want.Repo.Owner+"/"+want.Repo.Name, item.Repo.Owner+"/"+item.Repo.Name)
+		assert.Equal(want.Score, item.Score)
+		assert.Equal(want.Section, item.Section)
+		assert.Equal(want.Note, item.Note)
+		assert.Equal(want.Caveat, item.Caveat)
+		assert.Nil(item.HandledAt, "handled marks stay with the sender")
+	}
+	assert.NotNil(original.Items[0].HandledAt)
+}
+
+func TestAPIWorklistLinkRejectsAListWithoutItems(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 42)
+	fragment, err := worklist.Fragment(worklist.List{Title: "Merge today", Items: []worklist.Item{{
+		Item: worklist.ItemRef{Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 42},
+	}}})
+	require.NoError(t, err)
+	imported, err := client.HTTP.ImportWorklistWithResponse(ctx, &generated.ImportWorklistRequestOptions{
+		Body: &generated.ImportWorklistBody{Fragment: fragment},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, imported.JSON200, string(imported.Body))
+	// Deleting the repository row deletes its items from the list.
+	_, err = database.WriteDB().ExecContext(ctx, `DELETE FROM forge_repos WHERE owner = 'acme' AND name = 'widget'`)
+	require.NoError(t, err)
+
+	linked, err := client.HTTP.GetWorklistLinkWithResponse(ctx, &generated.GetWorklistLinkRequestOptions{
+		PathParams: &generated.GetWorklistLinkPath{ID: imported.JSON200.WorklistID},
+	})
+
+	require.Error(t, err)
+	require.NotNil(t, linked)
+	assert.Equal(t, http.StatusConflict, linked.StatusCode, string(linked.Body))
 }

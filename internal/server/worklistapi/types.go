@@ -156,3 +156,9 @@ type WorklistImportResponse struct {
 	ItemCount    int   `json:"item_count" doc:"Items of the link this Forge can show now."`
 	SkippedCount int   `json:"skipped_count" doc:"Items of the link this Forge cannot show now."`
 }
+
+// WorklistLinkResponse carries a link that opens the worklist in another
+// Forge.
+type WorklistLinkResponse struct {
+	Link string `json:"link" doc:"kenn://kenn-forge/worklists/import# followed by the encoded list. Opening it creates an equivalent list in the recipient's Forge."`
+}

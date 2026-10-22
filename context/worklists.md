@@ -133,8 +133,8 @@ stateDiagram-v2
   (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
 - Spoke preparation handoff does not move worklists. They are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP reads, dismisses, restores, marks, and creates a list from a link;
-  only MCP replaces a list. Each
+- HTTP reads, dismisses, restores, marks, builds a list's link, and creates a
+  list from a link; only MCP replaces a list. Each
   item embeds the same row the pull request or issue list returns, or null once
   the item is no longer a visible synced row. A dismissed list stays readable
   by ID with `dismissed_at` set.
@@ -166,8 +166,8 @@ stateDiagram-v2
   cross-language test vector.
 - The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd:
   browsers and scripts build links too. It never reaches a request line.
-- `kenn://kenn-forge/worklists/import#…` works only once the Kenn desktop
-  app's link allowlist, kept outside this repository, admits the path.
+- `kenn://kenn-forge/worklists/import#…` works only through an application
+  that handles `kenn://` links and admits the path.
   `/worklists/import#…` works on any Forge origin.
 - Opening a link creates its list with no confirm step. The same list always
   maps to the same worklist: opening it again, by Back, reload, or a second
@@ -177,6 +177,13 @@ stateDiagram-v2
   unwanted list is dismissed like any other.
 - The link follows its worklist, not its contents (maintainer decision): after
   an agent rewrites the list, or its items go away, the link still opens it.
+- A copied link carries the title, recipe, author, and items with each
+  repository's current route; never handled marks, snapshots, or stable IDs.
+  The server builds it: browsers cannot reproduce Go's DEFLATE
+  (`internal/server/worklistapi/link.go::Handler.LinkService`).
+- The UI copies only the `kenn://` form, and only when an app embedding Forge
+  sets `window.__KENN_EMBEDDED_KENN_LINKS__` before page scripts run: a
+  browser-level signal, never Forge config (maintainer decision) (`frontend/src/lib/browser/kenn-links.ts`).
 - Untracked, unsynced, or repeated items are skipped, never added, and the UI
   reports how many, counted from the link alone
   (`internal/server/worklistapi/import.go::Handler.importableRepos`). A link

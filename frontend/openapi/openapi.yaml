@@ -11743,6 +11743,22 @@ components:
         - review_decision
         - last_activity_at
       type: object
+    WorklistLinkResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistLinkResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        link:
+          description: kenn://kenn-forge/worklists/import# followed by the encoded list. Opening it creates an equivalent list in the recipient's Forge.
+          type: string
+      required:
+        - link
+      type: object
     WorklistMarksCleared:
       additionalProperties: false
       properties:
@@ -28864,6 +28880,32 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark worklist items handled or unhandled
+      tags:
+        - Worklists
+  /worklists/{id}/link:
+    get:
+      operationId: get-worklist-link
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistLinkResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get a link that carries the worklist
       tags:
         - Worklists
   /worklists/{id}/undismiss:

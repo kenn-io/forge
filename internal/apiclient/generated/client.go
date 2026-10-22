@@ -11586,6 +11586,38 @@ func (o *SetWorklistItemsHandledRequestOptions) GetHeader() (map[string]string, 
 	return nil, nil
 }
 
+// GetWorklistLinkRequestOptions is the options needed to make a request to GetWorklistLink.
+type GetWorklistLinkRequestOptions struct {
+	PathParams *GetWorklistLinkPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorklistLinkRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorklistLinkRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorklistLinkRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorklistLinkRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // UndismissWorklistRequestOptions is the options needed to make a request to UndismissWorklist.
 type UndismissWorklistRequestOptions struct {
 	PathParams *UndismissWorklistPath
@@ -13226,6 +13258,7 @@ type ClientInterface interface {
 	GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error)
 	DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error)
 	SetWorklistItemsHandledWithResponse(ctx context.Context, options *SetWorklistItemsHandledRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorklistItemsHandledResp, error)
+	GetWorklistLinkWithResponse(ctx context.Context, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistLinkResp, error)
 	UndismissWorklistWithResponse(ctx context.Context, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UndismissWorklistResp, error)
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error)
 	CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error)
@@ -39190,6 +39223,74 @@ func (c *Client) SetWorklistItemsHandledWithResponse(ctx context.Context, option
 	}
 }
 
+// GetWorklistLink Get a link that carries the worklist
+func (c *Client) GetWorklistLinkWithResponse(ctx context.Context, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistLinkResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/{id}/link")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorklistLinkResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorklistLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorklistLinkResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistLinkResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetWorklistLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistLinkErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // UndismissWorklist Restore dismissed worklist
 func (c *Client) UndismissWorklistWithResponse(ctx context.Context, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UndismissWorklistResp, error) {
 	var err error
@@ -48123,6 +48224,21 @@ func (c *Client) SetWorklistItemsHandledRaw(ctx context.Context, httpClient *htt
 	return httpClient.Do(req)
 }
 
+// GetWorklistLinkRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorklistLinkRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // UndismissWorklistRaw returns an unread response. The caller must close its body.
 func (c *Client) UndismissWorklistRaw(ctx context.Context, httpClient *http.Client, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55668,6 +55784,22 @@ func NewSetWorklistItemsHandledRequest(ctx context.Context, baseURL string, opti
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetWorklistLinkRequest constructs a typed request for a caller-owned transport.
+func NewGetWorklistLinkRequest(ctx context.Context, baseURL string, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewUndismissWorklistRequest constructs a typed request for a caller-owned transport.
 func NewUndismissWorklistRequest(ctx context.Context, baseURL string, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -58884,6 +59016,10 @@ type SetWorklistItemsHandledPath struct {
 	ID int64 `json:"id"`
 }
 
+type GetWorklistLinkPath struct {
+	ID int64 `json:"id"`
+}
+
 type UndismissWorklistPath struct {
 	ID int64 `json:"id"`
 }
@@ -61535,6 +61671,10 @@ type DismissWorklistErrorResponse = ProblemError
 type SetWorklistItemsHandledResponse = WorklistHandledResponse
 
 type SetWorklistItemsHandledErrorResponse = ProblemError
+
+type GetWorklistLinkResponse = WorklistLinkResponse
+
+type GetWorklistLinkErrorResponse = ProblemError
 
 type UndismissWorklistResponse = WorklistSummaryResponse
 
@@ -65145,6 +65285,15 @@ type SetWorklistItemsHandledResp struct {
 	Error                             *SetWorklistItemsHandledErrorResponse
 	JSON200                           *SetWorklistItemsHandledResponse
 	ApplicationProblemPlusJSONDefault *SetWorklistItemsHandledErrorResponse
+}
+
+type GetWorklistLinkResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorklistLinkErrorResponse
+	JSON200                           *GetWorklistLinkResponse
+	ApplicationProblemPlusJSONDefault *GetWorklistLinkErrorResponse
 }
 
 type UndismissWorklistResp struct {
@@ -69988,6 +70137,14 @@ type WorklistItemStateResponse struct {
 	LastActivityAt *time.Time `json:"last_activity_at"`
 	ReviewDecision string     `json:"review_decision"`
 	State          string     `json:"state"`
+}
+
+type WorklistLinkResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Link kenn://kenn-forge/worklists/import# followed by the encoded list. Opening it creates an equivalent list in the recipient's Forge.
+	Link string `json:"link"`
 }
 
 type WorklistMarksCleared struct {

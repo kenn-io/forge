@@ -278,6 +278,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "get-workspace-runtime-session-attach-spec", Owner: NodeLocal},
 	{OperationID: "get-workspace-runtime-session-initial-message", Owner: NodeLocal},
 	{OperationID: "get-worklist", Owner: ProviderWithLocalOverlay, PeerScope: federationauth.ScopeProviderRead},
+	{OperationID: "get-worklist-link", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderRead},
 	{OperationID: "import-worklist", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "inspect-fleet-project-worktree", Owner: NodeLocal},
 	{OperationID: "inspect-project-worktree", Owner: NodeLocal},

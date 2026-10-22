@@ -917,4 +917,74 @@ describe("WorklistView", () => {
     const strip = await screen.findByRole("region", { name: "Worklist item context" });
     expect(within(strip).getByText(/^An agent wrote this item /)).toBeTruthy();
   });
+
+  describe("copy link", () => {
+    const kennLink = "kenn://kenn-forge/worklists/import#v1.abc";
+    let writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
+
+    beforeEach(() => {
+      writeText = vi.fn(async () => {});
+      vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    });
+
+    function linkRoute(response: () => Response): MockRouteOverride {
+      return (request) =>
+        request.method === "GET" && request.url.pathname === "/api/v1/worklists/5/link" ? response() : null;
+    }
+
+    afterEach(() => {
+      delete window.__KENN_EMBEDDED_KENN_LINKS__;
+    });
+
+    it("is not offered unless the embedding app allows it", async () => {
+      renderView("/worklists/5", server, [linkRoute(() => jsonResponse({ link: kennLink }))]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+    });
+
+    it("copies the server's link for the open list", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/5", server, [linkRoute(() => jsonResponse({ link: kennLink }))]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      await fireEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(kennLink));
+      await waitFor(() => expect(getFlashes().map((flash) => flash.message)).toContain("Copied worklist link."));
+    });
+
+    it("reports why the server could not build a link", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/5", server, [
+        linkRoute(() =>
+          jsonResponse(
+            {
+              title: "Payload Too Large",
+              status: 413,
+              detail: "worklist is too large for a link",
+              code: "payloadTooLarge",
+            },
+            413,
+          ),
+        ),
+      ]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      await fireEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      await waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toContain("worklist is too large for a link"),
+      );
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it("is not offered for a list with no items", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/4", server);
+      await screen.findByText("No items remain on this list.");
+
+      expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+    });
+  });
 });

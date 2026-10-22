@@ -3,6 +3,7 @@
  */
 import type {
   DismissWorklistPathParameters,
+  GetWorklistLinkPathParameters,
   GetWorklistPathParameters,
   ImportWorklistBody,
   ListWorklistsParams,
@@ -12,6 +13,7 @@ import type {
   UndismissWorklistPathParameters,
   WorklistHandledResponse,
   WorklistImportResponse,
+  WorklistLinkResponse,
   WorklistResponse,
   WorklistSummaryResponse,
 } from "../models";
@@ -144,6 +146,23 @@ export const setWorklistItemsHandled = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(setWorklistItemsHandledBody),
+  });
+};
+
+export const getGetWorklistLinkUrl = ({ id }: GetWorklistLinkPathParameters) => {
+  return `/worklists/${encodeURIComponent(String(id))}/link`;
+};
+
+/**
+ * @summary Get a link that carries the worklist
+ */
+export const getWorklistLink = async (
+  { id }: GetWorklistLinkPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<WorklistLinkResponse> => {
+  return orvalFetch<WorklistLinkResponse>(getGetWorklistLinkUrl({ id }), {
+    ...options,
+    method: "GET",
   });
 };
 

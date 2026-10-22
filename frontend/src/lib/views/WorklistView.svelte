@@ -1,12 +1,13 @@
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import { Effect } from "effect";
-  import { Button, CollapsibleSidebar, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
+  import { Button, CollapsibleSidebar, copyToClipboard, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
-  import { worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
+  import { getWorklistLink, worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
+  import { kennLinksEnabled } from "../browser/kenn-links.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
@@ -61,6 +62,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
+  const kennLinks = kennLinksEnabled();
   const { worklists, detail: detailStore, issues: issuesStore } = getStores();
   const { toggleSidebar } = getSidebar();
   const paneLayout = getPaneLayoutStore("worklists");
@@ -267,6 +269,26 @@
           showFlash(failure instanceof ApiProblemError ? worklistFailureMessage(failure, fallback) : fallback, {
             tone: "danger",
           }),
+      },
+    );
+  }
+
+  function copyLink(list: Worklist): void {
+    const fallback = "Could not copy the worklist link.";
+    runtime.runCommand(
+      getWorklistLink(list.id).pipe(
+        Effect.flatMap((link) => Effect.promise(() => copyToClipboard(link))),
+        Effect.tap((copied) =>
+          Effect.sync(() => {
+            if (copied) showFlash("Copied worklist link.", { tone: "success" });
+            else showFlash("Could not copy to the clipboard.", { tone: "danger" });
+          }),
+        ),
+      ),
+      {
+        operation: "copy worklist link",
+        safeContext: { worklistId: list.id },
+        onFailure: (failure) => showFlash(worklistFailureMessage(failure, fallback), { tone: "danger" }),
       },
     );
   }
@@ -525,6 +547,7 @@
           onDismiss={() => dismissal.dismiss(worklist)}
           onItemsChanged={reloadAfterItemAction}
           onSetHandled={setHandled}
+          onCopyLink={kennLinks && worklist.items.length > 0 ? () => copyLink(worklist) : undefined}
           onVisibleOrder={recordVisibleOrder}
         />
       {/snippet}

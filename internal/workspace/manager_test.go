@@ -6306,6 +6306,33 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	)
 }
 
+// The daemon's $SHELL is fixed when it starts. A system profile switch can
+// remove that shell while the daemon keeps running, and a base terminal
+// launched with it exits at once, so the missing-tmux prune errors the
+// workspace.
+func TestManagerEnsureTmuxSurvivesRemovedDaemonShell(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux servers are unavailable")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skipf("tmux unavailable: %v", err)
+	}
+	t.Setenv("SHELL", filepath.Join(t.TempDir(), "removed", "fish"))
+	d := openTestDB(t)
+	mgr := newTestManager(t, d, t.TempDir())
+	mgr.SetTmuxCommand(privateTmuxOwner.Command(t, tmuxPath))
+	ctx := t.Context()
+
+	require.NoError(t, mgr.EnsureTmux(ctx, "forge-0123456789abcdef", t.TempDir()))
+
+	require.Never(t, func() bool {
+		exists, err := mgr.tmuxSessionExists(ctx, "forge-0123456789abcdef")
+		require.NoError(t, err)
+		return !exists
+	}, 2*time.Second, 50*time.Millisecond)
+}
+
 func TestManagerDeleteWithEmptyTmuxServer(t *testing.T) {
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux servers are unavailable")

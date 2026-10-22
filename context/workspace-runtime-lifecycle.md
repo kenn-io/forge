@@ -669,6 +669,11 @@ create a local process, PTY, or durable transport session
 - On macOS, tmux and PTY-owner shells with no configured `LANG`, `LC_ALL`, or `LC_CTYPE` must
   default `LC_CTYPE` to UTF-8 without overriding an explicit locale; launchd can
   otherwise leave zsh with incorrect Unicode prompt widths (`internal/workspace/localruntime/shell_environment.go::shellCharacterLocaleDefault`).
+- Resolve the base terminal's login shell from the user database on every launch
+  (macOS has no `getent`; use `id -P`) and skip a shell that is no longer executable.
+  The daemon's `$SHELL` is fixed at its start, and a shell a system profile switch
+  removed makes every new base pane exit at once, which the missing-tmux prune then
+  reports as a lost session (`internal/workspace/manager.go::userLoginShell`).
 - Forge's dedicated tmux server owns global passthrough, SIXEL, and mouse mode;
   live changes clear pane overrides, while custom servers receive passthrough
   only on Forge-owned panes and only while graphics are enabled

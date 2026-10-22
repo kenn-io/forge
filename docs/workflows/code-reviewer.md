@@ -33,8 +33,9 @@ Unsupported actions remain visible but unavailable.
 Videos attached to descriptions, comments, and review comments play inline
 where the provider plays them. For private repositories, Forge loads them with
 your provider credential. To watch one larger without leaving the page, use
-the expand button in the video's header. Playback continues in the larger
-view, and picks up inline from there when you close it.
+the expand button in the video's controls, next to full screen. Playback
+continues in the larger view, and picks up inline from there when you close
+it.
 
 In **Files**, select a line to draft an inline comment. When the provider
 supports native multiline ranges, you can also select a contiguous range.

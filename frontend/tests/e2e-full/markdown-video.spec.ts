@@ -42,7 +42,10 @@ async function startPlayback(video: Locator): Promise<void> {
 
 // Plays and seeks, which needs the route's byte ranges.
 async function expectPlayable(video: Locator): Promise<void> {
-  await expect(video).toHaveAttribute("controls", "");
+  // kit-ui's player draws the controls; the browser's stay off.
+  const player = video.locator("xpath=ancestor::div[contains(concat(' ', @class, ' '), ' kit-video-player ')][1]");
+  await expect(player.getByRole("button", { name: "Open video in expanded view" })).toBeVisible();
+  await expect(video).not.toHaveAttribute("controls");
   await expect(video).not.toHaveAttribute("autoplay");
   await startPlayback(video);
   expect(await video.evaluate((v: HTMLVideoElement) => v.duration)).toBeCloseTo(3, 0);
@@ -71,7 +74,7 @@ test("plays an issue description video", async ({ page }) => {
     .locator(".markdown-body")
     .filter({ has: page.locator("video") })
     .first();
-  const video = body.locator("video.markdown-video");
+  const video = body.locator(".markdown-video-frame video");
 
   await expectPlayable(video);
   await expectContained(video, body);
@@ -85,7 +88,7 @@ test("starts no video download until the player is played", async ({ page }) => 
     if (request.resourceType() === "media") downloads.push(request.url());
   });
   await page.goto(route("/issues/github/acme/widgets/14"));
-  const video = page.locator(".markdown-body video.markdown-video").first();
+  const video = page.locator(".markdown-body .markdown-video-frame video").first();
 
   // The player goes idle once it has decided what to fetch before play.
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.networkState)).toBe(1);
@@ -98,7 +101,7 @@ test("starts no video download until the player is played", async ({ page }) => 
 
 test("keeps the player size when the first play loads the video", async ({ page }) => {
   await page.goto(route("/issues/github/acme/widgets/14"));
-  const video = page.locator(".markdown-body video.markdown-video").first();
+  const video = page.locator(".markdown-body .markdown-video-frame video").first();
   await expect(video).toBeVisible();
   const before = await video.boundingBox();
 
@@ -113,7 +116,7 @@ test("plays a video in a diff review comment", async ({ page }) => {
     .locator(".review-thread-body")
     .filter({ has: page.locator("video") })
     .first();
-  const video = bubble.locator("video.markdown-video");
+  const video = bubble.locator(".markdown-video-frame video");
 
   await expectPlayable(video);
   await expectContained(video, bubble);
@@ -126,7 +129,7 @@ test("keeps the player inside the content width on a phone", async ({ page }) =>
     .locator(".markdown-body")
     .filter({ has: page.locator("video") })
     .first();
-  const video = body.locator("video.markdown-video");
+  const video = body.locator(".markdown-video-frame video");
   await startPlayback(video);
 
   await expectContained(video, body);
@@ -138,13 +141,16 @@ test("replaces a player that cannot load with a link to the original", async ({ 
   await page.goto(route("/issues/github/acme/widgets/14"));
   // Match on the issue text: the body loses its video once the notice replaces it.
   const body = page.locator(".markdown-body").filter({ hasText: "Screen recording" }).first();
-  const video = body.locator("video.markdown-video");
+  const video = body.locator(".markdown-video-frame video");
   await expect(video).toBeVisible();
 
-  await video.evaluate((v: HTMLVideoElement, source: string) => {
-    const url = new URL(v.getAttribute("src")!, window.location.href);
-    url.searchParams.set("source", source);
-    v.setAttribute("src", `${url.pathname}${url.search}`);
+  // The kit-ui player lists the address as a <source>.
+  await video.evaluate((v: HTMLVideoElement, missing: string) => {
+    const source = v.querySelector("source")!;
+    const url = new URL(source.getAttribute("src")!, window.location.href);
+    url.searchParams.set("source", missing);
+    source.setAttribute("src", `${url.pathname}${url.search}`);
+    v.load();
     v.play().catch(() => {});
   }, missing);
 
@@ -157,7 +163,7 @@ test("collapses and expands a player from its header", async ({ page }) => {
   await page.goto(route("/issues/github/acme/widgets/14"));
   const frame = page.locator(".markdown-body .markdown-video-frame").first();
   const header = frame.getByRole("button", { name: "Video", exact: true });
-  const video = frame.locator("video.markdown-video");
+  const video = frame.locator("video");
   const chevron = header.locator(".markdown-video-chevron");
   await expect(header).toHaveAttribute("aria-expanded", "true");
   await expect(video).toBeVisible();
@@ -200,7 +206,7 @@ function playback(video: Locator) {
 test("continues a playing video in the expanded view and back inline", async ({ page }) => {
   await page.goto(route("/issues/github/acme/widgets/14"));
   const frame = page.locator(".markdown-body .markdown-video-frame").first();
-  const video = frame.locator("video.markdown-video");
+  const video = frame.locator("video");
   await startPlayback(video);
 
   await frame.getByRole("button", { name: "Open video in expanded view" }).click();

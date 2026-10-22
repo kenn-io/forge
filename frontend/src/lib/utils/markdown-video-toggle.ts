@@ -6,9 +6,8 @@ export function initMarkdownVideoToggle(root: Document): () => void {
   const onClick = (event: MouseEvent) => {
     if (!(event.target instanceof Element)) return;
     const header = event.target.closest("button.markdown-video-header");
-    const frame = header?.parentElement?.parentElement;
-    if (!header?.parentElement?.classList.contains("markdown-video-bar")) return;
-    if (!frame?.classList.contains("markdown-video-frame")) return;
+    const frame = header?.parentElement;
+    if (!header || !frame?.classList.contains("markdown-video-frame")) return;
     const collapsing = header.getAttribute("aria-expanded") !== "false";
     header.setAttribute("aria-expanded", String(!collapsing));
     // A hidden player keeps playing its sound.

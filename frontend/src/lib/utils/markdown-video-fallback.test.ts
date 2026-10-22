@@ -46,16 +46,6 @@ describe("markdown video fallback", () => {
     expect(body.querySelector("a")?.getAttribute("href")).toBe(attachment);
   });
 
-  it("drops the expand button with the player but keeps the header", () => {
-    const body = mount(renderMarkdownSync(attachment, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) }));
-    expect(body.querySelector(".markdown-video-expand")).not.toBeNull();
-
-    body.querySelector("video")!.dispatchEvent(new Event("error"));
-
-    expect(body.querySelector(".markdown-video-expand")).toBeNull();
-    expect(body.querySelector(".markdown-video-header")).not.toBeNull();
-  });
-
   it("links a direct attachment to its own address", () => {
     const body = mount(renderMarkdownSync('<video src="attachments/u1" controls></video>', giteaRepo));
 

@@ -12,22 +12,24 @@ export function initMarkdownVideoFallback(root: Document): () => void {
 }
 
 function failedMarkdownVideo(target: EventTarget | null): HTMLVideoElement | null {
-  if (target instanceof HTMLVideoElement) return isMarkdownVideo(target) ? target : null;
+  if (target instanceof HTMLVideoElement) return playerOf(target) ? target : null;
   // Each <source> reports its own failure; the player has failed once the
   // browser has tried its last one.
   if (!(target instanceof HTMLSourceElement)) return null;
   const video = target.parentElement;
-  if (!(video instanceof HTMLVideoElement) || !isMarkdownVideo(video)) return null;
+  if (!(video instanceof HTMLVideoElement) || !playerOf(video)) return null;
   const sources = video.querySelectorAll("source");
   return sources[sources.length - 1] === target ? video : null;
 }
 
 // Players sit in their own frame (markdown.ts::normalizeMarkdownVideos), so
-// swapping one never disturbs the nodes the markdown host inserted.
-function isMarkdownVideo(video: HTMLVideoElement): boolean {
-  return (
-    video.classList.contains("markdown-video") && !!video.parentElement?.classList.contains("markdown-video-frame")
-  );
+// swapping one never disturbs the nodes the markdown host inserted. Once
+// mounted, the kit-ui player stands in the frame in place of the <video>
+// (markdown-video-player.ts).
+function playerOf(video: HTMLVideoElement): Element | null {
+  if (video.classList.contains("markdown-video") && video.parentElement?.classList.contains("markdown-video-frame"))
+    return video;
+  return video.closest(".markdown-video-frame > .kit-video-player");
 }
 
 function replaceWithNotice(video: HTMLVideoElement): void {
@@ -42,9 +44,7 @@ function replaceWithNotice(video: HTMLVideoElement): void {
     link.textContent = "Open the original";
     notice.append(link);
   }
-  // The notice has nothing to open in the expanded view.
-  video.parentElement?.querySelector(":scope > .markdown-video-bar > .markdown-video-expand")?.remove();
-  video.replaceWith(notice);
+  playerOf(video)?.replaceWith(notice);
 }
 
 // The address a reader can open: the attachment behind the media route, or

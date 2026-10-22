@@ -691,11 +691,7 @@ describe("markdown video", () => {
   function headers(html: string): HTMLButtonElement[] {
     const container = document.createElement("div");
     container.innerHTML = html;
-    return [
-      ...container.querySelectorAll<HTMLButtonElement>(
-        ".markdown-video-frame > .markdown-video-bar > button.markdown-video-header",
-      ),
-    ];
+    return [...container.querySelectorAll<HTMLButtonElement>(".markdown-video-frame > button.markdown-video-header")];
   }
 
   it("heads each player with an expanded toggle named after the video file", () => {
@@ -706,23 +702,7 @@ describe("markdown video", () => {
     expect(header?.textContent).toBe("sidebar demo.webm");
     expect(header?.getAttribute("type")).toBe("button");
     expect(header?.getAttribute("aria-expanded")).toBe("true");
-    expect(header?.parentElement?.nextElementSibling?.tagName).toBe("VIDEO");
-  });
-
-  it("puts an expand button named after the video file beside the header", () => {
-    const html = renderMarkdownSync('<video src="https://cdn.example.com/clips/sidebar%20demo.webm"></video>');
-
-    const expand = headers(html)[0]?.nextElementSibling;
-    expect(expand?.tagName).toBe("BUTTON");
-    expect(expand?.getAttribute("type")).toBe("button");
-    expect(expand?.classList.contains("markdown-video-expand")).toBe(true);
-    expect(expand?.getAttribute("aria-label")).toBe("Open video in expanded view: sidebar demo.webm");
-  });
-
-  it("labels the expand button generically when the address has no file name", () => {
-    const html = renderMarkdownSync(attachment, githubRepo, { mediaOutcomes: new Map([[attachment, "video"]]) });
-
-    expect(headers(html)[0]?.nextElementSibling?.getAttribute("aria-label")).toBe("Open video in expanded view");
+    expect(header?.nextElementSibling?.tagName).toBe("VIDEO");
   });
 
   it("labels a GitHub attachment player generically because its address has no file name", () => {

@@ -5,7 +5,7 @@ import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-import { initMarkdownVideoViewer } from "../utils/markdown-video-viewer.js";
+import { initMarkdownVideoPlayers } from "../utils/markdown-video-player.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";
 import { startRuntimeTelemetry } from "./telemetry.js";
@@ -44,9 +44,9 @@ const observeMarkdownImageExpansion = (target: HTMLElement) =>
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 
-const observeMarkdownVideoExpansion = (target: HTMLElement) =>
+const observeMarkdownVideoPlayers = (target: HTMLElement) =>
   Effect.acquireRelease(
-    Effect.sync(() => initMarkdownVideoViewer(target, { onViewerOpen: openMediaViewerFrame })),
+    Effect.sync(() => initMarkdownVideoPlayers(target, { onViewerOpen: openMediaViewerFrame })),
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 
@@ -91,7 +91,7 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
-  const videoExpansion = runtime.runCommand(Effect.scoped(observeMarkdownVideoExpansion(target)), {
+  const videoPlayers = runtime.runCommand(Effect.scoped(observeMarkdownVideoPlayers(target)), {
     operation: "observe markdown videos",
     safeContext: {},
     onFailure: () => {},
@@ -108,7 +108,7 @@ export function mountApplication(
   });
   const root = Effect.scoped(appProgram(target, runtime)).pipe(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
-    Effect.ensuring(Effect.sync(videoExpansion.interrupt)),
+    Effect.ensuring(Effect.sync(videoPlayers.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
     Effect.ensuring(Effect.sync(appOpens.interrupt)),
     Effect.ensuring(runtime.disposeEffect),

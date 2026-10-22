@@ -1,5 +1,5 @@
-// A rendered markdown player hands its playback to kit-ui's expanded view and
-// takes it back on close. Playback needs a real browser and a real clip.
+// Rendered markdown players become kit-ui VideoPlayers whose control bar
+// opens the expanded view. Playback needs a real browser and a real clip.
 
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -7,11 +7,13 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "../../app.css";
 import clip from "../../../tests/fixtures/markdown-video.webm?url";
 import { renderMarkdownSync } from "./markdown.js";
+import { initMarkdownVideoFallback } from "./markdown-video-fallback.js";
+import { initMarkdownVideoPlayers } from "./markdown-video-player.js";
 import { initMarkdownVideoToggle } from "./markdown-video-toggle.js";
-import { initMarkdownVideoViewer } from "./markdown-video-viewer.js";
 
 // Loading and seeking a clip can take seconds while other suites share the browser.
 const settle = { timeout: 5_000 };
+const expandName = "Open video in expanded view: markdown-video.webm";
 
 let cleanups: Array<() => void> = [];
 
@@ -28,7 +30,7 @@ function mount(markdown: string) {
   document.body.append(body);
   const restore = vi.fn();
   const onViewerOpen = vi.fn(() => restore);
-  const viewer = initMarkdownVideoViewer(document.body, { onViewerOpen });
+  const players = initMarkdownVideoPlayers(document.body, { onViewerOpen });
   // Chromium blocks unmuted autoplay when the full suite shares the browser,
   // so the viewer's player is muted before it gets metadata and starts.
   const muter = new MutationObserver(() => {
@@ -38,14 +40,15 @@ function mount(markdown: string) {
   muter.observe(document.body, { childList: true, subtree: true });
   cleanups.push(
     initMarkdownVideoToggle(document),
-    () => viewer.disconnect(),
+    initMarkdownVideoFallback(document),
+    () => players.disconnect(),
     () => muter.disconnect(),
   );
   return { body, onViewerOpen, restore };
 }
 
-function playback(video: HTMLVideoElement) {
-  return { time: video.currentTime, playing: !video.paused && !video.ended };
+function inlineVideo(body: HTMLElement): HTMLVideoElement {
+  return body.querySelector<HTMLVideoElement>(".markdown-video-frame > .kit-video-player video")!;
 }
 
 function expandedVideo(): HTMLVideoElement | null {
@@ -63,24 +66,35 @@ async function playInline(video: HTMLVideoElement, from: number) {
   await video.play();
 }
 
-describe("markdown video expanded view (browser)", () => {
+describe("markdown video player (browser)", () => {
+  it("puts the expand control in the player's bar, beside full screen", async () => {
+    const { body } = mount(`<video src="${clip}"></video>`);
+    const bar = body.querySelector('[role="group"][aria-label="Video controls"]')!;
+
+    // Video.js labels its buttons once they connect.
+    const names = () =>
+      Array.from(bar.querySelectorAll('[role="button"], button'), (button) => button.getAttribute("aria-label"));
+    await expect.poll(() => names().slice(-2), settle).toEqual([expandName, "Enter fullscreen"]);
+    // The header above the player still names the file.
+    expect(body.querySelector(".markdown-video-name")?.textContent).toBe("markdown-video.webm");
+    // An idle player must not fetch.
+    expect(inlineVideo(body).preload).toBe("none");
+  });
+
   it("continues inline playback in the viewer and resumes inline from where the viewer closed", async () => {
     const { body, onViewerOpen, restore } = mount(`<video src="${clip}"></video>`);
-    const video = body.querySelector<HTMLVideoElement>("video.markdown-video")!;
-    const header = body.querySelector<HTMLButtonElement>(".markdown-video-header")!;
+    const video = inlineVideo(body);
     await playInline(video, 0.5);
 
-    await userEvent.click(page.getByRole("button", { name: "Open video in expanded view: markdown-video.webm" }));
+    await userEvent.click(page.getByRole("button", { name: expandName }));
 
     await expect.poll(() => expandedVideo(), settle).not.toBeNull();
     expect(onViewerOpen).toHaveBeenCalledTimes(1);
-    expect(header.getAttribute("aria-expanded")).toBe("true");
-    expect(playback(video).playing).toBe(false);
+    expect(video.paused).toBe(true);
     const handedOver = video.currentTime;
     const expanded = expandedVideo()!;
-    expect(expanded.currentSrc).toBe(video.currentSrc);
-    await expect.poll(() => playback(expanded).playing, settle).toBe(true);
-    expect(expanded.currentTime).toBeGreaterThanOrEqual(handedOver);
+    await expect.poll(() => expanded.currentSrc, settle).toBe(video.currentSrc);
+    await expect.poll(() => !expanded.paused, settle).toBe(true);
     await expect.poll(() => expanded.currentTime, settle).toBeGreaterThan(handedOver + 0.5);
 
     await userEvent.keyboard("{Escape}");
@@ -93,32 +107,35 @@ describe("markdown video expanded view (browser)", () => {
     await expect.poll(() => !video.paused || video.ended, settle).toBe(true);
   });
 
-  it("leaves a collapsed player paused at the viewer's position", async () => {
+  it("collapsing hides and pauses the player", async () => {
     const { body } = mount(`<video src="${clip}"></video>`);
-    const video = body.querySelector<HTMLVideoElement>("video.markdown-video")!;
+    const video = inlineVideo(body);
+    await playInline(video, 0);
+
     await userEvent.click(body.querySelector<HTMLButtonElement>(".markdown-video-header")!);
-    expect(video.checkVisibility()).toBe(false);
 
-    await userEvent.click(page.getByRole("button", { name: "Open video in expanded view: markdown-video.webm" }));
-    await expect.poll(() => expandedVideo(), settle).not.toBeNull();
-    const expanded = expandedVideo()!;
-    await expanded.play();
-    await expect.poll(() => expanded.currentTime, settle).toBeGreaterThan(0.5);
-
-    await userEvent.keyboard("{Escape}");
-
-    await expect.poll(() => expandedVideo(), settle).toBeNull();
-    expect(video.currentTime).toBeGreaterThan(0.5);
     expect(video.paused).toBe(true);
+    expect(body.querySelector(".kit-video-player")!.checkVisibility()).toBe(false);
   });
 
-  it("keeps the expand button beside the header in the bar of a collapsed player", async () => {
+  it("replaces a player that cannot load with the notice, keeping the header", async () => {
+    const { body } = mount(`<video src="/missing-markdown-video.webm"></video>`);
+    const video = inlineVideo(body);
+
+    video.load();
+
+    await expect.poll(() => body.querySelector(".markdown-video-error"), settle).not.toBeNull();
+    expect(body.querySelector(".kit-video-player")).toBeNull();
+    expect(body.querySelector(".markdown-video-header")).not.toBeNull();
+  });
+
+  it("gives a re-rendered body a working player of its own", async () => {
     const { body } = mount(`<video src="${clip}"></video>`);
-    const expand = body.querySelector<HTMLButtonElement>(".markdown-video-expand")!;
 
-    await userEvent.click(body.querySelector<HTMLButtonElement>(".markdown-video-header")!);
+    body.innerHTML = renderMarkdownSync(`<video src="${clip}"></video>`);
 
-    expect(expand.checkVisibility()).toBe(true);
-    expect(body.querySelector("video")!.checkVisibility()).toBe(false);
+    await expect.poll(() => body.querySelectorAll(".kit-video-player").length, settle).toBe(1);
+    await userEvent.click(page.getByRole("button", { name: expandName }));
+    await expect.poll(() => expandedVideo(), settle).not.toBeNull();
   });
 });

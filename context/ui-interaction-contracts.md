@@ -48,6 +48,10 @@ Interactive surfaces must agree on which item is selected.
   `item-ref` anchors that resolve through the shared click handler, with the
   provider URL kept as the untracked-repo fallback
   (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- `item-ref` hrefs carry the configured base path so modifier clicks, new tabs,
+  and copied links work; plain clicks route from the anchor's data attributes,
+  never its href, so the prefix is applied once
+  (`frontend/src/lib/utils/item-reference.ts::buildItemReferenceHref`).
 - Explicit link targets other than `_self` retain native browser navigation, including widget links.
 - Untracked provider links retain native browser navigation; decide from the loaded
   repository catalog before cancelling the click, not by opening a popup after a

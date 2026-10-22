@@ -202,6 +202,24 @@ describe("itemRefHandler", () => {
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
+  it("routes from the data attributes so a base-path href is not prefixed twice", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
+
+    const result = await clickItemRef({
+      href: "/forge/pulls/github/acme/widgets/12",
+      "data-provider": "github",
+      "data-platform-host": "github.com",
+      "data-owner": "acme",
+      "data-name": "widgets",
+      "data-repo-path": "acme/widgets",
+      "data-number": "12",
+      "data-item-type": "pr",
+    });
+
+    expect(result.captured).toBe(true);
+    expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
+  });
+
   it("passes item type hints only for GitLab references", async () => {
     mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
 

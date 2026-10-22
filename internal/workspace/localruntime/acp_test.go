@@ -1215,8 +1215,15 @@ func TestCodexACPRestoresMode(t *testing.T) {
 				t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "1")
 			}
 			calls := 0
-			codexEffectiveAccess = func(context.Context, []string, []string, string, map[string]any) (string, string, error) {
+			worktree := t.TempDir()
+			codexEffectiveAccess = func(_ context.Context, probeCommand, env []string, cwd string, _ map[string]any) (string, string, error) {
 				calls++
+				if tc.name == "native reload derives" {
+					require.NotEmpty(t, probeCommand)
+					assert.Equal(command[0], probeCommand[0])
+					assert.Equal(worktree, cwd)
+					assert.Subset(env, []string{"KENN_FORGE_LOCALRUNTIME_HELPER=1", "KENN_FORGE_ACP_FIXTURE=1", "KENN_FORGE_ACP_CODEX=1", "INITIAL_AGENT_MODE="})
+				}
 				return "dangerFullAccess", "never", nil
 			}
 			manager := NewManager(Options{ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
@@ -1228,7 +1235,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 			if tc.reload {
 				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
 			}
-			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, t.TempDir(), nil, saved)
+			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved)
 			if tc.probe {
 				assert.Equal(1, calls)
 			} else {

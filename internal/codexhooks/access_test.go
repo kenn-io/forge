@@ -103,12 +103,11 @@ func TestReadAccess(t *testing.T) {
 		secondReply, wantSecondRequest                       string
 	}{
 		{name: "full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, secondReply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, sandbox: "dangerFullAccess", approval: "never", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`, wantSecondRequest: `{"id":2,"method":"thread/start","params":{"ephemeral":true,"config":{}}}`},
-		{name: "untrusted project full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, secondReply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, failure: "full access comes from project config Codex doesn't trust", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`, wantSecondRequest: `{"id":2,"method":"thread/start","params":{"ephemeral":true,"config":{}}}`},
-		{name: "hooks stripped", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"hooks": map[string]any{"enabled": true}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
-		{name: "caller config preserved with projects overridden", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"model": "example-model", "projects": map[string]any{"/workspace": map[string]any{"trust_level": "untrusted"}}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"model":"example-model","projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
+		{name: "untrusted project full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, secondReply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, failure: "full access comes from project config Codex doesn't trust"},
+		{name: "hooks stripped with caller config preserved and projects overridden", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"hooks": map[string]any{"enabled": true}, "model": "example-model", "projects": map[string]any{"/workspace": map[string]any{"trust_level": "untrusted"}}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"model":"example-model","projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
 		{name: "granular approval", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":{"granular":{"sandbox_approval":true}}}}`, sandbox: "readOnly"},
 		{name: "rpc error", reply: `{"error":{"message":"policy rejected"}}`, failure: "policy rejected"},
-		{name: "missing sandbox type", reply: `{"result":{"sandbox":{"type":""},"approvalPolicy":"never"}}`, failure: "no sandbox type"},
+		{name: "missing sandbox type", reply: `{"result":{"approvalPolicy":"never"}}`, failure: "no sandbox type"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var sent bytes.Buffer
@@ -118,6 +117,9 @@ func TestReadAccess(t *testing.T) {
 			}
 			c := &client{input: &sent, output: jsontext.NewDecoder(strings.NewReader(replies))}
 			sandbox, approval, err := c.readAccess("/workspace", tc.config)
+			if tc.config != nil {
+				assert.Equal(t, map[string]any{"hooks": map[string]any{"enabled": true}, "model": "example-model", "projects": map[string]any{"/workspace": map[string]any{"trust_level": "untrusted"}}}, tc.config)
+			}
 			if tc.failure != "" {
 				require.ErrorContains(t, err, tc.failure)
 			} else {

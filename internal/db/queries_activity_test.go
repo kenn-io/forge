@@ -2651,6 +2651,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	}{
 		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", searchCounts: map[string]int{"integrator": 1, `"A. Person"`: 1}},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "same linked author and committer without git signature", metadata: `{"commit_author":"alice"}`, actor: "alice", prCommitAuthor: "alice", branchCommitAuthor: "alice", searchCounts: map[string]int{"alice": 2}},
 		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator", searchCounts: map[string]int{"integrator": 1}},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "non-commit event", eventType: "issue_comment", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},

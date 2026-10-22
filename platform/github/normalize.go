@@ -245,7 +245,7 @@ func NormalizeCommitEvent(
 		Author:             actor,
 		Summary:            sha,
 	}
-	if author != "" && author != actor {
+	if author != "" {
 		metadata, _ := json.Marshal(commitEventMetadata{CommitAuthor: author})
 		event.MetadataJSON = string(metadata)
 	}

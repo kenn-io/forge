@@ -71,7 +71,7 @@ Read `<work-dir>/dev-ephemeral.json` when another tool or response needs process
   "data_dir": "tmp/my-run/data",
   "backend_url": "http://127.0.0.1:19091",
   "frontend_url": "http://127.0.0.1:15174",
-  "mcp_url": "http://127.0.0.1:19092"
+  "mcp_url": "http://127.0.0.1:19092/mcp"
 }
 ```
 

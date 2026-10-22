@@ -43,8 +43,9 @@ kenn-forge daemon restart
 
 Loopback MCP follows `[api].require_auth`, same as the HTTP API.
 When authentication is enabled, send the daemon bearer token.
-Runtime discovery publishes the resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
-the listener address and the token file path.
+Runtime discovery publishes the resolved MCP listener and URL, and
+`kenn-forge daemon status --json` shows both the listener address and the token
+file path.
 
 With explicit `[mcp].enabled = true`, `/mcp` on the main listener also accepts
 daemon bearer holders and, with `[api.tailscale_serve]`, allowlisted Serve users.

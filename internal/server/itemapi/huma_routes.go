@@ -584,8 +584,10 @@ func (s *Handlers) ResolveItem(
 	}
 	providerKind := httpapi.ProviderKind(repo.Repo)
 	providerHost := httpapi.ProviderHost(repo.Repo)
+	// GitLab and Bitbucket number issues and pull requests separately, so
+	// only their hints select between two items sharing a number.
 	itemTypeHint := requestedItemType
-	if providerKind != platform.KindGitLab {
+	if providerKind != platform.KindGitLab && providerKind != platform.KindBitbucket {
 		itemTypeHint = ""
 	}
 	if !s.IsConfiguredRepoTracked(repo.Repo) {

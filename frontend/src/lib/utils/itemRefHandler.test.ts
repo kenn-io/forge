@@ -220,7 +220,7 @@ describe("itemRefHandler", () => {
     expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith("/pulls/github/acme/widgets/12");
   });
 
-  it("passes item type hints only for GitLab references", async () => {
+  it("passes GitLab PR item type hints", async () => {
     mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "pr" });
 
     await clickItemRef({
@@ -272,6 +272,19 @@ describe("itemRefHandler", () => {
       { item_type: "issue" },
       expect.objectContaining({ signal: expect.anything() }),
     );
+  });
+
+  it("passes Bitbucket Cloud issue item type hints so a same-numbered PR does not win", async () => {
+    mocks.post.mockResolvedValue({ repo_tracked: true, item_type: "issue" });
+
+    await clickItemRef({ class: "", href: "https://bitbucket.org/acme/widgets/issues/5" });
+
+    expect(mocks.post).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "bitbucket", owner: "acme", name: "widgets", number: 5 }),
+      { item_type: "issue" },
+      expect.objectContaining({ signal: expect.anything() }),
+    );
+    expect(mocks.navigate).toHaveBeenCalledWith("/issues/bitbucket/acme/widgets/5");
   });
 
   it("preserves native navigation for an untracked reference with an external fallback", async () => {

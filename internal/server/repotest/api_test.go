@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"uuid"
 
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
@@ -1170,6 +1171,64 @@ func TestResolveItem_UsesItemTypeHintForGitLab(t *testing.T) {
 	require.Equal("issue", resp.JSON200.ItemType)
 	require.EqualValues(10, resp.JSON200.Number)
 	require.True(resp.JSON200.RepoTracked)
+}
+
+// Bitbucket Cloud numbers issues and pull requests separately, so issue #5
+// and PR #5 can coexist; the hint must pick the requested kind.
+func TestResolveItem_UsesItemTypeHintForBitbucketCloud(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	repoKey := platform.RepositoryUUIDKey(uuid.MustParse("11111111-1111-4111-8111-111111111111"))
+	repos := []ghclient.RepoRef{{
+		Platform:     platform.KindBitbucket,
+		PlatformHost: platform.DefaultBitbucketHost,
+		Owner:        "acme",
+		Name:         "widget",
+		Key:          repoKey,
+	}}
+	srv, database := servertest.SetupTestServerWithRepos(t, &serverfake.MockGH{}, repos)
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+		Platform:     "bitbucket",
+		PlatformHost: platform.DefaultBitbucketHost,
+		Owner:        "acme",
+		Name:         "widget",
+		Key:          repoKey,
+	})
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Second)
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 5, Number: 5,
+		URL:   "https://bitbucket.org/acme/widget/pull-requests/5",
+		Title: "Test PR", Author: "testuser", State: "open",
+		HeadBranch: "feature", BaseBranch: "main",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(t, err)
+	_, err = database.UpsertIssue(t.Context(), &db.Issue{
+		RepoID: repoID, PlatformID: 6, Number: 5,
+		URL:   "https://bitbucket.org/acme/widget/issues/5",
+		Title: "Test Issue", Author: "testuser", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(t, err)
+	client := servertest.SetupTestClient(t, srv)
+
+	for _, itemType := range []generated.ResolveRepoItemQueryItemType{
+		generated.ResolveRepoItemQueryItemTypeIssue,
+		generated.ResolveRepoItemQueryItemTypePr,
+	} {
+		t.Run(string(itemType), func(t *testing.T) {
+			require := require.New(t)
+			resp, err := client.HTTP.ResolveRepoItemWithResponse(t.Context(), &generated.ResolveRepoItemRequestOptions{
+				PathParams: &generated.ResolveRepoItemPath{Provider: "bitbucket", Owner: "acme", Name: "widget", Number: 5},
+				Query:      &generated.ResolveRepoItemQuery{ItemType: &itemType},
+			})
+			require.NoError(err)
+			require.Equal(http.StatusOK, resp.StatusCode)
+			require.NotNil(resp.JSON200)
+			require.Equal(string(itemType), resp.JSON200.ItemType)
+			require.True(resp.JSON200.RepoTracked)
+		})
+	}
 }
 
 func TestResolveItem_NotFoundOnGitHub(t *testing.T) {

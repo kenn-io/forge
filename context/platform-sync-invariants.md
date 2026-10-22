@@ -709,6 +709,7 @@ behavior.
 ## Bitbucket
 
 - Cloud repository identity is `bitbucket_repository_uuid`, not `platform_repo_id` (`internal/db/migrations/000062_bitbucket_repository_uuid.up.sql`). Pull and issue numbers stay repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
+- Cloud issues and PRs number separately, so item-reference resolution must send and honor the `item_type` hint as for GitLab (`internal/server/itemapi/huma_routes.go::Handlers.ResolveItem`).
 - Drain Cloud pages outside the SDK, whose auto-paging ignores later decode errors (`platform/bitbucket/client.go::collect`).
 - Cloud cannot reopen declined PRs; keep combined state/content mutation disabled (`platform/bitbucket/client.go::Client.Capabilities`).
 - Cloud PR embeds omit clone links and abbreviate hashes; resolve canonical URLs and full hashes (`platform/bitbucket/read.go::Client.normalizePull`).

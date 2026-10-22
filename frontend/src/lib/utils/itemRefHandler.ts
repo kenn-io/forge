@@ -42,7 +42,9 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
   const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
   const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
     const routeRef = { provider, platformHost, owner, name, repoPath };
-    const itemTypeHint = canonicalProvider(provider) === "gitlab" ? itemType : undefined;
+    // GitLab and Bitbucket number issues and pull requests separately.
+    const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
+    const itemTypeHint = separateNumbers ? itemType : undefined;
     const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
     return providerUsesHostRoute(routeRef)
       ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {

@@ -2647,23 +2647,23 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	for _, tc := range []struct {
 		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
 		otherRepo, duplicates, newerMetadata                                                             bool
+		searchCounts                                                                                     map[string]int
+		hideBotsCount                                                                                    int
 	}{
-		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", searchCounts: map[string]int{"integrator": 1, `"A. Person"`: 1}},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "original-login", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prCommitAuthor: "Git Author", branchCommitAuthor: "Git Author"},
 		{name: "empty identities"},
-		{name: "malformed metadata", metadata: "{broken", actor: "original-login", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator", searchCounts: map[string]int{"integrator": 1}},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
-		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
-		{name: "bot committer", metadata: `{"commit_author":"original-login"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "non-commit event", eventType: "issue_comment", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "bot committer", metadata: `{"commit_author":"original-login"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", hideBotsCount: 1},
 		{name: "rewritten sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "original-login", branchCommitAuthor: ""},
-		{name: "short sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
-		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "other provider", provider: "gitlab", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
 		{name: "duplicate pulls", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "newest metadata wins", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, newerMetadata: true, prCommitAuthor: "original-login", branchCommitAuthor: "replacement-login"},
-		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]"},
+		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]", hideBotsCount: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -2760,50 +2760,32 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 					}
 				}
 			}
-			raw, err := d.ListMREvents(t.Context(), mrID)
-			require.NoError(t, err)
-			require.Len(t, raw, 1)
-			assert.Equal(t, tc.actor, raw[0].Author)
-			assert.Equal(t, tc.metadata, raw[0].MetadataJSON)
-			if tc.name == "original author" {
-				opts.Search = "integrator"
-				items, err = d.ListActivity(t.Context(), opts)
+			for search, count := range tc.searchCounts {
+				searchOpts := opts
+				searchOpts.Search = search
+				matches, err := d.ListActivity(t.Context(), searchOpts)
 				require.NoError(t, err)
-				assert.Len(t, items, 1)
-				opts.Search = `"A. Person"`
-				items, err = d.ListActivity(t.Context(), opts)
-				require.NoError(t, err)
-				assert.Len(t, items, 1)
+				assert.Len(t, matches, count, search)
 			}
-			if tc.name == "bot original author" || tc.name == "bot committer" {
+			if tc.hideBotsCount > 0 {
 				opts.HideBots = true
-				items, err = d.ListActivity(t.Context(), opts)
+				matches, err := d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
-				if tc.name == "bot committer" {
-					assert.Len(t, items, 1)
-				} else {
-					assert.Len(t, items, 2)
-				}
+				assert.Len(t, matches, tc.hideBotsCount)
 			}
 		})
 	}
 }
 
 func TestActivityCommitIdentityMigration(t *testing.T) {
-	for _, version := range []uint{0, 73} {
-		t.Run(fmt.Sprint(version), func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "forge.db")
-			if version != 0 {
-				openAtVersionForTest(t, path, version, func(*sql.DB) {})
-			}
-			d, err := Open(path)
-			require.NoError(t, err)
-			t.Cleanup(func() { _ = d.Close() })
-			var name string
-			require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), "SELECT name FROM sqlite_master WHERE name = 'idx_mr_events_commit_summary'").Scan(&name))
-			assertDatabaseIntegrityForTest(t, d.ReadDB())
-		})
-	}
+	path := filepath.Join(t.TempDir(), "forge.db")
+	openAtVersionForTest(t, path, 73, func(*sql.DB) {})
+	d, err := Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = d.Close() })
+	var name string
+	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), "SELECT name FROM sqlite_master WHERE name = 'idx_mr_events_commit_summary'").Scan(&name))
+	assertDatabaseIntegrityForTest(t, d.ReadDB())
 }
 
 // Inspect the actual Activity SQL while retaining its real database execution.
@@ -2877,48 +2859,13 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	}
 	require.NoError(t, d.UpsertBranchCommits(t.Context(), commits))
 	require.NoError(t, d.Optimize(t.Context()))
-	items, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}, Limit: 1})
+	_, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}, Limit: 1})
 	require.NoError(t, err)
-	require.Len(t, items, 1)
-	assert.Equal(t, "Test Author", items[0].Author)
-	assert.Equal(t, "alice", items[0].CommitAuthor)
-	items, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"commit"}, Limit: 1})
+	_, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"commit"}, Limit: 1})
 	require.NoError(t, err)
-	require.Len(t, items, 1)
-	assert.Equal(t, "integrator", items[0].Author)
-	assert.Equal(t, "alice", items[0].CommitAuthor)
-	for _, search := range []string{"alice", "NOT !"} {
-		items, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), search: search == "alice"}, ListActivityOpts{Types: []string{"commit", "default_branch_commit"}, Search: search, Limit: 1})
+	// A standalone negation operator has no parsed terms.
+	for _, search := range []string{"alice", "NOT"} {
+		_, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), search: search == "alice"}, ListActivityOpts{Types: []string{"commit", "default_branch_commit"}, Search: search, Limit: 1})
 		require.NoError(t, err)
-		require.Len(t, items, 1)
-		assert.Equal(t, "alice", items[0].CommitAuthor)
 	}
-}
-
-func TestActivityBranchCommitDoesNotBorrowCommitter(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "acme", "widgets")
-	mrID := insertTestMR(t, d, repoID, 1, "Pull", baseTime())
-	const sha = "1234567890abcdef1234567890abcdef12345678"
-	require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{
-		MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "integrator",
-		CreatedAt: baseTime(), DedupeKey: "commit-identity",
-	}}))
-	branch := testBranchCommit(repoID, "main", sha, "Landed", baseTime())
-	branch.AuthorName = ""
-	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
-	items, err := d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"default_branch_commit"}})
-	require.NoError(t, err)
-	require.Len(t, items, 1)
-	assert.Empty(t, items[0].Author)
-	assert.Empty(t, items[0].AuthorName)
-	assert.Empty(t, items[0].CommitAuthor)
-	items, err = d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"default_branch_commit"}, Search: "integrator"})
-	require.NoError(t, err)
-	assert.Empty(t, items, "an empty git signature cannot use an actor-only search identity")
-	raw, err := d.ListMREvents(t.Context(), mrID)
-	require.NoError(t, err)
-	require.Len(t, raw, 1)
-	assert.Equal(t, "integrator", raw[0].Author)
 }

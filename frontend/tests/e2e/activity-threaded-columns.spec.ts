@@ -47,7 +47,6 @@ function branchCommit(args: {
   id: string;
   author: string;
   authorName: string;
-  commitAuthor?: string;
   createdAt: string;
   bodyPreview: string;
   sha: string;
@@ -58,7 +57,6 @@ function branchCommit(args: {
     activity_type: "default_branch_commit",
     author: args.author,
     author_name: args.authorName,
-    commit_author: args.commitAuthor,
     body_preview: args.bodyPreview,
     created_at: args.createdAt,
     committed_at: args.createdAt,
@@ -161,9 +159,8 @@ test.describe("threaded activity columns", () => {
     await mockActivity(page, [
       branchCommit({
         id: "cmt-1",
-        author: "integrator",
-        authorName: "Carol Example",
-        commitAuthor: "carol",
+        author: "carol",
+        authorName: "Carol Committer",
         createdAt: "2026-04-27T12:00:00Z",
         bodyPreview: "Refresh cache warmer",
         sha: "abcdef0123456789abcdef0123456789abcdef01",
@@ -173,7 +170,7 @@ test.describe("threaded activity columns", () => {
 
     const row = page.locator(".branch-activity-row").first();
     await expect(row).toBeVisible();
-    await expect(row.locator(".cell--author")).toHaveText("carol");
+    await expect(row.locator(".cell--author")).toHaveText("Carol Committer");
     await expect(row.locator(".cell--type")).toHaveText("Commit");
   });
 

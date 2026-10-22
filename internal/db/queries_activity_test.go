@@ -2646,7 +2646,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	const sha = "1234567890abcdef1234567890abcdef12345678"
 	for _, tc := range []struct {
 		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
-		otherRepo, duplicates, newerMetadata                                                             bool
+		otherRepo, duplicates                                                                            bool
 		searchCounts                                                                                     map[string]int
 		hideBotsCount                                                                                    int
 	}{
@@ -2662,7 +2662,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other provider", provider: "gitlab", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
 		{name: "duplicate pulls", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
-		{name: "newest metadata wins", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, newerMetadata: true, prCommitAuthor: "original-login", branchCommitAuthor: "replacement-login"},
 		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]", hideBotsCount: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2690,12 +2689,8 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
 			if tc.duplicates {
 				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
-				metadata := ""
-				if tc.newerMetadata {
-					metadata = `{"commit_author":"replacement-login"}`
-				}
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
-					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", MetadataJSON: metadata, CreatedAt: baseTime(), DedupeKey: "newer"},
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", CreatedAt: baseTime(), DedupeKey: "newer"},
 					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, CreatedAt: baseTime(), DedupeKey: "empty"},
 				}))
 			}
@@ -2724,6 +2719,9 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			wantSources := []string{}
 			if tc.prCommitAuthor == "original-login" {
 				wantSources = append(wantSources, "pre")
+				if tc.duplicates {
+					wantSources = append(wantSources, "pre", "pre")
+				}
 			}
 			if tc.branchCommitAuthor == "original-login" {
 				wantSources = append(wantSources, "bc")
@@ -2750,15 +2748,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 				require.NoError(t, err)
 				require.Len(t, matches, 1)
 				assert.Equal(t, "pre", matches[0].Source, "branch identity prefers metadata over newer actors")
-				if tc.newerMetadata {
-					searchOpts.Search = "replacement-login"
-					matches, err = d.ListActivity(t.Context(), searchOpts)
-					require.NoError(t, err)
-					require.Len(t, matches, 2)
-					for _, item := range matches {
-						assert.Equal(t, "replacement-login", item.CommitAuthor)
-					}
-				}
 			}
 			for search, count := range tc.searchCounts {
 				searchOpts := opts
@@ -2774,6 +2763,43 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 				assert.Len(t, matches, tc.hideBotsCount)
 			}
 		})
+	}
+}
+
+func TestListActivitySharedCommitAuthor(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	const sha = "1234567890abcdef1234567890abcdef12345678"
+	for i, metadata := range []string{`{"commit_author":"previous-login"}`, `{"commit_author":"current-login"}`} {
+		mrID := insertTestMR(t, d, repoID, i+1, "Cached pull", baseTime())
+		require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{
+			MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "integrator",
+			MetadataJSON: metadata, CreatedAt: baseTime(), DedupeKey: sha,
+		}}))
+	}
+	branch := testBranchCommit(repoID, "main", sha, "Landed change", baseTime())
+	branch.AuthorName = "Original Author"
+	branch.CommitterName = "Different Committer"
+	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
+	for _, tc := range []struct {
+		search string
+		count  int
+	}{{"", 3}, {"current-login", 3}, {"!current-login", 0}} {
+		items, err := d.ListActivity(t.Context(), ListActivityOpts{
+			Types: []string{"commit", "default_branch_commit"}, Search: tc.search, Limit: 50,
+		})
+		require.NoError(t, err)
+		assert.Len(items, tc.count, tc.search)
+		for _, item := range items {
+			assert.Equal("current-login", item.CommitAuthor, tc.search)
+			if item.Source == "bc" {
+				assert.Equal("Different Committer", item.CommitterName)
+			} else {
+				assert.Equal("integrator", item.Author)
+			}
+		}
 	}
 }
 
@@ -2808,6 +2834,7 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 	require.Zero(q.t, materializations, "search must resolve candidate keys rather than materialize the global commit cache")
 	if q.search {
 		assert.NotContains(q.t, plan, "SCAN e", "search must not scan every cached commit event")
+		assert.NotContains(q.t, plan, "SCAN ce", "search must not scan every cached commit event")
 	}
 
 	indexPosition, parentPosition, pagePosition, eventPosition := -1, -1, -1, -1
@@ -2825,7 +2852,7 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 		if strings.Contains(step, "SEARCH e USING INTEGER PRIMARY KEY") {
 			eventPosition = i
 		}
-		if pagePosition >= 0 && indexPosition > pagePosition && parentPosition < 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
+		if pagePosition >= 0 && indexPosition > pagePosition && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
 			parentPosition = i
 		}
 	}

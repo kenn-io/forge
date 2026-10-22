@@ -151,7 +151,6 @@ func listActivityWithQueryer(
 	}
 
 	searchQuery := ParseSearchQuery(opts.Search)
-	metadataAuthorSQL := activityCommitMetadataSQL("e.metadata_json")
 	searchIdentityCondition := ""
 	searchNamedColumn, searchEmptyColumn := "", ""
 	searchPRColumn, searchBranchColumn := "", ""
@@ -160,8 +159,8 @@ func listActivityWithQueryer(
 		searchIdentityCondition = " OR LOWER(search_commit_author) LIKE ?"
 		searchNamedColumn, searchEmptyColumn = ", '' AS search_commit_author", ", ''"
 		searchPRColumn = ", CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN " +
-			activityCommitIdentitySQL(metadataAuthorSQL, "e.author") + " ELSE '' END"
-		searchBranchColumn = ", CASE WHEN r.platform = 'github' THEN " + activityBranchCommitIdentitySQL("bc") + " ELSE '' END"
+			activityBranchCommitIdentitySQL("r.id", "e.summary", "NULL", "e.author") + " ELSE '' END"
+		searchBranchColumn = ", CASE WHEN r.platform = 'github' THEN " + activityBranchCommitIdentitySQL("bc.repo_id", "bc.commit_sha", "CASE WHEN bc.author_name != '' THEN NULLIF(ce.author, '') END", "''") + " ELSE '' END"
 		searchArgsPerTerm++
 	}
 	if cond, condArgs := searchQuery.sqlCondition(
@@ -522,8 +521,8 @@ func listActivityWithQueryer(
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"), activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
-		searchNamedColumn, searchEmptyColumn, searchPRColumn, activityBranchCommitIdentitySQL("page"), searchBranchColumn)
+		prActivityAtExpr("p"), issueActivityAtExpr("i"), activityBranchCommitIdentitySQL("page.repo_id", "e.summary", "NULL", "e.author"),
+		searchNamedColumn, searchEmptyColumn, searchPRColumn, activityBranchCommitIdentitySQL("page.repo_id", "page.commit_sha", "CASE WHEN page.author_name != '' THEN NULLIF(ce.author, '') END", "''"), searchBranchColumn)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)
@@ -1156,16 +1155,16 @@ func activityCommitPreferenceSQL(metadata, eventID string) string {
 }
 
 // Resolve only the candidate's exact repository and SHA through the commit index.
-func activityBranchCommitIdentitySQL(candidate string) string {
-	metadata := activityCommitMetadataSQL("e.metadata_json")
+func activityBranchCommitIdentitySQL(repoID, sha, actor, fallback string) string {
+	metadata := activityCommitMetadataSQL("ce.metadata_json")
 	return fmt.Sprintf(`COALESCE((
 	    SELECT %[1]s
-	    FROM forge_mr_events e
-	    JOIN forge_merge_requests p ON p.id = e.merge_request_id
-	    WHERE e.event_type = 'commit' AND e.summary = %[2]s.commit_sha
-	      AND p.repo_id = %[2]s.repo_id
-	      AND (%[3]s IS NOT NULL OR (%[2]s.author_name != '' AND e.author != ''))
-	    ORDER BY %[4]s LIMIT 1
-	), '')`, activityCommitIdentitySQL(metadata, "CASE WHEN "+candidate+".author_name != '' THEN NULLIF(e.author, '') END"),
-		candidate, metadata, activityCommitPreferenceSQL(metadata, "e.id"))
+	    FROM forge_mr_events ce
+	    JOIN forge_merge_requests p ON p.id = ce.merge_request_id
+	    WHERE ce.event_type = 'commit' AND ce.summary = %[2]s
+	      AND p.repo_id = %[3]s
+	      AND (%[4]s IS NOT NULL OR %[5]s IS NOT NULL)
+	    ORDER BY %[6]s LIMIT 1
+	), %[7]s)`, activityCommitIdentitySQL(metadata, actor),
+		sha, repoID, metadata, actor, activityCommitPreferenceSQL(metadata, "ce.id"), fallback)
 }

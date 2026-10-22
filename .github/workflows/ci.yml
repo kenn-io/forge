@@ -299,10 +299,14 @@ jobs:
         run: make nilaway
 
   test_go:
-    name: Go tests
+    name: Go tests (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [server, core, rest]
     runs-on: ubuntu-latest
     env:
-      GOFLAGS: -p=4
+      GOFLAGS: -p=2
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -327,21 +331,35 @@ jobs:
           MISE_ENV: ci
 
       - name: Run tests
+        env:
+          GO_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- ./... -shuffle=on -parallel=4 -timeout 20m
+          package_list=$(go list ./...)
+          packages=()
+          while IFS= read -r package; do
+            case "$package" in
+              go.kenn.io/forge/internal/server/*) group=server ;;
+              go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
+              *) group=rest ;;
+            esac
+            if [[ "$group" == "$GO_SHARD" ]]; then
+              packages+=("$package")
+            fi
+          done <<< "$package_list"
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
-          name: Go unit tests
+          name: Go unit tests (${{ matrix.shard }})
           path: tmp/test-output.json
           reporter: golang-json
           fail-on-error: false
 
       - name: Run live GraphQL validation
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
@@ -359,6 +377,7 @@ jobs:
           fail-on-error: false
 
       - name: Run integration tests (git-dependent)
+        if: matrix.shard == 'core'
         run: |
           mkdir -p tmp
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4
@@ -532,16 +551,17 @@ jobs:
           go test ./landedwork/... -shuffle=on
 
   race:
-    name: go test -race (${{ matrix.shard }})
+    name: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
     strategy:
       fail-fast: false
       matrix:
         shard: [server, core, rest]
+        part: [1, 2]
     runs-on: ubuntu-latest
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
-      GOFLAGS: -p=4
+      GOFLAGS: -p=2
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -562,10 +582,12 @@ jobs:
       - name: Run tests (race detector)
         env:
           RACE_SHARD: ${{ matrix.shard }}
+          RACE_PART: ${{ matrix.part }}
         run: |
           mkdir -p tmp
           package_list=$(go list ./...)
           packages=()
+          package_index=0
           while IFS= read -r package; do
             case "$package" in
               go.kenn.io/forge/internal/server/*) group=server ;;
@@ -573,7 +595,10 @@ jobs:
               *) group=rest ;;
             esac
             if [[ "$group" == "$RACE_SHARD" ]]; then
-              packages+=("$package")
+              if (( package_index % 2 == RACE_PART - 1 )); then
+                packages+=("$package")
+              fi
+              package_index=$((package_index + 1))
             fi
           done <<< "$package_list"
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
@@ -582,9 +607,10 @@ jobs:
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
         env:
           RACE_SHARD: ${{ matrix.shard }}
+          RACE_PART: ${{ matrix.part }}
         run: |
           {
-            echo "# Race shard $RACE_SHARD"
+            echo "# Race shard $RACE_SHARD ($RACE_PART/2)"
             echo
             echo "## Slowest race packages"
             echo
@@ -614,7 +640,7 @@ jobs:
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
         with:
-          name: Go race tests (${{ matrix.shard }})
+          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
           path: tmp/test-race-output.json
           reporter: golang-json
           fail-on-error: false
@@ -623,7 +649,7 @@ jobs:
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: go-race-timing-${{ matrix.shard }}
+          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
           path: |
             tmp/test-race-output.json
             tmp/test-race-timing-events.json

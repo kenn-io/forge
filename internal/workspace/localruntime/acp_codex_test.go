@@ -23,12 +23,12 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 	}{
 		{name: "full access", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
 		{name: "read only", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", approval: "on-request", mode: "read-only"},
-		{name: "full access with approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "on-request", notice: "dangerFullAccess with on-request"},
-		{name: "read only without approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", approval: "never", notice: "readOnly with never"},
+		{name: "full access with approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "on-request", notice: "Codex resolves dangerFullAccess with on-request approvals here and codex-acp has no matching mode, so this chat starts in its default mode. Pick a mode and Forge keeps it for this agent on this machine."},
+		{name: "read only without approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", approval: "never", notice: "Codex resolves readOnly with never approvals here and codex-acp has no matching mode, so this chat starts in its default mode. Pick a mode and Forge keeps it for this agent on this machine."},
 		{name: "workspace write without approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "workspaceWrite", approval: "never"},
 		{name: "adapter default", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "workspaceWrite", approval: "on-request"},
-		{name: "custom approval", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", notice: "readOnly with custom"},
-		{name: "probe failure", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, err: errors.New("probe failed"), notice: "couldn't use Codex's access settings"},
+		{name: "custom approval", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", notice: "Codex resolves readOnly with custom approvals here and codex-acp has no matching mode, so this chat starts in its default mode. Pick a mode and Forge keeps it for this agent on this machine."},
+		{name: "probe failure", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, err: errors.New("probe failed"), notice: "Forge couldn't use Codex's access settings (probe failed), so this chat starts in its default mode."},
 		{name: "npx options", agent: "@agentclientprotocol/codex-acp", command: []string{"npx", "--package=@agentclientprotocol/codex-acp", "codex-acp"}, wantCommand: []string{"npx", "--package=@agentclientprotocol/codex-acp", "codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
 		{name: "node entry point", agent: "@agentclientprotocol/codex-acp", command: []string{"node", "/adapter/dist/index.js"}, probe: false},
 		{name: "bunx", agent: "@agentclientprotocol/codex-acp", command: []string{"bunx", "@agentclientprotocol/codex-acp"}, wantCommand: []string{"bunx", "@agentclientprotocol/codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
@@ -81,7 +81,7 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 				assert.Empty(a.state.Notices)
 			} else {
 				require.Len(t, a.state.Notices, 1)
-				assert.Contains(a.state.Notices[0], tc.notice)
+				assert.Equal(tc.notice, a.state.Notices[0])
 			}
 		})
 	}
@@ -122,6 +122,7 @@ func TestCodexACPProbeResolvesExecutable(t *testing.T) {
 				assert.Empty(t, mode)
 				require.Len(t, a.state.Notices, 1)
 				assert.Contains(t, a.state.Notices[0], "couldn't use Codex's access settings")
+				assert.Contains(t, a.state.Notices[0], "so this chat starts in its default mode.")
 			}
 		})
 	}

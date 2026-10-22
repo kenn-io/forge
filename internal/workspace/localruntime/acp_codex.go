@@ -54,7 +54,7 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, s
 	var notice string
 	switch {
 	case err != nil:
-		notice = fmt.Sprintf("Forge couldn't use Codex's access settings (%v), so this chat starts in codex-acp's default Agent mode.", err)
+		notice = fmt.Sprintf("Forge couldn't use Codex's access settings (%v), so this chat starts in its default mode.", err)
 	case sandbox == "dangerFullAccess" && approval == "never":
 		return "agent-full-access"
 	case sandbox == "readOnly" && approval == "on-request":
@@ -65,7 +65,7 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, s
 		if approval == "" {
 			approval = "custom"
 		}
-		notice = fmt.Sprintf("Codex resolves %s with %s approvals here and codex-acp has no matching mode, so this chat starts in its default Agent mode. Pick a mode to keep it for this workspace.", sandbox, approval)
+		notice = fmt.Sprintf("Codex resolves %s with %s approvals here and codex-acp has no matching mode, so this chat starts in its default mode. Pick a mode and Forge keeps it for this agent on this machine.", sandbox, approval)
 	}
 	a.mu.Lock()
 	a.state.Notices = append(a.state.Notices, notice)

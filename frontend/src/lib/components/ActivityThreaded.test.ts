@@ -34,7 +34,8 @@ function activityItem(id: string, overrides: Partial<ActivityItem> = {}): Activi
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
-    author: "alice",
+    author: "integrator",
+    commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
     branch_name: "main",
@@ -472,7 +473,7 @@ describe("ActivityThreaded collapse", () => {
     const eventAuthors = Array.from(container.querySelectorAll(".event-row .event-author")).map((el) =>
       el.textContent?.trim(),
     );
-    expect(eventAuthors).toEqual(["bob", "alice"]);
+    expect(eventAuthors).toEqual(["Bob Example", "Alice Example"]);
   });
 
   it("shows a workspace indicator on item threads with attached workspaces", () => {

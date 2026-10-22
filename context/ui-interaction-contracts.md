@@ -559,7 +559,7 @@ Persisted controls must state their scope clearly.
   discovery fails or the user chooses to change it
   (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
 - Rebasing must preserve the stored event actor and time; show the original author and label a distinct committer (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
-  Activity branch commits reuse cached original-author identities only for an exact repository and full-SHA match (`internal/db/queries_activity.go::listActivityWithQueryer`).
+  Activity commit display identity is separate from the stored actor, so Hide bots follows the actor. Branch display identities require an exact repository and full-SHA cache match (`internal/db/queries_activity.go::listActivityWithQueryer`).
 - Timeline diff retry suppression must permit a new load after another pane clears
   or replaces the shared diff store; a previous attempt is not permanent availability
   (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).

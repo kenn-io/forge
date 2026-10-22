@@ -154,10 +154,10 @@ func listActivityWithQueryer(
 		"(item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
 			"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
 			"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
-			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
+			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR LOWER(commit_author) LIKE ? OR "+
 			"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
 			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?",
-		13, lowerLikePattern,
+		14, lowerLikePattern,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 		args = append(args, condArgs...)
@@ -294,7 +294,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       COALESCE(NULLIF(mr.url, ''), NULLIF(iss.url, ''), n.web_url),
-			       COALESCE(mr.state, iss.state, '')
+			       COALESCE(mr.state, iss.state, ''), ''
 			FROM forge_notification_items n
 			JOIN forge_repos r
 			       ON r.lifecycle_state = 'active'
@@ -324,6 +324,7 @@ func listActivityWithQueryer(
 
 	// The page is materialized before parent recency is derived so the ledger
 	// lookup runs once per returned row rather than once per candidate row.
+	commitAuthorSQL := `CASE WHEN json_valid(e.metadata_json) THEN NULLIF(json_extract(e.metadata_json, '$.commit_author'), '') END`
 	query := fmt.Sprintf(`
 		WITH page AS MATERIALIZED (
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
@@ -334,7 +335,7 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state
+		       subject_state, commit_author
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
@@ -352,7 +353,7 @@ func listActivityWithQueryer(
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
-			       '' AS subject_state
+			       '' AS subject_state, '' AS commit_author
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -376,7 +377,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       '', ''
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -397,9 +398,7 @@ func listActivityWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
-			       CASE WHEN r.platform = 'github' AND e.event_type = 'commit'
-			            THEN COALESCE(NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), ''), e.author)
-			            ELSE e.author END, p.author, e.created_at,
+			       e.author, p.author, e.created_at,
 			       p.id,
 			       substr(COALESCE(e.body, ''), 1, 200),
 			       '', '', '', '',
@@ -407,7 +406,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       '', CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN COALESCE(%[6]s, e.author) ELSE '' END
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -434,7 +433,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       '', ''
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -452,17 +451,7 @@ func listActivityWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
-			       substr(CASE WHEN r.platform = 'github' THEN COALESCE((
-			           SELECT COALESCE(NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), ''),
-			                           CASE WHEN bc.author_name != '' THEN NULLIF(e.author, '') END)
-			           FROM forge_mr_events e
-			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
-			           WHERE e.event_type = 'commit' AND e.summary = bc.commit_sha
-			             AND p.repo_id = bc.repo_id
-			             AND (NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), '') IS NOT NULL
-			                  OR (bc.author_name != '' AND e.author != ''))
-			           ORDER BY e.id DESC LIMIT 1
-			       ), bc.author_name) ELSE bc.author_name END, 1, %[1]d), '', bc.committed_at,
+			       substr(bc.author_name, 1, %[1]d), '', bc.committed_at,
 			       NULL,
 			       substr(bc.subject, 1, 200),
 			       bc.branch_name, bc.commit_sha, '', '',
@@ -472,7 +461,15 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       ''
+			       '', CASE WHEN r.platform = 'github' THEN COALESCE((
+			           SELECT COALESCE(%[6]s, CASE WHEN bc.author_name != '' THEN NULLIF(e.author, '') END)
+			           FROM forge_mr_events e
+			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
+			           WHERE e.event_type = 'commit' AND e.summary = bc.commit_sha
+			             AND p.repo_id = bc.repo_id
+			             AND (%[6]s IS NOT NULL OR (bc.author_name != '' AND e.author != ''))
+			           ORDER BY (%[6]s IS NOT NULL) DESC, e.id DESC LIMIT 1
+			       ), '') ELSE '' END
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -489,7 +486,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       '', ''
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
@@ -511,11 +508,11 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state
+		       subject_state, commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"))
+		prActivityAtExpr("p"), issueActivityAtExpr("i"), commitAuthorSQL)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)
@@ -548,7 +545,7 @@ func listActivityWithQueryer(
 			&it.AuthorName, &it.AuthorEmail,
 			&it.CommitterName, &it.CommitterEmail,
 			&authoredAtStr, &committedAtStr, &it.ActivityURL,
-			&it.SubjectState,
+			&it.SubjectState, &it.CommitAuthor,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
 		}

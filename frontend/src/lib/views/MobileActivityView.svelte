@@ -45,6 +45,7 @@
   import UserRoundIcon from "@lucide/svelte/icons/user-round";
   import {
     activityBranchKey,
+    activityAuthor,
     activityItemKey,
     isClosedOrMergedActivity,
     isDefaultBranchActivity,
@@ -747,9 +748,9 @@
   }
 
   function eventDetail(event: ActivityItem): string {
-    if (!isDefaultBranchActivity(event)) return event.author;
+    if (!isDefaultBranchActivity(event)) return activityAuthor(event);
     if (isDefaultBranchForcePushActivity(event)) return branchActivityTitle(event);
-    return [shortSha(event.commit_sha), event.author || event.author_name]
+    return [shortSha(event.commit_sha), activityAuthor(event)]
       .filter(Boolean)
       .join(" · ");
   }

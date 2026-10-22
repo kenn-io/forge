@@ -47,6 +47,7 @@ function branchCommit(args: {
   id: string;
   author: string;
   authorName: string;
+  commitAuthor?: string;
   createdAt: string;
   bodyPreview: string;
   sha: string;
@@ -57,6 +58,7 @@ function branchCommit(args: {
     activity_type: "default_branch_commit",
     author: args.author,
     author_name: args.authorName,
+    commit_author: args.commitAuthor,
     body_preview: args.bodyPreview,
     created_at: args.createdAt,
     committed_at: args.createdAt,
@@ -159,8 +161,9 @@ test.describe("threaded activity columns", () => {
     await mockActivity(page, [
       branchCommit({
         id: "cmt-1",
-        author: "carol",
-        authorName: "Carol Committer",
+        author: "integrator",
+        authorName: "Carol Example",
+        commitAuthor: "carol",
         createdAt: "2026-04-27T12:00:00Z",
         bodyPreview: "Refresh cache warmer",
         sha: "abcdef0123456789abcdef0123456789abcdef01",
@@ -172,6 +175,28 @@ test.describe("threaded activity columns", () => {
     await expect(row).toBeVisible();
     await expect(row.locator(".cell--author")).toHaveText("carol");
     await expect(row.locator(".cell--type")).toHaveText("Commit");
+  });
+
+  test("keeps the original commit author across flat, threaded, and mobile activity", async ({ page }) => {
+    await mockSettings(page);
+    await mockActivity(page, [
+      branchCommit({
+        id: "cmt-shared",
+        author: "integrator",
+        authorName: "Alice Example",
+        commitAuthor: "alice",
+        createdAt: "2026-04-27T12:00:00Z",
+        bodyPreview: "Keep the original author",
+        sha: "1234567890abcdef1234567890abcdef12345678",
+      }),
+    ]);
+    await page.goto("/?view=flat");
+    await expect(page.locator(".activity-row .cell--author")).toHaveText("alice");
+    await page.goto("/?view=threaded");
+    await expect(page.locator(".branch-activity-row .cell--author")).toHaveText("alice");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/m?view=threaded");
+    await expect(page.getByRole("button", { name: /Commit.*1234567.*alice/ })).toBeVisible();
   });
 
   test("hide-org toggle swaps the repo chip between owner/name and bare name", async ({ page }) => {

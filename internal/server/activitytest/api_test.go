@@ -921,3 +921,23 @@ func TestAPIListActivityKeepsProviderNamedHostsProviderQualified(t *testing.T) {
 		assert.Equal("widget", item.RepoName)
 	}
 }
+
+func TestAPIActivitySeparatesCommitAuthorFromActor(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database := servertest.SetupTestServer(t)
+	mrID := serverfake.SeedPR(t, database, "acme", "widget", 1)
+	require.NoError(t, database.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mrID, EventType: "commit", Author: "integrator",
+		MetadataJSON: `{"commit_author":"alice"}`, Summary: "1234567890abcdef1234567890abcdef12345678",
+		CreatedAt: time.Now().UTC(), DedupeKey: "commit-identity",
+	}}))
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?types=commit", nil)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var body struct {
+		Items []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
+	require.Len(t, body.Items, 1)
+	assert.Equal(t, "integrator", body.Items[0]["author"])
+	assert.Equal(t, "alice", body.Items[0]["commit_author"])
+}

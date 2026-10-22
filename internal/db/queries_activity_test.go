@@ -2645,24 +2645,25 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	t.Parallel()
 	const sha = "1234567890abcdef1234567890abcdef12345678"
 	for _, tc := range []struct {
-		name, provider, metadata, actor, gitName, summary, eventType, prAuthor, branchAuthor string
-		otherRepo, duplicates                                                                bool
+		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
+		otherRepo, duplicates                                                                            bool
 	}{
-		{name: "original author", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
-		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
-		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "alice", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
-		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prAuthor: "Git Author", branchAuthor: "Git Author"},
+		{name: "original author", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prCommitAuthor: "Git Author", branchCommitAuthor: "Git Author"},
 		{name: "empty identities"},
-		{name: "missing git author", actor: "integrator", prAuthor: "integrator"},
-		{name: "linked author without git signature", metadata: `{"commit_author":"alice"}`, actor: "integrator", prAuthor: "alice", branchAuthor: "alice"},
-		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prAuthor: "integrator", branchAuthor: "Git Author"},
-		{name: "bot committer", metadata: `{"commit_author":"alice"}`, actor: "helper[bot]", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
-		{name: "rewritten sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prAuthor: "alice", branchAuthor: "Git Author"},
-		{name: "short sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prAuthor: "alice", branchAuthor: "Git Author"},
-		{name: "other repository", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prAuthor: "alice", branchAuthor: "Git Author"},
-		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prAuthor: "integrator", branchAuthor: "Git Author"},
-		{name: "duplicate pulls", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prAuthor: "alice", branchAuthor: "newer-author"},
-		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prAuthor: "helper[bot]", branchAuthor: "helper[bot]"},
+		{name: "malformed metadata", metadata: "{broken", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "missing git author", actor: "integrator", prCommitAuthor: "integrator"},
+		{name: "linked author without git signature", metadata: `{"commit_author":"alice"}`, actor: "integrator", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "bot committer", metadata: `{"commit_author":"alice"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "rewritten sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "alice", branchCommitAuthor: ""},
+		{name: "short sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prCommitAuthor: "alice", branchCommitAuthor: ""},
+		{name: "other repository", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "alice", branchCommitAuthor: ""},
+		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "duplicate pulls", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "alice", branchCommitAuthor: "alice"},
+		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -2707,11 +2708,13 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			}
 			for _, item := range items {
 				if item.Source == "bc" {
-					assert.Equal(t, tc.branchAuthor, item.Author)
+					assert.Equal(t, tc.gitName, item.Author)
 					assert.Equal(t, tc.gitName, item.AuthorName)
+					assert.Equal(t, tc.branchCommitAuthor, item.CommitAuthor)
 				}
 				if item.Source == "pre" && item.ItemNumber == 1 {
-					assert.Equal(t, tc.prAuthor, item.Author)
+					assert.Equal(t, tc.actor, item.Author)
+					assert.Equal(t, tc.prCommitAuthor, item.CommitAuthor)
 				}
 			}
 			raw, err := d.ListMREvents(t.Context(), mrID)
@@ -2727,16 +2730,20 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 				opts.Search = "integrator"
 				items, err = d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
-				assert.Empty(t, items)
+				assert.Len(t, items, 1)
+				opts.Search = "Alice Example"
+				items, err = d.ListActivity(t.Context(), opts)
+				require.NoError(t, err)
+				assert.Len(t, items, 1)
 			}
 			if tc.name == "bot original author" || tc.name == "bot committer" {
 				opts.HideBots = true
 				items, err = d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
 				if tc.name == "bot committer" {
-					assert.Len(t, items, 2)
+					assert.Len(t, items, 1)
 				} else {
-					assert.Empty(t, items)
+					assert.Len(t, items, 2)
 				}
 			}
 		})
@@ -2802,5 +2809,6 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	items, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
-	assert.Equal(t, "alice", items[0].Author)
+	assert.Equal(t, "Test Author", items[0].Author)
+	assert.Equal(t, "alice", items[0].CommitAuthor)
 }

@@ -6,6 +6,7 @@
   import { getStores } from "../context.js";
   import {
     collapseActivityRuns,
+    activityAuthor,
     isCollapsedActivityRow,
     activityItemKey,
     activityRepoKey,
@@ -664,10 +665,6 @@
         || selected.platformHost === item.platform_host);
   }
 
-  function eventAuthor(event: ActivityItem): string {
-    return event.author || event.author_name || "";
-  }
-
   // Attribute the thread to its PR/issue author once that identity is known.
   function itemAuthor(event: ActivityItem): string {
     return event.item_author ?? "";
@@ -728,7 +725,7 @@
   function branchRowAuthor(row: ActivityRow): string {
     return isCollapsedActivityRow(row)
       ? row.author
-      : eventAuthor(row);
+      : activityAuthor(row);
   }
 
   function eventSummary(event: ActivityItem): string {
@@ -956,7 +953,7 @@
                 {#if eventSummary(row)}
                   <span class="event-summary">{eventSummary(row)}</span>
                 {/if}
-                <span class="event-author">{eventAuthor(row)}</span>
+                <span class="event-author">{activityAuthor(row)}</span>
                 <span class="event-time">{relativeTime(row.created_at)}</span>
                 {#if isUnreadNotification(row)}
                   <button

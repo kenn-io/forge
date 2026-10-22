@@ -1178,6 +1178,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		item.BeforeSHA = it.BeforeSHA
 		item.AfterSHA = it.AfterSHA
 		item.AuthorName = it.AuthorName
+		item.CommitAuthor = it.CommitAuthor
 		item.AuthorEmail = it.AuthorEmail
 		item.CommitterName = it.CommitterName
 		item.CommitterEmail = it.CommitterEmail

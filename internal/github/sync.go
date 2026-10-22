@@ -10284,16 +10284,12 @@ func (s *Syncer) refreshIssueTimeline(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"list comments for issue #%d: %w", number, err,
-		)
+		return fmt.Errorf("list comments for issue #%d: %w", number, err)
 	}
 	if visibility == nil {
 		visibility, err = s.storedIssueCommentVisibility(ctx, issueID)
 		if err != nil {
-			return fmt.Errorf(
-				"load stored comment visibility for issue #%d: %w", number, err,
-			)
+			return fmt.Errorf("load stored comment visibility for issue #%d: %w", number, err)
 		}
 		if observed, ok := s.currentIssueCommentVisibility(ctx, repo, number); ok {
 			visibility = observed
@@ -10301,9 +10297,7 @@ func (s *Syncer) refreshIssueTimeline(
 	} else {
 		storedVisibility, err := s.storedIssueCommentVisibility(ctx, issueID)
 		if err != nil {
-			return fmt.Errorf(
-				"load stored comment visibility for issue #%d: %w", number, err,
-			)
+			return fmt.Errorf("load stored comment visibility for issue #%d: %w", number, err)
 		}
 		maps.Copy(storedVisibility, visibility)
 		visibility = storedVisibility
@@ -10314,6 +10308,7 @@ func (s *Syncer) refreshIssueTimeline(
 		LastActivityAt: computeIssueCommentLastActivity(ghIssue, comments),
 	}
 	var otherEvents []db.IssueEvent
+	var timelineErr error
 	if timelineClient, ok := client.(issueTimelineLister); ok {
 		timelineEvents, err := timelineClient.ListIssueTimelineEvents(
 			ctx, repo.Owner, repo.Name, number,
@@ -10324,10 +10319,8 @@ func (s *Syncer) refreshIssueTimeline(
 			); disabledErr != nil {
 				return disabledErr
 			}
-			if IsArchiveSyncBudgetContext(ctx) {
-				return fmt.Errorf(
-					"list timeline events for issue #%d: %w", number, err,
-				)
+			if timelineErr = fmt.Errorf("list timeline events for issue #%d: %w", number, err); IsArchiveSyncBudgetContext(ctx) {
+				return timelineErr
 			}
 			logSyncFailure(ctx, slog.LevelWarn, "issue timeline event fetch failed during timeline refresh", err,
 				"repo", repo.Owner+"/"+repo.Name,
@@ -10341,14 +10334,14 @@ func (s *Syncer) refreshIssueTimeline(
 		ctx, repo, number, issueID, expectedRevision, comments, otherEvents, &derived, visibility,
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"replace issue events for #%d: %w", number, err,
-		)
+		return fmt.Errorf("replace issue events for #%d: %w", number, err)
 	}
 	if !applied {
 		return errParentSnapshotAdvanced
 	}
-
+	if syncBudgetWait(timelineErr) {
+		return timelineErr // keep the comments but leave the issue pending until the timeline fits the budget
+	}
 	return nil
 }
 

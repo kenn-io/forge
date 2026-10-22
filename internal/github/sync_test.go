@@ -15990,6 +15990,49 @@ func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
 	require.Equal(int32(1), client.issueTimelineCalls.Load())
 }
 
+func TestFetchIssueDetailBudgetRefusedTimelineKeepsCommentsAndStaysPending(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	issue := buildOpenIssue(1, now)
+	client := &issueTimelineMockClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return issue, nil
+		},
+		comments: []*gh.IssueComment{{
+			ID: new(int64(501)), Body: new("fetched before the ceiling"),
+			CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now),
+			User: &gh.User{Login: new("someone")},
+		}},
+		issueTimelineErr: fmt.Errorf("list issue timeline: %w", platform.ErrSyncBudgetExhausted),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+	t.Cleanup(syncer.Stop)
+	logs := captureDefaultLogs(t)
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+
+	require.ErrorIs(err, platform.ErrSyncBudgetExhausted)
+	assert.True(syncBudgetWait(err))
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Nil(stored.DetailFetchedAt, "skipped timeline keeps the issue pending")
+	events, err := database.ListIssueEvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1, "fetched comments are kept")
+	assert.Equal("fetched before the ceiling", events[0].Body)
+	assert.NotContains(logs.String(), "level=WARN")
+}
+
 // TestSyncerMRListFailureMarksRepoFailed verifies that when the
 // PR list fails, the MR path is marked failed, and the next cycle
 // invalidates the ETag and retries. Also verifies issue path is NOT

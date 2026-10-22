@@ -427,13 +427,12 @@ describe("itemRefHandler", () => {
     expect(mocks.navigateToURL).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["the user stays on the page", []],
-    ["the user moved to another page", ["/settings"]],
-    ["the user selected another Activity item", ["/?selected=pr:13"]],
-    ["the user closed the Activity panel", ["/"]],
-    ["the user left and came back to the same page", ["/settings", "/?selected=pr:12"]],
-  ])("opens the provider page for a late 404 only while %s", async (_label, laterURLs) => {
+  // Clicks an unsynced Forgejo link from /?selected=pr:12, changes the URL to
+  // each of laterURLs while the lookup is pending, then lets it fail.
+  async function clickWithDelayedFailure(
+    laterURLs: readonly string[],
+    failure: { status: number; code: "notFound" | "upstreamError"; externalUrl?: string },
+  ): Promise<void> {
     const { initItemRefHandler } = await import("./itemRefHandler.js");
     const runtime = makeAppRuntime(
       makeGeneratedClient({ RepositoriesService: { listRepos: mocks.repos, resolveRepoItemOnHost: mocks.post } }),
@@ -445,7 +444,7 @@ describe("itemRefHandler", () => {
       lookupStarted.resolve();
       await releaseLookup.promise;
       lookupSettled = true;
-      return problemResponse(404, "notFound");
+      return problemResponse(failure.status, failure.code);
     });
     const originURL = window.location.pathname + window.location.search;
     window.history.pushState(null, "", "/?selected=pr:12");
@@ -454,12 +453,9 @@ describe("itemRefHandler", () => {
     const anchor = document.createElement("a");
     anchor.className = "item-ref";
     anchor.href = "/pulls/forgejo/acme/widgets/12";
-    for (const [name, value] of Object.entries({
-      ...unsyncedForgejoPull,
-      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
-    })) {
-      anchor.setAttribute(name, value);
-    }
+    const attributes: Record<string, string> = { ...unsyncedForgejoPull };
+    if (failure.externalUrl) attributes["data-external-url"] = failure.externalUrl;
+    for (const [name, value] of Object.entries(attributes)) anchor.setAttribute(name, value);
     document.body.appendChild(anchor);
     try {
       anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
@@ -468,14 +464,37 @@ describe("itemRefHandler", () => {
       releaseLookup.resolve();
       await vi.waitFor(() => expect(lookupSettled).toBe(true));
       await new Promise((resolve) => setTimeout(resolve, 0));
-      if (laterURLs.length > 0) expect(mocks.navigateToURL).not.toHaveBeenCalled();
-      else expect(mocks.navigateToURL).toHaveBeenCalledWith("https://forge.example.com/acme/widgets/pulls/12");
-      expect(mocks.showFlash).not.toHaveBeenCalled();
     } finally {
       window.history.pushState(null, "", originURL);
       cleanup();
       await Effect.runPromise(runtime.disposeEffect);
     }
+  }
+
+  it.each([
+    ["the user stays on the page", [], true],
+    ["Activity rewrites the same URL", ["/?selected=pr:12"], true],
+    ["the user moved to another page", ["/settings"], false],
+    ["the user left and came back to the same page", ["/settings", "/?selected=pr:12"], false],
+  ])("opens the provider page for a late 404 when %s", async (_label, laterURLs, opens) => {
+    const externalUrl = "https://forge.example.com/acme/widgets/pulls/12";
+    await clickWithDelayedFailure(laterURLs, { status: 404, code: "notFound", externalUrl });
+
+    if (opens) expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl);
+    else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["not found", { status: 404, code: "notFound" as const }, "Item acme/widgets#12 not found."],
+    ["failure", { status: 502, code: "upstreamError" as const }, "Failed to resolve acme/widgets#12. Try again later."],
+  ])("shows the %s flash for a late lookup only while the user stays on the page", async (_label, failure, message) => {
+    await clickWithDelayedFailure([], failure);
+    expect(mocks.showFlash).toHaveBeenCalledWith(message, { tone: "danger" });
+
+    mocks.showFlash.mockReset();
+    await clickWithDelayedFailure(["/settings"], failure);
+    expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
   it("keeps the failure flash when the resolver fails for another reason", async () => {

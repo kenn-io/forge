@@ -650,11 +650,10 @@ describe("router URL change count", () => {
     expect(getURLChangeCount()).toBeGreaterThan(before);
   });
 
-  it("does not return to an earlier count when the URL returns to an earlier value", () => {
-    navigate("/");
+  it("does not advance when history.replaceState leaves the URL unchanged", () => {
+    navigate("/?range=7d");
     const before = getURLChangeCount();
-    navigate("/settings");
-    navigate("/");
-    expect(getURLChangeCount()).not.toBe(before);
+    window.history.replaceState(null, "", "/?range=7d");
+    expect(getURLChangeCount()).toBe(before);
   });
 });

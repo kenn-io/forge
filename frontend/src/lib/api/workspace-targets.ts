@@ -1,10 +1,9 @@
 import { Context, Effect, Layer } from "effect";
 import { makeOrderedCommandQueue, type CommandQueueClosed } from "../effect/ordered-command-queue.js";
 import type { NumberedRouteItemRef } from "../routes.js";
-import type { RoutableItemRef } from "../stores/router.svelte.js";
 import { invokeMutationCallback } from "../stores/ordered-mutations.js";
 import type { ResolvableItemReference } from "../utils/item-reference.js";
-import { resolveItemReferenceEffect } from "../utils/itemRefHandler.js";
+import { resolveItemReferenceEffect, type ItemReferenceResolution } from "../utils/itemRefHandler.js";
 import { InvalidExternalPayload, type ApiProblemError, type TransientTransportError } from "./effect-errors.js";
 import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { WorkspaceTargetSelection } from "./generated/models/workspaceTargetSelection.js";
@@ -29,8 +28,7 @@ interface WorkspaceTargetReferenceVisit {
   readonly id: string;
   readonly hostKey: string | undefined;
   readonly reference: ResolvableItemReference;
-  readonly onResolved: (item: RoutableItemRef) => void;
-  readonly onProviderPage: (url: string) => void;
+  readonly onResolution: (resolution: ItemReferenceResolution) => void;
 }
 
 type WorkspaceTargetCommand = WorkspaceTargetUpdate | WorkspaceTargetReferenceVisit;
@@ -92,12 +90,9 @@ export const WorkspaceTargetMutationsLive = Layer.effect(WorkspaceTargetMutation
     Effect.fn("executeWorkspaceTargetCommand")(function* (command: WorkspaceTargetCommand) {
       if (!("reference" in command)) return yield* persistWorkspaceTarget(command);
       const resolution = yield* resolveItemReferenceEffect(command.reference);
-      if (!resolution) return;
-      if (resolution.kind === "providerPage") {
-        return yield* invokeMutationCallback(() => command.onProviderPage(resolution.url));
-      }
+      yield* invokeMutationCallback(() => command.onResolution(resolution));
+      if (resolution.kind !== "item") return;
       const { item } = resolution;
-      yield* invokeMutationCallback(() => command.onResolved(item));
       yield* persistWorkspaceTarget({
         id: command.id,
         hostKey: command.hostKey,
@@ -113,11 +108,10 @@ export const visitWorkspaceTargetReference = Effect.fn("visitWorkspaceTargetRefe
   id: string,
   hostKey: string | undefined,
   reference: ResolvableItemReference,
-  onResolved: (item: RoutableItemRef) => void,
-  onProviderPage: (url: string) => void,
+  onResolution: (resolution: ItemReferenceResolution) => void,
 ) {
   const mutations = yield* WorkspaceTargetMutations;
-  yield* mutations.submit({ id, hostKey, reference, onResolved, onProviderPage });
+  yield* mutations.submit({ id, hostKey, reference, onResolution });
 });
 
 export const updateWorkspaceTarget = Effect.fn("updateWorkspaceTarget")(function* (

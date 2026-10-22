@@ -1131,9 +1131,16 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
-  it.each(["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const)(
-    "opens the provider page for an unsynced link only while its workspace remains current: %s",
-    async (laterAction) => {
+  it.each(
+    (["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
+      (laterAction) => [
+        [laterAction, "https://github.com/acme/widget/issues/7"] as const,
+        [laterAction, undefined] as const,
+      ],
+    ),
+  )(
+    "presents a late 404 only while its workspace remains current: %s, provider URL %s",
+    async (laterAction, externalUrl) => {
       const previousPath = window.location.pathname + window.location.search + window.location.hash;
       onTestFinished(() => navigate(previousPath));
       navigate("/terminal/ws-1");
@@ -1177,7 +1184,7 @@ describe("WorkspaceTerminalView", () => {
         name: "widget",
         repoPath: "acme/widget",
         number: "7",
-        externalUrl: "https://github.com/acme/widget/issues/7",
+        ...(externalUrl ? { externalUrl } : {}),
       });
       view.container.querySelector(".terminal-view")!.append(link);
       await fireEvent.click(link);
@@ -1193,16 +1200,14 @@ describe("WorkspaceTerminalView", () => {
         view.unmount();
       }
       releaseResolution.resolve();
-      if (laterAction === "no superseding action") {
-        await waitFor(() =>
-          expect(mocks.navigateToURL).toHaveBeenCalledWith("https://github.com/acme/widget/issues/7"),
-        );
-      } else {
-        await waitFor(() => expect(resolveSettled).toBe(true));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        expect(mocks.navigateToURL).not.toHaveBeenCalled();
-      }
-      expect(mocks.showFlash).not.toHaveBeenCalledWith("Item acme/widget#7 not found.", { tone: "danger" });
+      await waitFor(() => expect(resolveSettled).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const current = laterAction === "no superseding action";
+      const notFound = ["Item acme/widget#7 not found.", { tone: "danger" }] as const;
+      if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
+      else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+      if (current && !externalUrl) await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith(...notFound));
+      else expect(mocks.showFlash).not.toHaveBeenCalledWith(...notFound);
     },
   );
 

@@ -39,12 +39,13 @@ function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-// A reference resolves to an in-app item, or to its provider page when Forge has
-// not synced the item. Callers decide whether the result is still current
-// before acting on either.
+// A reference resolves to an in-app item, to its provider page when Forge has
+// not synced the item, or to a message saying why it cannot open. Callers
+// decide whether the result is still current before acting on it.
 export type ItemReferenceResolution =
   | { readonly kind: "item"; readonly item: RoutableItemRef }
-  | { readonly kind: "providerPage"; readonly url: string };
+  | { readonly kind: "providerPage"; readonly url: string }
+  | { readonly kind: "unresolved"; readonly message: string };
 
 export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(function* (ref: ResolvableItemReference) {
   const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
@@ -65,23 +66,23 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
     Effect.map((data) => ({ data }) as const),
     Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
   );
-  return yield* Effect.sync((): ItemReferenceResolution | undefined => {
+  return yield* Effect.sync((): ItemReferenceResolution => {
     if ("problem" in result) {
       const providerURL = safeExternalURL(ref.externalUrl);
       if (result.problem.status === 404 && providerURL) {
         return { kind: "providerPage", url: providerURL };
       }
-      if (result.problem.status === 404) {
-        showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
-      } else {
-        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
-      }
-      return;
+      return {
+        kind: "unresolved",
+        message:
+          result.problem.status === 404
+            ? `Item ${owner}/${name}#${number} not found.`
+            : `Failed to resolve ${owner}/${name}#${number}. Try again later.`,
+      };
     }
 
     if (!result.data.repo_tracked) {
-      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
-      return;
+      return { kind: "unresolved", message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.` };
     }
 
     return {
@@ -107,16 +108,18 @@ export function resolveItemReference(
   onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
 ): AppExecution<void, unknown> {
   const urlChangesAtClick = getURLChangeCount();
+  // The user has moved on once the URL changed, even back to the same value.
+  const stillCurrent = () => getURLChangeCount() === urlChangesAtClick;
   return runtime.runCommand(
     resolveItemReferenceEffect(ref).pipe(
       Effect.tap((resolution) =>
         Effect.sync(() => {
-          if (resolution?.kind === "item") onNavigate(resolution.item);
+          if (resolution.kind === "item") onNavigate(resolution.item);
           // The click was cancelled before the lookup, so the provider page
           // opens in this tab; browsers block a tab opened after an await.
-          // Skip it once the URL has changed, even back to the same value.
-          else if (resolution?.kind === "providerPage" && getURLChangeCount() === urlChangesAtClick)
-            navigateToURL(resolution.url);
+          else if (!stillCurrent()) return;
+          else if (resolution.kind === "providerPage") navigateToURL(resolution.url);
+          else showFlash(resolution.message, { tone: "danger" });
         }),
       ),
       Effect.asVoid,
@@ -131,7 +134,7 @@ export function resolveItemReference(
         number: ref.number.toString(),
       },
       onFailure: () => {
-        showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
+        if (stillCurrent()) showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
       },
     },
   );

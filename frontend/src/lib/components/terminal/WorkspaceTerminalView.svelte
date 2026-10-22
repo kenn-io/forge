@@ -2394,15 +2394,20 @@
       const urlChangesAtClick = getURLChangeCount();
       const selectionCurrent = () =>
         selectionGeneration === itemSelectionGeneration && isCurrentWorkspace(id, hostKey);
-      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
+      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (resolution) => {
         if (!selectionCurrent()) return;
-        showWorkspaceItem(item.itemType, {
-          ...item,
-          platformHost: resolvedPlatformHost(item.provider, item.platformHost),
-        });
-      }, (url) => {
+        if (resolution.kind === "item") {
+          const { item } = resolution;
+          showWorkspaceItem(item.itemType, {
+            ...item,
+            platformHost: resolvedPlatformHost(item.provider, item.platformHost),
+          });
+          return;
+        }
         // A parked view keeps its workspace, so also require an unchanged URL.
-        if (selectionCurrent() && getURLChangeCount() === urlChangesAtClick) navigateToURL(url);
+        if (getURLChangeCount() !== urlChangesAtClick) return;
+        if (resolution.kind === "providerPage") navigateToURL(resolution.url);
+        else showFlash(resolution.message, { tone: "danger" });
       }).pipe(Effect.tap(() => Effect.sync(() => {
         if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
       }))), {

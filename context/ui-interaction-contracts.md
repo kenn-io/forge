@@ -64,10 +64,11 @@ Interactive surfaces must agree on which item is selected.
   reference's http(s) provider URL in the current tab; the click was already
   cancelled and a new tab opened after the lookup would be popup-blocked. Keep the
   not-found flash only when the reference has no valid provider URL, and the
-  failure flash for other errors. The resolver returns that URL; each caller
-  leaves only if the router saw no URL change since the click, even one back to
-  the same URL, and its own selection is unchanged. A parked workspace view
-  keeps its workspace
+  failure flash for other errors. The resolver returns the outcome; each caller
+  leaves or flashes only if the router saw no URL change since the click, even
+  one back to the same URL, and its own selection is unchanged. A replaceState
+  write that keeps the URL is not a change. A parked workspace view keeps its
+  workspace
   (`frontend/src/lib/utils/itemRefHandler.ts::resolveItemReferenceEffect`,
   `frontend/src/lib/stores/router.svelte.ts::getURLChangeCount`).
 - Modified terminal links open in the client browser, including provider item URLs;

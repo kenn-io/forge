@@ -2392,10 +2392,8 @@
       const hostKey = workspaceHostKey;
       const selectionGeneration = ++itemSelectionGeneration;
       const urlChangesAtClick = getURLChangeCount();
-      const selectionCurrent = () =>
-        selectionGeneration === itemSelectionGeneration && isCurrentWorkspace(id, hostKey);
       appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (resolution) => {
-        if (!selectionCurrent()) return;
+        if (selectionGeneration !== itemSelectionGeneration || !isCurrentWorkspace(id, hostKey)) return;
         if (resolution.kind === "item") {
           const { item } = resolution;
           showWorkspaceItem(item.itemType, {

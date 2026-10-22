@@ -65,8 +65,12 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
   }).pipe(
     Effect.map((data) => ({ data }) as const),
     Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
+    Effect.catchTag("TransientTransportError", () => Effect.succeed({ transportFailed: true } as const)),
   );
   return yield* Effect.sync((): ItemReferenceResolution => {
+    if ("transportFailed" in result) {
+      return { kind: "unresolved", message: "Failed to resolve item reference. Check your connection." };
+    }
     if ("problem" in result) {
       const providerURL = safeExternalURL(ref.externalUrl);
       if (result.problem.status === 404 && providerURL) {

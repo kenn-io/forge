@@ -1133,83 +1133,85 @@ describe("WorkspaceTerminalView", () => {
 
   it.each(
     (["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
-      (laterAction) => [
-        [laterAction, "https://github.com/acme/widget/issues/7"] as const,
-        [laterAction, undefined] as const,
-      ],
+      (laterAction) =>
+        (["provider page", "not found", "network failure"] as const).map((outcome) => [laterAction, outcome]),
     ),
-  )(
-    "presents a late 404 only while its workspace remains current: %s, provider URL %s",
-    async (laterAction, externalUrl) => {
-      const previousPath = window.location.pathname + window.location.search + window.location.hash;
-      onTestFinished(() => navigate(previousPath));
-      navigate("/terminal/ws-1");
-      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
-      mocks.navigateToURL.mockReset();
-      const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
-      const resolveStarted = Promise.withResolvers<void>();
-      const releaseResolution = Promise.withResolvers<void>();
-      onTestFinished(() => releaseResolution.resolve());
-      let resolveSettled = false;
-      const originalFetch = globalThis.fetch;
-      vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
-        const request = input instanceof Request ? input : new Request(input, init);
-        const path = new URL(request.url).pathname;
-        if (path === "/api/v1/workspaces/ws-1" || path === "/api/v1/workspaces/ws-2")
-          return Response.json({ ...workspaceResponse, id: path.split("/").at(-1), repo });
-        if (path === "/api/v1/repos")
-          return Response.json([
-            { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
-          ]);
-        if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
-          resolveStarted.resolve();
-          await releaseResolution.promise;
-          resolveSettled = true;
-          return Response.json(
-            { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
-            { status: 404 },
-          );
-        }
-        return originalFetch(input, init);
-      });
-      const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
-      await screen.findByRole("button", { name: "Search PRs and issues" });
-      const link = document.createElement("a");
-      link.className = "item-ref";
-      link.textContent = "Related issue";
-      Object.assign(link.dataset, {
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "widget",
-        repoPath: "acme/widget",
-        number: "7",
-        ...(externalUrl ? { externalUrl } : {}),
-      });
-      view.container.querySelector(".terminal-view")!.append(link);
-      await fireEvent.click(link);
-      await resolveStarted.promise;
-      if (laterAction === "workspace switch") {
-        await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
-      } else if (laterAction === "route change") {
-        navigate("/settings");
-      } else if (laterAction === "route round trip") {
-        navigate("/settings");
-        navigate("/terminal/ws-1");
-      } else if (laterAction === "unmount") {
-        view.unmount();
+  )("presents a late lookup result only while its workspace remains current: %s, %s", async (laterAction, outcome) => {
+    const externalUrl = outcome === "provider page" ? "https://github.com/acme/widget/issues/7" : undefined;
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    mocks.navigateToURL.mockReset();
+    const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+    const resolveStarted = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    onTestFinished(() => releaseResolution.resolve());
+    let resolveSettled = false;
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/workspaces/ws-1" || path === "/api/v1/workspaces/ws-2")
+        return Response.json({ ...workspaceResponse, id: path.split("/").at(-1), repo });
+      if (path === "/api/v1/repos")
+        return Response.json([
+          { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+        ]);
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+        resolveStarted.resolve();
+        await releaseResolution.promise;
+        resolveSettled = true;
+        if (outcome === "network failure") throw new TypeError("Failed to fetch");
+        return Response.json(
+          { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+          { status: 404 },
+        );
       }
-      releaseResolution.resolve();
-      await waitFor(() => expect(resolveSettled).toBe(true));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const current = laterAction === "no superseding action";
-      const notFound = ["Item acme/widget#7 not found.", { tone: "danger" }] as const;
-      if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
-      else expect(mocks.navigateToURL).not.toHaveBeenCalled();
-      if (current && !externalUrl) await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith(...notFound));
-      else expect(mocks.showFlash).not.toHaveBeenCalledWith(...notFound);
-    },
-  );
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await screen.findByRole("button", { name: "Search PRs and issues" });
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    link.textContent = "Related issue";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+      ...(externalUrl ? { externalUrl } : {}),
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await resolveStarted.promise;
+    if (laterAction === "workspace switch") {
+      await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
+    } else if (laterAction === "route change") {
+      navigate("/settings");
+    } else if (laterAction === "route round trip") {
+      navigate("/settings");
+      navigate("/terminal/ws-1");
+    } else if (laterAction === "unmount") {
+      view.unmount();
+    }
+    releaseResolution.resolve();
+    await waitFor(() => expect(resolveSettled).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const current = laterAction === "no superseding action";
+    const message = {
+      "provider page": undefined,
+      "not found": "Item acme/widget#7 not found.",
+      "network failure": "Failed to resolve item reference. Check your connection.",
+    }[outcome];
+    if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
+    else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+    if (current && message)
+      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith(message, { tone: "danger" }));
+    expect(mocks.showFlash.mock.calls.map(([text]) => text)).toEqual(current && message ? [message] : []);
+  });
 
   it.each(["another link", "unmount"])("reports an accepted target save failure after %s", async (laterAction) => {
     const previousPath = window.location.pathname + window.location.search + window.location.hash;

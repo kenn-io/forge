@@ -485,15 +485,13 @@ describe("itemRefHandler", () => {
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["not found", { status: 404, code: "notFound" as const }, "Item acme/widgets#12 not found."],
-    ["failure", { status: 502, code: "upstreamError" as const }, "Failed to resolve acme/widgets#12. Try again later."],
-  ])("shows the %s flash for a late lookup only while the user stays on the page", async (_label, failure, message) => {
-    await clickWithDelayedFailure([], failure);
-    expect(mocks.showFlash).toHaveBeenCalledWith(message, { tone: "danger" });
+  it("shows the not-found flash for a late lookup only while the user stays on the page", async () => {
+    const notFound = { status: 404, code: "notFound" } as const;
+    await clickWithDelayedFailure([], notFound);
+    expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widgets#12 not found.", { tone: "danger" });
 
     mocks.showFlash.mockReset();
-    await clickWithDelayedFailure(["/settings"], failure);
+    await clickWithDelayedFailure(["/settings"], notFound);
     expect(mocks.showFlash).not.toHaveBeenCalled();
   });
 

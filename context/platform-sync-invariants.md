@@ -386,6 +386,7 @@ registry helpers return typed errors for missing providers or capabilities.
 - Background and watched GitHub detail syncs may use the persisted PR ETag; a
   normal 304 marks detail fetched and may refresh pending CI. Explicit
   `SyncMROnProvider` refreshes bypass the PR ETag.
+- PR-page polls also use the PR ETag; first-open hydration saves it for the next poll.
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion

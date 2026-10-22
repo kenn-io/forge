@@ -11319,6 +11319,35 @@ func (s *Syncer) notifyMRDetailSynced(ctx context.Context, repo RepoRef, repoID 
 	}
 }
 
+func (s *Syncer) canUseConditionalPRDetail(ctx context.Context, repo RepoRef, existing *db.MergeRequest, mode mrDetailMode) bool {
+	if mode != mrDetailPage {
+		return mode == mrDetailBackground
+	}
+	if existing == nil || existing.State != "open" {
+		return false
+	}
+	if s.clones == nil {
+		return true
+	}
+	diffSHAs := db.DiffSHAs{
+		PlatformHeadSHA: existing.PlatformHeadSHA,
+		PlatformBaseSHA: existing.PlatformBaseSHA,
+		DiffHeadSHA:     existing.DiffHeadSHA,
+		DiffBaseSHA:     existing.DiffBaseSHA,
+		MergeBaseSHA:    existing.MergeBaseSHA,
+		State:           string(existing.State),
+	}
+	if diffSHAs.Stale() {
+		return false
+	}
+	for _, sha := range []string{diffSHAs.DiffHeadSHA, diffSHAs.MergeBaseSHA} {
+		if _, err := s.clones.ResolveCommit(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, sha); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Syncer) syncMRForRepoResolved(
 	ctx context.Context,
 	repo RepoRef,
@@ -11404,22 +11433,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		useConditionalPRDetail := mode == mrDetailBackground || (mode == mrDetailPage && existing != nil && existing.State == "open")
-		if mode == mrDetailPage && existing != nil && existing.State == "open" && s.clones != nil {
-			diffSHAs, diffErr := s.db.GetDiffSHAsByRepoID(ctx, repoID, number)
-			if diffErr != nil {
-				return diffErr
-			}
-			useConditionalPRDetail = diffSHAs != nil && !diffSHAs.Stale()
-			if useConditionalPRDetail {
-				for _, sha := range []string{diffSHAs.DiffHeadSHA, diffSHAs.MergeBaseSHA} {
-					if _, err := s.clones.ResolveCommit(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, sha); err != nil {
-						useConditionalPRDetail = false
-						break
-					}
-				}
-			}
-		}
+		useConditionalPRDetail := s.canUseConditionalPRDetail(ctx, repo, existing, mode)
 		if client, ok := s.optionalGitHubClientFor(repo); ok && (useConditionalPRDetail || mode == mrDetailPage) {
 			var notModified bool
 			if providerAttempted != nil {

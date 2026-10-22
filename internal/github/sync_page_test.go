@@ -224,37 +224,25 @@ func TestPageSyncMRPersistsChangedParentResponse(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	ctx := t.Context()
-	d := openTestDB(t)
-	remote, _, base, head := pageSyncGitFixture(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", CloneURL: remote, Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
-	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
-	mc := &conditionalPRTrackingClient{nextETag: `"page-v1"`}
-	mc.singlePR = buildOpenPR(1, time.Now().UTC())
-	mc.singlePR.Head.SHA, mc.singlePR.Base.SHA = &head, &base
-	clones := gitclone.New(gitfixture.ScratchDir(t), nil)
-	t.Cleanup(clones.Wait)
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
-	require.NoError(syncer.ensureClone(withCloneRepositoryIdentity(ctx, repo), repo))
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, true)
-	require.NoError(err)
-	mc.conditionalCalls.Store(0)
-	mc.singlePR.Title = new("Updated parent")
-	mc.singlePR.UpdatedAt = makeTimestamp(mc.singlePR.UpdatedAt.Add(time.Minute))
-	mc.nextETag = `"page-v2"`
-	require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	f := newPageSyncFixture(t)
+	f.client.notModified = false
+	f.client.conditionalCalls.Store(0)
+	f.client.singlePR.Title = new("Updated parent")
+	f.client.singlePR.UpdatedAt = makeTimestamp(f.client.singlePR.UpdatedAt.Add(time.Minute))
+	f.client.nextETag = `"page-v2"`
+	require.NoError(f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
+	stored, err := f.syncer.db.GetMergeRequestByRepoIDAndNumber(ctx, f.repoID, 1)
 	require.NoError(err)
 	assert.Equal("Updated parent", stored.Title)
-	etag, err := d.GetHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1)
+	etag, err := f.syncer.db.GetHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1)
 	require.NoError(err)
 	assert.Equal(`"page-v2"`, etag)
-	assert.Equal(`"page-v1"`, mc.receivedETag)
-	assert.Equal(int32(1), mc.conditionalCalls.Load())
-	mc.notModified = true
-	mc.conditionalCalls.Store(0)
-	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-	assert.Zero(mc.conditionalCalls.Load(), "manual refresh remains unconditional")
+	assert.Equal(`"page-v1"`, f.client.receivedETag)
+	assert.Equal(int32(1), f.client.conditionalCalls.Load())
+	f.client.notModified = true
+	f.client.conditionalCalls.Store(0)
+	require.NoError(f.syncer.SyncMROnProvider(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
+	assert.Zero(f.client.conditionalCalls.Load(), "manual refresh remains unconditional")
 }
 
 func TestPageSyncMRStoresETagOnColdPageFetch(t *testing.T) {

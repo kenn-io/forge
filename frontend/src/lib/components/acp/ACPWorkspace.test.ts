@@ -387,6 +387,38 @@ describe("ACPWorkspace elicitations", () => {
     expect(screen.queryByLabelText("Cache preview")).toBeNull();
   });
 
+  it("puts a choice's question above its options", async () => {
+    const question = "Which cache should the service use?";
+    await openChat({
+      elicitations: [
+        {
+          id: "elicit-question",
+          message: "Please answer the following questions.",
+          schema: {
+            properties: {
+              question_0: {
+                type: "string",
+                title: "Cache",
+                description: question,
+                oneOf: [
+                  { const: "Redis", title: "Redis" },
+                  { const: "In-process", title: "In-process" },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const cache = screen.getByRole("radiogroup", { name: /Cache/ });
+    const text = cache.textContent ?? "";
+    expect(text.indexOf(question)).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf(question)).toBeLessThan(text.indexOf("Redis"));
+    const hint = document.getElementById(cache.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent).toBe(question);
+  });
+
   it("clears an optional choice when its picked option is activated again", async () => {
     await openChat({ elicitations: [askForm] });
 

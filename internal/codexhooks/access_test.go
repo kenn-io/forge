@@ -19,8 +19,10 @@ func TestEffectiveAccessWithCodex(t *testing.T) {
 	for _, tc := range []struct {
 		name, executable, config, projectConfig, sandboxMode, sandbox, approval string
 		args                                                                    []string
+		wantErr                                                                 bool
 	}{
 		{name: "project access overrides global", executable: "codex", config: "sandbox_mode = \"danger-full-access\"\n", projectConfig: "sandbox_mode = \"read-only\"\napproval_policy = \"on-request\"\n", sandboxMode: "read-only", sandbox: "readOnly", approval: "on-request"},
+		{name: "untrusted project cannot grant full access", executable: "codex", projectConfig: "sandbox_mode = \"danger-full-access\"\napproval_policy = \"never\"\n", sandboxMode: "danger-full-access", approval: "never", wantErr: true},
 		{name: "default permissions", executable: "codex", config: permissions, sandboxMode: "danger-full-access", sandbox: "dangerFullAccess", approval: "never"},
 		{name: "default permissions through codex-acp cli", executable: "codex-acp", args: []string{"cli"}, config: permissions, sandboxMode: "danger-full-access", sandbox: "dangerFullAccess", approval: "never"},
 	} {
@@ -75,9 +77,13 @@ func TestEffectiveAccessWithCodex(t *testing.T) {
 
 			command := append([]string{executable}, tc.args...)
 			sandbox, approval, err := EffectiveAccess(t.Context(), command, os.Environ(), workspace, nil)
-			require.NoError(err)
-			assert.Equal(tc.sandbox, sandbox)
-			assert.Equal(tc.approval, approval)
+			if tc.wantErr {
+				require.ErrorContains(err, "full access comes from project config Codex doesn't trust")
+			} else {
+				require.NoError(err)
+				assert.Equal(tc.sandbox, sandbox)
+				assert.Equal(tc.approval, approval)
+			}
 			after, err := os.ReadFile(configPath)
 			require.NoError(err)
 			assert.Equal([]byte(config), after, "access probe must not persist project trust or rewrite config")
@@ -94,8 +100,11 @@ func TestReadAccess(t *testing.T) {
 	for _, tc := range []struct {
 		name, reply, sandbox, approval, failure, wantRequest string
 		config                                               map[string]any
+		secondReply, wantSecondRequest                       string
 	}{
-		{name: "full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, sandbox: "dangerFullAccess", approval: "never", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
+		{name: "full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, secondReply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, sandbox: "dangerFullAccess", approval: "never", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`, wantSecondRequest: `{"id":2,"method":"thread/start","params":{"ephemeral":true,"config":{}}}`},
+		{name: "untrusted project full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, secondReply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, failure: "full access comes from project config Codex doesn't trust", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`, wantSecondRequest: `{"id":2,"method":"thread/start","params":{"ephemeral":true,"config":{}}}`},
+		{name: "hooks stripped", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"hooks": map[string]any{"enabled": true}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
 		{name: "caller config preserved with projects overridden", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"model": "example-model", "projects": map[string]any{"/workspace": map[string]any{"trust_level": "untrusted"}}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"model":"example-model","projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
 		{name: "granular approval", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":{"granular":{"sandbox_approval":true}}}}`, sandbox: "readOnly"},
 		{name: "rpc error", reply: `{"error":{"message":"policy rejected"}}`, failure: "policy rejected"},
@@ -103,7 +112,11 @@ func TestReadAccess(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var sent bytes.Buffer
-			c := &client{input: &sent, output: jsontext.NewDecoder(strings.NewReader(`{"id":1,` + tc.reply[1:]))}
+			replies := `{"id":1,` + tc.reply[1:]
+			if tc.secondReply != "" {
+				replies += "\n" + `{"id":2,` + tc.secondReply[1:]
+			}
+			c := &client{input: &sent, output: jsontext.NewDecoder(strings.NewReader(replies))}
 			sandbox, approval, err := c.readAccess("/workspace", tc.config)
 			if tc.failure != "" {
 				require.ErrorContains(t, err, tc.failure)
@@ -113,7 +126,14 @@ func TestReadAccess(t *testing.T) {
 			assert.Equal(t, tc.sandbox, sandbox)
 			assert.Equal(t, tc.approval, approval)
 			if tc.wantRequest != "" {
-				assert.JSONEq(t, tc.wantRequest, sent.String())
+				requests := strings.Split(strings.TrimSpace(sent.String()), "\n")
+				if tc.wantSecondRequest != "" {
+					require.Len(t, requests, 2)
+					assert.JSONEq(t, tc.wantSecondRequest, requests[1])
+				} else {
+					require.Len(t, requests, 1)
+				}
+				assert.JSONEq(t, tc.wantRequest, requests[0])
 			}
 		})
 	}

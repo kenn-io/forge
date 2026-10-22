@@ -25,11 +25,12 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 		{name: "read only", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", approval: "on-request", mode: "read-only"},
 		{name: "full access with approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "on-request", notice: "dangerFullAccess with on-request"},
 		{name: "read only without approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", approval: "never", notice: "readOnly with never"},
+		{name: "workspace write without approvals", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "workspaceWrite", approval: "never"},
 		{name: "adapter default", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "workspaceWrite", approval: "on-request"},
 		{name: "custom approval", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, sandbox: "readOnly", notice: "readOnly with custom"},
-		{name: "probe failure", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, err: errors.New("probe failed"), notice: "couldn't read Codex's access settings"},
+		{name: "probe failure", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp"}, wantCommand: []string{"codex-acp", "cli"}, probe: true, err: errors.New("probe failed"), notice: "couldn't use Codex's access settings"},
 		{name: "npx options", agent: "@agentclientprotocol/codex-acp", command: []string{"npx", "--package=@agentclientprotocol/codex-acp", "codex-acp"}, wantCommand: []string{"npx", "--package=@agentclientprotocol/codex-acp", "codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
-		{name: "node entry point", agent: "@agentclientprotocol/codex-acp", command: []string{"node", "/adapter/dist/index.js"}, wantCommand: []string{"node", "/adapter/dist/index.js", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
+		{name: "node entry point", agent: "@agentclientprotocol/codex-acp", command: []string{"node", "/adapter/dist/index.js"}, probe: false},
 		{name: "bunx", agent: "@agentclientprotocol/codex-acp", command: []string{"bunx", "@agentclientprotocol/codex-acp"}, wantCommand: []string{"bunx", "@agentclientprotocol/codex-acp", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
 		{name: "standalone", agent: "@agentclientprotocol/codex-acp", command: []string{"codex-acp-x86_64-linux"}, wantCommand: []string{"codex-acp-x86_64-linux", "cli"}, probe: true, sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
 		{name: "Windows executable", agent: "@agentclientprotocol/codex-acp", command: []string{"Codex-ACP.EXE"}, wantCommand: []string{"Codex-ACP.EXE", "cli"}, probe: runtime.GOOS == "windows", sandbox: "dangerFullAccess", approval: "never", mode: "agent-full-access"},
@@ -120,7 +121,7 @@ func TestCodexACPProbeResolvesExecutable(t *testing.T) {
 				assert.Zero(t, calls)
 				assert.Empty(t, mode)
 				require.Len(t, a.state.Notices, 1)
-				assert.Contains(t, a.state.Notices[0], "couldn't read Codex's access settings")
+				assert.Contains(t, a.state.Notices[0], "couldn't use Codex's access settings")
 			}
 		})
 	}

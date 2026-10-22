@@ -54,18 +54,18 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, s
 	var notice string
 	switch {
 	case err != nil:
-		notice = fmt.Sprintf("Forge couldn't read Codex's access settings, so this chat uses codex-acp's default mode, which Codex may reject: %v", err)
+		notice = fmt.Sprintf("Forge couldn't use Codex's access settings (%v), so this chat starts in codex-acp's default Agent mode.", err)
 	case sandbox == "dangerFullAccess" && approval == "never":
 		return "agent-full-access"
 	case sandbox == "readOnly" && approval == "on-request":
 		return "read-only"
-	case sandbox == "workspaceWrite" && approval == "on-request":
+	case sandbox == "workspaceWrite":
 		return ""
 	default:
 		if approval == "" {
 			approval = "custom"
 		}
-		notice = fmt.Sprintf("Codex resolves %s with %s approvals here. codex-acp has no matching mode, so this chat starts in its default mode, which Codex may reject.", sandbox, approval)
+		notice = fmt.Sprintf("Codex resolves %s with %s approvals here and codex-acp has no matching mode, so this chat starts in its default Agent mode. Pick a mode to keep it for this workspace.", sandbox, approval)
 	}
 	a.mu.Lock()
 	a.state.Notices = append(a.state.Notices, notice)
@@ -83,7 +83,7 @@ func codexACPProbeSupported(command []string) bool {
 		name = strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(name), ".exe"), ".cmd")
 	}
 	switch name {
-	case "codex-acp", "npx", "bunx", "node":
+	case "codex-acp", "npx", "bunx":
 		return true
 	}
 	standalone, _ := filepath.Match("codex-acp-*-*", name)

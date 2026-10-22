@@ -45,9 +45,10 @@ Rules:
   longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
 - Codex ACP chats derive Full access for `dangerFullAccess`/`never` and Read-only for `readOnly`/`on-request` only while the adapter is in its default `agent` mode; saved offered modes, non-empty session `INITIAL_AGENT_MODE`, and explicit adapter modes win.
-  Probe only direct `codex-acp`, `codex-acp-{arch}-{os}`, `npx`, `bunx`, or `node` launches, using the session's executable resolution; other launch forms keep their mode without a notice.
-  Derived modes stay unpersisted; probe failures, unmapped policies, and rejected derived modes keep the adapter default with a notice
+  Probe only direct `codex-acp`, `codex-acp-{arch}-{os}`, `npx`, or `bunx` launches, using the session's executable resolution; other launch forms keep their mode without a notice.
+  Derived modes stay unpersisted; probe failures, unmapped non-workspace-write policies, and rejected derived modes keep the adapter default with a notice
   (`internal/workspace/localruntime/acp_codex.go::deriveCodexMode`).
+  Full access needs the same result without the adapter's project-trust override; untrusted project config can only lower access (`internal/codexhooks/access.go::readAccess`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
 - On Windows the ACP agent shares its parent's console: acp-owner's ConPTY for workspace

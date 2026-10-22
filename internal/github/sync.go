@@ -6803,10 +6803,9 @@ func (s *Syncer) reconcileMergedActorEvents(
 	for _, candidate := range missing {
 		changed, err := s.backfillMergedActorEvent(ctx, repo, repoID, candidate.Number)
 		if err != nil {
-			slog.Warn("backfill merged actor failed",
+			logSyncFailure(slog.LevelWarn, "backfill merged actor failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
-				"number", candidate.Number,
-				"err", err)
+				"number", candidate.Number)
 			continue
 		}
 		if changed && s.onMergedActorRepaired != nil {

@@ -253,7 +253,7 @@ func TestAPIWorklistLinkOpensAnEquivalentListInAnotherForge(t *testing.T) {
 	put, err := sender.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
 		Title: "Merge today", Recipe: "open PRs with green CI", CreatedBy: "triage-bot",
 		Items: []mcpserver.WorklistPutItem{
-			{Item: identity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "check the migration"},
+			{Item: identity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "check the migration", CaveatLevel: worklist.CaveatWarning},
 			{Item: identity("issue", 5), Section: "Triage", Note: "needs a repro"},
 		},
 	})
@@ -317,9 +317,11 @@ func TestAPIWorklistLinkOpensAnEquivalentListInAnotherForge(t *testing.T) {
 		assert.Equal(want.Section, item.Section)
 		assert.Equal(want.Note, item.Note)
 		assert.Equal(want.Caveat, item.Caveat)
+		assert.Equal(want.CaveatLevel, item.CaveatLevel)
 		assert.Nil(item.HandledAt, "handled marks stay with the sender")
 	}
 	assert.NotNil(original.Items[0].HandledAt)
+	assert.Equal(generated.WorklistItemResponseCaveatLevelWarning, original.Items[0].CaveatLevel)
 }
 
 func TestAPIWorklistLinkRejectsAListWithoutItems(t *testing.T) {

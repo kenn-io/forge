@@ -71,6 +71,7 @@ func (h *Handler) importWorklist(
 				RepoKey: identity.Key, Owner: repos[i].Owner, Name: repos[i].Name, Number: item.Item.Number,
 			},
 			Score: item.Score, Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	var worklistID int64

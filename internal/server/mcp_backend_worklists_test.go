@@ -25,6 +25,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/worklist"
 )
 
 func worklistTestItem(repo *db.ActiveRepo, itemType string, number int) mcpserver.ItemIdentity {
@@ -227,7 +228,7 @@ func TestFederatedWorklistsHaveOneHubOwner(t *testing.T) {
 
 	put, err := nodeA.MCPBackend().PutWorklist(t.Context(), mcpserver.WorklistPut{
 		Title: "Merge today", Recipe: "green CI", CreatedBy: "spoke-a", WorkspaceID: "ws-a",
-		Items: []mcpserver.WorklistPutItem{{Item: worklistTestItem(repo, "pr", 42), Score: new(7), Caveat: "check docs"}},
+		Items: []mcpserver.WorklistPutItem{{Item: worklistTestItem(repo, "pr", 42), Score: new(7), Caveat: "check docs", CaveatLevel: worklist.CaveatWarning}},
 	})
 	require.NoError(err)
 	assert.True(put.Created)
@@ -242,6 +243,7 @@ func TestFederatedWorklistsHaveOneHubOwner(t *testing.T) {
 	assert.Equal(worklistTestItem(repo, "pr", 42), read.Items[0].Item)
 	assert.Equal(new(7), read.Items[0].Score)
 	assert.Equal("check docs", read.Items[0].Caveat)
+	assert.Equal("warning", read.Items[0].CaveatLevel)
 	assert.Nil(read.Items[0].HandledAt)
 
 	markedAt := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)

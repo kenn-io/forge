@@ -1,9 +1,9 @@
 <script lang="ts">
   import { Chip, formatRelativeTime, IconButton } from "@kenn-io/kit-ui";
-  import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
   import XIcon from "@lucide/svelte/icons/x";
   import type { WorklistItem } from "../../api/worklists.js";
+  import WorklistCaveatIcon from "./WorklistCaveatIcon.svelte";
   import { worklistChangeMarkers } from "./worklist-items.js";
 
   interface Props {
@@ -51,7 +51,7 @@
       <p class="worklist-context-aside">Review notes may cover an older head</p>
     {/if}
     {#if item.caveat}
-      <p class="worklist-context-caveat"><AlertTriangleIcon size={12} aria-hidden="true" />{item.caveat}</p>
+      <p class="worklist-context-caveat"><WorklistCaveatIcon level={item.caveat_level} size={12} />{item.caveat}</p>
     {/if}
     <div class="worklist-context-divider">
       <span>{createdBy.trim() || "An agent"} wrote this item {formatRelativeTime(item.written_at)}</span>

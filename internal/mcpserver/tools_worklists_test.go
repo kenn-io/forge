@@ -40,6 +40,7 @@ func TestPutWorklistForwardsTypedInputWithACPWorkspaceOverHTTP(t *testing.T) {
 			{
 				"item":  itemRefInput{Type: "pr", Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 42},
 				"score": 9, "section": "Ready", "note": "small fix", "caveat": "check docs",
+				"caveat_level": "warning",
 			},
 			{"item": itemRefInput{Type: "issue", Provider: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widget", Number: 7}},
 		},
@@ -52,7 +53,7 @@ func TestPutWorklistForwardsTypedInputWithACPWorkspaceOverHTTP(t *testing.T) {
 		WorklistID: 12, Title: "Merge today", Recipe: "open PRs with green CI",
 		CreatedBy: "triage-agent", WorkspaceID: "ws-chat",
 		Items: []WorklistPutItem{
-			{Item: testItemIdentity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "check docs"},
+			{Item: testItemIdentity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "check docs", CaveatLevel: worklist.CaveatWarning},
 			{Item: testItemIdentity("issue", 7)},
 		},
 	}, got[0])
@@ -97,6 +98,7 @@ func TestPutWorklistRejectsInvalidInputWithFieldDetails(t *testing.T) {
 		{"long section", valid(func(in *putWorklistInput) { in.Items[0].Section = strings.Repeat("s", 81) }), "items[0].section"},
 		{"long note", valid(func(in *putWorklistInput) { in.Items[0].Note = strings.Repeat("n", 4001) }), "items[0].note"},
 		{"long caveat", valid(func(in *putWorklistInput) { in.Items[0].Caveat = strings.Repeat("c", 4001) }), "items[0].caveat"},
+		{"unknown caveat level", valid(func(in *putWorklistInput) { in.Items[0].CaveatLevel = "urgent" }), "items[0].caveat_level"},
 		{"kata item", valid(func(in *putWorklistInput) { in.Items[0].Item.Type = "kata" }), "items[0].item"},
 		{"missing repository key", valid(func(in *putWorklistInput) { in.Items[0].Item.PlatformRepoID = 0 }), "items[0].item"},
 		{

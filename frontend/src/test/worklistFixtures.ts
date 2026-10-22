@@ -49,6 +49,7 @@ export function worklistItem(input: ItemInput): WorklistItemResponse {
     section: "",
     note: "",
     caveat: "",
+    caveat_level: "info",
     written_at: "2026-10-19T10:00:00Z",
     snapshot: steadyState,
     live: steadyState,

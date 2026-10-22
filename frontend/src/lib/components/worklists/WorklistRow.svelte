@@ -1,6 +1,5 @@
 <script lang="ts">
   import { Chip, DiffStats, type ChipTone } from "@kenn-io/kit-ui";
-  import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
@@ -13,6 +12,7 @@
   import LabelRow from "../shared/LabelRow.svelte";
   import PullStatusIcons from "../shared/PullStatusIcons.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import WorklistCaveatIcon from "./WorklistCaveatIcon.svelte";
   import { worklistChangeMarkers, worklistItemKey } from "./worklist-items.js";
 
   interface Props {
@@ -108,9 +108,9 @@
       {/if}
     </span>
     {#if item.caveat}
-      <span class="worklist-row-caveat" title={item.caveat}>
-        <AlertTriangleIcon size={11} aria-hidden="true" />
-        <span>{item.caveat}</span>
+      <span class={["worklist-row-caveat", `level-${item.caveat_level}`]} title={item.caveat}>
+        <WorklistCaveatIcon level={item.caveat_level} size={11} />
+        <span class="worklist-row-caveat-text">{item.caveat}</span>
       </span>
     {/if}
     {#if markers.length > 0}
@@ -295,15 +295,19 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    color: var(--accent-amber);
+    color: var(--text-muted);
     font-size: var(--font-size-xs);
   }
 
-  .worklist-row-caveat :global(svg) {
-    flex-shrink: 0;
+  .worklist-row-caveat.level-warning {
+    color: var(--accent-amber);
   }
 
-  .worklist-row-caveat span {
+  .worklist-row-caveat.level-critical {
+    color: var(--accent-red);
+  }
+
+  .worklist-row-caveat-text {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

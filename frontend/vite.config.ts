@@ -466,6 +466,7 @@ const config = {
       "@lucide/svelte/icons/move",
       "@lucide/svelte/icons/music",
       "@lucide/svelte/icons/network",
+      "@lucide/svelte/icons/octagon-alert",
       "@lucide/svelte/icons/octagon-x",
       "@lucide/svelte/icons/package-plus",
       "@lucide/svelte/icons/panel-bottom",

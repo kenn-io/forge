@@ -56635,6 +56635,14 @@ const (
 	ExternalContextRecommendationVerdictMerge ExternalContextRecommendationVerdict = "Merge"
 )
 
+type FederationWorklistPutItemCaveatLevel string
+
+const (
+	FederationWorklistPutItemCaveatLevelCritical FederationWorklistPutItemCaveatLevel = "critical"
+	FederationWorklistPutItemCaveatLevelInfo     FederationWorklistPutItemCaveatLevel = "info"
+	FederationWorklistPutItemCaveatLevelWarning  FederationWorklistPutItemCaveatLevel = "warning"
+)
+
 type GitAccessProblemReason string
 
 const (
@@ -56835,6 +56843,14 @@ type WorklistItemRefItemType string
 const (
 	WorklistItemRefItemTypeIssue WorklistItemRefItemType = "issue"
 	WorklistItemRefItemTypePr    WorklistItemRefItemType = "pr"
+)
+
+type WorklistItemResponseCaveatLevel string
+
+const (
+	WorklistItemResponseCaveatLevelCritical WorklistItemResponseCaveatLevel = "critical"
+	WorklistItemResponseCaveatLevelInfo     WorklistItemResponseCaveatLevel = "info"
+	WorklistItemResponseCaveatLevelWarning  WorklistItemResponseCaveatLevel = "warning"
 )
 
 type WorklistItemResponseFreshness string
@@ -67010,11 +67026,12 @@ type FederationWorklistPut struct {
 }
 
 type FederationWorklistPutItem struct {
-	Caveat  string                         `json:"caveat"`
-	Item    FederationWorkflowItemIdentity `json:"item"`
-	Note    string                         `json:"note"`
-	Score   *int64                         `json:"score,omitempty"`
-	Section string                         `json:"section"`
+	Caveat      string                                `json:"caveat"`
+	CaveatLevel *FederationWorklistPutItemCaveatLevel `json:"caveat_level,omitempty"`
+	Item        FederationWorkflowItemIdentity        `json:"item"`
+	Note        string                                `json:"note"`
+	Score       *int64                                `json:"score,omitempty"`
+	Section     string                                `json:"section"`
 }
 
 type FederationWorkspaceProviderState struct {
@@ -70102,9 +70119,10 @@ type WorklistItemRef struct {
 }
 
 type WorklistItemResponse struct {
-	Caveat    string                        `json:"caveat"`
-	Changes   WorklistChangesResponse       `json:"changes"`
-	Freshness WorklistItemResponseFreshness `json:"freshness"`
+	Caveat      string                          `json:"caveat"`
+	CaveatLevel WorklistItemResponseCaveatLevel `json:"caveat_level"`
+	Changes     WorklistChangesResponse         `json:"changes"`
+	Freshness   WorklistItemResponseFreshness   `json:"freshness"`
 
 	// HandledAt When the maintainer marked the item handled; null when unhandled. Independent of freshness.
 	HandledAt *time.Time `json:"handled_at"`

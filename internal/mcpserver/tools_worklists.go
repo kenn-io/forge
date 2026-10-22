@@ -91,6 +91,7 @@ func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (Worklist
 		put.Items = append(put.Items, WorklistPutItem{
 			Item: identity, Score: item.Score,
 			Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	if err := ValidateWorklistPut(put); err != nil {
@@ -153,6 +154,7 @@ func ValidateWorklistPut(put WorklistPut) error {
 				Owner: item.Item.Owner, Name: item.Item.Name, Number: item.Item.Number,
 			},
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	if err := list.Validate(); err != nil {

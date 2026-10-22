@@ -3679,6 +3679,12 @@ components:
       properties:
         caveat:
           type: string
+        caveat_level:
+          enum:
+            - info
+            - warning
+            - critical
+          type: string
         item:
           $ref: "#/components/schemas/FederationWorkflowItemIdentity"
         note:
@@ -11633,6 +11639,12 @@ components:
       properties:
         caveat:
           type: string
+        caveat_level:
+          enum:
+            - info
+            - warning
+            - critical
+          type: string
         changes:
           $ref: "#/components/schemas/WorklistChangesResponse"
         freshness:
@@ -11707,6 +11719,7 @@ components:
         - section
         - note
         - caveat
+        - caveat_level
         - written_at
         - snapshot
         - live

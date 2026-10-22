@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/worklist"
 )
 
 type FederationListWorkflowStatesInput struct {
@@ -275,11 +276,12 @@ func (s *Handlers) createAdHocWorkspaceOnHost(ctx context.Context, input *create
 }
 
 type federationWorklistPutItem struct {
-	Item    spokeapi.FederationWorkflowItemIdentity `json:"item"`
-	Score   *int                                    `json:"score,omitempty"`
-	Section string                                  `json:"section"`
-	Note    string                                  `json:"note"`
-	Caveat  string                                  `json:"caveat"`
+	Item        spokeapi.FederationWorkflowItemIdentity `json:"item"`
+	Score       *int                                    `json:"score,omitempty"`
+	Section     string                                  `json:"section"`
+	Note        string                                  `json:"note"`
+	Caveat      string                                  `json:"caveat"`
+	CaveatLevel string                                  `json:"caveat_level,omitempty" enum:"info,warning,critical"`
 }
 
 type federationWorklistPut struct {
@@ -309,6 +311,7 @@ func (put federationWorklistPut) Mcp() mcpserver.WorklistPut {
 		items = append(items, mcpserver.WorklistPutItem{
 			Item: mcpserver.ItemIdentity(item.Item), Score: item.Score,
 			Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: worklist.CaveatLevel(item.CaveatLevel),
 		})
 	}
 	return mcpserver.WorklistPut{

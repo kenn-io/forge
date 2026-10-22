@@ -209,6 +209,7 @@ func (b mcpBackend) putWorklistLocal(
 		params.Items = append(params.Items, db.WorklistItemParams{
 			RepoID: repo.ID, ItemType: item.Item.Type, ItemNumber: item.Item.Number,
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: string(item.CaveatLevel.OrDefault()),
 		})
 	}
 	result, err := b.server.db.PutWorklist(ctx, params)

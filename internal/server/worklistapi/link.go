@@ -79,6 +79,7 @@ func (h *Handler) LinkService(ctx context.Context, id int64) (WorklistLinkRespon
 				Owner: repo.Owner, Name: repo.Name, Number: item.ItemNumber,
 			},
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: worklist.CaveatLevel(item.CaveatLevel),
 		})
 	}
 	link, err := worklist.KennLink(list)

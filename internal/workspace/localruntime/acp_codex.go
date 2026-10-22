@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -17,12 +18,12 @@ const codexACPInitialModeTimeout = 5 * time.Second
 var codexEffectiveAccess = codexhooks.EffectiveAccess
 
 func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, savedMode string) string {
-	if a.agentName != "@agentclientprotocol/codex-acp" {
+	if a.agentName != "@agentclientprotocol/codex-acp" || !codexACPProbeSupported(command) {
 		return ""
 	}
 	a.mu.Lock()
 	derive := slices.ContainsFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool {
-		return option.ID == "mode" && option.Type == "select" && option.CurrentValue == "agent" && !configOffers(option, savedMode)
+		return option.ID == "mode" && option.CurrentValue == "agent" && !configOffers(option, savedMode)
 	})
 	a.mu.Unlock()
 	if !derive {
@@ -34,13 +35,22 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, s
 		if runtime.GOOS == "windows" {
 			key = strings.ToUpper(key)
 		}
+		if key == "INITIAL_AGENT_MODE" && value != "" {
+			return ""
+		}
 		if key == "CODEX_CONFIG" {
 			_ = json.Unmarshal([]byte(value), &config)
 		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, codexACPInitialModeTimeout)
 	defer cancel()
-	sandbox, approval, err := codexEffectiveAccess(ctx, append(slices.Clone(command), "cli"), env, cwd, config)
+	probe := append(slices.Clone(command), "cli")
+	executable, err := resolveExecutable(command[0])
+	var sandbox, approval string
+	if err == nil {
+		probe[0] = executable
+		sandbox, approval, err = codexEffectiveAccess(ctx, probe, env, cwd, config)
+	}
 	var notice string
 	switch {
 	case err != nil:
@@ -62,4 +72,20 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, s
 	a.changedLocked()
 	a.mu.Unlock()
 	return ""
+}
+
+func codexACPProbeSupported(command []string) bool {
+	if len(command) == 0 {
+		return false
+	}
+	name := filepath.Base(command[0])
+	if runtime.GOOS == "windows" {
+		name = strings.TrimSuffix(strings.TrimSuffix(strings.ToLower(name), ".exe"), ".cmd")
+	}
+	switch name {
+	case "codex-acp", "npx", "bunx", "node":
+		return true
+	}
+	standalone, _ := filepath.Match("codex-acp-*-*", name)
+	return standalone
 }

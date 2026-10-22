@@ -44,7 +44,8 @@ Rules:
   and daemon restarts; restore the model before dependent options and skip choices no
   longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
-- Codex ACP chats derive Full access for `dangerFullAccess`/`never` and Read-only for `readOnly`/`on-request` only while the adapter is in its default `agent` mode; saved offered modes and explicit adapter modes win.
+- Codex ACP chats derive Full access for `dangerFullAccess`/`never` and Read-only for `readOnly`/`on-request` only while the adapter is in its default `agent` mode; saved offered modes, non-empty session `INITIAL_AGENT_MODE`, and explicit adapter modes win.
+  Probe only direct `codex-acp`, `codex-acp-{arch}-{os}`, `npx`, `bunx`, or `node` launches, using the session's executable resolution; other launch forms keep their mode without a notice.
   Derived modes stay unpersisted; probe failures, unmapped policies, and rejected derived modes keep the adapter default with a notice
   (`internal/workspace/localruntime/acp_codex.go::deriveCodexMode`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;

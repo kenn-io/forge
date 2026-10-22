@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1181,6 +1182,21 @@ func TestObservedACPReportsOnlyPromptsAndReplies(t *testing.T) {
 	assert.Equal(t, 4, typed)
 }
 
+func codexACPFixtureCommand(t *testing.T) []string {
+	t.Helper()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	data, err := os.ReadFile(executable)
+	require.NoError(t, err)
+	name := "codex-acp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	adapter := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(adapter, data, 0o700))
+	return []string{adapter, "-test.run=^TestACPStdioHelper$"}
+}
+
 func TestCodexACPFirstPromptUsesResolvedMode(t *testing.T) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
@@ -1191,9 +1207,7 @@ func TestCodexACPFirstPromptUsesResolvedMode(t *testing.T) {
 	codexEffectiveAccess = func(context.Context, []string, []string, string, map[string]any) (string, string, error) {
 		return "dangerFullAccess", "never", nil
 	}
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	command := codexACPFixtureCommand(t)
 	manager := NewManager(Options{})
 	cwd := t.TempDir()
 	prompt := acpsdk.PromptRequest{SessionId: "fixture-session", Prompt: []acpsdk.ContentBlock{acpsdk.TextBlock("hello")}}
@@ -1221,9 +1235,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 	t.Setenv("INITIAL_AGENT_MODE", "")
 	previous := codexEffectiveAccess
 	t.Cleanup(func() { codexEffectiveAccess = previous })
-	executable, err := os.Executable()
-	require.NoError(t, err)
-	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	command := codexACPFixtureCommand(t)
 	for _, tc := range []struct {
 		name, savedMode, initialMode, mode, notice string
 		probe, reject, reload, fatal               bool

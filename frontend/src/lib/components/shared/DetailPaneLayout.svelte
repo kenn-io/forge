@@ -38,6 +38,8 @@
     flattenBelowPx?: number;
     /** Route-bound tab, when the surface has one. */
     routeTabKey?: string | undefined;
+    /** A new request reveals the route tab even when its key has not changed. */
+    routeNavigation?: object | null;
     /** A tab was clicked. Surfaces route this through navigate(). */
     onSelectTab?: ((tabKey: string) => void) | undefined;
     /**
@@ -65,6 +67,7 @@
     leafLabel = "Detail pane group",
     flattenBelowPx = 720,
     routeTabKey = undefined,
+    routeNavigation = null,
     onSelectTab = undefined,
     onFocusPane = undefined,
     paneLeafExtras = undefined,
@@ -394,15 +397,18 @@
   // including as a consequence of a zoom being placed. Re-asserting on every such
   // change silently undid any zoom on a non-route leaf the moment it was made
   // (Expand Terminal, Maximize pane), so it applies only when the route names a
-  // different pane than last applied, or names one that just became available.
+  // different pane, becomes available, or receives an explicit navigation request.
   let appliedRouteTabKey: string | null = null;
+  let appliedRouteNavigation: object | null = null;
   $effect(() => {
     const key = routeTabKey;
+    const navigation = routeNavigation;
     if (!key || !tabs.some((tab) => tab.key === key && tab.available)) {
       appliedRouteTabKey = null;
       return;
     }
-    if (appliedRouteTabKey === key) return;
+    if (appliedRouteTabKey === key && (!navigation || appliedRouteNavigation === navigation)) return;
+    appliedRouteNavigation = navigation;
     appliedRouteTabKey = key;
     lastReportedFocus = key;
     untrack(() => {

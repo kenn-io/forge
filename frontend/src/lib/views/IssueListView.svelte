@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getCommentNavigation } from "../stores/router.svelte.js";
   import type { Snippet } from "svelte";
   import { getSidebar, getStores } from "../context.js";
   import { CollapsibleSidebar } from "@kenn-io/kit-ui";
@@ -70,6 +71,9 @@
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,
   );
 
+  const commentNavigation = $derived(
+    selectedIssue ? getCommentNavigation({ ...selectedIssue, itemType: "issue" }) : null,
+  );
   function refreshSelectedDetail(): void {
     if (selectedIssue === null) return;
     const ref = selectedIssue;
@@ -174,6 +178,8 @@
         />
       {:else if paneLayout !== null}
       <DetailPaneLayout
+        routeTabKey={commentNavigation ? "conversation" : undefined}
+        routeNavigation={commentNavigation}
         layout={paneLayout}
         tabs={paneTabs}
         tablistLabel="Issue detail panes"
@@ -184,6 +190,7 @@
         {#snippet renderPane(tabKey, visible, _inputActive)}
           {#if tabKey === "conversation"}
             <IssueDetail
+              {visible}
               owner={selectedIssue.owner}
               name={selectedIssue.name}
               number={selectedIssue.number}

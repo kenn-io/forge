@@ -248,6 +248,7 @@
   }
 
   interface Props {
+    visible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -273,6 +274,7 @@
   }
 
   const {
+    visible = true,
     owner,
     name,
     number,
@@ -3484,6 +3486,7 @@
         {#if detailStore.getDiscussionLoaded()}
           {#key mutationRouteGeneration}
           <EventTimeline
+            {visible}
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}
             {provider}

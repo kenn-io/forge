@@ -66,3 +66,45 @@ it("opens shell-style history navigations at the requested PR or issue comment",
   firePopstate("/host/github.com/issues/github/acme/widgets/7#issuecomment-124");
   await expect.poll(() => document.activeElement?.textContent, { timeout: 10_000 }).toContain("Discussion 24");
 });
+
+it.each([
+  ["prs", "/host/github.com/pulls/github/acme/widgets/42"],
+  ["issues", "/host/github.com/issues/github/acme/widgets/7"],
+] as const)("reveals comments behind a maximized sibling in %s", async (surface, route) => {
+  await page.viewport(1600, 1000);
+  mounted = await mountBrowserApp(route, { overrides: [override] });
+  await expect.poll(() => document.querySelector('[data-comment-id="25"]'), { timeout: 10_000 }).not.toBeNull();
+  const { getPaneLayoutStore } = await import("./lib/stores/paneLayout.svelte.js");
+  const layout = getPaneLayoutStore(surface);
+  layout.splitTab("kata", layout.leafIDForTab("conversation")!, "horizontal", "after");
+  await expect.poll(() => layout.paneRender()?.onScreenTabs).toContain("kata");
+  const maximizeSibling = async () => {
+    const pane = document.querySelector('[data-pane-key="kata"]')!;
+    const button = pane
+      .closest(".tabbed-panel-leaf")!
+      .querySelector<HTMLButtonElement>('[data-testid="pane-toggle-zoom"]')!;
+    button.click();
+    await expect.poll(() => layout.paneRender()?.onScreenTabs).not.toContain("conversation");
+  };
+  const expectTarget = async (id: string) => {
+    await expect.poll(() => document.activeElement?.getAttribute("data-comment-id")).toBe(id);
+    const target = document.activeElement as HTMLElement;
+    expect(target.closest("[hidden]")).toBeNull();
+    expect(target.getBoundingClientRect().top).toBeGreaterThanOrEqual(0);
+    expect(target.getBoundingClientRect().top).toBeLessThan(window.innerHeight);
+    expect(layout.paneRender()?.onScreenTabs).toContain("conversation");
+  };
+  await maximizeSibling();
+  expect(window.location.pathname).toBe(route);
+  firePopstate(`${route}#issuecomment-125`);
+  await expectTarget("25");
+
+  // A later manual zoom stays in place until another explicit request, including
+  // the same comment URL, asks to reveal the conversation again.
+  await maximizeSibling();
+  firePopstate(`${route}#issuecomment-125`);
+  await expectTarget("25");
+  await maximizeSibling();
+  firePopstate(`${route}#issuecomment-102`);
+  await expectTarget("2");
+});

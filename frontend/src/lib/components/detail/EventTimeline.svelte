@@ -62,6 +62,7 @@
   import type { RepositoryKey } from "../../api/repository-key.js";
 
   interface Props {
+    visible?: boolean;
     events: Array<PREvent | IssueEvent>;
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
@@ -112,6 +113,7 @@
   }
 
   const {
+    visible = true,
     events,
     orderingEvents = events,
     provider,
@@ -811,7 +813,7 @@
     const entry = renderedTimelineEntries[targetEntryIndex];
     const element = timelineElement;
     const missing = missingCommentElement;
-    if (!navigation || (!element && !missing) ||
+    if (!visible || !navigation || (!element && !missing) ||
         (navigation === completedCommentNavigation && target?.ID === completedCommentID)) return;
     const execution = untrack(() => runtime.runCommand(
       Effect.sync(() => {

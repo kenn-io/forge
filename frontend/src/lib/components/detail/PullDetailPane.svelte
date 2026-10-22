@@ -123,6 +123,7 @@
 
 {#if tabKey === "conversation"}
   <PullDetail
+    {visible}
     owner={pr.owner}
     name={pr.name}
     number={pr.number}

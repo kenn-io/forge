@@ -959,7 +959,8 @@ Keyboard handlers must have one clear owner for each key press.
   the already-cleared payload as null and would leave its preview painted.
 - Route authority over pane layout (`DetailPaneLayout`'s `routeTabKey` effect) is a
   TRANSITION, not an invariant: it activates the route's pane and drops foreign
-  zooms only when the route names a different pane than last applied. The effect
+  zooms when the route names a different pane or a new comment-link request arrives.
+  Wait for the conversation to be visible before completing its comment jump. The effect
   also tracks `tabs`, whose identity changes as a consequence of a zoom itself;
   re-asserting on every change silently undid Expand Terminal and Maximize.
 - The pane controls popover is portalled to `<body>`. The leaf's action container is

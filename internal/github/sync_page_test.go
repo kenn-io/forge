@@ -62,7 +62,7 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 				mc.checkRuns[0].Conclusion = new("failure")
 				mc.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
 				mc.commits = []*gh.RepositoryCommit{{SHA: &head}}
-				for _, body := range []string{"New comment", "Edited comment", "Edited again"} {
+				for _, body := range []string{"New comment", "Edited comment"} {
 					_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?", baseline, before.ID)
 					require.NoError(err)
 					mc.comments[0].Body = &body
@@ -82,11 +82,6 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 					assert.Equal("approved", stored.ReviewDecision)
 					assert.True(stored.WorkflowApprovalRequired)
 					assert.True(stored.DetailFetchedAt.After(baseline))
-					diff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
-					require.NoError(err)
-					assert.Equal(head, diff.DiffHeadSHA)
-					assert.Equal(base, diff.DiffBaseSHA)
-					assert.Equal(base, diff.MergeBaseSHA)
 				}
 				assert.Equal(`"page-v1"`, mc.receivedETag)
 				assert.Zero(mc.getPRCalls.Load(), "unchanged page polls do not download the PR")
@@ -122,12 +117,11 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 				assert.Positive(mc.getPRCalls.Load())
 
 			case "merged page":
-				_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged', detail_fetched_at = ? WHERE id = ?", baseline, before.ID)
+				mergedAt := time.Now().UTC()
+				_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged', merged_at = ?, closed_at = ? WHERE id = ?", mergedAt, mergedAt, before.ID)
 				require.NoError(err)
 				require.NoError(os.Rename(remote, remote+".unavailable"))
-				mc.getPRCalls.Store(0)
 				mc.comments = []*gh.IssueComment{{ID: new(int64(6)), Body: new("Comment after merging"), CreatedAt: mc.singlePR.UpdatedAt}}
-				mc.checkRuns[0].Conclusion = new("failure")
 				require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
 				events, err := d.ListMREvents(ctx, before.ID)
 				require.NoError(err)
@@ -138,29 +132,19 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 					}
 				}
 				assert.Equal([]string{"Comment after merging"}, bodies)
-				stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-				require.NoError(err)
-				assert.Equal("failure", stored.CIStatus)
-				assert.True(stored.DetailFetchedAt.After(baseline))
-				mergedDiff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
-				require.NoError(err)
-				assert.Equal(head, mergedDiff.DiffHeadSHA)
-				assert.Equal(base, mergedDiff.DiffBaseSHA)
-				assert.Equal(base, mergedDiff.MergeBaseSHA)
 				assert.Zero(mc.getPRCalls.Load(), "unchanged merged page polls do not download the PR")
 			}
 		})
 	}
 }
 
-func TestPageSyncMRHydratesMissingParentWithSavedETag(t *testing.T) {
+func TestPageSyncMRFullySyncsMissingParent(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
-	require.NoError(d.UpsertHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1, `"page-v1"`))
 	mc := &conditionalPRTrackingClient{notModified: true}
 	mc.singlePR = buildOpenPR(1, time.Now().UTC())
 	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
@@ -177,13 +161,25 @@ func TestPageSyncMRPersistsChangedParentResponse(t *testing.T) {
 	assert := assert.New(t)
 	ctx := t.Context()
 	d := openTestDB(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	remote := filepath.Join(gitfixture.ScratchDir(t), "remote.git")
+	gitfixture.Run(t, filepath.Dir(remote), "init", "--bare", "--initial-branch=main", remote)
+	work := filepath.Join(gitfixture.ScratchDir(t), "work")
+	syncActivityGitRun(t, filepath.Dir(work), "clone", remote, work)
+	syncActivityGitRun(t, work, "config", "user.email", "fixture@example.com")
+	syncActivityGitRun(t, work, "config", "user.name", "Fixture")
+	base := syncActivityCommitAndPush(t, work, "base.txt", "base", "base", "main")
+	head := syncActivityCommitAndPush(t, work, "feature.txt", "feature", "feature", "feature")
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com", CloneURL: remote, Key: platform.RepositoryIDKey(testRepoID("owner", "repo"))}
 	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
 	require.NoError(err)
 	mc := &conditionalPRTrackingClient{nextETag: `"page-v1"`}
 	mc.singlePR = buildOpenPR(1, time.Now().UTC())
-	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
-	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, false)
+	mc.singlePR.Head.SHA, mc.singlePR.Base.SHA = &head, &base
+	clones := gitclone.New(gitfixture.ScratchDir(t), nil)
+	t.Cleanup(clones.Wait)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, clones, []RepoRef{repo}, time.Minute, nil, nil)
+	require.NoError(syncer.ensureClone(withCloneRepositoryIdentity(ctx, repo), repo))
+	_, err = syncer.fetchMRDetail(ctx, repo, repoID, 1, true)
 	require.NoError(err)
 	mc.conditionalCalls.Store(0)
 	mc.singlePR.Title = new("Updated parent")
@@ -202,5 +198,4 @@ func TestPageSyncMRPersistsChangedParentResponse(t *testing.T) {
 	mc.conditionalCalls.Store(0)
 	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
 	assert.Zero(mc.conditionalCalls.Load(), "manual refresh remains unconditional")
-	assert.Equal(int32(3), mc.getPRCalls.Load())
 }

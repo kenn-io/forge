@@ -56,6 +56,14 @@
       "groupSlug": "vite-plus-toolchain"
     },
     {
+      "description": [
+        "Kit UI refuses to render diagrams with any Mermaid version except its exact pin. Move this pin only when Kit UI moves its own."
+      ],
+      "matchManagers": ["bun"],
+      "matchPackageNames": ["mermaid"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["typescript"],
       "allowedVersions": "!/^(7\\.0\\.)/"
     },

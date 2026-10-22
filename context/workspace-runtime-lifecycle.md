@@ -44,6 +44,9 @@ Rules:
   and daemon restarts; restore the model before dependent options and skip choices no
   longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
+- Codex ACP chats derive Full access for `dangerFullAccess`/`never` and Read-only for `readOnly`/`on-request`; saved offered modes and `INITIAL_AGENT_MODE` win.
+  Derived modes stay unpersisted; probe failures, unmapped policies, and rejected derived modes keep the adapter default with a notice
+  (`internal/workspace/localruntime/acp_settings.go::Manager.startACP`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
 - On Windows the ACP agent shares its parent's console: acp-owner's ConPTY for workspace

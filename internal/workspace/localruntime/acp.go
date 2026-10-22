@@ -57,6 +57,7 @@ type ACP struct {
 	subscribers     map[chan struct{}]struct{}
 	state           ACPState
 	imagesSupported bool
+	agentName       string
 	loadSession     bool
 	saveConfig      func(map[string]string) error
 	kill            func(*os.Process) error // nil uses killSessionProcess
@@ -397,6 +398,9 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	if err == nil {
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
+		if initialized.AgentInfo != nil {
+			a.agentName = initialized.AgentInfo.Name
+		}
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
 		// Never silently discard native context after an agent previously

@@ -553,8 +553,9 @@ type RepoRef struct {
 }
 
 // PartialSyncError reports a repo sync cycle whose index scan completed but
-// failed to refresh one or more items in the listed scopes (none for a refused bulk read). Budget-only waits
-// preserve completed repo health; other failures update it. Consumers that
+// failed to refresh one or more items in the listed scopes. A refused bulk
+// read lists no scopes because REST indexing still covered them. Budget-only
+// waits preserve completed repo health; other failures update it. Consumers that
 // depend only on an unaffected scope (stack detection over merge requests,
 // workspace refresh flows) should proceed instead of treating the repository
 // as failed wholesale.
@@ -572,10 +573,11 @@ func (e *PartialSyncError) Error() string {
 	if e.Issues {
 		failedPaths = append(failedPaths, "issue")
 	}
-	message := fmt.Sprintf("one or more %s sync items failed", strings.Join(failedPaths, " and "))
 	if e.Cause != nil && failedPaths == nil {
 		return e.Cause.Error()
-	} else if e.Cause != nil {
+	}
+	message := fmt.Sprintf("one or more %s sync items failed", strings.Join(failedPaths, " and "))
+	if e.Cause != nil {
 		return message + ": " + e.Cause.Error()
 	}
 	return message
@@ -6440,7 +6442,6 @@ func (s *Syncer) indexSyncRepo(
 						failedScope |= failMR
 					}
 					if failedScope&failMR != 0 {
-						budgetRefusedScope &^= failMR
 						partialCause = retainSyncFailureCause(partialCause, err)
 					}
 				}
@@ -6598,7 +6599,6 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
-							budgetRefusedScope &^= failIssues
 							partialCause = retainSyncFailureCause(partialCause, err)
 						}
 					}
@@ -6618,7 +6618,6 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
-							budgetRefusedScope &^= failIssues
 							partialCause = retainSyncFailureCause(partialCause, err)
 						}
 					}
@@ -10306,7 +10305,8 @@ func (s *Syncer) refreshIssueTimeline(
 			); disabledErr != nil {
 				return disabledErr
 			}
-			if timelineErr = fmt.Errorf("list timeline events for issue #%d: %w", number, err); IsArchiveSyncBudgetContext(ctx) {
+			timelineErr = fmt.Errorf("list timeline events for issue #%d: %w", number, err)
+			if IsArchiveSyncBudgetContext(ctx) {
 				return timelineErr
 			}
 			logSyncFailure(ctx, slog.LevelWarn, "issue timeline event fetch failed during timeline refresh", err,

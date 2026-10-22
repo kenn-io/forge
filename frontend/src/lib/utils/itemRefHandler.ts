@@ -182,8 +182,7 @@ export function initItemRefHandler(
     const browserURL = isTracked(ref) ? null : safeExternalURL(ref.externalUrl);
     if (browserURL) anchor.href = browserURL;
 
-    const plainClick =
-      e.type === "click" && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+    const plainClick = e.type === "click" && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
     if (!plainClick || (anchor.target && anchor.target.toLowerCase() !== "_self")) return;
 
     if (browserURL) {

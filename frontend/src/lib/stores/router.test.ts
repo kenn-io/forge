@@ -13,6 +13,7 @@ import {
   forgetWorkspaceRoute,
   buildMobileWorkspaceRoute,
   buildMobileWorkspaceItemRoute,
+  getURLChangeCount,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -634,5 +635,26 @@ describe("comment navigation", () => {
     expect(getCommentNavigation(item)).toBeNull();
     navigate("/pulls#issuecomment-123");
     expect(getCommentNavigation(item)).toBeNull();
+  });
+});
+
+describe("router URL change count", () => {
+  it.each([
+    ["navigate", () => navigate("/settings")],
+    ["replaceUrl", () => replaceUrl("/?selected=pr:1")],
+    ["a direct history.replaceState", () => window.history.replaceState(null, "", "/?range=7d")],
+    ["browser back or forward", () => window.dispatchEvent(new PopStateEvent("popstate"))],
+  ])("advances on a URL change made by %s", (_label, change) => {
+    const before = getURLChangeCount();
+    change();
+    expect(getURLChangeCount()).toBeGreaterThan(before);
+  });
+
+  it("does not return to an earlier count when the URL returns to an earlier value", () => {
+    navigate("/");
+    const before = getURLChangeCount();
+    navigate("/settings");
+    navigate("/");
+    expect(getURLChangeCount()).not.toBe(before);
   });
 });

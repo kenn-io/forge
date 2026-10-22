@@ -10,10 +10,10 @@ import {
 import { RepositoryReads } from "../api/repository-reads.js";
 import type { RepoCatalog } from "../api/types.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
-import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
+import { navigate, buildItemRoute, getURLChangeCount, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 import { parseKnownProviderItemURL, type ProviderContext, type ResolvableItemReference } from "./item-reference.js";
-import { currentInAppPath, navigateToURL } from "./pageNavigation.js";
+import { navigateToURL } from "./pageNavigation.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -106,7 +106,7 @@ export function resolveItemReference(
   ref: ResolvableItemReference,
   onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
 ): AppExecution<void, unknown> {
-  const originPath = currentInAppPath();
+  const urlChangesAtClick = getURLChangeCount();
   return runtime.runCommand(
     resolveItemReferenceEffect(ref).pipe(
       Effect.tap((resolution) =>
@@ -114,8 +114,8 @@ export function resolveItemReference(
           if (resolution?.kind === "item") onNavigate(resolution.item);
           // The click was cancelled before the lookup, so the provider page
           // opens in this tab; browsers block a tab opened after an await.
-          // Skip it once the user has moved to another page or selection.
-          else if (resolution?.kind === "providerPage" && currentInAppPath() === originPath)
+          // Skip it once the URL has changed, even back to the same value.
+          else if (resolution?.kind === "providerPage" && getURLChangeCount() === urlChangesAtClick)
             navigateToURL(resolution.url);
         }),
       ),

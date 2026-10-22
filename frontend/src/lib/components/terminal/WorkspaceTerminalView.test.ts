@@ -1131,7 +1131,7 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
-  it.each(["workspace switch", "route change", "unmount", "no superseding action"] as const)(
+  it.each(["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const)(
     "opens the provider page for an unsynced link only while its workspace remains current: %s",
     async (laterAction) => {
       const previousPath = window.location.pathname + window.location.search + window.location.hash;
@@ -1186,6 +1186,9 @@ describe("WorkspaceTerminalView", () => {
         await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
       } else if (laterAction === "route change") {
         navigate("/settings");
+      } else if (laterAction === "route round trip") {
+        navigate("/settings");
+        navigate("/terminal/ws-1");
       } else if (laterAction === "unmount") {
         view.unmount();
       }

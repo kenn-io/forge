@@ -569,9 +569,19 @@ function nativeHistoryState(data: unknown, url?: string | URL | null): unknown {
   };
 }
 
+// Counts every URL change the router observes, including a return to an
+// earlier URL, so async work started by a click can tell whether the user has
+// moved on since.
+let urlChangeCount = 0;
+
+export function getURLChangeCount(): number {
+  return urlChangeCount;
+}
+
 if (typeof window !== "undefined") {
   const originalReplaceState = history.replaceState.bind(history);
   history.replaceState = ((data: unknown, unused: string, url?: string | URL | null) => {
+    urlChangeCount += 1;
     originalReplaceState(nativeHistoryState(data, url), unused, url);
     rememberActivityRoute();
     rememberWorkspaceRoute();
@@ -600,6 +610,7 @@ export function navigate(path: string, state?: Record<string, unknown>): void {
   rememberActivityRoute();
   rememberWorkspaceRoute();
   const fullPath = basePrefix + path;
+  urlChangeCount += 1;
   history.pushState(nativeHistoryState(state ?? null, fullPath), "", fullPath);
   route = parseRoute(fullPath);
   restoreMissingActivityFilters();
@@ -666,6 +677,7 @@ export function replaceUrl(path: string, state?: Record<string, unknown>): void 
 // Listen for browser back/forward.
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
+    urlChangeCount += 1;
     if (window.ReactNativeWebView && typeof history.state?.__forgeURL === "string") {
       history.replaceState(history.state, "", history.state.__forgeURL);
     }

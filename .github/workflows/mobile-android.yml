@@ -43,13 +43,17 @@ jobs:
         working-directory: mobile
         run: bun install --frozen-lockfile
 
+      - name: Check Expo dependency compatibility
+        working-directory: mobile
+        run: node node_modules/expo/bin/cli install --check
+
       - name: Type check
         working-directory: mobile
         run: node node_modules/typescript/bin/tsc --noEmit
 
       - name: Run node tests
         working-directory: mobile
-        run: node --experimental-strip-types --test *.test.ts
+        run: node --experimental-strip-types --test ./*.test.ts
 
       - name: Run Vitest suite
         working-directory: mobile

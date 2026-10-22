@@ -17,7 +17,7 @@ Use this document as the intent-level guide for mobile UI work in `kenn-forge`. 
   route literals on each side instead (`mobile/tsconfig.json`).
 - The native shell owns system-bar and cutout spacing. Android WebView must pass
   zeroes for those CSS safe-area insets while preserving keyboard insets
-  (`mobile/patches/react-native-webview@13.16.1.patch`).
+  (`mobile/patches/react-native-webview@14.0.1.patch`).
 - Connected native views use the web UI's header without a native server bar.
   Connection settings live in the phone menu and desktop Settings page; Android
   Back also returns there after page history (`mobile/App.tsx`).

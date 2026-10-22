@@ -296,7 +296,7 @@ jobs:
 
       - name: Run NilAway
         if: matrix.lane == 'go-linux'
-        run: make nilaway
+        run: make nilaway NILAWAY_BIN="$(go env GOPATH)/bin/nilaway"
 
   test_go:
     name: Go tests (${{ matrix.shard }})

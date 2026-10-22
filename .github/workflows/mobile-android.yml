@@ -1,8 +1,6 @@
 name: Mobile Android
 
 # PR CI does not build the Expo app under mobile/; check it nightly and on demand.
-# Schedules run only from the default branch and dispatch needs write access,
-# so this repository uses the managed fleet and forks use GitHub-hosted runners.
 on:
   schedule:
     - cron: "37 4 * * *"
@@ -18,7 +16,7 @@ concurrency:
 jobs:
   checks:
     name: Mobile checks
-    runs-on: ${{ github.repository == 'kenn-io/forge' && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,7 +59,7 @@ jobs:
 
   android:
     name: Android release build
-    runs-on: ${{ github.repository == 'kenn-io/forge' && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

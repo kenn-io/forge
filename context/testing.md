@@ -475,8 +475,8 @@ tests in the `go test -race` job summaries. When a PR regresses race runtime, us
 the CI timing artifacts rather than guessing from local timings alone.
 
 Keep race shards exhaustive: server descendants in `server`, CLI/DB/GitHub in
-`core`, and everything else in `rest`, including the server root. Namespace uses
-`core` and combined `server-rest` jobs; GitHub keeps the three groups separate.
+`core`, and everything else in `rest`, including the server root. Keep the three
+groups separate to bound each GitHub-hosted runner's workload.
 Rebalance from per-shard timing artifacts (`.github/workflows/ci.yml::race`).
 
 New full-stack server tests should default to `t.Parallel()` when they build

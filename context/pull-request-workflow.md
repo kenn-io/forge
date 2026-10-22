@@ -14,15 +14,12 @@ request metadata, comments, or review threads.
 - Runtime image publication belongs to the external release pipeline and only
   published releases may build release images. Do not add repository-owned image
   publication or automatic PR/mainline container builds.
-- Public CI profiles use Namespace's [Restricted access level](https://namespace.so/docs/solutions/github-actions/runner-controls/access-levels),
-  which disables workload access to Namespace features and APIs. GitHub fork
-  approvals, token permissions, and secrets are separate controls.
-- Reusable PR CI stays pinned to `main`, with GitHub-hosted fork runners even
-  for organization members; workflow validation selects Restricted Namespace
-  directly. (`.github/workflows/ci-pr.yml`, `.github/workflows/ci.yml`, `.github/workflows/workflow-validation.yml`)
-- PR checks therefore ignore the PR's own `ci.yml` edits: a renamed test
-  filter matches nothing and still passes. Dispatch `ci.yml` on the branch
-  (`gh workflow run ci.yml --ref <branch>`) and confirm the step ran tests.
+- All CI jobs use GitHub-hosted runners, including pull requests from forks,
+  workflow validation, and scheduled Android builds. (`.github/workflows/`)
+- PR CI calls the reusable workflow from the same commit so checks exercise
+  the proposed workflow changes. (`.github/workflows/ci-pr.yml::jobs.run`)
+- When changing test filters, confirm the step ran tests; a filter matching
+  nothing can still pass.
 - Parse Buildx manifest JSON for CI image digests; the plain
   `.Manifest.Digest` formatter can emit a full report
   (`.github/workflows/ci.yml::ensure_playwright_image`).

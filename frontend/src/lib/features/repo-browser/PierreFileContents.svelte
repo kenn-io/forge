@@ -28,7 +28,7 @@
     cacheKey: fileContentsCacheKey(path, contents),
   });
 
-  const options = $derived.by<FileOptions<undefined>>(() => ({
+  const options = $derived.by<FileOptions<undefined, undefined>>(() => ({
     disableFileHeader: true,
     disableVirtualizationBuffers: true,
     overflow: wordWrap ? "wrap" : "scroll",

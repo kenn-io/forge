@@ -251,9 +251,6 @@
     deleteConfirmWorkspace !== null &&
       workspaceActionMatches(deleteConfirmWorkspace, "delete"),
   );
-  const bulkDeleteBusy = $derived(
-    bulkDeleteConfirm !== null && workspaceAction?.action === "delete",
-  );
 
   const scopedWorkspaces = $derived.by(() => {
     const repoIdentities = workspaces.map(workspaceRepoFilterIdentity);
@@ -1257,7 +1254,6 @@
   }
 
   function closeBulkDeleteDialog(): void {
-    if (bulkDeleteBusy) return;
     bulkDeleteConfirm = null;
   }
 
@@ -1268,10 +1264,13 @@
   }
 
   // Deletes without force, so the server keeps any workspace with
-  // uncommitted changes; those are reported rather than discarded.
+  // uncommitted changes; those are reported rather than discarded. The
+  // dialog closes at once and each row disappears as its delete finishes.
   function confirmBulkDelete(): void {
     const targets = (bulkDeleteConfirm ?? []).filter(workspaceDeletable);
     if (targets.length === 0 || workspaceAction !== null) return;
+    bulkDeleteConfirm = null;
+    clearMultiSelection();
     workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "delete" };
     for (const ws of targets) onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     runtime.runCommand(
@@ -1285,7 +1284,6 @@
         Effect.flatMap((outcomes) =>
           Effect.sync(() => {
             requestApplicationWorkspaceRefresh();
-            clearMultiSelection();
             const failures = outcomes.flatMap(({ ws, result }) =>
               Result.isFailure(result) ? [`${displayName(ws)}: ${deleteFailureMessage(result.failure)}`] : [],
             );
@@ -1300,7 +1298,6 @@
             }
           }),
         ),
-        Effect.ensuring(Effect.sync(() => { bulkDeleteConfirm = null; })),
       ),
       {
         operation: "delete workspaces",
@@ -1902,8 +1899,6 @@
   message={bulkDeleteConfirm ? bulkDeleteMessage(bulkDeleteConfirm) : ""}
   hint="This removes their managed worktrees and runtime sessions. Workspaces with uncommitted changes are kept."
   confirmLabel={`Delete ${bulkDeleteConfirm?.length ?? 0} workspaces`}
-  pendingLabel="Deleting…"
-  busy={bulkDeleteBusy}
   tone="danger"
   frameId="workspace-sidebar-bulk-delete"
   onCancel={closeBulkDeleteDialog}

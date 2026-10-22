@@ -81,7 +81,8 @@ Interactive surfaces must agree on which item is selected.
   before revalidation, preserving same-ID entries on other hosts
   (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::removeWorkspaceListEntry`).
 - Workspace list multi-selection never navigates and covers only on-screen rows (not collapsed or filtered);
-  bulk delete never forces, so dirty worktrees survive and are reported
+  bulk delete never forces, so dirty worktrees survive and are reported. Its confirm dialog closes at once;
+  deletes run in the background and rows disappear as each finishes
   (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmBulkDelete`).
 - PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace instead of creating another, uses the saved default target, runs in the background without a
@@ -240,7 +241,8 @@ Interactive surfaces must agree on which item is selected.
   column; agent questions render inline in it. Turn status above the composer is one line of
   chips that expand on demand (`frontend/src/lib/components/acp/ChatDockRail.svelte`).
 - ACP elicitation choices render as an always-visible radio/checkbox list showing each
-  option's description and the picked option's `_meta` preview; never a dropdown. An
+  option's description and the picked option's `_meta` preview; never a dropdown. A choice
+  field's own description is its question and renders between its title and its options. An
   optional single choice clears by clicking or pressing Space on the picked option again, never
   through a control that appears on selection. Picking never moves the form: option previews
   share one slot sized to the tallest preview from the first render. Submit

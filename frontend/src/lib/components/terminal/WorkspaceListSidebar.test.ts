@@ -3273,6 +3273,38 @@ describe("WorkspaceListSidebar", () => {
     expect(selectedTitles()).toEqual([]);
   });
 
+  it("closes the bulk delete dialog while rows keep deleting in the background", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const pending = new Map<string, () => void>();
+    mockDelete.mockImplementation(
+      (_path: string, options: { params: { path: { id: string } } }) =>
+        new Promise((resolve) => {
+          pending.set(options.params.path.id, () => resolve({ response: { ok: true, status: 204 } }));
+        }),
+    );
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+
+    await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Oldest without activity"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete 2 workspaces..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Delete 2 workspaces?" });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Delete 2 workspaces" }));
+
+    await waitFor(() => expect(pending.size).toBe(2));
+    expect(screen.queryByRole("dialog", { name: "Delete 2 workspaces?" })).toBeNull();
+    expect(screen.getByText("Newest created")).toBeTruthy();
+    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+
+    pending.get("ws-old")!();
+    await waitFor(() => expect(screen.queryByText("Oldest without activity")).toBeNull());
+    expect(screen.getByText("Newest created")).toBeTruthy();
+
+    pending.get("ws-new")!();
+    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
+  });
+
   it("toggles rows with Cmd/Ctrl-click without opening them", async () => {
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
     const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });

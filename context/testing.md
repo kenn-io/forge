@@ -252,8 +252,8 @@ Playwright, Bun, and Vite+ pins in the recipe, cache only `/usr/local/install/ca
 and materialize `node_modules` from the lockfile before invoking baked `vp`
 (`.github/workflows/ci.yml::ensure_playwright_image`, `.github/docker/playwright/Dockerfile:3`).
 Vite+ owns its bundled test-tool versions; update direct Vite/Vitest pins only
-alongside a Vite+ toolchain upgrade, never through independent Renovate updates
-(`renovate.json:31`).
+alongside a Vite+ toolchain upgrade, never through independent Renovate updates;
+Renovate tracks the `vite` alias as `@voidzero-dev/vite-plus-core` (`renovate.json:31`).
 Set frontend CI concurrency for the selected runner; do not treat the fallback
 worker count as its budget (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 Run CI Vitest unit and browser projects separately: their worker limits differ,

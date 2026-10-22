@@ -123,6 +123,9 @@
           aria-invalid={problem ? "true" : undefined}
         >
           <legend>{@render labelText(field)}</legend>
+          <!-- A choice field's description is usually the question itself, so
+               it reads before the options rather than after them. -->
+          {#if field.description}<small class="question" id={`${id}-hint`}>{field.description}</small>{/if}
           <div class="choices">
             {#each field.choices as choice (choice.value)}
               {@const checked = picked.includes(choice.value)}
@@ -178,7 +181,7 @@
           oninput={(value) => { values[field.key] = value; }}
         />
       {/if}
-      {#if field.description}<small id={`${id}-hint`}>{field.description}</small>{/if}
+      {#if field.description && field.kind !== "multi" && field.kind !== "select"}<small id={`${id}-hint`}>{field.description}</small>{/if}
       {#if problem}<small class="problem" id={`${id}-error`}>{problem}</small>{/if}
     </div>
   {/each}
@@ -198,6 +201,7 @@
   .label, legend { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--text-secondary); }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
   legend { padding: 0; margin-bottom: var(--space-2); }
+  .question { display: block; margin-bottom: var(--space-2); white-space: pre-wrap; }
   .choices { display: flex; flex-direction: column; border: 1px solid var(--border-muted); border-radius: var(--radius-md); overflow: hidden; }
   fieldset[aria-invalid="true"] .choices { border-color: var(--accent-red); }
   .choices :global(.choice) { display: flex; align-items: flex-start; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-muted); cursor: pointer; }

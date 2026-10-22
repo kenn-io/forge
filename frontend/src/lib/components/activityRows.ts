@@ -102,7 +102,7 @@ function repoKeyForItem(item: ActivityItem): string {
 }
 
 function activityRunAuthor(item: ActivityItem): string {
-  return item.author_name || item.author;
+  return item.author || item.author_name || "";
 }
 
 function activityRunGroupKey(item: ActivityItem, options: Required<CollapseActivityRunsOptions>): string | null {

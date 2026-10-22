@@ -749,7 +749,7 @@
   function eventDetail(event: ActivityItem): string {
     if (!isDefaultBranchActivity(event)) return event.author;
     if (isDefaultBranchForcePushActivity(event)) return branchActivityTitle(event);
-    return [shortSha(event.commit_sha), event.author_name || event.author]
+    return [shortSha(event.commit_sha), event.author || event.author_name]
       .filter(Boolean)
       .join(" · ");
   }

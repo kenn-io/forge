@@ -269,7 +269,7 @@
   }
 
   function activityAuthor(item: ActivityItem): string {
-    return item.author_name || item.author;
+    return item.author || item.author_name || "";
   }
 
   function branchActivityTitle(item: ActivityItem): string {

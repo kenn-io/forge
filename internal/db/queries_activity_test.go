@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -2637,4 +2639,168 @@ func TestListActivityAuthorsIncludeParentsRecentOnlyByCloseOrMerge(t *testing.T)
 	require.NoError(err)
 	assert.Equal([]string{"Merger", "Closer", "Reopener"}, authors,
 		"every parent visible in Activity must offer its author as a filter candidate")
+}
+
+func TestListActivityCachedCommitAuthor(t *testing.T) {
+	t.Parallel()
+	const sha = "1234567890abcdef1234567890abcdef12345678"
+	for _, tc := range []struct {
+		name, provider, metadata, actor, gitName, summary, eventType, prAuthor, branchAuthor string
+		otherRepo, duplicates                                                                bool
+	}{
+		{name: "original author", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
+		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
+		{name: "empty metadata author", metadata: `{"commit_author":""}`, actor: "alice", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
+		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prAuthor: "Git Author", branchAuthor: "Git Author"},
+		{name: "empty identities"},
+		{name: "missing git author", actor: "integrator", prAuthor: "integrator"},
+		{name: "linked author without git signature", metadata: `{"commit_author":"alice"}`, actor: "integrator", prAuthor: "alice", branchAuthor: "alice"},
+		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prAuthor: "integrator", branchAuthor: "Git Author"},
+		{name: "bot committer", metadata: `{"commit_author":"alice"}`, actor: "helper[bot]", gitName: "Alice Example", prAuthor: "alice", branchAuthor: "alice"},
+		{name: "rewritten sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prAuthor: "alice", branchAuthor: "Git Author"},
+		{name: "short sha", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12], prAuthor: "alice", branchAuthor: "Git Author"},
+		{name: "other repository", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prAuthor: "alice", branchAuthor: "Git Author"},
+		{name: "other provider", provider: "gitlab", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prAuthor: "integrator", branchAuthor: "Git Author"},
+		{name: "duplicate pulls", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prAuthor: "alice", branchAuthor: "newer-author"},
+		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prAuthor: "helper[bot]", branchAuthor: "helper[bot]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			provider := tc.provider
+			if provider == "" {
+				provider = "github"
+			}
+			repoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(provider, provider+".com", "acme", "widgets"))
+			require.NoError(t, err)
+			eventRepo := repoID
+			if tc.otherRepo {
+				eventRepo = insertTestRepo(t, d, "acme", "other")
+			}
+			mrID := insertTestMR(t, d, eventRepo, 1, "Cached pull", baseTime())
+			summary := tc.summary
+			if summary == "" {
+				summary = sha
+			}
+			eventType := tc.eventType
+			if eventType == "" {
+				eventType = "commit"
+			}
+			event := MREvent{MergeRequestID: mrID, EventType: eventType, Summary: summary, Author: tc.actor, MetadataJSON: tc.metadata, CreatedAt: baseTime(), DedupeKey: "commit-" + sha[:12]}
+			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
+			if tc.duplicates {
+				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
+				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", CreatedAt: baseTime(), DedupeKey: "newer"},
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, CreatedAt: baseTime(), DedupeKey: "empty"},
+				}))
+			}
+			branch := testBranchCommit(repoID, "main", sha, "Landed change", baseTime())
+			branch.AuthorName = tc.gitName
+			require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
+			opts := ListActivityOpts{Types: []string{"commit", "comment", "default_branch_commit"}, Limit: 50}
+			items, err := d.ListActivity(t.Context(), opts)
+			require.NoError(t, err)
+			if tc.duplicates {
+				require.Len(t, items, 4)
+			} else {
+				require.Len(t, items, 2)
+			}
+			for _, item := range items {
+				if item.Source == "bc" {
+					assert.Equal(t, tc.branchAuthor, item.Author)
+					assert.Equal(t, tc.gitName, item.AuthorName)
+				}
+				if item.Source == "pre" && item.ItemNumber == 1 {
+					assert.Equal(t, tc.prAuthor, item.Author)
+				}
+			}
+			raw, err := d.ListMREvents(t.Context(), mrID)
+			require.NoError(t, err)
+			require.Len(t, raw, 1)
+			assert.Equal(t, tc.actor, raw[0].Author)
+			assert.Equal(t, tc.metadata, raw[0].MetadataJSON)
+			if tc.name == "original author" {
+				opts.Search = "alice"
+				items, err = d.ListActivity(t.Context(), opts)
+				require.NoError(t, err)
+				assert.Len(t, items, 2)
+				opts.Search = "integrator"
+				items, err = d.ListActivity(t.Context(), opts)
+				require.NoError(t, err)
+				assert.Empty(t, items)
+			}
+			if tc.name == "bot original author" || tc.name == "bot committer" {
+				opts.HideBots = true
+				items, err = d.ListActivity(t.Context(), opts)
+				require.NoError(t, err)
+				if tc.name == "bot committer" {
+					assert.Len(t, items, 2)
+				} else {
+					assert.Empty(t, items)
+				}
+			}
+		})
+	}
+}
+
+func TestActivityCommitIdentityMigration(t *testing.T) {
+	for _, version := range []uint{0, 73} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "forge.db")
+			if version != 0 {
+				openAtVersionForTest(t, path, version, func(*sql.DB) {})
+			}
+			d, err := Open(path)
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = d.Close() })
+			var name string
+			require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), "SELECT name FROM sqlite_master WHERE name = 'idx_mr_events_commit_summary'").Scan(&name))
+			assertDatabaseIntegrityForTest(t, d.ReadDB())
+		})
+	}
+}
+
+// Inspect the actual Activity SQL while retaining its real database execution.
+type activityPlanQueryer struct {
+	queryer
+	t  *testing.T
+	ro *sql.DB
+}
+
+func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	plan := explainQueryPlan(q.t, q.ro, query, args...)
+	q.t.Log(strings.Join(plan, "\n"))
+	indexPosition, parentPosition := -1, -1
+	for i, step := range plan {
+		if strings.Contains(step, "idx_mr_events_commit_summary (summary=?)") {
+			indexPosition = i
+		}
+		if indexPosition >= 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
+			parentPosition = i
+			break
+		}
+	}
+	require.GreaterOrEqual(q.t, indexPosition, 0, "commit lookup must search by SHA")
+	require.Greater(q.t, parentPosition, indexPosition, "parent repository check must follow the SHA lookup")
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
+func TestActivityCommitIdentityQueryPlan(t *testing.T) {
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	var events []MREvent
+	for i := range 50 {
+		mrID := insertTestMR(t, d, repoID, i+1, "Pull", baseTime())
+		for j := range 20 {
+			sha := fmt.Sprintf("%040d", i*20+j)
+			events = append(events, MREvent{MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "alice", CreatedAt: baseTime(), DedupeKey: sha})
+		}
+	}
+	require.NoError(t, d.UpsertMREvents(t.Context(), events))
+	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{testBranchCommit(repoID, "main", fmt.Sprintf("%040d", 1), "Landed", baseTime())}))
+	require.NoError(t, d.Optimize(t.Context()))
+	items, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "alice", items[0].Author)
 }

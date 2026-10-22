@@ -159,8 +159,8 @@ describe("collapseActivityRuns", () => {
   it("rolls up branch commit runs by repo branch and author", () => {
     const rows = collapseActivityRuns(
       [
-        branchItem("9", "default_branch_commit", "alice"),
-        branchItem("8", "default_branch_commit", "alice"),
+        { ...branchItem("9", "default_branch_commit", "alice"), author_name: "Alice Example" },
+        { ...branchItem("8", "default_branch_commit", "alice"), author_name: "Different git signature" },
         branchItem("7", "default_branch_commit", "alice"),
       ],
       { rollUpCommits: true },

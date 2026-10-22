@@ -665,7 +665,7 @@
   }
 
   function eventAuthor(event: ActivityItem): string {
-    return event.author_name || event.author;
+    return event.author || event.author_name || "";
   }
 
   // Attribute the thread to its PR/issue author once that identity is known.

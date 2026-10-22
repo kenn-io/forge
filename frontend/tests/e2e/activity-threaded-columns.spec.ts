@@ -170,7 +170,7 @@ test.describe("threaded activity columns", () => {
 
     const row = page.locator(".branch-activity-row").first();
     await expect(row).toBeVisible();
-    await expect(row.locator(".cell--author")).toHaveText("Carol Committer");
+    await expect(row.locator(".cell--author")).toHaveText("carol");
     await expect(row.locator(".cell--type")).toHaveText("Commit");
   });
 

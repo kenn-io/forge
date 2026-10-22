@@ -472,7 +472,7 @@ describe("ActivityThreaded collapse", () => {
     const eventAuthors = Array.from(container.querySelectorAll(".event-row .event-author")).map((el) =>
       el.textContent?.trim(),
     );
-    expect(eventAuthors).toEqual(["Bob Example", "Alice Example"]);
+    expect(eventAuthors).toEqual(["bob", "alice"]);
   });
 
   it("shows a workspace indicator on item threads with attached workspaces", () => {
@@ -500,7 +500,7 @@ describe("ActivityThreaded collapse", () => {
 
     const row = container.querySelector(".branch-activity-row");
     const authorCell = row?.querySelector(".cell--author");
-    expect(authorCell?.textContent?.trim()).toBe("Alice Example");
+    expect(authorCell?.textContent?.trim()).toBe("alice");
   });
 
   it("shows just the repo name when hideOrgName is on", () => {

@@ -696,6 +696,7 @@ describe("ActivityFeed compact mode", () => {
 
     const rows = container.querySelectorAll(".activity-row");
     expect(rows).toHaveLength(3);
+    expect(rows[0]?.querySelector(".cell--author")?.textContent?.trim()).toBe("alice");
     expect(container.textContent).toContain("Ship direct main commit 1");
     expect(container.textContent).toContain("Ship direct main commit 2");
     expect(container.textContent).toContain("Ship direct main commit 3");

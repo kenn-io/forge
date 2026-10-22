@@ -579,7 +579,7 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*Alice Example/ });
+    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*alice/ });
     await fireEvent.click(event);
 
     expect(onSelectItem).not.toHaveBeenCalled();

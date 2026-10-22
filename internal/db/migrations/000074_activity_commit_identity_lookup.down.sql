@@ -1,0 +1,1 @@
+DROP INDEX idx_mr_events_commit_summary;

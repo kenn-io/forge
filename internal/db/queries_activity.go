@@ -397,7 +397,9 @@ func listActivityWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       'pr', p.number, p.title,
 			       p.url, p.state,
-			       e.author, p.author, e.created_at,
+			       CASE WHEN r.platform = 'github' AND e.event_type = 'commit'
+			            THEN COALESCE(NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), ''), e.author)
+			            ELSE e.author END, p.author, e.created_at,
 			       p.id,
 			       substr(COALESCE(e.body, ''), 1, 200),
 			       '', '', '', '',
@@ -450,7 +452,17 @@ func listActivityWithQueryer(
 			       r.owner, r.name, r.repo_path_key,
 			       '', 0, '',
 			       '', '',
-			       substr(bc.author_name, 1, %[1]d), '', bc.committed_at,
+			       substr(CASE WHEN r.platform = 'github' THEN COALESCE((
+			           SELECT COALESCE(NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), ''),
+			                           CASE WHEN bc.author_name != '' THEN NULLIF(e.author, '') END)
+			           FROM forge_mr_events e
+			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
+			           WHERE e.event_type = 'commit' AND e.summary = bc.commit_sha
+			             AND p.repo_id = bc.repo_id
+			             AND (NULLIF(json_extract(NULLIF(e.metadata_json, ''), '$.commit_author'), '') IS NOT NULL
+			                  OR (bc.author_name != '' AND e.author != ''))
+			           ORDER BY e.id DESC LIMIT 1
+			       ), bc.author_name) ELSE bc.author_name END, 1, %[1]d), '', bc.committed_at,
 			       NULL,
 			       substr(bc.subject, 1, 200),
 			       bc.branch_name, bc.commit_sha, '', '',

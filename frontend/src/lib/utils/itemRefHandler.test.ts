@@ -11,9 +11,10 @@ const mocks = vi.hoisted(() => ({
   showFlash: vi.fn(),
 }));
 
-vi.mock("./pageNavigation.js", () => ({
-  navigateToURL: mocks.navigateToURL,
-}));
+vi.mock("./pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pageNavigation.js")>();
+  return { ...actual, navigateToURL: mocks.navigateToURL };
+});
 
 vi.mock("../api/runtime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/runtime.js")>();
@@ -423,9 +424,11 @@ describe("itemRefHandler", () => {
   });
 
   it.each([
-    ["the user stays on the page", false],
-    ["the user moved to another page", true],
-  ])("opens the provider page for a late 404 only while %s", async (_label, moveAway) => {
+    ["the user stays on the page", null],
+    ["the user moved to another page", "/settings"],
+    ["the user selected another Activity item", "/?selected=pr:13"],
+    ["the user closed the Activity panel", "/"],
+  ])("opens the provider page for a late 404 only while %s", async (_label, laterURL) => {
     const { initItemRefHandler } = await import("./itemRefHandler.js");
     const runtime = makeAppRuntime(
       makeGeneratedClient({ RepositoriesService: { listRepos: mocks.repos, resolveRepoItemOnHost: mocks.post } }),
@@ -439,7 +442,8 @@ describe("itemRefHandler", () => {
       lookupSettled = true;
       return problemResponse(404, "notFound");
     });
-    const originPath = window.location.pathname;
+    const originURL = window.location.pathname + window.location.search;
+    window.history.pushState(null, "", "/?selected=pr:12");
     const cleanup = initItemRefHandler(runtime, undefined, document);
     await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
     const anchor = document.createElement("a");
@@ -455,15 +459,15 @@ describe("itemRefHandler", () => {
     try {
       anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
       await lookupStarted.promise;
-      if (moveAway) window.history.pushState(null, "", "/settings");
+      if (laterURL !== null) window.history.pushState(null, "", laterURL);
       releaseLookup.resolve();
       await vi.waitFor(() => expect(lookupSettled).toBe(true));
       await new Promise((resolve) => setTimeout(resolve, 0));
-      if (moveAway) expect(mocks.navigateToURL).not.toHaveBeenCalled();
+      if (laterURL !== null) expect(mocks.navigateToURL).not.toHaveBeenCalled();
       else expect(mocks.navigateToURL).toHaveBeenCalledWith("https://forge.example.com/acme/widgets/pulls/12");
       expect(mocks.showFlash).not.toHaveBeenCalled();
     } finally {
-      window.history.pushState(null, "", originPath);
+      window.history.pushState(null, "", originURL);
       cleanup();
       await Effect.runPromise(runtime.disposeEffect);
     }

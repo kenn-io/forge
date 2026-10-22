@@ -18,7 +18,7 @@
   import { getRoute, navigate } from "../../stores/router.svelte.ts";
   import { resolvedPlatformHost } from "../../api/provider-routes.js";
   import { initItemRefHandler } from "../../utils/itemRefHandler.js";
-  import { navigateToURL } from "../../utils/pageNavigation.js";
+  import { currentInAppPath, navigateToURL } from "../../utils/pageNavigation.js";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
@@ -2391,7 +2391,7 @@
       const id = workspaceId;
       const hostKey = workspaceHostKey;
       const selectionGeneration = ++itemSelectionGeneration;
-      const originPath = window.location.pathname;
+      const originPath = currentInAppPath();
       const selectionCurrent = () =>
         selectionGeneration === itemSelectionGeneration && isCurrentWorkspace(id, hostKey);
       appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
@@ -2402,7 +2402,7 @@
         });
       }, (url) => {
         // A parked view keeps its workspace, so also require the same page.
-        if (selectionCurrent() && window.location.pathname === originPath) navigateToURL(url);
+        if (selectionCurrent() && currentInAppPath() === originPath) navigateToURL(url);
       }).pipe(Effect.tap(() => Effect.sync(() => {
         if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
       }))), {

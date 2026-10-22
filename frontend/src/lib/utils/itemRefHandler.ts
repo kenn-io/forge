@@ -13,7 +13,7 @@ import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 import { parseKnownProviderItemURL, type ProviderContext, type ResolvableItemReference } from "./item-reference.js";
-import { navigateToURL } from "./pageNavigation.js";
+import { currentInAppPath, navigateToURL } from "./pageNavigation.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -106,7 +106,7 @@ export function resolveItemReference(
   ref: ResolvableItemReference,
   onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
 ): AppExecution<void, unknown> {
-  const originPath = window.location.pathname;
+  const originPath = currentInAppPath();
   return runtime.runCommand(
     resolveItemReferenceEffect(ref).pipe(
       Effect.tap((resolution) =>
@@ -114,8 +114,8 @@ export function resolveItemReference(
           if (resolution?.kind === "item") onNavigate(resolution.item);
           // The click was cancelled before the lookup, so the provider page
           // opens in this tab; browsers block a tab opened after an await.
-          // Skip it once the user has moved to another page.
-          else if (resolution?.kind === "providerPage" && window.location.pathname === originPath)
+          // Skip it once the user has moved to another page or selection.
+          else if (resolution?.kind === "providerPage" && currentInAppPath() === originPath)
             navigateToURL(resolution.url);
         }),
       ),

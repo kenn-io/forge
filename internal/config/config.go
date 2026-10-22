@@ -1201,9 +1201,9 @@ func (c *Config) MCPListenAddr() string {
 		return ""
 	}
 	// The companion stays local even when the main listener faces a network.
-	host := c.Host
-	if !IsLoopbackHostname(host) {
-		host = "127.0.0.1"
+	host := "127.0.0.1"
+	if ip := net.ParseIP(c.Host); ip != nil && ip.IsLoopback() {
+		host = ip.String()
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }

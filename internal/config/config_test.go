@@ -184,6 +184,7 @@ func TestMCPListenAddrStaysLoopback(t *testing.T) {
 		want string
 	}{
 		{host: "127.0.0.1", want: "127.0.0.1:8092"},
+		{host: "::ffff:127.0.0.1", want: "127.0.0.1:8092"},
 		{host: "::1", port: "9192", want: "[::1]:9192"},
 		{host: "192.0.2.10", want: "127.0.0.1:8092"},
 		{host: "2001:db8::10", port: "9192", want: "127.0.0.1:9192"},

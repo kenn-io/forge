@@ -1747,6 +1747,7 @@ func buildAppState(
 		Host:                "127.0.0.1",
 		Port:                8091,
 		BasePath:            "/",
+		MCP:                 config.MCP{Enabled: new(false)},
 		Repos:               repos,
 		Activity: config.Activity{
 			ViewMode:  "flat",

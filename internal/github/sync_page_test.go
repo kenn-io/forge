@@ -158,48 +158,63 @@ func TestPageSyncMRRepairsMissingClone(t *testing.T) {
 }
 
 func TestPageSyncMRRecomputesMergedDiff(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	f := newPageSyncFixture(t)
+	for _, merged := range []bool{true, false} {
+		name := "closed unmerged"
+		if merged {
+			name = "merged"
+		}
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			f := newPageSyncFixture(t)
 
-	syncActivityGitRun(t, f.work, "checkout", "-B", "main", f.base)
-	syncActivityGitRun(t, f.work, "merge", "--no-ff", f.head, "-m", "Merge feature")
-	merge := syncActivityGitRun(t, f.work, "rev-parse", "HEAD")
-	syncActivityGitRun(t, f.work, "push", "origin", "main", f.head+":refs/pull/1/head")
-	f.client.singlePR.State = new("closed")
-	f.client.singlePR.Merged = new(true)
-	f.client.singlePR.MergedAt = makeTimestamp(time.Now().UTC())
-	f.client.singlePR.MergeCommitSHA = &merge
-	f.client.singlePR.Base.SHA = &merge
-	f.client.notModified = false
-	f.client.nextETag = `"merged-v1"`
-	require.NoError(f.syncer.ensureClone(withCloneRepositoryIdentity(ctx, f.repo), f.repo))
-	_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1, true)
-	require.NoError(err)
-	diff, err := f.syncer.db.GetDiffSHAsByRepoID(ctx, f.repoID, 1)
-	require.NoError(err)
-	require.Equal("merged", diff.State)
-	require.Equal(f.head, diff.MergeBaseSHA)
-	require.Equal(f.head, diff.DiffHeadSHA)
-	require.False(diff.Stale())
-	etag, err := f.syncer.db.GetHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1)
-	require.NoError(err)
-	require.Equal(`"merged-v1"`, etag)
-	f.client.receivedETag = ""
-	f.client.getPRCalls.Store(0)
-	require.NoError(f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-	assert.Empty(f.client.receivedETag, "merged page polls send no If-None-Match")
-	assert.Positive(f.client.getPRCalls.Load())
-	diff, err = f.syncer.db.GetDiffSHAsByRepoID(ctx, f.repoID, 1)
-	require.NoError(err)
-	assert.Equal(f.head, diff.DiffHeadSHA)
-	assert.Equal(f.base, diff.DiffBaseSHA)
-	assert.Equal(f.base, diff.MergeBaseSHA)
-	recoveredDiff, err := f.syncer.clones.Diff(withCloneRepositoryIdentity(ctx, f.repo), "github", "github.com", "owner", "repo", diff.MergeBaseSHA, diff.DiffHeadSHA, false)
-	require.NoError(err)
-	require.Len(recoveredDiff.Files, 1)
-	assert.Equal("feature.txt", recoveredDiff.Files[0].Path)
+			f.client.singlePR.State = new("closed")
+			if merged {
+				syncActivityGitRun(t, f.work, "checkout", "-B", "main", f.base)
+				syncActivityGitRun(t, f.work, "merge", "--no-ff", f.head, "-m", "Merge feature")
+				merge := syncActivityGitRun(t, f.work, "rev-parse", "HEAD")
+				syncActivityGitRun(t, f.work, "push", "origin", "main", f.head+":refs/pull/1/head")
+				f.client.singlePR.Merged = new(true)
+				f.client.singlePR.MergedAt = makeTimestamp(time.Now().UTC())
+				f.client.singlePR.MergeCommitSHA = &merge
+				f.client.singlePR.Base.SHA = &merge
+			}
+			f.client.notModified = false
+			f.client.nextETag = `"merged-v1"`
+			require.NoError(f.syncer.ensureClone(withCloneRepositoryIdentity(ctx, f.repo), f.repo))
+			_, err := f.syncer.fetchMRDetail(ctx, f.repo, f.repoID, 1, true)
+			require.NoError(err)
+			diff, err := f.syncer.db.GetDiffSHAsByRepoID(ctx, f.repoID, 1)
+			require.NoError(err)
+			if merged {
+				require.Equal("merged", diff.State)
+				require.Equal(f.head, diff.MergeBaseSHA)
+			} else {
+				require.Equal("closed", diff.State)
+				require.Equal(f.base, diff.MergeBaseSHA)
+			}
+			require.Equal(f.head, diff.DiffHeadSHA)
+			require.False(diff.Stale())
+			etag, err := f.syncer.db.GetHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1)
+			require.NoError(err)
+			require.Equal(`"merged-v1"`, etag)
+			f.client.receivedETag = ""
+			f.client.getPRCalls.Store(0)
+			require.NoError(f.syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
+			assert.Empty(f.client.receivedETag, "terminal page polls send no If-None-Match")
+			assert.Positive(f.client.getPRCalls.Load())
+			diff, err = f.syncer.db.GetDiffSHAsByRepoID(ctx, f.repoID, 1)
+			require.NoError(err)
+			assert.Equal(f.head, diff.DiffHeadSHA)
+			assert.Equal(f.base, diff.DiffBaseSHA)
+			assert.Equal(f.base, diff.MergeBaseSHA)
+			recoveredDiff, err := f.syncer.clones.Diff(withCloneRepositoryIdentity(ctx, f.repo), "github", "github.com", "owner", "repo", diff.MergeBaseSHA, diff.DiffHeadSHA, false)
+			require.NoError(err)
+			require.Len(recoveredDiff.Files, 1)
+			assert.Equal("feature.txt", recoveredDiff.Files[0].Path)
+		})
+	}
 }
 
 func TestPageSyncMRFullySyncsMissingParent(t *testing.T) {

@@ -35,7 +35,8 @@ where the provider plays them. For private repositories, Forge loads them with
 your provider credential. To watch one larger without leaving the page, use
 the expand button in the video's controls, next to full screen. Playback
 continues in the larger view, and picks up inline from there when you close
-it.
+it. The speed button sets the playback speed, and Forge remembers it for the
+next videos you open.
 
 In **Files**, select a line to draft an inline comment. When the provider
 supports native multiline ranges, you can also select a contiguous range.

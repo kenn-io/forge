@@ -5932,8 +5932,8 @@ func (s *Syncer) syncRepoOverview(
 ) {
 	releases, err := client.ListReleases(ctx, repo.Owner, repo.Name, 10)
 	if err != nil {
-		slog.Warn("list repo releases failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		logSyncFailure(slog.LevelWarn, "list repo releases failed", err,
+			"repo", repo.Owner+"/"+repo.Name,
 		)
 		return
 	}
@@ -5952,8 +5952,8 @@ func (s *Syncer) syncRepoOverview(
 	if len(selectedReleases) == 0 {
 		tags, err := client.ListTags(ctx, repo.Owner, repo.Name, 3)
 		if err != nil {
-			slog.Warn("list repo tags failed",
-				"repo", repo.Owner+"/"+repo.Name, "err", err,
+			logSyncFailure(slog.LevelWarn, "list repo tags failed", err,
+				"repo", repo.Owner+"/"+repo.Name,
 			)
 		} else {
 			selectedTags = displayTags(tags, 3)
@@ -6005,8 +6005,8 @@ func (s *Syncer) syncProviderRepoOverview(
 
 	releases, err := releaseReader.ListReleases(ctx, platformRepoRef(repo))
 	if err != nil {
-		slog.Warn("list repo releases failed",
-			"repo", repo.Owner+"/"+repo.Name, "err", err,
+		logSyncFailure(slog.LevelWarn, "list repo releases failed", err,
+			"repo", repo.Owner+"/"+repo.Name,
 		)
 		return
 	}
@@ -6390,10 +6390,7 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failMR
 							graphQLDone = true
-						} else if syncBudgetWait(gqlErr) {
-							failedScope |= failMR
-							partialCause = retainSyncFailureCause(partialCause, gqlErr)
-						} else {
+						} else if !syncBudgetWait(gqlErr) {
 							slog.Warn("GraphQL fetch failed, falling back to REST index",
 								"repo", repo.Owner+"/"+repo.Name,
 								"err", gqlErr,
@@ -6553,10 +6550,7 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failIssues
 							graphQLIssuesDone = true
-						} else if syncBudgetWait(gqlErr) {
-							failedScope |= failIssues
-							partialCause = retainSyncFailureCause(partialCause, gqlErr)
-						} else {
+						} else if !syncBudgetWait(gqlErr) {
 							slog.Warn("GraphQL issue fetch failed, falling back to REST",
 								"repo", repo.Owner+"/"+repo.Name,
 								"err", gqlErr,
@@ -7771,10 +7765,9 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 				)
 			}
 			failureCause = retainSyncFailureCause(failureCause, err)
-			slog.Error("GraphQL sync issue failed",
+			logSyncFailure(slog.LevelError, "GraphQL sync issue failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
-				"err", err,
 			)
 			failedScope |= failIssues
 		}

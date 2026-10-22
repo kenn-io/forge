@@ -16330,41 +16330,75 @@ func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(20)
-	var refill atomic.Bool
-	var listCalls, gqlAttempts, gqlRequests, requestsAfterLists atomic.Int64
+	budget := NewSyncBudgetWithEssentialReserve(60)
+	// Six reserved slots cover identity discovery and both lists across two cycles.
+	_, spent := budget.TrySpend(54)
+	require.True(spent)
+	var refill, listsStarted atomic.Bool
+	var prOK, prNotModified, issueOK, issueConditional, closureCalls atomic.Int64
+	var gqlAttempts, gqlRequests, requestsAfterLists atomic.Int64
 	now := time.Now().UTC().Truncate(time.Second)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if !refill.Load() && listCalls.Load() > 0 && !strings.HasSuffix(r.URL.Path, "/pulls") && !strings.HasSuffix(r.URL.Path, "/issues") {
+		if !refill.Load() && listsStarted.Load() && !strings.HasSuffix(r.URL.Path, "/pulls") && !strings.HasSuffix(r.URL.Path, "/issues") {
 			requestsAfterLists.Add(1)
 		}
 		switch r.URL.Path {
 		case "/api/v3/repos/owner/repo/pulls", "/api/v3/repos/owner/repo/issues":
-			listCalls.Add(1)
-			if r.Header.Get("If-None-Match") != "" {
+			listsStarted.Store(true)
+			isPR := strings.HasSuffix(r.URL.Path, "/pulls")
+			if !isPR && r.Header.Get("If-None-Match") != "" {
+				issueConditional.Add(1)
+			}
+			w.Header().Set("ETag", `"list-v1"`)
+			if r.Header.Get("If-None-Match") == `"list-v1"` {
+				if isPR {
+					prNotModified.Add(1)
+				}
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
-			w.Header().Set("ETag", `"list-v1"`)
-			if strings.HasSuffix(r.URL.Path, "/pulls") {
-				if !refill.Load() {
-					// Leave only the issue-list slot after this essential PR read.
-					_, spent := budget.TrySpendEssential(budget.Remaining() - 1)
-					assert.True(spent)
-				}
+			if isPR {
+				prOK.Add(1)
 				_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(1, now)})
 			} else {
+				issueOK.Add(1)
 				_ = json.NewEncoder(w).Encode([]*gh.Issue{buildOpenIssue(2, now)})
 			}
+		case "/api/v3/repos/owner/repo/pulls/1":
+			pr := buildOpenPR(1, now)
+			pr.Title = new("Hydrated PR")
+			_ = json.NewEncoder(w).Encode(pr)
+		case "/api/v3/repos/owner/repo/issues/3":
+			closureCalls.Add(1)
+			issue := buildOpenIssue(3, now)
+			issue.State = new("closed")
+			issue.ClosedAt = &gh.Timestamp{Time: now}
+			_ = json.NewEncoder(w).Encode(issue)
+		case "/api/v3/repos/owner/repo/commits/abc123def456/status":
+			_, _ = io.WriteString(w, `{"state":"success","statuses":[]}`)
+		case "/api/v3/repos/owner/repo/commits/abc123def456/check-runs":
+			_, _ = io.WriteString(w, `{"total_count":0,"check_runs":[]}`)
+		case "/api/v3/repos/owner/repo/actions/runs":
+			_, _ = io.WriteString(w, `{"total_count":0,"workflow_runs":[]}`)
 		case "/api/graphql":
 			gqlRequests.Add(1)
 			body, err := io.ReadAll(r.Body)
 			assert.NoError(err)
-			if bytes.Contains(body, []byte("pullRequests(")) {
-				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequests":{"nodes":[{"databaseId":1000,"number":1,"title":"Hydrated PR","state":"OPEN","url":"https://github.com/owner/repo/pull/1","author":{"login":"alice"},"createdAt":%q,"updatedAt":%q,"headRefName":"feature-branch","baseRefName":"main","headRefOid":"abc123def456","comments":{"nodes":[]},"reviewThreads":{"nodes":[]},"reviews":{"nodes":[]},"allCommits":{"nodes":[]},"timelineItems":{"nodes":[]}}],"pageInfo":{"hasNextPage":false}}}}}`, now.Format(time.RFC3339), now.Format(time.RFC3339))
-			} else {
+			switch {
+			case bytes.Contains(body, []byte("issues(")):
 				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"issues":{"nodes":[{"databaseId":2000,"number":2,"title":"Hydrated issue","state":"OPEN","url":"https://github.com/owner/repo/issues/2","author":{"login":"alice"},"createdAt":%q,"updatedAt":%q,"comments":{"nodes":[]},"timelineItems":{"nodes":[]}}],"pageInfo":{"hasNextPage":false}}}}}`, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			case bytes.Contains(body, []byte("isMergeQueueEnabled")):
+				_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":false,"mergeQueueEntry":null,"latestQueueEvent":{"nodes":[]}}}}}`)
+			case bytes.Contains(body, []byte("reviewThreads(")):
+				_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
+			case bytes.Contains(body, []byte("timelineItems(")):
+				_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
+			case bytes.Contains(body, []byte("comments(")):
+				_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
+			default:
+				assert.Fail("unexpected GraphQL query", string(body))
+				w.WriteHeader(http.StatusBadRequest)
 			}
 		case "/api/v3/repos/owner/repo", "/api/v3/repositories/100":
 			_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"has_issues":true,"default_branch":"main"}`)
@@ -16388,10 +16422,20 @@ func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
 	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
 		githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlHTTP), nil,
 	)})
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "owner", Name: "repo",
+		Key: platform.RepositoryIDKey(100),
+	})
+	require.NoError(err)
+	missing, err := NormalizeIssue(repoID, buildOpenIssue(3, now))
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, missing)
+	require.NoError(err)
 	logs := captureDefaultLogs(t)
 	syncer.RunOnce(ctx)
 
 	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.NotContains(logs.String(), "retrying with smaller page")
 	assert.NotContains(logs.String(), "level=WARN")
 	assert.NotContains(logs.String(), "level=ERROR")
 	assert.Equal(int64(2), gqlAttempts.Load())
@@ -16406,17 +16450,48 @@ func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(issue)
 
-	// Recovery must evict the newly stored list ETags and hydrate the PR.
+	logs.Reset()
+	listsStarted.Store(false)
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(1), prOK.Load())
+	assert.Equal(int64(1), prNotModified.Load())
+	assert.Equal(int64(2), issueOK.Load())
+	assert.Zero(issueConditional.Load())
+	assert.Zero(closureCalls.Load())
+	assert.Zero(requestsAfterLists.Load())
+	assert.Zero(gqlRequests.Load())
+	assert.Equal(int64(3), gqlAttempts.Load())
+	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.NotContains(logs.String(), "retrying with smaller page")
+	assert.NotContains(logs.String(), "level=WARN")
+	assert.NotContains(logs.String(), "level=ERROR")
+	missing, err = database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
+	require.NoError(err)
+	require.NotNil(missing)
+	assert.Equal("open", missing.State)
+
+	// Item failures force issue discovery again; unchanged PRs hydrate through the detail drain.
+	logs.Reset()
 	refill.Store(true)
 	budget.Reset()
 	syncer.RunOnce(ctx)
-	assert.Equal(int64(4), listCalls.Load())
-	assert.GreaterOrEqual(gqlRequests.Load(), int64(2))
+	assert.Equal(int64(1), prOK.Load())
+	assert.Equal(int64(2), prNotModified.Load())
+	assert.Equal(int64(3), issueOK.Load())
+	assert.Zero(issueConditional.Load())
+	assert.Equal(int64(1), closureCalls.Load())
+	missing, err = database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
+	require.NoError(err)
+	require.NotNil(missing)
+	assert.Equal("closed", missing.State)
+	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
 	pr, err = database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal("Hydrated PR", pr.Title)
 	assert.NotNil(pr.DetailFetchedAt)
+	assert.NotContains(logs.String(), "level=WARN")
+	assert.NotContains(logs.String(), "level=ERROR")
 }
 
 func TestSyncerBudgetWaitWithRealFailureStillLogsError(t *testing.T) {

@@ -151,11 +151,17 @@ func listActivityWithQueryer(
 	}
 
 	searchQuery := ParseSearchQuery(opts.Search)
+	metadataAuthorSQL := activityCommitMetadataSQL("e.metadata_json")
 	searchIdentityCondition := ""
+	searchNamedColumn, searchEmptyColumn := "", ""
+	searchPRColumn, searchBranchColumn := "", ""
 	searchArgsPerTerm := 13
 	if !searchQuery.Empty() {
-		searchIdentityCondition = " OR LOWER(CASE source WHEN 'pre' THEN search_pr.identity " +
-			"WHEN 'bc' THEN " + activityCommitIdentitySQL("search_branch.metadata_author", "CASE WHEN author_name != '' THEN search_branch.actor END") + " END) LIKE ?"
+		searchIdentityCondition = " OR LOWER(search_commit_author) LIKE ?"
+		searchNamedColumn, searchEmptyColumn = ", '' AS search_commit_author", ", ''"
+		searchPRColumn = ", CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN " +
+			activityCommitIdentitySQL(metadataAuthorSQL, "e.author") + " ELSE '' END"
+		searchBranchColumn = ", CASE WHEN r.platform = 'github' THEN " + activityBranchCommitIdentitySQL("bc") + " ELSE '' END"
 		searchArgsPerTerm++
 	}
 	if cond, condArgs := searchQuery.sqlCondition(
@@ -302,7 +308,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       COALESCE(NULLIF(mr.url, ''), NULLIF(iss.url, ''), n.web_url),
-			       COALESCE(mr.state, iss.state, '')
+			       COALESCE(mr.state, iss.state, '')` + searchEmptyColumn + `
 			FROM forge_notification_items n
 			JOIN forge_repos r
 			       ON r.lifecycle_state = 'active'
@@ -332,34 +338,8 @@ func listActivityWithQueryer(
 
 	// Materialize the page before deriving parent recency and display identity
 	// so those lookups run once per returned row rather than per candidate row.
-	metadataAuthorSQL := activityCommitMetadataSQL("e.metadata_json")
-	searchCTE, searchJoins := "", ""
-	if !searchQuery.Empty() {
-		searchCTE = fmt.Sprintf(`search_commit_events AS MATERIALIZED (
-		    SELECT e.id AS event_id, p.repo_id AS search_repo_id, e.summary AS search_sha,
-		           %[1]s AS metadata_author, e.author AS actor, %[2]s AS identity
-		    FROM forge_mr_events e
-		    JOIN forge_merge_requests p ON p.id = e.merge_request_id
-		    JOIN forge_repos r ON r.id = p.repo_id
-		    WHERE e.event_type = 'commit' AND r.platform = 'github'
-		), search_branch_identities AS MATERIALIZED (
-		    SELECT search_repo_id, search_sha, metadata_author, actor
-		    FROM (
-		        SELECT search_repo_id, search_sha, metadata_author, actor,
-		               ROW_NUMBER() OVER (PARTITION BY search_repo_id, search_sha ORDER BY %[3]s) AS preference
-		        FROM search_commit_events
-		        WHERE metadata_author IS NOT NULL OR actor != ''
-		    ) WHERE preference = 1
-		), `, metadataAuthorSQL, activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
-			activityCommitPreferenceSQL("metadata_author", "event_id"))
-		searchJoins = `LEFT JOIN search_commit_events search_pr
-		    ON unified.source = 'pre' AND search_pr.event_id = unified.source_id
-		LEFT JOIN search_branch_identities search_branch
-		    ON unified.source = 'bc' AND unified.platform = 'github'
-		   AND search_branch.search_repo_id = unified.repo_id AND search_branch.search_sha = unified.commit_sha`
-	}
 	query := fmt.Sprintf(`
-		WITH %[7]spage AS MATERIALIZED (
+		WITH page AS MATERIALIZED (
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
 		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
 		       item_type, item_number, item_title,
@@ -386,7 +366,7 @@ func listActivityWithQueryer(
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
-			       '' AS subject_state
+			       '' AS subject_state%[7]s
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -410,7 +390,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -439,7 +419,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[9]s
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -466,7 +446,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -494,7 +474,7 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       ''
+			       ''%[11]s
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -511,12 +491,11 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
-		%[8]s
 		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC
 		LIMIT ?
@@ -536,25 +515,15 @@ func listActivityWithQueryer(
 		       authored_at, committed_at, activity_url,
 		       subject_state, CASE
 		           WHEN page.source = 'pre' AND page.platform = 'github' AND page.activity_type = 'commit' THEN COALESCE((
-		               SELECT %[9]s
+		               SELECT %[6]s
 		               FROM forge_mr_events e WHERE e.id = page.source_id
 		           ), '')
-		           WHEN page.source = 'bc' AND page.platform = 'github' THEN COALESCE((
-			           SELECT %[10]s
-			           FROM forge_mr_events e
-			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
-			           WHERE e.event_type = 'commit' AND e.summary = page.commit_sha
-			             AND p.repo_id = page.repo_id
-			             AND (%[6]s IS NOT NULL OR (page.author_name != '' AND e.author != ''))
-			           ORDER BY %[11]s LIMIT 1
-			       ), '') ELSE '' END AS commit_author
+		           WHEN page.source = 'bc' AND page.platform = 'github' THEN %[10]s ELSE '' END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"), metadataAuthorSQL, searchCTE, searchJoins,
-		activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
-		activityCommitIdentitySQL(metadataAuthorSQL, "CASE WHEN page.author_name != '' THEN NULLIF(e.author, '') END"),
-		activityCommitPreferenceSQL(metadataAuthorSQL, "e.id"))
+		prActivityAtExpr("p"), issueActivityAtExpr("i"), activityCommitIdentitySQL(metadataAuthorSQL, "e.author"),
+		searchNamedColumn, searchEmptyColumn, searchPRColumn, activityBranchCommitIdentitySQL("page"), searchBranchColumn)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)
@@ -1184,4 +1153,19 @@ func activityCommitIdentitySQL(metadata, actor string) string {
 
 func activityCommitPreferenceSQL(metadata, eventID string) string {
 	return "(" + metadata + " IS NOT NULL) DESC, " + eventID + " DESC"
+}
+
+// Resolve only the candidate's exact repository and SHA through the commit index.
+func activityBranchCommitIdentitySQL(candidate string) string {
+	metadata := activityCommitMetadataSQL("e.metadata_json")
+	return fmt.Sprintf(`COALESCE((
+	    SELECT %[1]s
+	    FROM forge_mr_events e
+	    JOIN forge_merge_requests p ON p.id = e.merge_request_id
+	    WHERE e.event_type = 'commit' AND e.summary = %[2]s.commit_sha
+	      AND p.repo_id = %[2]s.repo_id
+	      AND (%[3]s IS NOT NULL OR (%[2]s.author_name != '' AND e.author != ''))
+	    ORDER BY %[4]s LIMIT 1
+	), '')`, activityCommitIdentitySQL(metadata, "CASE WHEN "+candidate+".author_name != '' THEN NULLIF(e.author, '') END"),
+		candidate, metadata, activityCommitPreferenceSQL(metadata, "e.id"))
 }

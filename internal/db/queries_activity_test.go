@@ -2823,30 +2823,36 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 			materializations++
 		}
 	}
+	require.Zero(q.t, materializations, "search must resolve candidate keys rather than materialize the global commit cache")
 	if q.search {
-		require.Equal(q.t, 1, materializations, "search resolves commit events once")
-		assert.Contains(q.t, strings.Join(plan, "\n"), "SEARCH search_pr USING AUTOMATIC COVERING INDEX (event_id=?) LEFT-JOIN")
-		assert.Contains(q.t, strings.Join(plan, "\n"), "SEARCH search_branch USING AUTOMATIC COVERING INDEX (search_repo_id=? AND search_sha=?) LEFT-JOIN")
-	} else {
-		require.Zero(q.t, materializations, "queries without parsed terms skip search identities")
+		assert.NotContains(q.t, plan, "SCAN e", "search must not scan every cached commit event")
 	}
 
 	indexPosition, parentPosition, pagePosition, eventPosition := -1, -1, -1, -1
+	searchIndexPosition := -1
 	for i, step := range plan {
 		if step == "SCAN page" {
 			pagePosition = i
 		}
 		if strings.Contains(step, "idx_mr_events_commit_summary (summary=?)") {
 			indexPosition = i
+			if pagePosition < 0 {
+				searchIndexPosition = i
+			}
 		}
 		if strings.Contains(step, "SEARCH e USING INTEGER PRIMARY KEY") {
 			eventPosition = i
 		}
-		if indexPosition >= 0 && parentPosition < 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
+		if pagePosition >= 0 && indexPosition > pagePosition && parentPosition < 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
 			parentPosition = i
 		}
 	}
 	require.GreaterOrEqual(q.t, pagePosition, 0, "query must scan the materialized page")
+	if q.search {
+		require.GreaterOrEqual(q.t, searchIndexPosition, 0, "branch search must use the exact-SHA index before pagination")
+	} else {
+		require.Equal(q.t, -1, searchIndexPosition, "queries without parsed terms skip candidate identity lookups")
+	}
 	require.Greater(q.t, indexPosition, pagePosition, "commit identity lookup must follow pagination")
 	require.Greater(q.t, parentPosition, indexPosition, "parent repository check must follow the SHA lookup")
 	require.Greater(q.t, eventPosition, pagePosition, "PR commit identity lookup must follow pagination")

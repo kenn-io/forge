@@ -19,8 +19,12 @@ The filters can narrow the queue by:
 - draft pull requests
 - human or bot activity
 
-Text search includes the displayed linked commit author and matches every word
-you type. Put `!` or `NOT` before a word to
+Linked GitHub authors from cached pull-request events also appear on
+default-branch commits when the repository and full SHA match. Text search
+includes those displayed names. Other providers keep their existing author
+names.
+
+Text search matches every word you type. Put `!` or `NOT` before a word to
 exclude it: `fix NOT alice` finds items that match "fix" and hides anything
 that matches "alice", including items alice opened. Quote a phrase to keep it together, as in
 `!"needs review"`. The search box highlights `!` and `NOT` when they act as

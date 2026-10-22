@@ -46,6 +46,8 @@
     deferUntilChecksPass?: boolean;
     /** Warn before an immediate merge when aggregate CI has failed. */
     ciFailed?: boolean;
+    /** Providers refuse to merge a draft, so the modal blocks it and says why. */
+    isDraft?: boolean;
     /**
      * True while a background merge is already queued for this PR. The
      * deferred action is withheld (the server would 409 on a second
@@ -86,6 +88,7 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     ciFailed = false,
+    isDraft = false,
     alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue,
     onclose, onstateconflict,
   }: Props = $props();
@@ -133,6 +136,8 @@
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
   const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
+
+  const mergeBlocked = $derived(headPinMissing || isDraft);
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -194,7 +199,7 @@
   }
 
   function submitMerge(deferred: boolean): void {
-    if (headPinMissing) return;
+    if (mergeBlocked) return;
     const params = mergeParams();
     const target = `${repoPath} #${number}`;
     detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, number, params, deferred, {
@@ -335,6 +340,11 @@
         />
       {/if}
 
+      {#if isDraft}
+        <div class="ci-defer-note" role="alert">
+          This pull request is a draft. Mark it ready for review before merging.
+        </div>
+      {/if}
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
           {#if mergeQueue}
@@ -386,7 +396,7 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={headPinMissing}
+      disabled={mergeBlocked}
       tone="success"
       surface="solid"
     >
@@ -396,7 +406,7 @@
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={headPinMissing}
+        disabled={mergeBlocked}
         tone="success"
         surface="soft"
       >

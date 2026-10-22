@@ -3331,6 +3331,7 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           ciFailed={ciStatusHasFailed(p.CIStatus)}
+          isDraft={p.IsDraft}
           alreadyQueued={deferredMergePending}
           mergeQueue={d.merge_queue_target
             ? { branch: d.merge_queue_target.branch, mergeMethod: d.merge_queue_target.merge_method }

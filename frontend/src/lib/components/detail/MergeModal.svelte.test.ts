@@ -336,6 +336,22 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
 
+  it("explains that a draft must be marked ready and does not submit it", async () => {
+    renderModal({ isDraft: true, deferUntilChecksPass: true });
+
+    expect(normalized(screen.getByRole("alert").textContent)).toBe(
+      "This pull request is a draft. Mark it ready for review before merging.",
+    );
+    const mergeAfterCI = screen.getByRole("button", { name: "Merge after CI is complete" });
+    const mergeAnyway = screen.getByRole("button", { name: "Merge Anyway" });
+    expect((mergeAfterCI as HTMLButtonElement).disabled).toBe(true);
+    expect((mergeAnyway as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(mergeAfterCI);
+    await fireEvent.click(mergeAnyway);
+
+    expect(mockMergePull).not.toHaveBeenCalled();
+  });
+
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true });
 

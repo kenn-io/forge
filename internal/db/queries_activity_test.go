@@ -2654,7 +2654,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prCommitAuthor: "Git Author", branchCommitAuthor: "Git Author"},
 		{name: "empty identities"},
 		{name: "malformed metadata", metadata: "{broken", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "missing git author", actor: "integrator", prCommitAuthor: "integrator"},
 		{name: "linked author without git signature", metadata: `{"commit_author":"alice"}`, actor: "integrator", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
 		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"alice"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
 		{name: "bot committer", metadata: `{"commit_author":"alice"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
@@ -2723,10 +2722,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			assert.Equal(t, tc.actor, raw[0].Author)
 			assert.Equal(t, tc.metadata, raw[0].MetadataJSON)
 			if tc.name == "original author" {
-				opts.Search = "alice"
-				items, err = d.ListActivity(t.Context(), opts)
-				require.NoError(t, err)
-				assert.Len(t, items, 2)
 				opts.Search = "integrator"
 				items, err = d.ListActivity(t.Context(), opts)
 				require.NoError(t, err)
@@ -2777,17 +2772,20 @@ type activityPlanQueryer struct {
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	q.t.Log(strings.Join(plan, "\n"))
-	indexPosition, parentPosition := -1, -1
+	indexPosition, parentPosition, pagePosition := -1, -1, -1
 	for i, step := range plan {
+		if step == "SCAN page" {
+			pagePosition = i
+		}
 		if strings.Contains(step, "idx_mr_events_commit_summary (summary=?)") {
 			indexPosition = i
 		}
-		if indexPosition >= 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
+		if indexPosition >= 0 && parentPosition < 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
 			parentPosition = i
-			break
 		}
 	}
-	require.GreaterOrEqual(q.t, indexPosition, 0, "commit lookup must search by SHA")
+	require.GreaterOrEqual(q.t, pagePosition, 0, "query must scan the materialized page")
+	require.Greater(q.t, indexPosition, pagePosition, "commit identity lookup must follow pagination")
 	require.Greater(q.t, parentPosition, indexPosition, "parent repository check must follow the SHA lookup")
 	return q.queryer.QueryContext(ctx, query, args...)
 }
@@ -2804,11 +2802,40 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 		}
 	}
 	require.NoError(t, d.UpsertMREvents(t.Context(), events))
-	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{testBranchCommit(repoID, "main", fmt.Sprintf("%040d", 1), "Landed", baseTime())}))
+	var commits []BranchCommit
+	for i := range 1000 {
+		commits = append(commits, testBranchCommit(repoID, "main", fmt.Sprintf("%040d", i), "Landed", baseTime().Add(time.Duration(i)*time.Second)))
+	}
+	require.NoError(t, d.UpsertBranchCommits(t.Context(), commits))
 	require.NoError(t, d.Optimize(t.Context()))
-	items, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}})
+	items, err := listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"default_branch_commit"}, Limit: 1})
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "Test Author", items[0].Author)
 	assert.Equal(t, "alice", items[0].CommitAuthor)
+}
+
+func TestActivityBranchCommitDoesNotBorrowCommitter(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	mrID := insertTestMR(t, d, repoID, 1, "Pull", baseTime())
+	const sha = "1234567890abcdef1234567890abcdef12345678"
+	require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{
+		MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "integrator",
+		CreatedAt: baseTime(), DedupeKey: "commit-identity",
+	}}))
+	branch := testBranchCommit(repoID, "main", sha, "Landed", baseTime())
+	branch.AuthorName = ""
+	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
+	items, err := d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"default_branch_commit"}})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Empty(t, items[0].Author)
+	assert.Empty(t, items[0].AuthorName)
+	assert.Empty(t, items[0].CommitAuthor)
+	raw, err := d.ListMREvents(t.Context(), mrID)
+	require.NoError(t, err)
+	require.Len(t, raw, 1)
+	assert.Equal(t, "integrator", raw[0].Author)
 }

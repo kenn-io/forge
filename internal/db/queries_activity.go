@@ -154,10 +154,10 @@ func listActivityWithQueryer(
 		"(item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
 			"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
 			"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
-			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR LOWER(commit_author) LIKE ? OR "+
+			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
 			"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
 			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?",
-		14, lowerLikePattern,
+		13, lowerLikePattern,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 		args = append(args, condArgs...)
@@ -461,15 +461,7 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       '', CASE WHEN r.platform = 'github' THEN COALESCE((
-			           SELECT COALESCE(%[6]s, CASE WHEN bc.author_name != '' THEN NULLIF(e.author, '') END)
-			           FROM forge_mr_events e
-			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
-			           WHERE e.event_type = 'commit' AND e.summary = bc.commit_sha
-			             AND p.repo_id = bc.repo_id
-			             AND (%[6]s IS NOT NULL OR (bc.author_name != '' AND e.author != ''))
-			           ORDER BY (%[6]s IS NOT NULL) DESC, e.id DESC LIMIT 1
-			       ), '') ELSE '' END
+			       '', ''
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -508,7 +500,15 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state, commit_author
+		       subject_state, CASE WHEN page.source = 'bc' AND page.platform = 'github' THEN COALESCE((
+			           SELECT COALESCE(%[6]s, CASE WHEN page.author_name != '' THEN NULLIF(e.author, '') END)
+			           FROM forge_mr_events e
+			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
+			           WHERE e.event_type = 'commit' AND e.summary = page.commit_sha
+			             AND p.repo_id = page.repo_id
+			             AND (%[6]s IS NOT NULL OR (page.author_name != '' AND e.author != ''))
+			           ORDER BY (%[6]s IS NOT NULL) DESC, e.id DESC LIMIT 1
+			       ), '') ELSE page.commit_author END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,

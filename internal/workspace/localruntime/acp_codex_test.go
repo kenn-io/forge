@@ -29,8 +29,8 @@ func TestCodexACPDerivesMode(t *testing.T) {
 			codexEffectiveAccess = func(context.Context, []string, []string, string, map[string]any) (string, string, error) {
 				return tc.sandbox, tc.approval, tc.err
 			}
-			a := &ACP{agentName: "@agentclientprotocol/codex-acp"}
-			assert.Equal(t, tc.mode, a.deriveCodexMode(t.Context(), []string{"adapter"}, nil, "/workspace"))
+			a := &ACP{agentName: "@agentclientprotocol/codex-acp", state: ACPState{ConfigOptions: []ACPConfigOption{{ID: "mode", Type: "select", CurrentValue: "agent"}}}}
+			assert.Equal(t, tc.mode, a.deriveCodexMode(t.Context(), []string{"adapter"}, nil, "/workspace", ""))
 			if tc.notice == "" {
 				assert.Empty(t, a.state.Notices)
 			} else {
@@ -45,7 +45,7 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 	previous := codexEffectiveAccess
 	t.Cleanup(func() { codexEffectiveAccess = previous })
 	for _, tc := range []struct {
-		name, agent               string
+		name, agent, initialMode  string
 		command, env, wantCommand []string
 		probe                     bool
 	}{
@@ -54,7 +54,7 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 		{name: "node entry point", agent: "@agentclientprotocol/codex-acp", command: []string{"node", "/adapter/dist/index.js"}, wantCommand: []string{"node", "/adapter/dist/index.js", "cli"}, probe: true},
 		{name: "other agent", agent: "other", command: []string{"codex-acp"}},
 		{name: "missing identity", command: []string{"codex-acp"}},
-		{name: "explicit mode", agent: "@agentclientprotocol/codex-acp", command: []string{"adapter"}, env: []string{"INITIAL_AGENT_MODE=read-only"}},
+		{name: "explicit mode", agent: "@agentclientprotocol/codex-acp", initialMode: "read-only", command: []string{"adapter"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -70,8 +70,12 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 				assert.True(bounded)
 				return "dangerFullAccess", "never", nil
 			}
-			a := &ACP{agentName: tc.agent}
-			mode := a.deriveCodexMode(t.Context(), tc.command, env, "/workspace")
+			initialMode := tc.initialMode
+			if initialMode == "" {
+				initialMode = "agent"
+			}
+			a := &ACP{agentName: tc.agent, state: ACPState{ConfigOptions: []ACPConfigOption{{ID: "mode", Type: "select", CurrentValue: initialMode}}}}
+			mode := a.deriveCodexMode(t.Context(), tc.command, env, "/workspace", "")
 			if tc.probe {
 				assert.Equal(1, calls)
 				assert.Equal("agent-full-access", mode)

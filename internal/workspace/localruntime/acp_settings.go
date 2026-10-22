@@ -125,17 +125,9 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if remaining == nil {
 		remaining = make(map[string]string)
 	}
-	a.mu.Lock()
-	savedModeOffered := slices.ContainsFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool {
-		return values["mode"] != "" && option.ID == "mode" && configOffers(option, values["mode"])
-	})
-	a.mu.Unlock()
-	derivedMode := ""
-	if !savedModeOffered {
-		derivedMode = a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd)
-		if derivedMode != "" {
-			remaining["mode"] = derivedMode
-		}
+	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, values["mode"])
+	if derivedMode != "" {
+		remaining["mode"] = derivedMode
 	}
 	for len(remaining) > 0 {
 		a.mu.Lock()

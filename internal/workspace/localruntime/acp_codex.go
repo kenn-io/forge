@@ -16,8 +16,16 @@ const codexACPInitialModeTimeout = 5 * time.Second
 
 var codexEffectiveAccess = codexhooks.EffectiveAccess
 
-func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd string) string {
+func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd, savedMode string) string {
 	if a.agentName != "@agentclientprotocol/codex-acp" {
+		return ""
+	}
+	a.mu.Lock()
+	derive := slices.ContainsFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool {
+		return option.ID == "mode" && option.Type == "select" && option.CurrentValue == "agent" && !configOffers(option, savedMode)
+	})
+	a.mu.Unlock()
+	if !derive {
 		return ""
 	}
 	var config map[string]any
@@ -25,9 +33,6 @@ func (a *ACP) deriveCodexMode(ctx context.Context, command, env []string, cwd st
 		key, value, _ := strings.Cut(entry, "=")
 		if runtime.GOOS == "windows" {
 			key = strings.ToUpper(key)
-		}
-		if key == "INITIAL_AGENT_MODE" && value != "" {
-			return ""
 		}
 		if key == "CODEX_CONFIG" {
 			_ = json.Unmarshal([]byte(value), &config)

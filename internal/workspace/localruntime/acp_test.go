@@ -85,6 +85,9 @@ func TestACPStdioHelper(t *testing.T) {
 	elicitationOffered := false
 	model, effort := "fast", "low"
 	mode := "agent"
+	if initialMode := os.Getenv("KENN_FORGE_ACP_INITIAL_MODE"); initialMode != "" {
+		mode = initialMode
+	}
 	configResponse := func(id jsontext.Value) {
 		if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"mode","name":"Mode","type":"select","currentValue":%q,"options":[{"value":"agent","name":"Agent"},{"value":"agent-full-access","name":"Full access"},{"value":"read-only","name":"Read-only"}]}]}}`+"\n", id, mode)
@@ -1222,9 +1225,10 @@ func TestCodexACPRestoresMode(t *testing.T) {
 	require.NoError(t, err)
 	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
 	for _, tc := range []struct {
-		name, savedMode, mode, notice string
-		probe, reject, reload, fatal  bool
+		name, savedMode, initialMode, mode, notice string
+		probe, reject, reload, fatal               bool
 	}{
+		{name: "launcher selected mode wins", initialMode: "read-only", mode: "read-only"},
 		{name: "saved offered mode wins", savedMode: "read-only", mode: "read-only"},
 		{name: "unoffered saved mode derives", savedMode: "removed", mode: "agent-full-access", probe: true},
 		{name: "native reload derives", mode: "agent-full-access", probe: true, reload: true},
@@ -1234,6 +1238,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
+			t.Setenv("KENN_FORGE_ACP_INITIAL_MODE", tc.initialMode)
 			t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "")
 			if tc.reject {
 				t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "1")

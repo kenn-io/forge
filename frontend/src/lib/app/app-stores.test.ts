@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { makeAppRuntime, type OwnedAppRuntime } from "./runtime.js";
+import { makeAppRuntime, type AppServices, type OwnedAppRuntime } from "./runtime.js";
 import { createAppStores } from "../app-stores.svelte.js";
 import type { Issue, IssueDetail, PullDetail, PullRequest } from "../api/types.js";
 import { createMockApiFetch } from "../../test/mockApiFetch.js";
@@ -40,12 +40,50 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await Effect.runPromise(runtime.disposeEffect);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
 describe("app store composition", () => {
+  it.each(["activity", "mobile-activity"])(
+    "uses Activity's own poll on %s and still refreshes agent badges on workspace events",
+    async (page) => {
+      const api = createMockApiFetch([
+        ({ url }) =>
+          url.pathname === "/api/v1/activity"
+            ? Response.json({ items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "" })
+            : undefined,
+        ({ url }) =>
+          url.pathname === "/api/v1/activity/authors"
+            ? Response.json({ authors: [], use_workspace_activity_for_recency: false })
+            : undefined,
+      ]);
+      vi.stubGlobal("fetch", api.fetch);
+      const { stores, listAgentStatusPolling } = createAppStores({ runtime, getPage: () => page });
+      stores.settings.setWorkspaceSettings({ show_agent_status_in_lists: true });
+      const run = <A, E>(effect: Effect.Effect<A, E, AppServices>) =>
+        runtime.runCommand(effect, { operation: "test Activity polling", safeContext: {}, onFailure: () => {} });
+      run(stores.events.streamEffect);
+      await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+      await run(stores.activity.reconcileActivityEffect()).exit;
+      const activityReads = () => api.requests.filter(({ url }) => url.pathname === "/api/v1/activity").length;
+      const initialReads = activityReads();
+
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const polling = run(listAgentStatusPolling);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(activityReads()).toBe(initialReads);
+      polling.interrupt();
+      await polling.exit;
+      vi.useRealTimers();
+
+      emit(eventSources[0]!, "workspace_status", {});
+      await vi.waitFor(() => expect(activityReads()).toBe(initialReads + 1));
+    },
+  );
+
   it("applies a sync refresh queued while the search cache is first loading", async () => {
     const fixture = createMockApiFetch();
     const firstRead = Promise.withResolvers<void>();

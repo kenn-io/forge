@@ -495,9 +495,12 @@ Persisted controls must state their scope clearly.
 - Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
   threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
   must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).
-- Restored Activity selections recover and retain verified repository identity from feed rows
-  before loading details, so cached PRs/issues render while the backend is pending; unknown
-  identity must not reuse a mutable route's cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Restored Activity selections use verified repository identity from explicit configured repos or
+  same-repository feed rows even when the selected row disappears; unknown identity must not reuse
+  a mutable route's detail cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Activity owns its polling backstop; agent badges must not add a second full-feed poll that
+  competes with detail reads on slow links. Workspace status events still refresh the feed
+  (`frontend/src/lib/app-stores.svelte.ts::listAgentStatusPolling`).
 - Activity project changes immediately project a recent matching or broader repository snapshot,
   only within the same remaining filters. Cached rows are previews; every project change still
   revalidates cursor and paging authority (`frontend/src/lib/stores/activity.svelte.ts::restoreRepositoryActivity`).

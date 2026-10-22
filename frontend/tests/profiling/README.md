@@ -207,3 +207,25 @@ Optional environment variables:
 For comparisons, preserve the baseline e2e binary before rebuilding, run each
 binary with the same Chromium version, and set `KENN_FORGE_PROFILE_BASELINE` on
 the second run. A negative timing delta means the second run was faster.
+
+## Activity on a slow link
+
+From `frontend/`, run:
+
+```bash
+../node_modules/.bin/vp exec -- playwright test --config tests/profiling/playwright-profile.config.ts activity-slow-link.spec.ts
+```
+
+This profile uses the built app and isolated seeded backend at 700 ms latency
+and 1 Mbps. It selects a PR and an issue, then returns through the Workspaces
+and Activity header buttons three times each. API responses are held during
+each return: the remembered title must be visible before responses resume.
+Each revalidation finishes before the next return. Timings include two
+animation frames after the visibility check.
+
+With agent badges enabled, a 60-second idle window records requests by URL
+and encoded response-body bytes. `timings.json` goes to
+`KENN_FORGE_PROFILE_OUT_DIR`, or `test-results/activity-slow-link/<timestamp>/`.
+Run profiles separately from other browser suites to avoid contention. These
+small fixtures measure network dependence; they do not reproduce a large
+account's rendering cost or an actual flight's packet loss.

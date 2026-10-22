@@ -476,11 +476,16 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     roborevClient = createRoborevClient(bp + roborevBase);
   }
 
-  // The poll never reads worklists; workspace status events still refresh the open list.
+  // Activity owns a delta poll and an authoritative backstop. Re-fetching its
+  // entire feed here every five seconds competes with detail reads on slow links.
+  // Workspace status events still refresh Activity and the open worklist.
   const listAgentStatusPolling = pollWhileVisible(
-    Effect.suspend(() => (gp() === "worklists" ? Effect.void : refreshVisibleData(false))).pipe(
-      Effect.catch(() => Effect.void),
-    ),
+    Effect.suspend(() => {
+      const page = gp();
+      return page === "worklists" || page === "activity" || page === "mobile-activity"
+        ? Effect.void
+        : refreshVisibleData(false);
+    }).pipe(Effect.catch(() => Effect.void)),
     "5 seconds",
     { immediate: true },
   );

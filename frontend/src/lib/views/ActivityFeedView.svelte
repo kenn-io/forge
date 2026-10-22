@@ -74,7 +74,7 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const { detail: detailStore, issues: issuesStore, activity } = getStores();
+  const { detail: detailStore, issues: issuesStore, activity, settings } = getStores();
   const paneLayout = getPaneLayoutStore("activity");
 
   const ACTIVITY_PANE_WIDTH_KEY = "kenn-forge-activity-pane-width";
@@ -160,17 +160,20 @@
   const activeDrawer = $derived.by(() => {
     const selection = controlled ? (controlledDrawer ?? null) : internalDrawer;
     if (!selection || selection.repositoryKey) return selection;
-    // URL selections omit repository identity. Recover it from the retained
-    // feed so a known item can render its cached detail before revalidation.
+    // Repository identity is independent of which items still match the feed.
+    // Use the loaded configuration even when the selected row has disappeared.
     const matches = (item: ActivityItem | ActivitySubject | WorkspaceActivitySubject) =>
-      item.item_type === selection.itemType && item.item_number === selection.number && repoIdentityMatches(item, selection);
+      repoIdentityMatches(item, selection);
     const item = activity.getItemActivity().find(matches)
       ?? activity.getActivityItems().find(matches)
       ?? activity.getWorkspaceActivity().find(matches);
+    const configuredRepo = settings.getConfiguredRepos().find((repo) =>
+      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, selection),
+    );
     const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
       ? retainedSelectionIdentity.repositoryKey
       : undefined;
-    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? retainedKey };
+    return { ...selection, repositoryKey: repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo) ?? retainedKey };
   });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
   $effect(() => {

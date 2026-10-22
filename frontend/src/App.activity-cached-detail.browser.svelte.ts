@@ -100,11 +100,13 @@ it("keeps merge controls mounted when Activity refreshes the selected PR", async
 });
 
 it.each([
-  { itemType: "pr", number: 42, title: "Add browser regression coverage" },
-  { itemType: "issue", number: 7, title: "Theme toggle does not stick" },
+  { itemType: "pr", number: 42, title: "Add browser regression coverage", removeRow: false },
+  { itemType: "issue", number: 7, title: "Theme toggle does not stick", removeRow: false },
+  { itemType: "pr", number: 42, title: "Add browser regression coverage", removeRow: true },
+  { itemType: "issue", number: 7, title: "Theme toggle does not stick", removeRow: true },
 ])(
-  "keeps a cached $itemType readable when returning while the backend is slow",
-  async ({ itemType, number, title }) => {
+  "keeps a cached $itemType readable when returning while the backend is slow (removed row: $removeRow)",
+  async ({ itemType, number, title, removeRow }) => {
     const repo = {
       provider: "github",
       platform_host: "github.com",
@@ -120,6 +122,7 @@ it.each([
           if (url.pathname === "/api/v1/settings")
             return jsonResponse({
               ...mockSettings,
+              repos: [{ ...mockSettings.repos[0], ...repo }],
               workspaces: { ...mockSettings.workspaces, show_agent_status_in_lists: false },
             });
           if (url.pathname !== "/api/v1/activity") return null;
@@ -171,7 +174,11 @@ it.each([
         return jsonResponse({
           ...detail,
           repo: { ...detail.repo, ...repo },
-          [field]: { ...detail[field], Title: refreshed ? `Updated: ${title}` : title },
+          [field]: {
+            ...detail[field],
+            Title: refreshed ? `Updated: ${title}` : title,
+            Body: "Cached discussion remains readable.",
+          },
         });
       }
       return response;
@@ -180,17 +187,29 @@ it.each([
       await vi.waitFor(() => expect(document.querySelector(".item-title")?.textContent).toBe(title));
       (document.querySelector(".item-title") as HTMLElement).click();
       await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(title));
-      const savedURL = window.location.pathname + window.location.search;
-      const { navigate } = await import("./lib/stores/router.svelte.js");
-      navigate("/workspaces");
+      const navigation = page.getByRole("navigation", { name: "Page", exact: true });
+      await navigation.getByRole("button", { name: "Workspaces", exact: true }).click();
       await vi.waitFor(() => expect(document.querySelector(".activity-feed")).toBeNull());
 
+      if (removeRow) {
+        omitSubject = true;
+        const readsBefore = mounted.api.requests.filter((call) => call.url.pathname === "/api/v1/activity").length;
+        emitBrowserEventSource("data_changed", {});
+        await vi.waitFor(() =>
+          expect(
+            mounted!.api.requests.filter((call) => call.url.pathname === "/api/v1/activity").length,
+          ).toBeGreaterThan(readsBefore),
+        );
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      }
+
       holdBackend = true;
-      navigate(savedURL);
+      await navigation.getByRole("button", { name: "Activity", exact: true }).click();
       flushSync();
       await vi.waitFor(() => expect(heldReads).toBeGreaterThan(0));
-      expect(document.querySelector(".item-title")?.textContent).toBe(title);
+      if (!removeRow) expect(document.querySelector(".item-title")?.textContent).toBe(title);
       expect(document.querySelector(".detail-title")?.textContent).toBe(title);
+      await expect.element(page.getByText("Cached discussion remains readable.", { exact: true })).toBeVisible();
       refreshed = true;
       holdBackend = false;
       pending.resolve();

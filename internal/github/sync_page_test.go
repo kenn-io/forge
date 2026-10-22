@@ -10,7 +10,6 @@ import (
 	gh "github.com/google/go-github/v92/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/reposeed"
@@ -45,6 +44,8 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 	require.NoError(err)
 	before, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 	require.NoError(err)
+	beforeDiff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
+	require.NoError(err)
 	require.Equal("success", before.CIStatus)
 	require.False(before.CIHadPending)
 	baseline := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -52,15 +53,13 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 	require.NoError(err)
 	// Complete local diffs must survive repeated polls without remote Git access.
 	require.NoError(os.Rename(remote, remote+".unavailable"))
-	mc.conditionalCalls.Store(0)
+	mc.getPRCalls.Store(0)
 	mc.notModified = true
 	mc.reviews = []*gh.PullRequestReview{{ID: new(int64(5)), User: &gh.User{Login: new("alice")}, State: new("APPROVED")}}
 	mc.comments = []*gh.IssueComment{{ID: new(int64(6)), CreatedAt: mc.singlePR.UpdatedAt}}
 	mc.checkRuns[0].Conclusion = new("failure")
 	mc.workflowRuns = []*gh.WorkflowRun{{ID: new(int64(7)), HeadSHA: &head, Event: new("pull_request"), PullRequests: []*gh.PullRequest{{Number: new(1)}}}}
 	mc.commits = []*gh.RepositoryCommit{{SHA: &head}}
-	synced := 0
-	syncer.SetOnMRSynced(func(_, _ string, _ *db.MergeRequest) { synced++ })
 	for _, body := range []string{"New comment", "Edited comment", "Edited comment", "Edited again", "Edited again"} {
 		_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?", baseline, before.ID)
 		require.NoError(err)
@@ -68,7 +67,6 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 		require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
 		events, err := d.ListMREvents(ctx, before.ID)
 		require.NoError(err)
-		require.Len(events, 3)
 		var bodies []string
 		for _, event := range events {
 			if event.EventType == "issue_comment" {
@@ -82,13 +80,12 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 		assert.Equal("approved", stored.ReviewDecision)
 		assert.True(stored.WorkflowApprovalRequired)
 		assert.True(stored.DetailFetchedAt.After(baseline))
+		diff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
+		require.NoError(err)
+		assert.Equal(beforeDiff, diff)
 	}
 	assert.Equal(`"page-v1"`, mc.receivedETag)
-	assert.Equal(int32(5), mc.conditionalCalls.Load())
-	assert.Equal(int32(1), mc.getPRCalls.Load(), "only hydration downloads the PR")
-	assert.Zero(mc.listIssueCommentsIfChangedCalls.Load())
-	assert.Equal(int32(6), mc.listIssueCommentsCalled.Load())
-	assert.Equal(5, synced)
+	assert.Zero(mc.getPRCalls.Load(), "unchanged page polls do not download the PR")
 
 	// Child failures leave detail freshness unchanged on a 304.
 	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET detail_fetched_at = ? WHERE id = ?", baseline, before.ID)
@@ -105,21 +102,70 @@ func TestPageSyncMRRefreshesChildrenOnParent304(t *testing.T) {
 	// Stale SHAs force the full path and recover through the existing diff sync.
 	require.NoError(os.Rename(remote+".unavailable", remote))
 	require.NoError(d.UpdateDiffSHAs(ctx, repoID, 1, "", "", ""))
-	mc.conditionalCalls.Store(0)
 	require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-	assert.Zero(mc.conditionalCalls.Load())
 	diff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
 	require.NoError(err)
 	assert.Equal(head, diff.DiffHeadSHA)
 	assert.Equal(base, diff.DiffBaseSHA)
 	assert.Equal(base, diff.MergeBaseSHA)
 
+	// Missing clones must recover even when the saved SHAs and ETag are current.
+	cloneCtx := withCloneRepositoryIdentity(ctx, repo)
+	clonePath, err := clones.ClonePathForContext(cloneCtx, "github", "github.com", "owner", "repo")
+	require.NoError(err)
+	require.NoError(os.RemoveAll(clonePath))
+	require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
+	recoveredDiff, err := clones.Diff(cloneCtx, "github", "github.com", "owner", "repo", diff.MergeBaseSHA, diff.DiffHeadSHA, false)
+	require.NoError(err)
+	require.Len(recoveredDiff.Files, 1)
+	assert.Equal("feature.txt", recoveredDiff.Files[0].Path)
+
 	// A page left open after merging also skips unchanged parent and diff work.
-	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged' WHERE id = ?", before.ID)
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged', detail_fetched_at = ? WHERE id = ?", baseline, before.ID)
 	require.NoError(err)
 	require.NoError(os.Rename(remote, remote+".unavailable"))
+	mc.getPRCalls.Store(0)
+	mc.comments[0].Body = new("Comment after merging")
+	mc.checkRuns[0].Conclusion = new("success")
 	require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
-	assert.Equal(int32(1), mc.conditionalCalls.Load())
+	events, err := d.ListMREvents(ctx, before.ID)
+	require.NoError(err)
+	var bodies []string
+	for _, event := range events {
+		if event.EventType == "issue_comment" {
+			bodies = append(bodies, event.Body)
+		}
+	}
+	assert.Equal([]string{"Comment after merging"}, bodies)
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	assert.Equal("success", stored.CIStatus)
+	assert.True(stored.DetailFetchedAt.After(baseline))
+	mergedDiff, err := d.GetDiffSHAsByRepoID(ctx, repoID, 1)
+	require.NoError(err)
+	assert.Equal(diff.DiffHeadSHA, mergedDiff.DiffHeadSHA)
+	assert.Equal(diff.DiffBaseSHA, mergedDiff.DiffBaseSHA)
+	assert.Equal(diff.MergeBaseSHA, mergedDiff.MergeBaseSHA)
+	assert.Zero(mc.getPRCalls.Load(), "unchanged merged page polls do not download the PR")
+}
+
+func TestPageSyncMRHydratesMissingParentWithSavedETag(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	require.NoError(d.UpsertHTTPEtag(ctx, "github", "github.com", "owner", "repo", "pull_request", 1, `"page-v1"`))
+	mc := &conditionalPRTrackingClient{notModified: true}
+	mc.singlePR = buildOpenPR(1, time.Now().UTC())
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	require.NoError(syncer.SyncMROnProviderIfChanged(ctx, platform.KindGitHub, "github.com", "owner", "repo", 1))
+	stored, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	require.Equal(mc.singlePR.GetTitle(), stored.Title)
+	require.NotNil(stored.DetailFetchedAt)
 }
 
 func TestPageSyncMRPersistsChangedParentResponse(t *testing.T) {

@@ -11414,13 +11414,21 @@ func (s *Syncer) syncMRForRepoResolved(
 	if rawReader, ok := mrReader.(interface {
 		GetGitHubPullRequest(context.Context, platform.RepoRef, int) (*gh.PullRequest, platform.MergeRequest, error)
 	}); ok {
-		useConditionalPRDetail := mode == mrDetailBackground || mode == mrDetailPage
+		useConditionalPRDetail := mode == mrDetailBackground || (mode == mrDetailPage && existing != nil)
 		if mode == mrDetailPage && existing != nil && s.clones != nil {
 			diffSHAs, diffErr := s.db.GetDiffSHAsByRepoID(ctx, repoID, number)
 			if diffErr != nil {
 				return diffErr
 			}
 			useConditionalPRDetail = diffSHAs != nil && !diffSHAs.Stale()
+			if useConditionalPRDetail {
+				for _, sha := range []string{diffSHAs.DiffHeadSHA, diffSHAs.MergeBaseSHA} {
+					if _, err := s.clones.ResolveCommit(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, sha); err != nil {
+						useConditionalPRDetail = false
+						break
+					}
+				}
+			}
 		}
 		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
 			var notModified bool

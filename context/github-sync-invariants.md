@@ -121,8 +121,8 @@ For pull requests, that means:
   detail drain (`internal/github/sync.go::syncMRForRepo`,
   `internal/github/sync.go::getPullRequestForDetail`,
   `internal/github/sync.go::markUnchangedMRDetailFetched`). PR-page polls use
-  conditional requests while refreshing children on 304; stale diff SHAs force
-  a full fetch (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual
+  conditional requests while refreshing children on 304; a missing parent,
+  stale diff SHAs, or missing local diff commits force a full fetch (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual
   refreshes remain unconditional (`internal/github/sync.go::SyncMR`,
   `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`). Cadence control is still required
   because changed PRs correctly fall through to comments, reviews, commits, CI,

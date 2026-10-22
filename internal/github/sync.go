@@ -8677,17 +8677,7 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	if !detailApplied {
 		return calls, nil
 	}
-	if s.onMRSynced != nil {
-		fresh, fErr := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-		if fErr != nil {
-			slog.Warn("get MR for onMRSynced hook failed",
-				"repo", repo.Owner+"/"+repo.Name,
-				"number", number, "err", fErr,
-			)
-		} else {
-			s.onMRSynced(repo.Owner, repo.Name, fresh)
-		}
-	}
+	s.notifyMRDetailSynced(ctx, repo, repoID, number)
 	return calls, nil
 }
 
@@ -11430,14 +11420,23 @@ func (s *Syncer) syncMRForRepoResolved(
 				}
 			}
 		}
-		if client, ok := s.optionalGitHubClientFor(repo); ok && useConditionalPRDetail {
+		if client, ok := s.optionalGitHubClientFor(repo); ok && (useConditionalPRDetail || mode == mrDetailPage) {
 			var notModified bool
 			if providerAttempted != nil {
 				*providerAttempted = true
 			}
-			ghPR, newETag, notModified, err = s.getPullRequestForDetail(
-				ctx, client, repo, number,
-			)
+			if useConditionalPRDetail {
+				ghPR, newETag, notModified, err = s.getPullRequestForDetail(
+					ctx, client, repo, number,
+				)
+			} else if conditional, ok := client.(conditionalPullRequestGetter); ok {
+				// Full page reads still save the validator for the next poll.
+				ghPR, newETag, notModified, err = conditional.GetPullRequestIfChanged(
+					ctx, repo.Owner, repo.Name, number, "",
+				)
+			} else {
+				ghPR, err = client.GetPullRequest(ctx, repo.Owner, repo.Name, number)
+			}
 			// Same canonical lookup classification as the raw
 			// GetGitHubPullRequest branch below.
 			if provider, ok := mrReader.(*platformgithub.Provider); ok {

@@ -123,9 +123,10 @@ For pull requests, that means:
   `internal/github/sync.go::markUnchangedMRDetailFetched`). Open PR-page 304s refresh
   all children: comments, reviews, commits, CI, and workflow approval
   (`internal/github/sync.go::refreshMRDetailSnapshot`). Background 304s refresh
-  comments and pending CI only
+  comments, comment moderation metadata, review threads, and pending CI
   (`internal/github/sync.go::markUnchangedMRDetailFetched`). Merged or closed PRs, a missing parent,
   stale diff SHAs, or missing local diff commits force a full page fetch
+  that saves the returned ETag for the next poll
   (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual refreshes remain
   unconditional (`internal/github/sync.go::SyncMROnProvider`). Cadence control is
   still required because child reads spend provider quota.

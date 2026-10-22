@@ -6390,7 +6390,11 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failMR
 							graphQLDone = true
-						} else if !syncBudgetWait(gqlErr) {
+						} else if syncBudgetWait(gqlErr) {
+							failedScope |= failMR
+							budgetRefusedScope |= failMR
+							partialCause = retainSyncFailureCause(partialCause, gqlErr)
+						} else {
 							slog.Warn("GraphQL fetch failed, falling back to REST index",
 								"repo", repo.Owner+"/"+repo.Name,
 								"err", gqlErr,
@@ -6439,6 +6443,7 @@ func (s *Syncer) indexSyncRepo(
 						failedScope |= failMR
 					}
 					if failedScope&failMR != 0 {
+						budgetRefusedScope &^= failMR
 						partialCause = retainSyncFailureCause(partialCause, err)
 					}
 				}
@@ -6550,7 +6555,11 @@ func (s *Syncer) indexSyncRepo(
 						) {
 							disabledScope |= failIssues
 							graphQLIssuesDone = true
-						} else if !syncBudgetWait(gqlErr) {
+						} else if syncBudgetWait(gqlErr) {
+							failedScope |= failIssues
+							budgetRefusedScope |= failIssues
+							partialCause = retainSyncFailureCause(partialCause, gqlErr)
+						} else {
 							slog.Warn("GraphQL issue fetch failed, falling back to REST",
 								"repo", repo.Owner+"/"+repo.Name,
 								"err", gqlErr,
@@ -6594,6 +6603,7 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
+							budgetRefusedScope &^= failIssues
 							partialCause = retainSyncFailureCause(partialCause, err)
 						}
 					}
@@ -6613,6 +6623,7 @@ func (s *Syncer) indexSyncRepo(
 							failedScope |= failIssues
 						}
 						if failedScope&failIssues != 0 {
+							budgetRefusedScope &^= failIssues
 							partialCause = retainSyncFailureCause(partialCause, err)
 						}
 					}

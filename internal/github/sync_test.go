@@ -16494,6 +16494,70 @@ func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
 	assert.NotContains(logs.String(), "level=ERROR")
 }
 
+func TestSyncerBudgetRefusedBulkPRRetainsWaitAndListETag(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	budget := NewSyncBudgetWithEssentialReserve(60)
+	_, spent := budget.TrySpend(54)
+	require.True(spent)
+	var prOK, prNotModified, gqlAttempts atomic.Int64
+	now := time.Now().UTC().Truncate(time.Second)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/repos/owner/repo/pulls":
+			w.Header().Set("ETag", `"list-v1"`)
+			if r.Header.Get("If-None-Match") == `"list-v1"` {
+				prNotModified.Add(1)
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			prOK.Add(1)
+			_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(1, now)})
+		case "/api/v3/repos/owner/repo/issues":
+			_, _ = io.WriteString(w, `[]`)
+		case "/api/v3/repos/owner/repo", "/api/v3/repositories/100":
+			_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"has_issues":true,"default_branch":"main"}`)
+		default:
+			assert.Fail("unexpected provider request", r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	gqlHTTP := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gqlAttempts.Add(1)
+		return WrapSyncBudgetTransport(server.Client().Transport, budget).RoundTrip(r)
+	})}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlHTTP), nil,
+	)})
+	_, err = reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "owner", Name: "repo",
+		Key: platform.RepositoryIDKey(100),
+	})
+	require.NoError(err)
+	logs := captureDefaultLogs(t)
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(2), gqlAttempts.Load())
+	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
+	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(1), prOK.Load())
+	assert.Equal(int64(1), prNotModified.Load())
+}
+
 func TestSyncerBudgetWaitWithRealFailureStillLogsError(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

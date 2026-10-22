@@ -202,16 +202,23 @@ describe("ActivityThreaded collapse", () => {
     expect(container.querySelector(".event-row")).toBeNull();
   });
 
-  it("keeps the event actor as thread author when the parent summary has no author", () => {
-    const { container } = render(ActivityThreaded, {
+  it("leaves an unknown parent author blank until its summary supplies one", async () => {
+    const items = [activityItem("authorless-parent-event", { item_number: 8, item_author: "", author: "alice" })];
+    const { container, rerender } = render(ActivityThreaded, {
       props: {
-        items: [activityItem("authorless-parent-event", { item_number: 8, item_author: "", author: "alice" })],
+        items,
         itemActivity: [itemSubject({ item_author: undefined })],
         onSelectItem: undefined,
       },
     });
 
-    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("alice");
+    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("");
+    expect(container.querySelector(".event-row .event-author")?.textContent).toBe("alice");
+
+    await rerender({ items, itemActivity: [itemSubject({ item_author: "prauthor" })], onSelectItem: undefined });
+
+    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("prauthor");
+    expect(container.querySelector(".event-row .event-author")?.textContent).toBe("alice");
   });
 
   it("sorts existing threads by workspace activity without adding an event", () => {

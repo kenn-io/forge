@@ -668,11 +668,9 @@
     return event.author_name || event.author;
   }
 
-  // The item row attributes the thread to the PR/issue author (carried on
-  // every row as item_author), not the latest actor. Falls back to the
-  // event actor only when item_author is absent (older cached rows).
+  // Attribute the thread to its PR/issue author once that identity is known.
   function itemAuthor(event: ActivityItem): string {
-    return event.item_author || eventAuthor(event);
+    return event.item_author ?? "";
   }
 
   function activityRepoIdentity(item: ActivityItem): RepoLabelIdentity {

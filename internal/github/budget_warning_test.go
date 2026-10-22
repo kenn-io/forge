@@ -193,3 +193,45 @@ func TestSyncerBulkBudgetRefusalKeepsStackDetection(t *testing.T) {
 	syncer.RunOnce(ctx)
 	assert.Equal(int64(1), prOK.Load(), "the refused bulk read keeps the list ETag")
 }
+
+func TestSyncerBudgetWaitDuringCIAndVisibilityReads(t *testing.T) {
+	for _, site := range []string{"CI check runs", "PR comment visibility"} {
+		t.Run(site, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := WithSyncBudget(t.Context())
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			_, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+			require.NoError(err)
+			budget := NewSyncBudget(1)
+			_, spent := budget.TrySpend(1)
+			require.True(spent)
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests.Add(1)
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil,
+				map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(
+				server.URL+"/api/graphql", &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)},
+			), nil)})
+			logs := captureDefaultLogs(t)
+
+			if site == "CI check runs" {
+				result, err := syncer.fetchGitHubCIStatus(ctx, repo, 1, "abc123")
+				require.NoError(err)
+				assert.False(result.Updated)
+			} else {
+				_, ok := syncer.currentPRCommentVisibility(ctx, repo, 1)
+				assert.False(ok)
+			}
+			assert.Zero(requests.Load())
+			assert.NotContains(logs.String(), "level=WARN")
+		})
+	}
+}

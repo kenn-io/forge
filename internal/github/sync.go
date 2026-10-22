@@ -5667,10 +5667,9 @@ func (s *Syncer) syncDefaultBranchActivity(
 		maxCommits,
 	)
 	if err != nil {
-		slog.Warn("list default branch commits failed",
+		logSyncFailure(ctx, slog.LevelWarn, "list default branch commits failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"branch", branch,
-			"err", err,
 		)
 		return
 	}
@@ -7449,10 +7448,9 @@ func (s *Syncer) refreshPRCommentsForItem(
 		) {
 			return true, true
 		}
-		slog.Warn("comment refresh: list PR comments failed",
+		logSyncFailure(ctx, slog.LevelWarn, "comment refresh: list PR comments failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
-			"err", err,
 		)
 		return true, false
 	}
@@ -7494,10 +7492,9 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		) {
 			return true, true
 		}
-		slog.Warn("comment refresh: list issue comments failed",
+		logSyncFailure(ctx, slog.LevelWarn, "comment refresh: list issue comments failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
-			"err", err,
 		)
 		return true, false
 	}
@@ -8928,10 +8925,9 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	calls := 1
 	if err != nil {
 		if preserveOnReadFailure {
-			slog.Warn("current PR review-thread visibility fetch failed; preserving stored state",
+			logSyncFailure(ctx, slog.LevelWarn, "current PR review-thread visibility fetch failed; preserving stored state", err,
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
-				"err", err,
 			)
 			return calls, nil
 		}
@@ -9427,10 +9423,9 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		if errors.Is(err, platform.ErrUnsupportedCapability) {
 			return nil, nil
 		}
-		slog.Warn("list CI checks failed",
+		logSyncFailure(ctx, slog.LevelWarn, "list CI checks failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return []string{ciRefreshWarning}, nil
 	}
@@ -9547,10 +9542,9 @@ func (s *Syncer) fetchGitHubCIStatus(
 	checkRuns, err := client.ListCheckRunsForRef(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
-		slog.Warn("list check runs failed",
+		logSyncFailure(ctx, slog.LevelWarn, "list check runs failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
@@ -9558,10 +9552,9 @@ func (s *Syncer) fetchGitHubCIStatus(
 	combined, err := client.GetCombinedStatus(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
 		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
-		slog.Warn("get combined status failed",
+		logSyncFailure(ctx, slog.LevelWarn, "get combined status failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
@@ -9632,10 +9625,9 @@ func (s *Syncer) refreshWorkflowApproval(
 
 	runs, err := client.ListWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
 	if err != nil {
-		slog.Warn("list workflow runs for approval refresh failed",
+		logSyncFailure(ctx, slog.LevelWarn, "list workflow runs for approval refresh failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return true, 1
 	}
@@ -9779,10 +9771,9 @@ func (s *Syncer) currentPRCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
-		slog.Warn("current PR comment visibility fetch failed; preserving stored state",
+		logSyncFailure(ctx, slog.LevelWarn, "current PR comment visibility fetch failed; preserving stored state", err,
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
-			"err", err,
 		)
 		return nil, false
 	}

@@ -2772,13 +2772,16 @@ type activityPlanQueryer struct {
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	q.t.Log(strings.Join(plan, "\n"))
-	indexPosition, parentPosition, pagePosition := -1, -1, -1
+	indexPosition, parentPosition, pagePosition, eventPosition := -1, -1, -1, -1
 	for i, step := range plan {
 		if step == "SCAN page" {
 			pagePosition = i
 		}
 		if strings.Contains(step, "idx_mr_events_commit_summary (summary=?)") {
 			indexPosition = i
+		}
+		if strings.Contains(step, "SEARCH e USING INTEGER PRIMARY KEY") {
+			eventPosition = i
 		}
 		if indexPosition >= 0 && parentPosition < 0 && strings.Contains(step, "SEARCH p USING INTEGER PRIMARY KEY") {
 			parentPosition = i
@@ -2787,6 +2790,7 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 	require.GreaterOrEqual(q.t, pagePosition, 0, "query must scan the materialized page")
 	require.Greater(q.t, indexPosition, pagePosition, "commit identity lookup must follow pagination")
 	require.Greater(q.t, parentPosition, indexPosition, "parent repository check must follow the SHA lookup")
+	require.Greater(q.t, eventPosition, pagePosition, "PR commit identity lookup must follow pagination")
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
@@ -2798,7 +2802,7 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 		mrID := insertTestMR(t, d, repoID, i+1, "Pull", baseTime())
 		for j := range 20 {
 			sha := fmt.Sprintf("%040d", i*20+j)
-			events = append(events, MREvent{MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "alice", CreatedAt: baseTime(), DedupeKey: sha})
+			events = append(events, MREvent{MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "integrator", MetadataJSON: `{"commit_author":"alice"}`, CreatedAt: baseTime(), DedupeKey: sha})
 		}
 	}
 	require.NoError(t, d.UpsertMREvents(t.Context(), events))
@@ -2812,6 +2816,11 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 	assert.Equal(t, "Test Author", items[0].Author)
+	assert.Equal(t, "alice", items[0].CommitAuthor)
+	items, err = listActivityWithQueryer(t.Context(), activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListActivityOpts{Types: []string{"commit"}, Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "integrator", items[0].Author)
 	assert.Equal(t, "alice", items[0].CommitAuthor)
 }
 

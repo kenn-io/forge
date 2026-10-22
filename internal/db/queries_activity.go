@@ -322,8 +322,8 @@ func listActivityWithQueryer(
 			      )` + notificationScope
 	}
 
-	// The page is materialized before parent recency is derived so the ledger
-	// lookup runs once per returned row rather than once per candidate row.
+	// Materialize the page before deriving parent recency and commit identity
+	// so those lookups run once per returned row rather than per candidate row.
 	commitAuthorSQL := `CASE WHEN json_valid(e.metadata_json) THEN NULLIF(json_extract(e.metadata_json, '$.commit_author'), '') END`
 	query := fmt.Sprintf(`
 		WITH page AS MATERIALIZED (
@@ -406,7 +406,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       '', CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN COALESCE(%[6]s, e.author) ELSE '' END
+			       '', ''
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -500,7 +500,12 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state, CASE WHEN page.source = 'bc' AND page.platform = 'github' THEN COALESCE((
+		       subject_state, CASE
+		           WHEN page.source = 'pre' AND page.platform = 'github' AND page.activity_type = 'commit' THEN COALESCE((
+		               SELECT COALESCE(%[6]s, e.author)
+		               FROM forge_mr_events e WHERE e.id = page.source_id
+		           ), '')
+		           WHEN page.source = 'bc' AND page.platform = 'github' THEN COALESCE((
 			           SELECT COALESCE(%[6]s, CASE WHEN page.author_name != '' THEN NULLIF(e.author, '') END)
 			           FROM forge_mr_events e
 			           JOIN forge_merge_requests p ON p.id = e.merge_request_id
@@ -508,7 +513,7 @@ func listActivityWithQueryer(
 			             AND p.repo_id = page.repo_id
 			             AND (%[6]s IS NOT NULL OR (page.author_name != '' AND e.author != ''))
 			           ORDER BY (%[6]s IS NOT NULL) DESC, e.id DESC LIMIT 1
-			       ), '') ELSE page.commit_author END AS commit_author
+			       ), '') ELSE '' END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,

@@ -490,6 +490,16 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+      # The removed-shell test skips without tmux, and the macOS images do not
+      # all ship it. Fail here so a green test step proves the test ran.
+      - name: Install tmux
+        run: |
+          command -v tmux >/dev/null || brew install tmux
+          tmux -V
+
+      - name: Run macOS removed login shell tmux test
+        run: go test ./internal/workspace -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
+
   # Landed-work proofs must run on the Git that Debian 12 and macOS ship (2.39),
   # not only on the newer Git of the hosted runners.
   landedwork-old-git:

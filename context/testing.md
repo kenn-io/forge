@@ -254,8 +254,8 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 Vite+ owns its bundled test-tool versions; update direct Vite/Vitest pins only
 alongside a Vite+ toolchain upgrade, never through independent Renovate updates
 (`renovate.json:31`).
-Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
-cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+Set frontend CI concurrency for the selected runner; do not treat the fallback
+worker count as its budget (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 Run CI Vitest unit and browser projects separately: their worker limits differ,
 which Vitest rejects in the same execution group
 (`frontend/vite.config.ts::resolveBrowserTestWorkers`).
@@ -285,6 +285,9 @@ sources. The Playwright runner must prepare those assets and build one run-owned
 cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
 externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+
+Run every full-stack shard for both Chromium and Firefox; the GitHub App setup
+suite runs once alongside Chromium (`.github/workflows/ci.yml::e2e`).
 
 - E2E provider decorators must embed concrete fixtures rather than base interfaces;
   narrowing erases optional capability interfaces (`cmd/e2e-server/main_test.go::TestE2EWorkflowClientExercisesProviderWorkflowContract`).

@@ -222,7 +222,12 @@ jobs:
         run: node scripts/verify-docs-site.mjs
 
   lint:
+    name: lint (${{ matrix.lane }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [frontend, go-linux, go-windows]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -254,9 +259,11 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run frontend tooling checks
+        if: matrix.lane == 'frontend'
         run: ./node_modules/.bin/vp run -w check
 
       - name: Run guardrail checks
+        if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
@@ -264,32 +271,38 @@ jobs:
       - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
 
       - name: Check Go formatters
+        if: matrix.lane == 'go-linux'
         run: make fmt-check
 
       - name: Run Go linters
+        if: matrix.lane == 'go-linux'
         run: make lint-check
 
       - name: Run Go linters for Windows
-        run: ./custom-gcl run ./...
-        env:
-          GOOS: windows
+        if: matrix.lane == 'go-windows'
+        run: |
+          make custom-gcl
+          GOOS=windows ./custom-gcl run ./...
 
       - name: Install NilAway
+        if: matrix.lane == 'go-linux'
         run: |
           go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Check shared Huma API contract
+        if: matrix.lane == 'go-linux'
         run: make huma-check
 
       - name: Run NilAway
+        if: matrix.lane == 'go-linux'
         run: make nilaway
 
   test_go:
     name: Go tests
     runs-on: ubuntu-latest
     env:
-      GOFLAGS: -p=2
+      GOFLAGS: -p=4
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -528,7 +541,7 @@ jobs:
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
-      GOFLAGS: -p=2
+      GOFLAGS: -p=4
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -720,7 +733,8 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox]
-    name: e2e (${{ matrix.browser }})
+        shard: [1, 2, 3]
+    name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -771,24 +785,24 @@ jobs:
       - name: Run E2E tests
         env:
           KENN_FORGE_E2E_INSECURE_ORIGIN: "1"
-        run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
+        run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
       # The GitHub App setup page suite runs Desktop Chrome only, so it
-      # rides the chromium leg of the matrix.
+      # runs once alongside the first Chromium shard.
       - name: Run GitHub App setup UI E2E tests
-        if: matrix.browser == 'chromium'
+        if: matrix.browser == 'chromium' && matrix.shard == 1
         run: ./node_modules/.bin/vp run --filter @kenn-forge/github-app-ui test:e2e
 
       - name: Upload Playwright report
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: e2e-report-${{ matrix.browser }}
+          name: e2e-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: frontend/test-results/
           retention-days: 7
 
       - name: Upload GitHub App setup UI Playwright report
-        if: failure() && matrix.browser == 'chromium'
+        if: failure() && matrix.browser == 'chromium' && matrix.shard == 1
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: github-app-ui-e2e-report

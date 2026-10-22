@@ -6,6 +6,7 @@ WORKDIR /src
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 ENV UV_THREADPOOL_SIZE=2 RAYON_NUM_THREADS=2
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN bun install --frozen-lockfile \
@@ -33,6 +34,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git openssh-client tmux \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 forge \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh forge

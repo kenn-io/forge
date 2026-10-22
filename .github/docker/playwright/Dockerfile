@@ -38,5 +38,6 @@ RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(
       -o Acquire::ForceIPv4=true \
       -o Acquire::http::Timeout=30 \
       -o Acquire::https::Timeout=30 \
-      install -y --no-install-recommends poppler-utils tmux \
+      install -y --no-install-recommends ca-certificates poppler-utils tmux \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816ubuntu0.24.04.1 \
     && rm -rf /var/lib/apt/lists/*

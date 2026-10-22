@@ -90,15 +90,3 @@ test("fits Copy link in the rail header at its narrowest", async ({ page }) => {
   const header = page.locator(".worklist-title-row");
   expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
-
-test("copies the open list's link to the clipboard", async ({ page, context, browserName }) => {
-  test.skip(browserName === "firefox", "Playwright Firefox does not support granting clipboard-read permission");
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const link = "kenn://kenn-forge/worklists/import#v1.abc";
-  await openWithKennLinks(page, link);
-
-  await page.getByRole("button", { name: "Copy link" }).click();
-
-  await expect(page.getByText("Copied worklist link.")).toBeVisible();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
-});

@@ -7,7 +7,12 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   repos: vi.fn(),
   navigate: vi.fn(),
+  navigateToURL: vi.fn(),
   showFlash: vi.fn(),
+}));
+
+vi.mock("./pageNavigation.js", () => ({
+  navigateToURL: mocks.navigateToURL,
 }));
 
 vi.mock("../api/runtime.js", async (importOriginal) => {
@@ -109,6 +114,7 @@ describe("itemRefHandler", () => {
     mocks.post.mockReset();
     mocks.repos.mockReset();
     mocks.navigate.mockReset();
+    mocks.navigateToURL.mockReset();
     mocks.showFlash.mockReset();
   });
 
@@ -374,5 +380,59 @@ describe("itemRefHandler", () => {
       tone: "danger",
     });
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+  const unsyncedForgejoPull = {
+    "data-provider": "forgejo",
+    "data-platform-host": "forge.example.com",
+    "data-owner": "acme",
+    "data-name": "widgets",
+    "data-repo-path": "acme/widgets",
+    "data-number": "12",
+  };
+
+  async function problemResponse(status: number, code: "notFound" | "upstreamError"): Promise<never> {
+    const { GeneratedProblemResponse } = await import("../api/runtime.js");
+    const problem = { status, code, title: "Problem", detail: "problem" };
+    throw new GeneratedProblemResponse(problem, Response.json(problem, { status }));
+  }
+
+  it("opens the provider page when a tracked repository has not synced the item", async () => {
+    mocks.post.mockImplementation(() => problemResponse(404, "notFound"));
+
+    const click = await clickItemRef({
+      ...unsyncedForgejoPull,
+      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
+    });
+
+    expect(click.captured).toBe(true);
+    expect(mocks.navigateToURL).toHaveBeenCalledWith("https://forge.example.com/acme/widgets/pulls/12");
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["without a provider URL", {}],
+    ["with a non-http provider URL", { "data-external-url": "javascript:alert(1)" }],
+  ])("keeps the not-found flash for an unsynced item %s", async (_label, extra) => {
+    mocks.post.mockImplementation(() => problemResponse(404, "notFound"));
+
+    await clickItemRef({ ...unsyncedForgejoPull, ...extra });
+
+    expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widgets#12 not found.", { tone: "danger" });
+    expect(mocks.navigateToURL).not.toHaveBeenCalled();
+  });
+
+  it("keeps the failure flash when the resolver fails for another reason", async () => {
+    mocks.post.mockImplementation(() => problemResponse(502, "upstreamError"));
+
+    await clickItemRef({
+      ...unsyncedForgejoPull,
+      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
+    });
+
+    expect(mocks.showFlash).toHaveBeenCalledWith("Failed to resolve acme/widgets#12. Try again later.", {
+      tone: "danger",
+    });
+    expect(mocks.navigateToURL).not.toHaveBeenCalled();
   });
 });

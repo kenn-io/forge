@@ -13,6 +13,7 @@ import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 import { parseKnownProviderItemURL, type ProviderContext, type ResolvableItemReference } from "./item-reference.js";
+import { navigateToURL } from "./pageNavigation.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -59,7 +60,13 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(func
   );
   return yield* Effect.sync(() => {
     if ("problem" in result) {
-      if (result.problem.status === 404) {
+      const providerURL = safeExternalURL(ref.externalUrl);
+      if (result.problem.status === 404 && providerURL) {
+        // Forge has not synced this item. The click was cancelled before the
+        // lookup, so leave for the provider page in this tab; a new tab opened
+        // after an awaited request would be popup-blocked.
+        navigateToURL(providerURL);
+      } else if (result.problem.status === 404) {
         showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
       } else {
         showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });

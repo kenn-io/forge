@@ -794,6 +794,9 @@ response never overwrites an App installation pool
 - Normal sync budget waits preserve the last completed repository health and timestamp,
   including earlier failures; mixed cycles must retain the real failure alongside the
   ceiling cause (`internal/github/sync.go::Syncer.syncRepo`).
+- A local budget refusal stops GraphQL retries and logs one wait line per repository;
+  lists already fetched stay saved and refetch after refill to finish partial work
+  (`internal/github/sync.go::indexSyncRepo`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive
   attempts without a registry reservation)

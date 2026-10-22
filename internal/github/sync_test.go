@@ -16325,6 +16325,127 @@ func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
 	assert.True(mc.prsCached, "cached PR list validator must stay warm")
 }
 
+func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	budget := NewSyncBudgetWithEssentialReserve(20)
+	var refill atomic.Bool
+	var listCalls, gqlAttempts, gqlRequests, requestsAfterLists atomic.Int64
+	now := time.Now().UTC().Truncate(time.Second)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !refill.Load() && listCalls.Load() > 0 && !strings.HasSuffix(r.URL.Path, "/pulls") && !strings.HasSuffix(r.URL.Path, "/issues") {
+			requestsAfterLists.Add(1)
+		}
+		switch r.URL.Path {
+		case "/api/v3/repos/owner/repo/pulls", "/api/v3/repos/owner/repo/issues":
+			listCalls.Add(1)
+			if r.Header.Get("If-None-Match") != "" {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"list-v1"`)
+			if strings.HasSuffix(r.URL.Path, "/pulls") {
+				if !refill.Load() {
+					// Leave only the issue-list slot after this essential PR read.
+					_, spent := budget.TrySpendEssential(budget.Remaining() - 1)
+					assert.True(spent)
+				}
+				_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(1, now)})
+			} else {
+				_ = json.NewEncoder(w).Encode([]*gh.Issue{buildOpenIssue(2, now)})
+			}
+		case "/api/graphql":
+			gqlRequests.Add(1)
+			body, err := io.ReadAll(r.Body)
+			assert.NoError(err)
+			if bytes.Contains(body, []byte("pullRequests(")) {
+				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequests":{"nodes":[{"databaseId":1000,"number":1,"title":"Hydrated PR","state":"OPEN","url":"https://github.com/owner/repo/pull/1","author":{"login":"alice"},"createdAt":%q,"updatedAt":%q,"headRefName":"feature-branch","baseRefName":"main","headRefOid":"abc123def456","comments":{"nodes":[]},"reviewThreads":{"nodes":[]},"reviews":{"nodes":[]},"allCommits":{"nodes":[]},"timelineItems":{"nodes":[]}}],"pageInfo":{"hasNextPage":false}}}}}`, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			} else {
+				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"issues":{"nodes":[{"databaseId":2000,"number":2,"title":"Hydrated issue","state":"OPEN","url":"https://github.com/owner/repo/issues/2","author":{"login":"alice"},"createdAt":%q,"updatedAt":%q,"comments":{"nodes":[]},"timelineItems":{"nodes":[]}}],"pageInfo":{"hasNextPage":false}}}}}`, now.Format(time.RFC3339), now.Format(time.RFC3339))
+			}
+		case "/api/v3/repos/owner/repo", "/api/v3/repositories/100":
+			_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"has_issues":true,"default_branch":"main"}`)
+		case "/api/v3/users/alice":
+			_, _ = io.WriteString(w, `{"login":"alice","name":"Alice"}`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	gqlHTTP := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gqlAttempts.Add(1)
+		return WrapSyncBudgetTransport(server.Client().Transport, budget).RoundTrip(r)
+	})}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlHTTP), nil,
+	)})
+	logs := captureDefaultLogs(t)
+	syncer.RunOnce(ctx)
+
+	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.NotContains(logs.String(), "level=WARN")
+	assert.NotContains(logs.String(), "level=ERROR")
+	assert.Equal(int64(2), gqlAttempts.Load())
+	assert.Zero(gqlRequests.Load())
+	assert.Zero(requestsAfterLists.Load())
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
+	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Nil(pr.DetailFetchedAt)
+	issue, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 2)
+	require.NoError(err)
+	require.NotNil(issue)
+
+	// Recovery must evict the newly stored list ETags and hydrate the PR.
+	refill.Store(true)
+	budget.Reset()
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(4), listCalls.Load())
+	assert.GreaterOrEqual(gqlRequests.Load(), int64(2))
+	pr, err = database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+	require.NoError(err)
+	require.NotNil(pr)
+	assert.Equal("Hydrated PR", pr.Title)
+	assert.NotNil(pr.DetailFetchedAt)
+}
+
+func TestSyncerBudgetWaitWithRealFailureStillLogsError(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+	require.NoError(err)
+	pr, err := NormalizePR(repoID, buildOpenPR(1, time.Now().UTC()))
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, pr)
+	require.NoError(err)
+	client := &partialFailureMock{}
+	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
+		return nil, platform.ErrSyncBudgetExhausted
+	}
+	client.listOpenIssuesErr = &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusInternalServerError}, Message: "issue list unavailable"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	logs := captureDefaultLogs(t)
+	syncer.RunOnce(ctx)
+	assert.Contains(logs.String(), `level=ERROR msg="sync repo failed"`)
+	assert.NotContains(logs.String(), `msg="repo waits for sync budget"`)
+	assert.Contains(syncer.Status().LastError, "issue list unavailable")
+	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
+}
+
 func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -611,6 +612,9 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 			ctx, owner, name, topLevelPageSize, false,
 		)
 	}
+	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+		return nil, err
+	}
 	if err != nil {
 		slog.Warn("GraphQL query failed, retrying with smaller page",
 			"owner", owner, "name", name,
@@ -724,6 +728,9 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 	result, err := g.fetchRepoIssuesWithPageSize(
 		ctx, owner, name, topLevelPageSize,
 	)
+	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+		return nil, err
+	}
 	if err != nil {
 		slog.Warn("GraphQL issue query failed, retrying with smaller page",
 			"owner", owner, "name", name,

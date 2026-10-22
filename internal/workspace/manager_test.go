@@ -6326,10 +6326,11 @@ func TestManagerEnsureTmuxSurvivesRemovedDaemonShell(t *testing.T) {
 
 	require.NoError(t, mgr.EnsureTmux(ctx, "forge-0123456789abcdef", t.TempDir()))
 
+	// Never can run one last check after the test's context is canceled.
+	checkCtx := context.WithoutCancel(ctx)
 	require.Never(t, func() bool {
-		exists, err := mgr.tmuxSessionExists(ctx, "forge-0123456789abcdef")
-		require.NoError(t, err)
-		return !exists
+		exists, err := mgr.tmuxSessionExists(checkCtx, "forge-0123456789abcdef")
+		return err != nil || !exists
 	}, 2*time.Second, 50*time.Millisecond)
 }
 

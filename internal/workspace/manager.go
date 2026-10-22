@@ -5207,17 +5207,19 @@ func (m *Manager) killTmuxSession(
 // shell removed since (as a system profile switch can do) exits at
 // once and takes its tmux session with it.
 func userLoginShell() string {
-	candidates := []string{os.Getenv("SHELL")}
+	var passwdShell string
 	if u, err := user.Current(); err == nil && u.Username != "" {
-		candidates = slices.Insert(candidates, 0, lookupPasswdShell(u.Username))
+		passwdShell = lookupPasswdShell(u.Username)
 	}
-	for _, shell := range candidates {
+	for _, shell := range []string{passwdShell, os.Getenv("SHELL")} {
 		if shell == "" {
 			continue
 		}
-		if path, err := exec.LookPath(shell); err == nil {
+		path, err := exec.LookPath(shell)
+		if err == nil {
 			return path
 		}
+		slog.Warn("skip unusable login shell for base terminal", "shell", shell, "err", err)
 	}
 	return "/bin/sh"
 }

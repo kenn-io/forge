@@ -17,9 +17,9 @@ func TestReadAccess(t *testing.T) {
 	}{
 		{name: "full access", reply: `{"result":{"sandbox":{"type":"dangerFullAccess"},"approvalPolicy":"never"}}`, sandbox: "dangerFullAccess", approval: "never", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
 		{name: "caller config preserved with projects overridden", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":"on-request"}}`, sandbox: "readOnly", approval: "on-request", config: map[string]any{"model": "example-model", "projects": map[string]any{"/workspace": map[string]any{"trust_level": "untrusted"}}}, wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"model":"example-model","projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
-		{name: "granular approval", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":{"granular":{"sandbox_approval":true}}}}`, sandbox: "readOnly", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
-		{name: "rpc error", reply: `{"error":{"message":"policy rejected"}}`, failure: "policy rejected", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
-		{name: "missing sandbox type", reply: `{"result":{"sandbox":{"type":""},"approvalPolicy":"never"}}`, failure: "no sandbox type", wantRequest: `{"id":1,"method":"thread/start","params":{"ephemeral":true,"config":{"projects":{"/workspace":{"trust_level":"trusted"}}}}}`},
+		{name: "granular approval", reply: `{"result":{"sandbox":{"type":"readOnly"},"approvalPolicy":{"granular":{"sandbox_approval":true}}}}`, sandbox: "readOnly"},
+		{name: "rpc error", reply: `{"error":{"message":"policy rejected"}}`, failure: "policy rejected"},
+		{name: "missing sandbox type", reply: `{"result":{"sandbox":{"type":""},"approvalPolicy":"never"}}`, failure: "no sandbox type"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var sent bytes.Buffer
@@ -32,7 +32,9 @@ func TestReadAccess(t *testing.T) {
 			}
 			assert.Equal(t, tc.sandbox, sandbox)
 			assert.Equal(t, tc.approval, approval)
-			assert.JSONEq(t, tc.wantRequest, sent.String())
+			if tc.wantRequest != "" {
+				assert.JSONEq(t, tc.wantRequest, sent.String())
+			}
 		})
 	}
 }

@@ -537,6 +537,9 @@ Persisted controls must state their scope clearly.
   `schema-constraints` module, never from hand-copied numbers, and show an inline
   invalid state instead of sending a request the server would reject
   (`scripts/generate-schema-constraints.mjs`, `frontend/src/lib/components/settings/DetailSettings.svelte::validateLimit`).
+- A save control disabled by invalid input names each blocking item and what it
+  needs, including items hidden by a filter; never leave a silent disabled button
+  (`frontend/src/lib/components/settings/AgentSettings.svelte::draftProblem`).
 - Workspace machines are one list with one default control: this Forge
   machine, connected devboxes, and unconnected assignments each appear once,
   and a radio in the row is the only way to choose where new workspaces run.

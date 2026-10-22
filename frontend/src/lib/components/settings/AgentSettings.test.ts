@@ -482,4 +482,41 @@ describe("AgentSettings", () => {
       expect(onUpdate).toHaveBeenCalledWith(agents, launchTargets);
     });
   });
+
+  it("restores a built-in agent's default binary when re-enabling one saved without a command", async () => {
+    const agents = [{ key: "codex", label: "codex", command: [], enabled: false }];
+    mockPersistSettings.mockResolvedValue({
+      agents: [{ key: "codex", label: "codex", command: ["codex"], enabled: true }],
+    });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "codex" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+
+    await waitFor(() =>
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [{ key: "codex", label: "codex", command: ["codex"], enabled: true }],
+      }),
+    );
+  });
+
+  it("names the agent and missing field when an invalid draft blocks saving, even if filtered out", async () => {
+    renderAgentSettings({ agents: [], onUpdate: vi.fn() });
+    const save = screen.getByRole("button", { name: "Save workspace agents" }) as HTMLButtonElement;
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add custom agent" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Add custom agent" }));
+    expect(save.disabled).toBe(true);
+    expect(save.getAttribute("aria-describedby")).toBeTruthy();
+    expect(document.getElementById(save.getAttribute("aria-describedby")!)?.textContent).toContain(
+      "Custom agent needs a key and a binary.",
+    );
+
+    await fireEvent.input(screen.getAllByLabelText("Custom agent key")[0]!, { target: { value: "review" } });
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Filter workspace agents" }), {
+      target: { value: "claude" },
+    });
+    expect(screen.getByText("review needs a binary.")).toBeTruthy();
+    expect(save.disabled).toBe(true);
+  });
 });

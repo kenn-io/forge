@@ -65,7 +65,13 @@
   const serializedAgents = $derived(
     serializeDrafts(drafts, preservedDefaultBuiltinKeys),
   );
-  const hasInvalidDraft = $derived(drafts.some((draft) => !isDraftValid(draft)));
+  const draftProblems = $derived(
+    drafts.flatMap((draft) => {
+      const message = draftProblem(draft);
+      return message === null ? [] : [{ id: draft.id, message }];
+    }),
+  );
+  const hasInvalidDraft = $derived(draftProblems.length > 0);
   const isDirty = $derived(
     JSON.stringify(serializedAgents) !== JSON.stringify(savedAgents),
   );
@@ -189,11 +195,22 @@
     return normalizeAgents(agentsToSave);
   }
 
-  function isDraftValid(draft: AgentDraft): boolean {
-    const key = draft.key.trim();
-    if (!draft.builtin && key === "") return false;
-    if (draft.enabled && draft.binary.trim() === "") return false;
-    return true;
+  function draftProblem(draft: AgentDraft): string | null {
+    const missing = [
+      !draft.builtin && draft.key.trim() === "" ? "key" : null,
+      draft.enabled && draft.binary.trim() === "" ? "binary" : null,
+    ].filter((field) => field !== null);
+    if (missing.length === 0) return null;
+    return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
+  }
+
+  function setEnabled(draft: AgentDraft, enabled: boolean): void {
+    draft.enabled = enabled;
+    // A built-in saved disabled with no command has an empty binary; give it
+    // the default back so turning it on does not leave an unsavable row.
+    if (!enabled || !draft.builtin || draft.binary.trim() !== "") return;
+    const builtin = builtins.find((candidate) => candidate.key === draft.key);
+    if (builtin) draft.binary = builtin.binary;
   }
 
   function agentName(draft: AgentDraft): string {
@@ -379,7 +396,12 @@
     {#each visibleDrafts as draft (draft.id)}
       <div class={["agent-row", !draft.builtin && "agent-row--custom"]}>
         <div class="agent-row-header">
-          <Checkbox class="enable-field" bind:checked={draft.enabled} disabled={saving}>
+          <Checkbox
+            class="enable-field"
+            checked={draft.enabled}
+            disabled={saving}
+            onchange={(enabled) => setEnabled(draft, enabled)}
+          >
             <LaunchTargetName
               target={{ kind: draft.protocol === "acp" ? "acp" : "agent", key: draft.key }}
               label={agentName(draft)}
@@ -509,6 +531,14 @@
     {/each}
   </div>
 
+  {#if draftProblems.length > 0}
+    <ul id="agent-save-blocked" class="save-blocked">
+      {#each draftProblems as problem (problem.id)}
+        <li>{problem.message}</li>
+      {/each}
+    </ul>
+  {/if}
+
   <div class="settings-actions">
     <button
       class="add-btn"
@@ -523,6 +553,7 @@
       class="save-btn"
       type="button"
       aria-label="Save workspace agents"
+      aria-describedby={draftProblems.length > 0 ? "agent-save-blocked" : undefined}
       disabled={!canSave}
       onclick={() => void save()}
     >
@@ -643,6 +674,14 @@
 
   .chevron-icon--expanded {
     transform: rotate(90deg);
+  }
+
+  .save-blocked {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--accent-red);
+    font-size: var(--font-size-sm);
   }
 
   .settings-actions {

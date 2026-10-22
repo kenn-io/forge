@@ -11308,7 +11308,7 @@ func (s *Syncer) notifyMRDetailSynced(ctx context.Context, repo RepoRef, repoID 
 	if s.onMRSynced != nil {
 		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 		if err != nil {
-			slog.Warn("get MR for onMRSynced hook in SyncMR",
+			slog.Warn("get MR for onMRSynced hook failed",
 				"repo", repo.Owner+"/"+repo.Name,
 				"number", number,
 				"err", err,
@@ -11320,10 +11320,14 @@ func (s *Syncer) notifyMRDetailSynced(ctx context.Context, repo RepoRef, repoID 
 }
 
 func (s *Syncer) canUseConditionalPRDetail(ctx context.Context, repo RepoRef, existing *db.MergeRequest, mode mrDetailMode) bool {
-	if mode != mrDetailPage {
-		return mode == mrDetailBackground
+	switch mode {
+	case mrDetailBackground:
+		return true
+	case mrDetailPage:
+	default:
+		return false
 	}
-	if existing == nil || existing.State != "open" {
+	if existing == nil || existing.State != db.MergeRequestStateOpen {
 		return false
 	}
 	if s.clones == nil {
@@ -11463,7 +11467,10 @@ func (s *Syncer) syncMRForRepoResolved(
 			if err == nil && ghPR == nil {
 				if notModified && existing != nil {
 					if mode == mrDetailPage {
-						_, err := s.refreshMRDetailSnapshot(ctx, repo, repoID, existing.ID, existing.SnapshotRevision, number, existing, existing, nil, nil)
+						_, err := s.refreshMRDetailSnapshot(
+							ctx, repo, repoID, existing.ID, existing.SnapshotRevision, number,
+							existing, existing, nil, nil,
+						)
 						if errors.Is(err, errParentSnapshotAdvanced) {
 							return nil
 						}

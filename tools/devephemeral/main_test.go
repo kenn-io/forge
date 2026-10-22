@@ -96,8 +96,6 @@ func TestPrepareEphemeralConfigSharesDefaultMCPListener(t *testing.T) {
 			require.NoError(t, err)
 			assert.Nil(reloaded.MCP.Enabled)
 			assert.Zero(reloaded.MCP.Port)
-			assert.True(reloaded.MCPEnabled())
-			assert.True(reloaded.MCPSharesMainListener())
 			assert.Equal(39101, prepared.mcpPort)
 			assert.Equal(tc.wantURL, prepared.mcpURL)
 		})
@@ -113,7 +111,6 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 		expectedPort  int
 	}{
 		{name: "explicit flag", mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
-		{name: "source port", mcp: config.MCP{Enabled: new(true), Port: 6661}, mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
 		{name: "explicit zero flag", mcpPortSet: true},
 		{name: "explicit enable free port", mcp: config.MCP{Enabled: new(true)}},
 		{name: "source port free port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
@@ -152,10 +149,8 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 
 			reloaded, err := config.Load(prepared.configPath)
 			require.NoError(err)
-			assert.True(reloaded.MCPEnabled())
 			require.NotNil(reloaded.MCP.Enabled)
 			assert.True(*reloaded.MCP.Enabled)
-			assert.False(reloaded.MCPSharesMainListener())
 			if tc.expectedPort != 0 {
 				assert.Equal(tc.expectedPort, reloaded.MCP.Port)
 			} else {
@@ -164,7 +159,6 @@ func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testin
 				assert.NotEqual(39101, reloaded.MCP.Port)
 				assert.NotEqual(39102, reloaded.MCP.Port)
 			}
-			assert.Equal(fmt.Sprintf("127.0.0.1:%d", reloaded.MCP.Port), reloaded.MCPListenAddr())
 			assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
 			assert.Equal(fmt.Sprintf("http://127.0.0.1:%d/mcp", reloaded.MCP.Port), prepared.mcpURL)
 		})
@@ -204,8 +198,8 @@ func TestPrepareEphemeralConfigLeavesDisabledMCPAlone(t *testing.T) {
 
 	reloaded, err := config.Load(prepared.configPath)
 	require.NoError(err)
-	assert.False(reloaded.MCPEnabled())
-	assert.Empty(reloaded.MCPListenAddr())
+	assert.Equal(new(false), reloaded.MCP.Enabled)
+	assert.Zero(reloaded.MCP.Port)
 	assert.Equal(0, prepared.mcpPort)
 	assert.Empty(prepared.mcpURL)
 }

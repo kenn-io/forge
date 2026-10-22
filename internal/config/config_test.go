@@ -85,17 +85,9 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	return cfg, cfg2
 }
 
-func TestMCPOnByDefault(t *testing.T) {
-	assert := assert.New(t)
-	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n"))
-	require.NoError(t, err)
-	assert.True(cfg.MCPEnabled())
-	assert.Equal("127.0.0.1:8091", cfg.MCPListenAddr())
-	assert.Equal("http://127.0.0.1:8091/mcp", cfg.MCPURL())
-	assert.True(cfg.MCPSharesMainListener())
-}
-
 func TestMCPDefaultConditions(t *testing.T) {
+	defaults, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n"))
+	require.NoError(t, err)
 	workerDir := t.TempDir()
 	worker, err := Load(writeConfig(t, fmt.Sprintf(`
 host = "127.0.0.1"
@@ -117,6 +109,7 @@ commit_email = "developer-a@example.org"
 		cfg  Config
 		want bool
 	}{
+		{name: "all defaults", cfg: *defaults, want: true},
 		{name: "IPv6 loopback", cfg: Config{Host: "::1"}, want: true},
 		{name: "network", cfg: Config{Host: "192.0.2.10"}},
 		{name: "wildcard", cfg: Config{Host: "0.0.0.0"}},
@@ -125,7 +118,13 @@ commit_email = "developer-a@example.org"
 		{name: "cache override", cfg: Config{Host: "127.0.0.1", MCP: MCP{DiffCacheMB: 256}}, want: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, tt.cfg.MCPEnabled())
+			assert := assert.New(t)
+			assert.Equal(tt.want, tt.cfg.MCPEnabled())
+			if tt.name == "all defaults" {
+				assert.Equal("127.0.0.1:8091", tt.cfg.MCPListenAddr())
+				assert.Equal("http://127.0.0.1:8091/mcp", tt.cfg.MCPURL())
+				assert.True(tt.cfg.MCPSharesMainListener())
+			}
 		})
 	}
 }

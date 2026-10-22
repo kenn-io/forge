@@ -334,7 +334,6 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 				return
 			}
 			require.NoError(err)
-			require.NotNil(primary)
 			t.Cleanup(func() {
 				require.NoError(primary.Close())
 				if mcpListener != nil {

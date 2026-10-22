@@ -73,6 +73,8 @@ func TestLoadMCPQuickstartExplainsStoppedDaemonWithoutCreatingRuntimeState(t *te
 host = "127.0.0.1"
 port = 8091
 data_dir = %q
+[mcp]
+enabled = true
 `, dataDir), 0o600))
 
 	info, err := loadMCPQuickstart(t.Context(), configPath, time.Second)

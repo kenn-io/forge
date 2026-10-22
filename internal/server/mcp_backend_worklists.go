@@ -136,6 +136,37 @@ func (b mcpBackend) clearWorklistMarksLocal(
 	return mcpserver.WorklistMarksCleared{WorklistID: id, Cleared: cleared}, nil
 }
 
+// ImportWorklist creates the list a link's fragment carries through the same
+// import as the import page, on the hub.
+func (b mcpBackend) ImportWorklist(
+	ctx context.Context, fragment string,
+) (mcpserver.WorklistImportResult, error) {
+	var (
+		response worklistapi.WorklistImportResponse
+		err      error
+	)
+	if b.server.providerSource != nil {
+		response, err = b.server.providerSource.ImportWorklist(ctx, fragment)
+	} else {
+		worklists, unavailable := b.localWorklists()
+		if unavailable != nil {
+			return mcpserver.WorklistImportResult{}, unavailable
+		}
+		release, admitErr := b.admitProviderWrite(ctx)
+		if admitErr != nil {
+			return mcpserver.WorklistImportResult{}, admitErr
+		}
+		defer release()
+		response, err = worklists.ImportService(ctx, fragment)
+	}
+	if err != nil {
+		return mcpserver.WorklistImportResult{}, mcpapi.McpBackendMutationError(err)
+	}
+	return mcpserver.WorklistImportResult{
+		WorklistID: response.WorklistID, ItemCount: response.ItemCount, SkippedCount: response.SkippedCount,
+	}, nil
+}
+
 // localWorklists returns the hub's worklist handler. Execution workers serve
 // MCP without one, and a worker that is not a spoke has no hub to forward to.
 func (b mcpBackend) localWorklists() (*worklistapi.Handler, error) {

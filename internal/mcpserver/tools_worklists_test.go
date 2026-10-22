@@ -247,3 +247,69 @@ func TestClearWorklistMarksForwardsToBackend(t *testing.T) {
 	assert.True(rejected.IsError)
 	assert.Equal([]int64{4}, cleared, "an invalid id never reaches the backend")
 }
+
+func TestImportWorklistAcceptsEveryLinkFormAndRejectsOtherLinks(t *testing.T) {
+	var fragments []string
+	s := newMCPTestServer(t, &fakeBackend{importWorklistFn: func(_ context.Context, fragment string) (WorklistImportResult, error) {
+		fragments = append(fragments, fragment)
+		return WorklistImportResult{WorklistID: 8, ItemCount: 1, SkippedCount: 2}, nil
+	}})
+	accepted := []string{
+		"kenn://kenn-forge/worklists/import#v1.abc",
+		"https://forge.example.com/worklists/import#v1.abc",
+		"http://127.0.0.1:8091/forge/worklists/import#v1.abc",
+		"  v1.abc  ",
+		"#v1.abc",
+	}
+	for _, link := range accepted {
+		t.Run("accepts "+strings.TrimSpace(link), func(t *testing.T) {
+			result, err := s.importWorklist(t.Context(), importWorklistInput{Link: link})
+
+			require.NoError(t, err)
+			assert.Equal(t, WorklistImportResult{WorklistID: 8, ItemCount: 1, SkippedCount: 2}, result)
+		})
+	}
+	assert.Equal(t, []string{"v1.abc", "v1.abc", "v1.abc", "v1.abc", "v1.abc"}, fragments)
+
+	rejected := []string{
+		"",
+		"https://forge.example.com/worklists/import",
+		"https://forge.example.com/worklists/import#",
+		"https://forge.example.com/pulls#v1.abc",
+		"https://forge.example.com/myworklists/import#v1.abc",
+		"ftp://forge.example.com/worklists/import#v1.abc",
+		"kenn://kenn-forge/pulls#v1.abc",
+		"/worklists/import#v1.abc",
+	}
+	for _, link := range rejected {
+		t.Run("rejects "+link, func(t *testing.T) {
+			_, err := s.importWorklist(t.Context(), importWorklistInput{Link: link})
+
+			var backendErr *Error
+			require.ErrorAs(t, err, &backendErr)
+			assert.Equal(t, "invalid_request", backendErr.Kind)
+			assert.Equal(t, ErrorCodeValidation, backendErr.Code)
+			assert.Equal(t, "link", backendErr.Details["field"])
+		})
+	}
+	assert.Len(t, fragments, len(accepted), "a link that is not a worklist link never reaches the backend")
+}
+
+func TestImportWorklistNamesTheLinkInImportValidationErrors(t *testing.T) {
+	importErr := &Error{
+		Kind: "invalid_request", Code: ErrorCodeValidation, Message: "no item in the link is tracked",
+		Details: map[string]any{"field": "body.fragment"},
+	}
+	s := newMCPTestServer(t, &fakeBackend{importWorklistFn: func(context.Context, string) (WorklistImportResult, error) {
+		return WorklistImportResult{}, importErr
+	}})
+
+	result, err := connectMCPTestSession(t, s).CallTool(t.Context(), &mcp.CallToolParams{
+		Name: "kenn_forge_import_worklist", Arguments: map[string]any{"link": "#v1.abc"},
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.IsError)
+	assert.Contains(t, result.Content[0].(*mcp.TextContent).Text, `"field":"link"`)
+	assert.Equal(t, "body.fragment", importErr.Details["field"], "the backend's error is not modified")
+}

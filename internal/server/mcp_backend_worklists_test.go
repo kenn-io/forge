@@ -359,9 +359,16 @@ func TestSpokeWorklistsDoNotFallBackWhenHubIsUnavailable(t *testing.T) {
 	require.ErrorAs(err, &clearErr)
 	assert.Equal(string(httpapi.CodeMutationOutcomeUnknown), clearErr.Code)
 	assert.True(clearErr.Ambiguous)
+
+	_, err = backend.ImportWorklist(t.Context(), "v1.AAAA")
+	var importErr *mcpserver.Error
+	require.ErrorAs(err, &importErr)
+	assert.Equal(string(httpapi.CodeMutationOutcomeUnknown), importErr.Code)
+	assert.True(importErr.Ambiguous)
 	assert.Equal([]federationauth.Scope{
 		federationauth.ScopeProviderRead, federationauth.ScopeProviderRead,
 		federationauth.ScopeProviderWrite, federationauth.ScopeProviderWrite, federationauth.ScopeProviderWrite,
+		federationauth.ScopeProviderWrite,
 	}, scopes)
 	stored, err := database.GetWorklist(t.Context(), local.ID, nil)
 	require.NoError(err)
@@ -559,6 +566,10 @@ func TestExecutionWorkerWorklistOperationsReportUnavailable(t *testing.T) {
 		},
 		"clear marks": func() error {
 			_, err := backend.ClearWorklistMarks(t.Context(), 1)
+			return err
+		},
+		"import": func() error {
+			_, err := backend.ImportWorklist(t.Context(), "v1.AAAA")
 			return err
 		},
 	}

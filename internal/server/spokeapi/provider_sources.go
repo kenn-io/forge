@@ -984,6 +984,22 @@ func (s *HubProviderSource) PutWorklist(
 	return response, nil
 }
 
+// ImportWorklist imports a worklist link on the hub, as the hub's import
+// page does.
+func (s *HubProviderSource) ImportWorklist(
+	ctx context.Context, fragment string,
+) (worklistapi.WorklistImportResponse, error) {
+	httpRequest, err := generated.NewImportWorklistRequest(ctx, "/api/v1", &generated.ImportWorklistRequestOptions{Body: &generated.ImportWorklistBody{Fragment: fragment}})
+	if err != nil {
+		return worklistapi.WorklistImportResponse{}, err
+	}
+	var response worklistapi.WorklistImportResponse
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
+		return worklistapi.WorklistImportResponse{}, err
+	}
+	return response, nil
+}
+
 func (s *HubProviderSource) GetWorklist(
 	ctx context.Context, id int64,
 ) (worklistapi.WorklistResponse, error) {

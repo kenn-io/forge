@@ -23,6 +23,7 @@ type ProviderBackend interface {
 	ListWorklists(context.Context, bool) ([]WorklistSummary, error)
 	DismissWorklist(context.Context, int64) (WorklistDismissal, error)
 	ClearWorklistMarks(context.Context, int64) (WorklistMarksCleared, error)
+	ImportWorklist(context.Context, string) (WorklistImportResult, error)
 }
 
 // LocalBackend owns data and execution that belong to the connected node.
@@ -352,6 +353,15 @@ type WorklistPutResult struct {
 	WorklistID int64 `json:"worklist_id"`
 	ItemCount  int   `json:"item_count"`
 	Created    bool  `json:"created"`
+}
+
+// WorklistImportResult names the list a worklist link created or reopened.
+// ItemCount and SkippedCount describe the link: the items Forge can show now
+// and the ones it skipped.
+type WorklistImportResult struct {
+	WorklistID   int64 `json:"worklist_id"`
+	ItemCount    int   `json:"item_count"`
+	SkippedCount int   `json:"skipped_count"`
 }
 
 type WorklistSummary struct {

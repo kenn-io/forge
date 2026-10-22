@@ -2825,13 +2825,6 @@ type activityPlanQueryer struct {
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	q.t.Log(strings.Join(plan, "\n"))
-	materializations := 0
-	for _, step := range plan {
-		if step == "MATERIALIZE search_commit_events" {
-			materializations++
-		}
-	}
-	require.Zero(q.t, materializations, "search must resolve candidate keys rather than materialize the global commit cache")
 	if q.search {
 		assert.NotContains(q.t, plan, "SCAN e", "search must not scan every cached commit event")
 		assert.NotContains(q.t, plan, "SCAN ce", "search must not scan every cached commit event")

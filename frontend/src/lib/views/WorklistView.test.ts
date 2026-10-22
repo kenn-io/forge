@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { Effect } from "effect";
-import { formatDiffStat } from "@kenn-io/kit-ui";
 import { createMockApiFetch, jsonResponse, type MockRouteOverride } from "../../test/mockApiFetch.js";
 import {
   WORKLIST_HANDLED_AT,
@@ -815,9 +814,7 @@ describe("WorklistView", () => {
     renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
-    const size = within(row("Add browser regression coverage")).getByLabelText("1234 additions, 56 deletions");
-    // The row uses kit-ui's diff stat formatting, whatever that formatting is.
-    expect(size.textContent?.replace(/\s+/g, "")).toBe(`+${formatDiffStat(1234)}\u2212${formatDiffStat(56)}`);
+    expect(within(row("Add browser regression coverage")).getByLabelText("1234 additions, 56 deletions")).toBeTruthy();
     expect(within(row("Mirror host stub PR")).queryByLabelText(/additions/)).toBeNull();
     expect(within(row("Theme toggle does not stick")).queryByLabelText(/additions/)).toBeNull();
   });

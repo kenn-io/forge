@@ -34,7 +34,7 @@ function activityItem(id: string, overrides: Partial<ActivityItem> = {}): Activi
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
-    author: "integrator",
+    author: "Alice Example",
     commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",

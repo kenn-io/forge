@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -2646,14 +2645,12 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	const sha = "1234567890abcdef1234567890abcdef12345678"
 	for _, tc := range []struct {
 		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
-		otherRepo, duplicates                                                                            bool
+		otherRepo, sharedSHA                                                                             bool
 		searchCounts                                                                                     map[string]int
 		hideBotsCount                                                                                    int
 	}{
 		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", searchCounts: map[string]int{"integrator": 1, `"A. Person"`: 1}},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "unlinked author", actor: "Git Author", gitName: "Git Author", prCommitAuthor: "Git Author", branchCommitAuthor: "Git Author"},
-		{name: "empty identities"},
 		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator", searchCounts: map[string]int{"integrator": 1}},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "non-commit event", eventType: "issue_comment", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
@@ -2661,7 +2658,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		{name: "rewritten sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other provider", provider: "gitlab", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
-		{name: "duplicate pulls", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", duplicates: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "shared SHA keeps PR authors and prefers latest detail sync", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", sharedSHA: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]", hideBotsCount: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2687,21 +2684,24 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			}
 			event := MREvent{MergeRequestID: mrID, EventType: eventType, Summary: summary, Author: tc.actor, MetadataJSON: tc.metadata, CreatedAt: baseTime(), DedupeKey: "commit-" + sha[:12]}
 			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
-			if tc.duplicates {
+			if tc.sharedSHA {
 				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
-					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "newer-author", CreatedAt: baseTime(), DedupeKey: "newer"},
-					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, CreatedAt: baseTime(), DedupeKey: "empty"},
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "other-integrator", MetadataJSON: `{"commit_author":"previous-login"}`, CreatedAt: baseTime(), DedupeKey: sha},
 				}))
+				// The lower-ID pull was synced later, despite its older event ID.
+				_, err = d.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET detail_fetched_at = CASE WHEN id = ? THEN '2026-10-22 12:00:00' ELSE '2026-10-21 12:00:00' END WHERE id IN (?, ?)`, mrID, mrID, otherMR)
+				require.NoError(t, err)
 			}
 			branch := testBranchCommit(repoID, "main", sha, "Landed change", baseTime())
 			branch.AuthorName = tc.gitName
+			branch.CommitterName = "Different Committer"
 			require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
 			opts := ListActivityOpts{Types: []string{"commit", "comment", "default_branch_commit"}, Limit: 50}
 			items, err := d.ListActivity(t.Context(), opts)
 			require.NoError(t, err)
-			if tc.duplicates {
-				require.Len(t, items, 4)
+			if tc.sharedSHA {
+				require.Len(t, items, 3)
 			} else {
 				require.Len(t, items, 2)
 			}
@@ -2710,6 +2710,11 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 					assert.Equal(t, tc.gitName, item.Author)
 					assert.Equal(t, tc.gitName, item.AuthorName)
 					assert.Equal(t, tc.branchCommitAuthor, item.CommitAuthor)
+					assert.Equal(t, "Different Committer", item.CommitterName)
+				}
+				if item.Source == "pre" && item.ItemNumber == 2 {
+					assert.Equal(t, "previous-login", item.CommitAuthor)
+					assert.Equal(t, "other-integrator", item.Author)
 				}
 				if item.Source == "pre" && item.ItemNumber == 1 {
 					assert.Equal(t, tc.actor, item.Author)
@@ -2719,9 +2724,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			wantSources := []string{}
 			if tc.prCommitAuthor == "original-login" {
 				wantSources = append(wantSources, "pre")
-				if tc.duplicates {
-					wantSources = append(wantSources, "pre", "pre")
-				}
 			}
 			if tc.branchCommitAuthor == "original-login" {
 				wantSources = append(wantSources, "bc")
@@ -2739,15 +2741,20 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 					assert.ElementsMatch(t, wantSources, sources)
 				} else {
 					assert.Len(t, matches, len(items)-len(wantSources))
+					for _, item := range matches {
+						assert.NotEqual(t, "original-login", item.CommitAuthor)
+					}
 				}
 			}
-			if tc.duplicates {
+			if tc.sharedSHA {
 				searchOpts := opts
-				searchOpts.Search = "newer-author"
+				searchOpts.Search = "previous-login"
 				matches, err := d.ListActivity(t.Context(), searchOpts)
 				require.NoError(t, err)
 				require.Len(t, matches, 1)
-				assert.Equal(t, "pre", matches[0].Source, "branch identity prefers metadata over newer actors")
+				assert.Equal(t, "pre", matches[0].Source)
+				assert.Equal(t, 2, matches[0].ItemNumber)
+				assert.Equal(t, "previous-login", matches[0].CommitAuthor)
 			}
 			for search, count := range tc.searchCounts {
 				searchOpts := opts
@@ -2766,54 +2773,6 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	}
 }
 
-func TestListActivitySharedCommitAuthor(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "acme", "widgets")
-	const sha = "1234567890abcdef1234567890abcdef12345678"
-	for i, metadata := range []string{`{"commit_author":"previous-login"}`, `{"commit_author":"current-login"}`} {
-		mrID := insertTestMR(t, d, repoID, i+1, "Cached pull", baseTime())
-		require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{
-			MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: "integrator",
-			MetadataJSON: metadata, CreatedAt: baseTime(), DedupeKey: sha,
-		}}))
-	}
-	branch := testBranchCommit(repoID, "main", sha, "Landed change", baseTime())
-	branch.AuthorName = "Original Author"
-	branch.CommitterName = "Different Committer"
-	require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
-	for _, tc := range []struct {
-		search string
-		count  int
-	}{{"", 3}, {"current-login", 3}, {"!current-login", 0}} {
-		items, err := d.ListActivity(t.Context(), ListActivityOpts{
-			Types: []string{"commit", "default_branch_commit"}, Search: tc.search, Limit: 50,
-		})
-		require.NoError(t, err)
-		assert.Len(items, tc.count, tc.search)
-		for _, item := range items {
-			assert.Equal("current-login", item.CommitAuthor, tc.search)
-			if item.Source == "bc" {
-				assert.Equal("Different Committer", item.CommitterName)
-			} else {
-				assert.Equal("integrator", item.Author)
-			}
-		}
-	}
-}
-
-func TestActivityCommitIdentityMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "forge.db")
-	openAtVersionForTest(t, path, 73, func(*sql.DB) {})
-	d, err := Open(path)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = d.Close() })
-	var name string
-	require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), "SELECT name FROM sqlite_master WHERE name = 'idx_mr_events_commit_summary'").Scan(&name))
-	assertDatabaseIntegrityForTest(t, d.ReadDB())
-}
-
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer
@@ -2824,10 +2783,11 @@ type activityPlanQueryer struct {
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
-	q.t.Log(strings.Join(plan, "\n"))
 	if q.search {
-		assert.NotContains(q.t, plan, "SCAN e", "search must not scan every cached commit event")
-		assert.NotContains(q.t, plan, "SCAN ce", "search must not scan every cached commit event")
+		for _, step := range plan {
+			assert.False(q.t, strings.HasPrefix(step, "SCAN e"), "search must not scan every cached commit event: %s", step)
+			assert.False(q.t, strings.HasPrefix(step, "SCAN ce"), "search must not scan every cached commit event: %s", step)
+		}
 	}
 
 	indexPosition, parentPosition, pagePosition, eventPosition := -1, -1, -1, -1

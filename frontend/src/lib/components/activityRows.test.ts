@@ -160,12 +160,12 @@ describe("collapseActivityRuns", () => {
     const rows = collapseActivityRuns(
       [
         {
-          ...branchItem("9", "default_branch_commit", "integrator"),
+          ...branchItem("9", "default_branch_commit", "Alice Example"),
           commit_author: "alice",
           author_name: "Alice Example",
         },
         {
-          ...branchItem("8", "default_branch_commit", "another-integrator"),
+          ...branchItem("8", "default_branch_commit", "Different git signature"),
           commit_author: "alice",
           author_name: "Different git signature",
         },

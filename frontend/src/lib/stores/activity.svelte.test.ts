@@ -3250,10 +3250,10 @@ describe("activity polling recovery", () => {
   });
 
   it.each([
-    ["current-parent-author", "current-parent-author"],
-    ["", "old-parent-author"],
-    [undefined, "old-parent-author"],
-  ])("reconciles retained item events with parent author %s", async (parentAuthor, expectedAuthor) => {
+    ["updated", "current-parent-author", "current-parent-author"],
+    ["empty", "", "old-parent-author"],
+    ["missing", undefined, "old-parent-author"],
+  ])("reconciles retained item events with parent author %s", async (_label, parentAuthor, expectedAuthor) => {
     const now = new Date().toISOString();
     const retained = {
       id: "pre:7",

@@ -563,8 +563,9 @@ Persisted controls must state their scope clearly.
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
   Activity commit display identity is separate from the stored actor, so Hide
   bots follows the actor. GitHub commit display names and text search share
-  cached author identities; branch matches require the exact repository and
-  full SHA. Other providers keep their existing author names
+  each PR event's own original author. Branch rows use the most recently detail-synced
+  PR's author for the exact repository and full SHA, breaking ties by event ID.
+  Other providers keep their existing author names
   (`internal/db/queries_activity.go::listActivityWithQueryer`).
 - Timeline diff retry suppression must permit a new load after another pane clears
   or replaces the shared diff store; a previous attempt is not permanent availability

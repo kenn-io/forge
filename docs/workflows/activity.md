@@ -19,10 +19,10 @@ The filters can narrow the queue by:
 - draft pull requests
 - human or bot activity
 
-Linked GitHub authors from cached pull-request events also appear on
-default-branch commits when the repository and full SHA match. Text search
-includes those displayed names. Other providers keep their existing author
-names.
+Each GitHub pull request's commit rows show their own original author.
+Default-branch rows use the author from the most recently synced pull request
+with the same repository and full SHA. Text search includes those displayed
+names. Other providers keep their existing author names.
 
 Text search matches every word you type. Put `!` or `NOT` before a word to
 exclude it: `fix NOT alice` finds items that match "fix" and hides anything

@@ -9,7 +9,7 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
     id,
     cursor: id,
     activity_type: "default_branch_commit",
-    author: "integrator",
+    author: "Alice Example",
     commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
@@ -573,6 +573,14 @@ describe("MobileActivityView branch activity", () => {
     expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });
 
+  it("shows the linked author on a default-branch commit", () => {
+    render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    expect(screen.getByRole("button", { name: /Commit.*a1b2c3d.*alice/ })).toBeTruthy();
+  });
+
   it("does not select a PR or issue when tapping a branch event", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
@@ -580,7 +588,7 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*alice/ });
+    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d/ });
     await fireEvent.click(event);
 
     expect(onSelectItem).not.toHaveBeenCalled();

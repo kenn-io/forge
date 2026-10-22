@@ -61,7 +61,7 @@ function activityItem(id: string, overrides: Partial<ActivityItem> = {}): Activi
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
-    author: "integrator",
+    author: "Alice Example",
     commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
@@ -675,7 +675,7 @@ describe("ActivityFeed compact mode", () => {
     expect(row?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("shows individual default-branch commits in the flat table", () => {
+  it("shows each default-branch commit with its linked author in the flat table", () => {
     items.value = [
       branchActivityItem("branch-commit-1", {
         body_preview: "Ship direct main commit 1",

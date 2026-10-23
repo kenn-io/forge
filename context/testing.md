@@ -273,7 +273,9 @@ Mock Playwright shares one Vite dev server, so cap CI workers at seven;
 higher worker counts starve navigation and reload requests into false 30-second
 timeouts (`frontend/playwright.config.ts::ciWorkers`).
 
-Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture, lockfile, and workspace-manifest key; do not use prefix restores, because stale package caches can poison a lockfile-correct install (`.github/workflows/ci.yml::build`).
+Bun caches, in containers and on hosts, use exact keys; prefix restores can poison a lockfile-correct install and, once resaved, accumulate every package version ever seen (`.github/workflows/ci.yml::build`).
+Only `main` saves CI caches; pull-request caches are visible to that pull request alone yet evict `main`'s from the 10 GB budget (`.github/workflows/ci.yml::lint`).
+Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get` or Playwright `--with-deps`, whose mirror fetches can stall for tens of minutes (`.github/workflows/ci.yml::e2e-roborev`).
 
 Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead

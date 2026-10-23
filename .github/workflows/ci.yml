@@ -22,6 +22,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# Only main saves caches. A pull request's caches are visible to that pull
+# request alone, yet they count against the repository's 10 GB cache budget and
+# evict the main caches that every pull request restores from.
 jobs:
   detect_changes:
     name: Detect changed paths
@@ -203,15 +206,21 @@ jobs:
           enable-cache: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build documentation from published assets
         run: node scripts/build-docs.mjs
@@ -239,8 +248,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
@@ -252,6 +262,13 @@ jobs:
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Stub frontend embed dir
         run: |
@@ -268,7 +285,13 @@ jobs:
         env:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
+      # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        if: matrix.lane != 'frontend'
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+        env:
+          MISE_ENV: ci
 
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
@@ -327,6 +350,8 @@ jobs:
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
       - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:
           MISE_ENV: ci
 
@@ -401,8 +426,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
@@ -414,6 +440,13 @@ jobs:
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Run frontend unit tests
         run: python3 scripts/frontend_unit_ci.py
@@ -667,8 +700,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
@@ -680,6 +714,13 @@ jobs:
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build frontend
         run: node scripts/build-frontend.mjs
@@ -715,15 +756,21 @@ jobs:
           persist-credentials: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Make $HOME owned by the current user for Firefox
         if: matrix.browser == 'firefox'
@@ -772,17 +819,23 @@ jobs:
           cache: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         # Restore only Bun's package cache; materialize node_modules from the
         # checked-out lockfile inside this job container.
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Make $HOME owned by the current user for Firefox
         # GitHub mounts the container $HOME (/github/home) owned by the runner
@@ -862,8 +915,9 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
@@ -876,6 +930,13 @@ jobs:
           cache: false
           run-install: true
 
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
+
       - name: Set up isolated roborev image builder
         id: roborev-builder
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -885,9 +946,43 @@ jobs:
             image=moby/buildkit:v0.34.0
             default-load=true
 
+      # Playwright's --with-deps runs apt-get update against the Ubuntu mirrors
+      # on every run, and a slow mirror can stall it for tens of minutes. List
+      # the packages Chromium needs that this runner image lacks, restore them
+      # from the apt package cache, and skip --with-deps below. Packages the
+      # image already has are left alone: restoring a cached copy would
+      # overwrite the image's newer version.
+      - name: List missing Playwright system packages
+        id: playwright-deps
+        working-directory: frontend
+        run: |
+          set +e
+          report="$(node node_modules/.bin/playwright install-deps --dry-run chromium)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ] && ! grep -q '^Missing system dependencies' <<<"$report"; then
+            printf '%s\n' "$report" >&2
+            exit "$status"
+          fi
+          packages=()
+          for package in $(sed -n 's/^  //p' <<<"$report"); do
+            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+              packages+=("$package")
+            fi
+          done
+          echo "Packages to install: ${packages[*]:-none}"
+          echo "packages=${packages[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Playwright system packages
+        if: steps.playwright-deps.outputs.packages != ''
+        uses: eclipse-score/apt-install@d545215b973c4151236fcb3f75480dffcb914835 # main
+        with:
+          packages: ${{ steps.playwright-deps.outputs.packages }}
+
       - name: Run roborev E2E tests
         env:
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
+          PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src
         run: ./scripts/run-roborev-e2e.sh
 
@@ -922,15 +1017,21 @@ jobs:
           persist-credentials: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Run frontend browser tests
         shell: bash

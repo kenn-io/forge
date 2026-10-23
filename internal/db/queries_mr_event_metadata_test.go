@@ -206,6 +206,8 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 	for _, tc := range []struct{ metadata, author string }{
 		{`{"commit_author":"a"}`, "a"},
 		{`{"commit_author":"b"}`, "b"},
+		{`{"commit_author":"a","commit_author":"b"}`, "a"},
+		{`invalid json`, "developer"},
 		{`{}`, "developer"},
 	} {
 		applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, false, map[string]string{"commit-1": tc.metadata})

@@ -1936,15 +1936,15 @@ func updateMREventMetadataTx(
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 		UPDATE forge_mr_events
-		SET metadata_json = ?, commit_author = CASE WHEN event_type = 'commit' THEN ? ELSE '' END
-		WHERE merge_request_id = ? AND dedupe_key = ?`)
+		SET metadata_json = ?1, commit_author = `+mrEventCommitAuthorSQL("event_type", "?1")+`
+		WHERE merge_request_id = ?2 AND dedupe_key = ?3`)
 	if err != nil {
 		return fmt.Errorf("prepare update mr event metadata: %w", err)
 	}
 	defer stmt.Close()
 	for dedupeKey, metadataJSON := range metadataByDedupeKey {
 		if _, err := stmt.ExecContext(
-			ctx, metadataJSON, mrEventCommitAuthor("commit", metadataJSON), mergeRequestID, dedupeKey,
+			ctx, metadataJSON, mergeRequestID, dedupeKey,
 		); err != nil {
 			return fmt.Errorf(
 				"update mr event metadata (dedupe_key=%s): %w",
@@ -1955,17 +1955,10 @@ func updateMREventMetadataTx(
 	return nil
 }
 
-func mrEventCommitAuthor(eventType, metadataJSON string) string {
-	if eventType != "commit" {
-		return ""
-	}
-	var metadata struct {
-		CommitAuthor string `json:"commit_author"`
-	}
-	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
-		return ""
-	}
-	return metadata.CommitAuthor
+func mrEventCommitAuthorSQL(eventType, metadata string) string {
+	return fmt.Sprintf(`CASE WHEN %s = 'commit' AND json_valid(%s)
+		AND json_type(%s, '$.commit_author') = 'text'
+		THEN json_extract(%s, '$.commit_author') ELSE '' END`, eventType, metadata, metadata, metadata)
 }
 
 func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
@@ -1976,7 +1969,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
 			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -2046,7 +2039,6 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		if _, err := stmt.ExecContext(ctx,
 			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.AuthorAssociation, e.Summary, e.Body,
 			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
-			mrEventCommitAuthor(e.EventType, e.MetadataJSON),
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 		}

@@ -2648,11 +2648,12 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		otherRepo, sharedSHA                                                                             bool
 	}{
 		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "duplicate author keys", metadata: `{"commit_author":"a","commit_author":"b"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "a", branchCommitAuthor: "a"},
 		{name: "upsert refreshes original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "updated-login", branchCommitAuthor: "updated-login"},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
 		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator"},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
-		{name: "non-commit event", eventType: "issue_comment", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
+		{name: "non-commit event", eventType: "issue_comment", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
 		{name: "rewritten sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other provider", provider: "gitlab", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
@@ -2681,6 +2682,11 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			}
 			event := MREvent{MergeRequestID: mrID, EventType: eventType, Summary: summary, Author: tc.actor, MetadataJSON: tc.metadata, CreatedAt: baseTime(), DedupeKey: "commit-" + sha[:12]}
 			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
+			if eventType != "commit" {
+				var storedAuthor string
+				require.NoError(t, d.ReadDB().QueryRowContext(t.Context(), `SELECT commit_author FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = ?`, mrID, event.DedupeKey).Scan(&storedAuthor))
+				assert.Empty(t, storedAuthor)
+			}
 			if tc.name == "upsert refreshes original author" {
 				event.MetadataJSON = `{"commit_author":"updated-login"}`
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))

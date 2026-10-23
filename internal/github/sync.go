@@ -6372,9 +6372,15 @@ func (s *Syncer) indexSyncRepo(
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					bulkRequestedAt := s.nowUTC()
-					result, gqlErr := fetcher.FetchRepoPRs(
-						ctx, repo.Owner, repo.Name, preferNativeStacks,
-					)
+					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
+					result, gqlErr := func() (*RepoBulkResult, error) {
+						if snapshotErr != nil {
+							return nil, snapshotErr
+						}
+						return fetcher.FetchRepoPRs(
+							ctx, repo.Owner, repo.Name, preferNativeStacks,
+						)
+					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureMergeRequests, gqlErr,
@@ -6395,7 +6401,7 @@ func (s *Syncer) indexSyncRepo(
 							nativeStackHints = nativeStackHintsFromBulk(result)
 						}
 						if err := s.doSyncRepoGraphQL(
-							ctx, repo, repoID, result, bulkRequestedAt, cloneFetchOK,
+							ctx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6533,9 +6539,15 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
-					issueResult, gqlErr := fetcher.FetchRepoIssues(
-						ctx, repo.Owner, repo.Name,
-					)
+					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
+					issueResult, gqlErr := func() (*RepoBulkResult, error) {
+						if snapshotErr != nil {
+							return nil, snapshotErr
+						}
+						return fetcher.FetchRepoIssues(
+							ctx, repo.Owner, repo.Name,
+						)
+					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, gqlErr,
@@ -6550,7 +6562,7 @@ func (s *Syncer) indexSyncRepo(
 						}
 					} else {
 						if err := s.doSyncRepoGraphQLIssues(
-							ctx, repo, repoID, issueResult,
+							ctx, repo, repoID, priorRevisions, issueResult,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureIssues, err,
@@ -7664,6 +7676,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
+	priorRevisions map[int]int64,
 	result *RepoBulkResult,
 	requestedAt time.Time,
 	cloneFetchOK bool,
@@ -7679,7 +7692,7 @@ func (s *Syncer) doSyncRepoGraphQL(
 		stillOpen[number] = true
 
 		if err := s.syncOpenMRFromBulk(
-			ctx, repo, repoID, requestedAt, bulk, cloneFetchOK,
+			ctx, repo, repoID, priorRevisions, requestedAt, bulk, cloneFetchOK,
 		); err != nil {
 			if errors.Is(err, platform.ErrRepositoryFeatureDisabled) {
 				return preservePartialSyncFailure(
@@ -7739,6 +7752,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
+	priorRevisions map[int]int64,
 	result *RepoBulkResult,
 ) error {
 	var failedScope failScope
@@ -7752,7 +7766,7 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 		stillOpen[number] = true
 
 		if err := s.syncOpenIssueFromBulk(
-			ctx, repo, repoID, bulk,
+			ctx, repo, repoID, priorRevisions, bulk,
 		); err != nil {
 			if disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureIssues, err,
@@ -7815,6 +7829,7 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
+	priorRevisions map[int]int64,
 	bulk *BulkIssue,
 ) error {
 	number := bulk.Issue.GetNumber()
@@ -7852,6 +7867,13 @@ func (s *Syncer) syncOpenIssueFromBulk(
 	if !accepted {
 		return nil
 	}
+	commentsCurrent := revision == priorRevisions[number]+1
+	if !commentsCurrent {
+		currentBulk := *bulk
+		currentBulk.CommentsComplete = false
+		currentBulk.Comments = nil
+		bulk = &currentBulk
+	}
 
 	// UpsertIssue uses COALESCE to preserve existing detail_fetched_at,
 	// so passing nil doesn't clear it. When comments are incomplete,
@@ -7868,6 +7890,10 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		if !detailCleared {
 			return nil
 		}
+	}
+
+	if !commentsCurrent {
+		return nil
 	}
 
 	if bulk.CommentsComplete && bulk.TimelineComplete {
@@ -7935,6 +7961,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
+	priorRevisions map[int]int64,
 	requestedAt time.Time,
 	bulk *BulkPR,
 	cloneFetchOK bool,
@@ -8030,6 +8057,15 @@ func (s *Syncer) syncOpenMRFromBulk(
 	}
 	if !accepted {
 		return nil
+	}
+	commentsCurrent := revision == priorRevisions[number]+1
+	if !commentsCurrent {
+		currentBulk := *bulk
+		currentBulk.CommentsComplete = false
+		currentBulk.Comments = nil
+		currentBulk.ReviewThreadsComplete = false
+		currentBulk.ReviewThreads = nil
+		bulk = &currentBulk
 	}
 	if !bulk.CommentsComplete || !bulk.ReviewsComplete ||
 		!bulk.ReviewThreadsComplete || !bulk.CommitsComplete ||

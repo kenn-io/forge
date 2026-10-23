@@ -1053,7 +1053,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const pollOnce = Effect.gen(function* () {
       if (detailSyncing || opts.getAirplaneMode?.()) return;
       const generation = issueSyncGeneration;
-      const updatedAt = issueDetail?.issue.UpdatedAt;
+      const previousDetail = JSON.stringify(issueDetail);
       yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
@@ -1068,7 +1068,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             ),
       ).pipe(Effect.catch(() => Effect.void));
       yield* refreshIssueDetailProgram(ref, generation);
-      if (generation === issueSyncGeneration && issueDetail?.issue.UpdatedAt !== updatedAt) {
+      if (generation === issueSyncGeneration && JSON.stringify(issueDetail) !== previousDetail) {
         reconcileListsAfterDetailSync();
       }
     }).pipe(Effect.catch(() => Effect.void));

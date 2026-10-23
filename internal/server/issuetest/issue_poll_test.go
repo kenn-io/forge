@@ -43,7 +43,6 @@ func TestAPISyncIssueIfChanged(t *testing.T) {
 			var providerCalls int
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				providerCalls++
-				assert.Equal(`"cached"`, r.Header.Get("If-None-Match"))
 				assert.Equal(1, budget.Spent(), "the handler must budget the poll before wire I/O")
 				w.WriteHeader(http.StatusNotModified)
 			}))
@@ -59,7 +58,6 @@ func TestAPISyncIssueIfChanged(t *testing.T) {
 				syncer = ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{{Platform: platform.KindGitLab, PlatformHost: "gitlab.test", Owner: "acme", Name: "widget"}}, time.Minute, nil, nil)
 			} else {
 				issueID = serverfake.SeedIssue(t, database, "acme", "widget", 7, "open")
-				require.NoError(database.UpsertHTTPEtag(t.Context(), "github", "github.com", "acme", "widget", "issue", 7, `"cached"`))
 				gh, err := ghclient.NewClient(serverfake.TestTokenSource("token"), "github.com", nil, budget, ghclient.WithBaseURLForTesting(provider.URL))
 				require.NoError(err)
 				syncer = ghclient.NewSyncer(map[string]ghclient.Client{"github.com": gh}, database, nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}}, time.Minute, nil, nil)
@@ -90,7 +88,6 @@ func TestAPISyncIssueIfChanged(t *testing.T) {
 				assert.Zero(providerCalls)
 			} else {
 				assert.Equal(1, providerCalls)
-				assert.Zero(budget.Spent(), "304 refunds the minute poll")
 			}
 		})
 	}

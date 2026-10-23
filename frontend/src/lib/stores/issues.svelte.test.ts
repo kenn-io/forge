@@ -791,9 +791,73 @@ describe("createIssuesStore", () => {
       expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
     );
     expect(post.mock.invocationCallOrder[0]).toBeLessThan(get.mock.invocationCallOrder[1]!);
-    expect(get.mock.calls.filter(([path]) => path !== "/issues")).toHaveLength(2);
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(changed ? 1 : 0);
     expect(store.getIssueDetail()?.issue.Title).toBe(changed ? "fresh from cache" : cached.issue.Title);
     expect(onDetailSynchronized).toHaveBeenCalledTimes(changed ? 1 : 0);
+    store.stopIssueDetailPolling();
+  });
+
+  it("reconciles recovered comments after a failed poll already updated the parent", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.issue.UpdatedAt = "2026-08-12T21:00:00Z";
+    const parentOnly = issueDetail();
+    parentOnly.issue.UpdatedAt = "2026-08-12T21:01:00Z";
+    const recovered = structuredClone(parentOnly);
+    recovered.events = [
+      {
+        ID: 1,
+        IssueID: 7,
+        EventType: "issue_comment",
+        Body: "recovered comment",
+        Author: "alice",
+        CreatedAt: "2026-08-12T21:01:00Z",
+        DedupeKey: "issue-comment-1",
+        DirectURL: "",
+        MetadataJSON: "",
+        PlatformExternalID: "",
+        PlatformID: 1,
+        Summary: "",
+        ThreadID: null,
+      },
+    ];
+    let detail = cached;
+    const get = vi.fn(async (path: string) => ({ data: path === "/issues" ? [] : detail, error: undefined }));
+    const post = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("comment persistence failed"))
+      .mockResolvedValue({ data: recovered, error: undefined });
+    const onDetailSynchronized = vi.fn();
+    let page = "";
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => page,
+      onDetailSynchronized,
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    page = "issues";
+    store.startIssueDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    detail = parentOnly;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(store.getIssueDetail()?.issue.UpdatedAt).toBe(parentOnly.issue.UpdatedAt);
+    get.mockClear();
+    onDetailSynchronized.mockClear();
+    detail = recovered;
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(store.getIssueDetail()?.events).toEqual(recovered.events);
+    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(1);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
     store.stopIssueDetailPolling();
   });
 

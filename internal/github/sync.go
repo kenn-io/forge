@@ -12016,6 +12016,9 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	if !s.AutomaticSyncEnabled() {
 		return nil
 	}
+	if removed, err := s.removedUpstreamForLiveSync(ctx, repoID, db.ArchiveItemTypeIssue, number); err != nil || removed {
+		return err
+	}
 	repo, ok := s.trackedRepoByIdentity(platform.KindGitHub, owner, name, host)
 	if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 		return nil
@@ -12050,11 +12053,8 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	if outcomeErr := s.issueOnlyFetchOutcomeError(ctx, repo, number, issue, err); outcomeErr != nil {
 		return outcomeErr
 	}
-	if err != nil {
+	if err != nil || issue.GetID() != existing.PlatformID {
 		return err
-	}
-	if issue.GetID() != existing.PlatformID {
-		return nil
 	}
 	normalized, err := NormalizeIssue(repoID, issue)
 	if err != nil {

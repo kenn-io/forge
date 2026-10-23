@@ -17486,13 +17486,14 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
 	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
-		PR:               pr,
-		Comments:         []*gh.IssueComment{},
-		CommentsComplete: true,
-		ReviewsComplete:  true,
-		CommitsComplete:  true,
-		TimelineComplete: true,
-		CIComplete:       true,
+		PR:                    pr,
+		Comments:              []*gh.IssueComment{},
+		CommentsComplete:      true,
+		ReviewsComplete:       true,
+		ReviewThreadsComplete: true,
+		CommitsComplete:       true,
+		TimelineComplete:      true,
+		CIComplete:            true,
 	}, false)
 	require.NoError(err)
 

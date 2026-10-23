@@ -83,6 +83,7 @@ func TestBulkSyncPreservesCommentsWrittenDuringFetch(t *testing.T) {
 					err = d.UpsertMREvents(ctx, []db.MREvent{
 						{MergeRequestID: parentID, PlatformID: new(int64(11)), EventType: "issue_comment", Body: "edited body", CreatedAt: now, DedupeKey: "comment-11"},
 						{MergeRequestID: parentID, PlatformID: new(int64(12)), EventType: "issue_comment", Body: "posted comment", CreatedAt: now, DedupeKey: "comment-12"},
+						{MergeRequestID: parentID, PlatformID: new(int64(13)), EventType: "review_comment", Body: "posted review reply", CreatedAt: now, DedupeKey: "review-comment-13"},
 					})
 				}
 				assert.NoError(err)
@@ -119,8 +120,8 @@ func TestBulkSyncPreservesCommentsWrittenDuringFetch(t *testing.T) {
 			} else {
 				events, err := d.ListMREvents(ctx, parentID)
 				require.NoError(err)
-				require.Len(events, 2)
-				assert.ElementsMatch([]string{"edited body", "posted comment"}, []string{events[0].Body, events[1].Body})
+				require.Len(events, 3)
+				assert.ElementsMatch([]string{"edited body", "posted comment", "posted review reply"}, []string{events[0].Body, events[1].Body, events[2].Body})
 				parent, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 				require.NoError(err)
 				assert.Nil(parent.DetailFetchedAt)

@@ -8069,6 +8069,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 		currentBulk := *bulk
 		currentBulk.CommentsComplete = false
 		currentBulk.Comments = nil
+		currentBulk.ReviewThreadsComplete = false
+		currentBulk.ReviewThreads = nil
 		bulk = &currentBulk
 	}
 	if !bulk.CommentsComplete || !bulk.ReviewsComplete ||

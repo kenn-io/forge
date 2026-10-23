@@ -306,7 +306,9 @@ fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
 	manager := workspace.NewManager(nil, dir, nil)
-	manager.SetTmuxCommand([]string{scriptPath})
+	// Read the script through sh to avoid ETXTBSY if a concurrent fork
+	// briefly inherits its writable descriptor before exec closes it.
+	manager.SetTmuxCommand([]string{"sh", scriptPath})
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 	srv := &Handler{workspaces: manager, tmuxActivity: tracker}
@@ -319,10 +321,10 @@ fi
 			t.Context(), &db.WorkspaceSummary{}, []string{"base", "idle", "working"},
 		)
 		trace, readErr := os.ReadFile(tracePath)
-		require.NoError(readErr)
-		t.Logf("attempt=%d elapsed=%s context=%v probe_error=%v result=%+v trace=\n%s",
-			attempt, time.Since(started), t.Context().Err(), err, result, trace)
+		t.Logf("attempt=%d elapsed=%s context=%v probe_error=%v result=%+v trace_error=%v trace=\n%s",
+			attempt, time.Since(started), t.Context().Err(), err, result, readErr, trace)
 		require.NoError(err, "each session fits within the shared probe budget")
+		require.NoError(readErr)
 		assert.True(ok, "healthy sessions must produce an activity sample")
 		assert.True(result.Working)
 		assert.Equal(tmuxActivitySourceTitle, result.Source)

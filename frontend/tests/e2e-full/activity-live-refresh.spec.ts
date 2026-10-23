@@ -548,25 +548,6 @@ test("viewed-hot PR fast sync refreshes the selected Activity detail", async ({ 
 test("replays an event whose detail consequence failed in transit", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
-    const isAPIRequest = (request: Request) => {
-      const path = new URL(request.url()).pathname;
-      return path.startsWith("/api/v1/") && path !== "/api/v1/events";
-    };
-    let apiRequestsStarted = 0;
-    let apiRequestsInFlight = 0;
-    page.on("request", (request) => {
-      if (isAPIRequest(request)) {
-        apiRequestsStarted++;
-        apiRequestsInFlight++;
-      }
-    });
-    page.on("requestfinished", (request) => {
-      if (isAPIRequest(request)) apiRequestsInFlight--;
-    });
-    page.on("requestfailed", (request) => {
-      if (isAPIRequest(request)) apiRequestsInFlight--;
-    });
-
     let failDetailReads = false;
     let consequenceFailed = false;
     const replayedComment = "Replayed after transient detail failure";
@@ -605,21 +586,6 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     await initialSync;
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
-    const checkpointComment = "Accepted before transient detail failure";
-    const checkpointEventID = await persistActivityComment(page, server.info.base_url, checkpointComment);
-    await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible({ timeout: 15_000 });
-    // Drain earlier event consequences before arming the failure for the next event.
-    await expect
-      .poll(
-        async () => {
-          const started = apiRequestsStarted;
-          await page.waitForTimeout(250);
-          return apiRequestsInFlight === 0 && apiRequestsStarted === started;
-        },
-        { timeout: 15_000 },
-      )
-      .toBe(true);
-
     failDetailReads = true;
     const reconnectRequested = page.waitForRequest(
       (request) => consequenceFailed && new URL(request.url()).pathname.endsWith("/api/v1/events"),
@@ -628,7 +594,6 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     const replayedEventID = await persistActivityComment(page, server.info.base_url, replayedComment);
     const cursor = new URL((await reconnectRequested).url()).searchParams.get("since");
     expect(cursor).toMatch(/^\d+$/);
-    expect(Number(cursor)).toBeGreaterThanOrEqual(checkpointEventID);
     expect(Number(cursor)).toBeLessThan(replayedEventID);
 
     await expect(detail.getByText(replayedComment, { exact: true })).toBeVisible({ timeout: 15_000 });

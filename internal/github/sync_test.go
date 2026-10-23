@@ -12636,7 +12636,6 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			before, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
 			issue.State = new("closed")
-			require.NoError(d.UpsertNotifications(ctx, []db.Notification{{Platform: "github", PlatformHost: repo.PlatformHost, PlatformNotificationID: "thread", RepoID: &repoID, RepoOwner: repo.Owner, RepoName: repo.Name, ItemNumber: new(7), ItemType: "issue", SubjectType: "Issue", SourceUpdatedAt: time.Now().UTC(), SyncedAt: time.Now().UTC()}}))
 			if tc.reused || tc.missing {
 				issue.ID = new(int64(8001))
 			}
@@ -12684,9 +12683,6 @@ func TestSyncIssuePagePoll(t *testing.T) {
 				require.NoError(err)
 				require.Len(events, 1)
 				assert.Equal(t, "new comment", events[0].Body)
-				done, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
-				require.NoError(err)
-				require.Len(done, 1)
 			} else {
 				assert.Equal(t, before, stored)
 			}

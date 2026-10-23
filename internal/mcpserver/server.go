@@ -72,6 +72,7 @@ func (s *Server) registerTools() {
 	s.syncKataTargetTool()
 	s.registerGuidance()
 	s.registerAppTools()
+	s.registerMediaTools()
 }
 
 // HTTPHandler serves the single stateless Streamable HTTP MCP endpoint.

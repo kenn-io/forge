@@ -12,6 +12,11 @@
   (`internal/mcpserver/app.html`, `frontend/src/lib/components/acp/McpApp.svelte`).
 - Generated apps reread cached evidence and cannot perform mutations; freshness
   and cached mergeability never certify permission to merge (`internal/mcpserver/apps.go::CallAppTool`).
+- Chat moves (session pool parking) replace a widget iframe's window; the host must
+  bridge each new window, not connect once (`frontend/src/lib/components/acp/mcp-app.ts::hostApp`).
+- Agent adapters forward tool results only as text or base64 images, so local media
+  travels as a path descriptor the chat resolves on the agent host; never put media
+  bytes in tool output (`internal/mcpserver/media.go::MediaDescriptorKind`).
 
 - Event excerpts must disclose whether more cached events exist so agents can
   decide whether to request more context; never silently truncate the list

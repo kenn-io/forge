@@ -77,7 +77,7 @@ func TestRemovedPRStopsFailingRepositorySync(t *testing.T) {
 			client.prsCached = false
 			syncer.RunOnce(ctx)
 			assert.Equal(firstCalls, calls.Load(), "removed PR must not be fetched next cycle")
-			require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), &RepoBulkResult{}, now, false))
+			require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
 			assert.Equal(firstCalls, calls.Load(), "GraphQL closure detection must also skip the removed PR")
 		})
 	}
@@ -134,7 +134,7 @@ func TestMissingPRSyncPreservesUncertainLookups(t *testing.T) {
 			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
-			err = syncer.doSyncRepoGraphQL(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), &RepoBulkResult{}, now, false)
+			err = syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false)
 			require.Error(err)
 			if tc.routeReused {
 				require.ErrorContains(err, "repository identity changed")
@@ -175,7 +175,7 @@ func TestRemovedGraphQLPRsWithoutExternalIDs(t *testing.T) {
 	}
 	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
-	require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), &RepoBulkResult{}, now, false))
+	require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
 	for _, number := range []int{7, 8} {
 		removed, err := database.IsArchiveItemRemovedUpstream(ctx, repoID, db.ArchiveItemTypeMergeRequest, number)
 		require.NoError(err)
@@ -226,7 +226,7 @@ func TestLiveInventoryRestoresRemovedPRInCompletedDiscovery(t *testing.T) {
 			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
-			require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), &RepoBulkResult{}, now, false))
+			require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{}, now, false))
 			visible, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID})
 			require.NoError(err)
 			require.Empty(visible, "confirmed removal hides the PR")
@@ -242,7 +242,7 @@ func TestLiveInventoryRestoresRemovedPRInCompletedDiscovery(t *testing.T) {
 				require.NoError(syncer.syncMergeRequestsFromList(ctx, reader, repo, repoID, []platform.MergeRequest{mr}, now.Add(time.Minute), false))
 			case "GraphQL":
 				pr.NodeID = nil // GraphQL inventory omits the external ID.
-				require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), &RepoBulkResult{PullRequests: []BulkPR{{PR: pr}}}, now.Add(time.Minute), false))
+				require.NoError(syncer.doSyncRepoGraphQL(ctx, repo, repoID, &RepoBulkResult{PullRequests: []BulkPR{{PR: pr}}}, now.Add(time.Minute), false))
 			}
 			visible, err = database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID})
 			require.NoError(err)

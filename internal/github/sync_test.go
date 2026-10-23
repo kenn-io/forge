@@ -8637,7 +8637,7 @@ func TestSyncOpenMRFromBulkPersistsMergedActorEventFromPullRequest(t *testing.T)
 		nil,
 	)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:                    pr,
 		CommentsComplete:      true,
 		ReviewsComplete:       true,
@@ -8682,7 +8682,7 @@ func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEm
 	reviewer := "alice"
 	approvedState := "APPROVED"
 	reviewID := int64(501)
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR: buildOpenPR(1, now),
 		Reviews: []*gh.PullRequestReview{{
 			ID: &reviewID, User: &gh.User{Login: &reviewer}, State: &approvedState,
@@ -8702,7 +8702,7 @@ func TestSyncOpenMRFromBulkPreservesReviewDecisionWhenReviewsConnectionReturnsEm
 	// reviews must not clear the persisted decision: review history is
 	// additive, and the earlier APPROVED review is retained even though
 	// this fetch's Reviews connection came back empty.
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               buildOpenPR(1, now.Add(time.Minute)),
 		Reviews:          nil,
 		CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
@@ -8810,7 +8810,7 @@ func TestSyncOpenMRFromBulkResolvesReviewDecisionIndependentOfNestedCompleteness
 			)
 			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 				PR:               buildOpenPR(1, now),
 				ReviewDecision:   "APPROVED",
 				CommentsComplete: true, ReviewsComplete: true, CommitsComplete: true,
@@ -8821,7 +8821,7 @@ func TestSyncOpenMRFromBulkResolvesReviewDecisionIndependentOfNestedCompleteness
 			require.NotNil(seeded)
 			require.Equal("approved", seeded.ReviewDecision)
 
-			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+			require.NoError(syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 				PR:               buildOpenPR(1, now.Add(time.Minute)),
 				ReviewDecision:   tc.scalar,
 				Reviews:          tc.reviews,
@@ -8903,7 +8903,7 @@ func TestSyncOpenMRFromBulkSkipsMergedActorFallbackWhenAuthoredMergedEventExists
 		nil,
 	)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               pr,
 		CommentsComplete: true,
 		ReviewsComplete:  true,
@@ -17276,7 +17276,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR: buildOpenPR(1, firstUpdatedAt),
 		Comments: []*gh.IssueComment{{
 			ID:        &commentID,
@@ -17305,7 +17305,7 @@ func TestSyncOpenMRFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *test
 	require.Len(events, 1)
 	assert.Equal(commentURL, events[0].DirectURL)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:                    buildOpenPR(1, secondUpdatedAt),
 		Comments:              []*gh.IssueComment{},
 		CommentsComplete:      true,
@@ -17346,7 +17346,7 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 		time.Minute, nil, nil,
 	)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:                    buildOpenPR(1, now),
 		CommentsComplete:      true,
 		ReviewsComplete:       true,
@@ -17370,7 +17370,7 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 	require.NotNil(mr)
 	require.NotNil(mr.DetailFetchedAt)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:                    buildOpenPR(1, now),
 		CommentsComplete:      true,
 		ReviewsComplete:       true,
@@ -17429,7 +17429,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:                    pr,
 		Comments:              []*gh.IssueComment{},
 		CommentsComplete:      true,
@@ -17485,15 +17485,14 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
-		PR:                    pr,
-		Comments:              []*gh.IssueComment{},
-		CommentsComplete:      true,
-		ReviewsComplete:       true,
-		ReviewThreadsComplete: true,
-		CommitsComplete:       true,
-		TimelineComplete:      true,
-		CIComplete:            true,
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
+		PR:               pr,
+		Comments:         []*gh.IssueComment{},
+		CommentsComplete: true,
+		ReviewsComplete:  true,
+		CommitsComplete:  true,
+		TimelineComplete: true,
+		CIComplete:       true,
 	}, false)
 	require.NoError(err)
 
@@ -17541,7 +17540,7 @@ func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenIncomplete(t *testing.T) {
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               pr,
 		Comments:         []*gh.IssueComment{},
 		CommentsComplete: true,
@@ -17585,7 +17584,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR: buildOpenPR(1, firstUpdatedAt),
 		Comments: []*gh.IssueComment{{
 			ID:        &commentID,
@@ -17611,7 +17610,7 @@ func TestSyncOpenMRFromBulkUpdatesCommentFieldsWhenOnlyCommentsAreComplete(t *te
 	require.NoError(err)
 	require.Len(events, 1)
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               buildOpenPR(1, secondUpdatedAt),
 		Comments:         []*gh.IssueComment{},
 		CommentsComplete: true,
@@ -17653,7 +17652,7 @@ func TestSyncOpenMRFromBulkStoresTimelineEvents(t *testing.T) {
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR: buildOpenPR(1, providerUpdatedAt),
 		Commits: []*gh.RepositoryCommit{{
 			SHA: &commitSHA,
@@ -17761,7 +17760,7 @@ func TestSyncOpenMRFromBulkClearsCIWhenHeadSHAChanges(t *testing.T) {
 	// New bulk fetch reports a new head SHA with CIComplete=false (the
 	// CI page was truncated). Without the head-SHA guard, the upsert
 	// would carry the old CI fields forward onto the new commit.
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               buildOpenPRWithSHA(1, now.Add(time.Minute), "newhead"),
 		Comments:         []*gh.IssueComment{},
 		CommentsComplete: true,
@@ -17821,7 +17820,7 @@ func TestSyncOpenMRFromBulkPreservesCIWhenHeadSHAUnchanged(t *testing.T) {
 
 	// CIComplete=false would normally skip the CI write. The existing
 	// CI must be preserved because the head SHA is unchanged.
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, time.Time{}, &BulkPR{
 		PR:               buildOpenPR(1, now.Add(time.Minute)),
 		Comments:         []*gh.IssueComment{},
 		CommentsComplete: true,
@@ -17872,7 +17871,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), &BulkIssue{
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
 		Issue: &gh.Issue{
 			ID:        &issueID,
 			Number:    &issueNumber,
@@ -17909,7 +17908,7 @@ func TestSyncOpenIssueFromBulkRemovesDeletedCommentsWhenCommentsAreComplete(t *t
 	assert.Equal(commentURL, events[0].DirectURL)
 
 	zeroComments := 0
-	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), &BulkIssue{
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
 		Issue: &gh.Issue{
 			ID:        &issueID,
 			Number:    &issueNumber,
@@ -18003,7 +18002,7 @@ func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *t
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), &BulkIssue{
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
 		Issue:             issue,
 		Comments:          comments,
 		CommentVisibility: map[int64]platformgithub.CommentVisibility{firstCommentID: {Hidden: true}, secondCommentID: {Hidden: true}},
@@ -18012,7 +18011,7 @@ func TestSyncOpenIssueFromBulkMergesPartialCommentVisibilityWithStoredState(t *t
 	})
 	require.NoError(err)
 
-	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), &BulkIssue{
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
 		Issue:             issue,
 		Comments:          comments[:1],
 		CommentVisibility: map[int64]platformgithub.CommentVisibility{firstCommentID: {}},
@@ -18062,7 +18061,7 @@ func TestSyncOpenIssueFromBulkStoresTimelineEvents(t *testing.T) {
 	)
 	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
 
-	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), &BulkIssue{
+	err = syncer.syncOpenIssueFromBulk(ctx, repo, repoID, &BulkIssue{
 		Issue: &gh.Issue{
 			ID:        &issueID,
 			Number:    &issueNumber,
@@ -18280,7 +18279,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, result,
 	)
 	require.NoError(err)
 
@@ -18518,7 +18517,7 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, result,
 	)
 	require.NoError(err)
 
@@ -18566,7 +18565,7 @@ func TestSyncRepoGraphQLIssuesStopsAfterWrappedRawDisabledFallback(t *testing.T)
 		{Issue: buildOpenIssue(2, now), CommentsComplete: false},
 	}}
 
-	err = syncer.doSyncRepoGraphQLIssues(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result)
+	err = syncer.doSyncRepoGraphQLIssues(ctx, repo, repoID, result)
 
 	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
 	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
@@ -18633,7 +18632,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, result,
 	)
 	require.NoError(err)
 
@@ -18710,7 +18709,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, result,
 	)
 	require.NoError(err)
 
@@ -18791,7 +18790,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 	// REST fallback will fail due to listIssueCommentsErr.
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, result,
 	)
 	// Partial failure expected.
 	require.Error(err)
@@ -18999,7 +18998,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 
 		newID, body, login := int64(12), "new", "bob"
 		syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		_, err = syncer.persistPRComments(t.Context(), repo, mr, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		err = syncer.persistPRComments(t.Context(), repo, mr, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
 		require.Error(err)
 		events, err := database.ListMREvents(t.Context(), mr.ID)
 		require.NoError(err)
@@ -19038,7 +19037,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 
 		newID, body, login := int64(22), "new", "bob"
 		syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		_, err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
 		require.Error(err)
 		events, err := database.ListIssueEvents(t.Context(), issue.ID)
 		require.NoError(err)

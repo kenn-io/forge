@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
-	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -261,7 +260,7 @@ func TestSyncFailedBulkCIRecovery(t *testing.T) {
 	pass := &syncPass{}
 	pass.observe(repo, "checks", platform.ErrPermissionDenied)
 	ctx := context.WithValue(t.Context(), syncPassKey{}, pass)
-	require.NoError(t, s.syncOpenMRFromBulk(ctx, repo, id, snapshotRevisions(t, s.db, id, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+	require.NoError(t, s.syncOpenMRFromBulk(ctx, repo, id, time.Time{}, &BulkPR{
 		PR: buildOpenPR(7, time.Now().UTC()), CIComplete: true,
 	}, false))
 	s.finishSyncPass(pass)

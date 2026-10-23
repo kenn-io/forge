@@ -108,7 +108,7 @@ fixtures, or changing shell-script coverage.
 - Shell-script tests must execute the script against controlled inputs and
   assert observable output, side effects, or exit status. Do not grep scripts,
   workflows, config, or docs for expected implementation text.
-- Run freshly written shell fakes through `testscript.Command`; concurrent forks can retain writable descriptors and cause `ETXTBSY` (`internal/testutil/testscript/command.go::Command`).
+- Run freshly written shell fakes through `testscript.Command`, except PATH shims resolved by name; concurrent forks can retain writable descriptors and cause `ETXTBSY` (`internal/testutil/testscript/command.go::Command`).
 - Go tests run Git only through `internal/testutil/gitfixture` or the
   `gitsafe` runners, and every such test package calls
   `gitsafe.RunIsolatedMain` from `TestMain`. `make git-test-fixture-check`

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"go.kenn.io/forge/internal/testutil/testscript"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +29,7 @@ for name in forge-aaaaaaaaaaaaaaaa forge-bbbbbbbbbbbbbbbb; do
 done
 `), 0o755))
 	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetTmuxCommand([]string{script})
+	mgr.SetTmuxCommand(testscript.Command(script))
 
 	server, err := mgr.TmuxServerIDWithSession(t.Context(), "forge-bbbbbbbbbbbbbbbb")
 	require.NoError(err)

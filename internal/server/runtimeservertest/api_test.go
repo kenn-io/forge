@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/testscript"
+
 	"github.com/creack/pty/v2"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
@@ -140,7 +142,7 @@ exit 0
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), ws))
 
-	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
+	cfg := &config.Config{Tmux: config.Tmux{Command: testscript.Command(tmuxPath)}}
 	srv := server.New(database, nil, nil, "/", cfg, server.ServerOptions{
 		WorktreeDir: worktreeDir,
 	})

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/testscript"
+
 	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,7 +100,7 @@ for arg in "$@"; do
 done
 exec "$@"
 `), 0o755))
-	tmuxCommand := append([]string{wrapper, failMarker}, workspaceTestTmuxCommand...)
+	tmuxCommand := append(testscript.Command(wrapper, failMarker), workspaceTestTmuxCommand...)
 	fixture := setupWorkspaceServerFixture(t, &config.Config{
 		Tmux: config.Tmux{Command: tmuxCommand},
 	}, server.ServerOptions{
@@ -172,7 +174,7 @@ func TestWorkspaceRuntimeTargetsHideInternalShellTargetE2E(t *testing.T) {
 		0o755,
 	))
 	cfg := &config.Config{Tmux: config.Tmux{
-		Command: []string{tmuxPath, "--scope", "tmux"},
+		Command: testscript.Command(tmuxPath, "--scope", "tmux"),
 	}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
@@ -262,7 +264,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 
 	tmuxPath := writeWorkspaceRuntimeTmuxProbe(t, "workspace-runtime-live", 0, "")
 	cfg := &config.Config{Tmux: config.Tmux{
-		Command: []string{tmuxPath, "--socket", "workspace"},
+		Command: testscript.Command(tmuxPath, "--socket", "workspace"),
 	}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	ctx := t.Context()
@@ -311,7 +313,7 @@ func TestWorkspaceRuntimeAttachSpecUsesStoredTmuxSessionE2E(t *testing.T) {
 	assert.Equal(
 		[]string{
 			"env", "-u", "TMUX", "-u", "TMUX_TMPDIR",
-			tmuxPath, "--socket", "workspace",
+			"sh", tmuxPath, "--socket", "workspace",
 			"-u", "attach-session", "-E", "-t", "workspace-runtime-live",
 		},
 		spec.Command,

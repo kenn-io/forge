@@ -307,9 +307,7 @@ fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
 	manager := workspace.NewManager(nil, dir, nil)
-	// Read the script through sh to avoid ETXTBSY if a concurrent fork
-	// briefly inherits its writable descriptor before exec closes it.
-	manager.SetTmuxCommand([]string{"sh", scriptPath})
+	manager.SetTmuxCommand(testscript.Command(scriptPath))
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 	srv := &Handler{workspaces: manager, tmuxActivity: tracker}

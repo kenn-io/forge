@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/testutil/testscript"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,7 +91,7 @@ esac
 		PullRequests: config.PullRequests{PreferGitHubNativeStacks: true},
 		Workspaces:   config.Workspaces{AutoAssignOnCreate: true},
 		Tmux: config.Tmux{
-			Command: []string{tmuxPath}, AgentSessions: &disableTmuxAgentSessions,
+			Command: testscript.Command(tmuxPath), AgentSessions: &disableTmuxAgentSessions,
 		},
 	}
 	syncer := ghclient.NewSyncer(

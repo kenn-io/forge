@@ -179,6 +179,7 @@ func TestSyncChecksCommentsOncePerCycleAfterUnchangedDetail(t *testing.T) {
 					require.NoError(err)
 					require.Len(events, 1)
 					assert.Equal("edited comment", events[0].Body)
+					assert.Equal(int32(2), client.(*conditionalIssueTrackingClient).conditionalCalls.Load(), "list updates preserve conditional detail reads")
 				}
 			})
 		}

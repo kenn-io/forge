@@ -94,9 +94,9 @@ what "current" means.
 
 For issues:
 
-- Issue-page polls preserve `detail_fetched_at`; detail reads bypass the saved
-  ETag when that timestamp is unset or older than `updated_at`, so timelines catch up
-  (`internal/github/sync.go::fetchIssueDetail`).
+- Issue-page polls preserve `detail_fetched_at` and the detail ETag; their separate
+  `issue-page` ETag falls back to `issue` until saved, so timelines catch up
+  (`internal/github/sync.go::getIssueForDetail`).
 
 For pull requests, that means:
 

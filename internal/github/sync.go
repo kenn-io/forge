@@ -8975,13 +8975,8 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
 	}
 
-	// A page poll can save the parent ETag before the timeline catches up.
-	if existing != nil && (existing.DetailFetchedAt == nil || existing.UpdatedAt.After(*existing.DetailFetchedAt)) {
-		ctx = platformgithub.WithUnconditionalRead(ctx)
-	}
-
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
-		ctx, client, repo, number,
+		ctx, client, repo, number, "issue",
 	)
 	calls++
 	// Route fetch failures and detected transfers through the canonical
@@ -9125,21 +9120,18 @@ func (s *Syncer) getIssueForDetail(
 	client Client,
 	repo RepoRef,
 	number int,
+	kind string,
 ) (*gh.Issue, string, bool, error) {
-	if IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
-		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
-		return issue, "", false, err
-	}
 	conditional, ok := client.(conditionalIssueGetter)
-	if !ok {
+	if !ok || IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
 		return issue, "", false, err
 	}
 
-	etag, err := s.db.GetHTTPEtag(
-		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, "issue", number,
-	)
+	etag, err := s.db.GetHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, kind, number)
+	if err == nil && etag == "" && kind == "issue-page" {
+		etag, err = s.db.GetHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue", number)
+	}
 	if err != nil {
 		slog.Warn("load issue ETag failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -12046,7 +12038,7 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	if err != nil {
 		return err
 	}
-	issue, etag, notModified, err := s.getIssueForDetail(ctx, client, repo, number)
+	issue, etag, notModified, err := s.getIssueForDetail(ctx, client, repo, number, "issue-page")
 	if syncBudgetWait(err) || notModified {
 		return nil
 	}
@@ -12082,7 +12074,7 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 		}
 	}
 	if etag != "" {
-		if err := s.db.UpsertHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue", number, etag); err != nil {
+		if err := s.db.UpsertHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue-page", number, etag); err != nil {
 			return err
 		}
 	}

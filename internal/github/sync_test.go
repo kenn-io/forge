@@ -12607,6 +12607,51 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		"parent 304s still check comments conditionally")
 }
 
+func TestSyncIssueDetailRetainsETag(t *testing.T) {
+	for _, pagePoll := range []bool{false, true} {
+		t.Run(map[bool]string{false: "detail_after_list_update", true: "page_poll_after_open"}[pagePoll], func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			updated := time.Now().UTC().Add(-time.Minute)
+			issue := buildOpenIssue(7, updated)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			if !pagePoll {
+				normalized.DetailFetchedAt = new(updated.Add(-time.Minute))
+			}
+			_, err = database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			client := &conditionalIssueLifecycleClient{
+				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil },
+				nextETag:   `"open"`,
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+
+			_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 7)
+			require.NoError(err)
+			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+			require.NoError(err)
+			require.Equal(`"open"`, etag, "opening or hydrating an issue must retain its response ETag")
+			commentsBefore := client.listIssueCommentsIfChangedCalls.Load()
+			client.notModified = true
+			if pagePoll {
+				require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+				assert.Equal(t, commentsBefore, client.listIssueCommentsIfChangedCalls.Load(), "an idle page poll skips comments")
+			} else {
+				_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 7)
+				require.NoError(err)
+			}
+			assert.Equal(t, `"open"`, client.receivedETag)
+			assert.Equal(t, int32(2), client.conditionalCalls.Load())
+			assert.Zero(t, client.unconditionalCalls.Load())
+		})
+	}
+}
+
 func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testing.T) {
 	for _, neverFetched := range []bool{false, true} {
 		t.Run(fmt.Sprintf("never_fetched=%t", neverFetched), func(t *testing.T) {
@@ -12678,11 +12723,19 @@ func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testin
 			assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.Body == "new comment" }))
 			etag, err := database.GetHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue", 7)
 			require.NoError(err)
+			assert.Equal(`"old"`, etag)
+			etag, err = database.GetHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue-page", 7)
+			require.NoError(err)
 			assert.Equal(`"new"`, etag)
 
 			client.notModified = true
+			require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+			assert.Equal(`"new"`, client.receivedETag, "idle polls use the page ETag before the detail drain catches up")
+			assert.Equal(int32(1), client.listIssueCommentsIfChangedCalls.Load())
+			client.notModified = false
 			syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
-			assert.Equal(int32(1), client.unconditionalCalls.Load())
+			assert.Equal(`"old"`, client.receivedETag)
+			assert.Zero(client.unconditionalCalls.Load())
 			assert.Equal(int32(1), client.timelineCalls.Load())
 			stored, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
@@ -12699,11 +12752,12 @@ func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testin
 				}
 			}
 			revision := stored.SnapshotRevision
+			client.notModified = true
 			require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
 			stored, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
 			assert.Equal(revision, stored.SnapshotRevision)
-			assert.Equal(int32(2), client.conditionalCalls.Load())
+			assert.Equal(int32(4), client.conditionalCalls.Load())
 			assert.Equal(`"new"`, client.receivedETag)
 		})
 	}
@@ -12758,6 +12812,9 @@ func TestSyncIssuePagePollRejectsReplacementIssueOrRetriesCommentFailure(t *test
 			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
 			require.NoError(err)
 			assert.Equal(`"old"`, etag)
+			etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+			require.NoError(err)
+			assert.Empty(etag, "rejected or failed polls leave the page ETag retryable")
 			if replacement {
 				assert.Equal(int32(1), client.conditionalCalls.Load())
 				assert.Zero(client.listIssueCommentsIfChangedCalls.Load())

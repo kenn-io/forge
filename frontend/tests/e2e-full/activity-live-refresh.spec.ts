@@ -548,6 +548,25 @@ test("viewed-hot PR fast sync refreshes the selected Activity detail", async ({ 
 test("replays an event whose detail consequence failed in transit", async ({ page }) => {
   const server = await startIsolatedE2EServer();
   try {
+    const isAPIRequest = (request: Request) => {
+      const path = new URL(request.url()).pathname;
+      return path.startsWith("/api/v1/") && path !== "/api/v1/events";
+    };
+    let apiRequestsStarted = 0;
+    let apiRequestsInFlight = 0;
+    page.on("request", (request) => {
+      if (isAPIRequest(request)) {
+        apiRequestsStarted++;
+        apiRequestsInFlight++;
+      }
+    });
+    page.on("requestfinished", (request) => {
+      if (isAPIRequest(request)) apiRequestsInFlight--;
+    });
+    page.on("requestfailed", (request) => {
+      if (isAPIRequest(request)) apiRequestsInFlight--;
+    });
+
     let failDetailReads = false;
     let consequenceFailed = false;
     const replayedComment = "Replayed after transient detail failure";
@@ -587,14 +606,19 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
     const checkpointComment = "Accepted before transient detail failure";
-    const checkpointSave = persistActivityComment(page, server.info.base_url, checkpointComment);
-    const checkpointRead = page.waitForRequest(async (request) => {
-      if (request.method() !== "GET" || new URL(request.url()).pathname !== detailPath) return false;
-      return (await (await request.response())?.text())?.includes(checkpointComment) ?? false;
-    });
-    const checkpointEventID = await checkpointSave;
-    await checkpointRead;
+    const checkpointEventID = await persistActivityComment(page, server.info.base_url, checkpointComment);
     await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible({ timeout: 15_000 });
+    // Drain earlier event consequences before arming the failure for the next event.
+    await expect
+      .poll(
+        async () => {
+          const started = apiRequestsStarted;
+          await page.waitForTimeout(250);
+          return apiRequestsInFlight === 0 && apiRequestsStarted === started;
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
 
     failDetailReads = true;
     const reconnectRequested = page.waitForRequest(

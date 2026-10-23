@@ -78,7 +78,7 @@ export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
           message:
             result.problem.status === 404
               ? `Item ${owner}/${name}#${number} not found.`
-              : `Failed to resolve ${owner}/${name}#${number}. Try again later.`,
+              : `Could not open ${owner}/${name}#${number}. Try again.`,
         };
       }
 
@@ -146,7 +146,7 @@ export function resolveItemReference(
       },
       onFailure: () => {
         if (stillCurrent())
-          showFlash(`Failed to open ${ref.owner}/${ref.name}#${ref.number}. Try again.`, { tone: "danger" });
+          showFlash(`Could not open ${ref.owner}/${ref.name}#${ref.number}. Try again.`, { tone: "danger" });
       },
     },
   );

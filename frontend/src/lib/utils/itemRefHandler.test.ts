@@ -514,7 +514,7 @@ describe("itemRefHandler", () => {
       "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
     });
 
-    expect(mocks.showFlash).toHaveBeenCalledWith("Failed to resolve acme/widgets#12. Try again later.", {
+    expect(mocks.showFlash).toHaveBeenCalledWith("Could not open acme/widgets#12. Try again.", {
       tone: "danger",
     });
     expect(mocks.navigateToURL).not.toHaveBeenCalled();

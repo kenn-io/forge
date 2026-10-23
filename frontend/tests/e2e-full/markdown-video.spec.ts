@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
 
-const clip = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/markdown-video.webm");
+const fixtures = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures");
+const clip = path.join(fixtures, "markdown-video.webm");
+// Large enough that the browser fetches it in several cut-short pieces.
+const largeClip = path.join(fixtures, "markdown-video-large.webm");
 
 test.describe.configure({ mode: "serial", timeout: 60_000 });
 
@@ -102,9 +105,9 @@ function trackMediaRequests(page: Page) {
   return counts;
 }
 
-async function expectPreviewed(frame: Locator): Promise<void> {
-  await expect(frame.locator(".markdown-video-duration")).toHaveText("0:03");
-  await expect(frame.locator("video.markdown-video")).toHaveAttribute("poster", /^blob:/);
+async function expectPreviewed(frame: Locator, options?: { timeout: number }): Promise<void> {
+  await expect(frame.locator(".markdown-video-duration")).toHaveText("0:03", options);
+  await expect(frame.locator("video.markdown-video")).toHaveAttribute("poster", /^blob:/, options);
 }
 
 test("shows a player's length and first frame before it is played", async ({ page }) => {
@@ -134,6 +137,34 @@ test("previews a description's players one at a time and holds no request afterw
   await expect.poll(() => media.open).toBe(0);
   expect(media.started).toBeGreaterThanOrEqual(5);
   expect(media.mostOpen).toBe(1);
+});
+
+test("plays to the end when the daemon cuts its download short", async ({ page }) => {
+  const cutServer = await startIsolatedE2EServerWithOptions({ markdownVideo: largeClip, markdownVideoInterrupt: true });
+  try {
+    let playing = false;
+    let cutsWhilePlaying = 0;
+    page.on("requestfailed", (request) => {
+      if (playing && request.resourceType() === "media") cutsWhilePlaying++;
+    });
+    await page.goto(new URL("/issues/github/acme/widgets/14", cutServer.info.base_url).toString());
+    const frame = page.locator(".markdown-body .markdown-video-frame").first();
+    const video = frame.locator("video.markdown-video");
+    // Firefox previews from a copy of the whole clip, so it waits out every cut.
+    await expectPreviewed(frame, { timeout: 15_000 });
+
+    playing = true;
+    await startPlayback(video);
+    await video.evaluate((v: HTMLVideoElement) => v.pause());
+    // The player's own download was cut, while playing or while paused.
+    await expect.poll(() => cutsWhilePlaying).toBeGreaterThan(0);
+    await video.evaluate((v: HTMLVideoElement) => v.play());
+
+    await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.ended), { timeout: 15_000 }).toBe(true);
+    await expect(frame.locator(".markdown-video-error")).toHaveCount(0);
+  } finally {
+    await cutServer.stop();
+  }
 });
 
 test("keeps the player size when the first play loads the video", async ({ page }) => {

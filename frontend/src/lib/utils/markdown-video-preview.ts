@@ -17,7 +17,7 @@ const PREVIEW_TIMEOUT = "15 seconds";
 // Wider frames are scaled down; the poster only fills the content column.
 const POSTER_MAX_WIDTH = 1280;
 
-export interface MarkdownVideoPreview {
+interface MarkdownVideoPreview {
   readonly duration: number | null;
   // A blob: URL for the player's poster attribute.
   readonly poster: string | null;
@@ -40,11 +40,22 @@ export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
       else visibility.observe(player);
     };
     // Collapsed players have no box, so they wait until they are expanded.
+    // A player the reader scrolled past before its turn is skipped and waits
+    // to come back into view, so the player in view does not wait behind it.
+    const inView = new WeakSet<HTMLVideoElement>();
+    const queued = new WeakSet<HTMLVideoElement>();
     const visibility = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (!entry.isIntersecting || !(entry.target instanceof HTMLVideoElement)) continue;
-        visibility.unobserve(entry.target);
-        Queue.offerUnsafe(pending, entry.target);
+        if (!(entry.target instanceof HTMLVideoElement)) continue;
+        const player = entry.target;
+        if (!entry.isIntersecting) {
+          inView.delete(player);
+          continue;
+        }
+        inView.add(player);
+        if (queued.has(player)) continue;
+        queued.add(player);
+        Queue.offerUnsafe(pending, player);
       }
     });
     const mutations = new MutationObserver((records) => {
@@ -80,6 +91,9 @@ export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
 
     const previewNext = Effect.gen(function* () {
       const player = yield* Queue.take(pending);
+      queued.delete(player);
+      if (!inView.has(player)) return;
+      visibility.unobserve(player);
       const key = sourceKey(player);
       if (key === null || !player.isConnected || hasStarted(player)) return;
       const known = previews.get(key);
@@ -100,7 +114,7 @@ export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
 
 function playersIn(node: Node): HTMLVideoElement[] {
   if (!(node instanceof Element)) return [];
-  if (node instanceof HTMLVideoElement) return node.matches(PLAYER_SELECTOR) ? [node] : [];
+  if (node instanceof HTMLVideoElement && node.matches(PLAYER_SELECTOR)) return [node];
   return [...node.querySelectorAll<HTMLVideoElement>(PLAYER_SELECTOR)];
 }
 

@@ -51,12 +51,23 @@ func CopyStream(stop context.Context, w io.Writer, body io.ReadCloser) {
 			<-stopped
 		}
 	}()
+	var limited *stallLimitedWriter
 	if rw != nil {
-		_ = http.NewResponseController(rw).Flush()
-		w = &stallLimitedWriter{stop: stop, w: rw, controller: http.NewResponseController(rw)}
+		controller := http.NewResponseController(rw)
+		_ = controller.Flush()
+		limited = &stallLimitedWriter{stop: stop, w: rw, controller: controller}
+		w = limited
 	}
 	if _, err := io.Copy(w, body); err != nil {
 		panic(http.ErrAbortHandler)
+	}
+	// The server sends what is still buffered after the handler returns,
+	// under the last write's deadline, which an upstream slow to end the
+	// body may already have spent.
+	if limited != nil {
+		if err := limited.arm(); err != nil {
+			panic(http.ErrAbortHandler)
+		}
 	}
 }
 
@@ -68,15 +79,20 @@ type stallLimitedWriter struct {
 }
 
 func (w *stallLimitedWriter) Write(p []byte) (int, error) {
-	// A writer without deadlines, such as a test recorder, never blocks.
-	err := w.controller.SetWriteDeadline(time.Now().Add(streamStallTimeout))
-	if err != nil && !errors.Is(err, http.ErrNotSupported) {
-		return 0, err
-	}
-	// Shutdown expires the deadline after stop ends. Checking afterwards
-	// means a shutdown that came before this write's deadline still wins.
-	if err := w.stop.Err(); err != nil {
+	if err := w.arm(); err != nil {
 		return 0, err
 	}
 	return w.w.Write(p)
+}
+
+// arm gives the next write to the client streamStallTimeout to drain.
+func (w *stallLimitedWriter) arm() error {
+	// A writer without deadlines, such as a test recorder, never blocks.
+	err := w.controller.SetWriteDeadline(time.Now().Add(streamStallTimeout))
+	if err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return err
+	}
+	// Shutdown expires the deadline after stop ends. Checking afterwards
+	// means a shutdown that came before this deadline still wins.
+	return w.stop.Err()
 }

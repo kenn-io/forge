@@ -647,8 +647,8 @@ Players join the page gallery with images and diagrams:
   frame with `metadata`) until `loadeddata` or 15 seconds, then drops every
   source and calls `load()`, which ends its requests in every browser. The
   copy stays outside the document so its load errors never reach the fallback
-  notice. Collapsed players wait until expanded, started players are left
-  alone, and results are kept per source for the session so a body that
+  notice. Collapsed players wait until expanded, a player scrolled out of
+  view before its turn waits to return, started players are left alone, and results are kept per source for the session so a body that
   renders again shows them at once. A source on another origin without CORS
   taints the canvas, so those players show only their length
   (`frontend/src/lib/utils/markdown-video-preview.ts::observeMarkdownVideoPreviews`).
@@ -656,7 +656,8 @@ Players join the page gallery with images and diagrams:
   Browsers stop reading a buffered video and can keep that connection open
   indefinitely; Chromium's media cache does so for some preview copies and
   for paused players. They ask again with a byte range when they need more,
-  so the cost is a reconnect
+  so the cost is a reconnect. net/http flushes buffered output after the
+  handler returns, so the copy re-arms the deadline once the upstream ends
   (`internal/server/httpapi/stream.go::CopyStream`).
 - GitLab images and videos share one upload rule: `uploads/...`,
   `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the

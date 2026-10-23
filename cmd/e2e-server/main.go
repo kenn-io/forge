@@ -116,6 +116,10 @@ func main() {
 		"markdown-video", "",
 		"serve this local clip as a synthetic GitHub video attachment",
 	)
+	markdownVideoInterrupt := flag.Bool(
+		"markdown-video-interrupt", false,
+		"end each -markdown-video response at the next 64 KiB boundary past its start",
+	)
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(
@@ -138,6 +142,7 @@ func main() {
 			*providerCollision,
 			*scenario,
 			*markdownVideo,
+			*markdownVideoInterrupt,
 		)
 	}
 	stop()
@@ -1283,15 +1288,16 @@ func setPR1CIState(
 // state. The same options feed the initial startup and every
 // /__e2e/reset rebuild.
 type appOptions struct {
-	scenario             string
-	roborevEndpoint      string
-	defaultPlatformHost  string
-	visibleImportedModes bool
-	providerCollision    bool
-	preferPtyOwner       bool
-	nodeID               string
-	federation           *e2eFederationRuntime
-	markdownVideo        string
+	scenario               string
+	roborevEndpoint        string
+	defaultPlatformHost    string
+	visibleImportedModes   bool
+	providerCollision      bool
+	preferPtyOwner         bool
+	nodeID                 string
+	federation             *e2eFederationRuntime
+	markdownVideo          string
+	markdownVideoInterrupt bool
 }
 
 type e2eFederationRuntime struct {
@@ -1921,6 +1927,7 @@ func buildAppState(
 		workflowClient = &e2eMarkdownVideoClient{
 			e2eWorkflowClient: baseWorkflowClient,
 			path:              opts.markdownVideo,
+			interrupt:         opts.markdownVideoInterrupt,
 		}
 	}
 	fixtureClients := map[string]ghclient.Client{
@@ -3750,20 +3757,25 @@ func run(
 	providerCollision bool,
 	scenario string,
 	markdownVideo string,
+	markdownVideoInterrupt bool,
 ) error {
+	if markdownVideoInterrupt && markdownVideo == "" {
+		return errors.New("-markdown-video-interrupt needs -markdown-video")
+	}
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
 	baseOpts := appOptions{
-		scenario:             scenario,
-		roborevEndpoint:      roborevEndpoint,
-		defaultPlatformHost:  defaultPlatformHost,
-		visibleImportedModes: visibleImportedModes,
-		providerCollision:    providerCollision,
-		nodeID:               e2eStandaloneNodeID,
-		markdownVideo:        markdownVideo,
+		scenario:               scenario,
+		roborevEndpoint:        roborevEndpoint,
+		defaultPlatformHost:    defaultPlatformHost,
+		visibleImportedModes:   visibleImportedModes,
+		providerCollision:      providerCollision,
+		nodeID:                 e2eStandaloneNodeID,
+		markdownVideo:          markdownVideo,
+		markdownVideoInterrupt: markdownVideoInterrupt,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)

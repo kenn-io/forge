@@ -38,6 +38,20 @@ function durationOf(player: HTMLVideoElement): string | null {
   return player.parentElement?.querySelector(".markdown-video-duration")?.textContent ?? null;
 }
 
+// Resolves once the player is in view, or out of it. The preview's own
+// observer was created first, so it has already seen the same change.
+function seen(player: HTMLElement, inView: boolean): Promise<void> {
+  return new Promise((resolve) => {
+    const watch = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting === inView)) {
+        watch.disconnect();
+        resolve();
+      }
+    });
+    watch.observe(player);
+  });
+}
+
 afterEach(async () => {
   if (observer) await Effect.runPromise(Fiber.interrupt(observer));
   observer = undefined;
@@ -75,6 +89,23 @@ describe("markdown video previews (browser)", () => {
 
     header.setAttribute("aria-expanded", "true");
     await expect.poll(() => durationOf(collapsed!), LOAD).toBe("0:03");
+  });
+
+  it("skips a player the reader scrolled past before its turn", async () => {
+    // The first source never answers, so its preview holds the queue until
+    // its player leaves the page.
+    const [held, passed, next] = mount(["/__browser-test/never-responds", `${clip}#passed`, `${clip}#next`]);
+    await seen(passed!, true);
+    const header = passed!.parentElement!.querySelector<HTMLButtonElement>(".markdown-video-header")!;
+    header.setAttribute("aria-expanded", "false");
+    await seen(passed!, false);
+    held!.parentElement!.remove();
+
+    await expect.poll(() => durationOf(next!), LOAD).toBe("0:03");
+    expect(durationOf(passed!)).toBeNull();
+
+    header.setAttribute("aria-expanded", "true");
+    await expect.poll(() => durationOf(passed!), LOAD).toBe("0:03");
   });
 
   it("shows a known preview at once when the body renders again", async () => {

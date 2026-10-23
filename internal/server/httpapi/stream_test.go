@@ -110,6 +110,48 @@ func TestCopyStreamEndsStreamToClientThatStoppedReading(t *testing.T) {
 	}
 }
 
+// lateEOFBody sends its data at once and ends only after a delay, like an
+// upstream slow to close.
+type lateEOFBody struct {
+	data  []byte
+	delay time.Duration
+}
+
+func (b *lateEOFBody) Read(p []byte) (int, error) {
+	if len(b.data) > 0 {
+		n := copy(p, b.data)
+		b.data = b.data[n:]
+		return n, nil
+	}
+	<-time.After(b.delay)
+	return 0, io.EOF
+}
+
+func (b *lateEOFBody) Close() error { return nil }
+
+func TestCopyStreamFinishesStreamWhoseUpstreamEndsLate(t *testing.T) {
+	previous := streamStallTimeout
+	streamStallTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { streamStallTimeout = previous })
+	const size = 64 * 1024
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		CopyStream(t.Context(), w, &lateEOFBody{data: make([]byte, size), delay: time.Second})
+	}))
+	t.Cleanup(srv.Close)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+
+	resp, err := srv.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	// The client reads throughout, so the end of the stream must arrive even
+	// though the upstream took longer than the stall limit to end it.
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Len(t, body, size)
+}
+
 // deadlineWriter fails a write that starts after its deadline, as a
 // connection whose deadline passed would.
 type deadlineWriter struct {

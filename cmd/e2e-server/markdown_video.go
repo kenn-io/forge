@@ -44,6 +44,11 @@ type e2eMarkdownVideoClient struct {
 	*e2eWorkflowClient
 
 	path string
+	// interrupt ends each response at the first multiple of
+	// e2eMarkdownVideoInterruptEvery past its start, the way the daemon ends a
+	// stream the browser stopped reading, so a test sees the browser fetch the
+	// rest.
+	interrupt bool
 }
 
 func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
@@ -71,11 +76,18 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 			Code: platform.ErrCodeRangeNotSatisfiable, Provider: platform.KindGitHub, PlatformHost: "github.com",
 		}
 	}
+	var body io.Reader = io.NewSectionReader(file, start, end-start+1)
+	if cut := (start/e2eMarkdownVideoInterruptEvery + 1) * e2eMarkdownVideoInterruptEvery; c.interrupt && end >= cut {
+		body = &interruptedReader{
+			r:     io.LimitReader(body, cut-start),
+			pause: e2eMarkdownVideoInterruptPause,
+		}
+	}
 	media := platform.MarkdownMedia{
 		Body: struct {
 			io.Reader
 			io.Closer
-		}{io.NewSectionReader(file, start, end-start+1), file},
+		}{body, file},
 		ContentType:   markdownVideoContentType(c.path),
 		ContentLength: end - start + 1,
 		Partial:       partial,
@@ -84,6 +96,37 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 		media.ContentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, size)
 	}
 	return media, nil
+}
+
+const (
+	// e2eMarkdownVideoInterruptEvery spaces the offsets where interrupted
+	// responses end. It is a multiple of the 32 KiB blocks browsers hand to
+	// the decoder, so the browser keeps every byte it got and asks again from
+	// the cut. Cutting at every multiple also cuts the player's own request
+	// after the preview copy has cached the start of the clip.
+	e2eMarkdownVideoInterruptEvery = 64 << 10
+	// e2eMarkdownVideoInterruptPause holds an interrupted response open long
+	// enough for a test to pause the player before the response ends.
+	e2eMarkdownVideoInterruptPause = 2 * time.Second
+)
+
+// errMarkdownVideoInterrupted fails the copy of an interrupted response, which
+// aborts it the same way the stall limit does.
+var errMarkdownVideoInterrupted = errors.New("demo video response interrupted")
+
+// interruptedReader passes r through, waits pause, then fails.
+type interruptedReader struct {
+	r     io.Reader
+	pause time.Duration
+}
+
+func (r *interruptedReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if !errors.Is(err, io.EOF) {
+		return n, err
+	}
+	<-time.After(r.pause)
+	return n, errMarkdownVideoInterrupted
 }
 
 // markdownVideoContentType lets browser tests use a WebM clip, which every

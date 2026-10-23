@@ -188,6 +188,12 @@ and the root event stream.
 - Keep process-compose as the backend's only restart owner; nested Air rerun
   loops can spawn competing servers while one holds the data-directory lock.
   Watch inputs must exclude generated clients and assets (`process-compose.yml`).
+- Verify reloads against the real checkout, not just scratch trees: single-file
+  watches traverse their parent, so local worktrees and caches can disable the
+  entire backend watcher while health checks still pass (`process-compose.yml`).
+- Restart Vite after dependency lock or manifest changes: its source-package
+  aliases retain paths resolved at startup, so new application code can import
+  missing exports from an older package (`frontend/vite.config.ts`).
 
 ## Startup Lock
 

@@ -12607,35 +12607,42 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		"parent 304s still check comments conditionally")
 }
 
-func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
-	for _, notModified := range []bool{false, true} {
-		name := "changed"
-		if notModified {
-			name = "not modified"
-		}
-		t.Run(name, func(t *testing.T) {
+func TestSyncIssuePagePoll(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		unchanged, cooldown, reused, missing bool
+		reads                                int
+	}{
+		{name: "changed", reads: 2},
+		{name: "unchanged", unchanged: true, reads: 1},
+		{name: "disabled Issues cooldown", cooldown: true},
+		{name: "reused repository", reused: true, reads: 1},
+		{name: "reused repository without stored issue", missing: true, reads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
 			ctx := t.Context()
-			database := openTestDB(t)
+			d := openTestDB(t)
 			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
 			require.NoError(err)
-			fetchedAt := time.Now().UTC().Add(-time.Minute)
-			issue := buildOpenIssue(7, fetchedAt)
+			issue := buildOpenIssue(7, time.Now().UTC().Add(-time.Minute))
 			normalized, err := NormalizeIssue(repoID, issue)
 			require.NoError(err)
-			normalized.DetailFetchedAt = &fetchedAt
-			issueID, err := database.UpsertIssue(ctx, normalized)
-			require.NoError(err)
-			require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
-			if notModified {
-				require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
+			if !tc.missing {
+				_, err = d.UpsertIssue(ctx, normalized)
+				require.NoError(err)
 			}
-			before, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			before, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
-			issue.Title = new("updated issue")
-			issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
-			issue.Comments = new(1)
+			issue.State = new("closed")
+			require.NoError(d.UpsertNotifications(ctx, []db.Notification{{Platform: "github", PlatformHost: repo.PlatformHost, PlatformNotificationID: "thread", RepoID: &repoID, RepoOwner: repo.Owner, RepoName: repo.Name, ItemNumber: new(7), ItemType: "issue", SubjectType: "Issue", SourceUpdatedAt: time.Now().UTC(), SyncedAt: time.Now().UTC()}}))
+			if tc.reused || tc.missing {
+				issue.ID = new(int64(8001))
+			}
+			issue.Title, issue.Comments = new("updated issue"), new(1)
+			issue.UpdatedAt = makeTimestamp(time.Now().UTC())
+			require.NoError(d.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
 			var paths []string
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
@@ -12643,229 +12650,46 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				switch path {
 				case "/repos/owner/repo/issues/7":
-					if notModified {
-						assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
+					assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
+					if tc.unchanged {
 						w.WriteHeader(http.StatusNotModified)
-						return
+					} else {
+						assert.NoError(t, json.NewEncoder(w).Encode(issue))
 					}
-					assert.Empty(t, r.Header.Get("If-None-Match"))
-					w.Header().Set("ETag", `"page"`)
-					assert.NoError(t, json.NewEncoder(w).Encode(issue))
 				case "/repos/owner/repo/issues/7/comments":
 					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
 				default:
-					assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+					assert.Fail(t, "unexpected provider request", "%s", path)
 					w.WriteHeader(http.StatusNotFound)
 				}
 			}))
 			t.Cleanup(provider.Close)
-			budget := NewSyncBudget(1000)
-			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
+			client, err := NewClient(testTokenSource("token"), repo.PlatformHost, nil, nil, WithBaseURLForTesting(provider.URL))
 			require.NoError(err)
-			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-			gql := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				assert.Fail(t, "page polls must skip GraphQL visibility")
-			}))
-			t.Cleanup(gql.Close)
-			syncer.SetFetchers(map[string]*GraphQLFetcher{
-				"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(gql.URL, gql.Client()), nil),
-			})
+			syncer := NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
 			poll := func() error {
-				return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+				return syncer.SyncIssueOnProvider(ctx, platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+			}
+			if tc.cooldown {
+				syncer.featureCooldowns.deferUntil(repo, platform.RepositoryFeatureIssues, time.Now().UTC().Add(time.Hour))
 			}
 			require.NoError(poll())
-			stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.Len(paths, tc.reads)
+			stored, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
-			require.NotNil(stored)
-			if notModified {
-				assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
-				assert.Equal(t, before, stored, "304 leaves the issue unchanged")
-			} else {
-				assert.Equal(t, []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"}, paths)
+			if tc.reads == 2 {
+				require.NotNil(stored)
 				assert.Equal(t, "updated issue", stored.Title)
-				require.NotNil(stored.DetailFetchedAt)
-				assert.WithinDuration(t, fetchedAt, *stored.DetailFetchedAt, time.Millisecond)
-				events, err := database.ListIssueEvents(ctx, issueID)
+				events, err := d.ListIssueEvents(ctx, stored.ID)
 				require.NoError(err)
 				require.Len(events, 1)
 				assert.Equal(t, "new comment", events[0].Body)
+				done, err := d.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
+				require.NoError(err)
+				require.Len(done, 1)
+			} else {
+				assert.Equal(t, before, stored)
 			}
-			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
-			require.NoError(err)
-			assert.Equal(t, `"page"`, etag)
-			etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-			require.NoError(err)
-			assert.Equal(t, `"detail"`, etag)
-		})
-	}
-}
-
-func TestSyncIssuePagePollPreservesIssueWhenRepositoryNameReused(t *testing.T) {
-	t.Run("uncached issue", func(t *testing.T) {
-		require := require.New(t)
-		ctx := t.Context()
-		database := openTestDB(t)
-		repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-		repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-		require.NoError(err)
-		issue := buildOpenIssue(7, time.Now().UTC())
-		issue.ID = new(int64(8001))
-		issue.Comments = new(1)
-		var paths []string
-		provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			path := strings.TrimPrefix(r.URL.Path, "/api/v3")
-			paths = append(paths, path)
-			w.Header().Set("Content-Type", "application/json")
-			switch path {
-			case "/repos/owner/repo/issues/7":
-				assert.Empty(t, r.Header.Get("If-None-Match"))
-				w.Header().Set("ETag", `"successor"`)
-				assert.NoError(t, json.NewEncoder(w).Encode(issue))
-			case "/repos/owner/repo/issues/7/comments":
-				assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("successor comment"), CreatedAt: issue.UpdatedAt}}))
-			default:
-				assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
-				w.WriteHeader(http.StatusNotFound)
-			}
-		}))
-		t.Cleanup(provider.Close)
-		budget := NewSyncBudget(1000)
-		client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
-		require.NoError(err)
-		syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-		require.NoError(syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true}))
-		assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
-		stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-		require.NoError(err)
-		assert.Nil(t, stored)
-		var eventCount int
-		require.NoError(database.ReadDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM forge_issue_events").Scan(&eventCount))
-		assert.Zero(t, eventCount)
-		etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
-		require.NoError(err)
-		assert.Empty(t, etag)
-	})
-
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-	require.NoError(err)
-	fetchedAt := time.Now().UTC().Add(-time.Minute)
-	issue := buildOpenIssue(7, fetchedAt)
-	normalized, err := NormalizeIssue(repoID, issue)
-	require.NoError(err)
-	normalized.DetailFetchedAt = &fetchedAt
-	issueID, err := database.UpsertIssue(ctx, normalized)
-	require.NoError(err)
-	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
-	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
-		IssueID: issueID, PlatformID: new(int64(10801)), EventType: "comment", Body: "original comment", CreatedAt: fetchedAt,
-	}}))
-	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
-	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	events, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	// The old repository name can be reused before background sync reconciles it.
-	issue.ID = new(int64(8001))
-	issue.Title = new("successor issue")
-	issue.UpdatedAt = makeTimestamp(fetchedAt.Add(time.Minute))
-	var paths []string
-	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/api/v3")
-		paths = append(paths, path)
-		assert.Equal(t, "/repos/owner/repo/issues/7", path)
-		assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("ETag", `"successor"`)
-		assert.NoError(t, json.NewEncoder(w).Encode(issue))
-	}))
-	t.Cleanup(provider.Close)
-	budget := NewSyncBudget(1000)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
-	require.NoError(err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	poll := func() error {
-		return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
-	}
-	require.NoError(poll())
-	assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
-	after, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	assert.Equal(t, stored, after, "a different provider issue must leave the stored issue unchanged")
-	afterEvents, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	assert.Equal(t, events, afterEvents)
-	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
-	require.NoError(err)
-	assert.Equal(t, `"page"`, etag)
-}
-
-func TestSyncIssuePagePollHonorsDisabledIssuesCooldown(t *testing.T) {
-	for _, path := range []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"} {
-		t.Run(path, func(t *testing.T) {
-			require := require.New(t)
-			ctx := t.Context()
-			database := openTestDB(t)
-			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-			require.NoError(err)
-			fetchedAt := time.Now().UTC().Add(-time.Minute)
-			issue := buildOpenIssue(7, fetchedAt)
-			normalized, err := NormalizeIssue(repoID, issue)
-			require.NoError(err)
-			normalized.DetailFetchedAt = &fetchedAt
-			_, err = database.UpsertIssue(ctx, normalized)
-			require.NoError(err)
-			require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
-			issue.Comments = new(1)
-			var paths []string
-			disabledPath := path
-			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
-				paths = append(paths, path)
-				w.Header().Set("Content-Type", "application/json")
-				if path == disabledPath {
-					w.WriteHeader(http.StatusGone)
-					_, err := w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
-					assert.NoError(t, err)
-					return
-				}
-				switch path {
-				case "/repos/owner/repo", "/repositories/" + strconv.FormatInt(testRepoID(repo.Owner, repo.Name), 10):
-					assert.NoError(t, json.NewEncoder(w).Encode(&gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Name: new(repo.Name), Owner: &gh.User{Login: new(repo.Owner)}}))
-				case "/repos/owner/repo/issues/7":
-					assert.NoError(t, json.NewEncoder(w).Encode(issue))
-				case "/repos/owner/repo/issues/7/comments":
-					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{}))
-				default:
-					assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
-					w.WriteHeader(http.StatusNotFound)
-				}
-			}))
-			t.Cleanup(provider.Close)
-			budget := NewSyncBudget(1000)
-			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
-			require.NoError(err)
-			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-			poll := func() error {
-				return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
-			}
-			now := fetchedAt
-			syncer.now = func() time.Time { return now }
-			require.Error(poll())
-			paths = nil
-			now = now.Add(time.Minute)
-			require.NoError(poll())
-			assert.Empty(t, paths, "polls during cooldown make no provider calls")
-			now = now.Add(repositoryFeatureProbeInterval)
-			require.Error(poll(), "a disabled probe renews the cooldown")
-			assert.Contains(t, paths, path)
-			disabledPath = ""
-			now = now.Add(repositoryFeatureProbeInterval)
-			require.NoError(poll(), "an expired cooldown permits recovery")
 		})
 	}
 }

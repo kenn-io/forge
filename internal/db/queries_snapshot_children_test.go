@@ -8,6 +8,72 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestChildSnapshotRejectsRevisionBeforeCommentUpsert(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name  string
+		issue bool
+	}{
+		{name: "pull request"},
+		{name: "issue", issue: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			assert := assert.New(t)
+			database := openTestDB(t)
+			ctx := t.Context()
+			now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+			repoID := insertTestRepo(t, database, "acme", "comment-revision")
+
+			if tt.issue {
+				issueID, revision, accepted, err := database.UpsertIssueSnapshotWithLabels(ctx, &Issue{
+					RepoID: repoID, PlatformID: 1, Number: 1, Title: "comment revision", State: "open",
+					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+				})
+				require.NoError(t, err)
+				require.True(t, accepted)
+				require.NoError(t, database.UpsertIssueEvents(ctx, []IssueEvent{{
+					IssueID: issueID, EventType: "issue_comment", Body: "posted comment",
+					CreatedAt: now, DedupeKey: "issue_comment:1",
+				}}))
+
+				applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
+					IssueID: issueID, ExpectedRevision: revision,
+				})
+				require.NoError(t, err)
+				assert.False(applied)
+				events, err := database.ListIssueEvents(ctx, issueID)
+				require.NoError(t, err)
+				require.Len(t, events, 1)
+				assert.Equal("posted comment", events[0].Body)
+			} else {
+				mrID, revision, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, &MergeRequest{
+					RepoID: repoID, PlatformID: 1, Number: 1, Title: "comment revision", State: MergeRequestStateOpen,
+					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+				})
+				require.NoError(t, err)
+				require.True(t, accepted)
+				require.NoError(t, database.UpsertMREvents(ctx, []MREvent{{
+					MergeRequestID: mrID, EventType: "issue_comment", Body: "posted comment",
+					CreatedAt: now, DedupeKey: "issue_comment:1",
+				}}))
+
+				applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
+					MergeRequestID: mrID, ExpectedRevision: revision, CommentsComplete: true,
+				})
+				require.NoError(t, err)
+				assert.False(applied)
+				events, err := database.ListMREvents(ctx, mrID)
+				require.NoError(t, err)
+				require.Len(t, events, 1)
+				assert.Equal("posted comment", events[0].Body)
+			}
+		})
+	}
+}
+
 func TestSnapshotBoundUpdatesRejectAdvancedRevision(t *testing.T) {
 	t.Parallel()
 

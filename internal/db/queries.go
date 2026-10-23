@@ -1898,7 +1898,22 @@ func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertMREventsTx(ctx, tx, events)
+		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.MergeRequestID] = struct{}{}
+		}
+		for id := range parentIDs {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE forge_merge_requests
+				SET snapshot_revision = snapshot_revision + 1
+				WHERE id = ?`, id); err != nil {
+				return fmt.Errorf("advance mr event parent revision: %w", err)
+			}
+		}
+		return nil
 	})
 }
 
@@ -3545,7 +3560,22 @@ func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertIssueEventsTx(ctx, tx, events)
+		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.IssueID] = struct{}{}
+		}
+		for id := range parentIDs {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE forge_issues
+				SET snapshot_revision = snapshot_revision + 1
+				WHERE id = ?`, id); err != nil {
+				return fmt.Errorf("advance issue event parent revision: %w", err)
+			}
+		}
+		return nil
 	})
 }
 

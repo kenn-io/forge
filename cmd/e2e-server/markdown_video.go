@@ -78,10 +78,7 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 	}
 	var body io.Reader = io.NewSectionReader(file, start, end-start+1)
 	if cut := (start/e2eMarkdownVideoInterruptEvery + 1) * e2eMarkdownVideoInterruptEvery; c.interrupt && end >= cut {
-		body = &interruptedReader{
-			r:     io.LimitReader(body, cut-start),
-			pause: e2eMarkdownVideoInterruptPause,
-		}
+		body = &interruptedReader{r: io.LimitReader(body, cut-start)}
 	}
 	media := platform.MarkdownMedia{
 		Body: struct {
@@ -114,10 +111,10 @@ const (
 // aborts it the same way the stall limit does.
 var errMarkdownVideoInterrupted = errors.New("demo video response interrupted")
 
-// interruptedReader passes r through, waits pause, then fails.
+// interruptedReader passes r through, waits
+// e2eMarkdownVideoInterruptPause, then fails.
 type interruptedReader struct {
-	r     io.Reader
-	pause time.Duration
+	r io.Reader
 }
 
 func (r *interruptedReader) Read(p []byte) (int, error) {
@@ -125,7 +122,7 @@ func (r *interruptedReader) Read(p []byte) (int, error) {
 	if !errors.Is(err, io.EOF) {
 		return n, err
 	}
-	<-time.After(r.pause)
+	<-time.After(e2eMarkdownVideoInterruptPause)
 	return n, errMarkdownVideoInterrupted
 }
 

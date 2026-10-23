@@ -170,6 +170,8 @@
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
   import { createTerminalZoomController } from "./terminalZoom";
+  import { DEFAULT_ACP_SETTINGS } from "../../api/types.js";
+  import { saveACPSettings } from "../../stores/acp-settings-persistence.js";
   import {
     makeWorkspaceRuntimeOwner,
     makeWorkspaceRuntimePresenterID,
@@ -369,6 +371,7 @@
   // by workspace would report the next workspace's control enabled while the shared
   // controller is still refusing input.
   let terminalZoomSaving = $state(false);
+  let acpZoomSaving = $state(false);
   let terminalOptionsSaving = $state(false);
   const terminalZoom = createTerminalZoomController({
     runtime: appRuntime,
@@ -1169,7 +1172,7 @@
     const workspaceKey = viewWorkspaceKey;
     // Only what a pane's popover can actually start. Presets are not offered there,
     // so a preset apply cannot be the write that must not be interrupted.
-    const busy = terminalOptionsSaving || terminalZoomSaving;
+    const busy = terminalOptionsSaving || terminalZoomSaving || acpZoomSaving;
     untrack(() => setWorkspaceControlsBusy(workspaceKey, controlsInPane && busy));
     return () => untrack(() => setWorkspaceControlsBusy(workspaceKey, false));
   });
@@ -1187,6 +1190,25 @@
       sessionKeyFromWorkflowTab(activeTabKey) ??
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
+
+  const acpZoomActive = $derived(
+    runtimeSessions.find((session) => session.key === currentSessionKey)?.kind === "acp",
+  );
+  const acpFontSize = $derived(settingsStore.getACPSettings().font_size);
+
+  function setACPFontSize(fontSize: number): void {
+    if (acpZoomSaving || fontSize === acpFontSize) return;
+    acpZoomSaving = true;
+    appRuntime.runCommand(saveACPSettings(settingsStore, { font_size: fontSize }).pipe(
+      Effect.ensuring(Effect.sync(() => { acpZoomSaving = false; })),
+    ), {
+      operation: "save ACP font size",
+      safeContext: {},
+      onFailure: (error) => {
+        showFlash(`Couldn't save ACP font size: ${settingsErrorMessage(error)}`, { tone: "danger" });
+      },
+    });
+  }
 
   // A promoted agent has its own detail pane, outside the workflow tab strip.
   // Remember that selection too, so Workspaces opens the agent the user was using.
@@ -4920,7 +4942,7 @@
                 {/if}
                 <WorkspacePaneControls
                   controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
-                  busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
+                  busy={terminalOptionsSaving || terminalZoomSaving || acpZoomSaving || applyingWorkflowPreset}
                 />
               </div>
             {:else}
@@ -5500,11 +5522,12 @@
     />
   {/if}
   <TerminalZoomControl
-    fontSize={terminalFontSize}
-    disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
-    onDecrease={terminalZoom.decrease}
-    onIncrease={terminalZoom.increase}
-    onReset={terminalZoom.reset}
+    target={acpZoomActive ? "ACP" : "terminal"}
+    fontSize={acpZoomActive ? acpFontSize : terminalFontSize}
+    disabled={actionsBlocked || !terminalSettingsReady || (acpZoomActive ? acpZoomSaving : terminalOptionsSaving)}
+    onDecrease={() => acpZoomActive ? setACPFontSize(acpFontSize - 1) : terminalZoom.decrease()}
+    onIncrease={() => acpZoomActive ? setACPFontSize(acpFontSize + 1) : terminalZoom.increase()}
+    onReset={() => acpZoomActive ? setACPFontSize(DEFAULT_ACP_SETTINGS.font_size) : terminalZoom.reset()}
   />
   <TerminalOptionsMenu
     disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}

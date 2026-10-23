@@ -765,7 +765,9 @@ describe("createIssuesStore", () => {
         ThreadID: null,
       },
     ];
-    const get = vi.fn(async () => ({ data: issueDetail(), error: undefined }));
+    const get = vi
+      .fn(async () => ({ data: fresh, error: undefined }))
+      .mockResolvedValueOnce({ data: issueDetail(), error: undefined });
     const post = vi
       .fn()
       .mockResolvedValueOnce({ data: fresh, error: undefined })
@@ -775,9 +777,14 @@ describe("createIssuesStore", () => {
     await loadIssueDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
+      repoPath: "acme/widget",
       sync: false,
     });
-    store.startIssueDetailPolling("acme", "widget", 7, { provider: "github", platformHost: "github.com" });
+    store.startIssueDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
     for (let poll = 0; poll < 3; poll++) {
       get.mockClear();
       if (poll === 2) get.mockRejectedValueOnce(new Error("cache unavailable"));
@@ -789,9 +796,7 @@ describe("createIssuesStore", () => {
       expect(get).toHaveBeenCalledOnce();
       expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
       expect(post.mock.invocationCallOrder[poll]).toBeLessThan(get.mock.invocationCallOrder[0]!);
-      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual(
-        poll === 2 ? ["New comment from the provider"] : [],
-      );
+      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual(["New comment from the provider"]);
     }
     store.stopIssueDetailPolling();
   });

@@ -53,8 +53,10 @@
 - Launch flashes count only when the document is visible at failure time;
   telemetry preserves their existing presentation
   (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
-- Outcomes wait through permission checks and backoff;
-  posted failures aren't replayed (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
+- Outcomes stay in the local queue until kit's gate is open for today, and
+  posted failures aren't replayed. Kit replays visits it accepted during a
+  check; the one exception is the same-day action that opens the next day's
+  check, which kit holds (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).

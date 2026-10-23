@@ -184,6 +184,12 @@ export function startRuntimeTelemetry(
   const pending = new Map<string | VisitEvent, { action: VisitEvent; day: string }>();
   let retry: ReturnType<typeof setTimeout> | undefined;
   let quiet = true;
+  // UTC day whose permission gate is already open. Empty until the first
+  // enabled receipt.
+  let enabledDay: string | undefined;
+  // Core actions already given to kit while it rolls into a new day's check.
+  // Kit holds that copy and sends it after the check.
+  const handedOff = new Set<string>();
   const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
   const stored = actionClaims(storageKey);
   const post = options.post ?? postReceipt;
@@ -225,7 +231,20 @@ export function startRuntimeTelemetry(
   const claimed = (key: string) => reportedDay.get(key) === today() || stored.has(key, today());
   const send = (action: VisitEvent) => {
     const key = coreKey(action);
-    if (key && claimed(key)) return void pending.delete(key);
+    const id = key ?? action;
+    if (key && (claimed(key) || handedOff.has(`${today()}\n${key}`))) return void pending.delete(id);
+    // A visit reported on a later UTC day is what makes kit open that day's
+    // check. Kit holds the visit and sends it once the check succeeds, so the
+    // local queue must not send it again. Until then, and during an ordinary
+    // permission check, kit would keep its own copy of anything reportVisit
+    // accepts and post it beside this queue.
+    if (enabledDay !== undefined && enabledDay !== today()) {
+      if (key) handedOff.add(`${today()}\n${key}`);
+      reporter.reportVisit(action);
+      pending.delete(id);
+      return;
+    }
+    if (quiet) return;
     reporter.reportVisit(action);
   };
   const flush = () => {
@@ -235,11 +254,13 @@ export function startRuntimeTelemetry(
       if (day === today()) send(action);
       else pending.delete(key);
     }
-    // Kit drops visits during backoff and only wakes its own pending daily events.
+    // Kit drops a visit during backoff instead of holding it. Retry until the
+    // post wrapper removes it. send() withholds visits while the gate is unknown.
     if (!quiet && pending.size > 0) retry = setTimeout(flush, 1_000);
   };
-  const unsubscribe = reporter.onQuietChange((value) => {
+  const unsubscribe = reporter.onQuietChange((value, next) => {
     quiet = value;
+    if (next === "enabled") enabledDay = today();
     if (quiet) clearTimeout(retry);
     if (!value) flush();
   });

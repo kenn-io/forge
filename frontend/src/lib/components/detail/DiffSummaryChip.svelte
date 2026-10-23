@@ -26,10 +26,10 @@
 
   const runtime = getAppRuntime();
 
-  /* kit Tooltip sets aria-describedby on its non-focusable wrapper span, not
-     on the real trigger. Reference the tooltip content from the button
-     directly: while closed the id resolves to nothing (ignored by AT), while
-     open it resolves to the summary. */
+  /* Kit Tooltip appends its own id to the focused control's aria-describedby.
+     Keep the summary id on the button as well: while the tooltip is closed
+     that id resolves to nothing, and while it is open it resolves to the
+     summary inside the tooltip. */
   const summaryContentId = $props.id();
 
   /* Whether the pointer/focus is on the trigger — drives lazy loading and

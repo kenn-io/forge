@@ -4,7 +4,7 @@
 // the non-data draggable attribute, neither expressible through kit's
 // extensions/codeFence/data-* hook surface. The fence primitives that DO
 // fit (escapeHtml, codeFenceLanguage, codeHighlightPlan and its budgets,
-// shikiStyleIsAllowed) are imported from kit-ui below, so highlighting
+// allowedShikiStyle) are imported from kit-ui below, so highlighting
 // budgets and the shiki style allowlist stay in parity by construction.
 // kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import { Marked } from "marked";
@@ -15,7 +15,7 @@ import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "mark
 import DOMPurify from "dompurify";
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import type { UponSanitizeAttributeHook } from "dompurify";
-import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
+import { allowedShikiStyle, codeFenceLanguage, codeHighlightPlan, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import {
@@ -752,9 +752,9 @@ const shikiStyleSanitizer: UponSanitizeAttributeHook = (node, data) => {
   const isStyledShikiNode =
     trustedShikiNode &&
     ((tagName === "pre" && node.classList.contains("shiki")) || (tagName === "span" && node.closest("pre.shiki")));
-  if (!isStyledShikiNode || !shikiStyleIsAllowed(data.attrValue)) {
-    data.keepAttr = false;
-  }
+  const allowed = isStyledShikiNode ? allowedShikiStyle(data.attrValue) : "";
+  if (allowed) data.attrValue = allowed;
+  else data.keepAttr = false;
 };
 
 function visibleTokenLineCount(raw: string): number {

@@ -107,12 +107,10 @@ describe("DiffSummaryChip", () => {
     await fireEvent.focusIn(trigger);
 
     const popover = await screen.findByRole("tooltip");
-    // kit Tooltip describes its wrapper span, not the focusable trigger; the
-    // chip wires the button to the summary content directly so assistive tech
-    // focused on the real button still gets the description.
-    const describedBy = trigger.getAttribute("aria-describedby");
-    expect(describedBy).toBeTruthy();
-    expect(popover.querySelector(`[id="${describedBy}"]`)).not.toBeNull();
+    // Kit appends the tooltip element's id to the button's own summary id.
+    // Either token has to name the open tooltip or a node inside it.
+    const describedBy = (trigger.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+    expect(describedBy.some((id) => id === popover.id || popover.querySelector(`[id="${id}"]`) !== null)).toBe(true);
     const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child")).map(
       (label) => label.textContent,
     );

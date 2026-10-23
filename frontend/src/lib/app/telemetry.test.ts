@@ -79,10 +79,10 @@ describe("browser telemetry", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     let status = "queued";
     const { sent, runtime, reporter, quiet } = setup(async () => Response.json({ status }, { status: 202 }));
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
     status = "disabled";
     reporter.reportScreen("docs");
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true, "disabled"));
     expect(sent).toHaveLength(2);
     reportPRViewed(runtime, "gitlab");
     reportWorkspaceOpened(runtime, "adhoc");
@@ -135,7 +135,7 @@ describe("browser telemetry", () => {
       expect(actions()).toEqual([]);
       if (mode === "expired day") vi.setSystemTime(new Date("2026-10-18T00:00:01Z"));
       receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
       await new Promise((resolve) => setTimeout(resolve, 0));
       if (mode === "expired day") {
         expect(actions()).toEqual([]);
@@ -189,7 +189,7 @@ describe("browser telemetry", () => {
       await vi.advanceTimersByTimeAsync(1);
       expect(signal?.aborted).toBe(true);
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(quiet).toHaveBeenLastCalledWith(false);
+      expect(quiet).toHaveBeenLastCalledWith(false, "enabled");
       expect(sent).toEqual([
         { event: "app_opened", properties: { surface: "web" } },
         stage === "fetch"
@@ -228,7 +228,7 @@ describe("browser telemetry", () => {
         ]),
       );
     } else {
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true, "disabled"));
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(sent.map((event) => event.event)).toEqual(["app_opened"]);
     }
@@ -236,7 +236,7 @@ describe("browser telemetry", () => {
 
   it("labels shown errors with the failed core action", async () => {
     const { sent, runtime, quiet } = setup();
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
     reportOutcome(runtime, { event: "error_shown", kind: "pr_viewed" });
     reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
     await vi.waitFor(() =>
@@ -293,7 +293,7 @@ describe("browser telemetry", () => {
       failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
     );
     await vi.advanceTimersByTimeAsync(0);
-    expect(quiet).toHaveBeenLastCalledWith(false);
+    expect(quiet).toHaveBeenLastCalledWith(false, "enabled");
     failing = true;
     reporter.reportScreen("docs");
     await vi.advanceTimersByTimeAsync(0);
@@ -339,7 +339,7 @@ describe("browser telemetry", () => {
       malformed ? new Response("{", { status: 202 }) : Response.json({ status: "queued" }, { status: 202 }),
     );
     await vi.advanceTimersByTimeAsync(0);
-    expect(quiet).toHaveBeenLastCalledWith(false);
+    expect(quiet).toHaveBeenLastCalledWith(false, "enabled");
     malformed = true;
     reportPRViewed(runtime, "github");
     await vi.advanceTimersByTimeAsync(1_000);
@@ -361,7 +361,7 @@ describe("browser telemetry", () => {
             { status: 400, headers: { "Content-Type": "application/problem+json" } },
           ),
     );
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
     status = 400;
     reportPRViewed(runtime, "github");
     await vi.waitFor(() => expect(sent).toHaveLength(2));

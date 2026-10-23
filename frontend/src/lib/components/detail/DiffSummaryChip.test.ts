@@ -107,10 +107,9 @@ describe("DiffSummaryChip", () => {
     await fireEvent.focusIn(trigger);
 
     const popover = await screen.findByRole("tooltip");
-    // Kit appends the tooltip element's id to the button's own summary id.
-    // Either token has to name the open tooltip or a node inside it.
-    const describedBy = (trigger.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
-    expect(describedBy.some((id) => id === popover.id || popover.querySelector(`[id="${id}"]`) !== null)).toBe(true);
+    // Assistive tech focused on the button reads the summary as its description.
+    expect(popover.id).not.toBe("");
+    expect(trigger.getAttribute("aria-describedby")?.split(" ")).toContain(popover.id);
     const labels = Array.from(popover.querySelectorAll(".diff-summary-row > span:first-child")).map(
       (label) => label.textContent,
     );

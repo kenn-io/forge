@@ -26,12 +26,6 @@
 
   const runtime = getAppRuntime();
 
-  /* Kit Tooltip appends its own id to the focused control's aria-describedby.
-     Keep the summary id on the button as well: while the tooltip is closed
-     that id resolves to nothing, and while it is open it resolves to the
-     summary inside the tooltip. */
-  const summaryContentId = $props.id();
-
   /* Whether the pointer/focus is on the trigger — drives lazy loading and
      the refetch-on-rekey behavior while the tooltip is held open. */
   let active = false;
@@ -141,7 +135,7 @@
     <!-- The summary loads after the tooltip is already described to
          assistive tech; a live region announces the async transition
          from Loading to the totals (or an error). -->
-    <div id={summaryContentId} aria-live="polite">
+    <div aria-live="polite">
       {#if error}
         <div class="diff-summary-state diff-summary-state--error">
           {error}
@@ -166,7 +160,6 @@
   <button
     type="button"
     class="diff-summary-trigger"
-    aria-describedby={summaryContentId}
     onmouseenter={handleEnter}
     onmouseleave={handleLeave}
     onfocusin={handleEnter}

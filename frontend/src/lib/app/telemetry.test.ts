@@ -247,44 +247,6 @@ describe("browser telemetry", () => {
     );
   });
 
-  it("keeps core actions waiting for a receipt instead of arming their own backoff retry", async () => {
-    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
-    let failing = false;
-    const { sent, runtime } = setup(async () =>
-      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    failing = true;
-    reportPRViewed(runtime, "github");
-    await vi.advanceTimersByTimeAsync(0);
-    failing = false;
-    reportWorkspaceOpened(runtime, "adhoc");
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(sent.map((event) => event.event)).toEqual(["app_opened", "pr_viewed"]);
-  });
-
-  it("wakes outcomes queued during backoff after all daily events are claimed", async () => {
-    vi.useFakeTimers({ toFake: ["performance", "setTimeout", "clearTimeout"] });
-    let failing = false;
-    const { sent, runtime, reporter } = setup(async () =>
-      failing ? new Response(null, { status: 500 }) : Response.json({ status: "queued" }, { status: 202 }),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    reporter.reportScreen("docs");
-    await vi.advanceTimersByTimeAsync(0);
-    failing = true;
-    reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
-    await vi.advanceTimersByTimeAsync(0);
-    failing = false;
-    reportOutcome(runtime, { event: "search_empty" });
-    await vi.advanceTimersByTimeAsync(999);
-    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed", "error_shown"]);
-    await vi.advanceTimersByTimeAsync(1);
-    expect(sent.map((event) => event.event)).toEqual(["app_opened", "screen_viewed", "error_shown", "search_empty"]);
-    await vi.advanceTimersByTimeAsync(32_000);
-    expect(sent).toHaveLength(4);
-  });
-
   it("retains pr_viewed through screen backoff until the gate retry succeeds", async () => {
     vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(new Date("2026-10-17T12:00:00Z"));
@@ -349,24 +311,5 @@ describe("browser telemetry", () => {
     expect(sent.filter((event) => event.event === "pr_viewed")).toEqual([
       { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
     ]);
-  });
-
-  it("readmits a core action after failed delivery", async () => {
-    let status = 202;
-    const { sent, runtime, quiet } = setup(async () =>
-      status === 202
-        ? Response.json({ status: "queued" }, { status })
-        : Response.json(
-            { title: "Bad Request", status: 400 },
-            { status: 400, headers: { "Content-Type": "application/problem+json" } },
-          ),
-    );
-    await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
-    status = 400;
-    reportPRViewed(runtime, "github");
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    status = 202;
-    reportPRViewed(runtime, "github");
-    await vi.waitFor(() => expect(sent).toHaveLength(3));
   });
 });

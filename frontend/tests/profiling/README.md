@@ -229,3 +229,29 @@ and encoded response-body bytes. `timings.json` goes to
 Run profiles separately from other browser suites to avoid contention. These
 small fixtures measure network dependence; they do not reproduce a large
 account's rendering cost or an actual flight's packet loss.
+
+## Variable latency and overlapping navigation
+
+From `frontend/`, run:
+
+```bash
+../node_modules/.bin/vp exec -- playwright test --config tests/profiling/playwright-profile.config.ts variable-latency.spec.ts
+```
+
+This uses Chromium's network emulation at 1 Mbps with a repeatable sequence of
+700, 1200, 1500, 900, 4000, 1000, 3500, and 800 ms latency. Conditions change
+before each navigation, including for requests already in flight. It is a
+controlled stress profile, not a measured distribution from an airline.
+
+The built app returns through Workspaces to a remembered Activity PR or issue,
+and revisits a PR outside the open list after viewing another PR. It checks the
+remembered title, available description, editable draft, and retained merge
+controls. Draft text must survive every return. Most returns overlap unfinished
+refreshes; one 4-second tail stays active through successful detail revalidation.
+Merge controls can remain disabled until their fresh settings arrive.
+
+`timings.json` records navigation-to-editing timings, tail revalidation, and
+per-request completion or cancellation under `test-results/variable-latency/`,
+or `KENN_FORGE_PROFILE_OUT_DIR`. As with the fixed-latency profile, packet loss,
+upstream provider latency, and large-account rendering costs are outside this
+synthetic fixture.

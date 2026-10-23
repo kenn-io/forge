@@ -19,7 +19,7 @@
   import { repositoryKeyFromWire } from "../api/repository-key.js";
 
   const { toggleSidebar } = getSidebar();
-  const { issues } = getStores();
+  const { issues, settings } = getStores();
 
   interface Props {
     selectedIssue?: IssueRouteRef | null;
@@ -62,9 +62,12 @@
   const selectedRepositoryKey = $derived.by(() => {
     if (!routeSelection || routeSelection.repositoryKey) return routeSelection?.repositoryKey;
     const item = issues.getIssues().find((item) =>
-      item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
+      repoIdentityMatches(item, routeSelection),
     );
-    return repositoryKeyFromWire(item?.repo);
+    const configuredRepo = settings.getConfiguredRepos().find((repo) =>
+      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, routeSelection),
+    );
+    return repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo);
   });
   const selectedIssue = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

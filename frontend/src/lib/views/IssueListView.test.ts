@@ -93,7 +93,7 @@ function renderIssueListView(options: RenderIssueListViewOptions = {}) {
             toggleSidebar: vi.fn(),
           },
         ],
-        [STORES_KEY, { issues: issuesStore }],
+        [STORES_KEY, { issues: issuesStore, settings: { getConfiguredRepos: () => [] } }],
       ]),
     }),
   };

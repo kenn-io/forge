@@ -71,6 +71,10 @@ Interactive surfaces must agree on which item is selected.
 - Repository-scoped detail reads must track identity values, not route-object references;
   unchanged feed refreshes must retain loaded actions
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
+- Remembered repository merge settings keep controls visible across navigation, but cannot enable merging before revalidation
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
+- PR and issue selections recover verified repository identity independently of the selected row's presence in the list;
+  unknown identities cannot reuse cached details (`frontend/src/lib/views/PRListView.svelte::selectedRepositoryKey`).
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
   Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
   cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).

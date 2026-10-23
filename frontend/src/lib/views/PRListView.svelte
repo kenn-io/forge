@@ -31,7 +31,7 @@
 
   const { toggleSidebar } = getSidebar();
   const navigate = getNavigate();
-  const { detail: detailStore, pulls } = getStores();
+  const { detail: detailStore, pulls, settings } = getStores();
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
     detailTab?: DetailTab;
@@ -89,9 +89,12 @@
   const selectedRepositoryKey = $derived.by(() => {
     if (!routeSelection || routeSelection.repositoryKey) return routeSelection?.repositoryKey;
     const item = pulls.getPulls().find((item) =>
-      item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
+      repoIdentityMatches(item, routeSelection),
     );
-    return repositoryKeyFromWire(item?.repo);
+    const configuredRepo = settings.getConfiguredRepos().find((repo) =>
+      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, routeSelection),
+    );
+    return repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo);
   });
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

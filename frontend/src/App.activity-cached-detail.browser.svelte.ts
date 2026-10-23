@@ -3,11 +3,12 @@ import { page } from "vite-plus/test/browser";
 import { flushSync } from "svelte";
 import {
   emitBrowserEventSource,
+  firePopstate,
   mountBrowserApp,
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockSettings } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, mockIssueFixture } from "./test/mockApiFetch.js";
 
 let mounted: MountedBrowserApp | undefined;
 
@@ -35,6 +36,11 @@ it("keeps merge controls mounted when Activity refreshes the selected PR", async
           if (url.pathname === "/api/v1/repo/github/acme/widgets") {
             repositoryReads += 1;
             return jsonResponse({
+              Platform: "github",
+              PlatformHost: "github.com",
+              PlatformRepoID: 1001,
+              Owner: "acme",
+              Name: "widgets",
               AllowSquashMerge: true,
               AllowMergeCommit: false,
               AllowRebaseMerge: false,
@@ -94,9 +100,17 @@ it("keeps merge controls mounted when Activity refreshes the selected PR", async
     expect(merge.element()).toBe(button);
     expect(close.getBoundingClientRect().toJSON()).toEqual(closeBounds);
     expect(repositoryReads).toBe(initialReads);
+
+    const header = page.getByRole("navigation", { name: "Page", exact: true });
+    await header.getByRole("button", { name: "Workspaces", exact: true }).click();
+    await header.getByRole("button", { name: "Activity", exact: true }).click();
+    await vi.waitFor(() => expect(repositoryReads).toBeGreaterThan(initialReads));
+    await expect.element(merge).toBeVisible();
+    await expect.element(merge).toBeDisabled();
   } finally {
     releaseRepositoryReads.resolve();
   }
+  await expect.element(page.getByRole("button", { name: "Squash and merge", exact: true })).toBeEnabled();
 });
 
 it.each([
@@ -229,3 +243,72 @@ it.each([
     }
   },
 );
+
+it.each([
+  { collection: "pulls", number: 42, title: "Add browser regression coverage" },
+  { collection: "issues", number: 7, title: "Theme toggle does not stick" },
+])("restores a cached $collection selection outside the visible list", async ({ collection, number, title }) => {
+  mounted = await mountBrowserApp(`/${collection}/github/acme/widgets/${number}`, {
+    overrides: [
+      ({ url }) => {
+        if (url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
+        if (collection === "issues" && /^\/api\/v1\/issues\/github\/acme\/widgets\/[78]/.test(url.pathname)) {
+          const issue = {
+            ...mockIssueFixture(7),
+            ...(url.pathname.includes("/widgets/8") ? { Number: 8, Title: "Another issue" } : {}),
+          };
+          return jsonResponse({
+            issue,
+            repo: { ...issue.repo, platform_repo_id: 1001 },
+            events: [],
+            repo_owner: "acme",
+            repo_name: "widgets",
+            platform_host: "github.com",
+            detail_loaded: true,
+          });
+        }
+        if (url.pathname === "/api/v1/settings")
+          return jsonResponse({
+            ...mockSettings,
+            repos: [
+              {
+                ...mockSettings.repos[0],
+                provider: "github",
+                platform_host: "github.com",
+                platform_repo_id: 1001,
+                owner: "acme",
+                name: "widgets",
+                repo_path: "acme/widgets",
+              },
+            ],
+          });
+        return null;
+      },
+    ],
+  });
+  await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(title));
+  firePopstate(`/${collection}/github/acme/widgets/${collection === "pulls" ? 55 : 8}`);
+  await vi.waitFor(() =>
+    expect(document.querySelector(".detail-title")?.textContent).toBe(
+      collection === "pulls" ? "Refactor theme system" : "Another issue",
+    ),
+  );
+  const header = page.getByRole("navigation", { name: "Page", exact: true });
+  await header.getByRole("button", { name: "Workspaces", exact: true }).click();
+  await vi.waitFor(() => expect(document.querySelector(".detail-title")).toBeNull());
+  const pending = Promise.withResolvers<void>();
+  const healthyFetch = globalThis.fetch;
+  let heldReads = 0;
+  globalThis.fetch = async (input, init) => {
+    heldReads++;
+    await pending.promise;
+    return healthyFetch(input, init);
+  };
+  try {
+    firePopstate(`/${collection}/github/acme/widgets/${number}`);
+    await vi.waitFor(() => expect(heldReads).toBeGreaterThan(0));
+    expect(document.querySelector(".detail-title")?.textContent).toBe(title);
+  } finally {
+    pending.resolve();
+  }
+});

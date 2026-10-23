@@ -123,7 +123,10 @@ function renderPRListView(options: RenderPRListViewOptions = {}) {
           },
         ],
         [NAVIGATE_KEY, options.navigate ?? vi.fn()],
-        [STORES_KEY, { detail: detailStore, pulls: { getPulls: () => [] } }],
+        [
+          STORES_KEY,
+          { detail: detailStore, pulls: { getPulls: () => [] }, settings: { getConfiguredRepos: () => [] } },
+        ],
       ]),
     }),
   };

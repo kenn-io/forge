@@ -1370,7 +1370,7 @@ Not every visibility control means "remove this entity entirely."
 - Provider data-change events must refresh mounted issue details from the local cache;
   waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
   without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
-- Visible issue-page polls install the conditional sync response each minute, read the local cache on sync failure, and reconcile lists when `UpdatedAt` changes (`frontend/src/lib/stores/issues.svelte.ts::startIssueDetailPolling`).
+- Visible issue-page polls conditionally check GitHub each minute before reading the local cache and reconcile lists when `UpdatedAt` changes (`frontend/src/lib/stores/issues.svelte.ts::startIssueDetailPolling`).
 - Background detail reads — timer polls and provider-event refreshes — skip while provider
   synchronization is active; overlap lets cached data supersede the authoritative response
   (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).

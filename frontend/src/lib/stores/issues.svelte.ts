@@ -1054,8 +1054,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       if (detailSyncing || opts.getAirplaneMode?.()) return;
       const generation = issueSyncGeneration;
       const updatedAt = issueDetail?.issue.UpdatedAt;
-      const envelopeTick = nextWorkspaceLifecycleTick();
-      const detail = yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
+      yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
               { ...providerHostRouteParams(ref), number: ref.number },
@@ -1067,15 +1066,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { if_changed: true },
               { signal },
             ),
-      ).pipe(
-        Effect.map((data): IssueDetail => ({ ...data, events: data.events ?? [] })),
-        Effect.catch(() => Effect.succeed(undefined)),
-      );
-      if (detail) {
-        yield* installIssueDetail(ref, detail, envelopeTick, generation, true);
-      } else {
-        yield* refreshIssueDetailProgram(ref, generation);
-      }
+      ).pipe(Effect.catch(() => Effect.void));
+      yield* refreshIssueDetailProgram(ref, generation);
       if (generation === issueSyncGeneration && issueDetail?.issue.UpdatedAt !== updatedAt) {
         reconcileListsAfterDetailSync();
       }

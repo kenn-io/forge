@@ -90,8 +90,8 @@ func TestAPISyncIssueIfChanged(t *testing.T) {
 				assert.Zero(providerCalls)
 			} else {
 				assert.Equal(1, providerCalls)
+				assert.Zero(budget.Spent(), "304 refunds the minute poll")
 			}
-			assert.Zero(budget.Spent(), "304 refunds the minute poll")
 		})
 	}
 }

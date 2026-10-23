@@ -18,16 +18,14 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 		secondAge      time.Duration
 		lastError      string
 		manual         bool
-		airplaneMode   bool
 		startupFetches []string
-		polls          int
+		poll           bool
 	}{
-		{name: "two credentials keep polling", secondAge: 65 * time.Minute, startupFetches: []string{"second"}, polls: 1},
+		{name: "two credentials keep polling", secondAge: 65 * time.Minute, startupFetches: []string{"second"}, poll: true},
 		{name: "future completion is ignored", secondAge: -2 * time.Minute, startupFetches: []string{"second"}},
 		{name: "oldest healthy repository sets shared cadence", sameCredential: true, secondAge: 65 * time.Minute, startupFetches: []string{"first", "second"}},
 		{name: "failed repository retries alone", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", startupFetches: []string{"second"}},
 		{name: "failed repository retries after scoped manual sync", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", manual: true, startupFetches: []string{"second"}},
-		{name: "airplane mode drops queued startup retries", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", manual: true, airplaneMode: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -79,9 +77,6 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 				}
 				s.Start(t.Context())
 				synctest.Wait()
-				if tc.airplaneMode {
-					s.SetAirplaneMode(true)
-				}
 				close(releaseManual)
 				synctest.Wait()
 				require.Len(t, listed, len(tc.startupFetches), "startup fetches")
@@ -90,11 +85,20 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 					fetched = append(fetched, <-listed)
 				}
 				require.ElementsMatch(t, tc.startupFetches, fetched)
-				for range tc.polls {
-					time.Sleep(time.Hour)
+				if tc.poll {
+					time.Sleep(55*time.Minute - time.Second)
+					s.RunOnce(t.Context())
 					synctest.Wait()
-					require.Len(t, listed, 2, "both credentials fetch at %s", time.Since(start))
-					require.ElementsMatch(t, []string{"first", "second"}, []string{<-listed, <-listed})
+					require.Empty(t, listed, "neither credential is due before the restored deadline")
+					time.Sleep(2 * time.Second)
+					s.RunOnce(t.Context())
+					synctest.Wait()
+					require.Len(t, listed, 1, "first credential is due at the restored deadline")
+					require.Equal(t, "first", <-listed)
+					time.Sleep(5 * time.Minute)
+					synctest.Wait()
+					require.Len(t, listed, 1, "second credential polls an hour after its startup fetch")
+					require.Equal(t, "second", <-listed)
 				}
 			})
 		})

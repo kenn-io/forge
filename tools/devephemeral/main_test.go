@@ -378,7 +378,6 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal("./scripts/dev-stack-backend.sh", specs.backend.name)
 	assert.Contains(specs.backend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
 	assert.Contains(specs.backend.env, "KENN_FORGE_LOG_FILE=/tmp/kenn-forge-dev/logs/backend-dev.log")
-	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=0")
 	assert.Equal("./scripts/frontend-dev.sh", specs.frontend.name)
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
@@ -532,20 +531,6 @@ exec "$FORGE_TEST_BIN" "$@"
 	case <-time.After(5 * time.Second):
 		require.Fail("timed out waiting for dev-ephemeral shutdown")
 	}
-}
-
-func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
-	assert := assert.New(t)
-	t.Setenv("TELEMETRY_ENABLED", "1")
-
-	specs := buildCommandSpecs(ephemeralRun{
-		configPath:   "/tmp/kenn-forge-dev/config.toml",
-		backendURL:   "http://127.0.0.1:39301",
-		frontendPort: 39302,
-		logDir:       "/tmp/kenn-forge-dev/logs",
-	}, false, nil)
-
-	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
 }
 
 func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {

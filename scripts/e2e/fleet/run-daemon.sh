@@ -71,11 +71,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-go_build_args=(-o "${binary}")
-if [[ -n "${KENN_FORGE_GO_BUILD_TAGS:-}" ]]; then
-  go_build_args=(-tags "${KENN_FORGE_GO_BUILD_TAGS}" "${go_build_args[@]}")
-fi
-go build "${go_build_args[@]}" ./cmd/kenn-forge
+go build -o "${binary}" ./cmd/kenn-forge
 
 "${binary}" serve --config "${config}" &
 forge_pid=$!

@@ -55,22 +55,6 @@ func enableTelemetryEnv(t *testing.T) {
 	})
 }
 
-func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	enableTelemetryEnv(t)
-	database := dbtest.Open(t)
-
-	reporter, err := NewReporter(Options{Database: database, Version: "v1.2.3"})
-	require.NoError(err)
-
-	assert.False(reporter.Enabled())
-	_, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
-	require.NoError(err)
-	assert.False(found)
-}
-
 func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

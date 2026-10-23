@@ -42,11 +42,6 @@ func TestMain(m *testing.M) {
 	if code, ok := testtmux.CommandWrapperExitCode(); ok {
 		os.Exit(code)
 	}
-	if os.Getenv("TELEMETRY_ENABLED") == "" {
-		if err := os.Setenv("TELEMETRY_ENABLED", "0"); err != nil {
-			panic(err)
-		}
-	}
 	runtimeDir, err := os.MkdirTemp("", "kenn-forge-test-home-")
 	if err != nil {
 		panic(err)

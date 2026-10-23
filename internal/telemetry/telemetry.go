@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
-	"testing"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -22,7 +21,6 @@ const (
 	envPrefix            = "KENN_FORGE"
 	InstallIDMetadataKey = "telemetry.install_id"
 	installedAtKey       = "telemetry.install_created_at"
-	postHogAPIKey        = "phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf"
 	postHogEndpoint      = "https://us.i.posthog.com"
 )
 
@@ -184,14 +182,12 @@ func UIEventAllowed(event string) bool {
 	return EventAllowed(event) && sourceForEvent(strings.TrimSpace(event)) == "backend"
 }
 
+// NewReporter reports to PostHog only when release builds set the project
+// key at link time; other builds get a reporter that sends nothing.
 func NewReporter(opts Options) (*Reporter, error) {
-	if testing.Testing() {
-		return DisabledReporter(), nil
-	}
 	return newReporter(opts, time.Now())
 }
 
-// newReporter is NewReporter without the go test guard.
 func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	if !enabledInBuild() || !EnabledFromEnv() {
 		return DisabledReporter(), nil
@@ -209,7 +205,6 @@ func newReporter(opts Options, now time.Time) (*Reporter, error) {
 	}
 
 	base := posthog.Options{
-		APIKey:      postHogAPIKey,
 		Endpoint:    postHogEndpoint,
 		Application: applicationSlug,
 		EnvPrefix:   envPrefix,

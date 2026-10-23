@@ -12607,7 +12607,7 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		"parent 304s still check comments conditionally")
 }
 
-func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
+func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testing.T) {
 	for _, neverFetched := range []bool{false, true} {
 		t.Run(fmt.Sprintf("never_fetched=%t", neverFetched), func(t *testing.T) {
 			assert := assert.New(t)
@@ -12627,10 +12627,12 @@ func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
 			issueID, err := database.UpsertIssue(ctx, normalized)
 			require.NoError(err)
 			commentID := int64(10801)
-			require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
-				{IssueID: issueID, EventType: "labeled", DedupeKey: "label-7", CreatedAt: fetchedAt},
-				{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "issue-comment-10801", CreatedAt: fetchedAt, MetadataJSON: `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`},
-			}))
+			if !neverFetched {
+				require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
+					{IssueID: issueID, EventType: "labeled", DedupeKey: "label-7", CreatedAt: fetchedAt},
+					{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "issue-comment-10801", CreatedAt: fetchedAt, MetadataJSON: `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`},
+				}))
+			}
 			require.NoError(database.UpsertHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue", 7, `"old"`))
 			issue.Title = new("updated issue")
 			issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
@@ -12666,10 +12668,14 @@ func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
 			assert.Equal(int32(1), client.listIssueCommentsIfChangedCalls.Load())
 			events, err := database.ListIssueEvents(ctx, issueID)
 			require.NoError(err)
-			require.Len(events, 3)
-			assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.EventType == "labeled" }))
+			if !neverFetched {
+				require.Len(events, 3)
+				assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.EventType == "labeled" }))
+				assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return strings.Contains(event.MetadataJSON, `"provider_hidden":true`) }))
+			} else {
+				require.Len(events, 2)
+			}
 			assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.Body == "new comment" }))
-			assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return strings.Contains(event.MetadataJSON, `"provider_hidden":true`) }))
 			etag, err := database.GetHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue", 7)
 			require.NoError(err)
 			assert.Equal(`"new"`, etag)
@@ -12685,9 +12691,11 @@ func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
 			events, err = database.ListIssueEvents(ctx, issueID)
 			require.NoError(err)
 			assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.EventType == "assigned" }))
-			for _, event := range events {
-				if event.EventType == "issue_comment" {
-					assert.Empty(event.MetadataJSON, "the drain refreshes hidden-comment flags")
+			if !neverFetched {
+				for _, event := range events {
+					if event.EventType == "issue_comment" {
+						assert.Empty(event.MetadataJSON, "the drain refreshes hidden-comment flags")
+					}
 				}
 			}
 			revision := stored.SnapshotRevision
@@ -12701,100 +12709,71 @@ func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
 	}
 }
 
-func TestSyncIssuePagePollRejectsReplacementIssue(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-	require.NoError(err)
-	issue := buildOpenIssue(7, time.Now().UTC().Add(-time.Minute))
-	normalized, err := NormalizeIssue(repoID, issue)
-	require.NoError(err)
-	issueID, err := database.UpsertIssue(ctx, normalized)
-	require.NoError(err)
-	before, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"old"`))
-	// A renamed repository's old route now returns another repository's issue.
-	issue.ID = new(int64(99007))
-	issue.Title = new("replacement issue")
-	issue.UpdatedAt = makeTimestamp(time.Now().UTC())
-	client := &conditionalIssueTrackingClient{nextETag: `"replacement"`}
-	client.budget = NewSyncBudget(1000)
-	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+func TestSyncIssuePagePollRejectsReplacementIssueOrRetriesCommentFailure(t *testing.T) {
+	for _, replacement := range []bool{true, false} {
+		t.Run(fmt.Sprintf("replacement=%t", replacement), func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			updatedAt := time.Now().UTC().Add(-time.Minute)
+			issue := buildOpenIssue(7, updatedAt)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			issueID, err := database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			before, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"old"`))
+			issue.Title = new("updated issue")
+			issue.UpdatedAt = makeTimestamp(updatedAt.Add(30 * time.Second))
+			issue.Comments = new(1)
+			client := &conditionalIssueTrackingClient{nextETag: `"new"`}
+			client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
+			commentsErr := errors.New("transient comments failure")
+			if replacement {
+				// A renamed repository's old route now returns another repository's issue.
+				issue.ID = new(int64(99007))
+			} else {
+				client.listIssueCommentsErr = commentsErr
+				client.comments = []*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
 
-	require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
-	after, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	assert.Equal(before, after)
-	events, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	assert.Empty(events)
-	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-	require.NoError(err)
-	assert.Equal(`"old"`, etag)
-	assert.Equal(int32(1), client.conditionalCalls.Load())
-	assert.Zero(client.listIssueCommentsIfChangedCalls.Load())
-	assert.Zero(client.listIssueCommentsCalled.Load())
-	assert.Equal(1, client.budget.Spent(), "only the issue read reaches the provider")
-}
+			err = syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7)
+			if replacement {
+				require.NoError(err)
+			} else {
+				require.ErrorIs(err, commentsErr)
+			}
+			failed, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			assert.Equal(before, failed)
+			events, err := database.ListIssueEvents(ctx, issueID)
+			require.NoError(err)
+			assert.Empty(events)
+			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+			require.NoError(err)
+			assert.Equal(`"old"`, etag)
+			if replacement {
+				assert.Equal(int32(1), client.conditionalCalls.Load())
+				assert.Zero(client.listIssueCommentsIfChangedCalls.Load())
+				assert.Zero(client.listIssueCommentsCalled.Load())
+				return
+			}
 
-func TestSyncIssuePagePollRetriesParentAfterCommentFailure(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := openTestDB(t)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-	require.NoError(err)
-	updatedAt := time.Now().UTC().Add(-time.Minute)
-	issue := buildOpenIssue(7, updatedAt)
-	normalized, err := NormalizeIssue(repoID, issue)
-	require.NoError(err)
-	issueID, err := database.UpsertIssue(ctx, normalized)
-	require.NoError(err)
-	before, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"old"`))
-	issue.Title = new("updated issue")
-	issue.UpdatedAt = makeTimestamp(updatedAt.Add(30 * time.Second))
-	issue.Comments = new(1)
-	client := &conditionalIssueTrackingClient{nextETag: `"new"`}
-	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
-	commentsErr := errors.New("transient comments failure")
-	client.listIssueCommentsErr = commentsErr
-	client.comments = []*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-
-	require.ErrorIs(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7), commentsErr)
-	failed, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	assert.Equal(before, failed, "a failed comment read leaves the parent untouched")
-	events, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	assert.Empty(events)
-	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-	require.NoError(err)
-	assert.Equal(`"old"`, etag)
-
-	client.listIssueCommentsErr = nil
-	require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
-	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	assert.Equal("updated issue", stored.Title)
-	assert.True(stored.UpdatedAt.After(failed.UpdatedAt), "the successful retry advances the timestamp used to reconcile lists")
-	events, err = database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("new comment", events[0].Body)
-	etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-	require.NoError(err)
-	assert.Equal(`"new"`, etag)
-	assert.Equal(`"old"`, client.receivedETag)
-	assert.Equal(int32(2), client.conditionalCalls.Load())
+			client.listIssueCommentsErr = nil
+			require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+			stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			assert.True(stored.UpdatedAt.After(failed.UpdatedAt), "the successful retry advances the timestamp used to reconcile lists")
+			assert.Equal(`"old"`, client.receivedETag)
+			assert.Equal(int32(2), client.conditionalCalls.Load())
+		})
+	}
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {

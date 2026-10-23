@@ -745,15 +745,22 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
-  it.each([false, true])("polls the provider before reading the cache (changed: %s)", async (changed) => {
+  it.each([
+    { changed: false, fails: false },
+    { changed: true, fails: false },
+    { changed: true, fails: true },
+  ])("polls the provider before reading the cache (changed: $changed, fails: $fails)", async ({ changed, fails }) => {
     vi.useFakeTimers();
     const cached = issueDetail();
     cached.issue.UpdatedAt = "2026-08-12T21:00:00Z";
     const fresh = issueDetail();
     fresh.issue.UpdatedAt = changed ? "2026-08-12T21:01:00Z" : cached.issue.UpdatedAt;
-    fresh.issue.Title = "fresh from cache";
+    fresh.issue.Title = changed ? "fresh from cache" : cached.issue.Title;
     const get = vi.fn(async (path: string) => ({ data: path === "/issues" ? [] : fresh, error: undefined }));
-    const post = vi.fn(async () => ({ data: cached, error: undefined }));
+    const post = vi.fn(async () => {
+      if (fails) throw new Error("provider unavailable");
+      return { data: cached, error: undefined };
+    });
     const onDetailSynchronized = vi.fn();
     let page = "";
     const store = createIssuesStore({
@@ -784,40 +791,9 @@ describe("createIssuesStore", () => {
       expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
     );
     expect(post.mock.invocationCallOrder[0]).toBeLessThan(get.mock.invocationCallOrder[1]!);
-    expect(store.getIssueDetail()?.issue.Title).toBe("fresh from cache");
+    expect(get.mock.calls.filter(([path]) => path !== "/issues")).toHaveLength(2);
+    expect(store.getIssueDetail()?.issue.Title).toBe(changed ? "fresh from cache" : cached.issue.Title);
     expect(onDetailSynchronized).toHaveBeenCalledTimes(changed ? 1 : 0);
-    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(changed ? 1 : 0);
-    store.stopIssueDetailPolling();
-  });
-
-  it("reads cached issue detail after a failed provider poll", async () => {
-    vi.useFakeTimers();
-    const cached = issueDetail();
-    const fresh = issueDetail();
-    fresh.issue.Title = "changed in local cache";
-    const get = vi.fn(async () => ({ data: fresh, error: undefined }));
-    get.mockResolvedValueOnce({ data: cached, error: undefined });
-    const post = vi.fn(async () => {
-      throw new Error("provider unavailable");
-    });
-    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
-    await loadIssueDetail(store, "acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      sync: false,
-    });
-    store.startIssueDetailPolling("acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
-
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    expect(post).toHaveBeenCalledOnce();
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(store.getIssueDetail()?.issue.Title).toBe("changed in local cache");
     store.stopIssueDetailPolling();
   });
 

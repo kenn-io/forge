@@ -15,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/platform"
 )
@@ -314,7 +315,7 @@ func TestDeleteWorkspacePersistsFailureAfterAdmission(t *testing.T) {
 		t, database, "ws-failure", filepath.Join(base, "missing"), "ready",
 	)
 	manager := workspacetest.NewManager(t, database, base)
-	manager.SetTmuxCommand([]string{script})
+	manager.SetTmuxCommand(testscript.Command(script))
 	var events []Event
 	handler := New(Deps{
 		DB:         database,

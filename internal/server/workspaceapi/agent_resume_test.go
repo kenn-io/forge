@@ -23,6 +23,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -160,7 +161,7 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			if status == "fairness" {
 				wrapper := filepath.Join(dir, "tmux-wrapper")
 				require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nif [ \"$1\" = has-session ] && [ \"$3\" = blocked ]; then\n touch "+shellquote.Join(blocked)+"\n exec sleep 60\nfi\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
-				tmux = []string{wrapper}
+				tmux = testscript.Command(wrapper)
 			}
 			agent := filepath.Join(dir, "agent")
 			require.NoError(os.WriteFile(agent, []byte(`#!/bin/sh
@@ -173,7 +174,7 @@ exec sleep 60
 				WrapAgentSessionsInTmux: true,
 				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 				TmuxOwnerMarker:         "kenn-forge:test-resume",
-				Targets:                 []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+				Targets:                 []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent, "--model", "model-a")}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 			})
 			t.Cleanup(func() {
 				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
@@ -258,7 +259,7 @@ exec sleep 60
 					return
 				}
 				targets[0].Available = true
-				targets[0].Command = []string{agent, "--model", "model-a"}
+				targets[0].Command = testscript.Command(agent, "--model", "model-a")
 				runtime.UpdateTargets(targets)
 			}
 			if status == "unavailable" {

@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
@@ -53,7 +54,7 @@ func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 	database := dbtest.Open(t)
 	manager := workspacetest.NewManager(t, database, t.TempDir())
 	if tmuxScript != "" {
-		manager.SetTmuxCommand([]string{tmuxScript})
+		manager.SetTmuxCommand(testscript.Command(tmuxScript))
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	handler := New(Deps{
@@ -1159,7 +1160,7 @@ fi
 				Label: "Worker", Kind: "agent", Scope: "session", TmuxSession: tc.sibling,
 			}))
 			manager := workspacetest.NewManager(t, database, t.TempDir())
-			manager.SetTmuxCommand([]string{scriptPath})
+			manager.SetTmuxCommand(testscript.Command(scriptPath))
 			handler := New(Deps{DB: database, Workspaces: manager})
 			if tc.slowSample {
 				now := time.Now()

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/testscript"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/testutil/dbtest"
@@ -107,7 +108,7 @@ agent_sessions = false
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	tmuxPath, recordPath := writeRuntimeCommandFakeTmux(t)
-	cfg.Tmux.Command = []string{tmuxPath}
+	cfg.Tmux.Command = testscript.Command(tmuxPath)
 	database := dbtest.Open(t)
 	mock := &serverfake.MockGH{}
 	clients := map[string]ghclient.Client{"github.com": mock}

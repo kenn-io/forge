@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/testscript"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -140,7 +141,7 @@ exit 0
 		shellquote.Join(tmux.killedLaunchesPath),
 	)
 	require.NoError(t, os.WriteFile(tmuxPath, []byte(script), 0o755))
-	tmux.command = []string{tmuxPath}
+	tmux.command = testscript.Command(tmuxPath)
 
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfgContent := `

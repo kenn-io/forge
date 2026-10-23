@@ -20,6 +20,7 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitfixture"
+	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -75,7 +76,7 @@ rm -f quit args
 					AgentExitDir:            agentExits,
 					Targets: []localruntime.LaunchTarget{{
 						Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true,
-						Command: []string{agent, "--model", "model-a"},
+						Command: testscript.Command(agent, "--model", "model-a"),
 					}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 					OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
 				})
@@ -339,7 +340,7 @@ rm -f quit started
 				AgentExitDir:            t.TempDir(),
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true,
-					Command: []string{agent},
+					Command: testscript.Command(agent),
 				}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 				// The exit callback has not run yet when cleanup checks.
 				OnSessionExit: func(localruntime.SessionInfo) {},
@@ -425,7 +426,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-ready",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
 	})
@@ -538,7 +539,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-replaced",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		// Hold the exit until a replacement server runs.
 		OnSessionExit: func(info localruntime.SessionInfo) {
@@ -687,7 +688,7 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 	failing := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(failing, []byte("#!/bin/sh\necho \"can't find session: x\" >&2\nexit 1\n"), 0o755))
 	broken := workspacetest.NewManager(t, database, t.TempDir())
-	broken.SetTmuxCommand([]string{failing})
+	broken.SetTmuxCommand(testscript.Command(failing))
 	brokenHandler := New(Deps{DB: database, Workspaces: broken})
 	one := map[string]bool{"0000000000000b01": true}
 	assert.Equal(one, brokenHandler.restoreTerminalsAfterServerLoss(ctx, nil, one))
@@ -737,7 +738,7 @@ func TestRestoreTerminalsAfterServerLossRotatesPastAStuckWorkspace(t *testing.T)
 		}))
 	}
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
-	workspaces.SetTmuxCommand([]string{wrapper})
+	workspaces.SetTmuxCommand(testscript.Command(wrapper))
 	handler := New(Deps{DB: database, Workspaces: workspaces})
 	// A pass runs out of budget once it reaches the stuck workspace.
 	pass := func(left map[string]bool) map[string]bool {
@@ -788,12 +789,12 @@ func TestStartupKeepsUnrestoredTerminalsOutstanding(t *testing.T) {
 		}))
 	}
 	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:     []string{wrapper},
+		TmuxCommand:     testscript.Command(wrapper),
 		PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 	})
 	t.Cleanup(runtime.Shutdown)
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
-	workspaces.SetTmuxCommand([]string{wrapper})
+	workspaces.SetTmuxCommand(testscript.Command(wrapper))
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	baseExists := func(id string) bool {
 		return procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "has-session", "-t", "forge-"+id)...).Run() == nil
@@ -847,7 +848,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-stop-first",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
 	})
@@ -944,13 +945,13 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 	agent := filepath.Join(t.TempDir(), "agent")
 	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > args.tmp && mv args.tmp args\nexec sleep 600\n"), 0o755))
 	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             []string{wrapper},
+		TmuxCommand:             testscript.Command(wrapper),
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-stuck",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
-		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: testscript.Command(wrapper)}},
 	})
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
@@ -959,7 +960,7 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
-	workspaces.SetTmuxCommand([]string{wrapper})
+	workspaces.SetTmuxCommand(testscript.Command(wrapper))
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	handler.baseRestoreBudget = 200 * time.Millisecond
 	handler.setRuntimeRecoveryPending("saved-runtime", true)
@@ -1011,7 +1012,7 @@ func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-replaced",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(info localruntime.SessionInfo) {
 			<-release
@@ -1089,13 +1090,13 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 	agent := filepath.Join(t.TempDir(), "agent")
 	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
 	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             []string{wrapper},
+		TmuxCommand:             testscript.Command(wrapper),
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-retained",
 		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
-		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
+			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: testscript.Command(agent),
+		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: testscript.Command(wrapper)}},
 	})
 	t.Cleanup(func() {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
@@ -1104,7 +1105,7 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
-	workspaces.SetTmuxCommand([]string{wrapper})
+	workspaces.SetTmuxCommand(testscript.Command(wrapper))
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },

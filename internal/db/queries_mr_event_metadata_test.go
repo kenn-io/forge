@@ -203,4 +203,22 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 	require.NoError(err)
 	assert.True(applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
+	for _, tc := range []struct{ metadata, author string }{
+		{`{"commit_author":"a"}`, "a"},
+		{`{"commit_author":"b"}`, "b"},
+		{`{}`, "developer"},
+	} {
+		applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, false, map[string]string{"commit-1": tc.metadata})
+		require.NoError(err)
+		require.True(applied)
+		opts := ListActivityOpts{Types: []string{"commit"}, Limit: 50}
+		items, err := database.ListActivity(ctx, opts)
+		require.NoError(err)
+		require.Len(items, 1)
+		assert.Equal(tc.author, items[0].CommitAuthor)
+		opts.Search = tc.author
+		items, err = database.ListActivity(ctx, opts)
+		require.NoError(err)
+		assert.Len(items, 1)
+	}
 }

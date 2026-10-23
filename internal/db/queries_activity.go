@@ -150,7 +150,7 @@ func listActivityWithQueryer(
 			"("+strings.Join(itemTypeClauses, " OR ")+")")
 	}
 
-	prCommitIdentity := "COALESCE(" + activityCommitMetadataSQL("e.metadata_json") + ", e.author)"
+	prCommitIdentity := "COALESCE(" + activityCommitAuthorSQL("e") + ", e.author)"
 	searchQuery := ParseSearchQuery(opts.Search)
 	searchIdentityCondition := ""
 	searchNamedColumn, searchEmptyColumn := "", ""
@@ -1142,14 +1142,14 @@ func lowerLikePattern(term string) string {
 	return "%" + strings.ToLower(term) + "%"
 }
 
-// Metadata records the original author even when the event actor is a committer.
-func activityCommitMetadataSQL(metadata string) string {
-	return "CASE WHEN json_valid(" + metadata + ") THEN NULLIF(json_extract(" + metadata + ", '$.commit_author'), '') END"
+// The cached author records original authorship even when the actor is a committer.
+func activityCommitAuthorSQL(alias string) string {
+	return "NULLIF(" + alias + ".commit_author, '')"
 }
 
 // Resolve only the candidate's exact repository and SHA through the commit index.
 func activityBranchCommitIdentitySQL(repoID, sha, actor, fallback string) string {
-	metadata := activityCommitMetadataSQL("ce.metadata_json")
+	metadata := activityCommitAuthorSQL("ce")
 	return fmt.Sprintf(`COALESCE((
 	    SELECT COALESCE(%[1]s, %[4]s)
 	    FROM forge_mr_events ce

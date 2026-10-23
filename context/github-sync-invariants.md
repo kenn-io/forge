@@ -228,6 +228,7 @@ PR timeline storage is intentionally selective.
 - Keep the existing event families stable: comments, reviews, commits, force
   pushes, and the currently supported PR system events.
 - GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve every known original author in commit metadata even when it matches the actor, and fall back independently to author identity/time when committer data is absent.
+- Event inserts and metadata rewrites cache the original author in `forge_mr_events.commit_author`; Activity reads that column. (`internal/db/queries.go::upsertMREventsTx`, `internal/db/queries.go::updateMREventMetadataTx`)
 - Review comments are UI-aware but are not part of the stored sync model unless
   they can be fetched within the supported timeline path.
 - If bulk sync persists PR system events, detail sync must persist the same

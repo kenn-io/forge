@@ -1920,7 +1920,7 @@ func advanceEventParentRevisionsTx(ctx context.Context, tx *sql.Tx, table string
 	return nil
 }
 
-// updateMREventMetadataTx rewrites only metadata_json for the matching event
+// updateMREventMetadataTx rewrites metadata_json and its cached commit author for the matching event
 // dedupe keys. Derived-state writers (commit liveness) ride this inside the
 // same revision-guarded transaction as the rest of their round's snapshot, so
 // a stale round can never land metadata and newer full-row event fields are
@@ -1936,7 +1936,7 @@ func updateMREventMetadataTx(
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 		UPDATE forge_mr_events
-		SET metadata_json = ?
+		SET metadata_json = ?, commit_author = CASE WHEN event_type = 'commit' THEN ? ELSE '' END
 		WHERE merge_request_id = ? AND dedupe_key = ?`)
 	if err != nil {
 		return fmt.Errorf("prepare update mr event metadata: %w", err)
@@ -1944,7 +1944,7 @@ func updateMREventMetadataTx(
 	defer stmt.Close()
 	for dedupeKey, metadataJSON := range metadataByDedupeKey {
 		if _, err := stmt.ExecContext(
-			ctx, metadataJSON, mergeRequestID, dedupeKey,
+			ctx, metadataJSON, mrEventCommitAuthor("commit", metadataJSON), mergeRequestID, dedupeKey,
 		); err != nil {
 			return fmt.Errorf(
 				"update mr event metadata (dedupe_key=%s): %w",
@@ -1955,6 +1955,19 @@ func updateMREventMetadataTx(
 	return nil
 }
 
+func mrEventCommitAuthor(eventType, metadataJSON string) string {
+	if eventType != "commit" {
+		return ""
+	}
+	var metadata struct {
+		CommitAuthor string `json:"commit_author"`
+	}
+	if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+		return ""
+	}
+	return metadata.CommitAuthor
+}
+
 func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1962,8 +1975,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -1979,6 +1992,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
+			    commit_author = excluded.commit_author,
 			    created_at    = excluded.created_at,
 			    direct_url    = COALESCE(NULLIF(excluded.direct_url, ''), direct_url),
 			    -- Events without a thread id come from provider responses
@@ -2032,6 +2046,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		if _, err := stmt.ExecContext(ctx,
 			e.MergeRequestID, e.PlatformID, e.PlatformExternalID, e.EventType, e.Author, e.AuthorAssociation, e.Summary, e.Body,
 			e.MetadataJSON, e.CreatedAt, e.DedupeKey, e.DirectURL, e.ThreadID, e.PositionJSON, e.Resolvable, e.Resolved,
+			mrEventCommitAuthor(e.EventType, e.MetadataJSON),
 		); err != nil {
 			return fmt.Errorf("insert mr event (dedupe_key=%s): %w", e.DedupeKey, err)
 		}

@@ -2648,6 +2648,7 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 		otherRepo, sharedSHA                                                                             bool
 	}{
 		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
+		{name: "upsert refreshes original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", prCommitAuthor: "updated-login", branchCommitAuthor: "updated-login"},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
 		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator"},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
@@ -2680,6 +2681,10 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 			}
 			event := MREvent{MergeRequestID: mrID, EventType: eventType, Summary: summary, Author: tc.actor, MetadataJSON: tc.metadata, CreatedAt: baseTime(), DedupeKey: "commit-" + sha[:12]}
 			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
+			if tc.name == "upsert refreshes original author" {
+				event.MetadataJSON = `{"commit_author":"updated-login"}`
+				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{event}))
+			}
 			if tc.sharedSHA {
 				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
 				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{

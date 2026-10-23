@@ -191,10 +191,11 @@ Rules:
   and thoughts are their own entries (`internal/workspace/localruntime/acp_client.go::ACP.appendContentLocked`).
 - Do not suppress external URLs in ACP Markdown images; use normal browser image loading
   (maintainer decision; `frontend/src/lib/components/acp/ChatMessageView.svelte::decorate`).
-- Resolve image references on the agent host for live and saved chat, without workspace,
-  symlink, or size restrictions, but read only regular files (symlinks resolved first) through
-  Kit's `fslink.ReadFile`; pipes, sockets, and devices can block or never end (maintainer
-  decision; `internal/server/workspaceapi/acp_images.go::acpContentImagePreview`).
+- Resolve image, video, and audio references on the agent host for live and saved chat, without
+  workspace, symlink, or size restrictions, but read only regular files (symlinks resolved first)
+  through Kit's `fslink.ReadFile`; pipes, sockets, and devices can block or never end. ACP has no
+  video block, so video becomes an embedded blob resource (maintainer decision;
+  `internal/server/workspaceapi/acp_media.go::acpContentMediaPreview`).
 - Never cap or truncate ACP data in either direction (prompts, commands, plans, media, tool
   output, errors, websocket frames, command backlogs); a session too large for the UI pages older
   history in. The chat socket's reader never waits on queued prompts, so a stop or answer

@@ -15,7 +15,7 @@ import (
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
-func TestACPImagePreviewFollowsSymlinksAndSkipsSpecialFiles(t *testing.T) {
+func TestACPMediaPreviewFollowsSymlinksAndSkipsSpecialFiles(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -29,14 +29,14 @@ func TestACPImagePreviewFollowsSymlinksAndSkipsSpecialFiles(t *testing.T) {
 	require.NoError(syscall.Mkfifo(fifo, 0o600))
 
 	linked := &localruntime.ACPContent{Type: "resource_link", URI: link}
-	require.True(acpContentImagePreview(linked))
+	require.True(acpContentMediaPreview(linked))
 	assert.Equal("image", linked.Type)
 	assert.Equal(base64.StdEncoding.EncodeToString(image), linked.Data)
 
 	for _, path := range []string{fifo, "/dev/zero"} {
 		content := &localruntime.ACPContent{Type: "resource_link", URI: path}
 		done := make(chan bool, 1)
-		go func() { done <- acpContentImagePreview(content) }()
+		go func() { done <- acpContentMediaPreview(content) }()
 		select {
 		case changed := <-done:
 			assert.False(changed, path)

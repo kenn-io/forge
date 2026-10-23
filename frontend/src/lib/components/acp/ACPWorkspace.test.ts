@@ -1124,6 +1124,58 @@ describe("ACPWorkspace rich content", () => {
     expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: "Message agent" }));
   });
 
+  it("plays agent videos instead of showing a download card", async () => {
+    await openChat({
+      messages: [
+        assistant({
+          type: "resource",
+          uri: "/work/demo.mp4",
+          mimeType: "video/mp4",
+          data: "AAAAGGZ0eXA=",
+          title: "Demo",
+        }),
+      ],
+    });
+
+    const video = screen.getByLabelText("Demo") as HTMLVideoElement;
+    expect(video.tagName).toBe("VIDEO");
+    expect(video.getAttribute("src")).toBe("data:video/mp4;base64,AAAAGGZ0eXA=");
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+  });
+
+  it("shows tool videos and audio without expanding tools", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "kenn_forge_show_media",
+          toolCallId: "media",
+          status: "completed",
+          toolContent: [
+            {
+              type: "content",
+              content: {
+                type: "resource",
+                uri: "/work/demo.webm",
+                mimeType: "video/webm",
+                data: "GkXfow==",
+                title: "Recording",
+              },
+            },
+            {
+              type: "content",
+              content: { type: "audio", mimeType: "audio/wav", data: "UklGRg==", title: "Narration" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "1 tool" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByLabelText("Recording").tagName).toBe("VIDEO");
+    expect(screen.getByLabelText("Narration").tagName).toBe("AUDIO");
+  });
+
   it("links resource cards only for web addresses", async () => {
     await openChat({
       messages: [

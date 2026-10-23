@@ -20,14 +20,14 @@ export function decodeAppDescriptor(content: ChatContent): AppDescriptor | undef
 
 // data: isolates the proxy from Forge. The inner frame also omits
 // allow-same-origin so generated code cannot alter or execute in the proxy.
-export const sandboxProxyURL = `data:text/html;base64,${btoa(String.raw`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'self' about:; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}iframe{display:block}</style></head><body><script>
+export const sandboxProxyURL = `data:text/html;base64,${btoa(String.raw`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; frame-src 'self' about:; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body,iframe{margin:0;width:100%;height:100%;border:0}iframe{display:block}</style></head><body><script>
 let view;
 addEventListener('message', event => {
   if (event.source === parent) {
     if (event.data?.method === 'ui/notifications/sandbox-resource-ready' && !view) {
       view = document.createElement('iframe');
       view.setAttribute('sandbox', 'allow-scripts');
-      view.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data:; connect-src \'none\'; form-action \'none\'; base-uri \'none\'">' + event.data.params.html;
+      view.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; script-src \'unsafe-inline\'; style-src \'unsafe-inline\'; img-src data: blob:; media-src data: blob:; connect-src \'none\'; form-action \'none\'; base-uri \'none\'">' + event.data.params.html;
       document.body.append(view);
     } else if (view) view.contentWindow.postMessage(event.data, '*');
   } else if (view && event.source === view.contentWindow) parent.postMessage(event.data, '*');
@@ -41,6 +41,24 @@ const sdkCall = <A>(operation: string, call: () => Promise<A>) =>
     catch: (cause) => TransientTransportError.make({ operation, cause }),
   });
 
+// Moving an iframe in the DOM, as the session pool does when it parks or
+// shows a chat, discards its window and loads a fresh proxy. A bridge only
+// hears the window it connected to, so each window gets its own.
+const replacedWindow = (frame: HTMLIFrameElement, current: Window | null) =>
+  Effect.callback<Window>((resume) => {
+    // Cleanup runs only on interruption, so a resolved waiter detaches itself.
+    const onLoad = () => {
+      const next = frame.contentWindow;
+      if (!next || next === current) return;
+      frame.removeEventListener("load", onLoad);
+      resume(Effect.succeed(next));
+    };
+    frame.addEventListener("load", onLoad);
+    // The frame may have moved while the previous bridge was connecting.
+    onLoad();
+    return Effect.sync(() => frame.removeEventListener("load", onLoad));
+  });
+
 export const hostApp = Effect.fn("McpApp.host")(function* (
   frame: HTMLIFrameElement,
   descriptor: AppDescriptor,
@@ -48,8 +66,28 @@ export const hostApp = Effect.fn("McpApp.host")(function* (
   update: (status: string, height?: number) => void,
   requestLink: (url: string) => void,
 ) {
-  const scope = yield* Effect.scope;
   const { html } = yield* executeGeneratedRequest("load MCP App", (signal) => getMcpAppResource({ signal }));
+  let target = frame.contentWindow ?? (yield* replacedWindow(frame, null));
+  for (;;) {
+    const current = target;
+    target = yield* Effect.scoped(
+      bridgeApp(frame, current, html, descriptor, runtime, update, requestLink).pipe(
+        Effect.andThen(replacedWindow(frame, current)),
+      ),
+    );
+  }
+});
+
+const bridgeApp = Effect.fn("McpApp.bridge")(function* (
+  frame: HTMLIFrameElement,
+  target: Window,
+  html: string,
+  descriptor: AppDescriptor,
+  runtime: AppRuntime,
+  update: (status: string, height?: number) => void,
+  requestLink: (url: string) => void,
+) {
+  const scope = yield* Effect.scope;
   const bridge = yield* Effect.acquireRelease(
     Effect.sync(
       () =>
@@ -127,9 +165,7 @@ export const hostApp = Effect.fn("McpApp.host")(function* (
       }),
     ).catch(() => {});
   };
-  const target = frame.contentWindow;
-  if (!target) return;
   yield* sdkCall("connect MCP App", () => bridge.connect(new PostMessageTransport(target, target)));
+  // Also reloads a proxy that announced itself before this bridge listened.
   frame.src = sandboxProxyURL;
-  return yield* Effect.never;
 });

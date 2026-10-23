@@ -161,3 +161,10 @@ MCP Apps hosts discover the renderer from the tool's `ui.resourceUri` metadata.
 Forge ACP chat also recognizes the tool's embedded component descriptor, so
 agents must preserve its resource content. Include a text explanation for
 clients without widget rendering. Generated HTML stays in the transcript.
+
+## Showing local media
+
+To show the maintainer a screenshot, screen recording, or audio clip you
+produced, call `kenn_forge_show_media` with the file's absolute path. The Forge
+ACP chat displays it inline from the agent host; keep the file in place. Do not
+link local paths in Markdown or embed media in generated components.

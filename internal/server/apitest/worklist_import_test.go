@@ -282,6 +282,8 @@ func TestAPIWorklistLinkOpensAnEquivalentListInAnotherForge(t *testing.T) {
 	assert.Equal(worklist.ItemRef{
 		Type: "pr", Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget", Number: 42,
 	}, carried.Items[0].Item, "a link names the repository by route, not by this Forge's identity")
+	assert.Equal(worklist.CaveatWarning, carried.Items[0].CaveatLevel)
+	assert.Empty(carried.Items[1].CaveatLevel, "a link leaves out the default info level")
 
 	recipient, recipientDB := setupTestServer(t)
 	recipientClient := setupTestClient(t, recipient)

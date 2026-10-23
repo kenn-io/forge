@@ -185,6 +185,7 @@ stateDiagram-v2
   an agent rewrites the list, or its items go away, the link still opens it.
 - A copied link carries the title, recipe, author, and items with each
   repository's current route; never handled marks, snapshots, or stable IDs.
+  It names a caveat level only when it is above the default info.
   The server builds it: browsers cannot reproduce Go's DEFLATE. An inactive
   repository refuses the link, since another repository may hold its route
   (`internal/server/worklistapi/link.go::Handler.LinkService`).

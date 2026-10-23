@@ -318,10 +318,10 @@ fi
 		result, ok, _, err := srv.probeWorkspaceTmuxActivity(
 			t.Context(), &db.WorkspaceSummary{}, []string{"base", "idle", "working"},
 		)
-		require.NoError(err, "each session fits within the shared probe budget")
 		trace, readErr := os.ReadFile(tracePath)
 		t.Logf("attempt=%d elapsed=%s context=%v probe_error=%v result=%+v trace_error=%v trace=\n%s",
 			attempt, time.Since(started), t.Context().Err(), err, result, readErr, trace)
+		require.NoError(err, "each session fits within the shared probe budget")
 		require.NoError(readErr)
 		assert.True(ok, "healthy sessions must produce an activity sample")
 		assert.True(result.Working)

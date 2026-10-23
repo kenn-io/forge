@@ -7491,7 +7491,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		)
 		return true, false
 	}
-	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
+	if _, err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -9086,7 +9086,7 @@ func (s *Syncer) markUnchangedIssueDetailFetched(
 			return calls, err
 		}
 		if err == nil {
-			if err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
+			if _, err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
 				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 				return calls, err
 			}
@@ -10431,7 +10431,7 @@ func (s *Syncer) persistIssueComments(
 	repo RepoRef,
 	issue *db.Issue,
 	comments []*gh.IssueComment,
-) error {
+) (bool, error) {
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
@@ -10440,13 +10440,9 @@ func (s *Syncer) persistIssueComments(
 		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
-		return fmt.Errorf("replace issue comment events: %w", err)
+		return false, fmt.Errorf("replace issue comment events: %w", err)
 	}
-	if !applied {
-		return nil
-	}
-
-	return nil
+	return applied, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(
@@ -12073,11 +12069,9 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 		return err
 	}
 	if commentsErr == nil {
-		derived := db.IssueDerivedFields{
-			CommentCount:   len(comments),
-			LastActivityAt: computeIssueCommentLastActivity(issue, comments),
-		}
-		applied, err := s.replaceIssueCommentEvents(ctx, repo, number, issueID, revision, comments, nil, &derived, nil)
+		normalized.ID = issueID
+		normalized.SnapshotRevision = revision
+		applied, err := s.persistIssueComments(ctx, repo, normalized, comments)
 		if err != nil || !applied {
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 			return err

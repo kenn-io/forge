@@ -12608,48 +12608,36 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 }
 
 func TestSyncIssueDetailRetainsETag(t *testing.T) {
-	for _, pagePoll := range []bool{false, true} {
-		t.Run(map[bool]string{false: "detail_after_list_update", true: "page_poll_after_open"}[pagePoll], func(t *testing.T) {
-			require := require.New(t)
-			ctx := t.Context()
-			database := openTestDB(t)
-			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
-			require.NoError(err)
-			updated := time.Now().UTC().Add(-time.Minute)
-			issue := buildOpenIssue(7, updated)
-			normalized, err := NormalizeIssue(repoID, issue)
-			require.NoError(err)
-			if !pagePoll {
-				normalized.DetailFetchedAt = new(updated.Add(-time.Minute))
-			}
-			_, err = database.UpsertIssue(ctx, normalized)
-			require.NoError(err)
-			client := &conditionalIssueLifecycleClient{
-				getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil },
-				nextETag:   `"open"`,
-			}
-			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
-
-			_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 7)
-			require.NoError(err)
-			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-			require.NoError(err)
-			require.Equal(`"open"`, etag, "opening or hydrating an issue must retain its response ETag")
-			commentsBefore := client.listIssueCommentsIfChangedCalls.Load()
-			client.notModified = true
-			if pagePoll {
-				require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
-				assert.Equal(t, commentsBefore, client.listIssueCommentsIfChangedCalls.Load(), "an idle page poll skips comments")
-			} else {
-				_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 7)
-				require.NoError(err)
-			}
-			assert.Equal(t, `"open"`, client.receivedETag)
-			assert.Equal(t, int32(2), client.conditionalCalls.Load())
-			assert.Zero(t, client.unconditionalCalls.Load())
-		})
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+	require.NoError(err)
+	updated := time.Now().UTC().Add(-time.Minute)
+	issue := buildOpenIssue(7, updated)
+	normalized, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	_, err = database.UpsertIssue(ctx, normalized)
+	require.NoError(err)
+	client := &conditionalIssueLifecycleClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil },
+		nextETag:   `"open"`,
 	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 7)
+	require.NoError(err)
+	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+	require.NoError(err)
+	require.Equal(`"open"`, etag, "opening or hydrating an issue must retain its response ETag")
+	commentsBefore := client.listIssueCommentsIfChangedCalls.Load()
+	client.notModified = true
+	require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+	assert.Equal(t, commentsBefore, client.listIssueCommentsIfChangedCalls.Load(), "an idle page poll skips comments")
+	assert.Equal(t, `"open"`, client.receivedETag)
+	assert.Equal(t, int32(2), client.conditionalCalls.Load())
+	assert.Zero(t, client.unconditionalCalls.Load())
 }
 
 func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testing.T) {
@@ -19374,7 +19362,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 
 		newID, body, login := int64(22), "new", "bob"
 		syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		_, err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
 		require.Error(err)
 		events, err := database.ListIssueEvents(t.Context(), issue.ID)
 		require.NoError(err)

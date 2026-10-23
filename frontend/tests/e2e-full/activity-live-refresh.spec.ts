@@ -580,7 +580,7 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     await initialSync;
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
-    const checkpointComment = "Accepted before transient detail failure";
+    const checkpointComment = "Comment before transient detail failure";
     await persistActivityComment(page, server.info.base_url, checkpointComment);
     await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible({ timeout: 15_000 });
 

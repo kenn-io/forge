@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import * as docsBuild from "./build-docs.mjs";
 
@@ -140,4 +142,25 @@ test("site verification fails when a markdown twin or llms.txt entry is missing"
   await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
   await writeFile(path.join(siteRoot, "llms.txt"), "# Kenn Forge\n");
   await assert.rejects(docsBuild.verifySiteRoot(siteRoot), /llms\.txt entry for/);
+});
+
+// Vercel builds the docs from only the files .vercelignore uploads, so a
+// published page missing there fails the production deploy while local
+// builds, which read the whole checkout, still pass.
+test("the Vercel upload includes every docs build input", () => {
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const dropped = new Set(
+    execFileSync("git", ["ls-files", "--cached", "--ignored", "--exclude-from=.vercelignore"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).split("\n"),
+  );
+  const inputs = [...docsBuild.publishedDocsFiles(), "llms.txt", "zensical.toml"].map((file) =>
+    path.posix.join("docs", ...file.split(path.sep)),
+  );
+
+  assert.deepEqual(
+    inputs.filter((file) => dropped.has(file)),
+    [],
+  );
 });

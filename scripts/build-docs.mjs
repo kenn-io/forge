@@ -55,8 +55,12 @@ export async function stageDocsSource(sourceDir, destinationDir, faviconSource, 
   });
 }
 
+export function publishedDocsFiles() {
+  return [...publishedFiles].sort();
+}
+
 export function publishedMarkdownPages() {
-  return [...publishedFiles].filter((file) => file.endsWith(".md")).sort();
+  return publishedDocsFiles().filter((file) => file.endsWith(".md"));
 }
 
 function twinPathFor(siteRoot, page) {

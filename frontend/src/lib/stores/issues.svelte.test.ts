@@ -765,6 +765,16 @@ describe("createIssuesStore", () => {
         ThreadID: null,
       },
     ];
+    const fallback = issueDetail();
+    fallback.events = [
+      {
+        ...fresh.events[0]!,
+        ID: 2,
+        DedupeKey: "comment:2",
+        PlatformExternalID: "2",
+        Body: "Later comment from the provider",
+      },
+    ];
     const get = vi
       .fn(async () => ({ data: fresh, error: undefined }))
       .mockResolvedValueOnce({ data: issueDetail(), error: undefined });
@@ -772,7 +782,7 @@ describe("createIssuesStore", () => {
       .fn()
       .mockResolvedValueOnce({ data: fresh, error: undefined })
       .mockRejectedValueOnce(new Error("provider unavailable"))
-      .mockResolvedValueOnce({ data: fresh, error: undefined });
+      .mockResolvedValueOnce({ data: fallback, error: undefined });
     const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
     await loadIssueDetail(store, "acme", "widget", 7, {
       provider: "github",
@@ -796,7 +806,9 @@ describe("createIssuesStore", () => {
       expect(get).toHaveBeenCalledOnce();
       expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
       expect(post.mock.invocationCallOrder[poll]).toBeLessThan(get.mock.invocationCallOrder[0]!);
-      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual(["New comment from the provider"]);
+      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual([
+        poll === 2 ? "Later comment from the provider" : "New comment from the provider",
+      ]);
     }
     store.stopIssueDetailPolling();
   });

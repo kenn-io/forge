@@ -49,7 +49,6 @@ func TestWorkspacePullBranchRouteFastForwardsBehindBranch(t *testing.T) {
 	client, srv := fixture.client, fixture.server
 	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
-	gitfixture.Run(t, ws.WorktreePath, "push", "-u", "origin", "HEAD")
 	upstreamRef := workspaceGitOutput(
 		t, ws.WorktreePath,
 		"rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}",

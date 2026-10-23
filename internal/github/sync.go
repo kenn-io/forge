@@ -6372,13 +6372,15 @@ func (s *Syncer) indexSyncRepo(
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					bulkRequestedAt := s.nowUTC()
-					priorRevisions, gqlErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
-					var result *RepoBulkResult
-					if gqlErr == nil {
-						result, gqlErr = fetcher.FetchRepoPRs(
+					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
+					result, gqlErr := func() (*RepoBulkResult, error) {
+						if snapshotErr != nil {
+							return nil, snapshotErr
+						}
+						return fetcher.FetchRepoPRs(
 							ctx, repo.Owner, repo.Name, preferNativeStacks,
 						)
-					}
+					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureMergeRequests, gqlErr,
@@ -6537,13 +6539,15 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
-					priorRevisions, gqlErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
-					var issueResult *RepoBulkResult
-					if gqlErr == nil {
-						issueResult, gqlErr = fetcher.FetchRepoIssues(
+					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
+					issueResult, gqlErr := func() (*RepoBulkResult, error) {
+						if snapshotErr != nil {
+							return nil, snapshotErr
+						}
+						return fetcher.FetchRepoIssues(
 							ctx, repo.Owner, repo.Name,
 						)
-					}
+					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, gqlErr,

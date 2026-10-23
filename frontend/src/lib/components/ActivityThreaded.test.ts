@@ -34,7 +34,8 @@ function activityItem(id: string, overrides: Partial<ActivityItem> = {}): Activi
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
-    author: "alice",
+    author: "Alice Example",
+    commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
     branch_name: "main",
@@ -202,16 +203,18 @@ describe("ActivityThreaded collapse", () => {
     expect(container.querySelector(".event-row")).toBeNull();
   });
 
-  it("keeps the event actor as thread author when the parent summary has no author", () => {
+  it("leaves an unknown parent author blank while showing the event actor", () => {
+    const items = [activityItem("authorless-parent-event", { item_number: 8, item_author: "", author: "alice" })];
     const { container } = render(ActivityThreaded, {
       props: {
-        items: [activityItem("authorless-parent-event", { item_number: 8, item_author: "", author: "alice" })],
+        items,
         itemActivity: [itemSubject({ item_author: undefined })],
         onSelectItem: undefined,
       },
     });
 
-    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("alice");
+    expect(container.querySelector(".item-row .cell--author")?.textContent).toBe("");
+    expect(container.querySelector(".event-row .event-author")?.textContent).toBe("alice");
   });
 
   it("sorts existing threads by workspace activity without adding an event", () => {
@@ -493,7 +496,7 @@ describe("ActivityThreaded collapse", () => {
 
     const row = container.querySelector(".branch-activity-row");
     const authorCell = row?.querySelector(".cell--author");
-    expect(authorCell?.textContent?.trim()).toBe("Alice Example");
+    expect(authorCell?.textContent?.trim()).toBe("alice");
   });
 
   it("shows just the repo name when hideOrgName is on", () => {

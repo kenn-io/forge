@@ -83,7 +83,7 @@ func (b mcpBackend) ListActivity(
 			},
 			ItemType: row.ItemType, ItemNumber: row.ItemNumber,
 			ItemTitle: row.ItemTitle, ItemURL: row.ItemURL, ItemState: row.ItemState,
-			Author: row.Author, ItemAuthor: row.ItemAuthor, CreatedAt: row.CreatedAt,
+			Author: row.Author, CommitAuthor: row.CommitAuthor, ItemAuthor: row.ItemAuthor, CreatedAt: row.CreatedAt,
 			BodyPreview: row.BodyPreview, BranchName: row.BranchName,
 			CommitSHA: row.CommitSHA, BeforeSHA: row.BeforeSHA, AfterSHA: row.AfterSHA,
 			AuthorName: row.AuthorName, AuthorEmail: row.AuthorEmail,

@@ -1185,6 +1185,7 @@ type ActivityItem struct {
 	BeforeSHA      string
 	AfterSHA       string
 	AuthorName     string
+	CommitAuthor   string
 	AuthorEmail    string
 	CommitterName  string
 	CommitterEmail string

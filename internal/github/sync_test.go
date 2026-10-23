@@ -15990,6 +15990,49 @@ func TestSyncIssuesFromListRetainsBestEffortTimelineErrors(t *testing.T) {
 	require.Equal(int32(1), client.issueTimelineCalls.Load())
 }
 
+func TestFetchIssueDetailBudgetRefusedTimelineKeepsCommentsAndStaysPending(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+	require.NoError(err)
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+	issue := buildOpenIssue(1, now)
+	client := &issueTimelineMockClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) {
+			return issue, nil
+		},
+		comments: []*gh.IssueComment{{
+			ID: new(int64(501)), Body: new("fetched before the ceiling"),
+			CreatedAt: makeTimestamp(now), UpdatedAt: makeTimestamp(now),
+			User: &gh.User{Login: new("someone")},
+		}},
+		issueTimelineErr: fmt.Errorf("list issue timeline: %w", platform.ErrSyncBudgetExhausted),
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{repo}, time.Minute, nil, testBudget(1000),
+	)
+	t.Cleanup(syncer.Stop)
+	logs := captureDefaultLogs(t)
+
+	_, err = syncer.fetchIssueDetail(ctx, repo, repoID, 1)
+
+	require.ErrorIs(err, platform.ErrSyncBudgetExhausted)
+	assert.True(syncBudgetWait(err))
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Nil(stored.DetailFetchedAt, "skipped timeline keeps the issue pending")
+	events, err := database.ListIssueEvents(ctx, stored.ID)
+	require.NoError(err)
+	require.Len(events, 1, "fetched comments are kept")
+	assert.Equal("fetched before the ceiling", events[0].Body)
+	assert.NotContains(logs.String(), "level=WARN")
+}
+
 // TestSyncerMRListFailureMarksRepoFailed verifies that when the
 // PR list fails, the MR path is marked failed, and the next cycle
 // invalidates the ETag and retries. Also verifies issue path is NOT
@@ -16325,49 +16368,175 @@ func TestSyncerBudgetRefusedPRListSkipsETagEviction(t *testing.T) {
 	assert.True(mc.prsCached, "cached PR list validator must stay warm")
 }
 
-func TestSyncerBudgetCauseSurvivesLaterIssueListFailure(t *testing.T) {
+func TestSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		withIssues bool
+	}{
+		{name: "one PR without closures"},
+		{name: "PR and issues with pending closure", withIssues: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testSyncerBudgetWaitLogsOneLinePerRepo(t, tc.withIssues)
+		})
+	}
+}
+
+func testSyncerBudgetWaitLogsOneLinePerRepo(t *testing.T, withIssues bool) {
+	t.Helper()
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
-
-	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
-	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
-	repoID, err := reposeed.Seed(
-		ctx, database, verifiedGitHubRepoIdentity("github.com", "owner", "repo"),
-	)
+	budget := NewSyncBudgetWithEssentialReserve(1000)
+	// Leave only the essential reserve available for discovery.
+	_, spent := budget.TrySpend(budget.BackgroundLimit())
+	require.True(spent)
+	var refill, listsStarted atomic.Bool
+	var prOK, prNotModified, issueOK, issueConditional, closureCalls atomic.Int64
+	var gqlRequests, requestsAfterLists atomic.Int64
+	now := time.Now().UTC().Truncate(time.Second)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if !refill.Load() && listsStarted.Load() && !strings.HasSuffix(r.URL.Path, "/pulls") && !strings.HasSuffix(r.URL.Path, "/issues") {
+			requestsAfterLists.Add(1)
+		}
+		switch r.URL.Path {
+		case "/api/v3/repos/owner/repo/pulls", "/api/v3/repos/owner/repo/issues":
+			listsStarted.Store(true)
+			isPR := strings.HasSuffix(r.URL.Path, "/pulls")
+			if !isPR && r.Header.Get("If-None-Match") != "" {
+				issueConditional.Add(1)
+			}
+			w.Header().Set("ETag", `"list-v1"`)
+			if r.Header.Get("If-None-Match") == `"list-v1"` {
+				if isPR {
+					prNotModified.Add(1)
+				}
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			if isPR {
+				prOK.Add(1)
+				_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(1, now)})
+			} else {
+				issueOK.Add(1)
+				issues := []*gh.Issue{}
+				if withIssues {
+					issues = append(issues, buildOpenIssue(2, now))
+				}
+				_ = json.NewEncoder(w).Encode(issues)
+			}
+		case "/api/v3/repos/owner/repo/issues/3":
+			closureCalls.Add(1)
+			issue := buildOpenIssue(3, now)
+			issue.State = new("closed")
+			issue.ClosedAt = &gh.Timestamp{Time: now}
+			_ = json.NewEncoder(w).Encode(issue)
+		case "/api/graphql":
+			gqlRequests.Add(1)
+			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"issues":{"nodes":[{"databaseId":2000,"number":2,"title":"Hydrated issue","state":"OPEN","url":"https://github.com/owner/repo/issues/2","author":{"login":"alice"},"createdAt":%q,"updatedAt":%q,"comments":{"nodes":[]},"timelineItems":{"nodes":[]}}],"pageInfo":{"hasNextPage":false}}}}}`, now.Format(time.RFC3339), now.Format(time.RFC3339))
+		case "/api/v3/repos/owner/repo", "/api/v3/repositories/100":
+			_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"has_issues":true,"default_branch":"main"}`)
+		case "/api/v3/users/alice":
+			_, _ = io.WriteString(w, `{"login":"alice","name":"Alice"}`)
+		default:
+			_, _ = io.WriteString(w, `[]`)
+		}
+	}))
+	defer server.Close()
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 	require.NoError(err)
-	normalized, err := NormalizePR(repoID, buildOpenPR(1, now))
+	gqlHTTP := &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+		githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlHTTP), nil,
+	)})
+	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com", Owner: "owner", Name: "repo",
+		Key: platform.RepositoryIDKey(100),
+	})
 	require.NoError(err)
-	_, err = database.UpsertMergeRequest(ctx, normalized)
-	require.NoError(err)
-
-	client := &partialFailureMock{}
-	client.openPRs = []*gh.PullRequest{}
-	client.getPullRequestFn = func(context.Context, string, string, int) (*gh.PullRequest, error) {
-		return nil, fmt.Errorf("get closed merge request: %w", platform.ErrSyncBudgetExhausted)
+	if withIssues {
+		missing, err := NormalizeIssue(repoID, buildOpenIssue(3, now))
+		require.NoError(err)
+		_, err = database.UpsertIssue(ctx, missing)
+		require.NoError(err)
 	}
-	client.listOpenIssuesFn = func(context.Context, string, string) ([]*gh.Issue, error) {
-		return nil, errors.New("issue list unavailable")
-	}
-
-	syncer := NewSyncer(
-		map[string]Client{"github.com": client}, database, nil,
-		repos, time.Minute, nil, nil,
-	)
+	logs := captureDefaultLogs(t)
 	syncer.RunOnce(ctx)
 
-	assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode,
-		"a later non-budget failure must not mask the earlier local-ceiling cause")
-	stored, err := database.GetRepoByID(ctx, repoID)
+	assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	assert.NotContains(logs.String(), "retrying with smaller page")
+	assert.NotContains(logs.String(), "level=WARN")
+	assert.NotContains(logs.String(), "level=ERROR")
+	assert.Zero(gqlRequests.Load())
+	assert.Zero(requestsAfterLists.Load())
+	if !withIssues {
+		pr, err := database.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+		require.NoError(err)
+		require.NotNil(pr)
+		assert.Nil(pr.DetailFetchedAt)
+	}
+	issue, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 2)
 	require.NoError(err)
-	require.NotNil(stored)
-	assert.Contains(stored.LastSyncError, "issue list unavailable")
+	if withIssues {
+		require.NotNil(issue)
+	} else {
+		assert.Nil(issue)
+	}
+
+	logs.Reset()
+	listsStarted.Store(false)
+	syncer.RunOnce(ctx)
+	if withIssues {
+		assert.Equal(int64(2), issueOK.Load())
+		assert.Zero(issueConditional.Load())
+	} else {
+		assert.Equal(int64(1), prOK.Load())
+		assert.Equal(int64(1), prNotModified.Load())
+		assert.Equal(int64(1), issueOK.Load())
+		assert.Equal(int64(1), issueConditional.Load())
+	}
+	assert.Zero(closureCalls.Load())
+	assert.Zero(requestsAfterLists.Load())
+	assert.Zero(gqlRequests.Load())
+	if withIssues {
+		assert.Equal(1, strings.Count(logs.String(), `msg="repo waits for sync budget"`))
+	} else {
+		assert.NotContains(logs.String(), `msg="repo waits for sync budget"`)
+	}
+	assert.NotContains(logs.String(), "retrying with smaller page")
+	assert.NotContains(logs.String(), "level=WARN")
+	assert.NotContains(logs.String(), "level=ERROR")
+	if withIssues {
+		missing, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
+		require.NoError(err)
+		require.NotNil(missing)
+		assert.Equal("open", missing.State)
+	}
+
+	if !withIssues {
+		return
+	}
+
+	// Refilling the budget lets the pending closure finish.
+	refill.Store(true)
+	budget.Reset()
+	syncer.RunOnce(ctx)
+	assert.Equal(int64(3), issueOK.Load())
+	assert.Zero(issueConditional.Load())
+	assert.Equal(int64(1), closureCalls.Load())
+	missing, err := database.GetIssue(ctx, "github", "github.com", "owner", "repo", 3)
+	require.NoError(err)
+	require.NotNil(missing)
+	assert.Equal("closed", missing.State)
 }
 
 func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
-	t.Parallel()
-
 	disabledMRs := platform.RepositoryFeatureDisabled(
 		platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests,
 		errors.New("pull requests disabled"),
@@ -16407,6 +16576,12 @@ func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
 			wantError:  "item unavailable",
 		},
 		{
+			name:       "budget refusal before issue list failure",
+			itemErrors: []error{platform.ErrSyncBudgetExhausted},
+			issueError: &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusInternalServerError}, Message: "issue list unavailable"},
+			wantError:  "issue list unavailable",
+		},
+		{
 			name:       "item failure before issue list refusal",
 			itemErrors: []error{errors.New("item unavailable")},
 			issueError: platform.ErrSyncBudgetExhausted,
@@ -16414,7 +16589,6 @@ func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			assert := assert.New(t)
 			require := require.New(t)
 			ctx := t.Context()
@@ -16442,6 +16616,7 @@ func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
 				[]RepoRef{repo}, time.Minute, nil, nil,
 			)
 			t.Cleanup(syncer.Stop)
+			logs := captureDefaultLogs(t)
 			syncer.RunOnce(ctx)
 			require.Equal(int64(len(tc.itemErrors)), lookups.Load())
 
@@ -16450,9 +16625,14 @@ func TestSyncerBudgetWaitWithItemFailures(t *testing.T) {
 			require.NotNil(stored)
 			assert.Equal(SyncErrorCodeLocalCeilingExhausted, syncer.Status().LastErrorCode)
 			if tc.wantError == "" {
+				assert.Contains(logs.String(), `msg="repo waits for sync budget"`)
+				assert.NotContains(logs.String(), `level=ERROR msg="sync repo failed"`)
 				assert.Equal("previous failure", stored.LastSyncError)
 				assert.Equal(&completedAt, stored.LastSyncCompletedAt)
 			} else {
+				assert.Contains(logs.String(), `level=ERROR msg="sync repo failed"`)
+				assert.NotContains(logs.String(), `msg="repo waits for sync budget"`)
+				assert.Contains(syncer.Status().LastError, tc.wantError)
 				assert.Contains(stored.LastSyncError, tc.wantError)
 				require.NotNil(stored.LastSyncCompletedAt)
 				assert.True(stored.LastSyncCompletedAt.After(completedAt))

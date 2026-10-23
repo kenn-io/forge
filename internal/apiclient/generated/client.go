@@ -65805,6 +65805,7 @@ type ActivityItemResponse struct {
 	BeforeSha          *string                 `json:"before_sha,omitempty"`
 	BodyPreview        string                  `json:"body_preview"`
 	BranchName         *string                 `json:"branch_name,omitempty"`
+	CommitAuthor       *string                 `json:"commit_author,omitempty"`
 	CommitSha          *string                 `json:"commit_sha,omitempty"`
 	CommittedAt        *string                 `json:"committed_at,omitempty"`
 	CommitterEmail     *string                 `json:"committer_email,omitempty"`

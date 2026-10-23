@@ -573,9 +573,15 @@ Persisted controls must state their scope clearly.
   that answered discovery is shown as text with the address form hidden until
   discovery fails or the user chooses to change it
   (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
-- Rebasing must not hide commit authorship: show the original author and label a
-  distinct committer, while preserving committer-based activity identity and time
+- Rebasing must preserve the stored event actor and time; show the original
+  author and label a distinct committer
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
+  Activity commit display identity is separate from the stored actor, so Hide
+  bots follows the actor. GitHub commit display names and text search share
+  each PR event's own original author. Branch rows use the most recently detail-synced
+  PR's author for the exact repository and full SHA, breaking ties by event ID.
+  Other providers keep their existing author names
+  (`internal/db/queries_activity.go::listActivityWithQueryer`).
 - Timeline diff retry suppression must permit a new load after another pane clears
   or replaces the shared diff store; a previous attempt is not permanent availability
   (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).

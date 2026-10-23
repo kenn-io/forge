@@ -51,6 +51,7 @@ type activityRow struct {
 	Item         itemRef       `json:"item"`
 	Workspace    *WorkspaceRef `json:"workspace,omitempty"`
 	Author       string        `json:"author"`
+	CommitAuthor string        `json:"commit_author,omitempty"`
 	ItemAuthor   string        `json:"item_author,omitempty"`
 	CreatedAt    string        `json:"created_at"`
 	BodyPreview  string        `json:"body_preview,omitempty"`
@@ -206,6 +207,7 @@ func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listAc
 			Item:         item.itemRef(),
 			Workspace:    item.Workspace,
 			Author:       item.Author,
+			CommitAuthor: item.CommitAuthor,
 			ItemAuthor:   item.ItemAuthor,
 			CreatedAt:    item.CreatedAt,
 			BodyPreview:  item.BodyPreview,

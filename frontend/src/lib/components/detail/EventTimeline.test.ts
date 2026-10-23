@@ -1676,17 +1676,20 @@ describe("EventTimeline", () => {
     expect(toggle?.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it.each(["normal", "compact"] as const)(
-    "shows author and committer for rebased commits in %s view",
-    (activityViewMode) => {
+  it.each([
+    ["normal", "original-author", "rebase-committer", "original-author committed by rebase-committer"],
+    ["compact", "original-author", "rebase-committer", "original-author committed by rebase-committer"],
+  ] as const)(
+    "shows commit attribution in %s view for author %s and committer %s",
+    (activityViewMode, author, committer, attribution) => {
       const { container } = renderTimeline({
         props: {
           activityViewMode,
           events: [
             makeEvent({
               EventType: "commit",
-              Author: "rebase-committer",
-              MetadataJSON: '{"commit_author":"original-author"}',
+              Author: committer,
+              MetadataJSON: JSON.stringify({ commit_author: author }),
               Summary: "abcdef1234567890",
               Body: "feat: rewrite commit",
             }),
@@ -1694,7 +1697,7 @@ describe("EventTimeline", () => {
         },
       });
 
-      expect(container.textContent).toContain("original-author committed by rebase-committer");
+      expect(container.querySelector(".event-author")?.textContent?.trim()).toBe(attribution);
     },
   );
 

@@ -101,12 +101,12 @@ function repoKeyForItem(item: ActivityItem): string {
   });
 }
 
-function activityRunAuthor(item: ActivityItem): string {
-  return item.author_name || item.author;
+export function activityAuthor(item: ActivityItem): string {
+  return item.commit_author || item.author_name || item.author;
 }
 
 function activityRunGroupKey(item: ActivityItem, options: Required<CollapseActivityRunsOptions>): string | null {
-  const author = activityRunAuthor(item);
+  const author = activityAuthor(item);
   if (item.activity_type === "commit") {
     if (!options.rollUpCommits) return null;
     return ["item", item.activity_type, repoKeyForItem(item), item.item_type, item.item_number, author].join("|");
@@ -160,7 +160,7 @@ export function collapseActivityRuns(items: ActivityItem[], options: CollapseAct
       result.push({
         kind: "collapsed",
         id: `collapsed-${latest.id}-${count}`,
-        author: activityRunAuthor(item),
+        author: activityAuthor(item),
         count,
         earliest: earliest.created_at,
         latest: latest.created_at,

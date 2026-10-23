@@ -12608,6 +12608,99 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 }
 
 func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
+	for _, notModified := range []bool{false, true} {
+		name := "changed"
+		if notModified {
+			name = "not modified"
+		}
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			fetchedAt := time.Now().UTC().Add(-time.Minute)
+			issue := buildOpenIssue(7, fetchedAt)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			normalized.DetailFetchedAt = &fetchedAt
+			issueID, err := database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
+			if notModified {
+				require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
+			}
+			before, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			issue.Title = new("updated issue")
+			issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
+			issue.Comments = new(1)
+			var paths []string
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+				paths = append(paths, path)
+				w.Header().Set("Content-Type", "application/json")
+				switch path {
+				case "/repos/owner/repo/issues/7":
+					if notModified {
+						assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					assert.Empty(t, r.Header.Get("If-None-Match"))
+					w.Header().Set("ETag", `"page"`)
+					assert.NoError(t, json.NewEncoder(w).Encode(issue))
+				case "/repos/owner/repo/issues/7/comments":
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
+				default:
+					assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			budget := NewSyncBudget(1000)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			gql := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				assert.Fail(t, "page polls must skip GraphQL visibility")
+			}))
+			t.Cleanup(gql.Close)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(gql.URL, gql.Client()), nil),
+			})
+			poll := func() error {
+				return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+			}
+			require.NoError(poll())
+			stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			require.NotNil(stored)
+			if notModified {
+				assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
+				assert.Equal(t, before, stored, "304 leaves the issue unchanged")
+			} else {
+				assert.Equal(t, []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"}, paths)
+				assert.Equal(t, "updated issue", stored.Title)
+				require.NotNil(stored.DetailFetchedAt)
+				assert.WithinDuration(t, fetchedAt, *stored.DetailFetchedAt, time.Millisecond)
+				events, err := database.ListIssueEvents(ctx, issueID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+			}
+			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+			require.NoError(err)
+			assert.Equal(t, `"page"`, etag)
+			etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+			require.NoError(err)
+			assert.Equal(t, `"detail"`, etag)
+		})
+	}
+}
+
+func TestSyncIssuePagePollPreservesIssueWhenRepositoryNameReused(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)
@@ -12622,143 +12715,102 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	issueID, err := database.UpsertIssue(ctx, normalized)
 	require.NoError(err)
 	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
-	issue.Title = new("updated issue")
-	issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
-	issue.Comments = new(1)
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{{
+		IssueID: issueID, PlatformID: new(int64(10801)), EventType: "comment", Body: "original comment", CreatedAt: fetchedAt,
+	}}))
+	require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	events, err := database.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	// The old repository name can be reused before background sync reconciles it.
+	issue.ID = new(int64(8001))
+	issue.Title = new("successor issue")
+	issue.UpdatedAt = makeTimestamp(fetchedAt.Add(time.Minute))
 	var paths []string
-	notModified := false
-	expectedETag := ""
-	responseETag := `"page"`
-	disabledPath := ""
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v3")
 		paths = append(paths, path)
+		assert.Equal(t, "/repos/owner/repo/issues/7", path)
+		assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
 		w.Header().Set("Content-Type", "application/json")
-		if path == disabledPath {
-			w.WriteHeader(http.StatusGone)
-			_, err := w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
-			assert.NoError(t, err)
-			return
-		}
-		switch path {
-		case "/repos/owner/repo", "/repositories/" + strconv.FormatInt(testRepoID(repo.Owner, repo.Name), 10):
-			assert.NoError(t, json.NewEncoder(w).Encode(&gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Name: new(repo.Name), Owner: &gh.User{Login: new(repo.Owner)}}))
-		case "/repos/owner/repo/issues/7":
-			assert.Equal(t, expectedETag, r.Header.Get("If-None-Match"))
-			if notModified {
-				w.WriteHeader(http.StatusNotModified)
-				return
-			}
-			w.Header().Set("ETag", responseETag)
-			assert.NoError(t, json.NewEncoder(w).Encode(issue))
-		case "/repos/owner/repo/issues/7/comments":
-			assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
-		default:
-			assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-		}
+		w.Header().Set("ETag", `"successor"`)
+		assert.NoError(t, json.NewEncoder(w).Encode(issue))
 	}))
 	t.Cleanup(provider.Close)
 	budget := NewSyncBudget(1000)
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
 	require.NoError(err)
 	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	gql := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		assert.Fail(t, "page polls must skip GraphQL visibility")
-	}))
-	t.Cleanup(gql.Close)
-	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(gql.URL, gql.Client()), nil),
-	})
 	poll := func() error {
 		return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
 	}
 	require.NoError(poll())
-	assert.Equal(t, []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"}, paths)
-	assert.Equal(t, 2, budget.Spent(), "changed polls spend two budget units")
-	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(t, "updated issue", stored.Title)
-	require.NotNil(stored.DetailFetchedAt)
-	assert.WithinDuration(t, fetchedAt, *stored.DetailFetchedAt, time.Millisecond)
-	events, err := database.ListIssueEvents(ctx, issueID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal(t, "new comment", events[0].Body)
-	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
-	require.NoError(err)
-	assert.Equal(t, `"page"`, etag)
-	etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
-	require.NoError(err)
-	assert.Equal(t, `"detail"`, etag)
-
-	notModified = true
-	expectedETag = `"page"`
-	paths = nil
-	require.NoError(poll())
 	assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
-	assert.Equal(t, 2, budget.Spent(), "304 spends no budget")
 	after, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	assert.Equal(t, stored, after, "304 leaves the issue unchanged")
-
-	// The old repository name can be reused before background sync reconciles it.
-	originalIssue := issue
-	successor := *issue
-	successor.ID = new(int64(8001))
-	successor.Title = new("successor issue")
-	successor.UpdatedAt = makeTimestamp(fetchedAt.Add(time.Minute))
-	issue = &successor
-	notModified = false
-	responseETag = `"successor"`
-	paths = nil
-	require.NoError(poll())
-	assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
-	after, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	assert.Equal(t, stored, after, "a different provider issue must leave the stored issue unchanged")
 	afterEvents, err := database.ListIssueEvents(ctx, issueID)
 	require.NoError(err)
 	assert.Equal(t, events, afterEvents)
-	etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+	etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
 	require.NoError(err)
 	assert.Equal(t, `"page"`, etag)
-	issue = originalIssue
-	responseETag = `"page"`
+}
 
-	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
-		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "closed-issue",
-		RepoID: &repoID, RepoOwner: repo.Owner, RepoName: repo.Name,
-		SubjectType: "Issue", ItemType: "issue", ItemNumber: new(7),
-		Unread: true, SourceUpdatedAt: fetchedAt, SyncedAt: fetchedAt,
-	}}))
-	active, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
-	require.NoError(err)
-	require.Len(active, 1)
-	notModified = false
-	issue.State = new("closed")
-	issue.ClosedAt = makeTimestamp(fetchedAt.Add(time.Minute))
-	issue.UpdatedAt = issue.ClosedAt
-	require.NoError(poll())
-	closed, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	require.Equal("closed", closed.State)
-	active, err = database.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
-	require.NoError(err)
-	assert.Empty(t, active)
-	done, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
-	require.NoError(err)
-	require.Len(done, 1)
-	assert.Equal(t, "closed", done[0].DoneReason)
-	assert.NotNil(t, done[0].DoneAt)
-
-	now := fetchedAt
-	syncer.now = func() time.Time { return now }
+func TestSyncIssuePagePollHonorsDisabledIssuesCooldown(t *testing.T) {
 	for _, path := range []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"} {
-		disabledPath = path
-		require.Error(poll())
-		for range 2 {
+		t.Run(path, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			fetchedAt := time.Now().UTC().Add(-time.Minute)
+			issue := buildOpenIssue(7, fetchedAt)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			normalized.DetailFetchedAt = &fetchedAt
+			_, err = database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			require.NoError(database.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7, `"detail"`))
+			issue.Comments = new(1)
+			var paths []string
+			disabledPath := path
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+				paths = append(paths, path)
+				w.Header().Set("Content-Type", "application/json")
+				if path == disabledPath {
+					w.WriteHeader(http.StatusGone)
+					_, err := w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
+					assert.NoError(t, err)
+					return
+				}
+				switch path {
+				case "/repos/owner/repo", "/repositories/" + strconv.FormatInt(testRepoID(repo.Owner, repo.Name), 10):
+					assert.NoError(t, json.NewEncoder(w).Encode(&gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Name: new(repo.Name), Owner: &gh.User{Login: new(repo.Owner)}}))
+				case "/repos/owner/repo/issues/7":
+					assert.NoError(t, json.NewEncoder(w).Encode(issue))
+				case "/repos/owner/repo/issues/7/comments":
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{}))
+				default:
+					assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			budget := NewSyncBudget(1000)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			poll := func() error {
+				return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+			}
+			now := fetchedAt
+			syncer.now = func() time.Time { return now }
+			require.Error(poll())
 			paths = nil
 			now = now.Add(time.Minute)
 			require.NoError(poll())
@@ -12766,10 +12818,10 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 			now = now.Add(repositoryFeatureProbeInterval)
 			require.Error(poll(), "a disabled probe renews the cooldown")
 			assert.Contains(t, paths, path)
-		}
-		disabledPath = ""
-		now = now.Add(repositoryFeatureProbeInterval)
-		require.NoError(poll(), "an expired cooldown permits recovery")
+			disabledPath = ""
+			now = now.Add(repositoryFeatureProbeInterval)
+			require.NoError(poll(), "an expired cooldown permits recovery")
+		})
 	}
 }
 

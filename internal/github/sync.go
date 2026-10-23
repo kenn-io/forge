@@ -9051,53 +9051,38 @@ func (s *Syncer) fetchIssueDetail(
 				return calls, err
 			}
 		}
-
-		if newETag != "" {
-			if err := s.db.UpsertHTTPEtag(
-				ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name,
-				"issue-page", number, newETag,
-			); err != nil {
-				slog.Warn("persist issue ETag failed",
-					"repo", repo.Owner+"/"+repo.Name,
-					"number", number,
-					"err", err,
-				)
+	} else {
+		if err := s.refreshIssueTimeline(
+			ctx, repo, issueID, revision, ghIssue, nil,
+		); err != nil {
+			calls++ // comments
+			if errors.Is(err, errParentSnapshotAdvanced) {
+				return calls, nil
 			}
+			if errors.Is(err, db.ErrRepositoryIdentityChanged) {
+				return calls, nil
+			}
+			return calls, err
 		}
-
-		return calls, nil
-	}
-
-	if err := s.refreshIssueTimeline(
-		ctx, repo, issueID, revision, ghIssue, nil,
-	); err != nil {
 		calls++ // comments
-		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
-		}
-		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
-			return calls, nil
-		}
-		return calls, err
-	}
-	calls++ // comments
 
-	detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(
-		ctx, issueID, revision,
-	)
-	if err != nil {
-		return calls, fmt.Errorf(
-			"mark detail fetched for issue #%d: %w", number, err,
+		detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(
+			ctx, issueID, revision,
 		)
-	}
-	if !detailApplied {
-		return calls, nil
+		if err != nil {
+			return calls, fmt.Errorf(
+				"mark detail fetched for issue #%d: %w", number, err,
+			)
+		}
+		if !detailApplied {
+			return calls, nil
+		}
 	}
 
 	if newETag != "" {
 		if err := s.db.UpsertHTTPEtag(
 			ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name,
-			"issue", number, newETag,
+			etagKind, number, newETag,
 		); err != nil {
 			slog.Warn("persist issue ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,

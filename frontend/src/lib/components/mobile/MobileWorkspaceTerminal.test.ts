@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { GeneratedProblemResponse } from "../../api/runtime.js";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
-import { navigate } from "../../stores/router.svelte.js";
+import { buildMobileWorkspaceRoute, navigate } from "../../stores/router.svelte.js";
 import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
 const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     launchWorkspaceRuntimeSession: vi.fn(),
     launchWorkspaceAgentHandoff: vi.fn(),
     retryWorkspace: vi.fn(),
+    deleteWorkspace: vi.fn(),
     getFleetWorkspace: vi.fn(),
     getFleetWorkspaceRuntime: vi.fn(),
     launchFleetWorkspaceRuntimeSession: vi.fn(),
@@ -865,6 +866,68 @@ describe("MobileWorkspaceTerminal", () => {
     expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
     held.resolve(runtime);
     await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+  });
+
+  async function confirmDeleteFromOptions(dialogName: string, confirmLabel: string): Promise<void> {
+    const dialog = await screen.findByRole("dialog", { name: dialogName });
+    await fireEvent.click(within(dialog).getByRole("button", { name: confirmLabel }));
+  }
+
+  it("deletes the open workspace from the options tray and returns to the list", async () => {
+    mocks.runtimeClient.deleteWorkspace.mockResolvedValue(undefined);
+    navigate(buildMobileWorkspaceRoute("ws-a"));
+    render(MobileWorkspaceTerminal, { props });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Terminal options" }));
+    const options = await screen.findByRole("dialog", { name: "Terminal options" });
+    await fireEvent.click(within(options).getByRole("button", { name: "Delete workspace…" }));
+    expect(mocks.runtimeClient.deleteWorkspace).not.toHaveBeenCalled();
+    await confirmDeleteFromOptions("Delete workspace?", "Delete workspace");
+
+    await waitFor(() => expect(window.location.pathname).toBe("/m/workspaces"));
+    expect(mocks.runtimeClient.deleteWorkspace).toHaveBeenCalledExactlyOnceWith({ id: "ws-a" }, undefined, {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("asks again before force deleting a dirty workspace from the options tray", async () => {
+    mocks.runtimeClient.deleteWorkspace
+      .mockRejectedValueOnce(
+        new GeneratedProblemResponse(
+          {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            detail: "worktree has uncommitted changes; retry with force",
+            code: "worktreeDirty",
+          },
+          new Response(null, { status: 409 }),
+        ),
+      )
+      .mockResolvedValueOnce(undefined);
+    navigate(buildMobileWorkspaceRoute("ws-a"));
+    render(MobileWorkspaceTerminal, { props });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Terminal options" }));
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Terminal options" })).getByRole("button", {
+        name: "Delete workspace…",
+      }),
+    );
+    await confirmDeleteFromOptions("Delete workspace?", "Delete workspace");
+
+    const forceConfirmation = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    expect(forceConfirmation.textContent).toContain("discards uncommitted changes");
+    expect(window.location.pathname).toBe(buildMobileWorkspaceRoute("ws-a"));
+    await fireEvent.click(within(forceConfirmation).getByRole("button", { name: "Force delete workspace" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/m/workspaces"));
+    expect(mocks.runtimeClient.deleteWorkspace).toHaveBeenNthCalledWith(
+      2,
+      { id: "ws-a" },
+      { force: true },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it("returns to the workspace list without treating a lookup miss as deletion", async () => {

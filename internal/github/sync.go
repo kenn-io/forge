@@ -7491,7 +7491,7 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		)
 		return true, false
 	}
-	if _, err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
+	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 		slog.Warn("comment refresh: persist issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -8935,14 +8935,14 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	return calls, nil
 }
 
-// fetchIssueDetail performs a full detail fetch for a single
-// issue: GetIssue + refreshIssueTimeline. Returns the number
-// of API calls made.
+// fetchIssueDetail refreshes one issue and returns the number of API calls.
+// Page polls refresh comments while leaving full-detail freshness alone.
 func (s *Syncer) fetchIssueDetail(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
 	number int,
+	options ...IssueSyncOptions,
 ) (int, error) {
 	removed, err := s.removedUpstreamForLiveSync(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
@@ -8975,10 +8975,18 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
 	}
 
+	pagePoll := len(options) > 0 && options[0].PagePoll
+	etagKind := "issue"
+	if pagePoll {
+		etagKind = "issue-page"
+	}
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
-		ctx, client, repo, number, "issue",
+		ctx, client, repo, number, etagKind,
 	)
 	calls++
+	if pagePoll && notModified {
+		return calls, nil
+	}
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
@@ -9026,36 +9034,52 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, nil
 	}
 
-	if err := s.refreshIssueTimeline(
-		ctx, repo, issueID, revision, ghIssue, nil,
-	); err != nil {
+	if pagePoll {
+		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, ghIssue.GetComments())
+		calls++
+		if err != nil && !platformgithub.IsNotModified(err) {
+			return calls, err
+		}
+		if err == nil {
+			normalized.ID = issueID
+			normalized.SnapshotRevision = revision
+			if err := s.persistIssueComments(ctx, repo, normalized, comments); err != nil {
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, err
+			}
+		}
+	} else {
+		if err := s.refreshIssueTimeline(
+			ctx, repo, issueID, revision, ghIssue, nil,
+		); err != nil {
+			calls++ // comments
+			if errors.Is(err, errParentSnapshotAdvanced) {
+				return calls, nil
+			}
+			if errors.Is(err, db.ErrRepositoryIdentityChanged) {
+				return calls, nil
+			}
+			return calls, err
+		}
 		calls++ // comments
-		if errors.Is(err, errParentSnapshotAdvanced) {
-			return calls, nil
-		}
-		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
-			return calls, nil
-		}
-		return calls, err
-	}
-	calls++ // comments
 
-	detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(
-		ctx, issueID, revision,
-	)
-	if err != nil {
-		return calls, fmt.Errorf(
-			"mark detail fetched for issue #%d: %w", number, err,
+		detailApplied, err := s.db.MarkIssueDetailFetchedSnapshot(
+			ctx, issueID, revision,
 		)
-	}
-	if !detailApplied {
-		return calls, nil
+		if err != nil {
+			return calls, fmt.Errorf(
+				"mark detail fetched for issue #%d: %w", number, err,
+			)
+		}
+		if !detailApplied {
+			return calls, nil
+		}
 	}
 
 	if newETag != "" {
 		if err := s.db.UpsertHTTPEtag(
 			ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name,
-			"issue", number, newETag,
+			etagKind, number, newETag,
 		); err != nil {
 			slog.Warn("persist issue ETag failed",
 				"repo", repo.Owner+"/"+repo.Name,
@@ -9086,7 +9110,7 @@ func (s *Syncer) markUnchangedIssueDetailFetched(
 			return calls, err
 		}
 		if err == nil {
-			if _, err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
+			if err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
 				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 				return calls, err
 			}
@@ -9122,16 +9146,20 @@ func (s *Syncer) getIssueForDetail(
 	number int,
 	kind string,
 ) (*gh.Issue, string, bool, error) {
+	if IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
+		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
+		return issue, "", false, err
+	}
 	conditional, ok := client.(conditionalIssueGetter)
-	if !ok || IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
+	if !ok {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
 		return issue, "", false, err
 	}
 
-	etag, err := s.db.GetHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, kind, number)
-	if err == nil && etag == "" && kind == "issue-page" {
-		etag, err = s.db.GetHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue", number)
-	}
+	etag, err := s.db.GetHTTPEtag(
+		ctx, string(repoPlatform(repo)), repoHost(repo),
+		repo.Owner, repo.Name, kind, number,
+	)
 	if err != nil {
 		slog.Warn("load issue ETag failed",
 			"repo", repo.Owner+"/"+repo.Name,
@@ -10431,7 +10459,7 @@ func (s *Syncer) persistIssueComments(
 	repo RepoRef,
 	issue *db.Issue,
 	comments []*gh.IssueComment,
-) (bool, error) {
+) error {
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
@@ -10440,9 +10468,13 @@ func (s *Syncer) persistIssueComments(
 		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
-		return false, fmt.Errorf("replace issue comment events: %w", err)
+		return fmt.Errorf("replace issue comment events: %w", err)
 	}
-	return applied, nil
+	if !applied {
+		return nil
+	}
+
+	return nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(
@@ -11984,6 +12016,11 @@ func (s *Syncer) SyncIssueOnHost(
 	return s.syncIssueWithHost(ctx, owner, name, number, host)
 }
 
+// IssueSyncOptions selects the lightweight issue-page refresh.
+type IssueSyncOptions struct {
+	PagePoll bool
+}
+
 // SyncIssueOnProvider fetches fresh issue data for a specific configured
 // provider host.
 func (s *Syncer) SyncIssueOnProvider(
@@ -11991,6 +12028,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	kind platform.Kind,
 	host, owner, name string,
 	number int,
+	options ...IssueSyncOptions,
 ) error {
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
@@ -12003,95 +12041,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncIssueForRepo(ctx, repo, number, nil)
-}
-
-// SyncIssueOnProviderIfChanged refreshes only the issue and comments for a page poll.
-func (s *Syncer) SyncIssueOnProviderIfChanged(
-	ctx context.Context,
-	host, owner, name string,
-	repoID int64,
-	number int,
-) (resultErr error) {
-	if !s.AutomaticSyncEnabled() {
-		return nil
-	}
-	if removed, err := s.removedUpstreamForLiveSync(ctx, repoID, db.ArchiveItemTypeIssue, number); err != nil || removed {
-		return err
-	}
-	repo, ok := s.trackedRepoByIdentity(platform.KindGitHub, owner, name, host)
-	if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
-		return nil
-	}
-	existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
-	if err != nil || existing == nil {
-		return err
-	}
-	bucket, err := s.bucketKeyForRepo(repo, false)
-	if err != nil {
-		return err
-	}
-	probe, due := s.beginRepositoryFeatureProbe(ctx, repo, platform.RepositoryFeatureIssues)
-	if !due {
-		return nil
-	}
-	defer probe.abandon()
-	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
-	defer releaseProviderWork()
-	client, err := s.clientFor(repo)
-	if err != nil {
-		return err
-	}
-	issue, etag, notModified, err := s.getIssueForDetail(ctx, client, repo, number, "issue-page")
-	defer func() {
-		s.recordGitHubRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, resultErr)
-		probe.release()
-	}()
-	if syncBudgetWait(err) || notModified {
-		return nil
-	}
-	if outcomeErr := s.issueOnlyFetchOutcomeError(ctx, repo, number, issue, err); outcomeErr != nil {
-		return outcomeErr
-	}
-	if err != nil || issue.GetID() != existing.PlatformID {
-		return err
-	}
-	normalized, err := NormalizeIssue(repoID, issue)
-	if err != nil {
-		return err
-	}
-	comments, commentsErr := s.listCommentsForRefresh(ctx, client, repo, number, issue.GetComments())
-	if commentsErr != nil && !platformgithub.IsNotModified(commentsErr) {
-		if syncBudgetWait(commentsErr) {
-			return nil
-		}
-		return commentsErr
-	}
-	if platformgithub.IsNotModified(commentsErr) && existing.LastActivityAt.After(normalized.LastActivityAt) {
-		normalized.LastActivityAt = existing.LastActivityAt
-	}
-	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, normalized)
-	if err != nil || !accepted {
-		if commentsErr == nil {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-		}
-		return err
-	}
-	if commentsErr == nil {
-		normalized.ID = issueID
-		normalized.SnapshotRevision = revision
-		applied, err := s.persistIssueComments(ctx, repo, normalized, comments)
-		if err != nil || !applied {
-			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-			return err
-		}
-	}
-	if etag != "" {
-		if err := s.db.UpsertHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue-page", number, etag); err != nil {
-			return err
-		}
-	}
-	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)
+	return s.syncIssueForRepo(ctx, repo, number, nil, options...)
 }
 
 func (s *Syncer) syncIssueWithHost(
@@ -12133,6 +12083,7 @@ func (s *Syncer) syncIssueForRepo(
 	repo RepoRef,
 	number int,
 	providerAttempted *bool,
+	options ...IssueSyncOptions,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12157,11 +12108,11 @@ func (s *Syncer) syncIssueForRepo(
 		return nil
 	}
 
-	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
+	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number, options...)
 	if providerAttempted != nil && providerCalls > 0 {
 		*providerAttempted = true
 	}
-	if err != nil {
+	if err != nil || len(options) > 0 && options[0].PagePoll {
 		return err
 	}
 	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)

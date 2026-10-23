@@ -109,7 +109,7 @@ func FederationWorkflowProblem(err error) error {
 	return httpapi.NewProblem(status, code, backendErr.Message, backendErr.Details)
 }
 
-func repoNumberFromHost(input *RepoNumberHostInput) itemapi.RepoNumberInput {
+func repoNumberFromHost(input *repoNumberHostInput) itemapi.RepoNumberInput {
 	return itemapi.RepoNumberInput{
 		Provider:     input.Provider,
 		PlatformHost: input.PlatformHost,
@@ -119,7 +119,7 @@ func repoNumberFromHost(input *RepoNumberHostInput) itemapi.RepoNumberInput {
 	}
 }
 
-type RepoNumberHostInput struct {
+type repoNumberHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
 	Owner        string `path:"owner"`
@@ -227,32 +227,36 @@ func (s *Handlers) getCommentAutocompleteOnHost(ctx context.Context, input *comm
 	return s.GetCommentAutocomplete(ctx, &next)
 }
 
-func (s *Handlers) syncPROnHost(ctx context.Context, input *RepoNumberHostInput) (*itemapi.SyncPROutput, error) {
+func (s *Handlers) syncPROnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.SyncPROutput, error) {
 	next := repoNumberFromHost(input)
 	return s.SyncPR(ctx, &next)
 }
 
-func (s *Handlers) syncPRCIOnHost(ctx context.Context, input *RepoNumberHostInput) (*itemapi.SyncPRCIOutput, error) {
+func (s *Handlers) syncPRCIOnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.SyncPRCIOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.SyncPRCI(ctx, &next)
 }
 
-func (s *Handlers) enqueuePRSyncOnHost(ctx context.Context, input *RepoNumberHostInput) (*itemapi.AcceptedOutput, error) {
+func (s *Handlers) enqueuePRSyncOnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.AcceptedOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.EnqueuePRSync(ctx, &next)
 }
 
 type syncIssueHostInput struct {
-	RepoNumberHostInput
-	IfChanged bool `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	IfChanged    bool   `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
 }
 
 func (s *Handlers) syncIssueOnHost(ctx context.Context, input *syncIssueHostInput) (*itemapi.SyncIssueOutput, error) {
-	next := itemapi.SyncIssueInput{IssueRepoNumberInput: itemapi.IssueRepoNumberInput(repoNumberFromHost(&input.RepoNumberHostInput)), IfChanged: input.IfChanged}
+	next := itemapi.SyncIssueInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number, IfChanged: input.IfChanged}
 	return s.SyncIssue(ctx, &next)
 }
 
-func (s *Handlers) enqueueIssueSyncOnHost(ctx context.Context, input *RepoNumberHostInput) (*itemapi.AcceptedOutput, error) {
+func (s *Handlers) enqueueIssueSyncOnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.AcceptedOutput, error) {
 	next := itemapi.IssueRepoNumberInput(repoNumberFromHost(input))
 	return s.EnqueueIssueSync(ctx, &next)
 }

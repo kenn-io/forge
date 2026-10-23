@@ -1,6 +1,7 @@
 package issuetest
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,8 +43,16 @@ func TestAPISyncIssueIfChanged(t *testing.T) {
 			budget := ghclient.NewSyncBudget(100)
 			var providerCalls int
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v3/repos/acme/widget" {
+					identity := serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget")
+					id, _ := identity.Key.ID()
+					w.Header().Set("Content-Type", "application/json")
+					assert.NoError(json.NewEncoder(w).Encode(map[string]any{"id": id, "name": "widget", "owner": map[string]string{"login": "acme"}}))
+					return
+				}
+				assert.Equal("/api/v3/repos/acme/widget/issues/7", r.URL.Path)
 				providerCalls++
-				assert.Equal(1, budget.Spent(), "the handler must budget the poll before wire I/O")
+				assert.Equal(2, budget.Spent(), "repository identity and the poll must be budgeted before wire I/O")
 				w.WriteHeader(http.StatusNotModified)
 			}))
 			defer provider.Close()

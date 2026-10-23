@@ -609,7 +609,7 @@ func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.SyncIssueInput)
 	}
 	if input.IfChanged {
 		if httpapi.ProviderKind(repo.Repo) == platform.KindGitHub {
-			err = (*s.Syncer).SyncIssueOnProviderIfChanged(ghclient.WithSyncBudget(ctx), httpapi.ProviderHost(repo.Repo), repo.Owner, repo.Name, repo.ID, input.Number)
+			err = (*s.Syncer).SyncIssueOnProvider(ghclient.WithSyncBudget(ctx), httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo), repo.Owner, repo.Name, input.Number, ghclient.IssueSyncOptions{PagePoll: true})
 		}
 	} else {
 		err = (*s.Syncer).SyncIssueOnProvider(ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo), repo.Owner, repo.Name, input.Number)

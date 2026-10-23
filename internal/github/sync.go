@@ -12012,7 +12012,7 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	host, owner, name string,
 	repoID int64,
 	number int,
-) error {
+) (resultErr error) {
 	if !s.AutomaticSyncEnabled() {
 		return nil
 	}
@@ -12028,6 +12028,11 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	if err != nil {
 		return err
 	}
+	probe, due := s.beginRepositoryFeatureProbe(ctx, repo, platform.RepositoryFeatureIssues)
+	if !due {
+		return nil
+	}
+	defer probe.abandon()
 	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
 	defer releaseProviderWork()
 	client, err := s.clientFor(repo)
@@ -12035,6 +12040,10 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 		return err
 	}
 	issue, etag, notModified, err := s.getIssueForDetail(ctx, client, repo, number, "issue-page")
+	defer func() {
+		s.recordGitHubRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, resultErr)
+		probe.release()
+	}()
 	if syncBudgetWait(err) || notModified {
 		return nil
 	}

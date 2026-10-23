@@ -9,7 +9,7 @@
   import { buildRoutedItemRoute, type PullRequestRouteRef } from "../routes.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
-  import { issueDetailMatchesRef, pullDetailMatchesRef, repoIdentityMatches } from "../components/detail/detail-match.js";
+  import { configuredRepoIdentityMatches, issueDetailMatchesRef, pullDetailMatchesRef, repoIdentityMatches } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -168,12 +168,12 @@
       ?? activity.getActivityItems().find(matches)
       ?? activity.getWorkspaceActivity().find(matches);
     const configuredRepo = settings.getConfiguredRepos().find((repo) =>
-      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, selection),
+      configuredRepoIdentityMatches(repo, selection),
     );
     const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
       ? retainedSelectionIdentity.repositoryKey
       : undefined;
-    return { ...selection, repositoryKey: repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo) ?? retainedKey };
+    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? repositoryKeyFromWire(configuredRepo) ?? retainedKey };
   });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
   $effect(() => {

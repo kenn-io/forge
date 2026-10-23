@@ -13,7 +13,7 @@
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
   import type { IssueDetailSyncMode } from "../stores/issues.svelte.js";
   import type { IssueRouteRef } from "../routes.js";
-  import { repoIdentityMatches, issueDetailMatchesRef } from "../components/detail/detail-match.js";
+  import { configuredRepoIdentityMatches, repoIdentityMatches, issueDetailMatchesRef } from "../components/detail/detail-match.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
   import { repositoryKeyFromWire } from "../api/repository-key.js";
@@ -65,9 +65,9 @@
       repoIdentityMatches(item, routeSelection),
     );
     const configuredRepo = settings.getConfiguredRepos().find((repo) =>
-      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, routeSelection),
+      configuredRepoIdentityMatches(repo, routeSelection),
     );
-    return repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo);
+    return repositoryKeyFromWire(item?.repo) ?? repositoryKeyFromWire(configuredRepo);
   });
   const selectedIssue = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

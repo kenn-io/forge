@@ -8,7 +8,7 @@ import {
   resetKeyboardModuleState,
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
-import { jsonResponse, mockSettings, mockIssueFixture } from "./test/mockApiFetch.js";
+import { jsonResponse, mockSettings, mockIssueFixture, mockPullFixture } from "./test/mockApiFetch.js";
 
 let mounted: MountedBrowserApp | undefined;
 
@@ -136,7 +136,16 @@ it.each([
           if (url.pathname === "/api/v1/settings")
             return jsonResponse({
               ...mockSettings,
-              repos: [{ ...mockSettings.repos[0], ...repo }],
+              repos: [
+                {
+                  ...mockSettings.repos[0],
+                  ...repo,
+                  owner: "former-team",
+                  name: "former-widgets",
+                  repo_path: "former-team/former-widgets",
+                  tracked_repo_path: "acme/widgets",
+                },
+              ],
               workspaces: { ...mockSettings.workspaces, show_agent_status_in_lists: false },
             });
           if (url.pathname !== "/api/v1/activity") return null;
@@ -247,68 +256,153 @@ it.each([
 it.each([
   { collection: "pulls", number: 42, title: "Add browser regression coverage" },
   { collection: "issues", number: 7, title: "Theme toggle does not stick" },
-])("restores a cached $collection selection outside the visible list", async ({ collection, number, title }) => {
-  mounted = await mountBrowserApp(`/${collection}/github/acme/widgets/${number}`, {
-    overrides: [
-      ({ url }) => {
-        if (url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
-        if (collection === "issues" && /^\/api\/v1\/issues\/github\/acme\/widgets\/[78]/.test(url.pathname)) {
-          const issue = {
-            ...mockIssueFixture(7),
-            ...(url.pathname.includes("/widgets/8") ? { Number: 8, Title: "Another issue" } : {}),
-          };
-          return jsonResponse({
-            issue,
-            repo: { ...issue.repo, platform_repo_id: 1001 },
-            events: [],
-            repo_owner: "acme",
-            repo_name: "widgets",
-            platform_host: "github.com",
-            detail_loaded: true,
-          });
-        }
-        if (url.pathname === "/api/v1/settings")
-          return jsonResponse({
-            ...mockSettings,
-            repos: [
-              {
-                ...mockSettings.repos[0],
-                provider: "github",
-                platform_host: "github.com",
-                platform_repo_id: 1001,
-                owner: "acme",
-                name: "widgets",
-                repo_path: "acme/widgets",
+])(
+  "restores a renamed repo's cached $collection selection outside the visible list",
+  async ({ collection, number, title }) => {
+    mounted = await mountBrowserApp(`/${collection}/github/acme/widgets/${number}`, {
+      overrides: [
+        ({ url }) => {
+          if (url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
+          if (collection === "issues" && /^\/api\/v1\/issues\/github\/acme\/widgets\/[78]/.test(url.pathname)) {
+            const issue = {
+              ...mockIssueFixture(7),
+              ...(url.pathname.includes("/widgets/8") ? { Number: 8, Title: "Another issue" } : {}),
+            };
+            return jsonResponse({
+              issue,
+              repo: { ...issue.repo, platform_repo_id: 1001 },
+              events: [],
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+              detail_loaded: true,
+            });
+          }
+          if (url.pathname === "/api/v1/settings")
+            return jsonResponse({
+              ...mockSettings,
+              repos: [
+                {
+                  ...mockSettings.repos[0],
+                  provider: "github",
+                  platform_host: "github.com",
+                  platform_repo_id: 1001,
+                  owner: "former-team",
+                  name: "former-widgets",
+                  repo_path: "former-team/former-widgets",
+                  tracked_repo_path: "acme/widgets",
+                },
+              ],
+            });
+          return null;
+        },
+      ],
+    });
+    await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(title));
+    firePopstate(`/${collection}/github/acme/widgets/${collection === "pulls" ? 55 : 8}`);
+    await vi.waitFor(() =>
+      expect(document.querySelector(".detail-title")?.textContent).toBe(
+        collection === "pulls" ? "Refactor theme system" : "Another issue",
+      ),
+    );
+    const header = page.getByRole("navigation", { name: "Page", exact: true });
+    await header.getByRole("button", { name: "Workspaces", exact: true }).click();
+    await vi.waitFor(() => expect(document.querySelector(".detail-title")).toBeNull());
+    const pending = Promise.withResolvers<void>();
+    const healthyFetch = globalThis.fetch;
+    let heldReads = 0;
+    globalThis.fetch = async (input, init) => {
+      heldReads++;
+      await pending.promise;
+      return healthyFetch(input, init);
+    };
+    try {
+      firePopstate(`/${collection}/github/acme/widgets/${number}`);
+      await vi.waitFor(() => expect(heldReads).toBeGreaterThan(0));
+      expect(document.querySelector(".detail-title")?.textContent).toBe(title);
+    } finally {
+      pending.resolve();
+    }
+  },
+);
+
+it.each(
+  [
+    { view: "Activity PR", collection: "pulls", itemType: "pr", number: 42, activity: true },
+    { view: "Activity issue", collection: "issues", itemType: "issue", number: 7, activity: true },
+    { view: "PR list", collection: "pulls", itemType: "pr", number: 42, activity: false },
+    { view: "issue list", collection: "issues", itemType: "issue", number: 7, activity: false },
+  ].flatMap((scenario) => ["moved/widgets", "acme/widgets"].map((trackedPath) => ({ ...scenario, trackedPath }))),
+)(
+  "opens the current repository in $view when a pinned path is reused (tracked: $trackedPath)",
+  async ({ collection, itemType, number, activity, trackedPath }) => {
+    const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const repo = { ...item.repo, platform_repo_id: 1001 };
+    const detailTitle = "Details from the current repository";
+    mounted = await mountBrowserApp(activity ? "/?view=threaded&collapsed=1" : `/${collection}`, {
+      overrides: [
+        ({ url }) => {
+          if (url.pathname === "/api/v1/settings")
+            return jsonResponse({
+              ...mockSettings,
+              repos: [
+                {
+                  ...mockSettings.repos[0],
+                  ...repo,
+                  owner: "acme",
+                  name: "widgets",
+                  // This pinned repository moved away; another ID now owns its old path.
+                  platform_repo_id: 2002,
+                  tracked_repo_path: trackedPath,
+                },
+              ],
+            });
+          if (url.pathname === `/api/v1/${collection}`) return jsonResponse([{ ...item, repo }]);
+          if (url.pathname === "/api/v1/activity")
+            return jsonResponse({
+              items: [],
+              item_activity: [
+                {
+                  activity_at: new Date().toISOString(),
+                  item_number: number,
+                  item_state: "open",
+                  item_title: item.Title,
+                  item_author: "user-a",
+                  item_type: itemType,
+                  repo_owner: "acme",
+                  repo_name: "widgets",
+                  repo,
+                },
+              ],
+              capped: false,
+            });
+          if (url.pathname === `/api/v1/${collection}/github/acme/widgets/${number}`)
+            return jsonResponse({
+              [collection === "pulls" ? "merge_request" : "issue"]: {
+                ...item,
+                repo,
+                Title: detailTitle,
+                Body: "Discussion from the replacement repository.",
               },
-            ],
-          });
-        return null;
-      },
-    ],
-  });
-  await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(title));
-  firePopstate(`/${collection}/github/acme/widgets/${collection === "pulls" ? 55 : 8}`);
-  await vi.waitFor(() =>
-    expect(document.querySelector(".detail-title")?.textContent).toBe(
-      collection === "pulls" ? "Refactor theme system" : "Another issue",
-    ),
-  );
-  const header = page.getByRole("navigation", { name: "Page", exact: true });
-  await header.getByRole("button", { name: "Workspaces", exact: true }).click();
-  await vi.waitFor(() => expect(document.querySelector(".detail-title")).toBeNull());
-  const pending = Promise.withResolvers<void>();
-  const healthyFetch = globalThis.fetch;
-  let heldReads = 0;
-  globalThis.fetch = async (input, init) => {
-    heldReads++;
-    await pending.promise;
-    return healthyFetch(input, init);
-  };
-  try {
-    firePopstate(`/${collection}/github/acme/widgets/${number}`);
-    await vi.waitFor(() => expect(heldReads).toBeGreaterThan(0));
-    expect(document.querySelector(".detail-title")?.textContent).toBe(title);
-  } finally {
-    pending.resolve();
-  }
-});
+              repo,
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+              detail_loaded: true,
+              events: [],
+            });
+          return null;
+        },
+      ],
+    });
+    await expect.element(page.getByText(item.Title, { exact: true }).first()).toBeVisible();
+    // URL restoration has no stable ID; the already loaded row must supply it.
+    firePopstate(
+      activity
+        ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`
+        : `/${collection}/github/acme/widgets/${number}`,
+    );
+    await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(detailTitle));
+    await expect.element(page.getByText("Discussion from the replacement repository.", { exact: true })).toBeVisible();
+  },
+);

@@ -10,7 +10,7 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
-  import { repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
+  import { configuredRepoIdentityMatches, repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -92,9 +92,9 @@
       repoIdentityMatches(item, routeSelection),
     );
     const configuredRepo = settings.getConfiguredRepos().find((repo) =>
-      !repo.is_glob && repoIdentityMatches({ repo_owner: repo.owner, repo_name: repo.name, repo }, routeSelection),
+      configuredRepoIdentityMatches(repo, routeSelection),
     );
-    return repositoryKeyFromWire(configuredRepo) ?? repositoryKeyFromWire(item?.repo);
+    return repositoryKeyFromWire(item?.repo) ?? repositoryKeyFromWire(configuredRepo);
   });
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

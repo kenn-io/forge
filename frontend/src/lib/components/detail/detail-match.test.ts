@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { repoIdentityMatches, type DetailRefLike } from "./detail-match.js";
+import { configuredRepoIdentityMatches, repoIdentityMatches, type DetailRefLike } from "./detail-match.js";
+import type { ConfigRepo } from "../../api/types.js";
 
 const cloudUUID = "0f5d2a4e-3b1c-4d7e-9a8b-1c2d3e4f5a6b";
 
@@ -45,4 +46,37 @@ describe("repoIdentityMatches", () => {
   it("accepts a route-only selection before the repository key is known", () => {
     expect(repoIdentityMatches(cloudDetail(cloudUUID), { ...cloudRef, repositoryKey: undefined })).toBe(true);
   });
+});
+
+it("matches a renamed configured repository in a nested namespace only at its tracked path", () => {
+  const repo: ConfigRepo = {
+    provider: "gitlab",
+    platform_host: "gitlab.com",
+    platform_repo_id: 42,
+    owner: "old-team",
+    name: "old-name",
+    repo_path: "old-team/old-name",
+    tracked_repo_path: "team/subgroup/widgets",
+    is_glob: false,
+    hidden_from_ui: false,
+    issue_pr_references: false,
+    matched_repo_count: 1,
+  };
+  const current: DetailRefLike = {
+    provider: "gitlab",
+    owner: "team/subgroup",
+    name: "widgets",
+    repoPath: "team/subgroup/widgets",
+    number: 7,
+  };
+  expect(configuredRepoIdentityMatches(repo, current)).toBe(true);
+  expect(
+    configuredRepoIdentityMatches(repo, {
+      ...current,
+      owner: "old-team",
+      name: "old-name",
+      repoPath: "old-team/old-name",
+    }),
+  ).toBe(false);
+  expect(configuredRepoIdentityMatches({ ...repo, is_glob: true }, current)).toBe(false);
 });

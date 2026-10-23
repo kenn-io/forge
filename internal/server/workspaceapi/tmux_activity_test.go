@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/workspace"
 )
 
@@ -307,7 +306,7 @@ fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
 	manager := workspace.NewManager(nil, dir, nil)
-	manager.SetTmuxCommand(testscript.Command(scriptPath))
+	manager.SetTmuxCommand([]string{"sh", scriptPath})
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 	srv := &Handler{workspaces: manager, tmuxActivity: tracker}
@@ -319,10 +318,10 @@ fi
 		result, ok, _, err := srv.probeWorkspaceTmuxActivity(
 			t.Context(), &db.WorkspaceSummary{}, []string{"base", "idle", "working"},
 		)
+		require.NoError(err, "each session fits within the shared probe budget")
 		trace, readErr := os.ReadFile(tracePath)
 		t.Logf("attempt=%d elapsed=%s context=%v probe_error=%v result=%+v trace_error=%v trace=\n%s",
 			attempt, time.Since(started), t.Context().Err(), err, result, readErr, trace)
-		require.NoError(err, "each session fits within the shared probe budget")
 		require.NoError(readErr)
 		assert.True(ok, "healthy sessions must produce an activity sample")
 		assert.True(result.Working)
@@ -361,7 +360,7 @@ fi
 `
 	require.NoError(os.WriteFile(scriptPath, []byte(script), 0o755))
 	manager := workspace.NewManager(nil, dir, nil)
-	manager.SetTmuxCommand(testscript.Command(scriptPath))
+	manager.SetTmuxCommand([]string{"sh", scriptPath})
 	now := time.Date(2026, 7, 15, 12, 0, 0, 0, time.UTC)
 	tracker := newTmuxActivityTracker(func() time.Time { return now })
 	srv := &Handler{workspaces: manager, tmuxActivity: tracker}

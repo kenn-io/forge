@@ -20,8 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/testutil/testscript"
-
 	"github.com/gofrs/flock"
 	managed "go.kenn.io/kit/git/managed"
 	"go.kenn.io/kwt/worktree"
@@ -1061,7 +1059,7 @@ func TestIssueWorkspaceBranchDoesNotCollideWithRecoveryState(t *testing.T) {
 			mgr := newTestManager(t, d, worktreeRoot)
 			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 			tmuxScript, _ := writeRecorderScript(t)
-			mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+			mgr.SetTmuxCommand([]string{tmuxScript})
 			ws, err := mgr.CreateIssue(
 				t.Context(), platformHost, "acme", "widget", 7,
 				CreateIssueOptions{
@@ -1492,7 +1490,7 @@ func TestSetupDirectoryRecoveryNeverCreatesReplacement(t *testing.T) {
 	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	tmuxScript, _ := writeRecorderScript(t)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7,
 		CreateIssueOptions{
@@ -1558,7 +1556,7 @@ func TestRetryDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 
 	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7,
 		CreateIssueOptions{
@@ -1608,7 +1606,7 @@ func TestDeletePendingDirectoryRecoveryPreservesExistingWorktree(t *testing.T) {
 	mgr := newTestManager(t, d, worktreeRoot)
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	tmuxScript, _ := writeRecorderScript(t)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	ws, err := mgr.CreateIssue(
 		t.Context(), platformHost, "acme", "widget", 7,
 		CreateIssueOptions{
@@ -1763,7 +1761,7 @@ func TestSetupUsesConfiguredWorktreeBasePath(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -1810,7 +1808,7 @@ func TestSetupCreatesPRWorktreeFromForkStyleWorktreeBase(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -1889,7 +1887,7 @@ func TestSetupWithOptionsKeepsWorkspaceUsableAfterRoborevFailure(t *testing.T) {
 			mgr := newWorkspaceTestManager(t, d, t.TempDir())
 			mgr.SetClones(clones)
 			tmuxScript, tmuxRecord := writeRecorderScript(t)
-			mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+			mgr.SetTmuxCommand([]string{tmuxScript})
 
 			binDir := t.TempDir()
 			roborevInvocations := filepath.Join(t.TempDir(), "roborev-invocations")
@@ -2117,7 +2115,7 @@ func TestSetupReusesExistingWorkspaceWorktree(t *testing.T) {
 	tmuxScript, tmuxRecord := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2249,7 +2247,7 @@ func TestSetupReusesExistingUniquifiedSyntheticPRWorktree(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2284,7 +2282,7 @@ func TestSetupDoesNotReuseUnconfiguredMatchingOriginWorktree(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
 	require.NoError(err)
@@ -2321,7 +2319,7 @@ func TestSetupRejectsExistingLocalBaseWorktreeWithExecutableConfig(t *testing.T)
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2364,7 +2362,7 @@ func TestSetupRejectsExistingSyntheticPRWorktreeOnStaleHead(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2420,7 +2418,7 @@ func TestSetupReusesExistingLocalBasePRHeadBranchWithoutManagingIt(t *testing.T)
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -2508,7 +2506,7 @@ func TestSetupRejectsExistingPRWorktreeOnUnexpectedBranch(t *testing.T) {
 	tmuxScript, _ := writeRecorderScript(t)
 
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -3216,7 +3214,7 @@ func TestWorkspaceBranchInspectionDoesNotRefreshExistingClone(t *testing.T) {
 	manager := newTestManager(t, d, t.TempDir())
 	manager.SetClones(clones)
 	tmuxScript, _ := writeRecorderScript(t)
-	manager.SetTmuxCommand(testscript.Command(tmuxScript))
+	manager.SetTmuxCommand([]string{tmuxScript})
 
 	// The first admission still creates the clone and checks its local branches.
 	_, err = manager.CreateAdHoc(ctx, "github", parsed.Host, "acme", "widget",
@@ -3337,7 +3335,7 @@ func TestSetupUsesManagedCloneForForkPRWithConfiguredWorktreeBasePath(t *testing
 
 	mgr := newTestManager(t, d, wtDir)
 	mgr.SetClones(clones)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	spec, err := databaseLaunchSpecResolver{db: d}.ResolveWorkspaceLaunchSpec(
@@ -3408,7 +3406,7 @@ func TestSetupFetchesConfiguredWorktreeBasePathBeforeAdd(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.Create(t.Context(), "github", platformHost, "acme", "widget", 42)
@@ -3435,7 +3433,7 @@ func TestSetupRefreshesConfiguredWorktreeBaseOriginHead(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newTestManager(t, d, wtDir)
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateIssue(
@@ -5949,7 +5947,7 @@ func TestManagerEnsureTmuxHasSessionPrefix(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
@@ -6032,7 +6030,7 @@ func TestManagerApplyTmuxGraphicsEnablesEveryOwnedCustomPane(t *testing.T) {
 	record := filepath.Join(dir, "record")
 	tmuxPath := filepath.Join(dir, "tmux")
 	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxPath))
+	mgr.SetTmuxCommand([]string{tmuxPath})
 	mgr.SetTmuxGraphics(true)
 	body := fmt.Sprintf("#!/bin/sh\n"+
 		"TMUX_RECORD=%s\n"+
@@ -6079,7 +6077,7 @@ func TestManagerApplyTmuxGraphicsDoesNotMutateCustomServer(t *testing.T) {
 	require := require.New(t)
 	script, record := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxGraphics(false)
 
 	require.NoError(mgr.ApplyTmuxGraphics(t.Context()))
@@ -6090,7 +6088,7 @@ func TestManagerApplyTmuxMouseDoesNotMutateCustomServer(t *testing.T) {
 	require := require.New(t)
 	script, record := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxMouse(true)
 
 	require.NoError(mgr.ApplyTmuxMouse(t.Context()))
@@ -6105,7 +6103,7 @@ func TestManagerEnsureTerminalUsesPtyOwnerWhenConfigured(t *testing.T) {
 	script, record := writeRecorderScript(t)
 	owner := &fakePtyOwnerClient{}
 	mgr := newTestManager(t, openTestDB(t), t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
 	require.NoError(mgr.EnsureTerminal(t.Context(), &db.Workspace{
@@ -6175,7 +6173,7 @@ func TestManagerCleanupTerminalUsesPtyOwnerForBaseSession(t *testing.T) {
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
 	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
@@ -6200,7 +6198,7 @@ func TestManagerCleanupPtyOwnerWorkspaceStopsStoredRuntimeTmuxSessions(t *testin
 	repoID := seedRepo(t, d, "github.com", "acme", "widget")
 	seedMR(t, d, repoID, 42, "feature/thing")
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerClient(owner)
 
 	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
@@ -6238,7 +6236,7 @@ func TestManagerDeleteUsesTmuxPrefix(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
@@ -6286,7 +6284,7 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
@@ -6393,7 +6391,7 @@ func TestManagerDeleteFailsWhenTmuxKillFails(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
@@ -6430,7 +6428,7 @@ func TestManagerDeleteStopsBeforeTeardownWhenAdmissionFails(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
@@ -6475,7 +6473,7 @@ func TestManagerDeleteTreatsTmuxServerExitDuringKillAsGone(t *testing.T) {
 	seedMR(t, d, repoID, 42, "feature/thing")
 
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	ctx := t.Context()
 	ws, err := mgr.Create(ctx, "github", "github.com", "acme", "widget", 42)
@@ -6568,7 +6566,7 @@ func TestManagerReapOrphanTmuxSessionsKillsUnknownManagedSessions(t *testing.T) 
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	live := &Workspace{
 		ID:           "ws-live",
@@ -6693,7 +6691,7 @@ func TestManagerReapOrphanTmuxSessionsKeepsStoredRuntimeSessions(
 		"done\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 
 	require.NoError(mgr.ReapOrphanTmuxSessions(t.Context()))
 
@@ -6743,7 +6741,7 @@ func TestManagerPruneMissingTmuxSessionsRemovesStaleRecords(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetPtyOwnerFallbackClient(&fakePtyOwnerClient{
 		StateSessions: map[string]bool{
 			"kenn-forge-0000000000000003": true,
@@ -6874,7 +6872,7 @@ func TestManagerTmuxSessionListSurvivesTmux36Sanitization(t *testing.T) {
 		`done` + "\n" +
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	ctx := t.Context()
 
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
@@ -7050,7 +7048,7 @@ func TestManagerCleanupTmuxSessionKillsRuntimeSessionsForWorkspace(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
 		TmuxSession:  "kenn-forge-0000000000000001",
@@ -7133,7 +7131,7 @@ func TestManagerCleanupTmuxSessionPreservesStoredRowsAfterRuntimeKillFailure(
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	ws := &Workspace{
 		ID:           "0000000000000001",
 		TmuxSession:  "kenn-forge-0000000000000001",
@@ -7270,7 +7268,7 @@ func TestManagerForgetRuntimeSessionAfterExitKeepsLiveTmuxSession(
 		`fi` + "\n" +
 		`exit 0` + "\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 
 	require.NoError(os.WriteFile(existsFile, []byte("1"), 0o644))
 	deleted, err := mgr.ForgetRuntimeSessionAfterExit(
@@ -7315,7 +7313,7 @@ func TestManagerRequestRetrySkipsGitCleanupWhenCloneMissing(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script, "wrap"))
+	mgr.SetTmuxCommand([]string{script, "wrap"})
 	mgr.SetClones(gitclone.New(filepath.Join(dir, "clones"), nil))
 	ctx := t.Context()
 	errMsg := "ensure clone failed"
@@ -7552,7 +7550,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMiss(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	mgr.SetHideTmuxStatus(true)
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
@@ -7617,7 +7615,7 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	mgr.SetTmuxGraphics(true)
 	mgr.SetTmuxMouse(true)
 
@@ -7709,7 +7707,7 @@ func TestManagerEnsureTmuxPropagatesNon1ExitCode(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-Y", "/tmp")
 	require.Error(err)
@@ -7732,7 +7730,7 @@ func TestManagerEnsureTmuxPropagatesExit1NonTmuxError(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-Q", "/tmp")
 	require.Error(err)
@@ -7758,7 +7756,7 @@ func TestManagerEnsureTmuxIgnoresAbsencePhraseOnStdout(t *testing.T) {
 
 	d := openTestDB(t)
 	mgr := newTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 
 	err := mgr.EnsureTmux(t.Context(), "sess-R", "/tmp")
 	require.Error(err)

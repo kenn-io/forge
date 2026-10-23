@@ -28,7 +28,6 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/gitclone"
-	"go.kenn.io/forge/internal/testutil/testscript"
 
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/procutil"
@@ -239,7 +238,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 
 	cfg := &config.Config{
 		Tmux: config.Tmux{
-			Command: testscript.Command(script, "wrap"),
+			Command: []string{script, "wrap"},
 		},
 	}
 	srv = New(database, syncer, nil, "/", cfg, ServerOptions{

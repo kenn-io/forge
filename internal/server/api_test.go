@@ -38,7 +38,6 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/testutil/testscript"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"golang.org/x/sync/semaphore"
 
@@ -5400,7 +5399,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 
 	t.Run("fixture", func(t *testing.T) {
 		cfg := &config.Config{
-			Tmux: config.Tmux{Command: testscript.Command(script)},
+			Tmux: config.Tmux{Command: []string{script}},
 		}
 		client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 
@@ -5442,7 +5441,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	database := dbtest.Open(t)
 
 	manager := workspacetest.NewManager(t, database, filepath.Join(dir, "worktrees"))
-	manager.SetTmuxCommand(testscript.Command(script))
+	manager.SetTmuxCommand([]string{script})
 	srv := wiredServer(&Server{workspaces: manager})
 	ctx := context.Background()
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
@@ -5619,7 +5618,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 		0o755,
 	))
 	restartedCfg := &config.Config{Tmux: config.Tmux{
-		Command: testscript.Command(availableTmux),
+		Command: []string{availableTmux},
 	}}
 	restarted := New(
 		fixture.database, fixture.syncer, nil, "/", restartedCfg,
@@ -6095,7 +6094,7 @@ exit 0
 		Key:     "helper",
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("sleep"),
-	}}, Tmux: config.Tmux{Command: testscript.Command(tmuxPath)}}
+	}}, Tmux: config.Tmux{Command: []string{tmuxPath}}}
 	ctx := context.Background()
 	ws := &workspace.Workspace{
 		ID:              "0000000000000001",
@@ -6209,9 +6208,9 @@ exit 0
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: testscript.Command(agentPath, "--flag"),
+			Command: []string{agentPath, "--flag"},
 		}},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
 	ctx := context.Background()
@@ -6378,7 +6377,7 @@ exit 0
 		t, database, ws.ID, "", "helper", sessionName, time.Time{},
 	)
 
-	cfg := &config.Config{Tmux: config.Tmux{Command: testscript.Command(tmuxPath)}}
+	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
 	srv := New(database, nil, nil, "/", cfg, ServerOptions{
 		WorktreeDir: worktreeDir,
 	})
@@ -6469,9 +6468,9 @@ exit 0
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: testscript.Command(agentPath),
+			Command: []string{agentPath},
 		}},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
@@ -6633,10 +6632,10 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	cfg := &config.Config{
 		Agents: []config.Agent{
-			{Key: "foo/bar", Label: "Foo Slash", Command: testscript.Command(agentPath)},
-			{Key: "foo:bar", Label: "Foo Colon", Command: testscript.Command(agentPath)},
+			{Key: "foo/bar", Label: "Foo Slash", Command: []string{agentPath}},
+			{Key: "foo:bar", Label: "Foo Colon", Command: []string{agentPath}},
 		},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
@@ -6703,9 +6702,9 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: testscript.Command(agentPath),
+			Command: []string{agentPath},
 		}},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
@@ -6786,9 +6785,9 @@ exit 0
 		Agents: []config.Agent{{
 			Key:     "helper",
 			Label:   "Helper",
-			Command: testscript.Command(agentPath),
+			Command: []string{agentPath},
 		}},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := context.Background()
@@ -7055,7 +7054,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		"exit 0\n"
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(script)},
+		Tmux: config.Tmux{Command: []string{script}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
 	ctx := context.Background()
@@ -7118,7 +7117,7 @@ func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) { //nolin
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
 			Command: serverRuntimeHelperCommand("sleep"),
 		},
@@ -7157,7 +7156,7 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 		os.Getenv("KENN_FORGE_FAKE_TMUX_ATTACH_EXIT"), []byte("1"), 0o600,
 	))
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
 			Command: serverRuntimeHelperCommand("sleep"),
 		},
@@ -7243,7 +7242,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) { //noli
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
 			Command: serverRuntimeHelperCommand("sleep"),
 		},
@@ -7324,7 +7323,7 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 
 	tmuxPath := writeFakeWorkspaceRuntimeTmux(t)
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Shell: config.Shell{
 			Command: serverRuntimeHelperCommand("sleep"),
 		},

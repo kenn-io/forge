@@ -5,8 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"go.kenn.io/forge/internal/testutil/testscript"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -326,7 +324,7 @@ func TestSetupAdHocWorkspaceBranchesFromOriginHead(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateAdHoc(
@@ -368,7 +366,7 @@ func TestSetupAdHocWorkspaceLeavesMatchingRemoteUntracked(t *testing.T) {
 	)))
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 	ws, err := mgr.CreateAdHoc(
 		t.Context(), "github", platformHost, "acme", "widget",
@@ -397,7 +395,7 @@ func TestSetupAdHocWorkspaceUsesHashedBranchForPrefixConflict(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateAdHoc(
@@ -433,7 +431,7 @@ func TestSetupAdHocWorkspaceLateBranchConflictFailsWithoutChangingIdentity(t *te
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateAdHoc(
@@ -537,7 +535,7 @@ func TestSetupFailsClosedWhenRouteReplacedMidSetup(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateAdHoc(
@@ -594,7 +592,7 @@ func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
 
 	tmuxScript, _ := writeRecorderScript(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(tmuxScript))
+	mgr.SetTmuxCommand([]string{tmuxScript})
 	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 
 	ws, err := mgr.CreateAdHoc(

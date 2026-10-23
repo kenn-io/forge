@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/testutil/testscript"
-
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,7 +41,7 @@ func TestPruneMissingTmuxSessionsKeepsReadyWorkspacesWhenServerIsEmpty(
 
 	d := openTestDB(t)
 	mgr := newWorkspaceTestManager(t, d, t.TempDir())
-	mgr.SetTmuxCommand(testscript.Command(script))
+	mgr.SetTmuxCommand([]string{script})
 	ctx := t.Context()
 	require.NoError(d.InsertWorkspace(ctx, &Workspace{
 		ID:           "0000000000000009",

@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go.kenn.io/forge/internal/testutil/testscript"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -87,7 +85,7 @@ func TestNewKataWorkspaceDoesNotAdoptCollidingBranch(t *testing.T) {
 	clone, err := mgr.clones.ClonePath("github", "github.com", "acme", "widget")
 	require.NoError(err)
 	tmux, _ := writeRecorderScript(t)
-	mgr.SetTmuxCommand(testscript.Command(tmux))
+	mgr.SetTmuxCommand([]string{tmux})
 	seedWorkspaceBareCloneAt(t, clone)
 	configureOriginHeadForIssueWorkspace(t, clone)
 	runWorkspaceTestGit(t, clone, "branch", ws.GitHeadRef, "HEAD")
@@ -169,7 +167,7 @@ func TestSetupReusesAdoptedPRCheckoutWithLocalCommits(t *testing.T) {
 			seedMR(t, database, repoID, 42, "feature/thing")
 			mgr := newTestManager(t, database, t.TempDir())
 			tmux, _ := writeRecorderScript(t)
-			mgr.SetTmuxCommand(testscript.Command(tmux))
+			mgr.SetTmuxCommand([]string{tmux})
 			mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
 			ws, err := mgr.Create(ctx, "github", host, "acme", "widget", 42)
 			require.NoError(err)
@@ -214,7 +212,7 @@ func TestRestoredAdHocCheckoutSurvivesLaterSetupFailure(t *testing.T) {
 	require.NoError(os.RemoveAll(ws.WorktreePath))
 	tmux := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(tmux, []byte("#!/bin/sh\necho 'cannot connect to server' >&2\nexit 1\n"), 0o755))
-	mgr.SetTmuxCommand(testscript.Command(tmux))
+	mgr.SetTmuxCommand([]string{tmux})
 	require.Error(mgr.Setup(ctx, ws))
 	assert.Equal(before, runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD"))
 	assert.Contains(string(runWorkspaceTestGit(t, ws.WorktreePath, "diff", "--cached", "--name-only")), "staged.txt")
@@ -222,7 +220,7 @@ func TestRestoredAdHocCheckoutSurvivesLaterSetupFailure(t *testing.T) {
 	require.NoError(err)
 	assert.Empty(current)
 	workingTmux, _ := writeRecorderScript(t)
-	mgr.SetTmuxCommand(testscript.Command(workingTmux))
+	mgr.SetTmuxCommand([]string{workingTmux})
 	require.NoError(mgr.Setup(ctx, ws))
 	assert.Equal(before, runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD"))
 	assert.Contains(string(runWorkspaceTestGit(t, ws.WorktreePath, "diff", "--cached", "--name-only")), "staged.txt")
@@ -249,7 +247,7 @@ func TestEmptyPRBranchDoesNotPreserveFreshFailedCheckout(t *testing.T) {
 			require.NoError(database.UpdateWorkspaceBranch(ctx, ws.ID, ""))
 			tmux := filepath.Join(t.TempDir(), "tmux")
 			require.NoError(os.WriteFile(tmux, []byte("#!/bin/sh\necho 'cannot connect to server' >&2\nexit 1\n"), 0o755))
-			mgr.SetTmuxCommand(testscript.Command(tmux))
+			mgr.SetTmuxCommand([]string{tmux})
 			require.ErrorContains(mgr.Setup(ctx, ws), "tmux new-session")
 			assert.NoDirExists(ws.WorktreePath)
 			state, err := mgr.observeWorkspaceRegistration(ctx, localRepo, ws.WorktreePath)

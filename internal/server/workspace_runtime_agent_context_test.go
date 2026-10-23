@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/internal/testutil/testscript"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/config"
@@ -36,8 +35,8 @@ func TestWorkspaceRuntimeLaunchWritesAgentContextE2E(t *testing.T) {
 	agentPath := filepath.Join(dir, "helper-agent")
 	require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 	cfg := &config.Config{
-		Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: testscript.Command(agentPath)}},
-		Tmux:   config.Tmux{Command: testscript.Command(tmuxPath)},
+		Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: []string{agentPath}}},
+		Tmux:   config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 	ctx := t.Context()
@@ -83,8 +82,8 @@ func TestWorkspaceRuntimeLaunchRejectsUnsafeRepositoryAgentInstructionsE2E(t *te
 			agentPath := filepath.Join(dir, "helper-agent")
 			require.NoError(os.WriteFile(agentPath, []byte("#!/bin/sh\nexit 0\n"), 0o755))
 			cfg := &config.Config{
-				Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: testscript.Command(agentPath)}},
-				Tmux:   config.Tmux{Command: testscript.Command(tmuxPath)},
+				Agents: []config.Agent{{Key: "codex", Label: "Codex", Command: []string{agentPath}}},
+				Tmux:   config.Tmux{Command: []string{tmuxPath}},
 			}
 			client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 			ctx := t.Context()
@@ -124,7 +123,7 @@ func TestWorkspaceRuntimeLaunchWritesIssueAndKataAgentContextE2E(t *testing.T) {
 	t.Cleanup(syncer.Stop)
 	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, dir, filepath.Join(dir, "tmux-record"))
 	cfg := &config.Config{
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 		Agents: []config.Agent{{
 			Key:     "codex",
 			Label:   "Codex",

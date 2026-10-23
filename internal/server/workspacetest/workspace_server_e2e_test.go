@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"go.kenn.io/forge/internal/testutil/testscript"
-
 	"github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -125,7 +123,7 @@ exit 0
 			Label:   "Helper",
 			Command: []string{"/bin/sh", "-lc", "exit 0"},
 		}},
-		Tmux: config.Tmux{Command: testscript.Command(tmuxPath)},
+		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
@@ -212,7 +210,7 @@ if [ "$mode" = "capture-pane" ]; then
 fi
 exit 0
 	`), 0o755))
-	cfg := &config.Config{Tmux: config.Tmux{Command: testscript.Command(tmuxPath)}}
+	cfg := &config.Config{Tmux: config.Tmux{Command: []string{tmuxPath}}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
 	database := fixture.database

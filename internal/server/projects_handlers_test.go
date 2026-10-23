@@ -15,7 +15,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.kenn.io/forge/internal/testutil/testscript"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
@@ -91,7 +90,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 
 	tmuxScript := writeProjectRuntimeTmuxProbe(t, "project-runtime-live", 0, "")
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTestWithTmux(
-		t, testscript.Command(tmuxScript, "--socket", "runtime"),
+		t, []string{tmuxScript, "--socket", "runtime"},
 	)
 	sessionKey := worktreeID + "_helper"
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
@@ -125,7 +124,7 @@ func TestProjectWorktreeRuntimeAttachSpecUsesStoredTmuxSession(t *testing.T) {
 	assert.Equal(
 		[]string{
 			"env", "-u", "TMUX", "-u", "TMUX_TMPDIR",
-			"sh", tmuxScript, "--socket", "runtime",
+			tmuxScript, "--socket", "runtime",
 			"-u", "attach-session", "-E", "-t", "project-runtime-live",
 		},
 		spec.Command,
@@ -140,7 +139,7 @@ func TestProjectWorktreeRuntimeAttachSpecRejectsMissingTmuxSession(t *testing.T)
 
 	tmuxScript := writeProjectRuntimeTmuxProbe(t, "project-runtime-live", 1, "can't find session")
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTestWithTmux(
-		t, testscript.Command(tmuxScript),
+		t, []string{tmuxScript},
 	)
 	sessionKey := worktreeID + "_helper"
 	require.NoError(srv.db.UpsertProjectWorktreeTmuxSession(
@@ -176,7 +175,7 @@ func TestProjectWorktreeRuntimeStopFallsBackToStoredTmuxSession(t *testing.T) {
 
 	tmuxScript, record := writeProjectRuntimeTmuxRecorder(t)
 	srv, projectID, worktreeID := setupProjectWorktreeRuntimeTestWithTmux(
-		t, testscript.Command(tmuxScript),
+		t, []string{tmuxScript},
 	)
 
 	targetKey := "helper"

@@ -92,6 +92,12 @@ what "current" means.
   even on failure. Failed details stay overdue for a later cycle
   (`internal/github/sync.go::drainDetailQueue`).
 
+For issues:
+
+- Issue-page polls preserve `detail_fetched_at`; detail reads bypass the saved
+  ETag when that timestamp is unset or older than `updated_at`, so timelines catch up
+  (`internal/github/sync.go::fetchIssueDetail`).
+
 For pull requests, that means:
 
 - Detail freshness must cover comments, reviews, review threads, commits, and
@@ -130,7 +136,6 @@ For pull requests, that means:
   (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual refreshes remain
   unconditional (`internal/github/sync.go::SyncMROnProvider`). Cadence control is
   still required because child reads spend provider quota.
-- Issue-page polls save the parent, comments, and ETag while preserving `detail_fetched_at`; background detail reads must bypass that ETag while `updated_at > detail_fetched_at` so timeline catch-up remains eligible (`internal/github/sync.go::fetchIssueDetail`).
 - MR snapshot publication reclassifies workspace head-repository trust from the
   stored row. Provider-ID collisions preserve the destination
   MR ID and merge its dependent review data before applying the newest provider

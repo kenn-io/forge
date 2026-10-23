@@ -19191,12 +19191,12 @@ paths:
           schema:
             format: int64
             type: integer
-        - description: Check the GitHub issue before refreshing its details.
+        - description: Check GitHub for changes; other providers return the local copy.
           explode: false
           in: query
           name: if_changed
           schema:
-            description: Check the GitHub issue before refreshing its details.
+            description: Check GitHub for changes; other providers return the local copy.
             type: boolean
       responses:
         "200":
@@ -23431,12 +23431,12 @@ paths:
           schema:
             format: int64
             type: integer
-        - description: Check the GitHub issue before refreshing its details.
+        - description: Check GitHub for changes; other providers return the local copy.
           explode: false
           in: query
           name: if_changed
           schema:
-            description: Check the GitHub issue before refreshing its details.
+            description: Check GitHub for changes; other providers return the local copy.
             type: boolean
       responses:
         "200":

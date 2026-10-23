@@ -39,7 +39,7 @@ type IssueRepoNumberInput struct {
 
 type SyncIssueInput struct {
 	IssueRepoNumberInput
-	IfChanged bool `query:"if_changed" doc:"Check the GitHub issue before refreshing its details."`
+	IfChanged bool `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
 }
 
 type ResolveItemInput struct {

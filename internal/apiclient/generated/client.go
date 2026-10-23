@@ -59879,7 +59879,7 @@ type ListWorkflowRunsOnHostQuery struct {
 }
 
 type SyncIssueOnHostQuery struct {
-	// IfChanged Check the GitHub issue before refreshing its details.
+	// IfChanged Check GitHub for changes; other providers return the local copy.
 	IfChanged *bool `json:"if_changed,omitempty"`
 }
 
@@ -60015,7 +60015,7 @@ type ListIssuesQuery struct {
 }
 
 type SyncIssueQuery struct {
-	// IfChanged Check the GitHub issue before refreshing its details.
+	// IfChanged Check GitHub for changes; other providers return the local copy.
 	IfChanged *bool `json:"if_changed,omitempty"`
 }
 

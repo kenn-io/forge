@@ -244,7 +244,7 @@ func (s *Handlers) enqueuePRSyncOnHost(ctx context.Context, input *RepoNumberHos
 
 type syncIssueHostInput struct {
 	RepoNumberHostInput
-	IfChanged bool `query:"if_changed" doc:"Check the GitHub issue before refreshing its details."`
+	IfChanged bool `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
 }
 
 func (s *Handlers) syncIssueOnHost(ctx context.Context, input *syncIssueHostInput) (*itemapi.SyncIssueOutput, error) {

@@ -4,7 +4,7 @@
 
 export type SyncIssueOnHostParams = {
   /**
-   * Check the GitHub issue before refreshing its details.
+   * Check GitHub for changes; other providers return the local copy.
    */
   if_changed?: boolean;
 };

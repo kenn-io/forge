@@ -8976,7 +8976,7 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	// A page poll can save the parent ETag before the timeline catches up.
-	if existing != nil && existing.DetailFetchedAt != nil && existing.UpdatedAt.After(*existing.DetailFetchedAt) {
+	if existing != nil && (existing.DetailFetchedAt == nil || existing.UpdatedAt.After(*existing.DetailFetchedAt)) {
 		ctx = platformgithub.WithUnconditionalRead(ctx)
 	}
 
@@ -12056,22 +12056,25 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 	if err != nil {
 		return err
 	}
+	if issue.GetID() != existing.PlatformID {
+		return nil
+	}
 	normalized, err := NormalizeIssue(repoID, issue)
 	if err != nil {
 		return err
+	}
+	comments, commentsErr := s.listCommentsForRefresh(ctx, client, repo, number, issue.GetComments())
+	if commentsErr != nil && !platformgithub.IsNotModified(commentsErr) {
+		if syncBudgetWait(commentsErr) {
+			return nil
+		}
+		return commentsErr
 	}
 	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, normalized)
 	if err != nil || !accepted {
 		return err
 	}
-	comments, err := s.listCommentsForRefresh(ctx, client, repo, number, issue.GetComments())
-	if err != nil && !platformgithub.IsNotModified(err) {
-		if syncBudgetWait(err) {
-			return nil
-		}
-		return err
-	}
-	if err == nil {
+	if commentsErr == nil {
 		applied, err := s.replaceIssueCommentEvents(ctx, repo, number, issueID, revision, comments, nil, nil, nil)
 		if err != nil || !applied {
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")

@@ -17,8 +17,9 @@ Start in **Activity** to find new comments, reviews, and state changes. Open
 The list shows review state, CI, branch information, and repository context.
 Select an item to open its description, timeline, actions, and diff.
 
-Use **Passing CI** in the list filters to find pull requests whose checks all
-passed, or **Failed CI** for the ones that need attention. A pull request with
+Use **Passing CI** in the list filters to find pull requests whose checks
+passed with none failed or still running, or **Failed CI** for the ones with a
+failed check. A pull request with
 no reported CI matches neither.
 
 Use local workflow statuses when you need a personal queue such as "needs my

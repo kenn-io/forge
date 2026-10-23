@@ -234,8 +234,8 @@ these tools call provider APIs.
 - `kenn_forge_get_worklist` reads a list with its recipe and, for each item,
   whether it is fresh, changed, or gone since the list was written, what
   changed, and when the maintainer marked it handled.
-- `kenn_forge_list_worklists` lists worklists, newest first, with their item
-  counts. Pass `include_dismissed` to include dismissed lists.
+- `kenn_forge_list_worklists` lists worklists, most recently updated first,
+  with their item counts. Pass `include_dismissed` to include dismissed lists.
 - `kenn_forge_dismiss_worklist` hides a list. Writing the list again brings it
   back.
 - `kenn_forge_clear_worklist_marks` clears every handled mark on a list. Call

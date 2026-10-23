@@ -51,10 +51,10 @@ those with pending CI merge once their checks pass. Drafts, conflicts, and
 failed CI are skipped.
 
 The same selection works in the pull request and issue lists for other
-actions. Right-click to star, edit labels or assignees, close, reopen, copy
-links, or open the items in the browser. Pull requests also offer workflow
-status, **Mark ready for review**, and **Convert to draft**. Label and
-assignee edits change only the values you change.
+actions. Right-click to copy links, star, edit labels or assignees, close,
+reopen, or run a quick action on each item. Pull requests also offer **Mark
+ready for review** and **Convert to draft**. Label and assignee edits change
+only the values you change.
 
 Detected stacks show member order. Mid-stack merges stay blocked by default
 until earlier members land.

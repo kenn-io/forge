@@ -23,8 +23,8 @@ list from the same recipe.
 ## Work the list
 
 The rail on the left shows the list's rows. Selecting a row opens the regular
-pull request or issue detail beside it, with its conversation, files, and
-workspace.
+pull request or issue detail beside it, with its conversation, workspace,
+and, for a pull request, changed files.
 
 - Press `j` and `k` to move between items, even with the rail collapsed.
 - Press `d` to mark the open item handled and move to the next one. A handled
@@ -41,9 +41,10 @@ The progress bar counts items that are handled, merged, or closed. With more
 than one list, the title is a picker that shows how many items each list has
 left.
 
-Shift- or Cmd/Ctrl-click rows to select several. **Actions** runs a quick
-action, such as triage, on each selected item in its own workspace, and
-**Mark handled** marks the whole selection.
+Shift- or Cmd/Ctrl-click rows to select several. **Actions** opens the same
+menu as the pull request and issue lists: copy links, star, edit labels or
+assignees, merge, close, reopen, or run a quick action, such as triage, on
+each item in its own workspace. **Mark handled** marks the whole selection.
 
 Forge remembers the list and item you had open. Reopening **Worklists** returns
 you there.
@@ -52,8 +53,8 @@ you there.
 
 Forge records each item's state when the agent writes it: head commit,
 comment count, CI result, review decision, and whether it was open. Rows then
-name what has changed since, such as new commits or a new CI result.
-**N changed since** in the list header filters to those rows.
+name what has changed since, such as new commits, a new CI result, or a
+merge. **N changed since** in the list header filters to those rows.
 
 When an item has new commits, its note may describe an older head. The context
 strip says so next to the note. Items merged or closed since the list was

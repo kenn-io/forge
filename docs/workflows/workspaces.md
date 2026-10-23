@@ -114,8 +114,8 @@ Review the files first. Force deletion is available only after that warning.
 To delete several workspaces, Shift- or Cmd/Ctrl-click them in the list,
 right-click, and choose **Delete N workspaces...**. The dialog closes when you
 confirm, and each row shows **Deleting workspace** until its delete finishes.
-Bulk deletion never forces, so workspaces with uncommitted changes stay, and
-Forge lists them, along with any failures, when it finishes.
+Bulk deletion never forces, so workspaces with uncommitted changes stay.
+When it finishes, Forge names each workspace it could not delete and why.
 
 If issue workspace creation finds the expected directory already present,
 Forge can recover it after verifying that it belongs to the managed

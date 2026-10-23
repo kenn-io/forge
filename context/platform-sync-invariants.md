@@ -648,9 +648,12 @@ Players join the page gallery with images and diagrams:
   source and calls `load()`, which ends its requests in every browser. The
   copy stays outside the document so its load errors never reach the fallback
   notice. Collapsed players wait until expanded, a player scrolled out of
-  view before its turn waits to return, started players are left alone, and results are kept per source for the session so a body that
-  renders again shows them at once. A source on another origin without CORS
-  taints the canvas, so those players show only their length
+  view before its turn waits to return, started players are left alone, and
+  results are kept per source for the session so a body that renders again
+  shows them at once. Previews apply to the rendered `<video>` and to the
+  kit-ui player's own, which copies the rendered poster when it replaces it.
+  A source on another origin without CORS taints the canvas, so those players
+  show only their length
   (`frontend/src/lib/utils/markdown-video-preview.ts::observeMarkdownVideoPreviews`).
 - A media stream whose client leaves a write unread for 15 seconds ends.
   Browsers stop reading a buffered video and can keep that connection open

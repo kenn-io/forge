@@ -8,7 +8,11 @@ import { Effect, Option, Queue } from "effect";
 // source, which ends its request. The player itself still fetches nothing
 // until it is played.
 
-const PLAYER_SELECTOR = ".markdown-video-frame > video.markdown-video";
+// The rendered <video>, and the kit-ui player's own <video> that replaces it
+// once mounted (markdown-video-player.ts::initMarkdownVideoPlayers). The
+// player copies the rendered one's poster, so a preview shown before the
+// swap carries over.
+const PLAYER_SELECTOR = ".markdown-video-frame video";
 
 // A copy that has no first frame by then gives up, so one slow source never
 // holds the queue. Whatever the copy learned by then still shows.
@@ -230,7 +234,7 @@ function showPreview(player: HTMLVideoElement, preview: MarkdownVideoPreview): v
 }
 
 function showDuration(player: HTMLVideoElement, seconds: number): void {
-  const header = player.parentElement?.querySelector(":scope > .markdown-video-header");
+  const header = player.closest(".markdown-video-frame")?.querySelector(":scope > .markdown-video-header");
   if (!header) return;
   let label = header.querySelector("time.markdown-video-duration");
   if (!label) {

@@ -107,14 +107,14 @@ function trackMediaRequests(page: Page) {
 
 async function expectPreviewed(frame: Locator, options?: { timeout: number }): Promise<void> {
   await expect(frame.locator(".markdown-video-duration")).toHaveText("0:03", options);
-  await expect(frame.locator("video.markdown-video")).toHaveAttribute("poster", /^blob:/, options);
+  await expect(frame.locator("video")).toHaveAttribute("poster", /^blob:/, options);
 }
 
 test("shows a player's length and first frame before it is played", async ({ page }) => {
   const media = trackMediaRequests(page);
   await page.goto(route("/issues/github/acme/widgets/14"));
   const frame = page.locator(".markdown-body .markdown-video-frame").first();
-  const video = frame.locator("video.markdown-video");
+  const video = frame.locator("video");
 
   await expectPreviewed(frame);
   await expect.poll(() => media.open).toBe(0);
@@ -149,7 +149,7 @@ test("plays to the end when the daemon cuts its download short", async ({ page }
     });
     await page.goto(new URL("/issues/github/acme/widgets/14", cutServer.info.base_url).toString());
     const frame = page.locator(".markdown-body .markdown-video-frame").first();
-    const video = frame.locator("video.markdown-video");
+    const video = frame.locator("video");
     // Firefox previews from a copy of the whole clip, so it waits out every cut.
     await expectPreviewed(frame, { timeout: 15_000 });
 
@@ -230,7 +230,7 @@ test("replaces a player that cannot load with a link to the original", async ({ 
 test("collapses and expands a player from its header", async ({ page }) => {
   await page.goto(route("/issues/github/acme/widgets/14"));
   const frame = page.locator(".markdown-body .markdown-video-frame").first();
-  const header = frame.getByRole("button", { name: "Video", exact: true });
+  const header = frame.getByRole("button", { name: /^Video/ });
   const video = frame.locator("video");
   const chevron = header.locator(".markdown-video-chevron");
   await expect(header).toHaveAttribute("aria-expanded", "true");

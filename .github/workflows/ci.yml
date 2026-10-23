@@ -268,7 +268,7 @@ jobs:
         env:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
 
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
@@ -326,7 +326,7 @@ jobs:
 
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
         env:
           MISE_ENV: ci
 

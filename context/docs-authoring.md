@@ -46,8 +46,9 @@ screenshots, or the Zensical site.
   plus `/docs/<page>.md`; index as `/docs/index.md`, so relative links resolve
   from the page's own directory) listed in the hand-maintained
   `docs/llms.txt`, and the build fails when any half or listing is missing —
-  a new page must be added to the file, nav, allowlist, and `llms.txt`.
-  (`scripts/build-docs.mjs::verifySiteRoot`)
+  a new page must be added to the file, nav, `publishedFiles`, `llms.txt`,
+  and `.vercelignore`; local builds pass without the last, but the Vercel
+  build cannot find the page. (`scripts/build-docs.mjs::verifySiteRoot`)
 - User-facing workflow screenshots are generated only by `make docs-screenshots`
   and must not be tracked on the main branch. Publish one complete current set
   at the root of the orphan `docs-assets` branch, then review its full commit

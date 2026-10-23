@@ -1243,3 +1243,33 @@ func TestMarkdownVideoFixtureAbsentWithoutFlag(t *testing.T) {
 	require.NoError(err)
 	assert.Nil(t, issue)
 }
+
+func TestMarkdownVideoFixtureAddsServedVideosToPullRequestDescription(t *testing.T) {
+	require := require.New(t)
+	assets, err := web.Assets()
+	require.NoError(err)
+	clipPath := filepath.Join(t.TempDir(), "demo.webm")
+	require.NoError(os.WriteFile(clipPath, []byte("webm"), 0o600))
+	state, err := buildAppState(t.Context(), assets, appOptions{
+		roborevEndpoint: defaultRoborevEndpoint,
+		markdownVideo:   clipPath,
+	})
+	require.NoError(err)
+	t.Cleanup(state.close)
+
+	repo, err := state.database.GetRepoByIdentity(t.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"))
+	require.NoError(err)
+	require.NotNil(repo)
+	pull, err := state.database.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 1)
+	require.NoError(err)
+	require.NotNil(pull)
+	for _, source := range e2eMarkdownVideoGallerySources {
+		assert.Contains(t, pull.Body, "\n\n"+source)
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
+			"http://127.0.0.1/api/v1/repo/github/acme/widgets/markdown-media?source="+url.QueryEscape(source), nil)
+		recorder := httptest.NewRecorder()
+		state.handler.ServeHTTP(recorder, request)
+		assert.Equal(t, http.StatusOK, recorder.Code, source)
+		assert.Equal(t, "webm", recorder.Body.String(), source)
+	}
+}

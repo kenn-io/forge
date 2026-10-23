@@ -3,7 +3,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test";
 import { startIsolatedE2EServerWithOptions, type IsolatedE2EServer } from "./support/e2eServer";
 
 const clip = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/markdown-video.webm");
@@ -80,23 +80,60 @@ test("plays an issue description video", async ({ page }) => {
   await expectContained(video, body);
 });
 
-// Firefox reads ahead on every player it preloads, so a page with a few
-// videos would hold every connection the browser allows to the daemon.
-test("starts no video download until the player is played", async ({ page }) => {
-  const downloads: string[] = [];
+// Counts video requests a page starts and how many are open at once. Firefox
+// reads ahead on every player it preloads, so a page with a few videos would
+// hold every connection the browser allows to the daemon.
+function trackMediaRequests(page: Page) {
+  const open = new Set<Request>();
+  const counts = { started: 0, open: 0, mostOpen: 0 };
   page.on("request", (request) => {
-    if (request.resourceType() === "media") downloads.push(request.url());
+    if (request.resourceType() !== "media") return;
+    open.add(request);
+    counts.started++;
+    counts.open = open.size;
+    counts.mostOpen = Math.max(counts.mostOpen, open.size);
   });
-  await page.goto(route("/issues/github/acme/widgets/14"));
-  const video = page.locator(".markdown-body .markdown-video-frame video").first();
+  const end = (request: Request) => {
+    open.delete(request);
+    counts.open = open.size;
+  };
+  page.on("requestfinished", end);
+  page.on("requestfailed", end);
+  return counts;
+}
 
-  // The player goes idle once it has decided what to fetch before play.
-  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.networkState)).toBe(1);
+async function expectPreviewed(frame: Locator): Promise<void> {
+  await expect(frame.locator(".markdown-video-duration")).toHaveText("0:03");
+  await expect(frame.locator("video.markdown-video")).toHaveAttribute("poster", /^blob:/);
+}
+
+test("shows a player's length and first frame before it is played", async ({ page }) => {
+  const media = trackMediaRequests(page);
+  await page.goto(route("/issues/github/acme/widgets/14"));
+  const frame = page.locator(".markdown-body .markdown-video-frame").first();
+  const video = frame.locator("video.markdown-video");
+
+  await expectPreviewed(frame);
+  await expect.poll(() => media.open).toBe(0);
+  // The preview came from a copy; the player itself has fetched nothing.
   expect(await video.evaluate((v: HTMLVideoElement) => v.readyState)).toBe(0);
-  expect(downloads).toEqual([]);
 
   await startPlayback(video);
-  expect(downloads).not.toEqual([]);
+});
+
+test("previews a description's players one at a time and holds no request afterwards", async ({ page }) => {
+  const media = trackMediaRequests(page);
+  await page.goto(route("/pulls/github/acme/widgets/1"));
+  const frames = page.locator(".markdown-body .markdown-video-frame");
+  await expect(frames).toHaveCount(5);
+
+  for (const frame of await frames.all()) {
+    await frame.scrollIntoViewIfNeeded();
+    await expectPreviewed(frame);
+  }
+  await expect.poll(() => media.open).toBe(0);
+  expect(media.started).toBeGreaterThanOrEqual(5);
+  expect(media.mostOpen).toBe(1);
 });
 
 test("keeps the player size when the first play loads the video", async ({ page }) => {

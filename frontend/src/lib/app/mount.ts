@@ -6,6 +6,7 @@ import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
 import { initMarkdownVideoPlayers } from "../utils/markdown-video-player.js";
+import { observeMarkdownVideoPreviews } from "../utils/markdown-video-preview.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";
 import { startRuntimeTelemetry } from "./telemetry.js";
@@ -101,6 +102,11 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
+  const videoPreviews = runtime.runCommand(Effect.scoped(observeMarkdownVideoPreviews(target)), {
+    operation: "preview markdown videos",
+    safeContext: {},
+    onFailure: () => {},
+  });
   const appOpens = runtime.runCommand(Effect.scoped(reportAppOpens(runtime)), {
     operation: "report app opens",
     safeContext: {},
@@ -110,6 +116,7 @@ export function mountApplication(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
     Effect.ensuring(Effect.sync(videoPlayers.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
+    Effect.ensuring(Effect.sync(videoPreviews.interrupt)),
     Effect.ensuring(Effect.sync(appOpens.interrupt)),
     Effect.ensuring(runtime.disposeEffect),
   );

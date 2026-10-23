@@ -7183,9 +7183,12 @@ func (s *Syncer) indexUpsertMergeRequest(
 		)
 	}
 
-	// Preserve fields list endpoints commonly omit.
+	// Preserve fields list endpoints commonly omit. The comment count is
+	// owned by the comment sync: list counts are absent (GitHub) or count
+	// different notes (GitLab), and writing them would make it flap.
 	needsCIDetailRefresh := false
 	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
 		if !mr.AdditionsKnown {
 			normalized.Additions = existing.Additions
 		}
@@ -7411,6 +7414,7 @@ func (s *Syncer) indexUpsertMR(
 	// Preserve fields the list endpoint doesn't return.
 	needsCIDetailRefresh := false
 	if existing != nil {
+		normalized.CommentCount = existing.CommentCount
 		normalized.Additions = existing.Additions
 		normalized.Deletions = existing.Deletions
 		preservePlatformBaseSHAIfOmitted(normalized, existing)

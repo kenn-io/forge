@@ -64,6 +64,9 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
+- Only the comment sync writes a stored PR's `comment_count`; list passes keep it,
+  because provider list counts are absent or count other notes and worklist
+  snapshots read it (`internal/github/sync.go::Syncer.indexUpsertMR`).
 - A partial GraphQL issue-comment page is observation-only: merge its visible
   and minimized states over stored moderation metadata before REST completion.
   (`internal/github/sync.go::refreshIssueTimeline`)

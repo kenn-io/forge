@@ -8163,6 +8163,75 @@ func TestIndexUpsertMRReadsExistingByRepoID(t *testing.T) {
 	assert.NotNil(gitlabMR.DetailFetchedAt)
 }
 
+// GitHub's pull request list omits the comment count, so a list pass must not
+// erase the count the comment sync derived.
+func TestIndexUpsertMRPreservesSyncedCommentCount(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+
+	repo := RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+	}
+	repoID, err := reposeed.Seed(ctx, d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(err)
+	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+	require.NoError(syncer.indexUpsertMR(ctx, &mockClient{}, repo, repoID, buildOpenPR(7, now), time.Time{}))
+	require.NoError(d.UpdateMRDerivedFields(ctx, repoID, 7, db.MRDerivedFields{CommentCount: 4}))
+
+	require.NoError(syncer.indexUpsertMR(
+		ctx, &mockClient{}, repo, repoID, buildOpenPR(7, now.Add(time.Minute)), time.Time{},
+	))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(4, got.CommentCount)
+}
+
+// Provider list counts measure different things than the synced comment
+// rows (GitHub reports zero, GitLab includes inline notes), so a list pass
+// keeps the count the comment sync derived.
+func TestIndexUpsertMergeRequestPreservesSyncedCommentCount(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	now := time.Date(2026, 4, 20, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com",
+		Owner: "acme", Name: "widget",
+	}
+	repoID, err := reposeed.Seed(ctx, d, verifiedDBRepoIdentity(ref))
+	require.NoError(err)
+	repo := RepoRef{
+		Platform: platform.KindGitLab, PlatformHost: ref.Host,
+		Owner: ref.Owner, Name: ref.Name,
+	}
+	listed := platform.MergeRequest{
+		PlatformID: 1001, Number: 1, URL: "https://gitlab.example.com/acme/widget/-/merge_requests/1",
+		Title: "Comments", State: "open", HeadBranch: "feature", BaseBranch: "main",
+		HeadSHA: "head", CommentCount: 9, CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	}
+	syncer := NewSyncer(nil, d, nil, nil, time.Minute, nil, nil)
+	require.NoError(syncer.indexUpsertMergeRequest(ctx, repo, repoID, listed, time.Time{}, false))
+	require.NoError(d.UpdateMRDerivedFields(ctx, repoID, 1, db.MRDerivedFields{CommentCount: 4}))
+
+	listed.UpdatedAt = now.Add(time.Minute)
+	listed.LastActivityAt = listed.UpdatedAt
+	require.NoError(syncer.indexUpsertMergeRequest(ctx, repo, repoID, listed, time.Time{}, false))
+
+	got, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(err)
+	require.NotNil(got)
+	assert.Equal(4, got.CommentCount)
+}
+
 func TestIndexUpsertMRPersistsMergedActorEventFromPullRequest(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

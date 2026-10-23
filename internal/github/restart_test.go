@@ -1,0 +1,70 @@
+package github
+
+import (
+	"context"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	gh "github.com/google/go-github/v92/github"
+	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/reposeed"
+)
+
+func TestRestartKeepsCredentialCadence(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		sameCredential bool
+		secondAge      time.Duration
+		lastError      string
+		polls          int
+	}{
+		{name: "two credentials keep polling", secondAge: 65 * time.Minute, polls: 2},
+		{name: "future failed repository retries alone", sameCredential: true, secondAge: -2 * time.Minute, lastError: "provider unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				d := openTestDB(t)
+				start := time.Now().UTC()
+				listed := make(chan string, 10)
+				client := &mockClient{listOpenPRsFn: func(_ context.Context, _, name string) ([]*gh.PullRequest, error) {
+					listed <- name
+					return nil, nil
+				}}
+				var repos []RepoRef
+				clients := map[string]Client{}
+				trackers := map[string]*RateTracker{}
+				for i, name := range []string{"first", "second"} {
+					host := name + ".example.com"
+					if tc.sameCredential {
+						host = "github.com"
+					}
+					repo := RepoRef{Owner: "acme", Name: name, PlatformHost: host}
+					repos = append(repos, repo)
+					clients[host] = client
+					trackers[host] = NewRateTracker(d, host, "host", "rest")
+					id, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity(host, repo.Owner, name))
+					require.NoError(t, err)
+					age := 5 * time.Minute
+					var lastError string
+					if i == 1 {
+						age, lastError = tc.secondAge, tc.lastError
+					}
+					require.NoError(t, d.UpdateRepoSyncCompleted(t.Context(), id, start.Add(-age), lastError))
+				}
+				s := NewSyncer(clients, d, nil, repos, time.Hour, trackers, nil)
+				defer s.Stop()
+				s.Start(t.Context())
+				synctest.Wait()
+				require.Len(t, listed, 1, "only the overdue or failed repository fetches at startup")
+				require.Equal(t, "second", <-listed)
+				for range tc.polls {
+					time.Sleep(time.Hour)
+					synctest.Wait()
+					require.Len(t, listed, 2, "both credentials fetch at %s", time.Since(start))
+					require.ElementsMatch(t, []string{"first", "second"}, []string{<-listed, <-listed})
+				}
+			})
+		})
+	}
+}

@@ -596,6 +596,7 @@ base_path = "/"
 ```
 
 - `sync_interval` controls provider refreshes.
+- After a restart, accounts with rate tracking resume their schedule from their oldest healthy live repository's successful sync plus `sync_interval`, while overdue accounts and failed or never-synced repositories refresh at startup.
 - `host` and `port` set the listener.
 - `base_path` adds a URL prefix behind a reverse proxy. It cannot start with
   `api`, `healthz`, or `livez`, which Forge serves at the root.

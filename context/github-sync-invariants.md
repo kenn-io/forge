@@ -49,6 +49,7 @@ Rules:
 
 ## Freshness Rules
 
+- Startup restores missing credential gates from the oldest error-free, non-future completion among tracked live repositories with a rate tracker; the run-slot owner applies completion plus interval once, while failed and never-synced repositories bypass the gate on the first startup pass (`internal/github/sync.go::Syncer.liveRepoSyncTimes`, `internal/github/sync.go::Syncer.runOnceWithSlot`).
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).

@@ -4,6 +4,12 @@ A worklist is a ranked list of pull requests and issues that an agent builds
 for you in Kenn Forge. Items can come from any tracked repository and
 provider. Open **Worklists** in the header to work through one item at a time.
 
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/worklist-light.svg" alt="Forge Worklists with a ranked review queue grouped by section and the selected pull request open beside it in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/worklist-dark.svg" alt="Forge Worklists with a ranked review queue grouped by section and the selected pull request open beside it in dark mode">
+  <figcaption>The rail groups the agent's items by section; the selected item opens with its note, caveat, and full detail.</figcaption>
+</figure>
+
 ## Ask an agent for a worklist
 
 Connect an agent to the [MCP companion](../kenn-forge-mcp.md#build-worklists)

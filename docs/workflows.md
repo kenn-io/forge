@@ -50,6 +50,12 @@ list, right-click, and choose **Merge**. Ready pull requests merge right away;
 those with pending CI merge once their checks pass. Drafts, conflicts, and
 failed CI are skipped.
 
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="assets/generated/pull-list-bulk-actions-light.svg" alt="Forge pull request list with three selected pull requests and the action menu open in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="assets/generated/pull-list-bulk-actions-dark.svg" alt="Forge pull request list with three selected pull requests and the action menu open in dark mode">
+  <figcaption>Right-click a selection to merge, label, assign, or run a quick action on every selected pull request.</figcaption>
+</figure>
+
 The same selection works in the pull request and issue lists for other
 actions. Right-click to copy links, star, edit labels or assignees, close,
 reopen, or run a quick action on each item. Pull requests also offer **Mark

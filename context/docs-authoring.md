@@ -52,7 +52,9 @@ screenshots, or the Zensical site.
 - User-facing workflow screenshots are generated only by `make docs-screenshots`
   and must not be tracked on the main branch. Publish one complete current set
   at the root of the orphan `docs-assets` branch, then review its full commit
-  SHA through `scripts/docs-assets.ref`; docs builds validate and materialize
+  SHA through `scripts/docs-assets.ref`. Publish each set as a fast-forward
+  child of the branch tip; released docs pin earlier SHAs, so never force-push
+  them away. Docs builds validate and materialize
   only that pinned set into the ignored `docs/assets/generated/` cache.
   Playwright captures in `docs/screenshots/` use the real seeded e2e backend,
   not mocked API fixtures or a developer daemon. (`scripts/sync-docs-assets.sh`)

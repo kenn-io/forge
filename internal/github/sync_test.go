@@ -12701,6 +12701,51 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 }
 
 func TestSyncIssuePagePollPreservesIssueWhenRepositoryNameReused(t *testing.T) {
+	t.Run("uncached issue", func(t *testing.T) {
+		require := require.New(t)
+		ctx := t.Context()
+		database := openTestDB(t)
+		repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+		repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+		require.NoError(err)
+		issue := buildOpenIssue(7, time.Now().UTC())
+		issue.ID = new(int64(8001))
+		issue.Comments = new(1)
+		var paths []string
+		provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+			paths = append(paths, path)
+			w.Header().Set("Content-Type", "application/json")
+			switch path {
+			case "/repos/owner/repo/issues/7":
+				assert.Empty(t, r.Header.Get("If-None-Match"))
+				w.Header().Set("ETag", `"successor"`)
+				assert.NoError(t, json.NewEncoder(w).Encode(issue))
+			case "/repos/owner/repo/issues/7/comments":
+				assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("successor comment"), CreatedAt: issue.UpdatedAt}}))
+			default:
+				assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+				w.WriteHeader(http.StatusNotFound)
+			}
+		}))
+		t.Cleanup(provider.Close)
+		budget := NewSyncBudget(1000)
+		client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
+		require.NoError(err)
+		syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+		require.NoError(syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true}))
+		assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
+		stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+		require.NoError(err)
+		assert.Nil(t, stored)
+		var eventCount int
+		require.NoError(database.ReadDB().QueryRowContext(ctx, "SELECT COUNT(*) FROM forge_issue_events").Scan(&eventCount))
+		assert.Zero(t, eventCount)
+		etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+		require.NoError(err)
+		assert.Empty(t, etag)
+	})
+
 	require := require.New(t)
 	ctx := t.Context()
 	database := openTestDB(t)

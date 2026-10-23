@@ -7868,18 +7868,12 @@ func (s *Syncer) syncOpenIssueFromBulk(
 		return nil
 	}
 	commentsCurrent := revision == priorRevisions[number]+1
-	if !commentsCurrent {
-		currentBulk := *bulk
-		currentBulk.CommentsComplete = false
-		currentBulk.Comments = nil
-		bulk = &currentBulk
-	}
 
 	// UpsertIssue uses COALESCE to preserve existing detail_fetched_at,
 	// so passing nil doesn't clear it. When comments are incomplete,
 	// explicitly clear it so the detail drain re-queues this issue
 	// if the REST fallback fails.
-	if !bulk.CommentsComplete || !bulk.TimelineComplete {
+	if !commentsCurrent || !bulk.CommentsComplete || !bulk.TimelineComplete {
 		var detailCleared bool
 		detailCleared, err = s.db.ClearIssueDetailFetchedSnapshot(ctx, issueID, revision)
 		if err != nil {

@@ -114,8 +114,14 @@ function sourceKey(player: HTMLVideoElement): string | null {
 }
 
 // A player the reader already started shows its own frames and length.
+// paused clears as soon as play() is called, while readyState and
+// networkState stay at nothing until the player's own load begins.
 function hasStarted(player: HTMLVideoElement): boolean {
-  return player.readyState > HTMLMediaElement.HAVE_NOTHING || player.networkState === HTMLMediaElement.NETWORK_LOADING;
+  return (
+    !player.paused ||
+    player.readyState > HTMLMediaElement.HAVE_NOTHING ||
+    player.networkState === HTMLMediaElement.NETWORK_LOADING
+  );
 }
 
 const loadPreview = (player: HTMLVideoElement) =>
@@ -202,6 +208,8 @@ const posterFrom = (copy: HTMLVideoElement) =>
   );
 
 function showPreview(player: HTMLVideoElement, preview: MarkdownVideoPreview): void {
+  // The reader can start the player while its copy is still reading.
+  if (hasStarted(player)) return;
   // An author's own poster wins, as it does in the browser.
   if (preview.poster !== null && !player.hasAttribute("poster")) player.setAttribute("poster", preview.poster);
   if (preview.duration !== null) showDuration(player, preview.duration);

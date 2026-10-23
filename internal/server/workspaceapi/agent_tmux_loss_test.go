@@ -1049,6 +1049,11 @@ func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, det
 	// The server dies and another terminal starts a replacement before the
 	// exit handler has run.
 	if detachClient {
+		require.Eventually(func() bool {
+			out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+				"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
+			return err == nil && strings.TrimSpace(string(out)) != ""
+		}, 5*time.Second, 10*time.Millisecond)
 		require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 			"detach-client", "-s", session.TmuxSession)...).Run())
 		require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)

@@ -4570,6 +4570,9 @@ func (s *Syncer) runOnceWithSlot(
 				s.coalescePendingRunLocked(
 					bypassNextSyncAfter, priorityRepos, onlyRepos,
 				)
+				s.pendingRun.bypassRepos = appendUniqueRepoRefs(
+					s.pendingRun.bypassRepos, bypassRepos,
+				)
 			}
 			s.runMu.Unlock()
 			return

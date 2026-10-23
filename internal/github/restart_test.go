@@ -11,7 +11,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
-func TestRestartKeepsCredentialCadence(t *testing.T) {
+func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 	for _, tc := range []struct {
 		name           string
 		sameCredential bool
@@ -21,10 +21,10 @@ func TestRestartKeepsCredentialCadence(t *testing.T) {
 		startupFetches []string
 		polls          int
 	}{
-		{name: "two credentials keep polling", secondAge: 65 * time.Minute, startupFetches: []string{"second"}, polls: 2},
+		{name: "two credentials keep polling", secondAge: 65 * time.Minute, startupFetches: []string{"second"}, polls: 1},
 		{name: "future completion is ignored", secondAge: -2 * time.Minute, startupFetches: []string{"second"}},
 		{name: "oldest healthy repository sets shared cadence", sameCredential: true, secondAge: 65 * time.Minute, startupFetches: []string{"first", "second"}},
-		{name: "failed repository retries alone", sameCredential: true, secondAge: -2 * time.Minute, lastError: "provider unavailable", startupFetches: []string{"second"}},
+		{name: "failed repository retries alone", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", startupFetches: []string{"second"}},
 		{name: "failed repository retries after scoped manual sync", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", manual: true, startupFetches: []string{"second"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

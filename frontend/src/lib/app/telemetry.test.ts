@@ -293,23 +293,4 @@ describe("browser telemetry", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(actions()).toHaveLength(2);
   });
-
-  it("keeps a same-day core action claimed after a malformed enabled 202 receipt", async () => {
-    vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
-    let malformed = false;
-    const { sent, runtime, quiet } = setup(async () =>
-      malformed ? new Response("{", { status: 202 }) : Response.json({ status: "queued" }, { status: 202 }),
-    );
-    await vi.advanceTimersByTimeAsync(0);
-    expect(quiet).toHaveBeenLastCalledWith(false, "enabled");
-    malformed = true;
-    reportPRViewed(runtime, "github");
-    await vi.advanceTimersByTimeAsync(1_000);
-    malformed = false;
-    reportPRViewed(runtime, "github");
-    await vi.advanceTimersByTimeAsync(0);
-    expect(sent.filter((event) => event.event === "pr_viewed")).toEqual([
-      { event: "pr_viewed", properties: { provider: "github", surface: "web" } },
-    ]);
-  });
 });

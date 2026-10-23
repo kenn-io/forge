@@ -34,16 +34,26 @@ export function initMarkdownVideoPlayers(
     const frame = video.parentElement!;
     // Set when the source has a file name (markdown.ts::normalizePlayer).
     const fileName = video.dataset["fileName"];
+    // The author's poster, muted, and loop settings carry over. VideoPlayer
+    // has no props for muted and loop, so they go on its own <video>.
+    const muted = video.hasAttribute("muted");
+    const loop = video.loop;
+    const poster = video.getAttribute("poster");
     const instance = mount(VideoPlayer, {
       target: frame,
       anchor: video,
       props: {
         sources: playerSources(video),
+        ...(poster ? { poster } : {}),
         label: fileName ?? "Video",
         // An idle player must not fetch (see normalizePlayer).
         preload: "none",
         expandLabel: fileName ? `${EXPAND_LABEL}: ${fileName}` : EXPAND_LABEL,
         onViewerOpen: options.onViewerOpen,
+        videoAttachment: (player: HTMLVideoElement) => {
+          player.defaultMuted = player.muted = muted;
+          player.loop = loop;
+        },
         class: "markdown-video-player",
       },
     });

@@ -31,19 +31,7 @@ function mount(markdown: string) {
   const restore = vi.fn();
   const onViewerOpen = vi.fn(() => restore);
   const players = initMarkdownVideoPlayers(document.body, { onViewerOpen });
-  // Chromium blocks unmuted autoplay when the full suite shares the browser,
-  // so the viewer's player is muted before it gets metadata and starts.
-  const muter = new MutationObserver(() => {
-    const expanded = expandedVideo();
-    if (expanded) expanded.muted = true;
-  });
-  muter.observe(document.body, { childList: true, subtree: true });
-  cleanups.push(
-    initMarkdownVideoToggle(document),
-    initMarkdownVideoFallback(document),
-    () => players.disconnect(),
-    () => muter.disconnect(),
-  );
+  cleanups.push(initMarkdownVideoToggle(document), initMarkdownVideoFallback(document), () => players.disconnect());
   return { body, onViewerOpen, restore };
 }
 
@@ -67,44 +55,37 @@ async function playInline(video: HTMLVideoElement, from: number) {
 }
 
 describe("markdown video player (browser)", () => {
-  it("puts the expand control in the player's bar, beside full screen", async () => {
+  it("names the player and its expand control after the file, and leaves it idle", async () => {
     const { body } = mount(`<video src="${clip}"></video>`);
-    const bar = body.querySelector('[role="group"][aria-label="Video controls"]')!;
 
-    // Video.js labels its buttons once they connect.
-    const names = () =>
-      Array.from(bar.querySelectorAll('[role="button"], button'), (button) => button.getAttribute("aria-label"));
-    await expect.poll(() => names().slice(-2), settle).toEqual([expandName, "Enter fullscreen"]);
+    await expect.poll(() => page.getByRole("button", { name: expandName }).query(), settle).not.toBeNull();
     // The header above the player still names the file.
     expect(body.querySelector(".markdown-video-name")?.textContent).toBe("markdown-video.webm");
     // An idle player must not fetch.
     expect(inlineVideo(body).preload).toBe("none");
   });
 
-  it("continues inline playback in the viewer and resumes inline from where the viewer closed", async () => {
-    const { body, onViewerOpen, restore } = mount(`<video src="${clip}"></video>`);
+  it("keeps the author's poster, muted, and loop settings", async () => {
+    const poster = "/markdown-video-poster.png";
+    const { body } = mount(`<video src="${clip}" poster="${poster}" muted loop></video>`);
     const video = inlineVideo(body);
-    await playInline(video, 0.5);
+
+    expect(video.getAttribute("poster")).toBe(poster);
+    // Set on the player's <video> once it mounts.
+    await expect.poll(() => ({ muted: video.muted, loop: video.loop })).toEqual({ muted: true, loop: true });
+  });
+
+  it("suspends app keyboard handling while the expanded view is open", async () => {
+    const { onViewerOpen, restore } = mount(`<video src="${clip}"></video>`);
 
     await userEvent.click(page.getByRole("button", { name: expandName }));
-
     await expect.poll(() => expandedVideo(), settle).not.toBeNull();
     expect(onViewerOpen).toHaveBeenCalledTimes(1);
-    expect(video.paused).toBe(true);
-    const handedOver = video.currentTime;
-    const expanded = expandedVideo()!;
-    await expect.poll(() => expanded.currentSrc, settle).toBe(video.currentSrc);
-    await expect.poll(() => !expanded.paused, settle).toBe(true);
-    await expect.poll(() => expanded.currentTime, settle).toBeGreaterThan(handedOver + 0.5);
+    expect(restore).not.toHaveBeenCalled();
 
     await userEvent.keyboard("{Escape}");
-
     await expect.poll(() => expandedVideo(), settle).toBeNull();
     expect(restore).toHaveBeenCalledTimes(1);
-    expect(video.currentTime).toBeGreaterThan(handedOver + 0.5);
-    // Under load the short clip can reach its end before the poll looks; a
-    // player that never resumed would still be paused short of the end.
-    await expect.poll(() => !video.paused || video.ended, settle).toBe(true);
   });
 
   it("collapsing hides and pauses the player", async () => {

@@ -220,6 +220,33 @@ running agent through the same runtime input path as the initial message. It
 does not launch a runtime, resume a handoff, or wait for later agent activity.
 Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 
+## Build worklists
+
+An agent can hand the maintainer a ranked
+[worklist](workflows/worklists.md) of synced pull requests and issues. None of
+these tools call provider APIs.
+
+- `kenn_forge_put_worklist` writes a list with a title, a recipe, and ranked
+  items. Each item can carry a score, section, note, and caveat. Every item
+  must be a pull request or issue Forge has synced; copy its identity from a
+  Forge read. Pass `worklist_id` to replace an existing list, or omit it to
+  create a new one.
+- `kenn_forge_get_worklist` reads a list with its recipe and, for each item,
+  whether it is fresh, changed, or gone since the list was written, what
+  changed, and when the maintainer marked it handled.
+- `kenn_forge_list_worklists` lists worklists, newest first, with their item
+  counts. Pass `include_dismissed` to include dismissed lists.
+- `kenn_forge_dismiss_worklist` hides a list. Writing the list again brings it
+  back.
+- `kenn_forge_clear_worklist_marks` clears every handled mark on a list. Call
+  it only when the maintainer asks.
+- `kenn_forge_import_worklist` creates the list a worklist link carries, as
+  opening the link in Forge does. It accepts a `kenn://` link, an HTTP(S) link
+  to `/worklists/import#v1...`, or the bare `v1...` fragment.
+
+To refresh a list, read its recipe, rerun the searches, and put the whole list
+again. Handled marks survive a rewrite for items that stay on the list.
+
 ## Troubleshooting
 
 If the endpoint is unavailable, check `kenn-forge mcp quickstart`, restart the

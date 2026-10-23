@@ -50,6 +50,12 @@ list, right-click, and choose **Merge**. Ready pull requests merge right away;
 those with pending CI merge once their checks pass. Drafts, conflicts, and
 failed CI are skipped.
 
+The same selection works in the pull request and issue lists for other
+actions. Right-click to star, edit labels or assignees, close, reopen, copy
+links, or open the items in the browser. Pull requests also offer workflow
+status, **Mark ready for review**, and **Convert to draft**. Label and
+assignee edits change only the values you change.
+
 Detected stacks show member order. Mid-stack merges stay blocked by default
 until earlier members land.
 
@@ -63,6 +69,13 @@ queue unmerged.
 
 The conversation, files, and workspace can share a pane layout. Reorder,
 split, resize, hide, or maximize panes as the task changes.
+
+## Work through a worklist
+
+Ask an agent connected through the [MCP companion](kenn-forge-mcp.md) for a
+ranked list of pull requests and issues. Open **Worklists** to step through
+the items, see what changed since the agent wrote the list, and mark items
+handled. See [Work through a worklist](workflows/worklists.md).
 
 ## Run manual provider workflows
 

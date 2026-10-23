@@ -111,6 +111,12 @@ Delete removes the kenn-forge-managed worktree and its workspace record. A
 dirty worktree blocks normal deletion so uncommitted work is not discarded.
 Review the files first. Force deletion is available only after that warning.
 
+To delete several workspaces, Shift- or Cmd/Ctrl-click them in the list,
+right-click, and choose **Delete N workspaces...**. The dialog closes when you
+confirm, and each row shows **Deleting workspace** until its delete finishes.
+Bulk deletion never forces, so workspaces with uncommitted changes stay, and
+Forge lists them, along with any failures, when it finishes.
+
 If issue workspace creation finds the expected directory already present,
 Forge can recover it after verifying that it belongs to the managed
 repository. A mismatched repository or branch stays untouched and needs manual

@@ -43,6 +43,10 @@ cards without them; other action buttons stay visible. Choose **Refresh** to
 fetch the current external status.
 Queued work can refresh automatically while the page is visible.
 
+An integration can also give advice: a **Merge** or **Hold** chip with a short
+reason, shown above **Details**. The advice doesn't change merge rules or the
+merge controls.
+
 Results for a different commit are labeled as older results. Actions receive
 the commit shown in Forge; if Forge has since synced a different head, refresh
 the PR before trying again. An action failure may mean the external service

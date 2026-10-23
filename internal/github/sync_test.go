@@ -18998,7 +18998,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 
 		newID, body, login := int64(12), "new", "bob"
 		syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		err = syncer.persistPRComments(t.Context(), repo, mr, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		_, err = syncer.persistPRComments(t.Context(), repo, mr, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
 		require.Error(err)
 		events, err := database.ListMREvents(t.Context(), mr.ID)
 		require.NoError(err)
@@ -19037,7 +19037,7 @@ func TestPersistGitHubCommentsRollsBackRecoveryWrites(t *testing.T) {
 
 		newID, body, login := int64(22), "new", "bob"
 		syncer := NewSyncerWithRegistry(nil, database, nil, []RepoRef{repo}, time.Minute, nil, nil)
-		err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
+		_, err = syncer.persistIssueComments(t.Context(), repo, issue, []*gh.IssueComment{{ID: &newID, Body: &body, User: &gh.User{Login: &login}, CreatedAt: &gh.Timestamp{Time: now}}})
 		require.Error(err)
 		events, err := database.ListIssueEvents(t.Context(), issue.ID)
 		require.NoError(err)

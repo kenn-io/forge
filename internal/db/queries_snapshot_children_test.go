@@ -8,6 +8,41 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSnapshotRevisionsIncludesOnlyOpenItems(t *testing.T) {
+	t.Parallel()
+
+	database := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, database, "acme", "revisions")
+	otherRepoID := insertTestRepo(t, database, "acme", "other")
+	now := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
+	for _, itemType := range []ArchiveItemType{ArchiveItemTypeMergeRequest, ArchiveItemTypeIssue} {
+		t.Run(string(itemType), func(t *testing.T) {
+			expected := map[int]int64{}
+			for i, state := range []string{"open", "closed", "open"} {
+				itemRepoID := repoID
+				if i == 2 {
+					itemRepoID = otherRepoID
+				}
+				var revision int64
+				var err error
+				if itemType == ArchiveItemTypeIssue {
+					_, revision, _, err = database.UpsertIssueSnapshotWithLabels(ctx, &Issue{RepoID: itemRepoID, PlatformID: int64(i + 1), Number: i + 1, Title: "Issue", State: state, CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+				} else {
+					_, revision, _, err = database.UpsertMergeRequestSnapshotWithLabels(ctx, &MergeRequest{RepoID: itemRepoID, PlatformID: int64(i + 1), Number: i + 1, Title: "PR", State: MergeRequestState(state), CreatedAt: now, UpdatedAt: now, LastActivityAt: now})
+				}
+				require.NoError(t, err)
+				if i == 0 {
+					expected[1] = revision
+				}
+			}
+			revisions, err := database.SnapshotRevisions(ctx, repoID, itemType)
+			require.NoError(t, err)
+			assert.Equal(t, expected, revisions)
+		})
+	}
+}
+
 func TestChildSnapshotRejectsRevisionBeforeCommentUpsert(t *testing.T) {
 	t.Parallel()
 

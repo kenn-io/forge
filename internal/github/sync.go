@@ -6372,13 +6372,13 @@ func (s *Syncer) indexSyncRepo(
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					bulkRequestedAt := s.nowUTC()
-					priorRevisions, err := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
-					if err != nil {
-						return fmt.Errorf("read pre-fetch snapshot revisions: %w", err)
+					priorRevisions, gqlErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
+					var result *RepoBulkResult
+					if gqlErr == nil {
+						result, gqlErr = fetcher.FetchRepoPRs(
+							ctx, repo.Owner, repo.Name, preferNativeStacks,
+						)
 					}
-					result, gqlErr := fetcher.FetchRepoPRs(
-						ctx, repo.Owner, repo.Name, preferNativeStacks,
-					)
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureMergeRequests, gqlErr,
@@ -6537,13 +6537,13 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
-					priorRevisions, err := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
-					if err != nil {
-						return fmt.Errorf("read pre-fetch snapshot revisions: %w", err)
+					priorRevisions, gqlErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
+					var issueResult *RepoBulkResult
+					if gqlErr == nil {
+						issueResult, gqlErr = fetcher.FetchRepoIssues(
+							ctx, repo.Owner, repo.Name,
+						)
 					}
-					issueResult, gqlErr := fetcher.FetchRepoIssues(
-						ctx, repo.Owner, repo.Name,
-					)
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, gqlErr,
@@ -7454,8 +7454,11 @@ func (s *Syncer) refreshPRCommentsForItem(
 		)
 		return true, false
 	}
-	if err := s.persistPRComments(ctx, repo, pr, comments); err != nil {
+	applied, err := s.persistPRComments(ctx, repo, pr, comments)
+	if err != nil || !applied {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+	}
+	if err != nil {
 		slog.Warn("comment refresh: persist PR comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", pr.Number,
@@ -7499,8 +7502,11 @@ func (s *Syncer) refreshIssueCommentsForItem(
 		)
 		return true, false
 	}
-	if err := s.persistIssueComments(ctx, repo, issue, comments); err != nil {
+	applied, err := s.persistIssueComments(ctx, repo, issue, comments)
+	if err != nil || !applied {
 		client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+	}
+	if err != nil {
 		slog.Warn("comment refresh: persist issue comments failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", issue.Number,
@@ -8644,7 +8650,8 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 			return calls, err
 		}
 		if err == nil {
-			if err := s.persistPRComments(ctx, repo, existing, comments); err != nil {
+			applied, err := s.persistPRComments(ctx, repo, existing, comments)
+			if err != nil || !applied {
 				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 				return calls, err
 			}
@@ -9116,7 +9123,8 @@ func (s *Syncer) markUnchangedIssueDetailFetched(
 			return calls, err
 		}
 		if err == nil {
-			if err := s.persistIssueComments(ctx, repo, existing, comments); err != nil {
+			applied, err := s.persistIssueComments(ctx, repo, existing, comments)
+			if err != nil || !applied {
 				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 				return calls, err
 			}
@@ -10446,17 +10454,14 @@ func (s *Syncer) persistPRComments(
 	repo RepoRef,
 	pr *db.MergeRequest,
 	comments []*gh.IssueComment,
-) error {
+) (bool, error) {
 	applied, err := s.replacePRCommentEvents(
 		ctx, repo, pr.Number, pr.ID, pr.SnapshotRevision, comments, nil, nil,
 	)
 	if err != nil {
-		return fmt.Errorf("replace PR comment events: %w", err)
+		return false, fmt.Errorf("replace PR comment events: %w", err)
 	}
-	if !applied {
-		return nil
-	}
-	return nil
+	return applied, nil
 }
 
 func (s *Syncer) persistIssueComments(
@@ -10464,7 +10469,7 @@ func (s *Syncer) persistIssueComments(
 	repo RepoRef,
 	issue *db.Issue,
 	comments []*gh.IssueComment,
-) error {
+) (bool, error) {
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
@@ -10473,13 +10478,9 @@ func (s *Syncer) persistIssueComments(
 		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
-		return fmt.Errorf("replace issue comment events: %w", err)
+		return false, fmt.Errorf("replace issue comment events: %w", err)
 	}
-	if !applied {
-		return nil
-	}
-
-	return nil
+	return applied, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(

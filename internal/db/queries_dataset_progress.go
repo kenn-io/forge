@@ -323,14 +323,14 @@ func domainRevisionTable(itemType ArchiveItemType) (string, error) {
 	}
 }
 
-// SnapshotRevisions captures parent revisions before a repository provider fetch.
+// SnapshotRevisions captures open parent revisions before a repository provider fetch.
 func (d *DB) SnapshotRevisions(ctx context.Context, repoID int64, itemType ArchiveItemType) (map[int]int64, error) {
 	table, err := domainRevisionTable(itemType)
 	if err != nil {
 		return nil, err
 	}
 	rows, err := d.roQueryContext(ctx, fmt.Sprintf(
-		`SELECT number, snapshot_revision FROM %s WHERE repo_id = ?`, table), repoID)
+		`SELECT number, snapshot_revision FROM %s WHERE repo_id = ? AND state = 'open'`, table), repoID)
 	if err != nil {
 		return nil, fmt.Errorf("read snapshot revisions: %w", err)
 	}

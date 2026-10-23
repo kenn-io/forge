@@ -48,7 +48,7 @@ NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1 && mise which nilaway 
 	fi)
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
-VITE_PLUS_VERSION := 0.1.24
+VITE_PLUS_VERSION := 1.4.0
 VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
 VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
 VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp

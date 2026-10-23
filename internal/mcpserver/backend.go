@@ -122,6 +122,7 @@ type ActivityItem struct {
 	ItemState      string
 	Workspace      *WorkspaceRef
 	Author         string
+	CommitAuthor   string
 	ItemAuthor     string
 	CreatedAt      string
 	BodyPreview    string

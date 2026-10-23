@@ -7,7 +7,7 @@ golangci-lint = "2.14.0"
 node = "24.22.1"
 "npm:@agentclientprotocol/codex-acp" = "2.1.1"
 "npm:@openai/codex" = "0.161.0"
-"npm:vite-plus" = "1.3.0"
+"npm:vite-plus" = "1.4.0"
 prek = "0.5.7"
 
 [tasks.dev-stack]

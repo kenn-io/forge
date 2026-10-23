@@ -413,6 +413,17 @@ a:hover {
   border-top: var(--border-width) solid var(--border-muted);
   background: var(--bg-inset);
 }
+/* The kit-ui player that replaces the <video> (markdown-video-player.ts)
+   keeps the same fixed frame. */
+.markdown-body .markdown-video-player {
+  border-top: var(--border-width) solid var(--border-muted);
+  border-radius: 0;
+}
+.markdown-body .markdown-video-player video {
+  aspect-ratio: 16 / 9;
+  max-height: 640px;
+  height: auto;
+}
 .markdown-body img {
   max-width: 100%;
   height: auto;

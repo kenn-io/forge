@@ -30,6 +30,7 @@
     isCollapsedActivityRow,
     isClosedOrMergedActivity,
     collapseActivityRuns,
+    activityAuthor,
     notificationReasonLabel,
     shortSha,
   } from "./activityRows.js";
@@ -266,10 +267,6 @@
 
   function branchName(item: ActivityItem): string {
     return item.branch_name || "default branch";
-  }
-
-  function activityAuthor(item: ActivityItem): string {
-    return item.author_name || item.author;
   }
 
   function branchActivityTitle(item: ActivityItem): string {

@@ -319,6 +319,7 @@ type ActivityItemResponse struct {
 	BeforeSHA          string                     `json:"before_sha,omitempty"`
 	AfterSHA           string                     `json:"after_sha,omitempty"`
 	AuthorName         string                     `json:"author_name,omitempty"`
+	CommitAuthor       string                     `json:"commit_author,omitempty"`
 	AuthorEmail        string                     `json:"author_email,omitempty"`
 	CommitterName      string                     `json:"committer_name,omitempty"`
 	CommitterEmail     string                     `json:"committer_email,omitempty"`

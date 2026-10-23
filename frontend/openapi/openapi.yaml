@@ -464,6 +464,8 @@ components:
           type: string
         branch_name:
           type: string
+        commit_author:
+          type: string
         commit_sha:
           type: string
         committed_at:

@@ -1892,14 +1892,32 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 // UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC.
 // When a duplicate dedupe key is seen again, the conflict path refreshes
 // mutable fields so edited events and legacy local-offset timestamps are
-// repaired during normal sync.
+// repaired during normal sync. The call advances each parent's snapshot_revision
+// so in-flight syncs that read the provider earlier cannot overwrite these events.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertMREventsTx(ctx, tx, events)
+		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.MergeRequestID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_merge_requests", parentIDs)
 	})
+}
+
+func advanceEventParentRevisionsTx(ctx context.Context, tx *sql.Tx, table string, parentIDs map[int64]struct{}) error {
+	for id := range parentIDs {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE %s SET snapshot_revision = snapshot_revision + 1 WHERE id = ?`, table), id); err != nil {
+			return fmt.Errorf("advance event parent revision: %w", err)
+		}
+	}
+	return nil
 }
 
 // updateMREventMetadataTx rewrites only metadata_json for the matching event
@@ -3539,13 +3557,22 @@ func (d *DB) UpdateIssueDetailFetched(
 
 // UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
 // UTC. Duplicate keys refresh mutable fields so edited events and older local
-// timestamp encodings are repaired during normal sync.
+// timestamp encodings are repaired during normal sync. The call advances each
+// parent's snapshot_revision so in-flight syncs that read the provider earlier
+// cannot overwrite these events.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertIssueEventsTx(ctx, tx, events)
+		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.IssueID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_issues", parentIDs)
 	})
 }
 

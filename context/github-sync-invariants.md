@@ -49,6 +49,7 @@ Rules:
 
 ## Freshness Rules
 
+- Startup restores missing credential gates from the oldest error-free, non-future completion among tracked live repositories with a rate tracker; the run-slot owner applies completion plus interval once, while failed and never-synced repositories bypass the gate on the first startup pass (`internal/github/sync.go::Syncer.liveRepoSyncTimes`, `internal/github/sync.go::Syncer.runOnceWithSlot`).
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
@@ -226,7 +227,7 @@ PR timeline storage is intentionally selective.
   stored rows may predate parent-time realignment. (`internal/server/pullapi/routes.go::withSyntheticMRLifecycleEvents`)
 - Keep the existing event families stable: comments, reviews, commits, force
   pushes, and the currently supported PR system events.
-- GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve a distinct original author in commit metadata, and fall back independently to author identity/time when committer data is absent.
+- GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve every known original author in commit metadata even when it matches the actor, and fall back independently to author identity/time when committer data is absent.
 - Review comments are UI-aware but are not part of the stored sync model unless
   they can be fetched within the supported timeline path.
 - If bulk sync persists PR system events, detail sync must persist the same
@@ -797,6 +798,10 @@ response never overwrites an App installation pool
 - Normal sync budget waits preserve the last completed repository health and timestamp,
   including earlier failures; mixed cycles must retain the real failure alongside the
   ceiling cause (`internal/github/sync.go::Syncer.syncRepo`).
+- A local budget refusal stops GraphQL retries and logs one wait line per repository.
+  Refused bulk reads preserve list ETags; only refused item work evicts them so
+  closures and timelines recover after refill
+  (`internal/github/sync.go::indexSyncRepo`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive
   attempts without a registry reservation)

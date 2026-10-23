@@ -9018,6 +9018,9 @@ func (s *Syncer) fetchIssueDetail(
 			"get issue #%d: %w", number, err,
 		)
 	}
+	if pagePoll && existing != nil && ghIssue.GetID() != existing.PlatformID {
+		return calls, nil
+	}
 	normalized, err := NormalizeIssue(repoID, ghIssue)
 	if err != nil {
 		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)

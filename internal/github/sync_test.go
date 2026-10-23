@@ -12628,6 +12628,7 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	var paths []string
 	notModified := false
 	expectedETag := ""
+	responseETag := `"page"`
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v3")
 		paths = append(paths, path)
@@ -12641,7 +12642,7 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
-			w.Header().Set("ETag", `"page"`)
+			w.Header().Set("ETag", responseETag)
 			assert.NoError(t, json.NewEncoder(w).Encode(issue))
 		case "/repos/owner/repo/issues/7/comments":
 			assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
@@ -12694,6 +12695,30 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	after, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	assert.Equal(t, stored, after, "304 leaves the issue unchanged")
+
+	// The old repository name can be reused before background sync reconciles it.
+	originalIssue := issue
+	successor := *issue
+	successor.ID = new(int64(8001))
+	successor.Title = new("successor issue")
+	successor.UpdatedAt = makeTimestamp(fetchedAt.Add(time.Minute))
+	issue = &successor
+	notModified = false
+	responseETag = `"successor"`
+	paths = nil
+	require.NoError(poll())
+	assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
+	after, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	assert.Equal(t, stored, after, "a different provider issue must leave the stored issue unchanged")
+	afterEvents, err := database.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	assert.Equal(t, events, afterEvents)
+	etag, err = database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+	require.NoError(err)
+	assert.Equal(t, `"page"`, etag)
+	issue = originalIssue
+	responseETag = `"page"`
 
 	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
 		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "closed-issue",

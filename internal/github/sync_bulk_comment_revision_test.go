@@ -83,7 +83,7 @@ func TestBulkSyncPreservesCommentsWrittenDuringFetch(t *testing.T) {
 					err = d.UpsertMREvents(ctx, []db.MREvent{
 						{MergeRequestID: parentID, PlatformID: new(int64(11)), EventType: "issue_comment", Body: "edited body", CreatedAt: now, DedupeKey: "comment-11"},
 						{MergeRequestID: parentID, PlatformID: new(int64(12)), EventType: "issue_comment", Body: "posted comment", CreatedAt: now, DedupeKey: "comment-12"},
-						{MergeRequestID: parentID, PlatformID: new(int64(13)), EventType: "review_comment", Body: "posted review reply", CreatedAt: now, DedupeKey: "review-comment-13"},
+						{MergeRequestID: parentID, PlatformID: new(int64(13)), EventType: "review_comment", Body: "posted review reply", CreatedAt: now, DedupeKey: "review_comment:13"},
 					})
 				}
 				assert.NoError(err)

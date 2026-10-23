@@ -747,15 +747,40 @@ describe("createIssuesStore", () => {
 
   it("polls with if_changed before reading the cache, even after a failed POST", async () => {
     vi.useFakeTimers();
+    const fresh = issueDetail();
+    fresh.events = [
+      {
+        ID: 1,
+        IssueID: 7,
+        EventType: "issue_comment",
+        Author: "alice",
+        Body: "New comment from the provider",
+        CreatedAt: "2026-01-01T00:00:00Z",
+        DedupeKey: "comment:1",
+        DirectURL: "",
+        MetadataJSON: "",
+        PlatformExternalID: "1",
+        PlatformID: 1,
+        Summary: "",
+        ThreadID: null,
+      },
+    ];
     const get = vi.fn(async () => ({ data: issueDetail(), error: undefined }));
     const post = vi
       .fn()
-      .mockResolvedValueOnce({ data: issueDetail(), error: undefined })
-      .mockRejectedValueOnce(new Error("provider unavailable"));
+      .mockResolvedValueOnce({ data: fresh, error: undefined })
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce({ data: fresh, error: undefined });
     const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      sync: false,
+    });
     store.startIssueDetailPolling("acme", "widget", 7, { provider: "github", platformHost: "github.com" });
-    for (let poll = 0; poll < 2; poll++) {
+    for (let poll = 0; poll < 3; poll++) {
       get.mockClear();
+      if (poll === 2) get.mockRejectedValueOnce(new Error("cache unavailable"));
       await vi.advanceTimersByTimeAsync(60_000);
       expect(post).toHaveBeenLastCalledWith(
         "/issues/{provider}/{owner}/{name}/{number}/sync",
@@ -764,6 +789,9 @@ describe("createIssuesStore", () => {
       expect(get).toHaveBeenCalledOnce();
       expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
       expect(post.mock.invocationCallOrder[poll]).toBeLessThan(get.mock.invocationCallOrder[0]!);
+      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual(
+        poll === 2 ? ["New comment from the provider"] : [],
+      );
     }
     store.stopIssueDetailPolling();
   });

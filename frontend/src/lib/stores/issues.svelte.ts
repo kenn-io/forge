@@ -1053,7 +1053,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const pollOnce = Effect.gen(function* () {
       if (detailSyncing || opts.getAirplaneMode?.()) return;
       const generation = issueSyncGeneration;
-      yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
+      const envelopeTick = nextWorkspaceLifecycleTick();
+      const synced = yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
               { ...providerHostRouteParams(ref), number: ref.number },
@@ -1066,7 +1067,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { signal },
             ),
       ).pipe(Effect.catch(() => Effect.void));
-      yield* refreshIssueDetailProgram(ref, generation);
+      yield* refreshIssueDetailProgram(ref, generation).pipe(
+        Effect.catch(() =>
+          synced
+            ? installIssueDetail(ref, { ...synced, events: synced.events ?? [] }, envelopeTick, generation, false)
+            : Effect.void,
+        ),
+      );
     }).pipe(Effect.catch(() => Effect.void));
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;

@@ -93,6 +93,7 @@ jobs:
               - scripts/vercel-build-docs.sh
               - scripts/vercel-install-docs.sh
             ci:
+              - .github/workflows/actions.lock
               - .github/workflows/ci.yml
               - .github/workflows/ci-pr.yml
               - .github/docker/**

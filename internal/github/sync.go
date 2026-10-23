@@ -12062,12 +12062,22 @@ func (s *Syncer) SyncIssueOnProviderIfChanged(
 		}
 		return commentsErr
 	}
+	if platformgithub.IsNotModified(commentsErr) && existing.LastActivityAt.After(normalized.LastActivityAt) {
+		normalized.LastActivityAt = existing.LastActivityAt
+	}
 	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, normalized)
 	if err != nil || !accepted {
+		if commentsErr == nil {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+		}
 		return err
 	}
 	if commentsErr == nil {
-		applied, err := s.replaceIssueCommentEvents(ctx, repo, number, issueID, revision, comments, nil, nil, nil)
+		derived := db.IssueDerivedFields{
+			CommentCount:   len(comments),
+			LastActivityAt: computeIssueCommentLastActivity(issue, comments),
+		}
+		applied, err := s.replaceIssueCommentEvents(ctx, repo, number, issueID, revision, comments, nil, &derived, nil)
 		if err != nil || !applied {
 			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 			return err

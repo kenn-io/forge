@@ -12763,6 +12763,123 @@ func TestSyncIssuePagePollStoresThenCatchesUpDetailAndSkipsNotModified(t *testin
 	}
 }
 
+func TestSyncIssuePagePollPreservesCommentActivity(t *testing.T) {
+	for _, commentsNotModified := range []bool{false, true} {
+		t.Run(fmt.Sprintf("comments_not_modified=%t", commentsNotModified), func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			updatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+			editedAt := updatedAt.Add(time.Hour)
+			issue := buildOpenIssue(7, updatedAt)
+			issue.Comments = new(1)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			if commentsNotModified {
+				normalized.LastActivityAt = editedAt
+			}
+			issueID, err := database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			comment := &gh.IssueComment{ID: new(int64(10801)), Body: new("edited comment"), CreatedAt: makeTimestamp(updatedAt), UpdatedAt: makeTimestamp(editedAt)}
+			client := &conditionalIssueTrackingClient{nextETag: `"new"`}
+			client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
+			if commentsNotModified {
+				require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{NormalizeIssueCommentEvent(issueID, comment)}))
+			} else {
+				client.comments = []*gh.IssueComment{comment}
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+
+			require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+			stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			require.Equal(editedAt, stored.LastActivityAt)
+			require.Equal(1, stored.CommentCount)
+			events, err := database.ListIssueEvents(ctx, issueID)
+			require.NoError(err)
+			require.Len(events, 1)
+			require.Equal("edited comment", events[0].Body)
+		})
+	}
+}
+
+func TestSyncIssuePagePollRetriesCommentsAfterDiscardedParent(t *testing.T) {
+	for _, parentFails := range []bool{false, true} {
+		t.Run(fmt.Sprintf("parent_fails=%t", parentFails), func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			database := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			updatedAt := time.Date(2026, 7, 14, 12, 0, 0, 0, time.UTC)
+			issue := buildOpenIssue(7, updatedAt)
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			issueID, err := database.UpsertIssue(ctx, normalized)
+			require.NoError(err)
+			if parentFails {
+				_, err = database.WriteDB().ExecContext(ctx, `CREATE TRIGGER reject_poll_parent BEFORE UPDATE ON forge_issues BEGIN SELECT RAISE(ABORT, 'reject parent'); END`)
+				require.NoError(err)
+			} else {
+				issue.UpdatedAt = makeTimestamp(updatedAt.Add(-time.Minute))
+			}
+			issue.Comments = new(1)
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v3/repos/owner/repo/issues/7":
+					w.Header().Set("ETag", `"issue"`)
+					if r.Header.Get("If-None-Match") == `"issue"` {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode(issue))
+				case "/api/v3/repos/owner/repo/issues/7/comments":
+					w.Header().Set("ETag", `"comments"`)
+					if r.Header.Get("If-None-Match") == `"comments"` {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: makeTimestamp(updatedAt)}}))
+				default:
+					assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(provider.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+
+			err = syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7)
+			if parentFails {
+				require.Error(err)
+				_, err = database.WriteDB().ExecContext(ctx, `DROP TRIGGER reject_poll_parent`)
+				require.NoError(err)
+			} else {
+				require.NoError(err)
+				issue.UpdatedAt = makeTimestamp(updatedAt)
+			}
+			events, err := database.ListIssueEvents(ctx, issueID)
+			require.NoError(err)
+			require.Empty(events)
+			etag, err := database.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+			require.NoError(err)
+			require.Empty(etag)
+
+			require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+			events, err = database.ListIssueEvents(ctx, issueID)
+			require.NoError(err)
+			require.Len(events, 1)
+			require.Equal("new comment", events[0].Body)
+		})
+	}
+}
+
 func TestSyncIssuePagePollRejectsReplacementIssueOrRetriesCommentFailure(t *testing.T) {
 	for _, replacement := range []bool{true, false} {
 		t.Run(fmt.Sprintf("replacement=%t", replacement), func(t *testing.T) {

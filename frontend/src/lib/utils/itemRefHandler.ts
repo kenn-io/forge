@@ -145,7 +145,8 @@ export function resolveItemReference(
         number: ref.number.toString(),
       },
       onFailure: () => {
-        if (stillCurrent()) showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
+        if (stillCurrent())
+          showFlash(`Failed to open ${ref.owner}/${ref.name}#${ref.number}. Try again.`, { tone: "danger" });
       },
     },
   );

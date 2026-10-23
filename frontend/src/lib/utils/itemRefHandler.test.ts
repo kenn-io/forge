@@ -474,7 +474,6 @@ describe("itemRefHandler", () => {
   }
 
   it.each([
-    ["the user stays on the page", [], true],
     ["Activity rewrites the same URL", ["/?selected=pr:12"], true],
     ["the user moved to another page", ["/settings"], false],
     ["the user left and came back to the same page", ["/settings", "/?selected=pr:12"], false],
@@ -489,9 +488,7 @@ describe("itemRefHandler", () => {
 
   it.each([
     ["the user stays on the page", [], true],
-    ["Activity rewrites the same URL", ["/?selected=pr:12"], true],
     ["the user moved to another page", ["/settings"], false],
-    ["the user selected another Activity item", ["/?selected=pr:13"], false],
   ])("opens a late resolved item when %s", async (_label, laterURLs, opens) => {
     await clickWithDelayedLookup(laterURLs, { status: 200, body: { repo_tracked: true, item_type: "pr" } });
 

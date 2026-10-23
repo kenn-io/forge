@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
+  mockSetACPSettings: vi.fn(),
   quickActions: [] as QuickAction[],
   mockTerminalInstances: [] as Array<{
     buffer: { active: { baseY: number; type: "normal" | "alternate" } };
@@ -178,6 +179,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getQuickActions: () => mocks.quickActions,
         getACPSettings: () => ({ font_family: "", font_size: 13 }),
+        setACPSettings: mocks.mockSetACPSettings,
         getConfiguredRepos: () => [],
         getModeVisibility: () => ({
           activity: true,
@@ -774,9 +776,11 @@ describe("WorkspaceTerminalView", () => {
     mocks.terminalWrite.mockReset();
     mocks.mockTerminalInstances.length = 0;
     mocks.mockSetTerminalSettings.mockReset();
+    mocks.mockSetACPSettings.mockReset();
     mocks.mockUpdateSettings.mockReset();
-    mocks.mockUpdateSettings.mockImplementation(async ({ terminal }) => ({
+    mocks.mockUpdateSettings.mockImplementation(async ({ terminal, acp }) => ({
       terminal,
+      acp: acp ? { font_family: "", font_size: 13, ...acp } : undefined,
     }));
 
     vi.stubGlobal(
@@ -1489,6 +1493,89 @@ describe("WorkspaceTerminalView", () => {
       });
     });
     expect(mocks.mockSetTerminalSettings).toHaveBeenCalledWith(expect.objectContaining({ font_size: 15 }));
+  });
+
+  describe.each(["workflow", "dock", "promoted"] as const)("font zoom selection in the %s pane", (region) => {
+    it.each(["acp", "plain_shell"] as const)(
+      "retains the selected %s session when the toolbar receives focus",
+      async (kind) => {
+        const workflowSession = { ...runningSession, kind: kind === "acp" ? "agent" : "acp" };
+        const selectedSession = {
+          ...reviewerSession,
+          kind,
+          display_region: region === "workflow" ? "workflow" : "terminal",
+        };
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          launch_targets: [],
+          sessions: [workflowSession, selectedSession],
+        });
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          region === "workflow"
+            ? persistedTwoSessionWorkflowLayout(workflowSession.key, selectedSession.key)
+            : JSON.stringify({ ...JSON.parse(persistedTerminalLayout("tabs")), open: true }),
+        );
+        if (region === "promoted") claimForPrs();
+        render(WorkspaceTerminalView, {
+          props: { workspaceId: "ws-1", paneSurface: region === "promoted" ? "prs" : undefined },
+        });
+        if (region === "promoted") render(WorkspacePaneControls);
+        await screen.findByRole("tab", { name: /Helper/ });
+        const workflowPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]')!;
+        await fireEvent.focusIn(workflowPane);
+
+        let selectedPane: HTMLElement | undefined;
+        if (region === "promoted") {
+          const layout = getPaneLayoutStore("prs");
+          noteWorkspacePaneRendered("prs");
+          const paneKey = sessionPaneKey("ws-1", undefined, selectedSession.key);
+          expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+          layout.notePaneRender({
+            activeInputTabKey: paneKey,
+            editableTabs: ["workspace", paneKey],
+            onScreenTabs: ["workspace", paneKey],
+            flattened: false,
+            soloChromeTabs: [],
+          });
+          flushSync();
+          // The surface releases input ownership when focus moves to its toolbar.
+          layout.notePaneRender({ ...layout.paneRender()!, activeInputTabKey: null });
+          flushSync();
+          const controls = screen.getByRole("button", { name: "Workspace controls" });
+          controls.focus();
+          await fireEvent.click(controls);
+        } else {
+          selectedPane =
+            region === "workflow"
+              ? document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!
+              : await screen.findByRole("group", { name: "Reviewer split drop targets" });
+          await fireEvent.focusIn(selectedPane);
+        }
+
+        const target = kind === "acp" ? "ACP" : "terminal";
+        const increase = screen.getByRole("button", { name: `Increase ${target} font size` });
+        if (selectedPane) await fireEvent.focusOut(selectedPane, { relatedTarget: increase });
+        increase.focus();
+        await fireEvent.click(increase);
+        await waitFor(() =>
+          expect(mocks.mockUpdateSettings).toHaveBeenCalledWith(
+            kind === "acp" ? { acp: { font_size: 14 } } : { terminal: expect.objectContaining({ font_size: 15 }) },
+          ),
+        );
+        await waitFor(() =>
+          expect(kind === "acp" ? mocks.mockSetACPSettings : mocks.mockSetTerminalSettings).toHaveBeenCalledWith(
+            expect.objectContaining({ font_size: kind === "acp" ? 14 : 15 }),
+          ),
+        );
+        expect(kind === "acp" ? mocks.mockSetTerminalSettings : mocks.mockSetACPSettings).not.toHaveBeenCalled();
+
+        // Returning to the workflow must replace the retained dock/pane selection.
+        await fireEvent.focusIn(workflowPane);
+        expect(
+          screen.getByRole("group", { name: kind === "acp" ? "Terminal font size" : "ACP font size" }),
+        ).toBeTruthy();
+      },
+    );
   });
 
   it.each([

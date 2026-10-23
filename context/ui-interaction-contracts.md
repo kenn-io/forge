@@ -539,8 +539,8 @@ Persisted controls must state their scope clearly.
 - ACP font preferences apply to all harnesses and persist separately from terminal
   preferences; changing either must preserve the other
   (`internal/config/config.go::ACP`).
-- Workspace font controls follow the selected session's ACP or terminal preference;
-  resizing session content must leave app chrome unchanged
+- Workspace font controls retain the selected session across workflow, docked, and
+  promoted panes when the toolbar takes focus; app chrome never resizes
   (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::acpZoomActive`).
 - Settings controls persist on change. Do not add a Save button, a dirty draft,
   or a saving state that disables sibling controls; queue saves serially and

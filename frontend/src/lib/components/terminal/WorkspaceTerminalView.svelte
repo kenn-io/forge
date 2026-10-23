@@ -1191,8 +1191,12 @@
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
 
+  // Input ownership ends on blur; the toolbar still targets the session last
+  // selected in the workflow, dock, or a promoted pane.
+  let selectedSessionKey = $state<string | null>(null);
   const acpZoomActive = $derived(
-    runtimeSessions.find((session) => session.key === currentSessionKey)?.kind === "acp",
+    (runtimeSessions.find((session) => session.key === selectedSessionKey) ??
+      runtimeSessions.find((session) => session.key === currentSessionKey))?.kind === "acp",
   );
   const acpFontSize = $derived(settingsStore.getACPSettings().font_size);
 
@@ -1225,6 +1229,7 @@
         : workflowTabKeyForSession(session.key);
       if (tab === "terminal") rememberActiveTab(tab);
       else if (activeTabKey !== tab) selectWorkspaceTab(tab);
+      selectedSessionKey = session.key;
     });
   });
 
@@ -2239,6 +2244,7 @@
       workflowTree: activateWorkflowTab(terminalLayout.workflowTree, key),
     };
     activeTabKey = key;
+    selectedSessionKey = sessionKeyFromWorkflowTab(key) ?? (key === "terminal" ? terminalLayout.activeSessionKey : null);
     if (remember) rememberActiveTab(key);
   }
 
@@ -2247,6 +2253,7 @@
       terminalLayout = { ...terminalLayout, open: true };
     }
     if (key === activeTabKey) {
+      selectedSessionKey = sessionKeyFromWorkflowTab(key) ?? (key === "terminal" ? terminalLayout.activeSessionKey : null);
       rememberActiveTab(key);
       return;
     }
@@ -3225,6 +3232,7 @@
     terminalLayout = runtimeSnapshotAuthoritative
       ? normalizeLayoutForSessions(sessions, selected)
       : selected;
+    selectedSessionKey = sessionKey;
     if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal", remember);
     }
@@ -3240,6 +3248,7 @@
         groupID,
       ),
     );
+    selectedSessionKey = terminalLayout.activeSessionKey;
     if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal");
     }
@@ -4232,6 +4241,7 @@
     // different workspace's runtime, so reset these even though
     // workspace/runtime themselves are kept.
     activeTabKey = restoredActiveTab;
+    selectedSessionKey = null;
     terminalLayout = layoutForActiveTab;
     terminalLayoutWorkspaceId = storageId;
     launchingKey = null;
@@ -5370,6 +5380,7 @@
                   : workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
                 onInputActivate={() => {
                   activateWorkspaceInputRegion("terminal");
+                  selectedSessionKey = terminalLayout.activeSessionKey;
                   if (external) surfaceLayout?.setExternalInputActive(true);
                 }}
                 onInputDeactivate={() => {

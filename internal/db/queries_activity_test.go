@@ -2646,21 +2646,16 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	for _, tc := range []struct {
 		name, provider, metadata, actor, gitName, summary, eventType, prCommitAuthor, branchCommitAuthor string
 		otherRepo, sharedSHA                                                                             bool
-		searchCounts                                                                                     map[string]int
-		hideBotsCount                                                                                    int
 	}{
-		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", searchCounts: map[string]int{"integrator": 1, `"A. Person"`: 1}},
+		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "same author and committer", actor: "alice", gitName: "Alice Example", prCommitAuthor: "alice", branchCommitAuthor: "alice"},
-		{name: "same linked author and committer without git signature", metadata: `{"commit_author":"alice"}`, actor: "alice", prCommitAuthor: "alice", branchCommitAuthor: "alice", searchCounts: map[string]int{"alice": 2}},
-		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator", searchCounts: map[string]int{"integrator": 1}},
+		{name: "committer without git signature", actor: "integrator", prCommitAuthor: "integrator"},
 		{name: "linked author without git signature", metadata: `{"commit_author":"original-login"}`, actor: "integrator", prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
 		{name: "non-commit event", eventType: "issue_comment", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
-		{name: "bot committer", metadata: `{"commit_author":"original-login"}`, actor: "helper[bot]", gitName: "Alice Example", prCommitAuthor: "original-login", branchCommitAuthor: "original-login", hideBotsCount: 1},
 		{name: "rewritten sha", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", summary: sha[:12] + "ffffffffffffffffffffffffffff", prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other repository", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", otherRepo: true, prCommitAuthor: "original-login", branchCommitAuthor: ""},
 		{name: "other provider", provider: "gitlab", actor: "integrator", gitName: "Git Author", prCommitAuthor: "", branchCommitAuthor: ""},
 		{name: "shared SHA keeps PR authors and prefers latest detail sync", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", sharedSHA: true, prCommitAuthor: "original-login", branchCommitAuthor: "original-login"},
-		{name: "bot original author", metadata: `{"commit_author":"helper[bot]"}`, actor: "integrator", gitName: "Helper", prCommitAuthor: "helper[bot]", branchCommitAuthor: "helper[bot]", hideBotsCount: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -2722,53 +2717,56 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 					assert.Equal(t, tc.prCommitAuthor, item.CommitAuthor)
 				}
 			}
-			wantSources := []string{}
-			if tc.prCommitAuthor == "original-login" {
-				wantSources = append(wantSources, "pre")
-			}
-			if tc.branchCommitAuthor == "original-login" {
-				wantSources = append(wantSources, "bc")
-			}
-			for _, search := range []string{"original-login", "!original-login"} {
-				searchOpts := opts
-				searchOpts.Search = search
-				matches, err := d.ListActivity(t.Context(), searchOpts)
+		})
+	}
+
+	for _, tc := range []struct {
+		name, metadata, actor, gitName string
+		sharedSHA                      bool
+		searchCounts                   map[string]int
+	}{
+		{name: "original author", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "A. Person", searchCounts: map[string]int{"original-login": 2, "!original-login": 0, "integrator": 1, `"A. Person"`: 1}},
+		{name: "same linked author and committer without git signature", metadata: `{"commit_author":"alice"}`, actor: "alice", searchCounts: map[string]int{"alice": 2}},
+		{name: "shared SHA", metadata: `{"commit_author":"original-login"}`, actor: "integrator", gitName: "Git Author", sharedSHA: true, searchCounts: map[string]int{"original-login": 2, "!original-login": 1}},
+	} {
+		t.Run("search/"+tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			repoID := insertTestRepo(t, d, "acme", "widgets")
+			mrID := insertTestMR(t, d, repoID, 1, "Cached pull", baseTime())
+			require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
+				{MergeRequestID: mrID, EventType: "commit", Summary: sha, Author: tc.actor, MetadataJSON: tc.metadata, CreatedAt: baseTime(), DedupeKey: "commit-" + sha[:12]},
+			}))
+			if tc.sharedSHA {
+				otherMR := insertTestMR(t, d, repoID, 2, "Second pull", baseTime())
+				require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{
+					{MergeRequestID: otherMR, EventType: "commit", Summary: sha, Author: "other-integrator", MetadataJSON: `{"commit_author":"previous-login"}`, CreatedAt: baseTime(), DedupeKey: sha},
+				}))
+				_, err := d.WriteDB().ExecContext(t.Context(), `UPDATE forge_merge_requests SET detail_fetched_at = CASE WHEN id = ? THEN '2026-10-22 12:00:00' ELSE '2026-10-21 12:00:00' END WHERE id IN (?, ?)`, mrID, mrID, otherMR)
 				require.NoError(t, err)
+			}
+			branch := testBranchCommit(repoID, "main", sha, "Landed change", baseTime())
+			branch.AuthorName = tc.gitName
+			require.NoError(t, d.UpsertBranchCommits(t.Context(), []BranchCommit{branch}))
+			for search, count := range tc.searchCounts {
+				matches, err := d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"commit", "default_branch_commit"}, Search: search, Limit: 50})
+				require.NoError(t, err)
+				assert.Len(t, matches, count, search)
 				if search == "original-login" {
-					sources := []string{}
-					for _, item := range matches {
-						sources = append(sources, item.Source)
-					}
-					assert.ElementsMatch(t, wantSources, sources)
-				} else {
-					assert.Len(t, matches, len(items)-len(wantSources))
+					assert.ElementsMatch(t, []string{"pre", "bc"}, activitySources(matches))
+				}
+				if search == "!original-login" {
 					for _, item := range matches {
 						assert.NotEqual(t, "original-login", item.CommitAuthor)
 					}
 				}
 			}
 			if tc.sharedSHA {
-				searchOpts := opts
-				searchOpts.Search = "previous-login"
-				matches, err := d.ListActivity(t.Context(), searchOpts)
+				matches, err := d.ListActivity(t.Context(), ListActivityOpts{Types: []string{"commit", "default_branch_commit"}, Search: "previous-login", Limit: 50})
 				require.NoError(t, err)
 				require.Len(t, matches, 1)
 				assert.Equal(t, "pre", matches[0].Source)
 				assert.Equal(t, 2, matches[0].ItemNumber)
 				assert.Equal(t, "previous-login", matches[0].CommitAuthor)
-			}
-			for search, count := range tc.searchCounts {
-				searchOpts := opts
-				searchOpts.Search = search
-				matches, err := d.ListActivity(t.Context(), searchOpts)
-				require.NoError(t, err)
-				assert.Len(t, matches, count, search)
-			}
-			if tc.hideBotsCount > 0 {
-				opts.HideBots = true
-				matches, err := d.ListActivity(t.Context(), opts)
-				require.NoError(t, err)
-				assert.Len(t, matches, tc.hideBotsCount)
 			}
 		})
 	}

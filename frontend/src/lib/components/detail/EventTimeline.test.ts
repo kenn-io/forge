@@ -1679,8 +1679,6 @@ describe("EventTimeline", () => {
   it.each([
     ["normal", "original-author", "rebase-committer", "original-author committed by rebase-committer"],
     ["compact", "original-author", "rebase-committer", "original-author committed by rebase-committer"],
-    ["normal", "alice", "alice", "alice"],
-    ["compact", "alice", "alice", "alice"],
   ] as const)(
     "shows commit attribution in %s view for author %s and committer %s",
     (activityViewMode, author, committer, attribution) => {

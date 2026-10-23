@@ -12607,6 +12607,90 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		"parent 304s still check comments conditionally")
 }
 
+func TestSyncIssuePagePollLeavesBackgroundDetailCatchupEligible(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+	require.NoError(err)
+	fetchedAt := time.Now().UTC().Add(-time.Minute)
+	issue := buildOpenIssue(7, fetchedAt.Add(-time.Minute))
+	normalized, err := NormalizeIssue(repoID, issue)
+	require.NoError(err)
+	normalized.DetailFetchedAt = &fetchedAt
+	issueID, err := database.UpsertIssue(ctx, normalized)
+	require.NoError(err)
+	commentID := int64(10801)
+	require.NoError(database.UpsertIssueEvents(ctx, []db.IssueEvent{
+		{IssueID: issueID, EventType: "labeled", DedupeKey: "label-7", CreatedAt: fetchedAt},
+		{IssueID: issueID, PlatformID: &commentID, EventType: "issue_comment", DedupeKey: "issue-comment-10801", CreatedAt: fetchedAt, MetadataJSON: `{"provider_hidden":true,"provider_hidden_reason":"ABUSE"}`},
+	}))
+	require.NoError(database.UpsertHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue", 7, `"old"`))
+	issue.Title = new("updated issue")
+	issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
+	issue.Comments = new(2)
+	client := &conditionalIssueLifecycleClient{
+		getIssueFn: func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil },
+		nextETag:   `"new"`,
+		comments: []*gh.IssueComment{
+			{ID: &commentID, Body: new("existing comment"), CreatedAt: makeTimestamp(fetchedAt)},
+			{ID: new(int64(10802)), Body: new("new comment"), CreatedAt: issue.UpdatedAt},
+		},
+		timelineEvents: []platformgithub.PullRequestTimelineEvent{{NodeID: "assigned-7", EventType: "assigned", Actor: "alice", CreatedAt: fetchedAt}},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	gqlSrv := currentCommentVisibilityServer(t, "issue", commentID, platformgithub.CommentVisibility{})
+	defer gqlSrv.Close()
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil),
+	})
+
+	require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("updated issue", stored.Title)
+	require.NotNil(stored.DetailFetchedAt)
+	assert.WithinDuration(fetchedAt, *stored.DetailFetchedAt, time.Millisecond)
+	assert.Zero(client.timelineCalls.Load())
+	assert.Equal(int32(1), client.listIssueCommentsIfChangedCalls.Load())
+	events, err := database.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	require.Len(events, 3)
+	assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.EventType == "labeled" }))
+	assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.Body == "new comment" }))
+	assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return strings.Contains(event.MetadataJSON, `"provider_hidden":true`) }))
+	etag, err := database.GetHTTPEtag(ctx, "github", "github.com", repo.Owner, repo.Name, "issue", 7)
+	require.NoError(err)
+	assert.Equal(`"new"`, etag)
+
+	client.notModified = true
+	syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
+	assert.Equal(int32(1), client.unconditionalCalls.Load())
+	assert.Equal(int32(1), client.timelineCalls.Load())
+	stored, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored.DetailFetchedAt)
+	assert.True(stored.DetailFetchedAt.After(fetchedAt))
+	events, err = database.ListIssueEvents(ctx, issueID)
+	require.NoError(err)
+	assert.True(slices.ContainsFunc(events, func(event db.IssueEvent) bool { return event.EventType == "assigned" }))
+	for _, event := range events {
+		if event.EventType == "issue_comment" {
+			assert.Empty(event.MetadataJSON, "the drain refreshes hidden-comment flags")
+		}
+	}
+	revision := stored.SnapshotRevision
+	require.NoError(syncer.SyncIssueOnProviderIfChanged(WithSyncBudget(ctx), repo.PlatformHost, repo.Owner, repo.Name, repoID, 7))
+	stored, err = database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	assert.Equal(revision, stored.SnapshotRevision)
+	assert.Equal(int32(2), client.conditionalCalls.Load())
+	assert.Equal(`"new"`, client.receivedETag)
+}
+
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

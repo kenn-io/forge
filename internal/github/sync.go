@@ -8975,6 +8975,11 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
 	}
 
+	// A page poll can save the parent ETag before the timeline catches up.
+	if existing != nil && existing.DetailFetchedAt != nil && existing.UpdatedAt.After(*existing.DetailFetchedAt) {
+		ctx = platformgithub.WithUnconditionalRead(ctx)
+	}
+
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
 		ctx, client, repo, number,
 	)
@@ -12011,6 +12016,74 @@ func (s *Syncer) SyncIssueOnProvider(
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
 	return s.syncIssueForRepo(ctx, repo, number, nil)
+}
+
+// SyncIssueOnProviderIfChanged refreshes only the issue and comments for a page poll.
+func (s *Syncer) SyncIssueOnProviderIfChanged(
+	ctx context.Context,
+	host, owner, name string,
+	repoID int64,
+	number int,
+) error {
+	if !s.AutomaticSyncEnabled() {
+		return nil
+	}
+	repo, ok := s.trackedRepoByIdentity(platform.KindGitHub, owner, name, host)
+	if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+		return nil
+	}
+	existing, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil || existing == nil {
+		return err
+	}
+	bucket, err := s.bucketKeyForRepo(repo, false)
+	if err != nil {
+		return err
+	}
+	releaseProviderWork := s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)
+	defer releaseProviderWork()
+	client, err := s.clientFor(repo)
+	if err != nil {
+		return err
+	}
+	issue, etag, notModified, err := s.getIssueForDetail(ctx, client, repo, number)
+	if syncBudgetWait(err) || notModified {
+		return nil
+	}
+	if outcomeErr := s.issueOnlyFetchOutcomeError(ctx, repo, number, issue, err); outcomeErr != nil {
+		return outcomeErr
+	}
+	if err != nil {
+		return err
+	}
+	normalized, err := NormalizeIssue(repoID, issue)
+	if err != nil {
+		return err
+	}
+	issueID, revision, accepted, err := s.commitIssueParentSnapshot(ctx, normalized)
+	if err != nil || !accepted {
+		return err
+	}
+	comments, err := s.listCommentsForRefresh(ctx, client, repo, number, issue.GetComments())
+	if err != nil && !platformgithub.IsNotModified(err) {
+		if syncBudgetWait(err) {
+			return nil
+		}
+		return err
+	}
+	if err == nil {
+		applied, err := s.replaceIssueCommentEvents(ctx, repo, number, issueID, revision, comments, nil, nil, nil)
+		if err != nil || !applied {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			return err
+		}
+	}
+	if etag != "" {
+		if err := s.db.UpsertHTTPEtag(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, "issue", number, etag); err != nil {
+			return err
+		}
+	}
+	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)
 }
 
 func (s *Syncer) syncIssueWithHost(

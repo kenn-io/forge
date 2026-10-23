@@ -4960,6 +4960,7 @@ func (o *SetIssueLabelsOnHostRequestOptions) GetHeader() (map[string]string, err
 // SyncIssueOnHostRequestOptions is the options needed to make a request to SyncIssueOnHost.
 type SyncIssueOnHostRequestOptions struct {
 	PathParams *SyncIssueOnHostPath
+	Query      *SyncIssueOnHostQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -4976,7 +4977,7 @@ func (o *SyncIssueOnHostRequestOptions) GetPathParams() (map[string]any, error) 
 
 // GetQuery returns the query params as a map.
 func (o *SyncIssueOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -7597,6 +7598,7 @@ func (o *SetIssueLabelsRequestOptions) GetHeader() (map[string]string, error) {
 // SyncIssueRequestOptions is the options needed to make a request to SyncIssue.
 type SyncIssueRequestOptions struct {
 	PathParams *SyncIssuePath
+	Query      *SyncIssueQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -7613,7 +7615,7 @@ func (o *SyncIssueRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *SyncIssueRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -23781,10 +23783,14 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueOnHostResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -29202,10 +29208,14 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -44412,10 +44422,14 @@ func (c *Client) SetIssueLabelsOnHostRaw(ctx context.Context, httpClient *http.C
 // SyncIssueOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SyncIssueOnHostRaw(ctx context.Context, httpClient *http.Client, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -45770,10 +45784,14 @@ func (c *Client) SetIssueLabelsRaw(ctx context.Context, httpClient *http.Client,
 // SyncIssueRaw returns an unread response. The caller must close its body.
 func (c *Client) SyncIssueRaw(ctx context.Context, httpClient *http.Client, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -51746,10 +51764,14 @@ func NewSyncIssueOnHostRequest(ctx context.Context, baseURL string, options *Syn
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -53185,10 +53207,14 @@ func NewSyncIssueRequest(ctx context.Context, baseURL string, options *SyncIssue
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -59852,6 +59878,11 @@ type ListWorkflowRunsOnHostQuery struct {
 	PerPage    *int64  `json:"per_page,omitempty"`
 }
 
+type SyncIssueOnHostQuery struct {
+	// IfChanged Check the GitHub issue before refreshing its details.
+	IfChanged *bool `json:"if_changed,omitempty"`
+}
+
 type GetPullDiffOnHostQuery struct {
 	Whitespace *string `json:"whitespace,omitempty"`
 
@@ -59981,6 +60012,11 @@ type ListIssuesQuery struct {
 	Assignee       *string `json:"assignee,omitempty"`
 	Limit          *int64  `json:"limit,omitempty"`
 	Offset         *int64  `json:"offset,omitempty"`
+}
+
+type SyncIssueQuery struct {
+	// IfChanged Check the GitHub issue before refreshing its details.
+	IfChanged *bool `json:"if_changed,omitempty"`
 }
 
 type ResolveKataIssueReferenceQuery struct {

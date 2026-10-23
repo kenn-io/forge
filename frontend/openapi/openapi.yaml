@@ -19191,6 +19191,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check the GitHub issue before refreshing its details.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check the GitHub issue before refreshing its details.
+            type: boolean
       responses:
         "200":
           content:
@@ -23424,6 +23431,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check the GitHub issue before refreshing its details.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check the GitHub issue before refreshing its details.
+            type: boolean
       responses:
         "200":
           content:

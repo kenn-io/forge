@@ -32,7 +32,7 @@ type Handlers struct {
 	GetRepoCommitDiffOnHost                 func(ctx context.Context, input *activityapi.GetRepoCommitDiffHostInput) (*activityapi.GetRepoCommitDiffOutput, error)
 	ListRepoLabels                          func(ctx context.Context, input *itemapi.GetRepoInput) (*itemapi.ListRepoLabelsOutput, error)
 	ResolveItem                             func(ctx context.Context, input *itemapi.ResolveItemInput) (*itemapi.ResolveItemOutput, error)
-	SyncIssue                               func(ctx context.Context, input *itemapi.IssueRepoNumberInput) (*itemapi.SyncIssueOutput, error)
+	SyncIssue                               func(ctx context.Context, input *itemapi.SyncIssueInput) (*itemapi.SyncIssueOutput, error)
 	SyncPR                                  func(ctx context.Context, input *itemapi.RepoNumberInput) (*itemapi.SyncPROutput, error)
 	SyncPRCI                                func(ctx context.Context, input *itemapi.RepoNumberInput) (*itemapi.SyncPRCIOutput, error)
 }

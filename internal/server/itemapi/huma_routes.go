@@ -37,6 +37,11 @@ type IssueRepoNumberInput struct {
 	Number       int    `path:"number"`
 }
 
+type SyncIssueInput struct {
+	IssueRepoNumberInput
+	IfChanged bool `query:"if_changed" doc:"Check the GitHub issue before refreshing its details."`
+}
+
 type ResolveItemInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string

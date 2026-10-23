@@ -17,10 +17,13 @@ func TestRestartKeepsCredentialCadence(t *testing.T) {
 		sameCredential bool
 		secondAge      time.Duration
 		lastError      string
+		startupFetches []string
 		polls          int
 	}{
-		{name: "two credentials keep polling", secondAge: 65 * time.Minute, polls: 2},
-		{name: "future failed repository retries alone", sameCredential: true, secondAge: -2 * time.Minute, lastError: "provider unavailable"},
+		{name: "two credentials keep polling", secondAge: 65 * time.Minute, startupFetches: []string{"second"}, polls: 2},
+		{name: "future completion is ignored", secondAge: -2 * time.Minute, startupFetches: []string{"second"}},
+		{name: "oldest healthy repository sets shared cadence", sameCredential: true, secondAge: 65 * time.Minute, startupFetches: []string{"first", "second"}},
+		{name: "failed repository retries alone", sameCredential: true, secondAge: -2 * time.Minute, lastError: "provider unavailable", startupFetches: []string{"second"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -56,8 +59,12 @@ func TestRestartKeepsCredentialCadence(t *testing.T) {
 				defer s.Stop()
 				s.Start(t.Context())
 				synctest.Wait()
-				require.Len(t, listed, 1, "only the overdue or failed repository fetches at startup")
-				require.Equal(t, "second", <-listed)
+				require.Len(t, listed, len(tc.startupFetches), "startup fetches")
+				var fetched []string
+				for range tc.startupFetches {
+					fetched = append(fetched, <-listed)
+				}
+				require.ElementsMatch(t, tc.startupFetches, fetched)
 				for range tc.polls {
 					time.Sleep(time.Hour)
 					synctest.Wait()

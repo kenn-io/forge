@@ -417,7 +417,7 @@ registry helpers return typed errors for missing providers or capabilities.
   only metadata writer. A branch that skips the write leaves default_branch
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
-- Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Local event writes advance that revision atomically so older syncs cannot overwrite them. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
+- Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Local event writes advance that revision atomically so older syncs cannot overwrite them. Complete comments and inline review sets replace; submitted reviews remain additive. Bulk GitHub sync captures revisions before provider reads and defers conflicting comment lists to detail sync. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 - Merge-request assignee omission remains unknown; only a provider-confirmed empty set counts as unassigned, so incomplete snapshots cannot claim that an item has no owner. (`internal/platformdb/persist.go::MarshalUserNamesJSON`, `internal/db/queries_assignees.go::unassignedCondition`)
 - This distinction carries onto the API: `assignees`/`requested_reviewers` are `omitzero` `[]string` fields, so a never-reported list is an absent JSON key and a confirmed-empty list serializes as `[]`; callers must not collapse the two. (`internal/db/queries.go::parseUserNamesJSON`)
 

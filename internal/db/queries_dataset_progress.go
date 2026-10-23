@@ -312,6 +312,41 @@ func (d *DB) FailArchiveItemSync(
 	})
 }
 
+func domainRevisionTable(itemType ArchiveItemType) (string, error) {
+	switch itemType {
+	case ArchiveItemTypeMergeRequest:
+		return "forge_merge_requests", nil
+	case ArchiveItemTypeIssue:
+		return "forge_issues", nil
+	default:
+		return "", fmt.Errorf("read item revision: invalid item type %q", itemType)
+	}
+}
+
+// SnapshotRevisions captures parent revisions before a repository provider fetch.
+func (d *DB) SnapshotRevisions(ctx context.Context, repoID int64, itemType ArchiveItemType) (map[int]int64, error) {
+	table, err := domainRevisionTable(itemType)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := d.roQueryContext(ctx, fmt.Sprintf(
+		`SELECT number, snapshot_revision FROM %s WHERE repo_id = ?`, table), repoID)
+	if err != nil {
+		return nil, fmt.Errorf("read snapshot revisions: %w", err)
+	}
+	defer rows.Close()
+	revisions := make(map[int]int64)
+	for rows.Next() {
+		var number int
+		var revision int64
+		if err := rows.Scan(&number, &revision); err != nil {
+			return nil, fmt.Errorf("scan snapshot revision: %w", err)
+		}
+		revisions[number] = revision
+	}
+	return revisions, rows.Err()
+}
+
 func lookupDomainRevisionTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -319,14 +354,12 @@ func lookupDomainRevisionTx(
 	itemType ArchiveItemType,
 	itemNumber int,
 ) (int64, error) {
-	table := "forge_issues"
-	if itemType == ArchiveItemTypeMergeRequest {
-		table = "forge_merge_requests"
-	} else if itemType != ArchiveItemTypeIssue {
-		return 0, fmt.Errorf("read archive item revision: invalid item type %q", itemType)
+	table, err := domainRevisionTable(itemType)
+	if err != nil {
+		return 0, err
 	}
 	var revision int64
-	err := tx.QueryRowContext(ctx, fmt.Sprintf(
+	err = tx.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT snapshot_revision FROM %s WHERE repo_id = ? AND number = ?`, table),
 		repoID, itemNumber,
 	).Scan(&revision)

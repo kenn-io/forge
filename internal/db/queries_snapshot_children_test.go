@@ -38,6 +38,10 @@ func TestChildSnapshotRejectsRevisionBeforeCommentUpsert(t *testing.T) {
 					IssueID: issueID, EventType: "issue_comment", Body: "posted comment",
 					CreatedAt: now, DedupeKey: "issue_comment:1",
 				}}))
+				stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
+				require.NoError(t, err)
+				require.NotNil(t, stored)
+				assert.Equal(revision+1, stored.SnapshotRevision)
 
 				applied, err := database.CommitIssueChildSnapshot(ctx, IssueChildSnapshot{
 					IssueID: issueID, ExpectedRevision: revision,
@@ -59,6 +63,10 @@ func TestChildSnapshotRejectsRevisionBeforeCommentUpsert(t *testing.T) {
 					MergeRequestID: mrID, EventType: "issue_comment", Body: "posted comment",
 					CreatedAt: now, DedupeKey: "issue_comment:1",
 				}}))
+				stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+				require.NoError(t, err)
+				require.NotNil(t, stored)
+				assert.Equal(revision+1, stored.SnapshotRevision)
 
 				applied, err := database.CommitMergeRequestChildSnapshot(ctx, MergeRequestChildSnapshot{
 					MergeRequestID: mrID, ExpectedRevision: revision, CommentsComplete: true,

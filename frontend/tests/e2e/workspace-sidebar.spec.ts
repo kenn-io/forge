@@ -1183,6 +1183,25 @@ test("phone offers the durable workspace terminal when no runtime session is lau
   await expect(page.getByRole("button", { name: /Stop terminal/ })).toHaveCount(0);
 });
 
+test("phone deletes the open workspace from its terminal options", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installControllableTerminalWebSockets(page);
+  await setupTerminalMocks(page);
+
+  await page.goto("/m/workspaces/local/ws-123");
+  await page.getByRole("button", { name: "Terminal options" }).click();
+  await page.getByRole("dialog", { name: "Terminal options" }).getByRole("button", { name: "Delete workspace…" }).click();
+  const confirmation = page.getByRole("dialog", { name: "Delete workspace?" });
+  await expect(confirmation).toBeVisible();
+
+  const deleted = page.waitForRequest(
+    (request) => request.method() === "DELETE" && new URL(request.url()).pathname === "/api/v1/workspaces/ws-123",
+  );
+  await confirmation.getByRole("button", { name: "Delete workspace", exact: true }).click();
+  await deleted;
+  await expect(page).toHaveURL(/\/m\/workspaces$/);
+});
+
 test("phone keeps the durable workspace terminal available when runtime discovery fails", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installControllableTerminalWebSockets(page);

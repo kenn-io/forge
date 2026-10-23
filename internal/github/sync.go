@@ -20,7 +20,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/telemetry"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"

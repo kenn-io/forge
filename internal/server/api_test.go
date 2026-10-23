@@ -31,7 +31,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty/v2"
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

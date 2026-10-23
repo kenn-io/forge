@@ -7,7 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 )

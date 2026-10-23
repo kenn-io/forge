@@ -12113,6 +12113,7 @@ func (s *Syncer) syncIssueForRepo(
 	}
 
 	var repoID int64
+	var probe repositoryFeatureProbe
 	if len(options) > 0 && options[0].PagePoll {
 		// Background sync reconciles repository renames; page polls use
 		// the stored identity so only the issue and comments cost reads.
@@ -12125,6 +12126,12 @@ func (s *Syncer) syncIssueForRepo(
 		}
 		repoID = stored.Repository.ID
 		repo = repoRefFromCatalog(repo, stored.Repository, nil)
+		var due bool
+		probe, due = s.beginRepositoryFeatureProbe(ctx, repo, platform.RepositoryFeatureIssues)
+		if !due {
+			return nil
+		}
+		defer probe.abandon()
 	} else {
 		resolvedRef, resolvedID, err := s.reconcileRepoForDirectSync(ctx, repo)
 		if err != nil {
@@ -12142,6 +12149,12 @@ func (s *Syncer) syncIssueForRepo(
 	}
 
 	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number, options...)
+	if len(options) > 0 && options[0].PagePoll {
+		s.recordGitHubRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, err)
+		if providerCalls > 0 {
+			probe.release()
+		}
+	}
 	if providerAttempted != nil && providerCalls > 0 {
 		*providerAttempted = true
 	}

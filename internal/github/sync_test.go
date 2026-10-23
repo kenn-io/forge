@@ -12629,10 +12629,17 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	notModified := false
 	expectedETag := ""
 	responseETag := `"page"`
+	disabledPath := ""
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/v3")
 		paths = append(paths, path)
 		w.Header().Set("Content-Type", "application/json")
+		if path == disabledPath {
+			w.WriteHeader(http.StatusGone)
+			_, err := w.Write([]byte(`{"message":"Issues are disabled for this repo"}`))
+			assert.NoError(t, err)
+			return
+		}
 		switch path {
 		case "/repos/owner/repo", "/repositories/" + strconv.FormatInt(testRepoID(repo.Owner, repo.Name), 10):
 			assert.NoError(t, json.NewEncoder(w).Encode(&gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Name: new(repo.Name), Owner: &gh.User{Login: new(repo.Owner)}}))
@@ -12745,6 +12752,25 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	require.Len(done, 1)
 	assert.Equal(t, "closed", done[0].DoneReason)
 	assert.NotNil(t, done[0].DoneAt)
+
+	now := fetchedAt
+	syncer.now = func() time.Time { return now }
+	for _, path := range []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"} {
+		disabledPath = path
+		require.Error(poll())
+		for range 2 {
+			paths = nil
+			now = now.Add(time.Minute)
+			require.NoError(poll())
+			assert.Empty(t, paths, "polls during cooldown make no provider calls")
+			now = now.Add(repositoryFeatureProbeInterval)
+			require.Error(poll(), "a disabled probe renews the cooldown")
+			assert.Contains(t, paths, path)
+		}
+		disabledPath = ""
+		now = now.Add(repositoryFeatureProbeInterval)
+		require.NoError(poll(), "an expired cooldown permits recovery")
+	}
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {

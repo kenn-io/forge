@@ -18,6 +18,7 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 		secondAge      time.Duration
 		lastError      string
 		manual         bool
+		airplaneMode   bool
 		startupFetches []string
 		polls          int
 	}{
@@ -26,6 +27,7 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 		{name: "oldest healthy repository sets shared cadence", sameCredential: true, secondAge: 65 * time.Minute, startupFetches: []string{"first", "second"}},
 		{name: "failed repository retries alone", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", startupFetches: []string{"second"}},
 		{name: "failed repository retries after scoped manual sync", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", manual: true, startupFetches: []string{"second"}},
+		{name: "airplane mode drops queued startup retries", sameCredential: true, secondAge: 5 * time.Minute, lastError: "provider unavailable", manual: true, airplaneMode: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -77,6 +79,9 @@ func TestStartupRestoresCadenceAndRetries(t *testing.T) {
 				}
 				s.Start(t.Context())
 				synctest.Wait()
+				if tc.airplaneMode {
+					s.SetAirplaneMode(true)
+				}
 				close(releaseManual)
 				synctest.Wait()
 				require.Len(t, listed, len(tc.startupFetches), "startup fetches")

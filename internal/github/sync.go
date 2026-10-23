@@ -648,6 +648,7 @@ type pendingSyncRun struct {
 	priorityRepos       []RepoRef
 	onlyRepos           []RepoRef
 	bypassRepos         []RepoRef
+	startupRetryRepos   []RepoRef
 }
 
 const (
@@ -4570,8 +4571,8 @@ func (s *Syncer) runOnceWithSlot(
 				s.coalescePendingRunLocked(
 					bypassNextSyncAfter, priorityRepos, onlyRepos,
 				)
-				s.pendingRun.bypassRepos = appendUniqueRepoRefs(
-					s.pendingRun.bypassRepos, bypassRepos,
+				s.pendingRun.startupRetryRepos = appendUniqueRepoRefs(
+					s.pendingRun.startupRetryRepos, bypassRepos,
 				)
 			}
 			s.runMu.Unlock()
@@ -4601,6 +4602,7 @@ func (s *Syncer) runOnceWithSlot(
 		pending := s.pendingRun
 		s.pendingRun = nil
 		if pending != nil && !s.AutomaticSyncEnabled() && !pending.bypassNextSyncAfter {
+			pending.startupRetryRepos = nil
 			if len(pending.bypassRepos) == 0 {
 				pending = nil
 			} else {
@@ -4638,7 +4640,7 @@ func (s *Syncer) runOnceWithSlot(
 			pending.bypassNextSyncAfter,
 			pending.priorityRepos,
 			only,
-			pending.bypassRepos,
+			appendUniqueRepoRefs(pending.bypassRepos, pending.startupRetryRepos),
 		)
 		if !launched {
 			s.releaseRunSlotWithStatus(terminalStatus)

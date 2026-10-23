@@ -239,6 +239,16 @@ const browserTestProject = defineProject(async () => {
     resolve: {
       conditions: [...defaultClientConditions],
     },
+    plugins: [
+      {
+        // A request that stays open until the page drops it, for specs that
+        // need a load to hold (markdown-video-preview.browser.svelte.ts).
+        name: "browser-test-never-responds",
+        configureServer(server) {
+          server.middlewares.use("/__browser-test/never-responds", () => {});
+        },
+      },
+    ],
     test: {
       name: "browser",
       setupFiles: ["./src/test/browserSetup.ts"],

@@ -582,9 +582,9 @@ Markdown without a repository keeps raw `<video>` tags. Every player gets
 16:9 frame so first play never resizes it
 (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`,
 `frontend/src/app.css`). A player that cannot load becomes a short notice
-linking to the original attachment; without preload, that happens only after
-the reader presses play. Each player sits in its own frame element so the
-swap never disturbs the nodes the markdown host inserted
+linking to the original attachment. The player loads nothing before play, so
+that happens only after the reader presses play. Each player sits in its own
+frame element so the swap never disturbs the nodes the markdown host inserted
 (`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
 The frame opens with a `<button aria-expanded>` header that collapses the
 player; it names the file from the source as written, before the media route
@@ -638,8 +638,30 @@ Players join the page gallery with images and diagrams:
   `internal/server/server.go::Server.Shutdown`).
 - Players use `preload="none"`: Firefox reads ahead on every preloaded player,
   so a few idle videos would hold every HTTP/1.1 connection the browser allows
-  to the daemon and stall the app
+  to the daemon and stall the app; with `preload="metadata"`, Firefox and
+  WebKit download whole files
   (`frontend/src/lib/utils/markdown.ts::normalizePlayer`).
+- Each player that comes into view gets its length in the header and its first
+  frame as its poster from a detached copy of the player, one copy at a time
+  for the whole page. The copy reads with `preload="auto"` (WebKit reaches no
+  frame with `metadata`) until `loadeddata` or 15 seconds, then drops every
+  source and calls `load()`, which ends its requests in every browser. The
+  copy stays outside the document so its load errors never reach the fallback
+  notice. Collapsed players wait until expanded, a player scrolled out of
+  view before its turn waits to return, started players are left alone, and
+  results are kept per source for the session so a body that renders again
+  shows them at once. Previews apply to the rendered `<video>` and to the
+  kit-ui player's own, which copies the rendered poster when it replaces it.
+  A source on another origin without CORS taints the canvas, so those players
+  show only their length
+  (`frontend/src/lib/utils/markdown-video-preview.ts::observeMarkdownVideoPreviews`).
+- A media stream whose client leaves a write unread for 15 seconds ends.
+  Browsers stop reading a buffered video and can keep that connection open
+  indefinitely; Chromium's media cache does so for some preview copies and
+  for paused players. They ask again with a byte range when they need more,
+  so the cost is a reconnect. net/http flushes buffered output after the
+  handler returns, so the copy re-arms the deadline once the upstream ends
+  (`internal/server/httpapi/stream.go::CopyStream`).
 - GitLab images and videos share one upload rule: `uploads/...`,
   `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the
   platform host, and only uploads on that host reach the proxy

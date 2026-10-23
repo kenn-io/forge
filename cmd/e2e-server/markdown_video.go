@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,18 +27,34 @@ const (
 	e2eMarkdownVideoThreadID    = "e2e-markdown-video-1"
 )
 
+// e2eMarkdownVideoGallerySources are separate attachments that all serve the
+// demo clip, so a pull request description holds several players with
+// distinct sources.
+var e2eMarkdownVideoGallerySources = []string{
+	"https://github.com/user-attachments/assets/e2e-gallery-video-1",
+	"https://github.com/user-attachments/assets/e2e-gallery-video-2",
+	"https://github.com/user-attachments/assets/e2e-gallery-video-3",
+	"https://github.com/user-attachments/assets/e2e-gallery-video-4",
+	"https://github.com/user-attachments/assets/e2e-gallery-video-5",
+}
+
 // e2eMarkdownVideoClient serves one local clip as the demo GitHub attachment.
 // Embedding keeps every optional provider interface of the workflow client.
 type e2eMarkdownVideoClient struct {
 	*e2eWorkflowClient
 
 	path string
+	// interrupt ends each response at the first multiple of
+	// e2eMarkdownVideoInterruptEvery past its start, the way the daemon ends a
+	// stream the browser stopped reading, so a test sees the browser fetch the
+	// rest.
+	interrupt bool
 }
 
 func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 	_ context.Context, _, _, sourceURL, byteRange string,
 ) (platform.MarkdownMedia, error) {
-	if sourceURL != e2eMarkdownVideoSource {
+	if sourceURL != e2eMarkdownVideoSource && !slices.Contains(e2eMarkdownVideoGallerySources, sourceURL) {
 		return platform.MarkdownMedia{}, &platform.Error{
 			Code: platform.ErrCodeNotFound, Provider: platform.KindGitHub, PlatformHost: "github.com",
 		}
@@ -59,11 +76,15 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 			Code: platform.ErrCodeRangeNotSatisfiable, Provider: platform.KindGitHub, PlatformHost: "github.com",
 		}
 	}
+	var body io.Reader = io.NewSectionReader(file, start, end-start+1)
+	if cut := (start/e2eMarkdownVideoInterruptEvery + 1) * e2eMarkdownVideoInterruptEvery; c.interrupt && end >= cut {
+		body = &interruptedReader{r: io.LimitReader(body, cut-start)}
+	}
 	media := platform.MarkdownMedia{
 		Body: struct {
 			io.Reader
 			io.Closer
-		}{io.NewSectionReader(file, start, end-start+1), file},
+		}{body, file},
 		ContentType:   markdownVideoContentType(c.path),
 		ContentLength: end - start + 1,
 		Partial:       partial,
@@ -72,6 +93,37 @@ func (c *e2eMarkdownVideoClient) OpenMarkdownMedia(
 		media.ContentRange = fmt.Sprintf("bytes %d-%d/%d", start, end, size)
 	}
 	return media, nil
+}
+
+const (
+	// e2eMarkdownVideoInterruptEvery spaces the offsets where interrupted
+	// responses end. It is a multiple of the 32 KiB blocks browsers hand to
+	// the decoder, so the browser keeps every byte it got and asks again from
+	// the cut. Cutting at every multiple also cuts the player's own request
+	// after the preview copy has cached the start of the clip.
+	e2eMarkdownVideoInterruptEvery = 64 << 10
+	// e2eMarkdownVideoInterruptPause holds an interrupted response open long
+	// enough for a test to pause the player before the response ends.
+	e2eMarkdownVideoInterruptPause = 2 * time.Second
+)
+
+// errMarkdownVideoInterrupted fails the copy of an interrupted response, which
+// aborts it the same way the stall limit does.
+var errMarkdownVideoInterrupted = errors.New("demo video response interrupted")
+
+// interruptedReader passes r through, waits
+// e2eMarkdownVideoInterruptPause, then fails.
+type interruptedReader struct {
+	r io.Reader
+}
+
+func (r *interruptedReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if !errors.Is(err, io.EOF) {
+		return n, err
+	}
+	<-time.After(e2eMarkdownVideoInterruptPause)
+	return n, errMarkdownVideoInterrupted
 }
 
 // markdownVideoContentType lets browser tests use a WebM clip, which every
@@ -111,7 +163,8 @@ func parseSingleByteRange(byteRange string, size int64) (start, end int64, parti
 
 // seedMarkdownVideoFixture adds a synthetic issue and a review thread on
 // acme/widgets#1 whose bodies hold the demo attachment URL alone in a
-// paragraph, in both SQLite and the provider fixture so a sync keeps them.
+// paragraph, and appends the gallery attachments to the description of
+// acme/widgets#1, in both SQLite and the provider fixture so a sync keeps them.
 func seedMarkdownVideoFixture(
 	ctx context.Context,
 	database *db.DB,
@@ -166,6 +219,18 @@ func seedMarkdownVideoFixture(
 	}
 	if mr == nil {
 		return errors.New("get markdown video pull request: not found")
+	}
+	description := mr.Body + "\n\nRecordings from each step of the release check:\n\n" +
+		strings.Join(e2eMarkdownVideoGallerySources, "\n\n")
+	if err := database.UpdateMRTitleBody(ctx, mr.ID, mr.Title, description, mr.UpdatedAt); err != nil {
+		return fmt.Errorf("seed markdown video pull request description: %w", err)
+	}
+	for _, pulls := range [][]*gh.PullRequest{fc.OpenPRs["acme/widgets"], fc.PRs["acme/widgets"]} {
+		for _, pull := range pulls {
+			if pull.GetNumber() == 1 {
+				pull.Body = new(description)
+			}
+		}
 	}
 	threadBody := "This is what the cache miss looks like on a slow device:\n\n" + e2eMarkdownVideoSource
 	if err := database.UpsertMREvents(ctx, []db.MREvent{{

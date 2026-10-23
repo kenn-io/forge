@@ -48,6 +48,9 @@ export type IsolatedE2EServerOptions = {
   // The extra items would change other specs' lists, so it always gets a
   // dedicated process.
   markdownVideo?: string;
+  // End each markdownVideo response at the next 64 KiB boundary past its
+  // start, the way the daemon ends a stream the browser stopped reading.
+  markdownVideoInterrupt?: boolean;
   // Spawn a dedicated server process and kill it on stop() instead of
   // leasing from the per-worker pool. Required when the test depends
   // on process environment the server must inherit at spawn time
@@ -710,6 +713,9 @@ async function spawnServer(
   }
   if (options.markdownVideo) {
     args.push("-markdown-video", options.markdownVideo);
+  }
+  if (options.markdownVideoInterrupt) {
+    args.push("-markdown-video-interrupt");
   }
   if (process.env.ROBOREV_ENDPOINT) {
     args.push("-roborev", process.env.ROBOREV_ENDPOINT);

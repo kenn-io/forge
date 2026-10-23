@@ -381,6 +381,11 @@ a:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.markdown-body .markdown-video-duration {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .markdown-body .markdown-video-chevron {
   transition: transform var(--transition-fast) var(--transition-ease, ease);
 }

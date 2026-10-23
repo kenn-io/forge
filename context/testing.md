@@ -308,9 +308,14 @@ suite runs once alongside Chromium (`.github/workflows/ci.yml::e2e`).
   `git fast-import` (`internal/testutil/diff_repo.go::appendSeededPR1Commits`).
 - Markdown video browser tests use a committed synthetic VP9 WebM clip, which
   every Playwright browser decodes, on a dedicated e2e server; the clip's extra
-  seeded items would change other specs' lists
+  seeded items, and the gallery of attachments it appends to the description
+  of `acme/widgets#1`, would change other specs' pages
   (`frontend/tests/e2e-full/markdown-video.spec.ts`,
-  `cmd/e2e-server/markdown_video.go::markdownVideoContentType`).
+  `cmd/e2e-server/markdown_video.go::markdownVideoContentType`). A larger
+  clip with `-markdown-video-interrupt` cuts responses at 64 KiB boundaries,
+  the size browsers cache in whole 32 KiB blocks; cutting the 24 KB clip
+  leaves nothing the browser can decode. Browser-tier specs that need a load
+  to hold use the `/__browser-test/never-responds` route (`frontend/vite.config.ts`).
 
 Playwright regressions that require a non-loopback listener must be opt-in only
 in the isolated CI container; local runs must skip before binding because the

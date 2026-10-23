@@ -201,6 +201,9 @@ through hand-written frontend data.
 - Drain asynchronous Playwright route handlers before page teardown; background refreshes
   can outlive passing assertions. Use `unrouteAll({ behavior: "wait" })` to retain callback errors
   (`frontend/tests/e2e-full/mobile-routes.spec.ts:11`).
+- Mock Playwright covers ACP chat UI too: the fake session socket answers an ACP connection with a
+  chat-state snapshot, so chat-surface checks need not wait for the real-backend suite
+  (`frontend/tests/e2e/workspace-sidebar.spec.ts::installControllableTerminalWebSockets`).
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do

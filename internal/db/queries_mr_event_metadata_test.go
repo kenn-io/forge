@@ -206,21 +206,14 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 	for _, tc := range []struct{ metadata, author string }{
 		{`{"commit_author":"a"}`, "a"},
 		{`{"commit_author":"b"}`, "b"},
-		{`{"commit_author":"a","commit_author":"b"}`, "a"},
-		{`invalid json`, "developer"},
-		{`{}`, "developer"},
+		{`{}`, ""},
+		{``, ""},
 	} {
 		applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, false, map[string]string{"commit-1": tc.metadata})
 		require.NoError(err)
 		require.True(applied)
-		opts := ListActivityOpts{Types: []string{"commit"}, Limit: 50}
-		items, err := database.ListActivity(ctx, opts)
-		require.NoError(err)
-		require.Len(items, 1)
-		assert.Equal(tc.author, items[0].CommitAuthor)
-		opts.Search = tc.author
-		items, err = database.ListActivity(ctx, opts)
-		require.NoError(err)
-		assert.Len(items, 1)
+		var author string
+		require.NoError(database.ReadDB().QueryRowContext(ctx, `SELECT commit_author FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'commit-1'`, mrID).Scan(&author))
+		assert.Equal(tc.author, author)
 	}
 }

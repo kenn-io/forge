@@ -92,7 +92,7 @@ what "current" means.
   even on failure. Failed details stay overdue for a later cycle
   (`internal/github/sync.go::drainDetailQueue`).
 
-- Issue-page polls use a separate `issue-page` ETag and preserve full-detail freshness so background sync still fetches timelines (`internal/github/sync.go::fetchIssueDetail`).
+- Issue-page polls use stored repository identity and a separate `issue-page` ETag, preserving full-detail freshness so background sync still reconciles renames and fetches timelines (`internal/github/sync.go::syncIssueForRepo`, `internal/github/sync.go::fetchIssueDetail`).
 
 For pull requests, that means:
 

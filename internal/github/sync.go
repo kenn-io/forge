@@ -12109,11 +12109,26 @@ func (s *Syncer) syncIssueForRepo(
 		defer releaseProviderWork()
 	}
 
-	resolvedRef, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
-	if err != nil {
-		return err
+	var repoID int64
+	if len(options) > 0 && options[0].PagePoll {
+		// Background sync reconciles repository renames; page polls use
+		// the stored identity so only the issue and comments cost reads.
+		stored, err := s.db.ResolveActiveRepositoryRoute(ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)))
+		if err != nil {
+			return err
+		}
+		if stored == nil {
+			return ErrRepoNotTracked
+		}
+		repoID = stored.Repository.ID
+		repo = repoRefFromCatalog(repo, stored.Repository, nil)
+	} else {
+		resolvedRef, resolvedID, err := s.reconcileRepoForDirectSync(ctx, repo)
+		if err != nil {
+			return err
+		}
+		repo, repoID = resolvedRef, resolvedID
 	}
-	repo = resolvedRef
 	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
 		// Live detail syncing stops on an archived repo; only archive
 		// hydration, which runs under the archive budget, proceeds.
@@ -12127,7 +12142,7 @@ func (s *Syncer) syncIssueForRepo(
 	if providerAttempted != nil && providerCalls > 0 {
 		*providerAttempted = true
 	}
-	if err != nil || len(options) > 0 && options[0].PagePoll {
+	if err != nil {
 		return err
 	}
 	return s.markClosedLinkedIssueNotificationsDone(ctx, repoID, number)

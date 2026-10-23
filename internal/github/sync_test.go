@@ -12625,11 +12625,36 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	issue.Title = new("updated issue")
 	issue.UpdatedAt = makeTimestamp(fetchedAt.Add(30 * time.Second))
 	issue.Comments = new(1)
-	client := &conditionalIssueLifecycleClient{}
-	client.getIssueFn = func(context.Context, string, string, int) (*gh.Issue, error) { return issue, nil }
-	client.nextETag = `"page"`
-	client.comments = []*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	var paths []string
+	notModified := false
+	expectedETag := ""
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+		paths = append(paths, path)
+		w.Header().Set("Content-Type", "application/json")
+		switch path {
+		case "/repos/owner/repo", "/repositories/" + strconv.FormatInt(testRepoID(repo.Owner, repo.Name), 10):
+			assert.NoError(t, json.NewEncoder(w).Encode(&gh.Repository{ID: new(testRepoID(repo.Owner, repo.Name)), Name: new(repo.Name), Owner: &gh.User{Login: new(repo.Owner)}}))
+		case "/repos/owner/repo/issues/7":
+			assert.Equal(t, expectedETag, r.Header.Get("If-None-Match"))
+			if notModified {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"page"`)
+			assert.NoError(t, json.NewEncoder(w).Encode(issue))
+		case "/repos/owner/repo/issues/7/comments":
+			assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
+		default:
+			assert.Fail(t, "unexpected provider request", "%s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(provider.Close)
+	budget := NewSyncBudget(1000)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
+	require.NoError(err)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	gql := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		assert.Fail(t, "page polls must skip GraphQL visibility")
 	}))
@@ -12641,9 +12666,8 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 		return syncer.SyncIssueOnProvider(WithSyncBudget(ctx), platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
 	}
 	require.NoError(poll())
-	assert.Empty(t, client.receivedETag, "page polls must not fall back to the detail ETag")
-	assert.Equal(t, int32(1), client.conditionalCalls.Load())
-	assert.Equal(t, int32(1), client.listIssueCommentsIfChangedCalls.Load(), "changed polls make two provider reads")
+	assert.Equal(t, []string{"/repos/owner/repo/issues/7", "/repos/owner/repo/issues/7/comments"}, paths)
+	assert.Equal(t, 2, budget.Spent(), "changed polls spend two budget units")
 	stored, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(stored)
@@ -12661,15 +12685,41 @@ func TestSyncIssuePagePollStoresThenSkipsNotModified(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(t, `"detail"`, etag)
 
-	client.notModified = true
+	notModified = true
+	expectedETag = `"page"`
+	paths = nil
 	require.NoError(poll())
-	assert.Equal(t, `"page"`, client.receivedETag)
-	assert.Equal(t, int32(2), client.conditionalCalls.Load())
-	assert.Equal(t, int32(1), client.listIssueCommentsIfChangedCalls.Load(), "304 skips comments")
-	assert.Zero(t, client.timelineCalls.Load())
+	assert.Equal(t, []string{"/repos/owner/repo/issues/7"}, paths)
+	assert.Equal(t, 2, budget.Spent(), "304 spends no budget")
 	after, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	assert.Equal(t, stored, after, "304 leaves the issue unchanged")
+
+	require.NoError(database.UpsertNotifications(ctx, []db.Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "closed-issue",
+		RepoID: &repoID, RepoOwner: repo.Owner, RepoName: repo.Name,
+		SubjectType: "Issue", ItemType: "issue", ItemNumber: new(7),
+		Unread: true, SourceUpdatedAt: fetchedAt, SyncedAt: fetchedAt,
+	}}))
+	active, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
+	require.NoError(err)
+	require.Len(active, 1)
+	notModified = false
+	issue.State = new("closed")
+	issue.ClosedAt = makeTimestamp(fetchedAt.Add(time.Minute))
+	issue.UpdatedAt = issue.ClosedAt
+	require.NoError(poll())
+	closed, err := database.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.Equal("closed", closed.State)
+	active, err = database.ListNotifications(ctx, db.ListNotificationsOpts{State: "active"})
+	require.NoError(err)
+	assert.Empty(t, active)
+	done, err := database.ListNotifications(ctx, db.ListNotificationsOpts{State: "done"})
+	require.NoError(err)
+	require.Len(done, 1)
+	assert.Equal(t, "closed", done[0].DoneReason)
+	assert.NotNil(t, done[0].DoneAt)
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {

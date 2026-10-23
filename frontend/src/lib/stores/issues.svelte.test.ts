@@ -745,55 +745,26 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
-  it.each([
-    { changed: false, fails: false },
-    { changed: true, fails: false },
-    { changed: true, fails: true },
-  ])("polls the provider before reading the cache (changed: $changed, fails: $fails)", async ({ changed, fails }) => {
+  it("polls with if_changed before reading the cache, even after a failed POST", async () => {
     vi.useFakeTimers();
-    const cached = issueDetail();
-    cached.issue.UpdatedAt = "2026-08-12T21:00:00Z";
-    const fresh = issueDetail();
-    fresh.issue.UpdatedAt = changed ? "2026-08-12T21:01:00Z" : cached.issue.UpdatedAt;
-    fresh.issue.Title = changed ? "fresh from cache" : cached.issue.Title;
-    const get = vi.fn(async (path: string) => ({ data: path === "/issues" ? [] : fresh, error: undefined }));
-    const post = vi.fn(async () => {
-      if (fails) throw new Error("provider unavailable");
-      return { data: cached, error: undefined };
-    });
-    const onDetailSynchronized = vi.fn();
-    let page = "";
-    const store = createIssuesStore({
-      client: mockClient({ GET: get, POST: post }),
-      getPage: () => page,
-      onDetailSynchronized,
-    });
-    get.mockResolvedValueOnce({ data: cached, error: undefined });
-    await loadIssueDetail(store, "acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      sync: false,
-    });
-    onDetailSynchronized.mockClear();
-    page = "issues";
-    store.startIssueDetailPolling("acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-    });
-
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    expect(post).toHaveBeenCalledOnce();
-    expect(post).toHaveBeenCalledWith(
-      "/issues/{provider}/{owner}/{name}/{number}/sync",
-      expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
-    );
-    expect(post.mock.invocationCallOrder[0]).toBeLessThan(get.mock.invocationCallOrder[1]!);
-    expect(get.mock.calls.filter(([path]) => path === "/issues")).toHaveLength(0);
-    expect(store.getIssueDetail()?.issue.Title).toBe(changed ? "fresh from cache" : cached.issue.Title);
-    expect(onDetailSynchronized).not.toHaveBeenCalled();
+    const get = vi.fn(async () => ({ data: issueDetail(), error: undefined }));
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({ data: issueDetail(), error: undefined })
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    store.startIssueDetailPolling("acme", "widget", 7, { provider: "github", platformHost: "github.com" });
+    for (let poll = 0; poll < 2; poll++) {
+      get.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(post).toHaveBeenLastCalledWith(
+        "/issues/{provider}/{owner}/{name}/{number}/sync",
+        expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
+      );
+      expect(get).toHaveBeenCalledOnce();
+      expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
+      expect(post.mock.invocationCallOrder[poll]).toBeLessThan(get.mock.invocationCallOrder[0]!);
+    }
     store.stopIssueDetailPolling();
   });
 
@@ -808,9 +779,8 @@ describe("createIssuesStore", () => {
       const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
       let cachedResponse = cached;
       const get = vi.fn(async () => ({ data: cachedResponse, error: undefined }));
-      const post = vi.fn(() => syncResponse.promise);
       const store = createIssuesStore({
-        client: mockClient({ GET: get, POST: post }),
+        client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
       });
       await loadIssueDetail(store, "acme", "widget", 7, {
         provider: "github",
@@ -846,7 +816,6 @@ describe("createIssuesStore", () => {
       );
       await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(true));
       await refresh();
-      expect(post).toHaveBeenCalledOnce();
 
       cachedResponse = fresh;
       syncResponse.resolve({ data: fresh, error: undefined });

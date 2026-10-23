@@ -16,6 +16,7 @@ request metadata, comments, or review threads.
   publication or automatic PR/mainline container builds.
 - All CI jobs use GitHub-hosted runners, including pull requests from forks,
   workflow validation, and scheduled Android builds. (`.github/workflows/`)
+- Workflow `uses:` lines name version tags; `.github/workflows/actions.lock` pins every action, including ones other actions call, and is what satisfies the org's SHA-pinning policy. Run `make actions-lock` after changing any `uses:` line; a stale lockfile fails jobs at setup (`Makefile::actions-lock`).
 - PR CI calls the reusable workflow from the same commit so checks exercise
   the proposed workflow changes. (`.github/workflows/ci-pr.yml::jobs.run`)
 - When changing test filters, confirm the step ran tests; a filter matching

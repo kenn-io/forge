@@ -36,12 +36,12 @@ jobs:
       e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      - uses: dorny/paths-filter@v4.0.3
         id: filter
         with:
           filters: |
@@ -117,7 +117,7 @@ jobs:
     env:
       PLAYWRIGHT_CI_IMAGE: ghcr.io/kenn-io/kenn-forge-playwright
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -196,18 +196,18 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           version: "0.13.4"
           enable-cache: false
 
       - name: Restore Bun package cache
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
@@ -217,7 +217,7 @@ jobs:
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: /usr/local/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -238,25 +238,25 @@ jobs:
       matrix:
         lane: [frontend, go-linux, go-windows]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Restore Bun package downloads
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.15.0
         with:
           version: "1.4.0"
           node-version-file: package.json
@@ -265,7 +265,7 @@ jobs:
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -286,7 +286,7 @@ jobs:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@v5.2.0
         if: matrix.lane != 'frontend'
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
@@ -333,11 +333,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -349,7 +349,7 @@ jobs:
 
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: jdx/mise-action@v5.2.0
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:
@@ -376,7 +376,7 @@ jobs:
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go unit tests (${{ matrix.shard }})
           path: tmp/test-output.json
@@ -394,7 +394,7 @@ jobs:
 
       - name: Publish live GraphQL test report
         if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
           path: tmp/test-graphql-output.json
@@ -409,7 +409,7 @@ jobs:
 
       - name: Publish integration test report
         if: ${{ !cancelled() && hashFiles('tmp/test-integration-output.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go integration tests
           path: tmp/test-integration-output.json
@@ -422,19 +422,19 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Restore Bun package downloads
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.15.0
         with:
           version: "1.4.0"
           node-version-file: package.json
@@ -443,7 +443,7 @@ jobs:
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -454,7 +454,7 @@ jobs:
       - name: Upload frontend unit diagnostics
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: frontend-unit-diagnostics
           path: tmp/frontend-unit-diagnostics/
@@ -467,11 +467,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -518,7 +518,7 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -534,11 +534,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -574,7 +574,7 @@ jobs:
     container:
       image: golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -598,11 +598,11 @@ jobs:
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -671,7 +671,7 @@ jobs:
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a # v3.2.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
           path: tmp/test-race-output.json
@@ -680,7 +680,7 @@ jobs:
 
       - name: Upload race timing artifacts
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
           path: |
@@ -691,24 +691,24 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Restore Bun package downloads
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.15.0
         with:
           version: "1.4.0"
           node-version-file: package.json
@@ -717,7 +717,7 @@ jobs:
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -751,13 +751,13 @@ jobs:
         browser: [chromium, firefox]
     name: e2e mock (${{ matrix.browser }})
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Restore Bun package cache
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
@@ -767,7 +767,7 @@ jobs:
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: /usr/local/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -781,7 +781,7 @@ jobs:
 
       - name: Upload mock Playwright report
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: e2e-mock-report-${{ matrix.browser }}
           path: frontend/test-results/
@@ -809,18 +809,18 @@ jobs:
         shard: [1, 2, 3]
     name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Restore Bun package cache
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
@@ -832,7 +832,7 @@ jobs:
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: /usr/local/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
@@ -874,7 +874,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: e2e-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: frontend/test-results/
@@ -882,7 +882,7 @@ jobs:
 
       - name: Upload GitHub App setup UI Playwright report
         if: failure() && matrix.browser == 'chromium' && matrix.shard == 1
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: github-app-ui-e2e-report
           path: packages/github-app-ui/playwright-report/
@@ -899,31 +899,31 @@ jobs:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
       ROBOREV_REF: 45707642fae0b548427b5154836fa0ac10106309
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           repository: roborev-dev/roborev
           ref: ${{ env.ROBOREV_REF }}
           path: .roborev-src
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Restore Bun package downloads
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.15.0
         with:
           version: "1.4.0"
           node-version-file: package.json
@@ -932,14 +932,14 @@ jobs:
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Set up isolated roborev image builder
         id: roborev-builder
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@v4.4.1
         with:
           driver: docker-container
           driver-opts: |
@@ -975,7 +975,7 @@ jobs:
 
       - name: Install Playwright system packages
         if: steps.playwright-deps.outputs.packages != ''
-        uses: eclipse-score/apt-install@d545215b973c4151236fcb3f75480dffcb914835 # main
+        uses: eclipse-score/apt-install@main
         with:
           packages: ${{ steps.playwright-deps.outputs.packages }}
 
@@ -988,7 +988,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: roborev-e2e-report
           path: frontend/test-results/
@@ -1012,13 +1012,13 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Restore Bun package cache
         id: bun-cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
@@ -1028,7 +1028,7 @@ jobs:
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/save@v6.1.0
         with:
           path: /usr/local/install/cache
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}

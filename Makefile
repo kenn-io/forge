@@ -62,7 +62,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-reboot-sim test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
         profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check gh-actions-lock-install actions-lock actions-lock-check-local actions-lock-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -245,6 +245,31 @@ huma-route-check:
 # Keep the browser CI image in lockstep with the Playwright, Bun, and Vite+ pins
 playwright-version-check: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node scripts/check-playwright-version.mjs
+
+# Workflow actions run at the commits in .github/workflows/actions.lock,
+# including actions that other actions call. The organization requires
+# SHA-pinned actions, and the lockfile is what satisfies that for nested refs.
+# Keep in step with constraints.ghActionsLock in renovate.json, which regenerates
+# the lockfile when it bumps an action.
+GH_ACTIONS_LOCK_VERSION ?= v0.3.0
+
+gh-actions-lock-install:
+	@if [ "$$(gh actions-lock --version 2>/dev/null)" != "actions-lock version $(GH_ACTIONS_LOCK_VERSION)" ]; then \
+		gh extension remove actions-lock >/dev/null 2>&1 || true; \
+		gh extension install github/gh-actions-lock --pin $(GH_ACTIONS_LOCK_VERSION); \
+	fi
+
+# Lock every workflow action after adding or bumping a `uses:` line
+actions-lock: gh-actions-lock-install
+	gh actions-lock --no-interactive
+
+# Offline check that every workflow action has a lockfile entry
+actions-lock-check-local: gh-actions-lock-install
+	gh actions-lock --verify-local
+
+# Network check that the lockfile is complete and every locked commit is still valid
+actions-lock-check: gh-actions-lock-install
+	gh actions-lock --verify
 
 # Run lightweight script regression tests
 script-tests: check-vite-plus-bin

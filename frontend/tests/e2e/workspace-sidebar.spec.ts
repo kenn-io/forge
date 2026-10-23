@@ -1190,7 +1190,10 @@ test("phone deletes the open workspace from its terminal options", async ({ page
 
   await page.goto("/m/workspaces/local/ws-123");
   await page.getByRole("button", { name: "Terminal options" }).click();
-  await page.getByRole("dialog", { name: "Terminal options" }).getByRole("button", { name: "Delete workspace…" }).click();
+  await page
+    .getByRole("dialog", { name: "Terminal options" })
+    .getByRole("button", { name: "Delete workspace…" })
+    .click();
   const confirmation = page.getByRole("dialog", { name: "Delete workspace?" });
   await expect(confirmation).toBeVisible();
 

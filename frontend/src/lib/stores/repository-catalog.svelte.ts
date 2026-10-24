@@ -21,8 +21,9 @@ export function createRepositoryCatalog() {
                   repositories = snapshot;
                 }),
               ),
-              // A failed refresh must not detach this view from later shared reads.
-              reads.refresh.pipe(Effect.ignore),
+              // Navigation reuses the shared catalog; events reconcile it separately.
+              // A failed first read must not detach the view from later shared reads.
+              reads.snapshot === undefined ? reads.refresh.pipe(Effect.ignore) : Effect.void,
             ],
             { concurrency: "unbounded", discard: true },
           );

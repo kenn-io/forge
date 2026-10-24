@@ -48,39 +48,77 @@ afterEach(async () => {
 
 describe("app store composition", () => {
   it.each(["activity", "mobile-activity"])(
-    "uses Activity's own poll on %s and still refreshes agent badges on workspace events",
+    "refreshes existing agent badges on %s every five seconds without events or feed reads",
     async (page) => {
+      const workspace = { id: "workspace-a", status: "ready", agent_state: "working" };
+      const subject = {
+        activity_at: new Date().toISOString(),
+        item_number: 42,
+        item_state: "open",
+        item_title: "Example pull request",
+        item_type: "pr",
+        repo_owner: "acme",
+        repo_name: "widgets",
+        workspace,
+      };
+      let agentState: string | undefined = "working";
+      let failWorkspaceRead = false;
       const api = createMockApiFetch([
-        ({ url }) =>
-          url.pathname === "/api/v1/activity"
-            ? Response.json({ items: [], item_activity: [], workspace_activity: [], capped: false, event_cursor: "" })
-            : undefined,
-        ({ url }) =>
-          url.pathname === "/api/v1/activity/authors"
-            ? Response.json({ authors: [], use_workspace_activity_for_recency: false })
-            : undefined,
+        ({ url }) => {
+          if (url.pathname === "/api/v1/workspaces") {
+            return failWorkspaceRead
+              ? Response.json({ detail: "Workspace read failed" }, { status: 503 })
+              : Response.json({ workspaces: [{ ...workspace, agent_state: agentState }] });
+          }
+          if (url.pathname === "/api/v1/activity") {
+            return Response.json({
+              items: [{ ...subject, id: 1, activity_type: "comment", created_at: subject.activity_at }],
+              item_activity: [subject],
+              workspace_activity: [subject],
+              capped: false,
+              event_cursor: "cursor",
+            });
+          }
+          return undefined;
+        },
       ]);
       vi.stubGlobal("fetch", api.fetch);
       const { stores, listAgentStatusPolling } = createAppStores({ runtime, getPage: () => page });
       stores.settings.setWorkspaceSettings({ show_agent_status_in_lists: true });
       const run = <A, E>(effect: Effect.Effect<A, E, AppServices>) =>
         runtime.runCommand(effect, { operation: "test Activity polling", safeContext: {}, onFailure: () => {} });
-      run(stores.events.streamEffect);
-      await vi.waitFor(() => expect(eventSources).toHaveLength(1));
       await run(stores.activity.reconcileActivityEffect()).exit;
       const activityReads = () => api.requests.filter(({ url }) => url.pathname === "/api/v1/activity").length;
       const initialReads = activityReads();
+      const states = () => [
+        stores.activity.getActivityItems()[0]?.workspace?.agent_state,
+        stores.activity.getItemActivity()[0]?.workspace?.agent_state,
+        stores.activity.getWorkspaceActivity()[0]?.workspace?.agent_state,
+      ];
+      expect(states()).toEqual(["working", "working", "working"]);
 
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       const polling = run(listAgentStatusPolling);
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(0);
+      for (const state of ["input", "approval", "done"]) {
+        agentState = state;
+        await vi.advanceTimersByTimeAsync(5_000);
+        expect(states()).toEqual([state, state, state]);
+      }
+      failWorkspaceRead = true;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(states()).toEqual(["done", "done", "done"]);
+      failWorkspaceRead = false;
+      agentState = "input";
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(states()).toEqual(["input", "input", "input"]);
+      agentState = undefined;
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(states()).toEqual([undefined, undefined, undefined]);
       expect(activityReads()).toBe(initialReads);
+      expect(eventSources).toHaveLength(0);
       polling.interrupt();
       await polling.exit;
-      vi.useRealTimers();
-
-      emit(eventSources[0]!, "workspace_status", {});
-      await vi.waitFor(() => expect(activityReads()).toBe(initialReads + 1));
     },
   );
 

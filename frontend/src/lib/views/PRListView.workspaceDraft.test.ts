@@ -175,7 +175,6 @@ function renderWithRealPullDetail(
             activity: { loadActivity: vi.fn() },
             detailActivityView: createDetailActivityViewStore(),
             settings: {
-              getConfiguredRepos: () => [],
               getLaunchTargets: () => [],
               getWorkspaceSettings: () => ({ default_execution_target: "" }),
               getDetailSettings: () => ({ initial_timeline_entry_limit: 250 }),

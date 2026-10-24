@@ -479,15 +479,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     roborevClient = createRoborevClient(bp + roborevBase);
   }
 
-  // Activity owns a delta poll and an authoritative backstop. Re-fetching its
-  // entire feed here every five seconds competes with detail reads on slow links.
-  // Workspace status events still refresh Activity and the open worklist.
+  // Agent hook reports do not emit workspace events. Refresh Activity badges
+  // from workspaces without downloading the feed's event history again.
   const listAgentStatusPolling = pollWhileVisible(
     Effect.suspend(() => {
       const page = gp();
-      return page === "worklists" || page === "activity" || page === "mobile-activity"
-        ? Effect.void
-        : refreshVisibleData(false);
+      if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
+      return page === "worklists" ? Effect.void : refreshVisibleData(false);
     }).pipe(Effect.catch(() => Effect.void)),
     "5 seconds",
     { immediate: true },

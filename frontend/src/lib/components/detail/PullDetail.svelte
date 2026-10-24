@@ -972,6 +972,7 @@
 
   let repoSettings = $state<RepoSettings | null>(null);
   let repoSettingsValidated = $state(false);
+  let repoSettingsFailed = $state(false);
   let showMergeModal = $state(false);
   let mergeModalSettings = $state<RepoSettings | null>(null);
 
@@ -1143,6 +1144,7 @@
     const selectedRef = untrack(() => ({ ...routeRef }));
     repoSettings = null;
     repoSettingsValidated = false;
+    repoSettingsFailed = false;
     const program = Effect.gen(function* () {
       const reads = yield* RepositoryReads;
       const cached = reads.detailSnapshot(selectedRef);
@@ -1159,6 +1161,7 @@
       safeContext: { provider: selectedRef.provider, owner: selectedRef.owner, name: selectedRef.name },
       onFailure: () => {
         repoSettingsValidated = false;
+        repoSettingsFailed = true;
       },
     });
     return execution.interrupt;
@@ -2726,7 +2729,9 @@
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = mergeQueueEntry
+          {@const mergeTitle = !repoSettingsValidated
+            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
+            : mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
             : midStackMergeBlocked
             ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`

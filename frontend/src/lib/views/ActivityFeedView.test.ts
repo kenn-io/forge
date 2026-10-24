@@ -88,7 +88,6 @@ function renderActivity(options: RenderOptions = {}) {
   const pullBox = createReactiveValue(options.pullDetail ?? null);
   const issueBox = createReactiveValue(options.issueDetail ?? null);
   const stores = {
-    settings: { getConfiguredRepos: () => [] },
     activity: { getItemActivity: () => [], getActivityItems: () => [], getWorkspaceActivity: () => [] },
     detail: { getDetail: pullBox.get, loadDetail: vi.fn(async () => undefined) },
     issues: { getIssueDetail: issueBox.get, loadIssueDetail: vi.fn(async () => undefined) },

@@ -9046,9 +9046,16 @@ func (s *Syncer) fetchIssueDetail(
 		if err == nil {
 			normalized.ID = issueID
 			normalized.SnapshotRevision = revision
-			if err := s.persistIssueComments(ctx, repo, normalized, comments); err != nil {
+			applied, err := s.persistIssueCommentsApplied(ctx, repo, normalized, comments)
+			if err != nil {
 				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
 				return calls, err
+			}
+			if !applied {
+				// The comments were not committed, so neither validator may
+				// vouch for them; the next poll must fetch both again.
+				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+				return calls, nil
 			}
 		}
 
@@ -10478,6 +10485,19 @@ func (s *Syncer) persistIssueComments(
 	issue *db.Issue,
 	comments []*gh.IssueComment,
 ) error {
+	_, err := s.persistIssueCommentsApplied(ctx, repo, issue, comments)
+	return err
+}
+
+// persistIssueCommentsApplied reports whether the comments were committed.
+// A parent write that landed after the caller's snapshot leaves them
+// uncommitted without an error.
+func (s *Syncer) persistIssueCommentsApplied(
+	ctx context.Context,
+	repo RepoRef,
+	issue *db.Issue,
+	comments []*gh.IssueComment,
+) (bool, error) {
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
@@ -10486,13 +10506,9 @@ func (s *Syncer) persistIssueComments(
 		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
-		return fmt.Errorf("replace issue comment events: %w", err)
+		return false, fmt.Errorf("replace issue comment events: %w", err)
 	}
-	if !applied {
-		return nil
-	}
-
-	return nil
+	return applied, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(

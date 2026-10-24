@@ -12611,9 +12611,11 @@ func TestSyncIssuePagePoll(t *testing.T) {
 	for _, tc := range []struct {
 		name                                 string
 		unchanged, cooldown, reused, missing bool
+		raced                                bool
 		reads                                int
 	}{
 		{name: "changed", reads: 2},
+		{name: "parent written while comments are fetched", raced: true, reads: 2},
 		{name: "unchanged", unchanged: true, reads: 1},
 		{name: "disabled Issues cooldown", cooldown: true},
 		{name: "reused repository", reused: true, reads: 1},
@@ -12643,19 +12645,36 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			issue.UpdatedAt = makeTimestamp(time.Now().UTC())
 			require.NoError(d.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
 			var paths []string
+			commentsWritten := false
 			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
 				paths = append(paths, path)
 				w.Header().Set("Content-Type", "application/json")
 				switch path {
 				case "/repos/owner/repo/issues/7":
-					assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
-					if tc.unchanged {
+					if tc.raced {
+						w.Header().Set("ETag", `"page-new"`)
+					} else {
+						assert.Equal(t, `"page"`, r.Header.Get("If-None-Match"))
+					}
+					if tc.unchanged || r.Header.Get("If-None-Match") == `"page-new"` {
 						w.WriteHeader(http.StatusNotModified)
 					} else {
 						assert.NoError(t, json.NewEncoder(w).Encode(issue))
 					}
 				case "/repos/owner/repo/issues/7/comments":
+					w.Header().Set("ETag", `"comments"`)
+					if r.Header.Get("If-None-Match") == `"comments"` {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					if tc.raced && !commentsWritten {
+						commentsWritten = true
+						racing, err := NormalizeIssue(repoID, issue)
+						assert.NoError(t, err)
+						_, err = d.UpsertIssue(r.Context(), racing)
+						assert.NoError(t, err)
+					}
 					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
 				default:
 					assert.Fail(t, "unexpected provider request", "%s", path)
@@ -12676,7 +12695,31 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			require.Len(paths, tc.reads)
 			stored, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 			require.NoError(err)
-			if tc.reads == 2 {
+			if tc.raced {
+				// A parent write landed before the comments committed, so no
+				// validator may vouch for them yet.
+				require.NotNil(stored)
+				assert.Equal(t, "updated issue", stored.Title)
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				assert.Empty(t, events)
+				etag, err := d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page"`, etag)
+
+				require.NoError(poll())
+				events, err = d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page-new"`, etag)
+
+				seen := len(paths)
+				require.NoError(poll())
+				assert.Len(t, paths, seen+1, "a committed page is not fetched again")
+			} else if tc.reads == 2 {
 				require.NotNil(stored)
 				assert.Equal(t, "updated issue", stored.Title)
 				events, err := d.ListIssueEvents(ctx, stored.ID)

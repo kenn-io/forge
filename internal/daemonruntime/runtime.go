@@ -291,7 +291,7 @@ func configRuntimes(
 	var currentLegacy []ConfigRuntime
 	var unmatchedLegacy []ConfigRuntime
 	for _, record := range records {
-		if record.Service != Service || !daemon.ProcessAlive(record.PID) {
+		if record.Service != Service || !localLive(record) {
 			continue
 		}
 		recordConfigPath := record.Metadata[metadataConfigPath]
@@ -439,11 +439,15 @@ func canonicalBasePath(basePath string) string {
 	return "/"
 }
 
+func localLive(record daemon.RuntimeRecord) bool {
+	return daemon.RuntimeProcessScope(record) == daemon.ProcessScopeLocal && daemon.ProcessAlive(record.PID)
+}
+
 // Compatible reports whether a discovery record can represent the expected
 // local instance before the caller performs its authenticated readiness probe.
 func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 	if record.Service != Service || record.Network != daemon.NetworkTCP ||
-		!daemon.ProcessAlive(record.PID) {
+		!localLive(record) {
 		return false
 	}
 	recordDataDir, err := runtimeRecordDataDir(record)

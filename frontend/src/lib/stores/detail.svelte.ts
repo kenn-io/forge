@@ -578,20 +578,20 @@ export function createDetailStore(opts: DetailStoreOptions) {
     pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
   }
 
+  function observePullRepository(ref: DetailRequestRef, authoritative: PullDetail): void {
+    if (!pullDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) return;
+    runtime.runCommand(observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }), {
+      operation: "reconcile repository identity from pull detail",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
     if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo))) {
       return Effect.sync(() => {
         // Correct inferred route identity without accepting a response for an explicitly selected ID.
-        if (pullDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) {
-          runtime.runCommand(
-            observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }),
-            {
-              operation: "reconcile repository identity from pull detail",
-              safeContext: {},
-              onFailure: () => {},
-            },
-          );
-        }
+        observePullRepository(ref, authoritative);
         return false;
       });
     }
@@ -676,6 +676,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
+          if (applied && ref.repositoryKey === undefined) observePullRepository(ref, authoritative);
           return applied;
         }),
         rebaseEntries,

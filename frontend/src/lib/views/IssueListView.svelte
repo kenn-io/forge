@@ -66,7 +66,7 @@
     const item = issues.getIssues().find((item) =>
       repoIdentityMatches(item, routeSelection),
     );
-    return repositoryKeyFromWire(item?.repo) ?? repositoryCatalog.keyForRoute(routeSelection);
+    return repositoryCatalog.keyForRoute(routeSelection, repositoryKeyFromWire(item?.repo));
   });
   const selectedIssue = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

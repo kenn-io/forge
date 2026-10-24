@@ -172,7 +172,7 @@
     const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
       ? retainedSelectionIdentity.repositoryKey
       : undefined;
-    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? repositoryCatalog.keyForRoute(selection) ?? retainedKey };
+    return { ...selection, repositoryKey: repositoryCatalog.keyForRoute(selection, repositoryKeyFromWire(item?.repo)) ?? retainedKey };
   });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
   $effect(() => {

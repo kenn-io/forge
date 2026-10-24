@@ -88,11 +88,35 @@ it("keeps a fresh route observation when an older catalog request finishes later
           provider: "github",
           platformHost: "github.com",
           repositoryKey: { kind: "id", id: 2002 },
+          fromDetail: true,
           owner: "acme",
           name: "widgets",
           repoPath: "acme/widgets",
         },
       ]);
+    }).pipe(Effect.provide(AppLiveLayer)),
+  );
+});
+
+it("retains detail identities omitted by a later catalog read", async () => {
+  vi.spyOn(globalThis, "fetch").mockImplementation(
+    createMockApiFetch([({ url }) => (url.pathname === "/api/v1/repos" ? jsonResponse([]) : null)]).fetch,
+  );
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const reads = yield* RepositoryReads;
+      const ref = {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+        repositoryKey: repositoryIdKey(1001),
+      };
+      yield* reads.observeRoute(ref);
+      yield* reads.refresh;
+      const current = yield* Stream.runHead(reads.identities);
+      expect(Option.getOrThrow(current)).toEqual([expect.objectContaining(ref)]);
     }).pipe(Effect.provide(AppLiveLayer)),
   );
 });

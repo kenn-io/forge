@@ -723,6 +723,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
   }
 
+  function observeIssueRepository(ref: IssueDetailRequestRef, authoritative: IssueDetail): void {
+    if (!issueDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) return;
+    runtime.runCommand(observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }), {
+      operation: "reconcile repository identity from issue detail",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
   function rebaseIssueMutations(
     ref: IssueDetailRequestRef,
     authoritative: IssueDetail,
@@ -731,16 +740,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo))) {
       return Effect.sync(() => {
         // Correct inferred route identity without accepting a response for an explicitly selected ID.
-        if (issueDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) {
-          runtime.runCommand(
-            observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }),
-            {
-              operation: "reconcile repository identity from issue detail",
-              safeContext: {},
-              onFailure: () => {},
-            },
-          );
-        }
+        observeIssueRepository(ref, authoritative);
         return false;
       });
     }
@@ -785,6 +785,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && issueDetailEnvelopeTick >= issueDetailCacheTick) issueDetailCacheTick = 0;
+          if (applied && ref.repositoryKey === undefined) observeIssueRepository(ref, authoritative);
           return applied;
         }),
         entries,

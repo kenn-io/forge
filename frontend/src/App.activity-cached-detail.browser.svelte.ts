@@ -517,3 +517,160 @@ it.each(
     await expect.element(page.getByText("Original discussion.", { exact: true })).not.toBeInTheDocument();
   },
 );
+
+const identityViews = [
+  { view: "Activity PR", collection: "pulls", itemType: "pr", number: 42, activity: true },
+  { view: "Activity issue", collection: "issues", itemType: "issue", number: 7, activity: true },
+  { view: "PR list", collection: "pulls", itemType: "pr", number: 42, activity: false },
+  { view: "issue list", collection: "issues", itemType: "issue", number: 7, activity: false },
+];
+
+it.each(identityViews)(
+  "restores a verified $view detail with no matching rows or catalog entry",
+  async ({ collection, itemType, number, activity }) => {
+    const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const route = (n: number) =>
+      activity
+        ? `/?view=threaded&collapsed=1&selected=${itemType}:${n}&provider=github&repo_path=acme%2Fwidgets`
+        : `/${collection}/github/acme/widgets/${n}`;
+    mounted = await mountBrowserApp(route(number), {
+      overrides: [
+        ({ url }) => {
+          if (url.pathname === "/api/v1/repos" || url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
+          if (url.pathname === "/api/v1/activity") return jsonResponse({ items: [], item_activity: [], capped: false });
+          const match = url.pathname.match(new RegExp(`^/api/v1/${collection}/github/acme/widgets/(\\d+)$`));
+          if (!match) return null;
+          const selectedNumber = Number(match[1]);
+          return jsonResponse({
+            [collection === "pulls" ? "merge_request" : "issue"]: {
+              ...item,
+              Number: selectedNumber,
+              Title: `Verified item ${selectedNumber}`,
+              Body: `Discussion for item ${selectedNumber}.`,
+            },
+            repo: { ...item.repo, platform_repo_id: 1001 },
+            repo_owner: "acme",
+            repo_name: "widgets",
+            platform_host: "github.com",
+            detail_loaded: true,
+            events: [],
+          });
+        },
+      ],
+    });
+    await expect.element(page.getByText(`Discussion for item ${number}.`, { exact: true })).toBeVisible();
+    // A later catalog refresh can omit a repository whose stored details remain available.
+    await mounted.runtime.runCommand(
+      Effect.gen(function* () {
+        yield* (yield* RepositoryReads).refresh;
+      }),
+      { operation: "refresh empty repository fixture", safeContext: {}, onFailure: () => {} },
+    ).exit;
+    firePopstate(route(number + 1));
+    await expect.element(page.getByText(`Discussion for item ${number + 1}.`, { exact: true })).toBeVisible();
+    const header = page.getByRole("navigation", { name: "Page", exact: true });
+    await header.getByRole("button", { name: "Workspaces", exact: true }).click();
+    const pending = Promise.withResolvers<void>();
+    const healthyFetch = globalThis.fetch;
+    let heldReads = 0;
+    globalThis.fetch = async (input, init) => {
+      heldReads++;
+      await pending.promise;
+      return healthyFetch(input, init);
+    };
+    try {
+      firePopstate(route(number));
+      await vi.waitFor(() => expect(heldReads).toBeGreaterThan(0));
+      await expect.element(page.getByText(`Discussion for item ${number}.`, { exact: true })).toBeVisible();
+      expect(document.querySelector(".detail-title")?.textContent).toBe(`Verified item ${number}`);
+    } finally {
+      pending.resolve();
+    }
+  },
+);
+
+it.each(identityViews.flatMap((view) => [false, true].map((currentCatalog) => ({ ...view, currentCatalog }))))(
+  "recovers $view route reuse despite retained sibling rows and failed list reads (current catalog: $currentCatalog)",
+  async ({ collection, itemType, number, activity, currentCatalog }) => {
+    const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const oldRepo = { ...item.repo, platform_repo_id: 1001 };
+    let reused = false;
+    let failedListReads = 0;
+    mounted = await mountBrowserApp(activity ? "/?view=threaded&collapsed=1" : `/${collection}`, {
+      overrides: [
+        ({ url }) => {
+          if (url.pathname === "/api/v1/repos")
+            return jsonResponse([
+              {
+                Platform: "github",
+                PlatformHost: "github.com",
+                PlatformRepoID: reused && currentCatalog ? 2002 : 1001,
+                Owner: "acme",
+                Name: "widgets",
+              },
+            ]);
+          if (url.pathname === `/api/v1/${collection}` || url.pathname === "/api/v1/activity") {
+            if (reused) {
+              failedListReads++;
+              return jsonResponse({ title: "List unavailable" }, 503);
+            }
+            return url.pathname === "/api/v1/activity"
+              ? jsonResponse({
+                  items: [],
+                  capped: false,
+                  item_activity: [
+                    {
+                      activity_at: new Date().toISOString(),
+                      item_number: number + 1,
+                      item_state: "open",
+                      item_title: "Retained sibling",
+                      item_type: itemType,
+                      repo_owner: "acme",
+                      repo_name: "widgets",
+                      repo: oldRepo,
+                    },
+                  ],
+                })
+              : jsonResponse([{ ...item, Number: number + 1, Title: "Retained sibling", repo: oldRepo }]);
+          }
+          if (url.pathname !== `/api/v1/${collection}/github/acme/widgets/${number}`) return null;
+          return jsonResponse({
+            [collection === "pulls" ? "merge_request" : "issue"]: {
+              ...item,
+              Title: "Replacement repository detail",
+              Body: "Replacement discussion.",
+            },
+            repo: { ...item.repo, platform_repo_id: 2002 },
+            repo_owner: "acme",
+            repo_name: "widgets",
+            platform_host: "github.com",
+            detail_loaded: true,
+            events: [],
+          });
+        },
+      ],
+    });
+    await expect.element(page.getByText("Retained sibling", { exact: true }).first()).toBeVisible();
+    reused = true;
+    emitBrowserEventSource("data_changed", {});
+    await vi.waitFor(() => expect(failedListReads).toBeGreaterThan(0));
+    firePopstate(
+      activity
+        ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`
+        : `/${collection}/github/acme/widgets/${number}`,
+    );
+    await expect.element(page.getByText("Replacement discussion.", { exact: true })).toBeVisible();
+    // Subsequent catalog reads must not demote the verified detail below a retained row.
+    if (currentCatalog) {
+      await mounted.runtime.runCommand(
+        Effect.gen(function* () {
+          yield* (yield* RepositoryReads).refresh;
+        }),
+        { operation: "refresh replacement repository fixture", safeContext: {}, onFailure: () => {} },
+      ).exit;
+      flushSync();
+    }
+    expect(document.querySelector(".detail-title")?.textContent).toBe("Replacement repository detail");
+    await expect.element(page.getByText("Retained sibling", { exact: true }).first()).toBeVisible();
+  },
+);

@@ -93,7 +93,7 @@
     const item = pulls.getPulls().find((item) =>
       repoIdentityMatches(item, routeSelection),
     );
-    return repositoryKeyFromWire(item?.repo) ?? repositoryCatalog.keyForRoute(routeSelection);
+    return repositoryCatalog.keyForRoute(routeSelection, repositoryKeyFromWire(item?.repo));
   });
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

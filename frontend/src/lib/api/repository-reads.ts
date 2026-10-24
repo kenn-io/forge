@@ -4,9 +4,21 @@ import { executeGeneratedApiRequest } from "./generated-api.js";
 import type { RepoCatalog } from "./types.js";
 import type { RepoResponse } from "./generated/models/repoResponse.js";
 import { canonicalProvider, resolvedPlatformHost } from "./provider-routes.js";
-import { repositoryKeyFromCatalog, repositoryKeyString } from "./repository-key.js";
+import { repositoryKeyFromCatalog, repositoryKeyString, sameRepositoryKey } from "./repository-key.js";
 import type { RepositoryRouteRef } from "../routes.js";
 import { createRecentDetails } from "../stores/recent-details.js";
+
+export interface RepositoryIdentity extends RepositoryRouteRef {
+  readonly fromDetail: boolean;
+}
+
+function sameRoute(a: RepositoryRouteRef, b: RepositoryRouteRef): boolean {
+  return (
+    canonicalProvider(a.provider) === canonicalProvider(b.provider) &&
+    resolvedPlatformHost(a.provider, a.platformHost) === resolvedPlatformHost(b.provider, b.platformHost) &&
+    a.repoPath === b.repoPath
+  );
+}
 
 function detailSnapshotKey(ref: RepositoryRouteRef): string | undefined {
   if (!ref.repositoryKey) return undefined;
@@ -22,7 +34,7 @@ export class RepositoryReads extends Context.Service<
   RepositoryReads,
   {
     readonly snapshot: RepoCatalog[] | undefined;
-    readonly identities: Stream.Stream<readonly RepositoryRouteRef[]>;
+    readonly identities: Stream.Stream<readonly RepositoryIdentity[]>;
     readonly observeRoute: (ref: RepositoryRouteRef) => Effect.Effect<void>;
     readonly refresh: Effect.Effect<RepoCatalog[], ApiProblemError | TransientTransportError>;
     // Presentation only: callers must revalidate before enabling repository actions.
@@ -35,7 +47,7 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
   Effect.gen(function* () {
     let snapshot: RepoCatalog[] | undefined;
     let observationRevision = 0;
-    const identities = yield* SubscriptionRef.make<readonly RepositoryRouteRef[]>([]);
+    const identities = yield* SubscriptionRef.make<readonly RepositoryIdentity[]>([]);
     const details = createRecentDetails<RepoResponse>(100);
     const pending = yield* Cache.make({
       capacity: 1,
@@ -49,17 +61,28 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
           snapshot = repos;
           // A catalog read started before a detail observation cannot undo its newer identity.
           if (revision === observationRevision) {
-            yield* SubscriptionRef.set(
-              identities,
-              repos.map((repo) => ({
-                provider: repo.Platform,
-                platformHost: repo.PlatformHost,
-                repositoryKey: repositoryKeyFromCatalog(repo),
-                owner: repo.Owner,
-                name: repo.Name,
-                repoPath: `${repo.Owner}/${repo.Name}`,
-              })),
-            );
+            const catalog = repos.map((repo) => ({
+              provider: repo.Platform,
+              platformHost: repo.PlatformHost,
+              repositoryKey: repositoryKeyFromCatalog(repo),
+              owner: repo.Owner,
+              name: repo.Name,
+              repoPath: `${repo.Owner}/${repo.Name}`,
+              fromDetail: false,
+            }));
+            yield* SubscriptionRef.update(identities, (current) => [
+              ...catalog.map(
+                (repo) =>
+                  current.find(
+                    (prior) =>
+                      prior.fromDetail &&
+                      sameRoute(prior, repo) &&
+                      sameRepositoryKey(prior.repositoryKey, repo.repositoryKey),
+                  ) ?? repo,
+              ),
+              // The catalog lists tracked repositories; details can still exist outside it.
+              ...current.filter((prior) => prior.fromDetail && !catalog.some((repo) => sameRoute(prior, repo))),
+            ]);
           }
           return repos;
         }),
@@ -73,16 +96,8 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
         if (ref.repositoryKey === undefined) return;
         observationRevision++;
         yield* SubscriptionRef.update(identities, (current) => [
-          ...current.filter(
-            (repo) =>
-              !(
-                canonicalProvider(repo.provider) === canonicalProvider(ref.provider) &&
-                resolvedPlatformHost(repo.provider, repo.platformHost) ===
-                  resolvedPlatformHost(ref.provider, ref.platformHost) &&
-                repo.repoPath === ref.repoPath
-              ),
-          ),
-          ref,
+          ...current.filter((repo) => !sameRoute(repo, ref)),
+          { ...ref, fromDetail: true },
         ]);
       }),
       refresh: Cache.get(pending, "repositories"),

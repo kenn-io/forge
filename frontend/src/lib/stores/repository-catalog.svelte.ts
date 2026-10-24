@@ -1,13 +1,13 @@
 import { Effect, Stream } from "effect";
 import { untrack } from "svelte";
 import { getAppRuntime } from "../app/runtime-context.js";
-import { RepositoryReads } from "../api/repository-reads.js";
+import { RepositoryReads, type RepositoryIdentity } from "../api/repository-reads.js";
 import { canonicalProvider, resolvedPlatformHost, type ProviderRouteRef } from "../api/provider-routes.js";
-import type { RepositoryRouteRef } from "../routes.js";
+import type { RepositoryKey } from "../api/repository-key.js";
 
 export function createRepositoryCatalog() {
   const runtime = getAppRuntime();
-  let repositories = $state.raw<readonly RepositoryRouteRef[]>([]);
+  let repositories = $state.raw<readonly RepositoryIdentity[]>([]);
 
   $effect(() => {
     const execution = untrack(() =>
@@ -39,7 +39,7 @@ export function createRepositoryCatalog() {
   });
 
   return {
-    keyForRoute(ref: ProviderRouteRef) {
+    keyForRoute(ref: ProviderRouteRef, rowKey?: RepositoryKey) {
       const repo = repositories.find(
         (repo) =>
           canonicalProvider(repo.provider) === canonicalProvider(ref.provider) &&
@@ -49,7 +49,7 @@ export function createRepositoryCatalog() {
           repo.name === ref.name &&
           repo.repoPath === ref.repoPath,
       );
-      return repo?.repositoryKey;
+      return (repo?.fromDetail ? repo.repositoryKey : undefined) ?? rowKey ?? repo?.repositoryKey;
     },
   };
 }

@@ -33,7 +33,10 @@ import (
 var (
 	forgeBuildDir   string // Owned and removed by TestMain.
 	forgeBuildMu    sync.Mutex
-	forgeBuildCache = make(map[string]func() (string, error))
+	forgeBuildCache = make(map[string]struct {
+		path string
+		err  error
+	})
 )
 
 // buildForge uses buildForgeWithLDFlags to share the default test binary.
@@ -57,18 +60,17 @@ func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 		t.Skip("test builds and launches a real kenn-forge daemon")
 	}
 	forgeBuildMu.Lock()
+	defer forgeBuildMu.Unlock()
 	build, ok := forgeBuildCache[ldflags]
 	if !ok {
-		build = sync.OnceValues(func() (string, error) {
-			binDir, err := os.MkdirTemp(forgeBuildDir, "forge-")
-			if err != nil {
-				return "", err
-			}
-			binPath := filepath.Join(binDir, "kenn-forge")
+		binDir, err := os.MkdirTemp(forgeBuildDir, "forge-")
+		build.err = err
+		if err == nil {
+			build.path = filepath.Join(binDir, "kenn-forge")
 			if runtime.GOOS == "windows" {
-				binPath += ".exe"
+				build.path += ".exe"
 			}
-			args := []string{"build", "-o", binPath}
+			args := []string{"build", "-o", build.path}
 			if ldflags != "" {
 				args = append(args, "-ldflags="+ldflags)
 			}
@@ -76,14 +78,12 @@ func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 			cmd := procutil.Command("go", args...)
 			cmd.Stdout = os.Stderr
 			cmd.Stderr = os.Stderr
-			return binPath, cmd.Run()
-		})
+			build.err = cmd.Run()
+		}
 		forgeBuildCache[ldflags] = build
 	}
-	forgeBuildMu.Unlock()
-	binPath, err := build()
-	require.NoError(t, err, "go build ./cmd/kenn-forge")
-	return binPath
+	require.NoError(t, build.err, "go build ./cmd/kenn-forge")
+	return build.path
 }
 
 func runDaemonLifecycle(bin string, args ...string) (string, string, error) {

@@ -20,6 +20,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/cenkalti/backoff/v7"
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -61,16 +62,15 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	// Windows can briefly keep daemon executables locked after process exit.
-	deadline := time.Now().Add(2 * time.Second)
-	for {
+	_, err = backoff.Retry(context.Background(), func() (struct{}, error) {
 		err := os.RemoveAll(runtimeDir)
-		if err == nil {
-			break
+		if err != nil && (runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission)) {
+			return struct{}{}, backoff.Permanent(err)
 		}
-		if runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission) || time.Now().Add(10*time.Millisecond).After(deadline) {
-			panic(err)
-		}
-		time.Sleep(10 * time.Millisecond) //nolint:kennlint // Wait for Windows to release daemon executables, bounded by two seconds.
+		return struct{}{}, err
+	}, backoff.WithBackOff(backoff.NewConstantBackOff(10*time.Millisecond)), backoff.WithMaxElapsedTime(2*time.Second))
+	if err != nil {
+		panic(err)
 	}
 	os.Exit(code)
 }

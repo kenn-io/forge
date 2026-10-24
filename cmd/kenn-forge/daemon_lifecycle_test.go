@@ -272,7 +272,7 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 		assert.Equal(41, record.PID)
 		assert.NotEmpty(dataDir)
 		waitTimeout = timeout
-		return errors.Join(errors.New("shutdown wait"), daemonruntime.ErrStopTimeout)
+		return errors.Join(errors.New("shutdown wait"), context.DeadlineExceeded)
 	}
 	removes := 0
 	deps.remove = func(string) error { removes++; return nil }

@@ -16,9 +16,6 @@ import (
 
 const probeTimeout = 750 * time.Millisecond
 
-// ErrStopTimeout means shutdown was requested but process exit was not confirmed.
-var ErrStopTimeout = errors.New("daemon shutdown timed out")
-
 type discovery struct {
 	store   daemon.RuntimeStore
 	dataDir string
@@ -119,26 +116,17 @@ func Stop(ctx context.Context, record daemon.RuntimeRecord, dataDir string, requ
 	if err != nil {
 		return err
 	}
-	requested := false
-	err = daemon.Stop(ctx, record, daemon.StopOptions{
+	return daemon.Stop(ctx, record, daemon.StopOptions{
 		Proof: proof,
 		Probe: daemon.ProbeOptions{Path: ProofPingPath, Timeout: probeTimeout},
 		Request: func(_ context.Context, rec daemon.RuntimeRecord) error {
-			if err := request(rec.PID); err != nil {
-				return err
-			}
-			requested = true
-			return nil
+			return request(rec.PID)
 		},
 		Exited: func(_ context.Context, rec daemon.RuntimeRecord) (bool, error) {
 			return !daemon.RuntimeProcessAlive(rec), nil
 		},
 		Timeout: timeout,
 	})
-	if requested && errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("%w: %w", ErrStopTimeout, err)
-	}
-	return err
 }
 
 // IsVerifiedReady reports whether record serves the ready health endpoint and

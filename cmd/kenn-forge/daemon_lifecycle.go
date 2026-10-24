@@ -246,7 +246,7 @@ func (l *daemonLifecycle) Stop(
 	defer joinLifecycleLockRelease("daemon stop", mutation.locks, &resultErr)
 
 	stopped, err := l.stopLocked(
-		ctx, "daemon stop", configPath, mutation.config.DataDir,
+		ctx, "daemon stop", mutation.config.DataDir,
 		mutation.store, mutation.target,
 	)
 	if err != nil {
@@ -281,7 +281,7 @@ func (l *daemonLifecycle) Restart(
 	defer joinLifecycleLockRelease("daemon restart", mutation.locks, &resultErr)
 
 	stopped, err := l.stopLocked(
-		ctx, "daemon restart", configPath, mutation.config.DataDir,
+		ctx, "daemon restart", mutation.config.DataDir,
 		mutation.store, mutation.target,
 	)
 	if err != nil {
@@ -693,7 +693,7 @@ func (l *daemonLifecycle) acquireMutationLocks(
 
 func (l *daemonLifecycle) stopLocked(
 	ctx context.Context,
-	operation, configPath, currentDataDir string,
+	operation, currentDataDir string,
 	store daemon.RuntimeStore,
 	target *daemonruntime.ConfigRuntime,
 ) (*daemon.RuntimeRecord, error) {
@@ -704,34 +704,12 @@ func (l *daemonLifecycle) stopLocked(
 	if target == nil {
 		record, _, found, err = l.deps.findVerified(ctx, store, dataDir)
 	} else {
-		dataDir = target.DataDir
-		record = target.Record
+		record, dataDir = target.Record, target.DataDir
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: discover daemon: %w", operation, err)
 	}
-	if target != nil && target.DataDir != currentDataDir {
-		status, err := l.deps.readStatus(target.DataDir)
-		if err != nil {
-			return nil, fmt.Errorf("%s: read runtime status: %w", operation, err)
-		}
-		matches, err := runtimeStatusMatches(
-			status, target.ConfigPath, record.PID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("%s: validate runtime status identity: %w", operation, err)
-		}
-		if !matches {
-			return nil, fmt.Errorf(
-				"%s: authenticated daemon does not match config identity %q; no process was signaled",
-				operation, configPath,
-			)
-		}
-	}
-	if found {
-		err = l.deps.stop(ctx, record, dataDir, daemonStopTimeout)
-	}
-	if !found || target != nil && ctx.Err() == nil && (errors.Is(err, daemon.ErrDaemonUnreachable) || errors.Is(err, daemon.ErrStopProofRequired)) {
+	if !found {
 		status, err := l.deps.readStatus(dataDir)
 		if err != nil {
 			return nil, fmt.Errorf("%s: read runtime status: %w", operation, err)
@@ -742,14 +720,9 @@ func (l *daemonLifecycle) stopLocked(
 				operation,
 			)
 		}
-		if target != nil {
-			if err := l.removeRuntimeRecord(operation, "unauthenticated", target.Record.SourcePath); err != nil {
-				return nil, err
-			}
-		}
 		return nil, nil
 	}
-	if err != nil {
+	if err := l.deps.stop(ctx, record, dataDir, daemonStopTimeout); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("%s: wait for process %d: %w", operation, record.PID, ctxErr)
 		}

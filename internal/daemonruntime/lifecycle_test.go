@@ -43,23 +43,6 @@ func TestFindVerifiedAcceptsProvenRuntimeWithDifferentVersion(t *testing.T) {
 	assert.Equal(record.PID, ping.PID)
 }
 
-func TestFindVerifiedSkipsProvenRecordKitCannotJudge(t *testing.T) {
-	require := require.New(t)
-	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
-	record, _, found, err := FindVerified(t.Context(), store, dataDir)
-	require.NoError(err)
-	require.True(found)
-	// Unknown proxies for Foreign: kit takes the same branch without parsing its opaque identity format.
-	record.ProcessIdentityV2 = "unreadable"
-	_, err = store.Write(record)
-	require.NoError(err)
-
-	_, _, found, err = FindVerified(t.Context(), store, dataDir)
-
-	require.NoError(err)
-	require.False(found)
-}
-
 func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
 	require := require.New(t)
 	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")

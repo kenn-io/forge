@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -259,52 +260,52 @@ func TestDaemonStopRemovesOnlyVerifiedRuntimeRecordAfterExit(t *testing.T) {
 }
 
 func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	deps, _ := daemonLifecycleTestDeps(t)
-	deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
-		return daemon.RuntimeRecord{PID: 41, SourcePath: "/runtime/daemon.41.json"}, daemon.PingInfo{PID: 41}, true, nil
+	record := daemon.RuntimeRecord{
+		PID: 41, SourcePath: "/runtime/daemon.41.json",
+		Network: daemon.NetworkTCP, Address: "127.0.0.1:8090",
 	}
-	stops := 0
-	var waitTimeout time.Duration
-	deps.stop = func(_ context.Context, record daemon.RuntimeRecord, dataDir string, timeout time.Duration) error {
-		stops++
-		assert.Equal(41, record.PID)
-		assert.NotEmpty(dataDir)
-		waitTimeout = timeout
-		return errors.Join(errors.New("shutdown wait"), context.DeadlineExceeded)
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		{"exit timeout", fmt.Errorf("wait for daemon exit: %w", context.DeadlineExceeded)},
+		{"proof timeout", &daemon.UnreachableError{Record: record, Endpoint: record.Endpoint(), Err: context.DeadlineExceeded}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			deps, _ := daemonLifecycleTestDeps(t)
+			deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
+				return record, daemon.PingInfo{PID: 41}, true, nil
+			}
+			stops := 0
+			var waitTimeout time.Duration
+			deps.stop = func(_ context.Context, record daemon.RuntimeRecord, dataDir string, timeout time.Duration) error {
+				stops++
+				assert.Equal(41, record.PID)
+				assert.NotEmpty(dataDir)
+				waitTimeout = timeout
+				return tt.err
+			}
+			removes := 0
+			deps.remove = func(string) error { removes++; return nil }
+
+			err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
+
+			require.Error(err)
+			if tt.name == "proof timeout" {
+				require.ErrorContains(err, "stop process 41:")
+				require.ErrorIs(err, daemon.ErrDaemonUnreachable)
+				assert.NotContains(err.Error(), "will not force-kill")
+			} else {
+				require.ErrorContains(err, "will not force-kill")
+				require.ErrorContains(err, "terminate it manually")
+			}
+			assert.Equal(1, stops)
+			assert.GreaterOrEqual(waitTimeout, 50*time.Second)
+			assert.Zero(removes)
+		})
 	}
-	removes := 0
-	deps.remove = func(string) error { removes++; return nil }
-
-	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
-
-	require.Error(err)
-	require.ErrorContains(err, "will not force-kill")
-	require.ErrorContains(err, "terminate it manually")
-	assert.Equal(1, stops)
-	assert.GreaterOrEqual(waitTimeout, 50*time.Second)
-	assert.Zero(removes)
-}
-
-func TestDaemonStopReportsProofTimeoutWithoutExitGuidance(t *testing.T) {
-	deps, _ := daemonLifecycleTestDeps(t)
-	record := daemon.RuntimeRecord{PID: 41, SourcePath: "/runtime/daemon.41.json"}
-	deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
-		return record, daemon.PingInfo{PID: 41}, true, nil
-	}
-	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error {
-		return &daemon.UnreachableError{Record: record, Err: context.DeadlineExceeded}
-	}
-	removes := 0
-	deps.remove = func(string) error { removes++; return nil }
-
-	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
-
-	require.ErrorContains(t, err, "stop process 41:")
-	require.ErrorIs(t, err, daemon.ErrDaemonUnreachable)
-	assert.NotContains(t, err.Error(), "will not force-kill")
-	assert.Zero(t, removes)
 }
 
 func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {

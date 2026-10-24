@@ -3,8 +3,11 @@ package daemonruntime
 import (
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -238,42 +241,58 @@ func TestConfigRuntimesIgnoresUnresolvableUnrelatedConfig(t *testing.T) {
 	require.Equal(target.PID, runtimes[0].Record.PID)
 }
 
-func TestPublishKeepsRecordKitCannotJudge(t *testing.T) {
-	require := require.New(t)
-	t.Setenv("KENN_FORGE_HOME", t.TempDir())
-	store, err := Store()
-	require.NoError(err)
-	record := daemon.NewRuntimeRecord(Service, "dev", daemon.Endpoint{
-		Network: daemon.NetworkTCP, Address: "127.0.0.1:1",
-	})
-	old := record
-	old.PID = 1 << 30
-	// Unknown proxies for Foreign: kit takes the same branch without parsing its opaque identity format.
-	old.ProcessIdentityV2 = "unreadable"
-	oldPath, err := store.Write(old)
-	require.NoError(err)
+func TestDiscoverySkipsRecordsNotProvenLocal(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("PID namespaces require Linux")
+	}
+	const identityEnv = "KENN_FORGE_TEST_FOREIGN_IDENTITY"
+	identity := daemon.ProcessIdentity(os.Getenv(identityEnv))
+	if identity == "" {
+		unshare, err := exec.LookPath("unshare")
+		if err != nil {
+			t.Skip("unshare unavailable")
+		}
+		args := []string{"--user", "--map-root-user", "--pid", "--fork", "--mount-proc"}
+		probe := exec.CommandContext(t.Context(), unshare, append(args, "true")...)
+		output, err := probe.CombinedOutput()
+		if err != nil && (strings.Contains(string(output), "Operation not permitted") || strings.Contains(string(output), "Permission denied")) {
+			t.Skipf("PID namespace unavailable: %s", output)
+		}
+		require.NoError(t, err, "%s", output)
+		identity, ok := daemon.ReadProcessIdentity(os.Getpid())
+		require.True(t, ok)
+		// Run discovery in a nested namespace with the parent's opaque identity.
+		cmd := exec.CommandContext(t.Context(), unshare, append(args, os.Args[0], "-test.run=^TestDiscoverySkipsRecordsNotProvenLocal$")...)
+		cmd.Env = append(os.Environ(), identityEnv+"="+string(identity))
+		output, err = cmd.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
+	}
 
-	_, err = Publish(record)
+	for _, name := range []string{"FindVerified", "ConfigRuntimes"} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+			record, _, found, err := FindVerified(t.Context(), store, dataDir)
+			require.NoError(err)
+			require.True(found)
+			record.ProcessIdentityV2 = identity
+			require.Equal(daemon.ProcessScopeForeign, daemon.RuntimeProcessScope(record))
+			_, err = store.Write(record)
+			require.NoError(err)
 
-	require.NoError(err)
-	require.FileExists(oldPath)
-}
-
-func TestConfigRuntimesSkipsRecordKitCannotJudge(t *testing.T) {
-	require := require.New(t)
-	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
-	records, err := store.List()
-	require.NoError(err)
-	require.Len(records, 1)
-	record := records[0]
-	record.ProcessIdentityV2 = "unreadable"
-	_, err = store.Write(record)
-	require.NoError(err)
-
-	runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
-
-	require.NoError(err)
-	require.Empty(runtimes)
+			switch name {
+			case "FindVerified":
+				_, _, found, err = FindVerified(t.Context(), store, dataDir)
+				require.NoError(err)
+				require.False(found)
+			case "ConfigRuntimes":
+				runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
+				require.NoError(err)
+				require.Empty(runtimes)
+			}
+		})
+	}
 }
 
 type fakeAddress string

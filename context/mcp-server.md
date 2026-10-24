@@ -81,6 +81,9 @@
   workflow state use the hub; clone, workspace, runtime, and
   agent-session tools stay local, and hub outages remain typed
   (`internal/mcpserver/backend.go::NewFederatedBackend`).
+- Execution workers have no hub; repository, pull request, and issue reads
+  (list, detail, diff, stack) return `serviceUnavailable`
+  (`internal/server/mcp_backend.go::mcpBackend.localPulls`).
 - Every MCP repository and item reference carries provider-verified `platform_repo_id`;
   local tools resolve it to the active repository's current route, including after renames
   (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).

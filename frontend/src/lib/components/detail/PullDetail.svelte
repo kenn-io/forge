@@ -652,6 +652,12 @@
     const requestAutoSync = autoSync;
     const requestWorkflowApprovalSync = workflowApprovalSync;
     const requestIdentity = $state.snapshot(itemIdentity);
+    // Learning the ID from this accepted response does not require another read.
+    if (lastDetailLoadRepositoryKey === undefined && requestRepositoryKey !== undefined
+      && untrack(() => !stalePR
+        && sameRepositoryKey(requestRepositoryKey, repositoryKeyFromWire(detailStore.getDetail()?.repo)))) {
+      lastDetailLoadRepositoryKey = requestRepositoryKey;
+    }
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)

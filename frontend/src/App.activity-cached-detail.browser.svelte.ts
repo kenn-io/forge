@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { flushSync } from "svelte";
-import { Effect } from "effect";
+import { Effect, Fiber } from "effect";
 import { RepositoryReads } from "./lib/api/repository-reads.js";
 import {
   emitBrowserEventSource,
@@ -502,12 +502,42 @@ it.each(
       firePopstate(route);
     } else if (update === "shared refresh") {
       catalogID = 2002;
-      await mounted.runtime.runCommand(
-        Effect.gen(function* () {
-          yield* (yield* RepositoryReads).refresh;
-        }),
-        { operation: "refresh repository fixture", safeContext: {}, onFailure: () => {} },
-      ).exit;
+      const started = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      const healthyFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        const response = await healthyFetch(input, init);
+        const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+        if (url.pathname === "/api/v1/repos") {
+          started.resolve();
+          await release.promise;
+        }
+        return response;
+      };
+      try {
+        await mounted.runtime.runCommand(
+          Effect.gen(function* () {
+            const reads = yield* RepositoryReads;
+            const refresh = yield* reads.refresh.pipe(Effect.forkChild);
+            yield* Effect.promise(() => started.promise);
+            // A detail for another route must not suppress this route's catalog change.
+            yield* reads.observeRoute({
+              provider: "github",
+              platformHost: "github.com",
+              owner: "acme",
+              name: "tools",
+              repoPath: "acme/tools",
+              repositoryKey: { kind: "id", id: 3003 },
+            });
+            release.resolve();
+            yield* Fiber.join(refresh);
+          }),
+          { operation: "refresh repository fixture", safeContext: {}, onFailure: () => {} },
+        ).exit;
+      } finally {
+        release.resolve();
+        globalThis.fetch = healthyFetch;
+      }
     } else {
       catalogID = 2002;
       emitBrowserEventSource(update, { valid: true, restart_required: false });
@@ -515,6 +545,25 @@ it.each(
     await expect.element(page.getByText("Replacement discussion.", { exact: true })).toBeVisible();
     expect(document.querySelector(".detail-title")?.textContent).toBe("Replacement repository detail");
     await expect.element(page.getByText("Original discussion.", { exact: true })).not.toBeInTheDocument();
+    if (update === "shared refresh") {
+      await page
+        .getByRole("navigation", { name: "Page", exact: true })
+        .getByRole("button", { name: "Workspaces", exact: true })
+        .click();
+      const pending = Promise.withResolvers<void>();
+      const healthyFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        await pending.promise;
+        return healthyFetch(input, init);
+      };
+      try {
+        firePopstate(route);
+        await expect.element(page.getByText("Replacement discussion.", { exact: true })).toBeVisible();
+        await expect.element(page.getByText("Original discussion.", { exact: true })).not.toBeInTheDocument();
+      } finally {
+        pending.resolve();
+      }
+    }
   },
 );
 
@@ -524,6 +573,61 @@ const identityViews = [
   { view: "PR list", collection: "pulls", itemType: "pr", number: 42, activity: false },
   { view: "issue list", collection: "issues", itemType: "issue", number: 7, activity: false },
 ];
+
+it.each(identityViews)(
+  "keeps accepted $view actions available when its repository identity is learned",
+  async ({ collection, itemType, number, activity }) => {
+    const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const pending = Promise.withResolvers<void>();
+    let detailReads = 0;
+    const route = activity
+      ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`
+      : `/${collection}/github/acme/widgets/${number}`;
+    try {
+      mounted = await mountBrowserApp("/workspaces", {
+        overrides: [
+          ({ url }) => {
+            if (url.pathname === "/api/v1/repos" || url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
+            if (url.pathname === "/api/v1/activity")
+              return jsonResponse({ items: [], item_activity: [], capped: false });
+            const detailPath = `/api/v1/${collection}/github/acme/widgets/${number}`;
+            if (url.pathname !== detailPath) return null;
+            return jsonResponse({
+              [collection === "pulls" ? "merge_request" : "issue"]: {
+                ...item,
+                Body: "Accepted detail remains usable.",
+              },
+              repo: { ...item.repo, platform_repo_id: 1001 },
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+              detail_loaded: true,
+              events: [],
+            });
+          },
+        ],
+      });
+      const healthyFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+        const detailPath = `/api/v1/${collection}/github/acme/widgets/${number}`;
+        // Provider sync cannot mask a duplicate foreground load.
+        if (url.pathname.startsWith(`${detailPath}/sync`) || (url.pathname === detailPath && ++detailReads > 1)) {
+          await pending.promise;
+        }
+        return healthyFetch(input, init);
+      };
+      firePopstate(route);
+      await expect.element(page.getByText("Accepted detail remains usable.", { exact: true })).toBeVisible();
+      await expect
+        .element(page.getByRole("button", { name: itemType === "pr" ? "Close" : "Close issue", exact: true }))
+        .toBeEnabled();
+      expect(detailReads).toBe(1);
+    } finally {
+      pending.resolve();
+    }
+  },
+);
 
 it.each(identityViews)(
   "restores a verified $view detail with no matching rows or catalog entry",

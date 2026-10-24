@@ -12,12 +12,16 @@ export interface RepositoryIdentity extends RepositoryRouteRef {
   readonly fromDetail: boolean;
 }
 
+function routeKey(ref: RepositoryRouteRef): string {
+  return JSON.stringify([
+    canonicalProvider(ref.provider),
+    resolvedPlatformHost(ref.provider, ref.platformHost),
+    ref.repoPath,
+  ]);
+}
+
 function sameRoute(a: RepositoryRouteRef, b: RepositoryRouteRef): boolean {
-  return (
-    canonicalProvider(a.provider) === canonicalProvider(b.provider) &&
-    resolvedPlatformHost(a.provider, a.platformHost) === resolvedPlatformHost(b.provider, b.platformHost) &&
-    a.repoPath === b.repoPath
-  );
+  return routeKey(a) === routeKey(b);
 }
 
 function detailSnapshotKey(ref: RepositoryRouteRef): string | undefined {
@@ -47,6 +51,7 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
   Effect.gen(function* () {
     let snapshot: RepoCatalog[] | undefined;
     let observationRevision = 0;
+    const routeObservationRevisions = new Map<string, number>();
     const identities = yield* SubscriptionRef.make<readonly RepositoryIdentity[]>([]);
     const details = createRecentDetails<RepoResponse>(100);
     const pending = yield* Cache.make({
@@ -59,31 +64,30 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
             client.RepositoriesService.listRepos({ signal }),
           );
           snapshot = repos;
-          // A catalog read started before a detail observation cannot undo its newer identity.
-          if (revision === observationRevision) {
-            const catalog = repos.map((repo) => ({
-              provider: repo.Platform,
-              platformHost: repo.PlatformHost,
-              repositoryKey: repositoryKeyFromCatalog(repo),
-              owner: repo.Owner,
-              name: repo.Name,
-              repoPath: `${repo.Owner}/${repo.Name}`,
-              fromDetail: false,
-            }));
-            yield* SubscriptionRef.update(identities, (current) => [
-              ...catalog.map(
-                (repo) =>
-                  current.find(
-                    (prior) =>
-                      prior.fromDetail &&
-                      sameRoute(prior, repo) &&
-                      sameRepositoryKey(prior.repositoryKey, repo.repositoryKey),
-                  ) ?? repo,
-              ),
-              // The catalog lists tracked repositories; details can still exist outside it.
-              ...current.filter((prior) => prior.fromDetail && !catalog.some((repo) => sameRoute(prior, repo))),
-            ]);
-          }
+          const catalog = repos.map((repo) => ({
+            provider: repo.Platform,
+            platformHost: repo.PlatformHost,
+            repositoryKey: repositoryKeyFromCatalog(repo),
+            owner: repo.Owner,
+            name: repo.Name,
+            repoPath: `${repo.Owner}/${repo.Name}`,
+            fromDetail: false,
+          }));
+          yield* SubscriptionRef.update(identities, (current) => [
+            ...catalog.map(
+              (repo) =>
+                current.find(
+                  (prior) =>
+                    prior.fromDetail &&
+                    sameRoute(prior, repo) &&
+                    // Protect only routes observed after this catalog request began.
+                    ((routeObservationRevisions.get(routeKey(repo)) ?? 0) > revision ||
+                      sameRepositoryKey(prior.repositoryKey, repo.repositoryKey)),
+                ) ?? repo,
+            ),
+            // The catalog lists tracked repositories; details can still exist outside it.
+            ...current.filter((prior) => prior.fromDetail && !catalog.some((repo) => sameRoute(prior, repo))),
+          ]);
           return repos;
         }),
     });
@@ -94,7 +98,7 @@ export const RepositoryReadsLive = Layer.effect(RepositoryReads)(
       identities: SubscriptionRef.changes(identities),
       observeRoute: Effect.fn("observe repository route identity")(function* (ref: RepositoryRouteRef) {
         if (ref.repositoryKey === undefined) return;
-        observationRevision++;
+        routeObservationRevisions.set(routeKey(ref), ++observationRevision);
         yield* SubscriptionRef.update(identities, (current) => [
           ...current.filter((repo) => !sameRoute(repo, ref)),
           { ...ref, fromDetail: true },

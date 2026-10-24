@@ -80,8 +80,10 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/repository-catalog.svelte.ts::createRepositoryCatalog`).
 - Accepted route-matching details establish unknown URL identity even outside the tracked catalog; later catalog omissions must retain it
   (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).
+- Learning a repository ID from accepted details must preserve freshness without another foreground read
+  (`frontend/src/lib/components/detail/PullDetail.svelte::lastDetailLoadRepositoryKey`).
 - Navigation reuses the shared repository catalog; inferred URL identities stay live through shared reads and provider/configuration reconciliation.
-  A route-matching fresh detail may correct inferred identity, never an explicit selection; older catalog reads cannot undo that observation
+  Fresh details may correct inferred identity, never an explicit selection; older catalog reads must retain newer observations while updating unrelated routes
   (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
   Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state

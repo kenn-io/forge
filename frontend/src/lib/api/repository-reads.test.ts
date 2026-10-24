@@ -120,3 +120,58 @@ it("retains detail identities omitted by a later catalog read", async () => {
     }).pipe(Effect.provide(AppLiveLayer)),
   );
 });
+
+it.each([false, true])(
+  "merges unrelated catalog routes during an observation (previous identity: %s)",
+  async (known) => {
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const api = createMockApiFetch([
+      ({ url }) =>
+        url.pathname === "/api/v1/repos"
+          ? jsonResponse([
+              { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widgets" },
+              { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 3003, Owner: "acme", Name: "tools" },
+            ])
+          : null,
+    ]);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const response = await api.fetch(input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+      if (url.pathname === "/api/v1/repos") {
+        started.resolve();
+        await release.promise;
+      }
+      return response;
+    });
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const reads = yield* RepositoryReads;
+        const ref = {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "tools",
+          repoPath: "acme/tools",
+          repositoryKey: repositoryIdKey(2002),
+        };
+        if (known) yield* reads.observeRoute(ref);
+        const pending = yield* reads.refresh.pipe(Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* reads.observeRoute({
+          ...ref,
+          name: "widgets",
+          repoPath: "acme/widgets",
+          repositoryKey: repositoryIdKey(4004),
+        });
+        release.resolve();
+        yield* Fiber.join(pending);
+        const current = Option.getOrThrow(yield* Stream.runHead(reads.identities));
+        expect(current).toEqual([
+          expect.objectContaining({ repoPath: "acme/widgets", repositoryKey: repositoryIdKey(4004), fromDetail: true }),
+          expect.objectContaining({ repoPath: "acme/tools", repositoryKey: repositoryIdKey(3003), fromDetail: false }),
+        ]);
+      }).pipe(Effect.provide(AppLiveLayer)),
+    );
+  },
+);

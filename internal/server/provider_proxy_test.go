@@ -757,6 +757,8 @@ func TestProviderProxyMapsHubTimeoutToUnavailable(t *testing.T) {
 		w http.ResponseWriter, r *http.Request,
 	) {
 		<-r.Context().Done()
+		// Returning would race the client's timeout with an implicit 200 response.
+		panic(http.ErrAbortHandler)
 	}))
 	t.Cleanup(hub.Close)
 

@@ -34,7 +34,19 @@ func TestShowMediaReturnsChatDescriptorForLocalMedia(t *testing.T) {
 	assert.Equal(MediaDescriptor{Kind: MediaDescriptorKind, Path: recording, Title: "Demo", MimeType: "video/webm"}, descriptor)
 	assert.Equal(MediaDescriptorKind, result.StructuredContent.(map[string]any)["kind"])
 
-	for _, path := range []string{notes, "recording.webm", filepath.Join(root, "missing.mp4"), "/dev/zero"} {
+	// Each path fails only the check named beside it.
+	cwd, err := os.Getwd()
+	require.NoError(err)
+	relative, err := filepath.Rel(cwd, recording)
+	require.NoError(err)
+	folder := filepath.Join(root, "clip.mp4")
+	require.NoError(os.Mkdir(folder, 0o700))
+	for _, path := range []string{
+		notes,                              // not media
+		relative,                           // not absolute
+		filepath.Join(root, "missing.mp4"), // missing
+		folder,                             // not a regular file
+	} {
 		result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
 			Name: "kenn_forge_show_media", Arguments: map[string]any{"path": path},
 		})

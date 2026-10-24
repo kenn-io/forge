@@ -17,6 +17,7 @@
     resourceLanguage,
   } from "./chat-content.js";
   import type { ChatContent } from "./chat-types.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 
   import McpApp from "./McpApp.svelte";
   import { decodeAppDescriptor } from "./mcp-app.js";
@@ -68,7 +69,13 @@
   {/if}
 {:else if isVideoContent(content)}
   {#if videoSrc}
-    <div class="video"><VideoPlayer src={videoSrc} label={label || "Video from agent"} /></div>
+    <div class="video">
+      <VideoPlayer
+        src={videoSrc}
+        label={label || "Video from agent"}
+        onViewerOpen={() => pushModalFrame("media-viewer", [])}
+      />
+    </div>
   {:else}
     {@render placeholder(Video, "Video unavailable")}
   {/if}

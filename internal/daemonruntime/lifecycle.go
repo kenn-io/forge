@@ -91,18 +91,42 @@ func FindVerifiedRecord(
 	record daemon.RuntimeRecord,
 	dataDir string,
 ) (daemon.PingInfo, bool, error) {
-	token, err := runtimelock.ReadAuthToken(dataDir)
-	if err != nil {
+	proof, found, err := proofFor(dataDir)
+	if err != nil || !found {
 		return daemon.PingInfo{}, false, err
 	}
-	if token == "" {
-		return daemon.PingInfo{}, false, nil
+	return (discovery{dataDir: dataDir}).probe(ctx, proof, record)
+}
+
+func proofFor(dataDir string) (*daemon.Proof, bool, error) {
+	token, err := runtimelock.ReadAuthToken(dataDir)
+	if err != nil || token == "" {
+		return nil, false, err
 	}
 	proof, err := daemon.NewProof([]byte(token))
 	if err != nil {
-		return daemon.PingInfo{}, false, fmt.Errorf("initialize daemon proof: %w", err)
+		return nil, false, fmt.Errorf("initialize daemon proof: %w", err)
 	}
-	return (discovery{dataDir: dataDir}).probe(ctx, proof, record)
+	return proof, true, nil
+}
+
+// Stop proves the endpoint, requests shutdown, and waits for process exit.
+func Stop(ctx context.Context, record daemon.RuntimeRecord, dataDir string, request func(int) error, timeout time.Duration) error {
+	proof, _, err := proofFor(dataDir)
+	if err != nil {
+		return err
+	}
+	return daemon.Stop(ctx, record, daemon.StopOptions{
+		Proof: proof,
+		Probe: daemon.ProbeOptions{Path: ProofPingPath, Timeout: probeTimeout},
+		Request: func(_ context.Context, rec daemon.RuntimeRecord) error {
+			return request(rec.PID)
+		},
+		Exited: func(_ context.Context, rec daemon.RuntimeRecord) (bool, error) {
+			return !daemon.RuntimeProcessAlive(rec), nil
+		},
+		Timeout: timeout,
+	})
 }
 
 // IsVerifiedReady reports whether record serves the ready health endpoint and
@@ -148,17 +172,9 @@ func (d discovery) findVerified(
 	ctx context.Context,
 	requireVersion bool,
 ) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
-	token, err := runtimelock.ReadAuthToken(d.dataDir)
-	if err != nil {
+	proof, found, err := proofFor(d.dataDir)
+	if err != nil || !found {
 		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, err
-	}
-	if token == "" {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false, nil
-	}
-	proof, err := daemon.NewProof([]byte(token))
-	if err != nil {
-		return daemon.RuntimeRecord{}, daemon.PingInfo{}, false,
-			fmt.Errorf("initialize daemon proof: %w", err)
 	}
 	records, err := d.store.List()
 	if err != nil {

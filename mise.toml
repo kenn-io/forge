@@ -2,7 +2,7 @@
 bun = "latest"
 "github:F1bonacc1/process-compose" = "latest"
 glab = "1.124.0"
-golangci-lint = "2.14.0"
+golangci-lint = "2.15.0"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
 node = "24.22.1"
 "npm:@agentclientprotocol/codex-acp" = "2.2.2"

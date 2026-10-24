@@ -25,7 +25,7 @@
         "@effect/platform-browser": "4.0.5",
         "@kenn-io/kata-ui": "github:kenn-io/kata#v0.18.0",
         "@kenn-io/kit-ui": "github:kenn-io/kit-ui#1bd3bb05ac0fbb0dba8b6372ba53106380e64632",
-        "@lucide/svelte": "1.58.0",
+        "@lucide/svelte": "1.59.0",
         "@modelcontextprotocol/ext-apps": "2.0.3",
         "@pierre/diffs": "1.5.2",
         "@pierre/trees": "1.0.0-beta.6",
@@ -301,7 +301,7 @@
 
     "@lit/reactive-element": ["@lit/reactive-element@2.1.2", "", { "dependencies": { "@lit-labs/ssr-dom-shim": "^1.5.0" } }, "sha512-pbCDiVMnne1lYUIaYNN5wrwQXDtHaYtg7YEFPeW+hws6U47WeFvISGUWekPGKWOP1ygrs0ef0o1VJMk1exos5A=="],
 
-    "@lucide/svelte": ["@lucide/svelte@1.58.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-yUKVOUokJews09DTEf23We9/0Lju+XR+1Pcr6rYZBilpf4Uf6T3XRmalUgOsQW0drFfCI53WlIzgokkq2EqwYg=="],
+    "@lucide/svelte": ["@lucide/svelte@1.59.0", "", { "peerDependencies": { "svelte": "^5" } }, "sha512-ga9IrEsFJBkt/34VnRFcQ2HLs8eOpOovXZ62XzwfC7f0zBfo4y116FBIDroZkD0gInYYY2hSSAcsQEm/Vm+AoA=="],
 
     "@marijn/find-cluster-break": ["@marijn/find-cluster-break@1.0.2", "", {}, "sha512-l0h88YhZFyKdXIFNfSWpyjStDjGHwZ/U7iobcK1cQQD8sejsONdQtTVU+1wVN1PBw40PiiHB1vA5S7VTfQiP9g=="],
 

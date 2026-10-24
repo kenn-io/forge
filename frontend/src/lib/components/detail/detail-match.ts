@@ -1,4 +1,4 @@
-import type { ConfigRepo, IssueDetail, PullDetail } from "../../api/types.js";
+import type { IssueDetail, PullDetail } from "../../api/types.js";
 import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
 import { repositoryKeyAllows, repositoryKeyFromWire, type RepositoryKey } from "../../api/repository-key.js";
 
@@ -43,21 +43,6 @@ export function repoIdentityMatches(
       resolvedPlatformHost(ref.provider, ref.platformHost) &&
     detail.repo?.repo_path === ref.repoPath &&
     repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(detail.repo))
-  );
-}
-
-export function configuredRepoIdentityMatches(repo: ConfigRepo, ref: DetailRefLike): boolean {
-  if (repo.is_glob) return false;
-  // Exact config entries keep their original address after provider-side renames.
-  const path = repo.tracked_repo_path || repo.repo_path;
-  const separator = path.lastIndexOf("/");
-  return repoIdentityMatches(
-    {
-      repo_owner: path.slice(0, separator),
-      repo_name: path.slice(separator + 1),
-      repo: { ...repo, repo_path: path },
-    },
-    ref,
   );
 }
 

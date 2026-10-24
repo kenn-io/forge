@@ -332,16 +332,27 @@ it.each(
     { view: "Activity issue", collection: "issues", itemType: "issue", number: 7, activity: true },
     { view: "PR list", collection: "pulls", itemType: "pr", number: 42, activity: false },
     { view: "issue list", collection: "issues", itemType: "issue", number: 7, activity: false },
-  ].flatMap((scenario) => ["moved/widgets", "acme/widgets"].map((trackedPath) => ({ ...scenario, trackedPath }))),
+  ].flatMap((scenario) =>
+    ["moved/widgets", "acme/widgets"].flatMap((trackedPath) =>
+      [false, true].flatMap((filtered) =>
+        (filtered && trackedPath === "acme/widgets" ? ["current", "empty", "unavailable"] : ["current"]).map(
+          (catalog) => ({ ...scenario, trackedPath, filtered, catalog }),
+        ),
+      ),
+    ),
+  ),
 )(
-  "opens the current repository in $view when a pinned path is reused (tracked: $trackedPath)",
-  async ({ collection, itemType, number, activity, trackedPath }) => {
+  "opens the current repository in $view when a pinned path is reused (tracked: $trackedPath, filtered: $filtered, catalog: $catalog)",
+  async ({ collection, itemType, number, activity, trackedPath, filtered, catalog }) => {
     const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
     const repo = { ...item.repo, platform_repo_id: 1001 };
     const detailTitle = "Details from the current repository";
     mounted = await mountBrowserApp(activity ? "/?view=threaded&collapsed=1" : `/${collection}`, {
       overrides: [
         ({ url }) => {
+          if (url.pathname === "/api/v1/repos" && catalog === "empty") return jsonResponse([]);
+          if (url.pathname === "/api/v1/repos" && catalog === "unavailable")
+            return jsonResponse({ title: "Unavailable" }, 503);
           if (url.pathname === "/api/v1/settings")
             return jsonResponse({
               ...mockSettings,
@@ -357,23 +368,25 @@ it.each(
                 },
               ],
             });
-          if (url.pathname === `/api/v1/${collection}`) return jsonResponse([{ ...item, repo }]);
+          if (url.pathname === `/api/v1/${collection}`) return jsonResponse(filtered ? [] : [{ ...item, repo }]);
           if (url.pathname === "/api/v1/activity")
             return jsonResponse({
               items: [],
-              item_activity: [
-                {
-                  activity_at: new Date().toISOString(),
-                  item_number: number,
-                  item_state: "open",
-                  item_title: item.Title,
-                  item_author: "user-a",
-                  item_type: itemType,
-                  repo_owner: "acme",
-                  repo_name: "widgets",
-                  repo,
-                },
-              ],
+              item_activity: filtered
+                ? []
+                : [
+                    {
+                      activity_at: new Date().toISOString(),
+                      item_number: number,
+                      item_state: "open",
+                      item_title: item.Title,
+                      item_author: "user-a",
+                      item_type: itemType,
+                      repo_owner: "acme",
+                      repo_name: "widgets",
+                      repo,
+                    },
+                  ],
               capped: false,
             });
           if (url.pathname === `/api/v1/${collection}/github/acme/widgets/${number}`)
@@ -395,8 +408,11 @@ it.each(
         },
       ],
     });
-    await expect.element(page.getByText(item.Title, { exact: true }).first()).toBeVisible();
-    // URL restoration has no stable ID; the already loaded row must supply it.
+    if (!filtered) await expect.element(page.getByText(item.Title, { exact: true }).first()).toBeVisible();
+    await vi.waitFor(() =>
+      expect(mounted!.api.requests.some((request) => request.url.pathname === "/api/v1/repos")).toBe(true),
+    );
+    // URL restoration has no stable ID, even when every matching row is filtered out.
     firePopstate(
       activity
         ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`

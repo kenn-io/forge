@@ -75,9 +75,9 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
 - PR and issue selections recover verified repository identity independently of the selected row's presence in the list;
   unknown identities cannot reuse cached details (`frontend/src/lib/views/PRListView.svelte::selectedRepositoryKey`).
-- URL selections prefer current list/feed identity over configured identity; exact config entries retain their old address after renames,
-  so match their `tracked_repo_path` and its owner/name before reusing cached details
-  (`frontend/src/lib/components/detail/detail-match.ts::configuredRepoIdentityMatches`).
+- URL selections use current list/feed rows or the active repository catalog; configured pins can identify displaced repositories after route reuse.
+  Without a verified match, leave the route unbound so a fresh detail response can establish identity
+  (`frontend/src/lib/stores/repository-catalog.svelte.ts::createRepositoryCatalog`).
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
   Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
   cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).

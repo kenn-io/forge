@@ -10,7 +10,7 @@
   import PullList from "../components/sidebar/PullList.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import KataLinksPanel from "../components/kata/KataLinksPanel.svelte";
-  import { configuredRepoIdentityMatches, repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
+  import { repoIdentityMatches, pullDetailMatchesRef } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -26,12 +26,14 @@
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
   import { repositoryKeyFromWire } from "../api/repository-key.js";
+  import { createRepositoryCatalog } from "../stores/repository-catalog.svelte.js";
 
   type StackMemberNavigate = (ref: PullRequestRouteRef) => boolean | void;
 
   const { toggleSidebar } = getSidebar();
   const navigate = getNavigate();
-  const { detail: detailStore, pulls, settings } = getStores();
+  const { detail: detailStore, pulls } = getStores();
+  const repositoryCatalog = createRepositoryCatalog();
   interface Props {
     selectedPR?: PullRequestRouteRef | null;
     detailTab?: DetailTab;
@@ -91,10 +93,7 @@
     const item = pulls.getPulls().find((item) =>
       repoIdentityMatches(item, routeSelection),
     );
-    const configuredRepo = settings.getConfiguredRepos().find((repo) =>
-      configuredRepoIdentityMatches(repo, routeSelection),
-    );
-    return repositoryKeyFromWire(item?.repo) ?? repositoryKeyFromWire(configuredRepo);
+    return repositoryKeyFromWire(item?.repo) ?? repositoryCatalog.keyForRoute(routeSelection);
   });
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

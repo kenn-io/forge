@@ -9,7 +9,7 @@
   import { buildRoutedItemRoute, type PullRequestRouteRef } from "../routes.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
-  import { configuredRepoIdentityMatches, issueDetailMatchesRef, pullDetailMatchesRef, repoIdentityMatches } from "../components/detail/detail-match.js";
+  import { issueDetailMatchesRef, pullDetailMatchesRef, repoIdentityMatches } from "../components/detail/detail-match.js";
   import DetailPaneLayout from "../components/shared/DetailPaneLayout.svelte";
   import type { TabbedPanelLeaf } from "../components/shared/tabbed-panel-layout.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
@@ -19,6 +19,7 @@
   import type { ActivityCommitSelection } from "../utils/activitySelection.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
+  import { createRepositoryCatalog } from "../stores/repository-catalog.svelte.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -74,7 +75,8 @@
     workspacePaneControls = undefined,
   }: Props = $props();
 
-  const { detail: detailStore, issues: issuesStore, activity, settings } = getStores();
+  const { detail: detailStore, issues: issuesStore, activity } = getStores();
+  const repositoryCatalog = createRepositoryCatalog();
   const paneLayout = getPaneLayoutStore("activity");
 
   const ACTIVITY_PANE_WIDTH_KEY = "kenn-forge-activity-pane-width";
@@ -161,19 +163,16 @@
     const selection = controlled ? (controlledDrawer ?? null) : internalDrawer;
     if (!selection || selection.repositoryKey) return selection;
     // Repository identity is independent of which items still match the feed.
-    // Use the loaded configuration even when the selected row has disappeared.
+    // The active catalog also covers repositories whose rows were filtered out.
     const matches = (item: ActivityItem | ActivitySubject | WorkspaceActivitySubject) =>
       repoIdentityMatches(item, selection);
     const item = activity.getItemActivity().find(matches)
       ?? activity.getActivityItems().find(matches)
       ?? activity.getWorkspaceActivity().find(matches);
-    const configuredRepo = settings.getConfiguredRepos().find((repo) =>
-      configuredRepoIdentityMatches(repo, selection),
-    );
     const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
       ? retainedSelectionIdentity.repositoryKey
       : undefined;
-    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? repositoryKeyFromWire(configuredRepo) ?? retainedKey };
+    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? repositoryCatalog.keyForRoute(selection) ?? retainedKey };
   });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
   $effect(() => {

@@ -12630,6 +12630,7 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			issue := buildOpenIssue(7, time.Now().UTC().Add(-time.Minute))
 			normalized, err := NormalizeIssue(repoID, issue)
 			require.NoError(err)
+			normalized.DetailFetchedAt = new(time.Now().UTC().Add(-time.Hour))
 			if !tc.missing {
 				_, err = d.UpsertIssue(ctx, normalized)
 				require.NoError(err)
@@ -12716,6 +12717,15 @@ func TestSyncIssuePagePoll(t *testing.T) {
 				seen := len(paths)
 				require.NoError(poll())
 				assert.Len(t, paths, seen+1, "a committed page is not fetched again")
+
+				// Background sync still sees the issue as due for its full
+				// detail refresh, with its own validator untouched.
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+				require.NoError(err)
+				assert.Empty(t, etag)
+				stored, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+				require.NoError(err)
+				assert.Equal(t, before.DetailFetchedAt, stored.DetailFetchedAt)
 			} else {
 				assert.Equal(t, before, stored)
 			}

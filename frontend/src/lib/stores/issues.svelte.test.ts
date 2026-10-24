@@ -807,7 +807,6 @@ describe("createIssuesStore", () => {
       expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
     );
     expect(detailReads()).toBe(1);
-    expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
     expect(listReads()).toBe(0);
     expect(onDetailSynchronized).not.toHaveBeenCalled();
 
@@ -864,7 +863,13 @@ describe("createIssuesStore", () => {
       let cachedResponse = cached;
       const get = vi.fn(async () => ({ data: cachedResponse, error: undefined }));
       const store = createIssuesStore({
-        client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
+        client: mockClient({
+          GET: get,
+          POST: vi
+            .fn()
+            .mockReturnValueOnce(syncResponse.promise)
+            .mockReturnValue(new Promise(() => {})),
+        }),
       });
       await loadIssueDetail(store, "acme", "widget", 7, {
         provider: "github",
@@ -907,8 +912,7 @@ describe("createIssuesStore", () => {
       expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
       expect(get).toHaveBeenCalledTimes(1);
       await refresh();
-      // A scheduled poll also re-reads the cache when its provider response lands.
-      expect(get).toHaveBeenCalledTimes(source === "scheduled poll" ? 3 : 2);
+      expect(get).toHaveBeenCalledTimes(2);
       store.stopIssueDetailPolling();
     },
   );

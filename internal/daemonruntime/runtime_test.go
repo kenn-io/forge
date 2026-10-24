@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -248,23 +247,33 @@ func TestDiscoverySkipsRecordsNotProvenLocal(t *testing.T) {
 	const identityEnv = "KENN_FORGE_TEST_FOREIGN_IDENTITY"
 	identity := daemon.ProcessIdentity(os.Getenv(identityEnv))
 	if identity == "" {
-		unshare, err := exec.LookPath("unshare")
-		if err != nil {
-			t.Skip("unshare unavailable")
+		tmp := t.TempDir()
+		var command []string
+		for _, args := range [][]string{
+			{"bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--unshare-pid", "--"},
+			{"unshare", "--user", "--map-root-user", "--pid", "--fork", "--mount-proc"},
+		} {
+			path, err := exec.LookPath(args[0])
+			if err != nil {
+				continue
+			}
+			probe := exec.CommandContext(t.Context(), path, append(args[1:], "true")...)
+			if output, err := probe.CombinedOutput(); err != nil {
+				t.Logf("%s: %v: %s", args[0], err, output)
+				continue
+			}
+			command = append([]string{path}, args[1:]...)
+			break
 		}
-		args := []string{"--user", "--map-root-user", "--pid", "--fork", "--mount-proc"}
-		probe := exec.CommandContext(t.Context(), unshare, append(args, "true")...)
-		output, err := probe.CombinedOutput()
-		if err != nil && (strings.Contains(string(output), "Operation not permitted") || strings.Contains(string(output), "Permission denied")) {
-			t.Skipf("PID namespace unavailable: %s", output)
+		if command == nil {
+			t.Skip("PID namespace unavailable with bwrap or unshare")
 		}
-		require.NoError(t, err, "%s", output)
 		identity, ok := daemon.ReadProcessIdentity(os.Getpid())
 		require.True(t, ok)
 		// Run discovery in a nested namespace with the parent's opaque identity.
-		cmd := exec.CommandContext(t.Context(), unshare, append(args, os.Args[0], "-test.run=^TestDiscoverySkipsRecordsNotProvenLocal$")...)
-		cmd.Env = append(os.Environ(), identityEnv+"="+string(identity))
-		output, err = cmd.CombinedOutput()
+		cmd := exec.CommandContext(t.Context(), command[0], append(command[1:], os.Args[0], "-test.run=^TestDiscoverySkipsRecordsNotProvenLocal$")...)
+		cmd.Env = append(os.Environ(), identityEnv+"="+string(identity), "TMPDIR="+tmp)
+		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "%s", output)
 		return
 	}

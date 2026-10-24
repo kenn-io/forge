@@ -375,7 +375,6 @@ func buildCommandSpecs(run ephemeralRun, syncEnabled bool, frontendArgs []string
 		"KENN_FORGE_LOG_LEVEL":        envDefault("KENN_FORGE_LOG_LEVEL", "debug"),
 		"KENN_FORGE_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
 		"KENN_FORGE_LOG_STDERR_LEVEL": envDefault("KENN_FORGE_LOG_STDERR_LEVEL", "info"),
-		"TELEMETRY_ENABLED":           envDefault("TELEMETRY_ENABLED", "0"),
 	})
 	frontendEnv := overlayEnv(sanitizedFrontendEnv(baseEnv), map[string]string{
 		"KENN_FORGE_CONFIG": run.configPath,

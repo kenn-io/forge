@@ -80,6 +80,9 @@ modal-frame and layer stacking, and that the flow opens and closes
 The same applies to Go kit: telemetry tests cover only the install identity
 and event routing Forge hands kit, not kit's property stamping, filtering,
 install-age tagging, or env opt-out (`internal/telemetry/telemetry_kit_test.go`).
+Only release builds, which set kit's PostHog project key at link time, send
+telemetry, so tests and dev stacks need no telemetry opt-out
+(`internal/telemetry/telemetry.go::NewReporter`).
 For kwt, drive Forge entry points such as checkout creation, refresh, and
 cleanup; do not call kwt scope or repository methods with hand-built requests
 to re-test its locking, claiming, base-sync, or error classification

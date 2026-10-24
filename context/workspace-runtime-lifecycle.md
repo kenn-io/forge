@@ -326,6 +326,8 @@ hub-owned.
 - The browser pane that claims resize authority owns the complete character and
   pixel geometry; hidden or non-owning panes cannot overwrite it. Retained PTYs use
   an 8x16 fallback only until claimed browser geometry arrives (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
+- PTY resize must retain the file descriptor across its ioctls and preserve nonblocking
+  I/O; terminal closure can overlap a resize (`internal/ptysize/resize_unix.go::Resize`).
 - A hub terminates the browser WebSocket and opens a separately
   authenticated WebSocket to the owning spoke. It forwards bytes and resize
   messages only; the spoke still owns tmux/ptyowner state, persistence, exit

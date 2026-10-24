@@ -1,9 +1,7 @@
 package ptysize
 
 import (
-	"fmt"
 	"math"
-	"os"
 
 	"github.com/creack/pty"
 )
@@ -46,20 +44,6 @@ func Winsize(geometry Geometry) *pty.Winsize {
 		X:    clamp(geometry.PixelWidth),
 		Y:    clamp(geometry.PixelHeight),
 	}
-}
-
-// Resize applies browser geometry to a PTY. When a caller has no measured
-// pixel value, the existing per-cell geometry is retained across the character
-// resize.
-func Resize(ptmx *os.File, geometry Geometry) error {
-	current, err := pty.GetsizeFull(ptmx)
-	if err != nil {
-		return fmt.Errorf("get PTY size before resize: %w", err)
-	}
-	if err := pty.Setsize(ptmx, Apply(current, geometry)); err != nil {
-		return fmt.Errorf("set PTY size: %w", err)
-	}
-	return nil
 }
 
 // Apply combines measured browser geometry with a previous PTY size.

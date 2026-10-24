@@ -113,12 +113,12 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	continued := func(key, sessionID string) {
 		require.NoError(activity.HandleEvent("claude", agentactivity.HookEvent{SessionID: sessionID, CWD: worktree, HookEventName: "SessionStart", Source: "resume"}, key))
 	}
-	// The agent helper records the arguments a resume appended.
-	resumedWith := func() string {
-		data, _ := os.ReadFile(filepath.Join(worktree, "args"))
+	// Agents restored together must not overwrite each other's evidence.
+	resumedWith := func(key string) string {
+		data, _ := os.ReadFile(filepath.Join(worktree, "args-"+key))
 		return string(data)
 	}
-	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(worktree, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(worktree, "args-"+agent.Key)); return err == nil }, 5*time.Second, 10*time.Millisecond)
 	report("claude", "saved-conversation", "Stop")
 	stopIdle := func() { handler.idle.Load().stopIdle(ctx) }
 	running := func(key string) bool {
@@ -256,10 +256,10 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	runtime.Shutdown()
 	runtime, handler = daemon(time.Hour)
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
-	assert.Empty(resumedWith(), "a daemon restart must not relaunch a stopped agent")
+	assert.Empty(resumedWith(agent.Key), "a daemon restart must not relaunch a stopped agent")
 	assert.False(client.HasState(shell.Key), "a daemon restart must not relaunch a stopped shell")
 	require.NoError(handler.restoreRuntimeSessions(ctx, true))
-	assert.Empty(resumedWith(), "recovery retries must not relaunch a stopped agent")
+	assert.Empty(resumedWith(agent.Key), "recovery retries must not relaunch a stopped agent")
 
 	listed, err = handler.GetWorkspaceRuntimeService(ctx, ws.ID, true)
 	require.NoError(err)
@@ -270,7 +270,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	awaitResume(handler, ws.ID)
 	assert.True(running(agent.Key))
 	assert.True(running(shell.Key), "a stopped shell starts fresh under its key")
-	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond, "the agent resumes its saved conversation")
+	require.Eventually(func() bool { return resumedWith(agent.Key) == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond, "the agent resumes its saved conversation")
 	continued(agent.Key, "saved-conversation")
 
 	// Swap config between the per-runtime idle reads, after the first stop was admitted.
@@ -314,14 +314,14 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 			assert.Equal(localruntime.SessionStatusError, session.Status)
 		}
 	}
-	require.NoError(os.Remove(filepath.Join(worktree, "args")))
+	require.NoError(os.Remove(filepath.Join(worktree, "args-"+agent.Key)))
 	require.NoError(handler.restoreRuntimeSessions(ctx, true))
 	assert.False(running(agent.Key), "recovery can't resume while the target is missing")
 	removedTarget.TargetKey = "worker"
 	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &removedTarget))
 	require.NoError(handler.restoreRuntimeSessions(ctx, true))
 	assert.True(running(agent.Key), "the maintenance pass resumes an agent whose resume failed")
-	require.Eventually(func() bool { return resumedWith() == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool { return resumedWith(agent.Key) == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond)
 
 	// A cancelled caller doesn't fail the resume.
 	continued(agent.Key, "saved-conversation")
@@ -352,7 +352,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	require.NoError(client.Stop(ctx, crashed.Key))
 	runtime, handler = daemon(time.Hour)
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
-	require.Eventually(func() bool { return resumedWith() == "--resume\ncrashed-conversation" }, 5*time.Second, 10*time.Millisecond, "recovery resumes the saved conversation")
+	require.Eventually(func() bool { return resumedWith(crashed.Key) == "--resume\ncrashed-conversation" }, 5*time.Second, 10*time.Millisecond, "recovery resumes the saved conversation")
 	require.True(running(crashed.Key))
 	continued(crashed.Key, "crashed-conversation")
 	stopIdle() // the restarted daemon's first pass starts the clock

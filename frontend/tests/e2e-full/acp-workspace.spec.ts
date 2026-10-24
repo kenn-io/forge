@@ -398,11 +398,16 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect
       .poll(async () => JSON.stringify(await (await api.get(`/api/v1/workspaces/${workspace.id}/targets`)).json()))
       .toContain('"title":"Add CLI flag parser"');
-    const modifiedTab = page.context().waitForEvent("page");
+    const modifiedURL = `${origin}/pulls/github/acme/tools/1`;
+    const modifiedRequested = new Promise<void>((resolve) => {
+      void page.context().route(modifiedURL, (route) => {
+        resolve();
+        return route.fulfill({ contentType: "text/html", body: "Pull request destination" });
+      });
+    });
     await prLink.click({ modifiers: ["ControlOrMeta"] });
-    const modified = await modifiedTab;
-    await expect(modified).toHaveURL(`${origin}/pulls/github/acme/tools/1`);
-    await modified.close();
+    await modifiedRequested;
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
     // Chromium can omit the page event for a middle-clicked cross-origin tab.
     // Observe its navigation request and keep the original page in Forge.
     const upstreamURL = "https://github.com/example-org/library/issues/3";

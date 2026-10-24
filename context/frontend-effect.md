@@ -42,6 +42,9 @@ service is the supported tool here.
 - Settings page reads must follow previously accepted saves but remain page-owned;
   leaving Settings cancels reads without cancelling saves or blocking later writes
   (`frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
+- Cancel a form's wait for accepted work when its host changes, even if the user
+  returns to that host; the application queue still owns the accepted mutation
+  (`frontend/src/lib/components/terminal/WorkspaceFirstRunPanel.svelte::runProjectSubmission`).
 - Use scoped acquisition and finalizers for listeners, streams, readers,
   abort controllers, timers, presenters, and workflow owners. Teardown must be
   explicit at the same lifetime boundary that acquired the resource.

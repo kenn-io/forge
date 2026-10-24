@@ -176,6 +176,11 @@ test.describe("PR description task list", () => {
       const targetX = targetBox.x + 20;
       // Below the midpoint -> "drop after" so the item lands at index 2.
       const targetY = targetBox.y + targetBox.height * 0.85;
+      const saved = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1",
+      );
       await page.mouse.move(startX, startY);
       await page.mouse.down();
       const steps = 8;
@@ -186,7 +191,7 @@ test.describe("PR description task list", () => {
       }
       await page.mouse.up();
 
-      await page.waitForTimeout(900);
+      expect((await saved).ok()).toBe(true);
       await page.reload();
       const reloadedBody = page.locator(".body-section .markdown-body");
       await reloadedBody.waitFor({ state: "visible" });

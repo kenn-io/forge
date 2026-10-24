@@ -24,6 +24,7 @@
     projectMutationFailureMessage,
     projectMutationKey,
     type CloneProjectCommand,
+    type ProjectMutationFailure,
     type RegisterExistingProjectCommand,
   } from "./project-mutation-workflow.js";
   import ToolingStatusBlock from "./ToolingStatusBlock.svelte";
@@ -81,7 +82,7 @@
   let githubPath = $state("");
   let githubBranch = $state("");
   let snapshotHosts = $state.raw<HostSummary[]>([]);
-  let repositoryExecution: AppExecution<void, never> | undefined;
+  let repositoryExecution: AppExecution<void, ProjectMutationFailure> | undefined;
   let componentDestroyed = false;
 
   const tooling = $derived(resolveToolingStatus(runtime));
@@ -278,7 +279,7 @@
   ): void {
     if (inFlight) return;
     inFlight = true;
-    runtime.runCommand(
+    repositoryExecution = runtime.runCommand(
       Effect.gen(function* () {
         const workflow = yield* ProjectMutationWorkflow;
         const acknowledgement = yield* (command._tag === "RegisterExisting"

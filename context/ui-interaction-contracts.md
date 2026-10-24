@@ -75,8 +75,8 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
 - PR and issue selections recover verified repository identity independently of the selected row's presence in the list;
   unknown identities cannot reuse cached details (`frontend/src/lib/views/PRListView.svelte::selectedRepositoryKey`).
-- URL selections prefer verified detail observations over retained rows, then the active catalog; stale configured pins must not identify a route's new occupant.
-  Without a verified match, leave the route unbound so a fresh detail response can establish identity
+- URL selections prefer verified detail observations; conflicting row and catalog identities leave the route unbound until a fresh detail response establishes identity.
+  Configured pins must not identify a route's new occupant
   (`frontend/src/lib/stores/repository-catalog.svelte.ts::createRepositoryCatalog`).
 - Accepted route-matching details establish unknown URL identity even outside the tracked catalog; later catalog omissions must retain it
   (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).

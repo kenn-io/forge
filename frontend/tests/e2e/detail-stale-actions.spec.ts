@@ -608,7 +608,10 @@ test.describe("detail load-error banner", () => {
                 });
               } else {
                 const detail = JSON.parse(entry.body);
-                if (refreshResult === "replacement") detail.repo.platform_repo_id = 1103;
+                if (refreshResult === "replacement") {
+                  detail.repo.platform_repo_id = 1103;
+                  (detail.merge_request ?? detail.issue).Body = "Fresh replacement repository discussion.";
+                }
                 await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
               }
             } else {
@@ -645,14 +648,15 @@ test.describe("detail load-error banner", () => {
           refresh.resolve();
         }
         const refreshButton = page.getByRole("button", { name: "Refresh detail", exact: true });
-        if (refreshResult === "matching") {
-          await expect(page.locator(".btn--close").first()).toBeEnabled();
-        } else {
-          if (refreshResult === "failed") {
-            await expect(page.getByTestId("detail-load-error")).toBeVisible();
-          }
+        if (refreshResult === "failed") {
+          await expect(page.getByTestId("detail-load-error")).toBeVisible();
           await expect(refreshButton).toBeEnabled();
           await expect(page.locator(".btn--close:enabled")).toHaveCount(0);
+        } else {
+          if (refreshResult === "replacement") {
+            await expect(page.getByText("Fresh replacement repository discussion.", { exact: true })).toBeVisible();
+          }
+          await expect(page.locator(".btn--close").first()).toBeEnabled();
         }
         await expect(page.locator(".detail-title")).toContainText(item.first.title);
         if (refreshResult === "failed") {

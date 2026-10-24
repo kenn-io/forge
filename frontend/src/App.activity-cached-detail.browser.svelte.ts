@@ -451,11 +451,13 @@ it.each(
     ["data_changed", "config.changed", "shared refresh", "detail response"].map((update) => ({ ...scenario, update })),
   ),
 )(
-  "follows route reuse after mount in $view with filtered rows ($update)",
+  "follows route reuse after mount in $view with retained or filtered rows ($update)",
   async ({ collection, itemType, number, activity, update }) => {
     let repositoryID = 1001;
     let catalogID = 1001;
+    let detailReads = 0;
     const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const retainedRows = update === "shared refresh";
     const route = activity
       ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`
       : `/${collection}/github/acme/widgets/${number}`;
@@ -472,8 +474,27 @@ it.each(
                 Name: "widgets",
               },
             ]);
-          if (url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
-          if (url.pathname === "/api/v1/activity") return jsonResponse({ items: [], item_activity: [], capped: false });
+          if (url.pathname === `/api/v1/${collection}`)
+            return jsonResponse(retainedRows ? [{ ...item, Number: number + 1, Title: "Retained sibling" }] : []);
+          if (url.pathname === "/api/v1/activity")
+            return jsonResponse({
+              items: [],
+              capped: false,
+              item_activity: retainedRows
+                ? [
+                    {
+                      activity_at: new Date().toISOString(),
+                      item_number: number + 1,
+                      item_state: "open",
+                      item_title: "Retained sibling",
+                      item_type: itemType,
+                      repo_owner: "acme",
+                      repo_name: "widgets",
+                      repo: item.repo,
+                    },
+                  ]
+                : [],
+            });
           if (url.pathname === `/api/v1/${collection}/github/acme/widgets/${number}`)
             return jsonResponse({
               [collection === "pulls" ? "merge_request" : "issue"]: {
@@ -486,6 +507,7 @@ it.each(
               repo_name: "widgets",
               platform_host: "github.com",
               detail_loaded: true,
+              detail_fetched_at: new Date(Date.UTC(2026, 0, 1, 0, 0, ++detailReads)).toISOString(),
               events: [],
             });
           return null;
@@ -493,7 +515,12 @@ it.each(
       ],
     });
     await expect.element(page.getByText("Original discussion.", { exact: true })).toBeVisible();
-    // The route changes ownership while this view remains mounted and every row remains filtered out.
+    // Initial provider sync must settle so it cannot mask a missed catalog update.
+    await vi.waitFor(() => expect(detailReads).toBeGreaterThan(1));
+    await expect
+      .element(page.getByRole("status", { name: "Syncing from GitHub", exact: true }))
+      .not.toBeInTheDocument();
+    // The route changes ownership while rows are either retained or filtered out.
     repositoryID = 2002;
     if (update === "detail response") {
       // No catalog event: a foreground read must recover from the stale inferred ID.

@@ -3,7 +3,7 @@ import { untrack } from "svelte";
 import { getAppRuntime } from "../app/runtime-context.js";
 import { RepositoryReads, type RepositoryIdentity } from "../api/repository-reads.js";
 import { canonicalProvider, resolvedPlatformHost, type ProviderRouteRef } from "../api/provider-routes.js";
-import type { RepositoryKey } from "../api/repository-key.js";
+import { sameRepositoryKey, type RepositoryKey } from "../api/repository-key.js";
 
 export function createRepositoryCatalog() {
   const runtime = getAppRuntime();
@@ -49,7 +49,11 @@ export function createRepositoryCatalog() {
           repo.name === ref.name &&
           repo.repoPath === ref.repoPath,
       );
-      return (repo?.fromDetail ? repo.repositoryKey : undefined) ?? rowKey ?? repo?.repositoryKey;
+      if (!repo?.fromDetail && repo?.repositoryKey && rowKey && !sameRepositoryKey(repo.repositoryKey, rowKey)) {
+        // Conflicting hints require a fresh route read before restoring details.
+        return undefined;
+      }
+      return repo?.repositoryKey ?? rowKey;
     },
   };
 }

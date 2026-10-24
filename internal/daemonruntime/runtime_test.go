@@ -238,6 +238,43 @@ func TestConfigRuntimesIgnoresUnresolvableUnrelatedConfig(t *testing.T) {
 	require.Equal(target.PID, runtimes[0].Record.PID)
 }
 
+func TestPublishKeepsRecordKitCannotJudge(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("KENN_FORGE_HOME", t.TempDir())
+	store, err := Store()
+	require.NoError(err)
+	record := daemon.NewRuntimeRecord(Service, "dev", daemon.Endpoint{
+		Network: daemon.NetworkTCP, Address: "127.0.0.1:1",
+	})
+	old := record
+	old.PID = 1 << 30
+	old.ProcessIdentityV2 = "unreadable"
+	oldPath, err := store.Write(old)
+	require.NoError(err)
+
+	_, err = Publish(record)
+
+	require.NoError(err)
+	require.FileExists(oldPath)
+}
+
+func TestConfigRuntimesSkipsRecordKitCannotJudge(t *testing.T) {
+	require := require.New(t)
+	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+	records, err := store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	record := records[0]
+	record.ProcessIdentityV2 = "unreadable"
+	_, err = store.Write(record)
+	require.NoError(err)
+
+	runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
+
+	require.NoError(err)
+	require.Empty(runtimes)
+}
+
 type fakeAddress string
 
 func (a fakeAddress) Network() string { return "fake" }

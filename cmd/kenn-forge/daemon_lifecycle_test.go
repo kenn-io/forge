@@ -231,13 +231,13 @@ func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
 	deps.readStatus = func(string) (runtimelock.Status, error) {
 		return runtimelock.Status{Running: true}, nil
 	}
-	signals := 0
-	deps.signal = func(int) error { signals++; return nil }
+	stops := 0
+	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error { stops++; return nil }
 
 	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
 
 	require.ErrorContains(t, err, "could not be authenticated")
-	assert.Zero(t, signals)
+	assert.Zero(t, stops)
 }
 
 func TestDaemonStopRemovesOnlyVerifiedRuntimeRecordAfterExit(t *testing.T) {
@@ -265,12 +265,14 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 	deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
 		return daemon.RuntimeRecord{PID: 41, SourcePath: "/runtime/daemon.41.json"}, daemon.PingInfo{PID: 41}, true, nil
 	}
-	signals := 0
-	deps.signal = func(int) error { signals++; return nil }
+	stops := 0
 	var waitTimeout time.Duration
-	deps.waitForExit = func(_ context.Context, _ int, timeout time.Duration) bool {
+	deps.stop = func(_ context.Context, record daemon.RuntimeRecord, dataDir string, timeout time.Duration) error {
+		stops++
+		assert.Equal(41, record.PID)
+		assert.NotEmpty(dataDir)
 		waitTimeout = timeout
-		return false
+		return errors.Join(errors.New("shutdown wait"), daemonruntime.ErrStopTimeout)
 	}
 	removes := 0
 	deps.remove = func(string) error { removes++; return nil }
@@ -280,7 +282,7 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "will not force-kill")
 	require.ErrorContains(err, "terminate it manually")
-	assert.Equal(1, signals)
+	assert.Equal(1, stops)
 	assert.GreaterOrEqual(waitTimeout, 50*time.Second)
 	assert.Zero(removes)
 }
@@ -306,7 +308,7 @@ func TestDaemonRestartValidatesNodeIDBeforeSignaling(t *testing.T) {
 	err := newDaemonLifecycle(deps).Restart(t.Context(), "/config.toml", io.Discard)
 
 	require.ErrorContains(t, err, "invalid node ID")
-	assert.NotContains(t, *events, "signal")
+	assert.NotContains(t, *events, "stop")
 }
 
 func TestDaemonRestartStartsWhenNotRunning(t *testing.T) {
@@ -330,10 +332,9 @@ func TestDaemonRestartHoldsOneLockAcrossStopAndStart(t *testing.T) {
 			PID: 41, SourcePath: "/runtime/daemon.41.json",
 		}, daemon.PingInfo{PID: 41}, true, nil
 	}
-	deps.signal = func(int) error { *events = append(*events, "signal"); return nil }
-	deps.waitForExit = func(context.Context, int, time.Duration) bool {
-		*events = append(*events, "wait")
-		return true
+	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error {
+		*events = append(*events, "stop")
+		return nil
 	}
 	deps.ensureBackground = func(context.Context, string, *config.Config) (daemon.RuntimeRecord, error) {
 		*events = append(*events, "start")
@@ -344,7 +345,7 @@ func TestDaemonRestartHoldsOneLockAcrossStopAndStart(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, []string{
-		"lock", "find", "signal", "wait", "remove", "start", "unlock",
+		"lock", "find", "stop", "remove", "start", "unlock",
 	}, *events)
 }
 
@@ -458,13 +459,9 @@ func daemonLifecycleTestDeps(t *testing.T) (daemonLifecycleDeps, *[]string) {
 			*events = append(*events, "start")
 			return daemonTestRuntime(42), nil
 		},
-		signal: func(int) error {
-			*events = append(*events, "signal")
+		stop: func(context.Context, daemon.RuntimeRecord, string, time.Duration) error {
+			*events = append(*events, "stop")
 			return nil
-		},
-		waitForExit: func(context.Context, int, time.Duration) bool {
-			*events = append(*events, "wait")
-			return true
 		},
 		remove: func(string) error {
 			*events = append(*events, "remove")

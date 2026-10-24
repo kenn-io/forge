@@ -287,6 +287,26 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 	assert.Zero(removes)
 }
 
+func TestDaemonStopReportsProofTimeoutWithoutExitGuidance(t *testing.T) {
+	deps, _ := daemonLifecycleTestDeps(t)
+	record := daemon.RuntimeRecord{PID: 41, SourcePath: "/runtime/daemon.41.json"}
+	deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
+		return record, daemon.PingInfo{PID: 41}, true, nil
+	}
+	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error {
+		return &daemon.UnreachableError{Record: record, Err: context.DeadlineExceeded}
+	}
+	removes := 0
+	deps.remove = func(string) error { removes++; return nil }
+
+	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
+
+	require.ErrorContains(t, err, "stop process 41:")
+	require.ErrorIs(t, err, daemon.ErrDaemonUnreachable)
+	assert.NotContains(t, err.Error(), "will not force-kill")
+	assert.Zero(t, removes)
+}
+
 func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {
 	deps, events := daemonLifecycleTestDeps(t)
 	deps.loadConfig = func(string) (*config.Config, error) {

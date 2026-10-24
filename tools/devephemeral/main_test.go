@@ -145,6 +145,43 @@ func TestPrepareEphemeralConfigSharesDefaultMCPListener(t *testing.T) {
 	}
 }
 
+func TestSelectFreePortSkipsReservedPorts(t *testing.T) {
+	for _, failNext := range []bool{false, true} {
+		t.Run(fmt.Sprintf("allocation error=%t", failNext), func(t *testing.T) {
+			require := require.New(t)
+			listen := func() (net.Listener, error) {
+				return (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			}
+			reserved, err := listen()
+			require.NoError(err)
+			t.Cleanup(func() { _ = reserved.Close() })
+			reservedPort := reserved.Addr().(*net.TCPAddr).Port
+			allocationErr := errors.New("listen failed")
+			first := true
+			selected, err := selectFreePort([]int{reservedPort}, func() (net.Listener, error) {
+				if first {
+					first = false
+					return reserved, nil
+				}
+				if failNext {
+					return nil, allocationErr
+				}
+				return listen()
+			})
+			if failNext {
+				require.ErrorIs(err, allocationErr)
+			} else {
+				require.NoError(err)
+				assert.NotEqual(t, reservedPort, selected)
+			}
+			// Even a rejected candidate must be released on success and failure.
+			reopened, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", reserved.Addr().String())
+			require.NoError(err)
+			require.NoError(reopened.Close())
+		})
+	}
+}
+
 func TestRequireDistinctPortsRejectsAnyCollision(t *testing.T) {
 	require := require.New(t)
 
@@ -498,7 +535,7 @@ exec "$FORGE_TEST_BIN" "$@"
 			"-backend-port", "0", "-frontend-port", "0",
 		})
 	}()
-	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"))
+	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"), errCh)
 	require.Eventually(func() bool {
 		req, requestErr := http.NewRequestWithContext(
 			t.Context(), http.MethodGet, status.BackendURL+"/api/v1/repos", nil,
@@ -764,7 +801,7 @@ func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
 	require.NoError(release())
 	lockReleased = true
 
-	status := waitForStatusFile(t, statusPath)
+	status := waitForStatusFile(t, statusPath, errCh)
 	assert.NotEqual(oldBackend.Process.Pid, status.BackendPID)
 	assert.NotEqual(oldFrontend.Process.Pid, status.FrontendPID)
 	assert.Equal("http://127.0.0.1:39511", status.BackendURL)
@@ -1012,7 +1049,7 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	}()
 
 	statusPath := filepath.Join(workDir, "dev-ephemeral.json")
-	status := waitForStatusFile(t, statusPath)
+	status := waitForStatusFile(t, statusPath, errCh)
 	assert.NotZero(status.PID)
 	assert.NotZero(status.BackendPID)
 	assert.NotZero(status.FrontendPID)
@@ -1100,7 +1137,7 @@ func waitForCommandExit(t *testing.T, cmd *exec.Cmd, waitCh <-chan error) {
 	}
 }
 
-func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
+func waitForStatusFile(t *testing.T, path string, errCh <-chan error) ephemeralStatus {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -1110,6 +1147,9 @@ func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
 			return status
 		}
 		select {
+		case err := <-errCh:
+			require.Failf(t, "dev stack exited before publishing status", "error: %v", err)
+			return ephemeralStatus{}
 		case <-deadline:
 			require.Failf(t, "timed out waiting for status file", "path: %s", path)
 			return ephemeralStatus{}

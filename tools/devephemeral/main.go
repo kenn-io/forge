@@ -148,11 +148,11 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	resolvedBackendPort, err := resolvePort(*backendPort)
+	resolvedBackendPort, err := resolvePort(*backendPort, *frontendPort, *mcpPort)
 	if err != nil {
 		return fmt.Errorf("resolve backend port: %w", err)
 	}
-	resolvedFrontendPort, err := resolvePort(*frontendPort)
+	resolvedFrontendPort, err := resolvePort(*frontendPort, resolvedBackendPort, *mcpPort)
 	if err != nil {
 		return fmt.Errorf("resolve frontend port: %w", err)
 	}
@@ -323,7 +323,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	if cfg.MCPEnabled() {
 		if opts.mcpPortSet || cfg.MCP.Enabled != nil {
 			// A dedicated source listener belongs to the live daemon; choose a new port.
-			cfg.MCP.Port, err = resolvePort(opts.mcpPort)
+			cfg.MCP.Port, err = resolvePort(opts.mcpPort, opts.backendPort, opts.frontendPort)
 			if err != nil {
 				return ephemeralRun{}, fmt.Errorf("resolve mcp port: %w", err)
 			}
@@ -988,27 +988,38 @@ func stopProcess(process *os.Process) {
 	}
 }
 
-func resolvePort(port int) (int, error) {
+func resolvePort(port int, excluded ...int) (int, error) {
 	if port != 0 {
 		if err := validatePort(port); err != nil {
 			return 0, err
 		}
 		return port, nil
 	}
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return 0, fmt.Errorf("unexpected address type %T", listener.Addr())
-	}
-	return addr.Port, nil
+	return selectFreePort(excluded, func() (net.Listener, error) {
+		return (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	})
 }
 
-// requireDistinctPorts rejects a free-port resolution that handed two
-// listeners the same port; a fixed port that repeats is a user error either way.
+func selectFreePort(excluded []int, listen func() (net.Listener, error)) (int, error) {
+	for {
+		listener, err := listen()
+		if err != nil {
+			return 0, err
+		}
+		// Keep rejected candidates bound so the next allocation cannot return
+		// the same port. There can be at most len(excluded) such candidates.
+		defer listener.Close()
+		addr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok {
+			return 0, fmt.Errorf("unexpected address type %T", listener.Addr())
+		}
+		if !slices.Contains(excluded, addr.Port) {
+			return addr.Port, nil
+		}
+	}
+}
+
+// requireDistinctPorts rejects repeated fixed ports supplied by the caller.
 func requireDistinctPorts(backend, frontend, mcp int) error {
 	switch {
 	case backend == frontend:

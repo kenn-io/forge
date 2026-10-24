@@ -699,37 +699,16 @@ func (l *daemonLifecycle) stopLocked(
 ) (*daemon.RuntimeRecord, error) {
 	dataDir := currentDataDir
 	var record daemon.RuntimeRecord
-	var found bool
+	found := target != nil
 	var err error
 	if target == nil {
 		record, _, found, err = l.deps.findVerified(ctx, store, dataDir)
 	} else {
 		dataDir = target.DataDir
-		_, found, err = l.deps.findVerifiedRecord(ctx, target.Record, dataDir)
 		record = target.Record
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: discover daemon: %w", operation, err)
-	}
-	if !found {
-		status, err := l.deps.readStatus(dataDir)
-		if err != nil {
-			return nil, fmt.Errorf("%s: read runtime status: %w", operation, err)
-		}
-		if status.Running {
-			return nil, fmt.Errorf(
-				"%s: authoritative runtime lock is held, but daemon identity could not be authenticated; no process was signaled",
-				operation,
-			)
-		}
-		if target != nil {
-			if err := l.removeRuntimeRecord(
-				operation, "unauthenticated", target.Record.SourcePath,
-			); err != nil {
-				return nil, err
-			}
-		}
-		return nil, nil
 	}
 	if target != nil && target.DataDir != currentDataDir {
 		status, err := l.deps.readStatus(target.DataDir)
@@ -749,7 +728,28 @@ func (l *daemonLifecycle) stopLocked(
 			)
 		}
 	}
-	if err := l.deps.stop(ctx, record, dataDir, daemonStopTimeout); err != nil {
+	if found {
+		err = l.deps.stop(ctx, record, dataDir, daemonStopTimeout)
+	}
+	if !found || target != nil && ctx.Err() == nil && (errors.Is(err, daemon.ErrDaemonUnreachable) || errors.Is(err, daemon.ErrStopProofRequired)) {
+		status, err := l.deps.readStatus(dataDir)
+		if err != nil {
+			return nil, fmt.Errorf("%s: read runtime status: %w", operation, err)
+		}
+		if status.Running {
+			return nil, fmt.Errorf(
+				"%s: authoritative runtime lock is held, but daemon identity could not be authenticated; no process was signaled",
+				operation,
+			)
+		}
+		if target != nil {
+			if err := l.removeRuntimeRecord(operation, "unauthenticated", target.Record.SourcePath); err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	}
+	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("%s: wait for process %d: %w", operation, record.PID, ctxErr)
 		}

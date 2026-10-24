@@ -228,17 +228,39 @@ func TestDaemonStopReportsNotRunning(t *testing.T) {
 }
 
 func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
-	deps, _ := daemonLifecycleTestDeps(t)
-	deps.readStatus = func(string) (runtimelock.Status, error) {
-		return runtimelock.Status{Running: true}, nil
+	for _, stopErr := range []error{daemon.ErrDaemonUnreachable, daemon.ErrStopProofRequired} {
+		for _, running := range []bool{true, false} {
+			deps, _ := daemonLifecycleTestDeps(t)
+			dataDir := t.TempDir()
+			record := daemonTestRuntime(41)
+			record.SourcePath = filepath.Join(t.TempDir(), "daemon.41.json")
+			deps.readStatus = func(path string) (runtimelock.Status, error) {
+				assert.Equal(t, dataDir, path)
+				return runtimelock.Status{Running: running}, nil
+			}
+			stops := 0
+			deps.stop = func(_ context.Context, got daemon.RuntimeRecord, path string, _ time.Duration) error {
+				stops++
+				assert.Equal(t, record, got)
+				assert.Equal(t, dataDir, path)
+				return stopErr
+			}
+			var removed []string
+			deps.remove = func(path string) error { removed = append(removed, path); return nil }
+
+			stopped, err := (&daemonLifecycle{deps: deps}).stopLocked(t.Context(), "daemon stop", "/config.toml", dataDir, daemon.RuntimeStore{}, &daemonruntime.ConfigRuntime{DataDir: dataDir, Record: record})
+
+			assert.Nil(t, stopped)
+			assert.Equal(t, 1, stops)
+			if running {
+				require.ErrorContains(t, err, "could not be authenticated")
+				assert.Empty(t, removed)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, []string{record.SourcePath}, removed)
+			}
+		}
 	}
-	stops := 0
-	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error { stops++; return nil }
-
-	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
-
-	require.ErrorContains(t, err, "could not be authenticated")
-	assert.Zero(t, stops)
 }
 
 func TestDaemonStopRemovesOnlyVerifiedRuntimeRecordAfterExit(t *testing.T) {

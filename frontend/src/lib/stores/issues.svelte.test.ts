@@ -765,9 +765,12 @@ describe("createIssuesStore", () => {
     const first = issueDetail();
     first.events = [comment(1, "Older comment in the provider response")];
     const third = issueDetail();
-    third.events = [comment(5, "Comment in the provider fallback")];
+    third.events = [comment(5, "Older comment in the failed-read response")];
+    const fourth = issueDetail();
+    fourth.events = [comment(6, "Comment in the provider fallback")];
     const firstResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     const thirdResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const fourthResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     let cached = issueDetail();
     const get = vi.fn(async (path: string) =>
       path === "/issues" ? { data: [], error: undefined } : { data: cached, error: undefined },
@@ -777,7 +780,8 @@ describe("createIssuesStore", () => {
       .fn()
       .mockReturnValueOnce(firstResponse.promise)
       .mockRejectedValueOnce(new Error("provider unavailable"))
-      .mockReturnValueOnce(thirdResponse.promise);
+      .mockReturnValueOnce(thirdResponse.promise)
+      .mockReturnValueOnce(fourthResponse.promise);
     const store = createIssuesStore({
       client: mockClient({ GET: get, POST: post }),
       getPage: () => "issues",
@@ -837,16 +841,36 @@ describe("createIssuesStore", () => {
     expect(onDetailSynchronized).toHaveBeenCalledOnce();
     expect(listReads()).toBe(1);
 
+    const shown = [
+      "Newer comment from a background sync",
+      "Comment committed by the poll",
+      "Comment shown by a later tick",
+    ];
+    cached = issueDetail();
+    cached.events = [comment(2, shown[0]!), comment(3, shown[1]!), comment(4, shown[2]!)];
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledTimes(3);
     expect(detailReads()).toBe(6);
+    expect(bodies()).toEqual(shown);
     get.mockRejectedValueOnce(new Error("cache unavailable"));
     thirdResponse.resolve({ data: third, error: undefined });
     await vi.advanceTimersByTimeAsync(0);
     expect(detailReads()).toBe(7);
-    expect(bodies()).toEqual(["Comment in the provider fallback"]);
+    expect(bodies()).toEqual(shown);
     expect(onDetailSynchronized).toHaveBeenCalledTimes(2);
     expect(listReads()).toBe(2);
+
+    get.mockRejectedValueOnce(new Error("cache unavailable"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(4);
+    expect(bodies()).toEqual(shown);
+    get.mockRejectedValueOnce(new Error("cache unavailable"));
+    fourthResponse.resolve({ data: fourth, error: undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detailReads()).toBe(9);
+    expect(bodies()).toEqual(["Comment in the provider fallback"]);
+    expect(onDetailSynchronized).toHaveBeenCalledTimes(3);
+    expect(listReads()).toBe(3);
     store.stopIssueDetailPolling();
   });
 

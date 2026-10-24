@@ -1053,9 +1053,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // The provider request has no overall timeout, so it runs beside the local
     // cache read instead of ahead of it, one at a time, and ends with the poll fiber.
     // When it lands the cache is read again, which holds its commit and anything
-    // newer; the response body is only a fallback if that read fails.
+    // newer; the response body is only a fallback if that read fails, and its tick
+    // is taken before the request so a newer read displayed meanwhile wins.
     let providerPollInFlight = false;
-    const providerPoll = (generation: number) =>
+    const providerPoll = (generation: number, envelopeTick: number) =>
       executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
@@ -1069,15 +1070,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { signal },
             ),
       ).pipe(
-        Effect.flatMap((synced) => {
-          const envelopeTick = nextWorkspaceLifecycleTick();
-          return refreshIssueDetailProgram(ref, generation).pipe(
+        Effect.flatMap((synced) =>
+          refreshIssueDetailProgram(ref, generation).pipe(
             Effect.catch(() =>
               installIssueDetail(ref, { ...synced, events: synced.events ?? [] }, envelopeTick, generation, false),
             ),
             Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
-          );
-        }),
+          ),
+        ),
         Effect.catch(() => Effect.void),
         Effect.ensuring(
           Effect.sync(() => {
@@ -1090,7 +1090,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const generation = issueSyncGeneration;
       if (!providerPollInFlight) {
         providerPollInFlight = true;
-        yield* Effect.forkChild(providerPoll(generation), { startImmediately: true });
+        yield* Effect.forkChild(providerPoll(generation, nextWorkspaceLifecycleTick()), { startImmediately: true });
       }
       yield* refreshIssueDetailProgram(ref, generation);
     }).pipe(Effect.catch(() => Effect.void));

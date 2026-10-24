@@ -1,6 +1,6 @@
 services:
   gitea:
-    image: ${KENN_FORGE_GITEA_IMAGE:-gitea/gitea:28.1.0}
+    image: ${KENN_FORGE_GITEA_IMAGE:-gitea/gitea:28.2.0}
     ports:
       - "127.0.0.1:${GITEA_HTTP_PORT:-13001}:3000"
     environment:

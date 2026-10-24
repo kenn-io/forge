@@ -1050,11 +1050,13 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const ref = issueDetailRequestRef(owner, name, number, options);
     activeIssueDetailRef = ref;
     const pollingGeneration = ++issuePollingGeneration;
-    const pollOnce = Effect.gen(function* () {
-      if (detailSyncing || opts.getAirplaneMode?.()) return;
-      const generation = issueSyncGeneration;
-      const envelopeTick = nextWorkspaceLifecycleTick();
-      const synced = yield* executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
+    // The provider request has no overall timeout, so it runs beside the local
+    // cache read instead of ahead of it, one at a time, and ends with the poll fiber.
+    // The response takes its envelope tick when it lands: cache reads that started
+    // while it was pending would otherwise mark it stale and drop it.
+    let providerPollInFlight = false;
+    const providerPoll = (generation: number) =>
+      executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
               { ...providerHostRouteParams(ref), number: ref.number },
@@ -1066,14 +1068,31 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { if_changed: true },
               { signal },
             ),
-      ).pipe(Effect.catch(() => Effect.void));
-      yield* refreshIssueDetailProgram(ref, generation).pipe(
-        Effect.catch(() =>
-          synced
-            ? installIssueDetail(ref, { ...synced, events: synced.events ?? [] }, envelopeTick, generation, false)
-            : Effect.void,
+      ).pipe(
+        Effect.flatMap((synced) =>
+          installIssueDetail(
+            ref,
+            { ...synced, events: synced.events ?? [] },
+            nextWorkspaceLifecycleTick(),
+            generation,
+            false,
+          ),
+        ),
+        Effect.catch(() => Effect.void),
+        Effect.ensuring(
+          Effect.sync(() => {
+            providerPollInFlight = false;
+          }),
         ),
       );
+    const pollOnce = Effect.gen(function* () {
+      if (detailSyncing || opts.getAirplaneMode?.()) return;
+      const generation = issueSyncGeneration;
+      if (!providerPollInFlight) {
+        providerPollInFlight = true;
+        yield* Effect.forkChild(providerPoll(generation), { startImmediately: true });
+      }
+      yield* refreshIssueDetailProgram(ref, generation);
     }).pipe(Effect.catch(() => Effect.void));
     const program = Effect.gen(function* () {
       const workflow = yield* IssuesWorkflow;

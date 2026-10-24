@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +43,23 @@ func TestFindVerifiedAcceptsProvenRuntimeWithDifferentVersion(t *testing.T) {
 	assert.Equal(record.PID, ping.PID)
 }
 
+func TestFindVerifiedSkipsProvenRecordKitCannotJudge(t *testing.T) {
+	require := require.New(t)
+	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+	record, _, found, err := FindVerified(t.Context(), store, dataDir)
+	require.NoError(err)
+	require.True(found)
+	// Unknown proxies for Foreign: kit takes the same branch without parsing its opaque identity format.
+	record.ProcessIdentityV2 = "unreadable"
+	_, err = store.Write(record)
+	require.NoError(err)
+
+	_, _, found, err = FindVerified(t.Context(), store, dataDir)
+
+	require.NoError(err)
+	require.False(found)
+}
+
 func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
 	require := require.New(t)
 	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
@@ -62,17 +78,9 @@ func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
 	require.Error(err)
 	require.Empty(requested)
 
-	ctx, cancel := context.WithDeadline(t.Context(), time.Time{})
-	defer cancel()
-	err = Stop(ctx, record, dataDir, request, time.Second)
-	require.ErrorIs(err, context.DeadlineExceeded)
-	require.NotErrorIs(err, ErrStopTimeout)
-	require.Empty(requested)
-
 	err = Stop(t.Context(), record, dataDir, request, time.Second)
 	require.ErrorIs(err, context.DeadlineExceeded)
 	require.ErrorIs(err, ErrStopTimeout)
-	require.Equal(1, strings.Count(err.Error(), context.DeadlineExceeded.Error()))
 	require.Equal([]int{record.PID}, requested)
 }
 

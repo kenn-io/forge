@@ -291,9 +291,6 @@ and the root event stream.
   discovery still requires a local live PID and a token-derived proof bound to the
   record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).
-- Discovery and lifecycle consider only records kit judges local and alive;
-  preserve records whose process scope can't be judged
-  (`internal/daemonruntime/runtime.go::localLive`).
 - The ready handler exposes standard identity at `GET /api/ping`; its private
   proof path binds the same identity to the published record and only accepts
   direct loopback requests

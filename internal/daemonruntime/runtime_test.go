@@ -238,32 +238,42 @@ func TestConfigRuntimesIgnoresUnresolvableUnrelatedConfig(t *testing.T) {
 	require.Equal(target.PID, runtimes[0].Record.PID)
 }
 
-func TestDiscoverySkipsRecordWithUnknownProcessScope(t *testing.T) {
-	for _, name := range []string{"FindVerified", "ConfigRuntimes"} {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
-			records, err := store.List()
-			require.NoError(err)
-			require.Len(records, 1)
-			record := records[0]
-			// A malformed identity makes kit report Unknown process scope.
-			record.ProcessIdentityV2 = "unreadable"
-			_, err = store.Write(record)
-			require.NoError(err)
+func TestPublishKeepsRecordKitCannotJudge(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("KENN_FORGE_HOME", t.TempDir())
+	store, err := Store()
+	require.NoError(err)
+	record := daemon.NewRuntimeRecord(Service, "dev", daemon.Endpoint{
+		Network: daemon.NetworkTCP, Address: "127.0.0.1:1",
+	})
+	old := record
+	old.PID = 1 << 30
+	// Unknown proxies for Foreign: kit takes the same branch without parsing its opaque identity format.
+	old.ProcessIdentityV2 = "unreadable"
+	oldPath, err := store.Write(old)
+	require.NoError(err)
 
-			switch name {
-			case "FindVerified":
-				_, _, found, err := FindVerified(t.Context(), store, dataDir)
-				require.NoError(err)
-				require.False(found)
-			case "ConfigRuntimes":
-				runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
-				require.NoError(err)
-				require.Empty(runtimes)
-			}
-		})
-	}
+	_, err = Publish(record)
+
+	require.NoError(err)
+	require.FileExists(oldPath)
+}
+
+func TestConfigRuntimesSkipsRecordKitCannotJudge(t *testing.T) {
+	require := require.New(t)
+	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+	records, err := store.List()
+	require.NoError(err)
+	require.Len(records, 1)
+	record := records[0]
+	record.ProcessIdentityV2 = "unreadable"
+	_, err = store.Write(record)
+	require.NoError(err)
+
+	runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
+
+	require.NoError(err)
+	require.Empty(runtimes)
 }
 
 type fakeAddress string

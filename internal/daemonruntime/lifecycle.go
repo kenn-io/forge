@@ -17,7 +17,7 @@ import (
 const probeTimeout = 750 * time.Millisecond
 
 // ErrStopTimeout means shutdown was requested but process exit was not confirmed.
-var ErrStopTimeout = fmt.Errorf("daemon shutdown timed out: %w", context.DeadlineExceeded)
+var ErrStopTimeout = errors.New("daemon shutdown timed out")
 
 type discovery struct {
 	store   daemon.RuntimeStore
@@ -115,12 +115,9 @@ func proofFor(dataDir string) (*daemon.Proof, bool, error) {
 
 // Stop proves the endpoint, requests shutdown, and waits for process exit.
 func Stop(ctx context.Context, record daemon.RuntimeRecord, dataDir string, request func(int) error, timeout time.Duration) error {
-	proof, found, err := proofFor(dataDir)
+	proof, _, err := proofFor(dataDir)
 	if err != nil {
 		return err
-	}
-	if !found {
-		return errors.New("daemon stop requires an auth token")
 	}
 	requested := false
 	err = daemon.Stop(ctx, record, daemon.StopOptions{

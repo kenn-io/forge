@@ -248,6 +248,7 @@ func TestPublishKeepsRecordKitCannotJudge(t *testing.T) {
 	})
 	old := record
 	old.PID = 1 << 30
+	// Unknown proxies for Foreign: kit takes the same branch without parsing its opaque identity format.
 	old.ProcessIdentityV2 = "unreadable"
 	oldPath, err := store.Write(old)
 	require.NoError(err)

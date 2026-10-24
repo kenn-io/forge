@@ -769,13 +769,20 @@ describe("createIssuesStore", () => {
     const firstResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     const thirdResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     let cached = issueDetail();
-    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const get = vi.fn(async (path: string) =>
+      path === "/issues" ? { data: [], error: undefined } : { data: cached, error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
     const post = vi
       .fn()
       .mockReturnValueOnce(firstResponse.promise)
       .mockRejectedValueOnce(new Error("provider unavailable"))
       .mockReturnValueOnce(thirdResponse.promise);
-    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
     await loadIssueDetail(store, "acme", "widget", 7, {
       provider: "github",
       platformHost: "github.com",
@@ -788,7 +795,10 @@ describe("createIssuesStore", () => {
       repoPath: "acme/widget",
     });
     const bodies = () => store.getIssueDetail()?.events.map((event) => event.Body);
+    const detailReads = () => get.mock.calls.filter(([path]) => path !== "/issues").length;
+    const listReads = () => get.mock.calls.filter(([path]) => path === "/issues").length;
     get.mockClear();
+    onDetailSynchronized.mockClear();
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledOnce();
@@ -796,12 +806,14 @@ describe("createIssuesStore", () => {
       "/issues/{provider}/{owner}/{name}/{number}/sync",
       expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
     );
-    expect(get).toHaveBeenCalledOnce();
+    expect(detailReads()).toBe(1);
     expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
+    expect(listReads()).toBe(0);
+    expect(onDetailSynchronized).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledOnce();
-    expect(get).toHaveBeenCalledTimes(2);
+    expect(detailReads()).toBe(2);
     expect(bodies()).toEqual([]);
 
     cached = issueDetail();
@@ -814,21 +826,27 @@ describe("createIssuesStore", () => {
     cached.events = [comment(2, "Newer comment from a background sync"), comment(3, "Comment committed by the poll")];
     firstResponse.resolve({ data: first, error: undefined });
     await vi.advanceTimersByTimeAsync(0);
-    expect(get).toHaveBeenCalledTimes(4);
+    expect(detailReads()).toBe(4);
     expect(bodies()).toEqual(["Newer comment from a background sync", "Comment committed by the poll"]);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(listReads()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledTimes(2);
-    expect(get).toHaveBeenCalledTimes(5);
+    expect(detailReads()).toBe(5);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(listReads()).toBe(1);
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledTimes(3);
-    expect(get).toHaveBeenCalledTimes(6);
+    expect(detailReads()).toBe(6);
     get.mockRejectedValueOnce(new Error("cache unavailable"));
     thirdResponse.resolve({ data: third, error: undefined });
     await vi.advanceTimersByTimeAsync(0);
-    expect(get).toHaveBeenCalledTimes(7);
+    expect(detailReads()).toBe(7);
     expect(bodies()).toEqual(["Comment in the provider fallback"]);
+    expect(onDetailSynchronized).toHaveBeenCalledTimes(2);
+    expect(listReads()).toBe(2);
     store.stopIssueDetailPolling();
   });
 

@@ -1075,6 +1075,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             Effect.catch(() =>
               installIssueDetail(ref, { ...synced, events: synced.events ?? [] }, envelopeTick, generation, false),
             ),
+            Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
           );
         }),
         Effect.catch(() => Effect.void),

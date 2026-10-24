@@ -104,7 +104,8 @@ function sixelGraphicsCommand(): string {
 function iipGraphicsCommand(): string {
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADklEQVR4nGP4z8DwHwQBEPgD/U6VwW8AAAAASUVORK5CYII=";
   const iipSequence = `\\033\\033]1337;File=inline=1;size=71;width=2;height=1;preserveAspectRatio=0:${png}\\033\\033\\\\`;
-  return `printf '${tmuxPassthroughFormat(iipSequence)}'`;
+  // Keep the shell prompt below the image; tmux cannot track passthrough cursor movement.
+  return `printf '${tmuxPassthroughFormat(iipSequence)}\\n'`;
 }
 
 async function expectGraphicsImage(terminal: Locator, checkColors: boolean): Promise<void> {

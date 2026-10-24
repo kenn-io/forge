@@ -403,8 +403,8 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     const modified = await modifiedTab;
     await expect(modified).toHaveURL(`${origin}/pulls/github/acme/tools/1`);
     await modified.close();
-    // Playwright reports no URL for this cross-origin tab, so the routed
-    // request is the evidence of where it went.
+    // Chromium can omit the page event for a middle-clicked cross-origin tab.
+    // Observe its navigation request and keep the original page in Forge.
     const upstreamURL = "https://github.com/example-org/library/issues/3";
     const upstreamRequested = new Promise<void>((resolve) => {
       void page.context().route(upstreamURL, (route) => {
@@ -412,12 +412,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
         return route.fulfill({ contentType: "text/html", body: "Upstream destination" });
       });
     });
-    const upstreamTab = page.context().waitForEvent("page");
     await conversation.getByRole("link", { name: "an upstream issue" }).click({ button: "middle" });
-    const upstream = await upstreamTab;
     await upstreamRequested;
     await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
-    await upstream.close();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);

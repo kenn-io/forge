@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,8 +60,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	code := m.Run()
-	if err := os.RemoveAll(runtimeDir); err != nil {
-		panic(err)
+	// Windows can briefly keep daemon executables locked after process exit.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		err := os.RemoveAll(runtimeDir)
+		if err == nil {
+			break
+		}
+		if runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission) || time.Now().Add(10*time.Millisecond).After(deadline) {
+			panic(err)
+		}
+		time.Sleep(10 * time.Millisecond) //nolint:kennlint // Wait for Windows to release daemon executables, bounded by two seconds.
 	}
 	os.Exit(code)
 }

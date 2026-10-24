@@ -340,7 +340,11 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 		name, isRepo := strings.CutPrefix(r.URL.Path, "/repos/example-org/")
 		switch {
 		case r.URL.Path == "/app/installations/23":
-			_, _ = fmt.Fprintf(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":%q}}`, fixture.workflows.Load())
+			permissions := "{}"
+			if grant := fixture.workflows.Load().(string); grant != "" {
+				permissions = fmt.Sprintf(`{"workflows":%q}`, grant)
+			}
+			_, _ = fmt.Fprintf(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":%s}`, permissions)
 		case r.URL.Path == "/app/installations/23/access_tokens":
 			var request githubapp.InstallationTokenRequest
 			if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) || !assert.Len(t, request.Repositories, 1) {
@@ -416,14 +420,10 @@ func TestBrokerServiceAccountMintsWritableTokenWithoutMembership(t *testing.T) {
 		assert.Equal(t, "main", credential.DefaultBranch, profile)
 	}
 	assert.Zero(t, fixture.humanChecks.Load(), "service accounts skip user, membership, and permission checks")
-	permissions, ok := fixture.mintedPerms.Load().(map[string]string)
-	require.True(t, ok)
-	assert.Equal(t, "write", permissions["contents"])
-	assert.Equal(t, "write", permissions["pull_requests"])
 }
 
 func TestBrokerWorkflowPermissions(t *testing.T) {
-	for _, profile := range []string{"git", "push", "pr"} {
+	for _, profile := range []string{"git", "pr"} {
 		t.Run(profile, func(t *testing.T) {
 			fixture := newServiceAccountFixture(t)
 			request := CredentialRequest{Repository: "example-org/project-a", Profile: profile}

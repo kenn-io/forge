@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -29,9 +30,13 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
-// buildForge compiles the kenn-forge binary into a per-test temp dir
-// and returns the absolute path. The build runs once per test via
-// t.TempDir.
+var (
+	forgeBuildDir   string // Owned and removed by TestMain.
+	forgeBuildMu    sync.Mutex
+	forgeBuildCache = make(map[string]func() (string, error))
+)
+
+// buildForge uses buildForgeWithLDFlags to share the default test binary.
 func buildForge(t *testing.T) string {
 	t.Helper()
 	return buildForgeWithLDFlags(t, "")
@@ -51,20 +56,33 @@ func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 	if testing.Short() {
 		t.Skip("test builds and launches a real kenn-forge daemon")
 	}
-	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "kenn-forge")
-	if runtime.GOOS == "windows" {
-		binPath += ".exe"
+	forgeBuildMu.Lock()
+	build, ok := forgeBuildCache[ldflags]
+	if !ok {
+		build = sync.OnceValues(func() (string, error) {
+			binDir, err := os.MkdirTemp(forgeBuildDir, "forge-")
+			if err != nil {
+				return "", err
+			}
+			binPath := filepath.Join(binDir, "kenn-forge")
+			if runtime.GOOS == "windows" {
+				binPath += ".exe"
+			}
+			args := []string{"build", "-o", binPath}
+			if ldflags != "" {
+				args = append(args, "-ldflags="+ldflags)
+			}
+			args = append(args, ".")
+			cmd := procutil.Command("go", args...)
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			return binPath, cmd.Run()
+		})
+		forgeBuildCache[ldflags] = build
 	}
-	args := []string{"build", "-o", binPath}
-	if ldflags != "" {
-		args = append(args, "-ldflags="+ldflags)
-	}
-	args = append(args, ".")
-	cmd := procutil.Command("go", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	require.NoError(t, cmd.Run(), "go build ./cmd/kenn-forge")
+	forgeBuildMu.Unlock()
+	binPath, err := build()
+	require.NoError(t, err, "go build ./cmd/kenn-forge")
 	return binPath
 }
 

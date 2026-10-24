@@ -54,6 +54,10 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("KENN_FORGE_HOME", runtimeDir); err != nil {
 		panic(err)
 	}
+	forgeBuildDir = filepath.Join(runtimeDir, "binaries")
+	if err := os.Mkdir(forgeBuildDir, 0o700); err != nil {
+		panic(err)
+	}
 	code := m.Run()
 	if err := os.RemoveAll(runtimeDir); err != nil {
 		panic(err)

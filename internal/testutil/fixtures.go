@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -1507,9 +1507,7 @@ func buildGHIssue(
 // It returns the DB and SeedResult. The DB is closed automatically via t.Cleanup.
 func OpenFixtureTestDB(t *testing.T) (*db.DB, *SeedResult) {
 	t.Helper()
-	d, err := db.Open(filepath.Join(t.TempDir(), "test.db"))
-	require.NoError(t, err)
-	t.Cleanup(func() { d.Close() })
+	d := dbtest.Open(t)
 
 	result, err := SeedFixtures(t.Context(), d)
 	require.NoError(t, err)

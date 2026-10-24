@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

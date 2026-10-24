@@ -5,7 +5,7 @@ import (
 	"math"
 	"os"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 )
 
 // Geometry is the character and pixel size reported by the browser that owns

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

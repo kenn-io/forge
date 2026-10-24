@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/procutil"

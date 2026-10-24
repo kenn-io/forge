@@ -11,7 +11,7 @@ require (
 	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.15
-	github.com/creack/pty/v2 v2.0.1
+	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/danielgtaylor/shorthand/v2 v2.4.0
 	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.3
@@ -86,7 +86,6 @@ require (
 	github.com/containerd/ttrpc v1.2.8 // indirect
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danielgtaylor/mexpr v1.10.1 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect

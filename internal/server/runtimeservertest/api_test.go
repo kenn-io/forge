@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"

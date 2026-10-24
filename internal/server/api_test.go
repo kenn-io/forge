@@ -30,7 +30,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	gh "github.com/google/go-github/v93/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"

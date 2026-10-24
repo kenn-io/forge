@@ -251,11 +251,15 @@ checks below.
    | Scope | Permission | Access |
    | --- | --- | --- |
    | Repository | Contents | Read and write |
+   | Repository | Workflows | Read and write |
    | Repository | Pull requests | Read and write |
    | Repository | Checks | Read-only |
    | Repository | Commit statuses | Read-only |
    | Repository | Metadata | Read-only (automatic) |
    | Organization | Members | Read-only |
+
+   Workflows lets writable accounts push changes to workflow files. The broker
+   requests it only when the installation has granted **Workflows: write**.
 
 5. For **Where can this GitHub App be installed?**, choose **Only on this
    account**, then click **Create GitHub App**.

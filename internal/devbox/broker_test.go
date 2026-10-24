@@ -46,7 +46,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/app/installations/23":
-			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected"}`)
+			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":"write"}}`)
 		case "/app/installations/23/access_tokens":
 			var request struct {
 				Repositories  []string          `json:"repositories"`
@@ -60,6 +60,11 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 				return
 			}
 			assert.Empty(request.RepositoryIDs)
+			if request.Permissions["contents"] == "write" {
+				assert.Equal("write", request.Permissions["workflows"])
+			} else {
+				assert.NotContains(request.Permissions, "workflows")
+			}
 			var repo githubapp.Repository
 			token := "fixture-installation-token"
 			switch request.Repositories[0] {
@@ -311,6 +316,7 @@ type serviceFixture struct {
 	tokenID        atomic.Int64
 	mintedPerms    atomic.Value
 	contentsMinted atomic.Int32
+	workflows      atomic.Value
 }
 
 // serviceRepositoryIDs are the fixture installation's repositories: project-a is
@@ -322,6 +328,7 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 	t.Helper()
 	fixture := &serviceFixture{uid: 2001}
 	fixture.repositoryID.Store(42)
+	fixture.workflows.Store("")
 	idOf := func(name string) int64 {
 		if name == "project-a" {
 			return fixture.repositoryID.Load()
@@ -333,7 +340,7 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 		name, isRepo := strings.CutPrefix(r.URL.Path, "/repos/example-org/")
 		switch {
 		case r.URL.Path == "/app/installations/23":
-			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected"}`)
+			_, _ = fmt.Fprintf(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":%q}}`, fixture.workflows.Load())
 		case r.URL.Path == "/app/installations/23/access_tokens":
 			var request githubapp.InstallationTokenRequest
 			if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) || !assert.Len(t, request.Repositories, 1) {
@@ -415,6 +422,32 @@ func TestBrokerServiceAccountMintsWritableTokenWithoutMembership(t *testing.T) {
 	assert.Equal(t, "write", permissions["pull_requests"])
 }
 
+func TestBrokerWorkflowPermissions(t *testing.T) {
+	for _, profile := range []string{"git", "push", "pr"} {
+		t.Run(profile, func(t *testing.T) {
+			fixture := newServiceAccountFixture(t)
+			request := CredentialRequest{Repository: "example-org/project-a", Profile: profile}
+			for _, grant := range []string{"", "read", "write", ""} {
+				fixture.workflows.Store(grant)
+				_, err := fixture.broker.Credential(t.Context(), fixture.uid, request)
+				require.NoError(t, err)
+				want := map[string]string{"metadata": "read", "contents": "write"}
+				if profile == "pr" {
+					want["pull_requests"] = "write"
+					want["checks"], want["statuses"] = "read", "read"
+				}
+				if grant == "write" {
+					want["workflows"] = "write"
+				}
+				permissions, ok := fixture.mintedPerms.Load().(map[string]string)
+				require.True(t, ok)
+				assert.Equal(t, want, permissions, "installation workflows grant %q", grant)
+			}
+			assert.Equal(t, int32(3), fixture.contentsMinted.Load(), "permission changes replace cached tokens")
+		})
+	}
+}
+
 func TestBrokerServiceAccountStillChecksRepositoryIdentity(t *testing.T) {
 	fixture := newServiceAccountFixture(t)
 	fixture.repositoryID.Store(43)
@@ -433,6 +466,7 @@ func TestBrokerServiceAccountRejectsAnotherOrganizationsRepository(t *testing.T)
 
 func TestBrokerServiceAccountReadsOnlyItsReadRepositories(t *testing.T) {
 	fixture := newServiceAccountFixture(t)
+	fixture.workflows.Store("write")
 	credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
 		CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
 	require.NoError(t, err)

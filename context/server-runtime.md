@@ -124,6 +124,9 @@ and the root event stream.
   (`internal/devbox/broker.go::validateRepositoryGrants`)
 - Repository names can be reused; stale broker token scope gets one refresh with full admission
   checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)
+- Writable broker tokens request Workflows write only when the installation grants it;
+  cached tokens must match the requested permissions. Read-only tokens stay unchanged.
+  (`internal/devbox/broker.go::Broker.credential`)
 - The broker authenticates Unix peer UIDs and keeps personal GitHub credentials off workers.
   Human commit identity and the App push actor are distinct; GitHub rulesets enforce
   protected-branch restrictions. (`internal/devbox/broker.go`)

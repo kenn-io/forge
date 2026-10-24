@@ -251,6 +251,9 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	profile := "read"
 	if writable {
 		permissions["contents"], profile = "write", "write"
+		if installation.GetPermissions().GetWorkflows() == "write" {
+			permissions["workflows"] = "write"
+		}
 	}
 	if request.Profile == "pr" {
 		permissions["pull_requests"] = "write"
@@ -306,7 +309,7 @@ func (b *Broker) token(ctx context.Context, jwt string, repository string, profi
 	b.mu.Lock()
 	cached := b.cache[key]
 	b.mu.Unlock()
-	if cached != nil && time.Until(cached.ExpiresAt) > 2*time.Minute {
+	if cached != nil && time.Until(cached.ExpiresAt) > 2*time.Minute && maps.Equal(cached.Permissions, permissions) {
 		return cached, nil
 	}
 	token, err := b.apps.CreateInstallationToken(ctx, jwt, b.config.InstallationID, &githubapp.InstallationTokenRequest{

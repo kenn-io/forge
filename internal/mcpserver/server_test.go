@@ -50,6 +50,7 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_search_items",
 		"kenn_forge_send_agent_message",
 		"kenn_forge_set_item_workflow_state",
+		"kenn_forge_show_media",
 		"kenn_forge_spawn_workspace_with_agent",
 	}, toolNames)
 

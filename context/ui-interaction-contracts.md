@@ -670,6 +670,10 @@ Keyboard handlers must have one clear owner for each key press.
 - Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
   command surface is active, route and list navigation should run only through
   actions explicitly registered for that active surface.
+- Kit's expanded media viewer opens outside the modal stack. Every Kit media
+  player with an `onViewerOpen` option must push a `media-viewer` frame through
+  it, or app shortcuts open over the viewer
+  (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
 - Registry actions also back the command palette: remove only an accelerator by
   setting `binding: null`; deleting the action removes the palette command too
   (`frontend/src/lib/components/keyboard/Palette.svelte::visibleActions`).

@@ -2,6 +2,7 @@ package workspaceapi
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -491,10 +492,16 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	handler.setRuntimeRecoveryPending(stopped.SessionKey, false)
 	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
 	require.True(runtime.StoppedMark(stopped.SessionKey))
+	// The idle loop applies the change in the background.
 	handler.ApplyConfig(ConfigSnapshot{})
-	assert.Nil(handler.syncIdle(ctx))
-	noState("turning the setting off removes idle state")
-	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery")
+	gone := func(path string) bool {
+		_, err := os.Stat(path)
+		return errors.Is(err, os.ErrNotExist)
+	}
+	require.Eventually(func() bool {
+		return gone(parkedDir) && gone(activityFile) && pending(stopped.SessionKey)
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Nil(handler.idle.Load())
 }
 
 // acpParkPeer is an ACP owner that counts park requests.

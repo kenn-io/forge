@@ -1,20 +1,23 @@
 <script lang="ts">
-  import { Button, CodeBlock, ImagePreview } from "@kenn-io/kit-ui";
+  import { Button, CodeBlock, ImagePreview, VideoPlayer } from "@kenn-io/kit-ui";
   import Download from "@lucide/svelte/icons/download";
   import FileText from "@lucide/svelte/icons/file-text";
   import ImageIcon from "@lucide/svelte/icons/image";
   import Link from "@lucide/svelte/icons/link";
   import Music from "@lucide/svelte/icons/music";
+  import Video from "@lucide/svelte/icons/video";
   import {
     decodeBase64,
     formatBytes,
     isImageContent,
+    isVideoContent,
     mediaDataURL,
     resourceFilename,
     resourceHref,
     resourceLanguage,
   } from "./chat-content.js";
   import type { ChatContent } from "./chat-types.js";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 
   import McpApp from "./McpApp.svelte";
   import { decodeAppDescriptor } from "./mcp-app.js";
@@ -25,6 +28,7 @@
   const meta = $derived([content.mimeType, formatBytes(content.size)].filter(Boolean).join(" · "));
   const imageSrc = $derived(isImageContent(content) ? mediaDataURL(content, "image") : undefined);
   const audioSrc = $derived(content.type === "audio" ? mediaDataURL(content, "audio") : undefined);
+  const videoSrc = $derived(isVideoContent(content) ? mediaDataURL(content, "video") : undefined);
   const href = $derived(resourceHref(content.uri));
   const languageProp = $derived.by((): { language?: string } => {
     const language = resourceLanguage(content);
@@ -62,6 +66,18 @@
     <div class="image"><ImagePreview src={imageSrc} alt={label || "Image from agent"} maxHeight="24rem" /></div>
   {:else}
     {@render placeholder(ImageIcon, "Image unavailable")}
+  {/if}
+{:else if isVideoContent(content)}
+  {#if videoSrc}
+    <div class="video">
+      <VideoPlayer
+        src={videoSrc}
+        label={label || "Video from agent"}
+        onViewerOpen={() => pushModalFrame("media-viewer", [])}
+      />
+    </div>
+  {:else}
+    {@render placeholder(Video, "Video unavailable")}
   {/if}
 {:else if content.type === "audio"}
   {#if audioSrc}
@@ -119,6 +135,16 @@
   .image {
     width: fit-content;
     max-width: 100%;
+  }
+  /* The chat shows the image itself, without Kit's padded checkerboard stage. */
+  .image :global(.kit-image-preview) {
+    justify-content: flex-start;
+    min-height: 0;
+    padding: 0;
+    background: none;
+  }
+  .video {
+    width: min(48rem, 100%);
   }
   .audio {
     display: block;

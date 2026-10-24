@@ -7,6 +7,7 @@ import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import { fixtureMessages, fixtureState } from "./chat-test-fixtures.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
 import { STORES_KEY } from "../../context.js";
+import { getStackDepth, getTopFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 let settings: ReturnType<typeof createSettingsStore>;
@@ -1122,6 +1123,72 @@ describe("ACPWorkspace rich content", () => {
 
     await fireEvent.click(audio);
     expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: "Message agent" }));
+  });
+
+  it("plays agent videos instead of showing a download card", async () => {
+    await openChat({
+      messages: [
+        assistant({
+          type: "resource",
+          uri: "/work/demo.mp4",
+          mimeType: "video/mp4",
+          data: "AAAAGGZ0eXA=",
+          title: "Demo",
+        }),
+      ],
+    });
+
+    const video = screen.getByLabelText("Demo") as HTMLVideoElement;
+    expect(video.tagName).toBe("VIDEO");
+    expect(video.getAttribute("src")).toBe("data:video/mp4;base64,AAAAGGZ0eXA=");
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+  });
+
+  it("suspends app shortcuts while an agent video is expanded", async () => {
+    await openChat({
+      messages: [assistant({ type: "resource", mimeType: "video/webm", data: "GkXfow==", title: "Demo" })],
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open video in expanded view" }));
+    const viewer = await screen.findByRole("dialog");
+    expect(getTopFrame()?.frameId).toBe("media-viewer");
+
+    await fireEvent.keyDown(viewer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(getStackDepth()).toBe(0);
+  });
+
+  it("shows tool videos and audio without expanding tools", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "kenn_forge_show_media",
+          toolCallId: "media",
+          status: "completed",
+          toolContent: [
+            {
+              type: "content",
+              content: {
+                type: "resource",
+                uri: "/work/demo.webm",
+                mimeType: "video/webm",
+                data: "GkXfow==",
+                title: "Recording",
+              },
+            },
+            {
+              type: "content",
+              content: { type: "audio", mimeType: "audio/wav", data: "UklGRg==", title: "Narration" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "1 tool" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByLabelText("Recording").tagName).toBe("VIDEO");
+    expect(screen.getByLabelText("Narration").tagName).toBe("AUDIO");
   });
 
   it("links resource cards only for web addresses", async () => {

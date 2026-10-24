@@ -5,7 +5,7 @@
   import ChatMessageView from "./ChatMessageView.svelte"
   import ChatToolDetails from "./ChatToolDetails.svelte"
   import ChatContentBlock from "./ChatContentBlock.svelte"
-  import { isImageContent } from "./chat-content.js"
+  import { isInlineMediaContent } from "./chat-content.js"
   import { decodeAppDescriptor } from "./mcp-app.js"
   import type { ContentScrollPositions } from "./chat-content-scroll.js"
   import { toolStatus, type ChatMessage } from "./chat-types.js"
@@ -163,7 +163,7 @@
   {/if}
   {#each messages as message (message.id)}
     {#each message.toolContent ?? [] as item, contentIndex (contentIndex)}
-      {#if item.content && (isImageContent(item.content) || decodeAppDescriptor(item.content))}
+      {#if item.content && (isInlineMediaContent(item.content) || decodeAppDescriptor(item.content))}
         <ChatContentBlock content={item.content} />
       {/if}
     {/each}

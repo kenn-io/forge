@@ -121,7 +121,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				if err != nil {
 					data, _ = json.Marshal(acpCommandError{Message: err.Error(), Command: command.Type})
 				}
-				if conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
+				if conn.Write(ctx, websocket.MessageText, acpMediaPreviews(data)) != nil {
 					return
 				}
 			case "prompt", "config", "supervise":
@@ -150,7 +150,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				var state struct {
 					MessageCursor uint64 `json:"messageCursor"`
 				}
-				if json.Unmarshal(data, &state) != nil || conn.Write(ctx, websocket.MessageText, acpImagePreviews(data)) != nil {
+				if json.Unmarshal(data, &state) != nil || conn.Write(ctx, websocket.MessageText, acpMediaPreviews(data)) != nil {
 					return
 				}
 				cursor = state.MessageCursor
@@ -162,7 +162,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent localruntime.ACPChat
 				if err != nil {
 					return
 				}
-				if conn.Write(ctx, websocket.MessageText, acpImagePreviews(batch.Data)) != nil {
+				if conn.Write(ctx, websocket.MessageText, acpMediaPreviews(batch.Data)) != nil {
 					return
 				}
 				cursor = batch.MessageCursor

@@ -545,6 +545,7 @@ const config = {
       "@lucide/svelte/icons/user-check",
       "@lucide/svelte/icons/user-round",
       "@lucide/svelte/icons/users",
+      "@lucide/svelte/icons/video",
       "@lucide/svelte/icons/workflow",
       "@lucide/svelte/icons/wrench",
       "@lucide/svelte/icons/x",

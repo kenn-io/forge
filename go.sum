@@ -581,8 +581,6 @@ gitlab.com/gitlab-org/api/client-go/v3 v3.25.0 h1:TbjC8JejqUuS9mm7RwfAPDC7THPGM+
 gitlab.com/gitlab-org/api/client-go/v3 v3.25.0/go.mod h1:UQl7jIdE6nbYNDtc4XWXeiam0V4MJx459e637POlpnQ=
 go.kenn.io/kata v0.18.0 h1:UpF9Q2vLDhFaZuaIDr8YyzRGCuvKf85cvPPYL5/vxNI=
 go.kenn.io/kata v0.18.0/go.mod h1:KblbQ6NemGL/KSSWpFZ7FMndxdaqB4ulNx+9HvPamWQ=
-go.kenn.io/kit v0.42.0 h1:CDr1DYd0qyds94fTdXK3zmhINxUIPaVqRlfCYiU30Lw=
-go.kenn.io/kit v0.42.0/go.mod h1:2YpYZc9JeuplK95/pkXw+3xP4xI+QgojYRRr8gAXu3A=
 go.kenn.io/kit v0.42.1 h1:eCAy4Ej/AVyyOldedtqHeKFlMSZpXb80qfamImZJBxQ=
 go.kenn.io/kit v0.42.1/go.mod h1:2YpYZc9JeuplK95/pkXw+3xP4xI+QgojYRRr8gAXu3A=
 go.kenn.io/kwt v0.9.4-0.20261015163017-a92affa6b55e h1:AKutk9eTC7GYt9JEas/k3nSOaDsgscDaKkaQSCefDGQ=

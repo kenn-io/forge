@@ -1,22 +1,31 @@
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import { untrack } from "svelte";
 import { getAppRuntime } from "../app/runtime-context.js";
 import { RepositoryReads } from "../api/repository-reads.js";
 import { canonicalProvider, resolvedPlatformHost, type ProviderRouteRef } from "../api/provider-routes.js";
-import { repositoryKeyFromCatalog } from "../api/repository-key.js";
-import type { RepoCatalog } from "../api/types.js";
+import type { RepositoryRouteRef } from "../routes.js";
 
 export function createRepositoryCatalog() {
   const runtime = getAppRuntime();
-  let repositories = $state.raw<readonly RepoCatalog[]>([]);
+  let repositories = $state.raw<readonly RepositoryRouteRef[]>([]);
 
   $effect(() => {
     const execution = untrack(() =>
       runtime.runCommand(
         Effect.gen(function* () {
           const reads = yield* RepositoryReads;
-          repositories = reads.snapshot ?? [];
-          repositories = yield* reads.refresh;
+          yield* Effect.all(
+            [
+              Stream.runForEach(reads.identities, (snapshot) =>
+                Effect.sync(() => {
+                  repositories = snapshot;
+                }),
+              ),
+              // A failed refresh must not detach this view from later shared reads.
+              reads.refresh.pipe(Effect.ignore),
+            ],
+            { concurrency: "unbounded", discard: true },
+          );
         }),
         {
           operation: "load repository identities for detail selection",
@@ -32,14 +41,14 @@ export function createRepositoryCatalog() {
     keyForRoute(ref: ProviderRouteRef) {
       const repo = repositories.find(
         (repo) =>
-          canonicalProvider(repo.Platform) === canonicalProvider(ref.provider) &&
-          resolvedPlatformHost(repo.Platform, repo.PlatformHost) ===
+          canonicalProvider(repo.provider) === canonicalProvider(ref.provider) &&
+          resolvedPlatformHost(repo.provider, repo.platformHost) ===
             resolvedPlatformHost(ref.provider, ref.platformHost) &&
-          repo.Owner === ref.owner &&
-          repo.Name === ref.name &&
-          `${repo.Owner}/${repo.Name}` === ref.repoPath,
+          repo.owner === ref.owner &&
+          repo.name === ref.name &&
+          repo.repoPath === ref.repoPath,
       );
-      return repositoryKeyFromCatalog(repo);
+      return repo?.repositoryKey;
     },
   };
 }

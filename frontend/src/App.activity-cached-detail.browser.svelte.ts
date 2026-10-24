@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { flushSync } from "svelte";
+import { Effect } from "effect";
+import { RepositoryReads } from "./lib/api/repository-reads.js";
 import {
   emitBrowserEventSource,
   firePopstate,
@@ -420,5 +422,82 @@ it.each(
     );
     await vi.waitFor(() => expect(document.querySelector(".detail-title")?.textContent).toBe(detailTitle));
     await expect.element(page.getByText("Discussion from the replacement repository.", { exact: true })).toBeVisible();
+  },
+);
+
+it.each(
+  [
+    { view: "Activity PR", collection: "pulls", itemType: "pr", number: 42, activity: true },
+    { view: "Activity issue", collection: "issues", itemType: "issue", number: 7, activity: true },
+    { view: "PR list", collection: "pulls", itemType: "pr", number: 42, activity: false },
+    { view: "issue list", collection: "issues", itemType: "issue", number: 7, activity: false },
+  ].flatMap((scenario) =>
+    ["data_changed", "config.changed", "shared refresh", "detail response"].map((update) => ({ ...scenario, update })),
+  ),
+)(
+  "follows route reuse after mount in $view with filtered rows ($update)",
+  async ({ collection, itemType, number, activity, update }) => {
+    let repositoryID = 1001;
+    let catalogID = 1001;
+    const item = collection === "pulls" ? mockPullFixture(42) : mockIssueFixture(7);
+    const route = activity
+      ? `/?view=threaded&collapsed=1&selected=${itemType}:${number}&provider=github&repo_path=acme%2Fwidgets`
+      : `/${collection}/github/acme/widgets/${number}`;
+    mounted = await mountBrowserApp(route, {
+      overrides: [
+        ({ url }) => {
+          if (url.pathname === "/api/v1/repos")
+            return jsonResponse([
+              {
+                Platform: "github",
+                PlatformHost: "github.com",
+                PlatformRepoID: catalogID,
+                Owner: "acme",
+                Name: "widgets",
+              },
+            ]);
+          if (url.pathname === `/api/v1/${collection}`) return jsonResponse([]);
+          if (url.pathname === "/api/v1/activity") return jsonResponse({ items: [], item_activity: [], capped: false });
+          if (url.pathname === `/api/v1/${collection}/github/acme/widgets/${number}`)
+            return jsonResponse({
+              [collection === "pulls" ? "merge_request" : "issue"]: {
+                ...item,
+                Title: repositoryID === 1001 ? "Original repository detail" : "Replacement repository detail",
+                Body: repositoryID === 1001 ? "Original discussion." : "Replacement discussion.",
+              },
+              repo: { ...item.repo, platform_repo_id: repositoryID },
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+              detail_loaded: true,
+              events: [],
+            });
+          return null;
+        },
+      ],
+    });
+    await expect.element(page.getByText("Original discussion.", { exact: true })).toBeVisible();
+    // The route changes ownership while this view remains mounted and every row remains filtered out.
+    repositoryID = 2002;
+    if (update === "detail response") {
+      // No catalog event: a foreground read must recover from the stale inferred ID.
+      firePopstate(activity ? "/?view=threaded&collapsed=1" : `/${collection}`);
+      flushSync();
+      firePopstate(route);
+    } else if (update === "shared refresh") {
+      catalogID = 2002;
+      await mounted.runtime.runCommand(
+        Effect.gen(function* () {
+          yield* (yield* RepositoryReads).refresh;
+        }),
+        { operation: "refresh repository fixture", safeContext: {}, onFailure: () => {} },
+      ).exit;
+    } else {
+      catalogID = 2002;
+      emitBrowserEventSource(update, { valid: true, restart_required: false });
+    }
+    await expect.element(page.getByText("Replacement discussion.", { exact: true })).toBeVisible();
+    expect(document.querySelector(".detail-title")?.textContent).toBe("Replacement repository detail");
+    await expect.element(page.getByText("Original discussion.", { exact: true })).not.toBeInTheDocument();
   },
 );

@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { refreshRepositoryCatalog } from "./api/repository-reads.js";
 import { pollWhileVisible } from "./effect/poll-while-visible.js";
 import { ApiProblemError } from "./api/effect-errors.js";
 import { createRoborevClient } from "./api/roborev/client.js";
@@ -202,7 +203,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           acpHydration,
         );
       });
-      yield* refreshVisibleData();
+      yield* Effect.all([refreshRepositoryCatalog, refreshVisibleData()], { concurrency: "unbounded", discard: true });
       yield* workspaceItemSearch.refreshEffect;
       yield* refreshWorklistSummaries();
     });
@@ -280,6 +281,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   function reconcileProviderState() {
     return Effect.all(
       [
+        refreshRepositoryCatalog,
         refreshVisibleData(),
         refreshRetainedActivity(),
         issuesStore.refreshActiveIssueDetailEffect(),
@@ -314,6 +316,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       observeHubFailure(
         Effect.all(
           [
+            refreshRepositoryCatalog,
             refreshVisibleData(),
             refreshRetainedActivity(),
             issuesStore.refreshActiveIssueDetailEffect(),

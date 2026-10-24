@@ -1,4 +1,6 @@
 import { Effect, Result } from "effect";
+import { observeRepositoryRoute } from "../api/repository-reads.js";
+import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
 import { SvelteSet } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
@@ -577,8 +579,22 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
-    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
-      return Effect.succeed(false);
+    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo))) {
+      return Effect.sync(() => {
+        // Correct inferred route identity without accepting a response for an explicitly selected ID.
+        if (pullDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) {
+          runtime.runCommand(
+            observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }),
+            {
+              operation: "reconcile repository identity from pull detail",
+              safeContext: {},
+              onFailure: () => {},
+            },
+          );
+        }
+        return false;
+      });
+    }
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.merge_request.labels ?? [];

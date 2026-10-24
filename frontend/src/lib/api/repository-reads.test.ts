@@ -1,7 +1,7 @@
-import { Effect } from "effect";
+import { Effect, Fiber, Option, Stream } from "effect";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { AppLiveLayer } from "../app/layer.js";
-import { createMockApiFetch } from "../../test/mockApiFetch.js";
+import { createMockApiFetch, jsonResponse } from "../../test/mockApiFetch.js";
 import { executeGeneratedApiRequest } from "./generated-api.js";
 import { repositoryIdKey, repositoryUUIDKey } from "./repository-key.js";
 import { RepositoryReads } from "./repository-reads.js";
@@ -52,3 +52,47 @@ it.each([
     );
   },
 );
+
+it("keeps a fresh route observation when an older catalog request finishes later", async () => {
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const api = createMockApiFetch([
+    async ({ url }) => {
+      if (url.pathname !== "/api/v1/repos") return null;
+      started.resolve();
+      await release.promise;
+      return jsonResponse([
+        { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 1001, Owner: "acme", Name: "widgets" },
+      ]);
+    },
+  ]);
+  vi.spyOn(globalThis, "fetch").mockImplementation(api.fetch);
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const reads = yield* RepositoryReads;
+      const pending = yield* reads.refresh.pipe(Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* reads.observeRoute({
+        provider: "github",
+        platformHost: "github.com",
+        repositoryKey: repositoryIdKey(2002),
+        owner: "acme",
+        name: "widgets",
+        repoPath: "acme/widgets",
+      });
+      release.resolve();
+      yield* Fiber.join(pending);
+      const current = yield* Stream.runHead(reads.identities);
+      expect(Option.getOrThrow(current)).toEqual([
+        {
+          provider: "github",
+          platformHost: "github.com",
+          repositoryKey: { kind: "id", id: 2002 },
+          owner: "acme",
+          name: "widgets",
+          repoPath: "acme/widgets",
+        },
+      ]);
+    }).pipe(Effect.provide(AppLiveLayer)),
+  );
+});

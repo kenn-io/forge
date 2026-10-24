@@ -1189,10 +1189,7 @@ func (c *Config) MCPPort() int {
 	if c.MCP.Port != 0 {
 		return c.MCP.Port
 	}
-	if c.MCP.Enabled == nil {
-		return c.Port
-	}
-	return c.Port + 1
+	return c.Port
 }
 
 func (c *Config) MCPListenAddr() string {
@@ -1739,12 +1736,6 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
 		return errors.New("config: MCP diff cache size is outside the supported range")
-	}
-	if c.MCPEnabled() {
-		mcpPort := c.MCPPort()
-		if mcpPort < 1 || mcpPort > 65535 {
-			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)
-		}
 	}
 
 	bindKey, err := ParseHostKey(net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))

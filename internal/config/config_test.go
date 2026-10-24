@@ -158,12 +158,13 @@ func TestSetMCPEnabled(t *testing.T) {
 	}
 }
 
-func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
+func TestExplicitlyEnabledMCPSharesBackendPort(t *testing.T) {
 	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\n"))
 	require.NoError(t, err)
-	assert.Equal(8092, cfg.MCPPort())
-	assert.Equal("127.0.0.1:8092", cfg.MCPListenAddr())
+	assert.Equal(8091, cfg.MCPPort())
+	assert.Equal("127.0.0.1:8091", cfg.MCPListenAddr())
+	assert.True(cfg.MCPSharesMainListener())
 	assert.Equal(int64(128<<20), cfg.MCPDiffCacheBytes())
 }
 
@@ -174,10 +175,10 @@ func TestMCPListenAddrStaysLoopback(t *testing.T) {
 		basePath string
 		want     string
 	}{
-		{host: "127.0.0.1", want: "127.0.0.1:8092"},
-		{host: "::ffff:127.0.0.1", want: "127.0.0.1:8092"},
+		{host: "127.0.0.1", want: "127.0.0.1:8091"},
+		{host: "::ffff:127.0.0.1", want: "127.0.0.1:8091"},
 		{host: "::1", port: "9192", want: "[::1]:9192"},
-		{host: "192.0.2.10", want: "127.0.0.1:8092"},
+		{host: "192.0.2.10", want: "127.0.0.1:8091"},
 		{host: "2001:db8::10", port: "9192", want: "127.0.0.1:9192"},
 		{host: "127.0.0.1", port: "8091", basePath: "/forge/", want: "127.0.0.1:8091"},
 	}
@@ -205,7 +206,7 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 		{name: "loopback same port", host: "127.0.0.1", mcpPort: "8091", want: true},
 		{name: "ipv6 loopback same port", host: "::1", mcpPort: "8091", want: true},
 		{name: "ipv4 wildcard same port", host: "0.0.0.0", mcpPort: "8091", want: true},
-		{name: "loopback default port", host: "127.0.0.1", want: false},
+		{name: "loopback default port", host: "127.0.0.1", want: true},
 		{name: "loopback distinct port", host: "127.0.0.1", mcpPort: "9192", want: false},
 		// The companion binds 127.0.0.1, which these main listeners do not cover.
 		{name: "interface same port", host: "192.0.2.10", mcpPort: "8091", want: false},
@@ -244,11 +245,6 @@ func TestMCPConfigValidation(t *testing.T) {
 		content string
 		wantErr string
 	}{
-		{
-			name:    "default port overflows",
-			content: "host = \"127.0.0.1\"\nport = 65535\n[mcp]\nenabled = true\n",
-			wantErr: "MCP port",
-		},
 		{
 			name:    "explicit port below range",
 			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = -1\n",

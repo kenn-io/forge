@@ -39,7 +39,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	existing, err := os.ReadFile(cfgPath)
 	require.NoError(err)
 	require.NoError(os.WriteFile(
-		cfgPath, append(existing, []byte("\n[mcp]\nenabled = true\n")...), 0o600,
+		cfgPath, fmt.Appendf(existing, "\n[mcp]\nenabled = true\nport = %d\n", mcpPort), 0o600,
 	))
 
 	serve := procutil.Command(bin, "serve", "--config", cfgPath)
@@ -183,7 +183,7 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	require.NoError(err)
 	assert.False(result.IsError)
 
-	// The public authority uses the main-listener policy even on loopback.
+	// The public authority uses the main-listener bearer policy even on loopback.
 	token, err := os.ReadFile(runtimelock.AuthTokenPath(dataDir))
 	require.NoError(err)
 	bearerRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+appAddr+"/mcp", strings.NewReader(
@@ -197,7 +197,7 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	bearerResponse, err := http.DefaultClient.Do(bearerRequest)
 	require.NoError(err)
 	defer bearerResponse.Body.Close()
-	assert.Equal(http.StatusNotFound, bearerResponse.StatusCode)
+	assert.Equal(http.StatusOK, bearerResponse.StatusCode)
 
 	quickstartOutput, err := procutil.Command(
 		bin, "mcp", "quickstart", "--config", cfgPath, "--json",

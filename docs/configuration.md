@@ -644,10 +644,9 @@ tailnet IP, require `enabled = true`. To turn it off:
 enabled = false
 ```
 
-Set `enabled = true` for a separate listener at the backend port plus one, or
-also set `port` to choose its port. Existing explicit settings keep their endpoint.
-A saved `port` with `enabled` omitted keeps MCP off. Re-enabling in Settings uses
-the default endpoint for the saved host and port. Older versions dropped explicit
+With `enabled = true` and no `port`, MCP also uses Forge's own port. Set `port`
+for a separate loopback listener. A saved `port` with `enabled` omitted keeps MCP
+off. Older versions dropped explicit
 false values on save; set `enabled = false` again to preserve an old opt-out.
 
 The sessionless Streamable HTTP endpoint is

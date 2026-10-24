@@ -23,13 +23,9 @@ To turn it off, save this in `~/.kenn/forge/config.toml`:
 enabled = false
 ```
 
-For a separate listener, set `enabled = true`. Its port defaults to the backend
-port plus one; set `port` to choose another. A saved `port` with `enabled`
-omitted keeps the companion off. Existing explicit `enabled = true`
-configurations keep their endpoint. Re-enabling in Settings uses the default
-endpoint for the saved host and port. With no MCP port set, it leaves out
-main-listener bearer and Tailscale Serve access; saving a port in Settings
-stores `enabled = true` and keeps that access.
+With `enabled = true` and no `port`, the companion also uses Forge's own port.
+For a separate loopback listener, set `port`. A saved `port` with `enabled`
+omitted keeps the companion off.
 
 Older versions dropped `enabled = false` when saving. Configurations with no
 `enabled` key and no MCP port start serving `/mcp` after upgrade when the default
@@ -47,9 +43,10 @@ Runtime discovery publishes the resolved MCP listener and URL, and
 `kenn-forge daemon status --json` shows both the listener address and the token
 file path.
 
-With explicit `[mcp].enabled = true`, `/mcp` on the main listener also accepts
-daemon bearer holders and, with `[api.tailscale_serve]`, allowlisted Serve users.
-The omitted default enables only the direct loopback companion.
+While MCP is enabled, `/mcp` on the main listener also accepts daemon bearer
+holders and, with `[api.tailscale_serve]`, allowlisted Serve users. `/api/ping`
+reports `mcp_url` on the origin the caller used, so a client that reaches Forge
+through Tailscale Serve discovers the Serve URL.
 
 For a machine-readable listener list, run:
 
@@ -102,7 +99,6 @@ Set the referenced environment variable from the token file, for example
 `export KENN_FORGE_API_TOKEN="$(cat ~/.kenn/forge/auth_token)"`, using the
 `token_path` reported by `kenn-forge daemon status --json`.
 
-For Tailscale Serve access, set explicit `[mcp].enabled = true`.
 If Forge is published with Tailscale Serve and your Tailscale login is allowed
 (see [Federated Forge](federated-fleet.md)), point the client at the Serve origin
 instead. No token is needed:

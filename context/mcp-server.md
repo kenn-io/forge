@@ -33,9 +33,10 @@
 - Durable ACP owners retain their injected MCP address across daemon restarts;
   reattachment updates the daemon URL and credential behind that address
   (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy.Bind`).
-- With enabled and port omitted, MCP shares the main loopback-IP listener on non-workers;
-  explicit true retains backend port plus one, and an explicit port overrides it
-  (`internal/config/config.go::Config.MCPPort`).
+- With port omitted, enabled MCP uses the backend port; an explicit port is the
+  only way to get a separate listener (`internal/config/config.go::Config.MCPPort`).
+  Omitted enablement defaults on only for loopback-IP non-workers
+  (`internal/config/config.go::Config.mcpDefaultOn`).
   When that port is the backend port and the main listener already accepts the
   companion's loopback address, the main listener serves `/mcp` at the base path
   instead of binding a colliding socket. Direct loopback requests get the
@@ -45,8 +46,12 @@
   `internal/server/mcp_tailnet.go::Server.isDirectLocalMCPRequest`).
 - The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
   the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
-  Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;
-  changing listener settings requires a restart
+  Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`.
+  When the main listener serves `/mcp`, ping answers a non-loopback authority
+  with `/mcp` on that caller's origin, using `https` for TLS or a Serve-forwarded
+  scheme, because host apps require the endpoint to match the origin they used
+  (`internal/server/daemon_ping.go::Server.advertisedMCPURL`). Changing listener
+  settings requires a restart
   (`cmd/kenn-forge/main.go::bindDaemonListeners`,
   `internal/server/daemon_ping.go::Server.daemonPing`).
 - Settings exposes the saved MCP listener/cache configuration separately from
@@ -65,7 +70,7 @@
 - On the main listener, `/mcp` is a hidden Huma operation on the server mux that
   hands the raw request to the MCP SDK; keep its policy in that route rather than
   intercepting it in `ServeHTTP` (`internal/server/mcp_tailnet.go::Server.registerMCPRoute`).
-- With explicit `[mcp].enabled = true`, the main listener also serves `/mcp` to requests with
+- While MCP is enabled, the main listener also serves `/mcp` to requests with
   the daemon bearer, regardless of `[api].require_auth`, and, with
   `[api.tailscale_serve]` enabled, to allowlisted Serve users without a bearer
   (`cmd/kenn-forge/main.go::runWithTelemetry`, `internal/server/mcp_tailnet.go::Server.serveMCP`). Both pass the

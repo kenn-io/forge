@@ -26,10 +26,12 @@
   // svelte-ignore state_referenced_locally
   let enabledDraft = $state(mcp.enabled);
   // svelte-ignore state_referenced_locally
-  let portDraft = $state<number | undefined>(mcp.port);
+  let portDraft = $state<number | undefined>(mcp.port || undefined);
   let portValid = $state(true);
   // svelte-ignore state_referenced_locally
-  let diffCacheDraft = $state<number | undefined>(mcp.diff_cache_mb);
+  let diffCacheDraft = $state<number | undefined>(
+    mcp.diff_cache_mb || undefined,
+  );
   let diffCacheValid = $state(true);
 
   const parsedPort = $derived(portDraft ?? 0);
@@ -63,9 +65,9 @@
 
   function resetDraft(): void {
     enabledDraft = currentMCP.enabled;
-    portDraft = currentMCP.port;
+    portDraft = currentMCP.port || undefined;
     portValid = true;
-    diffCacheDraft = currentMCP.diff_cache_mb;
+    diffCacheDraft = currentMCP.diff_cache_mb || undefined;
     diffCacheValid = true;
   }
 
@@ -131,12 +133,13 @@
           portValid = event.currentTarget.validity.valid;
         }}
         bind:value={portDraft}
-        placeholder="Automatic"
+        placeholder="Same as Forge"
         disabled={saving}
         aria-invalid={!portValid}
       />
       <span class="field-help">
-        Blank uses the default: Forge's own port, or port + 1 if enabled is set in the config file.
+        Leave blank to serve MCP on Forge's own port. Set a port only for a
+        separate loopback listener.
       </span>
     </label>
 

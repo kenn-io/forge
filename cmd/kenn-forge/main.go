@@ -946,7 +946,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		return fmt.Errorf("initialize MCP server: %w", err)
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
-	if cfg.MCP.Enabled != nil && *cfg.MCP.Enabled {
+	if cfg.MCPEnabled() {
 		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
 	}
 	if mcpSwitcher != nil {

@@ -27,8 +27,8 @@ type mcpBackend struct {
 	server *Server
 }
 
-// localPulls returns the hub's pull request handler. Execution workers serve
-// MCP without one, and a worker that is not a spoke has no hub to forward to.
+// localPulls returns the hub's pull request handler. Execution workers never
+// have a hub, so they serve MCP without this handler.
 func (b mcpBackend) localPulls() (*pullapi.Handler, error) {
 	if b.server.pullAPI == nil {
 		return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(
@@ -38,8 +38,8 @@ func (b mcpBackend) localPulls() (*pullapi.Handler, error) {
 	return b.server.pullAPI, nil
 }
 
-// localIssues returns the hub's issue handler. Execution workers serve
-// MCP without one, and a worker that is not a spoke has no hub to forward to.
+// localIssues returns the hub's issue handler. Execution workers never
+// have a hub, so they serve MCP without this handler.
 func (b mcpBackend) localIssues() (*issueapi.Handler, error) {
 	if b.server.issueAPI == nil {
 		return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(

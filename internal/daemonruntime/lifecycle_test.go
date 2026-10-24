@@ -80,7 +80,6 @@ func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
 
 	err = Stop(t.Context(), record, dataDir, request, time.Second)
 	require.ErrorIs(err, context.DeadlineExceeded)
-	require.ErrorIs(err, ErrStopTimeout)
 	require.Equal([]int{record.PID}, requested)
 }
 

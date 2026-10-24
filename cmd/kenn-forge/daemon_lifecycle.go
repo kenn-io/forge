@@ -753,7 +753,7 @@ func (l *daemonLifecycle) stopLocked(
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("%s: wait for process %d: %w", operation, record.PID, ctxErr)
 		}
-		if errors.Is(err, daemonruntime.ErrStopTimeout) {
+		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf(
 				"%s: process %d did not exit after %s; the CLI will not force-kill an unconfirmed PID, inspect the process and terminate it manually",
 				operation, record.PID, daemonStopTimeout,

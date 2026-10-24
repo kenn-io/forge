@@ -34,6 +34,7 @@ function repoRef(owner: string, name: string) {
   return {
     provider: "github",
     platform_host: "github.com",
+    platform_repo_id: 1001,
     repo_path: `${owner}/${name}`,
     owner,
     name,

@@ -20,6 +20,7 @@ type TimelineEvent = {
 const mockRepo = {
   provider: "github",
   platform_host: "github.com",
+  platform_repo_id: 1001,
   repo_path: "acme/widgets",
   owner: "acme",
   name: "widgets",
@@ -273,7 +274,7 @@ test("keeps the pre-kit commit SHA in the compact header before the timestamp", 
     MergeRequestID: 1,
     PlatformID: 9102,
     EventType: "commit",
-    Author: "wesm",
+    Author: "user-a",
     Summary: "3bab070 Close fixture authority revival paths",
     Body: "Close fixture authority revival paths",
     MetadataJSON: "",
@@ -298,7 +299,7 @@ test("keeps the pre-kit commit SHA in the compact header before the timestamp", 
   const time = card.locator(".event-time");
 
   await expect(type).toHaveText("Commit");
-  await expect(author).toHaveText("wesm");
+  await expect(author).toHaveText("user-a");
   await expect(sha).toHaveText("3bab070");
   await expect(subject).toHaveText("Close fixture authority revival paths");
   await expect(time).toBeVisible();

@@ -19,6 +19,7 @@
   import type { ActivityCommitSelection } from "../utils/activitySelection.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { repositoryKeyFromWire, type RepositoryKey } from "../api/repository-key.js";
+  import { createRepositoryCatalog } from "../stores/repository-catalog.svelte.js";
 
   type ActivityDetailTab = "conversation" | "files";
 
@@ -75,6 +76,7 @@
   }: Props = $props();
 
   const { detail: detailStore, issues: issuesStore, activity } = getStores();
+  const repositoryCatalog = createRepositoryCatalog();
   const paneLayout = getPaneLayoutStore("activity");
 
   const ACTIVITY_PANE_WIDTH_KEY = "kenn-forge-activity-pane-width";
@@ -160,17 +162,17 @@
   const activeDrawer = $derived.by(() => {
     const selection = controlled ? (controlledDrawer ?? null) : internalDrawer;
     if (!selection || selection.repositoryKey) return selection;
-    // URL selections omit repository identity. Recover it from the retained
-    // feed so a known item can render its cached detail before revalidation.
+    // Repository identity is independent of which items still match the feed.
+    // The active catalog also covers repositories whose rows were filtered out.
     const matches = (item: ActivityItem | ActivitySubject | WorkspaceActivitySubject) =>
-      item.item_type === selection.itemType && item.item_number === selection.number && repoIdentityMatches(item, selection);
+      repoIdentityMatches(item, selection);
     const item = activity.getItemActivity().find(matches)
       ?? activity.getActivityItems().find(matches)
       ?? activity.getWorkspaceActivity().find(matches);
     const retainedKey = retainedSelectionIdentity?.route === buildRoutedItemRoute(selection)
       ? retainedSelectionIdentity.repositoryKey
       : undefined;
-    return { ...selection, repositoryKey: repositoryKeyFromWire(item?.repo) ?? retainedKey };
+    return { ...selection, repositoryKey: repositoryCatalog.keyForRoute(selection, repositoryKeyFromWire(item?.repo)) ?? retainedKey };
   });
   const selectedItemRoute = $derived(activeDrawer ? buildRoutedItemRoute(activeDrawer) : null);
   $effect(() => {

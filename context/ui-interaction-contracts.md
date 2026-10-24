@@ -83,6 +83,18 @@ Interactive surfaces must agree on which item is selected.
 - Repository-scoped detail reads must track identity values, not route-object references;
   unchanged feed refreshes must retain loaded actions
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
+- Remembered repository merge settings keep controls visible across navigation, but cannot enable merging before revalidation
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
+- PR and issue selections recover verified repository identity independently of the selected row's presence in the list;
+  unknown identities cannot reuse cached details (`frontend/src/lib/views/PRListView.svelte::selectedRepositoryKey`).
+- URL selections prefer verified detail observations over retained rows, then the active catalog; stale configured pins must not identify a route's new occupant.
+  Without a verified match, leave the route unbound so a fresh detail response can establish identity
+  (`frontend/src/lib/stores/repository-catalog.svelte.ts::createRepositoryCatalog`).
+- Accepted route-matching details establish unknown URL identity even outside the tracked catalog; later catalog omissions must retain it
+  (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).
+- Navigation reuses the shared repository catalog; inferred URL identities stay live through shared reads and provider/configuration reconciliation.
+  A route-matching fresh detail may correct inferred identity, never an explicit selection; older catalog reads cannot undo that observation
+  (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
   Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
   cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
@@ -507,9 +519,12 @@ Persisted controls must state their scope clearly.
 - Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
   threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
   must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).
-- Restored Activity selections recover and retain verified repository identity from feed rows
-  before loading details, so cached PRs/issues render while the backend is pending; unknown
-  identity must not reuse a mutable route's cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Restored Activity selections use verified repository identity from the shared catalog or
+  same-repository feed rows even when the selected row disappears; unknown identity must not reuse
+  a mutable route's detail cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
+- Activity agent badges retain five-second polling through workspace reads, without reloading the feed;
+  agent hooks do not emit workspace status events, and delta polls do not refresh existing rows
+  (`frontend/src/lib/stores/activity.svelte.ts::refreshAgentStatusEffect`).
 - Activity project changes immediately project a recent matching or broader repository snapshot,
   only within the same remaining filters. Cached rows are previews; every project change still
   revalidates cursor and paging authority (`frontend/src/lib/stores/activity.svelte.ts::restoreRepositoryActivity`).

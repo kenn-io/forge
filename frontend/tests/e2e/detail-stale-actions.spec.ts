@@ -77,7 +77,7 @@ const providerCapabilities = {
   workflow_approval: true,
 };
 
-const repoIds: Record<string, number> = { widgets: 1018, "squash-only": 1022 };
+const repoIds: Record<string, number> = { widgets: 1001, "squash-only": 1022 };
 
 function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_host: string }) {
   return {

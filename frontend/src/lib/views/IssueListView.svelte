@@ -18,9 +18,11 @@
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
   import { repositoryKeyFromWire } from "../api/repository-key.js";
+  import { createRepositoryCatalog } from "../stores/repository-catalog.svelte.js";
 
   const { toggleSidebar } = getSidebar();
   const { issues } = getStores();
+  const repositoryCatalog = createRepositoryCatalog();
 
   interface Props {
     selectedIssue?: IssueRouteRef | null;
@@ -63,9 +65,9 @@
   const selectedRepositoryKey = $derived.by(() => {
     if (!routeSelection || routeSelection.repositoryKey) return routeSelection?.repositoryKey;
     const item = issues.getIssues().find((item) =>
-      item.Number === routeSelection.number && repoIdentityMatches(item, routeSelection),
+      repoIdentityMatches(item, routeSelection),
     );
-    return repositoryKeyFromWire(item?.repo);
+    return repositoryCatalog.keyForRoute(routeSelection, repositoryKeyFromWire(item?.repo));
   });
   const selectedIssue = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,

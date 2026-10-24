@@ -47,6 +47,7 @@ function repoRef(owner: string, name: string) {
   return {
     provider: "github",
     platform_host: "github.com",
+    platform_repo_id: name === "widgets" ? 1001 : 1002,
     repo_path: `${owner}/${name}`,
     owner,
     name,

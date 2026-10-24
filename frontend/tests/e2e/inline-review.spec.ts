@@ -106,6 +106,7 @@ function pullDetail(
     repo: {
       provider,
       platform_host: platformHost,
+      platform_repo_id: 1001,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -163,6 +164,7 @@ function pullListItem(capabilities = baseCapabilities, provider = "github", plat
     repo: {
       provider,
       platform_host: platformHost,
+      platform_repo_id: 1001,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",

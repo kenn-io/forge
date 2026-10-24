@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { observeRepositoryRoute } from "../api/repository-reads.js";
+import { issueDetailMatchesRef } from "../components/detail/detail-match.js";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { searchEmptyReporter } from "../app/telemetry.js";
@@ -721,13 +723,27 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
   }
 
+  function observeIssueRepository(ref: IssueDetailRequestRef, authoritative: IssueDetail): void {
+    if (!issueDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) return;
+    runtime.runCommand(observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }), {
+      operation: "reconcile repository identity from issue detail",
+      safeContext: {},
+      onFailure: () => {},
+    });
+  }
+
   function rebaseIssueMutations(
     ref: IssueDetailRequestRef,
     authoritative: IssueDetail,
     installEnvelope: () => boolean,
   ) {
-    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
-      return Effect.succeed(false);
+    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo))) {
+      return Effect.sync(() => {
+        // Correct inferred route identity without accepting a response for an explicitly selected ID.
+        observeIssueRepository(ref, authoritative);
+        return false;
+      });
+    }
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.issue.labels ?? [];
@@ -769,6 +785,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && issueDetailEnvelopeTick >= issueDetailCacheTick) issueDetailCacheTick = 0;
+          if (applied && ref.repositoryKey === undefined) observeIssueRepository(ref, authoritative);
           return applied;
         }),
         entries,

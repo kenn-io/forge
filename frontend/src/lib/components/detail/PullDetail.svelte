@@ -12,6 +12,8 @@
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { apiErrorMessage } from "../../api/runtime.js";
+  import { RepositoryReads } from "../../api/repository-reads.js";
+  import type { RepoResponse } from "../../api/generated/models/repoResponse.js";
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -960,7 +962,19 @@
     operations?: RepoOperations;
   };
 
+  function mergeSettingsFromRepo(settings: RepoResponse): RepoSettings {
+    return {
+      allowSquash: settings.AllowSquashMerge,
+      allowMerge: settings.AllowMergeCommit,
+      allowRebase: settings.AllowRebaseMerge,
+      viewerCanMerge: settings.ViewerCanMerge,
+      operations: settings.operations,
+    };
+  }
+
   let repoSettings = $state<RepoSettings | null>(null);
+  let repoSettingsValidated = $state(false);
+  let repoSettingsFailed = $state(false);
   let showMergeModal = $state(false);
   let mergeModalSettings = $state<RepoSettings | null>(null);
 
@@ -1131,27 +1145,25 @@
     void mergeSettingsIdentity;
     const selectedRef = untrack(() => ({ ...routeRef }));
     repoSettings = null;
-    const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
-      providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
-    ).pipe(
-      retryIdempotentRead,
-      Effect.flatMap((settings) =>
-        Effect.sync(() => {
-          repoSettings = {
-            allowSquash: settings.AllowSquashMerge,
-            allowMerge: settings.AllowMergeCommit,
-            allowRebase: settings.AllowRebaseMerge,
-            viewerCanMerge: settings.ViewerCanMerge,
-            operations: settings.operations,
-          };
-        }),
-      ),
-    );
+    repoSettingsValidated = false;
+    repoSettingsFailed = false;
+    const program = Effect.gen(function* () {
+      const reads = yield* RepositoryReads;
+      const cached = reads.detailSnapshot(selectedRef);
+      if (cached) repoSettings = mergeSettingsFromRepo(cached);
+      const settings = yield* executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
+        providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
+      ).pipe(retryIdempotentRead);
+      reads.rememberDetail(settings);
+      repoSettings = mergeSettingsFromRepo(settings);
+      repoSettingsValidated = true;
+    });
     const execution = runtime.runCommand(program, {
       operation: "load repository merge settings",
       safeContext: { provider: selectedRef.provider, owner: selectedRef.owner, name: selectedRef.name },
       onFailure: () => {
-        repoSettings = null;
+        repoSettingsValidated = false;
+        repoSettingsFailed = true;
       },
     });
     return execution.interrupt;
@@ -1167,7 +1179,7 @@
   // still be in flight or have failed). The settings response is the
   // fallback for older detail payloads without operations.
   const repoOperations = $derived(
-    detailStore.getDetail()?.repo?.operations ?? repoSettings?.operations,
+    detailStore.getDetail()?.repo?.operations ?? (repoSettingsValidated ? repoSettings?.operations : undefined),
   );
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
@@ -1289,7 +1301,7 @@
       repoSettings,
       // Treat a blocked head as stale for gating: the merge modal must
       // not open while the reviewed head is unknown.
-      stale: stalePR || headActionsBlocked || midStackMergeBlocked || mergePending,
+      stale: stalePR || !repoSettingsValidated || headActionsBlocked || midStackMergeBlocked || mergePending,
       stores: { detail: detailStore },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
@@ -2719,7 +2731,9 @@
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = mergeQueueEntry
+          {@const mergeTitle = !repoSettingsValidated
+            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
+            : mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
             : midStackMergeBlocked
             ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
@@ -2744,10 +2758,10 @@
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || mergeQueueEntry || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              if (stalePR || !repoSettingsValidated || mergeQueueEntry || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"

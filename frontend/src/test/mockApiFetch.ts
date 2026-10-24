@@ -72,6 +72,7 @@ function repoRef(owner: string, name: string, platformHost: string) {
   return {
     provider: "github",
     platform_host: platformHost,
+    platform_repo_id: platformHost === "github.com" ? 1001 : 2002,
     repo_path: `${owner}/${name}`,
     owner,
     name,
@@ -490,7 +491,7 @@ function matchesRouteIdentity(
 function pullDetailResponse(pr: (typeof pulls)[number]) {
   return {
     merge_request: pr,
-    repo: { ...pr.repo, platform_repo_id: 1001 },
+    repo: pr.repo,
     repo_owner: pr.repo_owner,
     repo_name: pr.repo_name,
     platform_host: pr.platform_host,

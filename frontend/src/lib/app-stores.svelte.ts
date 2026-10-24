@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { refreshRepositoryCatalog } from "./api/repository-reads.js";
 import { pollWhileVisible } from "./effect/poll-while-visible.js";
 import { ApiProblemError } from "./api/effect-errors.js";
 import { createRoborevClient } from "./api/roborev/client.js";
@@ -202,7 +203,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           acpHydration,
         );
       });
-      yield* refreshVisibleData();
+      yield* Effect.all([refreshRepositoryCatalog, refreshVisibleData()], { concurrency: "unbounded", discard: true });
       yield* workspaceItemSearch.refreshEffect;
       yield* refreshWorklistSummaries();
     });
@@ -280,6 +281,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   function reconcileProviderState() {
     return Effect.all(
       [
+        refreshRepositoryCatalog,
         refreshVisibleData(),
         refreshRetainedActivity(),
         issuesStore.refreshActiveIssueDetailEffect(),
@@ -314,6 +316,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       observeHubFailure(
         Effect.all(
           [
+            refreshRepositoryCatalog,
             refreshVisibleData(),
             refreshRetainedActivity(),
             issuesStore.refreshActiveIssueDetailEffect(),
@@ -476,11 +479,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     roborevClient = createRoborevClient(bp + roborevBase);
   }
 
-  // The poll never reads worklists; workspace status events still refresh the open list.
+  // Agent hook reports do not emit workspace events. Refresh Activity badges
+  // from workspaces without downloading the feed's event history again.
   const listAgentStatusPolling = pollWhileVisible(
-    Effect.suspend(() => (gp() === "worklists" ? Effect.void : refreshVisibleData(false))).pipe(
-      Effect.catch(() => Effect.void),
-    ),
+    Effect.suspend(() => {
+      const page = gp();
+      if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
+      return page === "worklists" ? Effect.void : refreshVisibleData(false);
+    }).pipe(Effect.catch(() => Effect.void)),
     "5 seconds",
     { immediate: true },
   );

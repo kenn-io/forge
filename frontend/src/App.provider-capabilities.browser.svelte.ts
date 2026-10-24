@@ -86,6 +86,7 @@ const lockedPullDetail = {
     repo: {
       provider: "github",
       platform_host: "github.com",
+      platform_repo_id: 1001,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",
@@ -96,6 +97,7 @@ const lockedPullDetail = {
   repo: {
     provider: "github",
     platform_host: "github.com",
+    platform_repo_id: 1001,
     repo_path: "acme/widgets",
     owner: "acme",
     name: "widgets",

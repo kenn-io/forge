@@ -133,7 +133,6 @@ func (b mcpBackend) ListPulls(
 	}
 	var resolved mcpapi.ResolvedMCPRepository
 	if query.Repository.Provider != "" {
-		var err error
 		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err
@@ -163,7 +162,6 @@ func (b mcpBackend) ListIssues(
 	}
 	var resolved mcpapi.ResolvedMCPRepository
 	if query.Repository.Provider != "" {
-		var err error
 		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err

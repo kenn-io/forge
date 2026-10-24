@@ -242,8 +242,17 @@ func (s *Handlers) enqueuePRSyncOnHost(ctx context.Context, input *repoNumberHos
 	return s.EnqueuePRSync(ctx, &next)
 }
 
-func (s *Handlers) syncIssueOnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.SyncIssueOutput, error) {
-	next := itemapi.IssueRepoNumberInput(repoNumberFromHost(input))
+type syncIssueHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	IfChanged    bool   `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
+}
+
+func (s *Handlers) syncIssueOnHost(ctx context.Context, input *syncIssueHostInput) (*itemapi.SyncIssueOutput, error) {
+	next := itemapi.SyncIssueInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number, IfChanged: input.IfChanged}
 	return s.SyncIssue(ctx, &next)
 }
 

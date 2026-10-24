@@ -745,6 +745,74 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
+  it("polls with if_changed before reading the cache, even after a failed POST", async () => {
+    vi.useFakeTimers();
+    const fresh = issueDetail();
+    fresh.events = [
+      {
+        ID: 1,
+        IssueID: 7,
+        EventType: "issue_comment",
+        Author: "alice",
+        Body: "New comment from the provider",
+        CreatedAt: "2026-01-01T00:00:00Z",
+        DedupeKey: "comment:1",
+        DirectURL: "",
+        MetadataJSON: "",
+        PlatformExternalID: "1",
+        PlatformID: 1,
+        Summary: "",
+        ThreadID: null,
+      },
+    ];
+    const fallback = issueDetail();
+    fallback.events = [
+      {
+        ...fresh.events[0]!,
+        ID: 2,
+        DedupeKey: "comment:2",
+        PlatformExternalID: "2",
+        Body: "Later comment from the provider",
+      },
+    ];
+    const get = vi
+      .fn(async () => ({ data: fresh, error: undefined }))
+      .mockResolvedValueOnce({ data: issueDetail(), error: undefined });
+    const post = vi
+      .fn()
+      .mockResolvedValueOnce({ data: fresh, error: undefined })
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValueOnce({ data: fallback, error: undefined });
+    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    store.startIssueDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    for (let poll = 0; poll < 3; poll++) {
+      get.mockClear();
+      if (poll === 2) get.mockRejectedValueOnce(new Error("cache unavailable"));
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(post).toHaveBeenLastCalledWith(
+        "/issues/{provider}/{owner}/{name}/{number}/sync",
+        expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
+      );
+      expect(get).toHaveBeenCalledOnce();
+      expect(get).toHaveBeenCalledWith("/issues/{provider}/{owner}/{name}/{number}", expect.anything());
+      expect(post.mock.invocationCallOrder[poll]).toBeLessThan(get.mock.invocationCallOrder[0]!);
+      expect(store.getIssueDetail()?.events.map((event) => event.Body)).toEqual([
+        poll === 2 ? "Later comment from the provider" : "New comment from the provider",
+      ]);
+    }
+    store.stopIssueDetailPolling();
+  });
+
   it.each(["scheduled poll", "provider event"])(
     "skips a %s while an on-demand issue sync is pending",
     async (source) => {

@@ -745,7 +745,7 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
-  it("keeps reading the cache while a provider poll is pending and installs its response", async () => {
+  it("keeps reading the cache while a provider poll is pending and re-reads it when the poll lands", async () => {
     vi.useFakeTimers();
     const comment = (id: number, body: string): IssueDetail["events"][number] => ({
       ID: id,
@@ -763,9 +763,9 @@ describe("createIssuesStore", () => {
       ThreadID: null,
     });
     const first = issueDetail();
-    first.events = [comment(1, "New comment from the provider")];
+    first.events = [comment(1, "Older comment in the provider response")];
     const third = issueDetail();
-    third.events = [comment(2, "Later comment from the provider")];
+    third.events = [comment(5, "Comment in the provider fallback")];
     const firstResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     const thirdResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
     let cached = issueDetail();
@@ -804,22 +804,31 @@ describe("createIssuesStore", () => {
     expect(get).toHaveBeenCalledTimes(2);
     expect(bodies()).toEqual([]);
 
-    cached = first;
+    cached = issueDetail();
+    cached.events = [comment(2, "Newer comment from a background sync")];
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(bodies()).toEqual(["Newer comment from a background sync"]);
+
+    cached = issueDetail();
+    cached.events = [comment(2, "Newer comment from a background sync"), comment(3, "Comment committed by the poll")];
     firstResponse.resolve({ data: first, error: undefined });
     await vi.advanceTimersByTimeAsync(0);
-    expect(bodies()).toEqual(["New comment from the provider"]);
+    expect(get).toHaveBeenCalledTimes(4);
+    expect(bodies()).toEqual(["Newer comment from a background sync", "Comment committed by the poll"]);
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledTimes(2);
-    expect(get).toHaveBeenCalledTimes(3);
-    expect(bodies()).toEqual(["New comment from the provider"]);
+    expect(get).toHaveBeenCalledTimes(5);
 
     await vi.advanceTimersByTimeAsync(60_000);
     expect(post).toHaveBeenCalledTimes(3);
-    expect(get).toHaveBeenCalledTimes(4);
+    expect(get).toHaveBeenCalledTimes(6);
+    get.mockRejectedValueOnce(new Error("cache unavailable"));
     thirdResponse.resolve({ data: third, error: undefined });
     await vi.advanceTimersByTimeAsync(0);
-    expect(bodies()).toEqual(["Later comment from the provider"]);
+    expect(get).toHaveBeenCalledTimes(7);
+    expect(bodies()).toEqual(["Comment in the provider fallback"]);
     store.stopIssueDetailPolling();
   });
 
@@ -878,7 +887,8 @@ describe("createIssuesStore", () => {
       expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
       expect(get).toHaveBeenCalledTimes(1);
       await refresh();
-      expect(get).toHaveBeenCalledTimes(2);
+      // A scheduled poll also re-reads the cache when its provider response lands.
+      expect(get).toHaveBeenCalledTimes(source === "scheduled poll" ? 3 : 2);
       store.stopIssueDetailPolling();
     },
   );

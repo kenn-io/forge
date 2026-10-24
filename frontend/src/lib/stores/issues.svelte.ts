@@ -1052,8 +1052,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const pollingGeneration = ++issuePollingGeneration;
     // The provider request has no overall timeout, so it runs beside the local
     // cache read instead of ahead of it, one at a time, and ends with the poll fiber.
-    // The response takes its envelope tick when it lands: cache reads that started
-    // while it was pending would otherwise mark it stale and drop it.
+    // When it lands the cache is read again, which holds its commit and anything
+    // newer; the response body is only a fallback if that read fails.
     let providerPollInFlight = false;
     const providerPoll = (generation: number) =>
       executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
@@ -1069,15 +1069,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { signal },
             ),
       ).pipe(
-        Effect.flatMap((synced) =>
-          installIssueDetail(
-            ref,
-            { ...synced, events: synced.events ?? [] },
-            nextWorkspaceLifecycleTick(),
-            generation,
-            false,
-          ),
-        ),
+        Effect.flatMap((synced) => {
+          const envelopeTick = nextWorkspaceLifecycleTick();
+          return refreshIssueDetailProgram(ref, generation).pipe(
+            Effect.catch(() =>
+              installIssueDetail(ref, { ...synced, events: synced.events ?? [] }, envelopeTick, generation, false),
+            ),
+          );
+        }),
         Effect.catch(() => Effect.void),
         Effect.ensuring(
           Effect.sync(() => {

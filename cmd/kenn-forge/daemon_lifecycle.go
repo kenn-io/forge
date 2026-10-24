@@ -755,8 +755,8 @@ func (l *daemonLifecycle) stopLocked(
 		}
 		if errors.Is(err, daemonruntime.ErrStopTimeout) {
 			return nil, fmt.Errorf(
-				"%s: process %d did not exit after %s; the CLI will not force-kill an unconfirmed PID, inspect the process and terminate it manually: %w",
-				operation, record.PID, daemonStopTimeout, err,
+				"%s: process %d did not exit after %s; the CLI will not force-kill an unconfirmed PID, inspect the process and terminate it manually",
+				operation, record.PID, daemonStopTimeout,
 			)
 		}
 		return nil, fmt.Errorf("%s: stop process %d: %w", operation, record.PID, err)

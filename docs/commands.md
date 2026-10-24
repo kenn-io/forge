@@ -18,8 +18,6 @@ publishes its ready identity and safely reuses a compatible running process.
 Use `daemon restart` after changing startup configuration or replacing the
 binary.
 
-When a PID-namespace sandbox shares the config home with a live daemon outside the sandbox, `daemon stop` and `daemon restart` refuse and leave the daemon and its runtime record untouched; run lifecycle commands where the daemon runs.
-
 On Unix, stop sends SIGTERM once. If the daemon does not exit within 15 seconds,
 the command leaves it running and directs you to inspect and terminate it
 manually rather than risking a force-kill of a reused PID.

@@ -171,3 +171,7 @@ fixtures, or changing shell-script coverage.
 - Peer transport-failure fixtures must retain their listening address and abort
   the response; a closed listener's port may be reused by another test server
   (`internal/server/e2etest/fleet_snapshot_test.go::TestFleetOperationProxyPeerDispatchFailureE2E`).
+
+- Detached daemon fixtures must wait for process termination before removing their binaries;
+  Windows `Process.Kill` only requests termination
+  (`cmd/kenn-forge/lock_e2e_test.go::killDaemonRecords`).

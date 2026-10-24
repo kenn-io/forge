@@ -458,7 +458,7 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	attached.Close()
 	_, err = handler.getWorkspaceRuntime(ctx, &getWorkspaceRuntimeInput{ID: ws.ID, Viewing: true})
 	require.NoError(err)
-	assert.Nil(handler.syncIdle(ctx))
+	assert.Nil(handler.idle.Load())
 	noState("typing and page views with the setting off record nothing")
 
 	restart()
@@ -492,7 +492,12 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	require.NoError(runtime.Park(ctx, ws.ID, stopped.SessionKey))
 	require.True(runtime.StoppedMark(stopped.SessionKey))
 	handler.ApplyConfig(ConfigSnapshot{})
-	assert.Nil(handler.syncIdle(ctx))
+	// Config reload wakes the idle loop; wait for its complete handoff.
+	require.Eventually(func() bool {
+		_, parkedErr := os.Stat(parkedDir)
+		_, activityErr := os.Stat(activityFile)
+		return handler.idle.Load() == nil && os.IsNotExist(parkedErr) && os.IsNotExist(activityErr) && pending(stopped.SessionKey)
+	}, 5*time.Second, 10*time.Millisecond)
 	noState("turning the setting off removes idle state")
 	assert.True(pending(stopped.SessionKey), "a stopped agent goes back to recovery")
 }

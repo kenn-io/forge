@@ -108,7 +108,11 @@ func killDaemonRecords(store daemon.RuntimeStore) {
 			continue
 		}
 		if process, err := os.FindProcess(record.PID); err == nil {
-			_ = process.Kill()
+			if err := process.Kill(); err == nil {
+				// Windows termination is asynchronous; wait before removing the binary.
+				_, _ = process.Wait()
+			}
+			_ = process.Release()
 		}
 	}
 }

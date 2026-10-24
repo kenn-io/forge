@@ -443,12 +443,17 @@ func TestACPDoesNotRestoreAnAgentThatExited(t *testing.T) {
 	require.NoError(t, err)
 	agent, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
+	// Keep the attachment open until the exit-triggering command is acknowledged.
+	_, unsubscribe := agent.Subscribe()
+	defer unsubscribe()
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "exit"}))
+	unsubscribe()
 	select {
 	case <-exits:
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "ACP exit was not reported")
 	}
+	assert.Equal(t, 7, agent.ExitCode())
 	assert.True(t, manager.Exited(info.Key))
 	// The owner is fully gone, as when the reopen comes a moment later.
 	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
@@ -492,12 +497,17 @@ func exitedACPChat(t *testing.T, supervised bool) (*Manager, SessionInfo, ACPSta
 	require.NoError(t, err)
 	var state ACPState
 	require.NoError(t, json.Unmarshal(data, &state))
+	// Keep the attachment open until the exit-triggering command is acknowledged.
+	_, unsubscribe := agent.Subscribe()
+	defer unsubscribe()
 	require.NoError(t, agent.Command(prompt))
+	unsubscribe()
 	select {
 	case <-exits:
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "ACP exit was not reported")
 	}
+	require.Equal(t, 7, agent.ExitCode())
 	require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
 	return manager, info, state, dir
 }

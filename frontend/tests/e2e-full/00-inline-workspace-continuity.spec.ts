@@ -586,15 +586,8 @@ function sessionWebSockets(page: Page, workspaceId: string) {
 test.describe("inline workspace pane continuity", () => {
   test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  // Reset persisted pane layouts on every document load so navigation starts
-  // with the default workspace pane arrangement.
   test.beforeEach(async ({ page }) => {
     trackTerminalReadiness(page);
-    await page.addInitScript(() => {
-      for (const surface of ["prs", "issues", "activity"]) {
-        localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
-      }
-    });
   });
 
   test("a dock resize grows both split terminals and their PTY rows", async ({ page }) => {

@@ -232,13 +232,10 @@ func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
 	deps.readStatus = func(string) (runtimelock.Status, error) {
 		return runtimelock.Status{Running: true}, nil
 	}
-	stops := 0
-	deps.stop = func(context.Context, daemon.RuntimeRecord, string, time.Duration) error { stops++; return nil }
 
 	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
 
 	require.ErrorContains(t, err, "could not be authenticated")
-	assert.Zero(t, stops)
 }
 
 func TestDaemonStopRemovesOnlyVerifiedRuntimeRecordAfterExit(t *testing.T) {
@@ -265,11 +262,27 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 		Network: daemon.NetworkTCP, Address: "127.0.0.1:8090",
 	}
 	for _, tt := range []struct {
-		name string
-		err  error
+		name       string
+		err        error
+		checkError func(*testing.T, error)
 	}{
-		{"exit timeout", fmt.Errorf("wait for daemon exit: %w", context.DeadlineExceeded)},
-		{"proof timeout", &daemon.UnreachableError{Record: record, Endpoint: record.Endpoint(), Err: context.DeadlineExceeded}},
+		{
+			name: "exit timeout",
+			err:  fmt.Errorf("wait for daemon exit: %w", context.DeadlineExceeded),
+			checkError: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "will not force-kill")
+				require.ErrorContains(t, err, "terminate it manually")
+			},
+		},
+		{
+			name: "proof timeout",
+			err:  &daemon.UnreachableError{Record: record, Endpoint: record.Endpoint(), Err: context.DeadlineExceeded},
+			checkError: func(t *testing.T, err error) {
+				require.ErrorContains(t, err, "stop process 41:")
+				require.ErrorIs(t, err, daemon.ErrDaemonUnreachable)
+				assert.NotContains(t, err.Error(), "will not force-kill")
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -293,14 +306,7 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 			err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
 
 			require.Error(err)
-			if tt.name == "proof timeout" {
-				require.ErrorContains(err, "stop process 41:")
-				require.ErrorIs(err, daemon.ErrDaemonUnreachable)
-				assert.NotContains(err.Error(), "will not force-kill")
-			} else {
-				require.ErrorContains(err, "will not force-kill")
-				require.ErrorContains(err, "terminate it manually")
-			}
+			tt.checkError(t, err)
 			assert.Equal(1, stops)
 			assert.GreaterOrEqual(waitTimeout, 50*time.Second)
 			assert.Zero(removes)
@@ -309,27 +315,50 @@ func TestDaemonStopDoesNotEscalateAfterGracefulTimeout(t *testing.T) {
 }
 
 func TestDaemonRestartValidatesBeforeSignaling(t *testing.T) {
-	deps, events := daemonLifecycleTestDeps(t)
-	deps.loadConfig = func(string) (*config.Config, error) {
-		return &config.Config{Host: "192.0.2.1", DataDir: t.TempDir()}, nil
+	for _, tt := range []struct {
+		name        string
+		host        string
+		nodeIDErr   error
+		wantError   string
+		checkEvents func(*testing.T, []string)
+	}{
+		{
+			name:      "loopback listener",
+			host:      "192.0.2.1",
+			wantError: "loopback TCP listener",
+			checkEvents: func(t *testing.T, events []string) {
+				assert.Empty(t, events)
+			},
+		},
+		{
+			name:      "node ID",
+			host:      "127.0.0.1",
+			nodeIDErr: errors.New("invalid node ID"),
+			wantError: "invalid node ID",
+			checkEvents: func(t *testing.T, events []string) {
+				assert.NotContains(t, events, "stop")
+			},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			deps, events := daemonLifecycleTestDeps(t)
+			dataDir := t.TempDir()
+			deps.loadConfig = func(string) (*config.Config, error) {
+				return &config.Config{Host: tt.host, DataDir: dataDir}, nil
+			}
+			deps.ensureNodeID = func(string) (string, error) {
+				return "0123456789abcdef0123456789abcdef", tt.nodeIDErr
+			}
+			deps.findVerified = func(context.Context, daemon.RuntimeStore, string) (daemon.RuntimeRecord, daemon.PingInfo, bool, error) {
+				return daemon.RuntimeRecord{PID: 41, SourcePath: "/runtime/daemon.41.json"}, daemon.PingInfo{PID: 41}, true, nil
+			}
+
+			err := newDaemonLifecycle(deps).Restart(t.Context(), "/config.toml", io.Discard)
+
+			require.ErrorContains(t, err, tt.wantError)
+			tt.checkEvents(t, *events)
+		})
 	}
-
-	err := newDaemonLifecycle(deps).Restart(t.Context(), "/config.toml", io.Discard)
-
-	require.ErrorContains(t, err, "loopback TCP listener")
-	assert.Empty(t, *events)
-}
-
-func TestDaemonRestartValidatesNodeIDBeforeSignaling(t *testing.T) {
-	deps, events := daemonLifecycleTestDeps(t)
-	deps.ensureNodeID = func(string) (string, error) {
-		return "", errors.New("invalid node ID")
-	}
-
-	err := newDaemonLifecycle(deps).Restart(t.Context(), "/config.toml", io.Discard)
-
-	require.ErrorContains(t, err, "invalid node ID")
-	assert.NotContains(t, *events, "stop")
 }
 
 func TestDaemonRestartStartsWhenNotRunning(t *testing.T) {

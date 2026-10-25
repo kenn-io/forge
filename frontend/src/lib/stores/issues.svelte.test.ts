@@ -851,6 +851,94 @@ describe("createIssuesStore", () => {
     store.stopIssueDetailPolling();
   });
 
+  it("refreshes lists only when a provider poll brings in a change", async () => {
+    vi.useFakeTimers();
+    let cached = issueDetail();
+    cached.issue.UpdatedAt = "2026-01-01T00:00:00Z";
+    const onDetailSynchronized = vi.fn();
+    const post = vi.fn(async () => ({ data: cached, error: undefined }));
+    const store = createIssuesStore({
+      client: mockClient({ GET: vi.fn(async () => ({ data: cached, error: undefined })), POST: post }),
+      onDetailSynchronized,
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    onDetailSynchronized.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(onDetailSynchronized).not.toHaveBeenCalled();
+
+    cached = issueDetail();
+    cached.issue.UpdatedAt = "2026-01-01T00:01:00Z";
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    store.stopIssueDetailPolling();
+  });
+
+  it("does not send provider polls for issues outside GitHub", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.repo.provider = "gitlab";
+    cached.repo.platform_host = "gitlab.com";
+    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const post = vi.fn();
+    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    const ref = { provider: "gitlab", platformHost: "gitlab.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    get.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(get).toHaveBeenCalledOnce();
+    expect(post).not.toHaveBeenCalled();
+    store.stopIssueDetailPolling();
+  });
+
+  it("keeps the comment deletion sync when a provider poll lands during it", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    cached.events = [
+      { ID: 42, PlatformID: 42, EventType: "issue_comment", Body: "to delete" },
+    ] as IssueDetail["events"];
+    const fresh = issueDetail();
+    fresh.issue.Title = "Fresh issue detail";
+    const pollResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const post = vi.fn((_path: string, options: { params: { query?: { if_changed?: boolean } } }) =>
+      options.params.query?.if_changed ? pollResponse.promise : syncResponse.promise,
+    );
+    const store = createIssuesStore({
+      client: mockClient({
+        GET: vi.fn(async () => ({ data: cached, error: undefined })),
+        POST: post,
+        DELETE: vi.fn(async () => ({ data: undefined, error: undefined })),
+      }),
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+
+    const settled = Promise.withResolvers<void>();
+    store.deleteIssueComment("acme", "widget", 7, 42, { onSettled: settled.resolve });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    pollResponse.resolve({ data: cached, error: undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    syncResponse.resolve({ data: fresh, error: undefined });
+    await settled.promise;
+    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(false));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
+    expect(getFlash()).toBeNull();
+    store.stopIssueDetailPolling();
+  });
+
   it.each(["scheduled poll", "provider event"])(
     "skips a %s while an on-demand issue sync is pending",
     async (source) => {

@@ -1053,9 +1053,22 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     // The provider request has no overall timeout, so it runs beside the local
     // cache read instead of ahead of it, one at a time, and ends with the poll fiber.
     // When it lands the cache is read again, which holds its commit and anything
-    // newer, so the response body itself is never installed.
+    // newer, so the response body itself is never installed. Only GitHub
+    // checks the provider; other providers would return the local copy.
     let providerPollInFlight = false;
-    const providerPoll = (generation: number) =>
+    const checksProvider = canonicalProvider(ref.provider) === "github";
+    // GitHub bumps UpdatedAt on any issue or comment change, so these
+    // fields tell a poll that wrote something from one that found nothing.
+    const listFields = () =>
+      issueDetail === null
+        ? ""
+        : JSON.stringify([
+            issueDetail.issue.UpdatedAt,
+            issueDetail.issue.LastActivityAt,
+            issueDetail.issue.CommentCount,
+            issueDetail.events.map((event) => event.ID),
+          ]);
+    const providerPoll = (generation: number, before: string) =>
       executeGeneratedApiRequest("POST issue detail poll", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost(
@@ -1069,8 +1082,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { signal },
             ),
       ).pipe(
-        Effect.flatMap(() => refreshIssueDetailProgram(ref, generation)),
-        Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
+        // A user-started sync installs its own response and refreshes the
+        // lists; a re-read started after it would make that response stale.
+        Effect.flatMap(() =>
+          detailSyncing ? Effect.succeed({ applied: false }) : refreshIssueDetailProgram(ref, generation),
+        ),
+        Effect.tap((result) =>
+          Effect.sync(() => {
+            if (result.applied && listFields() !== before) reconcileListsAfterDetailSync();
+          }),
+        ),
         Effect.catch(() => Effect.void),
         Effect.ensuring(
           Effect.sync(() => {
@@ -1081,9 +1102,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const pollOnce = Effect.gen(function* () {
       if (detailSyncing || opts.getAirplaneMode?.()) return;
       const generation = issueSyncGeneration;
-      if (!providerPollInFlight) {
+      if (checksProvider && !providerPollInFlight) {
         providerPollInFlight = true;
-        yield* Effect.forkChild(providerPoll(generation), { startImmediately: true });
+        yield* Effect.forkChild(providerPoll(generation, listFields()), { startImmediately: true });
       }
       yield* refreshIssueDetailProgram(ref, generation);
     }).pipe(Effect.catch(() => Effect.void));

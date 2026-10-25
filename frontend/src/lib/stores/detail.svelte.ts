@@ -676,7 +676,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
-          if (applied && ref.repositoryKey === undefined) observePullRepository(ref, authoritative);
+          if (applied) observePullRepository(ref, authoritative);
           return applied;
         }),
         rebaseEntries,

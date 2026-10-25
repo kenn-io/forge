@@ -785,7 +785,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && issueDetailEnvelopeTick >= issueDetailCacheTick) issueDetailCacheTick = 0;
-          if (applied && ref.repositoryKey === undefined) observeIssueRepository(ref, authoritative);
+          if (applied) observeIssueRepository(ref, authoritative);
           return applied;
         }),
         entries,

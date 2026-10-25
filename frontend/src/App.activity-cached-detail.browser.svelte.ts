@@ -137,7 +137,7 @@ it.each([
   { itemType: "pr", number: 42, title: "Add browser regression coverage", removeRow: true },
   { itemType: "issue", number: 7, title: "Theme toggle does not stick", removeRow: true },
 ])(
-  "keeps a cached $itemType readable when returning while the backend is slow (removed row: $removeRow)",
+  "keeps a cached $itemType outside the catalog readable on a slow return (removed row: $removeRow)",
   async ({ itemType, number, title, removeRow }) => {
     const repo = {
       provider: "github",
@@ -151,6 +151,7 @@ it.each([
     mounted = await mountBrowserApp("/?view=threaded&collapsed=1", {
       overrides: [
         ({ url }) => {
+          if (url.pathname === "/api/v1/repos") return jsonResponse([]);
           if (url.pathname === "/api/v1/settings")
             return jsonResponse({
               ...mockSettings,

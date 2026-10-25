@@ -78,7 +78,7 @@ Interactive surfaces must agree on which item is selected.
 - URL selections prefer verified detail observations; conflicting row and catalog identities leave the route unbound until a fresh detail response establishes identity.
   Configured pins must not identify a route's new occupant
   (`frontend/src/lib/stores/repository-catalog.svelte.ts::createRepositoryCatalog`).
-- Accepted route-matching details establish unknown URL identity even outside the tracked catalog; later catalog omissions must retain it
+- Every accepted route-matching detail retains verified identity, including keyed selections outside the catalog; later URL restoration must not depend on visible rows
   (`frontend/src/lib/api/repository-reads.ts::RepositoryReadsLive`).
 - Learning a repository ID from accepted details must preserve freshness without another foreground read
   (`frontend/src/lib/components/detail/PullDetail.svelte::lastDetailLoadRepositoryKey`).

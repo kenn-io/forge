@@ -120,4 +120,4 @@ only routes to them.
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Run tests before committing when applicable
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)
-- Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
+- Before pushing any frontend change, you must have run the tests covering the changed files locally after the final frontend/test edit (`../node_modules/.bin/vp test run <files>` from `frontend/`), plus the affected Playwright specs whenever the change touches them or the shared mock fixtures they rely on; type checks and CI-only verification are not enough. CI runs the full suites.

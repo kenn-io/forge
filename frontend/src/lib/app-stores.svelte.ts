@@ -182,6 +182,13 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       }),
   });
 
+  function refreshIndependently(refreshes: Array<Effect.Effect<unknown, ProviderEventsError, AppServices>>) {
+    // Report a failed refresh after the other projections finish.
+    return Effect.validate(refreshes, (refresh) => refresh, { concurrency: "unbounded", discard: true }).pipe(
+      Effect.mapError(([failure]) => failure),
+    );
+  }
+
   function handleConfigChanged(event: { valid: boolean }) {
     if (!event.valid) return Effect.void;
     return Effect.gen(function* () {
@@ -203,9 +210,12 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           acpHydration,
         );
       });
-      yield* Effect.all([refreshRepositoryCatalog, refreshVisibleData()], { concurrency: "unbounded", discard: true });
-      yield* workspaceItemSearch.refreshEffect;
-      yield* refreshWorklistSummaries();
+      yield* refreshIndependently([
+        refreshRepositoryCatalog,
+        refreshVisibleData(),
+        workspaceItemSearch.refreshEffect,
+        refreshWorklistSummaries(),
+      ]);
     });
   }
 
@@ -279,18 +289,15 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   }
 
   function reconcileProviderState() {
-    return Effect.all(
-      [
-        refreshRepositoryCatalog,
-        refreshVisibleData(),
-        refreshRetainedActivity(),
-        issuesStore.refreshActiveIssueDetailEffect(),
-        syncStore.reconcileSyncStatusEffect,
-        workspaceItemSearch.refreshEffect,
-        refreshWorklistSummaries(),
-      ],
-      { concurrency: "unbounded", discard: true },
-    );
+    return refreshIndependently([
+      refreshRepositoryCatalog,
+      refreshVisibleData(),
+      refreshRetainedActivity(),
+      issuesStore.refreshActiveIssueDetailEffect(),
+      syncStore.reconcileSyncStatusEffect,
+      workspaceItemSearch.refreshEffect,
+      refreshWorklistSummaries(),
+    ]);
   }
 
   function reconcileProviderStateAfterHubConnection() {
@@ -314,20 +321,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }),
     onDataChanged: () =>
       observeHubFailure(
-        Effect.all(
-          [
-            refreshRepositoryCatalog,
-            refreshVisibleData(),
-            refreshRetainedActivity(),
-            issuesStore.refreshActiveIssueDetailEffect(),
-            workspaceItemSearch.refreshEffect,
-            refreshWorklistSummaries(),
-          ],
-          {
-            concurrency: "unbounded",
-            discard: true,
-          },
-        ),
+        refreshIndependently([
+          refreshRepositoryCatalog,
+          refreshVisibleData(),
+          refreshRetainedActivity(),
+          issuesStore.refreshActiveIssueDetailEffect(),
+          workspaceItemSearch.refreshEffect,
+          refreshWorklistSummaries(),
+        ]),
       ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,

@@ -68,6 +68,36 @@ test("keeps the detail pane and rows usable when notes and the recipe are long",
   await expect(rail.getByRole("button", { name: "Theme toggle does not stick" })).toBeInViewport();
 });
 
+test("collapses the context strip to one line so the detail gets the room", async ({ page }) => {
+  await page.setViewportSize({ width: 900, height: 600 });
+  const list = worklistResponse(5, "Review queue");
+  list.items[0] = {
+    ...list.items[0]!,
+    note: "Approved and green, but the docs nit needs a reply before anyone merges this change.",
+    caveat: "Check the final caveat before merging. ".repeat(12),
+  };
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/worklists/5");
+  const strip = page.getByRole("region", { name: "Worklist item context" });
+  await expect(strip.getByRole("region", { name: "Item notes" })).toBeVisible();
+  const expandedHeight = (await strip.boundingBox())!.height;
+
+  await strip.getByRole("button", { name: "Item notes" }).click();
+
+  await expect(strip.getByRole("region", { name: "Item notes" })).toHaveCount(0);
+  const summary = strip.getByText("Approved and green, but the docs nit", { exact: false });
+  await expect(summary).toBeVisible();
+  expect(await summary.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  const collapsedHeight = (await strip.boundingBox())!.height;
+  expect(collapsedHeight).toBeLessThan(48);
+  expect(collapsedHeight).toBeLessThan(expandedHeight / 2);
+  await expect(strip.getByRole("button", { name: "Mark handled" })).toBeInViewport({ ratio: 1 });
+  await expect(strip.getByRole("button", { name: "Close worklist item" })).toBeInViewport({ ratio: 1 });
+});
+
 async function openWithKennLinks(page: Page, link: string): Promise<void> {
   await page.setViewportSize({ width: 1400, height: 700 });
   await page.addInitScript(() => {

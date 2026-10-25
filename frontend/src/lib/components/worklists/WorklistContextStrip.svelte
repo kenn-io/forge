@@ -1,10 +1,12 @@
 <script lang="ts">
   import { Chip, formatRelativeTime, IconButton } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
+  import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
+  import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import XIcon from "@lucide/svelte/icons/x";
   import type { WorklistItem } from "../../api/worklists.js";
   import WorklistCaveatIcon from "./WorklistCaveatIcon.svelte";
-  import { worklistChangeMarkers } from "./worklist-items.js";
+  import { readWorklistNotesCollapsed, worklistChangeMarkers, writeWorklistNotesCollapsed } from "./worklist-items.js";
 
   interface Props {
     item: WorklistItem;
@@ -15,12 +17,30 @@
 
   let { item, createdBy, onToggleHandled, onClose }: Props = $props();
 
+  const bodyId = $props.id();
   const markers = $derived(worklistChangeMarkers(item));
   const handled = $derived(item.handled_at !== null);
+  // One preference for every item, so stepping through a list keeps the strip short.
+  let collapsed = $state(readWorklistNotesCollapsed());
+
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    writeWorklistNotesCollapsed(collapsed);
+  }
 </script>
 
-<section class="worklist-context" aria-label="Worklist item context">
+<section class={["worklist-context", { "worklist-context--collapsed": collapsed }]} aria-label="Worklist item context">
   <div class="worklist-context-head">
+    <IconButton
+      size="sm"
+      ariaLabel="Item notes"
+      title={collapsed ? "Show item notes" : "Hide item notes"}
+      ariaExpanded={!collapsed}
+      ariaControls={bodyId}
+      onclick={toggleCollapsed}
+    >
+      {#if collapsed}<ChevronRightIcon size={14} aria-hidden="true" />{:else}<ChevronDownIcon size={14} aria-hidden="true" />{/if}
+    </IconButton>
     {#if item.score !== null}
       <Chip size="sm" tone="neutral" uppercase={false}>Score {item.score}</Chip>
     {/if}
@@ -28,6 +48,9 @@
       <Chip size="sm" tone="muted" uppercase={false}>{item.section}</Chip>
     {/if}
     <span class="worklist-context-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+    {#if collapsed && item.note}
+      <span class="worklist-context-summary" title={item.note}>{item.note}</span>
+    {/if}
     <button
       type="button"
       class={["worklist-context-handled", { "worklist-context-handled--on": handled }]}
@@ -41,32 +64,34 @@
       <XIcon size={14} aria-hidden="true" />
     </IconButton>
   </div>
-  <!-- Long notes scroll inside the strip so the detail pane keeps its room. -->
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-  <div class="worklist-context-body" role="region" aria-label="Item notes" tabindex="0">
-    {#if item.note}
-      <p class="worklist-context-note">{item.note}</p>
-    {/if}
-    {#if item.changes.new_commits}
-      <p class="worklist-context-aside">Review notes may cover an older head</p>
-    {/if}
-    {#if item.caveat}
-      <p class="worklist-context-caveat"><WorklistCaveatIcon level={item.caveat_level} size={12} />{item.caveat}</p>
-    {/if}
-    <div class="worklist-context-divider">
-      <span>{createdBy.trim() || "An agent"} wrote this item {formatRelativeTime(item.written_at)}</span>
+  {#if !collapsed}
+    <!-- Long notes scroll inside the strip so the detail pane keeps its room. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div class="worklist-context-body" id={bodyId} role="region" aria-label="Item notes" tabindex="0">
+      {#if item.note}
+        <p class="worklist-context-note">{item.note}</p>
+      {/if}
+      {#if item.changes.new_commits}
+        <p class="worklist-context-aside">Review notes may cover an older head</p>
+      {/if}
+      {#if item.caveat}
+        <p class="worklist-context-caveat"><WorklistCaveatIcon level={item.caveat_level} size={12} />{item.caveat}</p>
+      {/if}
+      <div class="worklist-context-divider">
+        <span>{createdBy.trim() || "An agent"} wrote this item {formatRelativeTime(item.written_at)}</span>
+      </div>
+      {#if markers.length > 0}
+        <ul class="worklist-context-events" aria-label="Changes since">
+          {#each markers as marker (marker.label)}
+            <li>
+              <Chip size="xs" tone="info" uppercase={false}>New</Chip>
+              <span>{marker.label}</span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
-    {#if markers.length > 0}
-      <ul class="worklist-context-events" aria-label="Changes since">
-        {#each markers as marker (marker.label)}
-          <li>
-            <Chip size="xs" tone="info" uppercase={false}>New</Chip>
-            <span>{marker.label}</span>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </div>
+  {/if}
 </section>
 
 <style>
@@ -83,6 +108,10 @@
     font-size: var(--font-size-sm);
   }
 
+  .worklist-context--collapsed {
+    padding-block: var(--space-2);
+  }
+
   .worklist-context-head {
     flex-shrink: 0;
     display: flex;
@@ -92,7 +121,7 @@
   }
 
   .worklist-context-ref {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--text-muted);
@@ -102,9 +131,19 @@
     white-space: nowrap;
   }
 
+  .worklist-context-summary {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .worklist-context-handled {
     display: inline-flex;
     flex-shrink: 0;
+    margin-left: auto;
     align-items: center;
     gap: var(--space-2);
     padding: var(--space-1) var(--space-3);

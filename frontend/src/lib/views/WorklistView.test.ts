@@ -350,6 +350,37 @@ describe("WorklistView", () => {
     expect(within(strip).getByText("3 new comments")).toBeTruthy();
   });
 
+  it("collapses the item notes for every item and keeps the choice across reloads", async () => {
+    renderView("/worklists/5", server);
+    expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
+    const strip = () => screen.getByRole("region", { name: "Worklist item context" });
+    const toggle = () => within(strip()).getByRole("button", { name: "Item notes" });
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.click(toggle());
+
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(within(strip()).queryByRole("region", { name: "Item notes" })).toBeNull();
+    expect(within(strip()).queryByText(/wrote this item/)).toBeNull();
+    expect(within(strip()).getByText("Approved and green; only a docs nit left.")).toBeTruthy();
+    expect(within(strip()).getByRole("button", { name: "Mark handled" })).toBeTruthy();
+
+    await fireEvent.click(row("Theme toggle does not stick"));
+    await waitFor(() => expect(within(strip()).getByText("Reporter confirmed on two browsers.")).toBeTruthy());
+    expect(within(strip()).queryByText("Could be a duplicate of an older report.")).toBeNull();
+
+    cleanup();
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(within(strip()).getByText("Reporter confirmed on two browsers.")).toBeTruthy());
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.click(toggle());
+
+    const notes = within(strip()).getByRole("region", { name: "Item notes" });
+    expect(toggle().getAttribute("aria-controls")).toBe(notes.id);
+    expect(within(notes).getByText("Could be a duplicate of an older report.")).toBeTruthy();
+  });
+
   it("loads the detail from the repository's current route when the link names its old one", async () => {
     renderView(
       "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fold-name&platform_repo_id=1001",

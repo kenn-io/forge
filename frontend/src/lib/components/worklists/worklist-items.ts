@@ -157,6 +157,26 @@ export function writeWorklistOrder(order: WorklistOrder): void {
   }
 }
 
+const NOTES_COLLAPSED_STORAGE_KEY = "kenn-forge:worklists:notes-collapsed";
+
+/** Whether the open item's context strip shows only its header line. */
+export function readWorklistNotesCollapsed(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(NOTES_COLLAPSED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeWorklistNotesCollapsed(collapsed: boolean): void {
+  try {
+    if (collapsed) globalThis.localStorage?.setItem(NOTES_COLLAPSED_STORAGE_KEY, "1");
+    else globalThis.localStorage?.removeItem(NOTES_COLLAPSED_STORAGE_KEY);
+  } catch {
+    // localStorage can be unavailable in restricted browser contexts.
+  }
+}
+
 /** Highest score first, ties by agent rank, unscored items last. */
 export function worklistItemsByScore(items: readonly WorklistItem[]): WorklistItem[] {
   return [...items].sort((a, b) => {

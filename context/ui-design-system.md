@@ -26,9 +26,12 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
 - Keep the quiet dark canvas and content surfaces dark enough for comfortable
   reading. Inset, hover, and border tokens step up in small, even increments so
   tab strips, group headers, chips, and hovered rows read as structure, never as
-  bright gray fills. The quiet light palette mirrors this with dimmed,
-  nearly neutral silver-gray chrome and reading surface and soft warm-black
-  ink (about 10:1, never near-black on white, a blue cast, or a yellow cast); diff code text
+  bright gray fills. The quiet light palette mirrors this with an off-white
+  reading surface on a light warm-gray chrome canvas, so panes separate
+  without glare, and soft warm-black ink (about 13:1; never pure white,
+  near-black on white, dimmed mid-gray surfaces, a blue cast, or a yellow
+  cast). Muted text steps visibly below body ink, and accents are the
+  brightest shades that stay AA rather than darkened toward black; diff code text
   follows `--text-primary` rather than the Pierre theme's own foreground
   (`frontend/src/lib/components/diff/PierreFileDiff.svelte`). Muted text and
   accent text must stay AA on every step and, for accents, on their own
@@ -36,7 +39,7 @@ Use this document as the intent-level guide for frontend UI work in `kenn-forge`
   surface and hover in both themes. The light contrast and both row orders are
   checked in `frontend/tests/e2e-full/sidebar-scroll-indicator.spec.ts`.
   Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
-- Workspace terminals follow the app theme: a silver-gray xterm theme in light mode
+- Workspace terminals follow the app theme: an off-white xterm theme in light mode
   and the dark theme in dark mode, with `--terminal-bg` matching each. Light
   ANSI text hues clear 4.5:1 on the light page, and the 4.5 contrast floor
   darkens colors a TUI chose for a dark background

@@ -12,7 +12,9 @@ isolated test tmux command; they must never fall back to the host tmux server
 Persistent-config server fixtures start the real config watcher. When a request
 saves config, provider fakes must resolve the post-save repository set and tests
 must await the config event before asserting converged state
-(`internal/server/settings_test.go::setupTestServerWithConfigContent`).
+(`internal/server/settings_test.go::setupTestServerWithConfigContent`). After
+such a save, read `srv.cfg` only under `cfgMu`; the watcher may be replacing it
+(`internal/server/settings_test.go::TestHandleUpdateSettingsPersistsModes`).
 
 ## Live GraphQL validation
 

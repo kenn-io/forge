@@ -373,7 +373,11 @@ func TestHandleUpdateSettingsPersistsModes(t *testing.T) {
 	assert.True(*cfg2.Modes.Pulls)
 	assert.True(*cfg2.Modes.Issues)
 
+	// The PUT above rewrote the config file, so the config watcher may be
+	// replacing srv.cfg concurrently.
+	srv.cfgMu.Lock()
 	activity := srv.cfg.Activity
+	srv.cfgMu.Unlock()
 	activity.TimeRange = "30d"
 	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		Activity: &activity,

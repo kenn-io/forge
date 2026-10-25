@@ -198,9 +198,6 @@ server cannot produce the state. Use `frontend/src/test/mockApiFetch.ts` rather
 than forking the Playwright fixture, and do not assert backend-computed values
 through hand-written frontend data.
 
-- Keep catalog, list, and detail repository IDs consistent unless testing an identity conflict;
-  route-reuse fixtures must move every matching projection together
-  (`frontend/src/test/mockApiFetch.ts::repoRef`).
 - Drain asynchronous Playwright route handlers before page teardown; background refreshes
   can outlive passing assertions. Use `unrouteAll({ behavior: "wait" })` to retain callback errors
   (`frontend/tests/e2e-full/mobile-routes.spec.ts:11`).

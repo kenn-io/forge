@@ -96,7 +96,6 @@ function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_ho
   return {
     provider: "github",
     platform_host: item.platform_host,
-    platform_repo_id: 1001,
     owner: item.repo_owner,
     name: item.repo_name,
     repo_path: `${item.repo_owner}/${item.repo_name}`,

@@ -243,9 +243,8 @@ This uses Chromium's network emulation at 1 Mbps with a repeatable sequence of
 before each navigation, including for requests already in flight. It is a
 controlled stress profile, not a measured distribution from an airline.
 
-The built app returns through Workspaces to a remembered Activity PR or issue,
-and revisits a PR outside the open list after viewing another PR. It checks the
-remembered title, available description, editable draft, and retained merge
+The built app returns through Workspaces to a remembered Activity PR or issue.
+It checks the remembered title, description, editable draft, and retained merge
 controls. Draft text must survive every return. Most returns overlap unfinished
 refreshes; one 4-second tail stays active through successful detail revalidation.
 Merge controls can remain disabled until their fresh settings arrive.

@@ -53,7 +53,7 @@ const capable = {
 
 const workflowOperation = { available: true };
 
-const repoIds: Record<string, number> = { widgets: 1001, legacy: 1020 };
+const repoIds: Record<string, number> = { widgets: 1005, legacy: 1020 };
 
 function summary(name: string, supportsActions: boolean) {
   return {

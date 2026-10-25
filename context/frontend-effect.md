@@ -83,9 +83,6 @@ service is the supported tool here.
 - Repeated reads of the same PR or issue list query share the pending request;
   only a changed query replaces it, so polling cannot starve a slow response
   (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
-- Independent provider/configuration refreshes finish before reporting errors;
-  a failed repository catalog read must not cancel healthy list or detail reads
-  (`frontend/src/lib/app-stores.svelte.ts::refreshIndependently`).
 - Fleet snapshot consumers share pending reads within the app runtime; completed results do not suppress later refreshes,
   and releasing one consumer does not cancel another (`frontend/src/lib/api/fleet-snapshot.ts::FleetSnapshotReadsLive`).
 - Navigation retains successful previews for explicit commit/range scopes;

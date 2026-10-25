@@ -244,7 +244,6 @@ beforeEach(() => {
   runtime = makeTestAppRuntime(
     makeGeneratedClient({
       SettingsService: { getSettings: getSettings as never },
-      RepositoriesService: { listRepos: async () => [] },
       PullRequestsService: { listPulls: async () => [] },
       IssuesService: { listIssues: async () => [] },
     }),

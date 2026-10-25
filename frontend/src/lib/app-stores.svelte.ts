@@ -1,5 +1,4 @@
 import { Effect } from "effect";
-import { refreshRepositoryCatalog } from "./api/repository-reads.js";
 import { pollWhileVisible } from "./effect/poll-while-visible.js";
 import { ApiProblemError } from "./api/effect-errors.js";
 import { createRoborevClient } from "./api/roborev/client.js";
@@ -182,13 +181,6 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
       }),
   });
 
-  function refreshIndependently(refreshes: Array<Effect.Effect<unknown, ProviderEventsError, AppServices>>) {
-    // Report a failed refresh after the other projections finish.
-    return Effect.validate(refreshes, (refresh) => refresh, { concurrency: "unbounded", discard: true }).pipe(
-      Effect.mapError(([failure]) => failure),
-    );
-  }
-
   function handleConfigChanged(event: { valid: boolean }) {
     if (!event.valid) return Effect.void;
     return Effect.gen(function* () {
@@ -210,12 +202,9 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           acpHydration,
         );
       });
-      yield* refreshIndependently([
-        refreshRepositoryCatalog,
-        refreshVisibleData(),
-        workspaceItemSearch.refreshEffect,
-        refreshWorklistSummaries(),
-      ]);
+      yield* refreshVisibleData();
+      yield* workspaceItemSearch.refreshEffect;
+      yield* refreshWorklistSummaries();
     });
   }
 
@@ -289,15 +278,17 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   }
 
   function reconcileProviderState() {
-    return refreshIndependently([
-      refreshRepositoryCatalog,
-      refreshVisibleData(),
-      refreshRetainedActivity(),
-      issuesStore.refreshActiveIssueDetailEffect(),
-      syncStore.reconcileSyncStatusEffect,
-      workspaceItemSearch.refreshEffect,
-      refreshWorklistSummaries(),
-    ]);
+    return Effect.all(
+      [
+        refreshVisibleData(),
+        refreshRetainedActivity(),
+        issuesStore.refreshActiveIssueDetailEffect(),
+        syncStore.reconcileSyncStatusEffect,
+        workspaceItemSearch.refreshEffect,
+        refreshWorklistSummaries(),
+      ],
+      { concurrency: "unbounded", discard: true },
+    );
   }
 
   function reconcileProviderStateAfterHubConnection() {
@@ -321,14 +312,19 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }),
     onDataChanged: () =>
       observeHubFailure(
-        refreshIndependently([
-          refreshRepositoryCatalog,
-          refreshVisibleData(),
-          refreshRetainedActivity(),
-          issuesStore.refreshActiveIssueDetailEffect(),
-          workspaceItemSearch.refreshEffect,
-          refreshWorklistSummaries(),
-        ]),
+        Effect.all(
+          [
+            refreshVisibleData(),
+            refreshRetainedActivity(),
+            issuesStore.refreshActiveIssueDetailEffect(),
+            workspaceItemSearch.refreshEffect,
+            refreshWorklistSummaries(),
+          ],
+          {
+            concurrency: "unbounded",
+            discard: true,
+          },
+        ),
       ),
     onWorkspaceStatus: () =>
       settingsStore.getWorkspaceSettings().show_agent_status_in_lists ? refreshVisibleData(false) : Effect.void,

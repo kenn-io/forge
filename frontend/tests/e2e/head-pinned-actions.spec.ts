@@ -109,7 +109,7 @@ function unboundDetailEnvelope(platformHeadSha: string, reviewedHeadSha = platfo
     repo: {
       provider: "github",
       platform_host: "github.com",
-      platform_repo_id: 1001,
+      platform_repo_id: 4242,
       repo_path: "acme/widgets",
       owner: "acme",
       name: "widgets",

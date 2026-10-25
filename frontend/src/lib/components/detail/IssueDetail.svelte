@@ -311,12 +311,6 @@
     const requestRepoPath = repoPath;
     const requestAutoSync = autoSync;
     const requestIdentity = $state.snapshot(itemIdentity);
-    // Learning the ID from this accepted response does not require another read.
-    if (lastDetailLoadRepositoryKey === undefined && requestRepositoryKey !== undefined
-      && untrack(() => !staleIssue
-        && sameRepositoryKey(requestRepositoryKey, repositoryKeyFromWire(issues.getIssueDetail()?.repo)))) {
-      lastDetailLoadRepositoryKey = requestRepositoryKey;
-    }
     const shouldLoad =
       lastDetailLoadIdentity === null
       || !identityEquals(lastDetailLoadIdentity, requestIdentity)

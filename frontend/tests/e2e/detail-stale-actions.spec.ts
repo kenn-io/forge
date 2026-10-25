@@ -77,7 +77,7 @@ const providerCapabilities = {
   workflow_approval: true,
 };
 
-const repoIds: Record<string, number> = { widgets: 1001, "squash-only": 1022 };
+const repoIds: Record<string, number> = { widgets: 1018, "squash-only": 1022 };
 
 function repoEnvelope(item: { repo_owner: string; repo_name: string; platform_host: string }) {
   return {
@@ -608,10 +608,7 @@ test.describe("detail load-error banner", () => {
                 });
               } else {
                 const detail = JSON.parse(entry.body);
-                if (refreshResult === "replacement") {
-                  detail.repo.platform_repo_id = 1103;
-                  (detail.merge_request ?? detail.issue).Body = "Fresh replacement repository discussion.";
-                }
+                if (refreshResult === "replacement") detail.repo.platform_repo_id = 1103;
                 await route.fulfill({ contentType: "application/json", body: JSON.stringify(detail) });
               }
             } else {
@@ -648,15 +645,14 @@ test.describe("detail load-error banner", () => {
           refresh.resolve();
         }
         const refreshButton = page.getByRole("button", { name: "Refresh detail", exact: true });
-        if (refreshResult === "failed") {
-          await expect(page.getByTestId("detail-load-error")).toBeVisible();
+        if (refreshResult === "matching") {
+          await expect(page.locator(".btn--close").first()).toBeEnabled();
+        } else {
+          if (refreshResult === "failed") {
+            await expect(page.getByTestId("detail-load-error")).toBeVisible();
+          }
           await expect(refreshButton).toBeEnabled();
           await expect(page.locator(".btn--close:enabled")).toHaveCount(0);
-        } else {
-          if (refreshResult === "replacement") {
-            await expect(page.getByText("Fresh replacement repository discussion.", { exact: true })).toBeVisible();
-          }
-          await expect(page.locator(".btn--close").first()).toBeEnabled();
         }
         await expect(page.locator(".detail-title")).toContainText(item.first.title);
         if (refreshResult === "failed") {

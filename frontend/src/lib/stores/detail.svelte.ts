@@ -1,6 +1,4 @@
 import { Effect, Result } from "effect";
-import { observeRepositoryRoute } from "../api/repository-reads.js";
-import { pullDetailMatchesRef } from "../components/detail/detail-match.js";
 import { SvelteSet } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
@@ -578,23 +576,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
     pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
   }
 
-  function observePullRepository(ref: DetailRequestRef, authoritative: PullDetail): void {
-    if (!pullDetailMatchesRef(authoritative, { ...ref, repositoryKey: undefined })) return;
-    runtime.runCommand(observeRepositoryRoute({ ...ref, repositoryKey: repositoryKeyFromWire(authoritative.repo) }), {
-      operation: "reconcile repository identity from pull detail",
-      safeContext: {},
-      onFailure: () => {},
-    });
-  }
-
   function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
-    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo))) {
-      return Effect.sync(() => {
-        // Correct inferred route identity without accepting a response for an explicitly selected ID.
-        observePullRepository(ref, authoritative);
-        return false;
-      });
-    }
+    if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
+      return Effect.succeed(false);
     return Effect.gen(function* () {
       const mutations = yield* ProviderMutations;
       const labels = authoritative.merge_request.labels ?? [];
@@ -676,7 +660,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
-          if (applied) observePullRepository(ref, authoritative);
           return applied;
         }),
         rebaseEntries,

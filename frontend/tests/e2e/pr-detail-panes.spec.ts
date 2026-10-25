@@ -96,7 +96,6 @@ async function mockSplitViewPR(page: Page): Promise<void> {
       repo: {
         provider: "github",
         platform_host: "github.com",
-        platform_repo_id: 1001,
         owner: "acme",
         name: "widgets",
         repo_path: "acme/widgets",

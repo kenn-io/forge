@@ -50,20 +50,17 @@ test("records navigation while variable-latency refreshes overlap", async ({ pag
       data: { workspaces: { show_agent_status_in_lists: true } },
     });
     expect(configured.ok()).toBe(true);
-    for (const { selection, url, pageName, scope } of [
+    for (const { selection, url, scope } of [
       {
         selection: "pr:1",
         url: "/?view=threaded&collapsed=1&selected=pr:1&provider=github&repo_path=acme%2Fwidgets",
-        pageName: "Activity",
         scope: ".activity-detail",
       },
       {
         selection: "issue:10",
         url: "/?view=threaded&collapsed=1&selected=issue:10&provider=github&repo_path=acme%2Fwidgets",
-        pageName: "Activity",
         scope: ".activity-detail",
       },
-      { selection: "pulls:5", url: "/pulls/github/acme/widgets/5", pageName: "PRs", scope: ".pull-detail" },
     ]) {
       console.log(`variable-latency: loading ${selection}`);
       await page.goto(`${server.info.base_url}${url}`, { waitUntil: "domcontentloaded" });
@@ -71,23 +68,16 @@ test("records navigation while variable-latency refreshes overlap", async ({ pag
       const body = page.locator(`${scope} .body-section .markdown-body`).first();
       const input = page.locator(`${scope} .comment-editor-input`).first();
       await expect(title).toBeVisible({ timeout: 120_000 });
-      if (pageName === "Activity") await expect(body).toBeVisible();
+      await expect(body).toBeVisible();
       await expect(input).toBeEditable();
       if (selection === "pr:1") await expect(page.locator(`${scope} .btn--merge`)).toBeVisible();
       const expectedTitle = await title.textContent();
-      const expectedBody = (await body.count()) ? await body.textContent() : null;
+      const expectedBody = await body.textContent();
       let draft = "";
       const header = page.getByRole("navigation", { name: "Page", exact: true });
       for (let iteration = 0; iteration < 8; iteration++) {
         latencyMs = latencies[iteration]!;
         await cdp.send("Network.emulateNetworkConditions", { ...network, latency: latencyMs });
-        if (pageName === "PRs") {
-          await page.evaluate(() => {
-            history.pushState(null, "", "/pulls/github/acme/widgets/1");
-            window.dispatchEvent(new PopStateEvent("popstate"));
-          });
-          await expect(title).toHaveText("Add widget caching layer");
-        }
         await header.getByRole("button", { name: "Workspaces", exact: true }).click();
         await expect(title).toHaveCount(0);
         const detailPath = `/api/v1/${selection.startsWith("issue") ? "issues" : "pulls"}/github/acme/widgets/${selection.split(":")[1]}`;
@@ -98,13 +88,9 @@ test("records navigation while variable-latency refreshes overlap", async ({ pag
               )
             : undefined;
         const started = await page.evaluate(() => performance.now());
-        if (pageName === "Activity") await header.getByRole("button", { name: pageName, exact: true }).click();
-        else {
-          await page.goBack();
-          await page.goBack();
-        }
+        await header.getByRole("button", { name: "Activity", exact: true }).click();
         await expect(title).toHaveText(expectedTitle!, { timeout: 1_000 });
-        if (expectedBody !== null) await expect(body).toHaveText(expectedBody, { timeout: 1_000 });
+        await expect(body).toHaveText(expectedBody!, { timeout: 1_000 });
         await expect(input).toBeEditable({ timeout: 1_000 });
         await expect(input).toHaveText(draft);
         await input.press("End");

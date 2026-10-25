@@ -11,23 +11,6 @@ for (const [kind, path] of [
     const api = createMockApiHandler();
     let repositoryId = 1104;
     await mockApi(page);
-    await page.route("**/api/v1/repos", async (route) => {
-      const response = api.handle({ method: "GET", url: new URL(route.request().url()), bodyText: "" });
-      const repos = (await response.json()) as { PlatformRepoID: number }[];
-      repos[0]!.PlatformRepoID = repositoryId;
-      await route.fulfill({ json: repos });
-    });
-    await page.route(
-      (url) => url.pathname === `/api/v1/${kind === "issue" ? "issues" : "pulls"}`,
-      async (route) => {
-        const response = api.handle({ method: "GET", url: new URL(route.request().url()), bodyText: "" });
-        const items = (await response.json()) as { repo: { platform_host: string; platform_repo_id: number } }[];
-        for (const item of items) {
-          if (item.repo.platform_host === "github.com") item.repo.platform_repo_id = repositoryId;
-        }
-        await route.fulfill({ json: items });
-      },
-    );
     await page.route(`**/api/v1${path}`, async (route) => {
       const response = api.handle({ method: "GET", url: new URL(route.request().url()), bodyText: "" });
       const detail = (await response.json()) as { repo: { platform_repo_id: number } };

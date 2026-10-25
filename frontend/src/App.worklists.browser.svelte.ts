@@ -147,6 +147,21 @@ it("fits every row in the rail at its narrowest width", async () => {
   }
 });
 
+it("announces a caveat's level only when the agent raised it above info", async () => {
+  const list = worklistResponse(5, "Review queue");
+  list.items[0] = { ...list.items[0]!, caveat: "The migration drops a column.", caveat_level: "critical" };
+  const server: WorklistServer = { lists: [list], requests: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  const rail = page.getByRole("region", { name: "Review queue items" });
+
+  await expect
+    .element(rail.getByRole("button", { name: "Add browser regression coverage" }))
+    .toHaveAccessibleDescription(/Critical: ?The migration drops a column\./);
+  const info = rail.getByRole("button", { name: "Theme toggle does not stick" });
+  await expect.element(info).toHaveAccessibleDescription(/Could be a duplicate of an older report\./);
+  await expect.element(info).not.toHaveAccessibleDescription(/Warning|Critical/);
+});
+
 it("marks the open item handled with d and moves on in rank order", async () => {
   await page.viewport(1400, 900);
   const list = worklistResponse(5, "Review queue");

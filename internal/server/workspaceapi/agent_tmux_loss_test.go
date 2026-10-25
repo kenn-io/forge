@@ -424,6 +424,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-ready",
+		AgentExitDir:            t.TempDir(),
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -537,6 +538,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-replaced",
+		AgentExitDir:            t.TempDir(),
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -846,6 +848,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-stop-first",
+		AgentExitDir:            t.TempDir(),
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -981,6 +984,15 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 // terminals went with the old server ready for recovery to restore.
 func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
 	t.Parallel()
+	for _, name := range []string{"server killed", "client detached first"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t, name == "client detached first")
+		})
+	}
+}
+
+func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, detachClient bool) {
 	require := require.New(t)
 	ctx := t.Context()
 	if privateTmuxOwner == nil {
@@ -1010,6 +1022,7 @@ func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
 		WrapAgentSessionsInTmux: true,
 		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
 		TmuxOwnerMarker:         "kenn-forge:test-replaced",
+		AgentExitDir:            t.TempDir(),
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -1035,8 +1048,21 @@ func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
 
 	// The server dies and another terminal starts a replacement before the
 	// exit handler has run.
+	if detachClient {
+		require.Eventually(func() bool {
+			out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+				"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
+			return err == nil && strings.TrimSpace(string(out)) != ""
+		}, 5*time.Second, 10*time.Millisecond)
+		require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+			"detach-client", "-s", session.TmuxSession)...).Run())
+		require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
+	}
 	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(func() bool {
+		server, err := workspaces.TmuxServerID(ctx)
+		return err == nil && server == "" && runtime.Exited(session.Key)
+	}, 5*time.Second, 10*time.Millisecond)
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
 	handler.runWorkspaceTmuxPrune(ctx)

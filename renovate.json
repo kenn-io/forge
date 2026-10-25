@@ -7,6 +7,9 @@
   "minimumReleaseAgeBehaviour": "timestamp-required",
   "prCreation": "not-pending",
   "internalChecksFilter": "strict",
+  "constraints": {
+    "ghActionsLock": "v0.3.0"
+  },
   "vulnerabilityAlerts": {
     "minimumReleaseAge": null,
     "prCreation": "immediate"

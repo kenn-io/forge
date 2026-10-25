@@ -49,6 +49,7 @@ type ephemeralOptions struct {
 	backendPort      int
 	frontendPort     int
 	mcpPort          int
+	mcpPortSet       bool
 	freshDB          bool
 }
 
@@ -119,7 +120,7 @@ func run(ctx context.Context, args []string) error {
 	stop := fs.Bool("stop", false, "stop an ephemeral dev stack using its status JSON")
 	backendPort := fs.Int("backend-port", 0, "backend port (0 selects a free port)")
 	frontendPort := fs.Int("frontend-port", 0, "frontend port (0 selects a free port)")
-	mcpPort := fs.Int("mcp-port", 0, "MCP listener port when the source config enables MCP (0 selects a free port)")
+	mcpPort := fs.Int("mcp-port", 0, "dedicated MCP listener port (0 selects a free port); without this flag, a source using the default shares the backend port")
 	freshDB := fs.Bool("fresh-db", false, "start with an empty ephemeral database instead of copying the source database")
 	syncEnabled := fs.Bool("sync", false, "enable provider synchronization")
 	if err := fs.Parse(args); err != nil {
@@ -147,19 +148,21 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	resolvedBackendPort, err := resolvePort(*backendPort)
+	resolvedBackendPort, err := resolvePort(*backendPort, *frontendPort, *mcpPort)
 	if err != nil {
 		return fmt.Errorf("resolve backend port: %w", err)
 	}
-	resolvedFrontendPort, err := resolvePort(*frontendPort)
+	resolvedFrontendPort, err := resolvePort(*frontendPort, resolvedBackendPort, *mcpPort)
 	if err != nil {
 		return fmt.Errorf("resolve frontend port: %w", err)
 	}
-	resolvedMCPPort, err := resolvePort(*mcpPort)
-	if err != nil {
-		return fmt.Errorf("resolve mcp port: %w", err)
-	}
-	if err := requireDistinctPorts(resolvedBackendPort, resolvedFrontendPort, resolvedMCPPort); err != nil {
+	mcpPortSet := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "mcp-port" {
+			mcpPortSet = true
+		}
+	})
+	if err := requireDistinctPorts(resolvedBackendPort, resolvedFrontendPort, 0); err != nil {
 		return err
 	}
 
@@ -196,7 +199,8 @@ func run(ctx context.Context, args []string) error {
 		workDir:          resolvedWorkDir,
 		backendPort:      resolvedBackendPort,
 		frontendPort:     resolvedFrontendPort,
-		mcpPort:          resolvedMCPPort,
+		mcpPort:          *mcpPort,
+		mcpPortSet:       mcpPortSet,
 		freshDB:          *freshDB,
 	})
 	if err != nil {
@@ -315,18 +319,20 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 	cfg.Port = opts.backendPort
 	cfg.DataDir = dataDir
 	cfg.TrustReverseProxy = false
-	// The source config's MCP port belongs to the developer's live daemon, so
-	// the ephemeral backend must never inherit it. The launcher resolves a free
-	// port; a zero here keeps the config's implicit backend+1.
 	mcpPort := 0
-	mcpURL := ""
-	if cfg.MCP.Enabled {
-		cfg.MCP.Port = opts.mcpPort
-		mcpPort = cfg.MCPPort()
-		mcpURL, err = serverURL(cfg.Host, mcpPort, "/")
-		if err != nil {
-			return ephemeralRun{}, err
+	if cfg.MCPEnabled() {
+		if opts.mcpPortSet || cfg.MCP.Enabled != nil {
+			// A dedicated source listener belongs to the live daemon; choose a new port.
+			cfg.MCP.Port, err = resolvePort(opts.mcpPort, opts.backendPort, opts.frontendPort)
+			if err != nil {
+				return ephemeralRun{}, fmt.Errorf("resolve mcp port: %w", err)
+			}
+			if err := requireDistinctPorts(opts.backendPort, opts.frontendPort, cfg.MCP.Port); err != nil {
+				return ephemeralRun{}, err
+			}
+			cfg.MCP.Enabled = new(true)
 		}
+		mcpPort = cfg.MCPPort()
 	}
 
 	configPath := filepath.Join(opts.workDir, "config.toml")
@@ -350,7 +356,7 @@ func prepareEphemeralConfig(opts ephemeralOptions) (ephemeralRun, error) {
 		logDir:       logDir,
 		backendURL:   backendURL,
 		frontendURL:  frontendURL,
-		mcpURL:       mcpURL,
+		mcpURL:       cfg.MCPURL(),
 		backendPort:  opts.backendPort,
 		frontendPort: opts.frontendPort,
 		mcpPort:      mcpPort,
@@ -369,7 +375,6 @@ func buildCommandSpecs(run ephemeralRun, syncEnabled bool, frontendArgs []string
 		"KENN_FORGE_LOG_LEVEL":        envDefault("KENN_FORGE_LOG_LEVEL", "debug"),
 		"KENN_FORGE_LOG_FILE":         filepath.Join(run.logDir, "backend-dev.log"),
 		"KENN_FORGE_LOG_STDERR_LEVEL": envDefault("KENN_FORGE_LOG_STDERR_LEVEL", "info"),
-		"TELEMETRY_ENABLED":           envDefault("TELEMETRY_ENABLED", "0"),
 	})
 	frontendEnv := overlayEnv(sanitizedFrontendEnv(baseEnv), map[string]string{
 		"KENN_FORGE_CONFIG": run.configPath,
@@ -982,27 +987,38 @@ func stopProcess(process *os.Process) {
 	}
 }
 
-func resolvePort(port int) (int, error) {
+func resolvePort(port int, excluded ...int) (int, error) {
 	if port != 0 {
 		if err := validatePort(port); err != nil {
 			return 0, err
 		}
 		return port, nil
 	}
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer listener.Close()
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return 0, fmt.Errorf("unexpected address type %T", listener.Addr())
-	}
-	return addr.Port, nil
+	return selectFreePort(excluded, func() (net.Listener, error) {
+		return (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	})
 }
 
-// requireDistinctPorts rejects a free-port resolution that handed two
-// listeners the same port; a fixed port that repeats is a user error either way.
+func selectFreePort(excluded []int, listen func() (net.Listener, error)) (int, error) {
+	for {
+		listener, err := listen()
+		if err != nil {
+			return 0, err
+		}
+		// Keep rejected candidates bound so the next allocation cannot return
+		// the same port. There can be at most len(excluded) such candidates.
+		defer listener.Close()
+		addr, ok := listener.Addr().(*net.TCPAddr)
+		if !ok {
+			return 0, fmt.Errorf("unexpected address type %T", listener.Addr())
+		}
+		if !slices.Contains(excluded, addr.Port) {
+			return addr.Port, nil
+		}
+	}
+}
+
+// requireDistinctPorts rejects repeated fixed ports supplied by the caller.
 func requireDistinctPorts(backend, frontend, mcp int) error {
 	switch {
 	case backend == frontend:

@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -29,9 +30,16 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
 
-// buildForge compiles the kenn-forge binary into a per-test temp dir
-// and returns the absolute path. The build runs once per test via
-// t.TempDir.
+var (
+	forgeBuildDir   string // Owned and removed by TestMain.
+	forgeBuildMu    sync.Mutex
+	forgeBuildCache = make(map[string]struct {
+		path string
+		err  error
+	})
+)
+
+// buildForge uses buildForgeWithLDFlags to share the default test binary.
 func buildForge(t *testing.T) string {
 	t.Helper()
 	return buildForgeWithLDFlags(t, "")
@@ -51,21 +59,31 @@ func buildForgeWithLDFlags(t *testing.T, ldflags string) string {
 	if testing.Short() {
 		t.Skip("test builds and launches a real kenn-forge daemon")
 	}
-	binDir := t.TempDir()
-	binPath := filepath.Join(binDir, "kenn-forge")
-	if runtime.GOOS == "windows" {
-		binPath += ".exe"
+	forgeBuildMu.Lock()
+	defer forgeBuildMu.Unlock()
+	build, ok := forgeBuildCache[ldflags]
+	if !ok {
+		binDir, err := os.MkdirTemp(forgeBuildDir, "forge-")
+		build.err = err
+		if err == nil {
+			build.path = filepath.Join(binDir, "kenn-forge")
+			if runtime.GOOS == "windows" {
+				build.path += ".exe"
+			}
+			args := []string{"build", "-o", build.path}
+			if ldflags != "" {
+				args = append(args, "-ldflags="+ldflags)
+			}
+			args = append(args, ".")
+			cmd := procutil.Command("go", args...)
+			cmd.Stdout = os.Stderr
+			cmd.Stderr = os.Stderr
+			build.err = cmd.Run()
+		}
+		forgeBuildCache[ldflags] = build
 	}
-	args := []string{"build", "-o", binPath}
-	if ldflags != "" {
-		args = append(args, "-ldflags="+ldflags)
-	}
-	args = append(args, ".")
-	cmd := procutil.Command("go", args...)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	require.NoError(t, cmd.Run(), "go build ./cmd/kenn-forge")
-	return binPath
+	require.NoError(t, build.err, "go build ./cmd/kenn-forge")
+	return build.path
 }
 
 func runDaemonLifecycle(bin string, args ...string) (string, string, error) {
@@ -90,7 +108,11 @@ func killDaemonRecords(store daemon.RuntimeStore) {
 			continue
 		}
 		if process, err := os.FindProcess(record.PID); err == nil {
-			_ = process.Kill()
+			if err := process.Kill(); err == nil {
+				// Windows termination is asynchronous; wait before removing the binary.
+				_, _ = process.Wait()
+			}
+			_ = process.Release()
 		}
 	}
 }

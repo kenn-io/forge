@@ -5,6 +5,8 @@ import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
+import { initMarkdownVideoPlayers } from "../utils/markdown-video-player.js";
+import { observeMarkdownVideoPreviews } from "../utils/markdown-video-preview.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";
 import { startRuntimeTelemetry } from "./telemetry.js";
@@ -28,8 +30,8 @@ export const appProgram = (target: HTMLElement, runtime: OwnedAppRuntime) =>
     (application) => Effect.promise(() => unmount(application)),
   ).pipe(Effect.andThen(Effect.never));
 
-// Markdown images and Mermaid diagrams expand into kit-ui's MediaViewer,
-// which pages through every displayed image and diagram on the page.
+// Markdown images, Mermaid diagrams, and videos expand into kit-ui's
+// MediaViewer, which pages through every displayed one on the page.
 const openMediaViewerFrame = () => pushModalFrame("media-viewer", []);
 
 const observeMarkdownImageExpansion = (target: HTMLElement) =>
@@ -40,6 +42,12 @@ const observeMarkdownImageExpansion = (target: HTMLElement) =>
         onViewerOpen: openMediaViewerFrame,
       }),
     ),
+    (controller) => Effect.sync(() => controller.disconnect()),
+  ).pipe(Effect.andThen(Effect.never));
+
+const observeMarkdownVideoPlayers = (target: HTMLElement) =>
+  Effect.acquireRelease(
+    Effect.sync(() => initMarkdownVideoPlayers(target, { onViewerOpen: openMediaViewerFrame })),
     (controller) => Effect.sync(() => controller.disconnect()),
   ).pipe(Effect.andThen(Effect.never));
 
@@ -84,8 +92,18 @@ export function mountApplication(
     safeContext: {},
     onFailure: () => {},
   });
+  const videoPlayers = runtime.runCommand(Effect.scoped(observeMarkdownVideoPlayers(target)), {
+    operation: "observe markdown videos",
+    safeContext: {},
+    onFailure: () => {},
+  });
   const mermaidRendering = runtime.runCommand(Effect.scoped(observeMarkdownMermaidRendering(target)), {
     operation: "observe markdown diagrams",
+    safeContext: {},
+    onFailure: () => {},
+  });
+  const videoPreviews = runtime.runCommand(Effect.scoped(observeMarkdownVideoPreviews(target)), {
+    operation: "preview markdown videos",
     safeContext: {},
     onFailure: () => {},
   });
@@ -96,7 +114,9 @@ export function mountApplication(
   });
   const root = Effect.scoped(appProgram(target, runtime)).pipe(
     Effect.ensuring(Effect.sync(imageExpansion.interrupt)),
+    Effect.ensuring(Effect.sync(videoPlayers.interrupt)),
     Effect.ensuring(Effect.sync(mermaidRendering.interrupt)),
+    Effect.ensuring(Effect.sync(videoPreviews.interrupt)),
     Effect.ensuring(Effect.sync(appOpens.interrupt)),
     Effect.ensuring(runtime.disposeEffect),
   );

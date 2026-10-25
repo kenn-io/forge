@@ -3,7 +3,7 @@ package ptysize
 import (
 	"testing"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/assert"
 )
 

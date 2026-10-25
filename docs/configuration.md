@@ -596,6 +596,7 @@ base_path = "/"
 ```
 
 - `sync_interval` controls provider refreshes.
+- After a restart, accounts with rate tracking resume their schedule from their oldest healthy live repository's successful sync plus `sync_interval`, while overdue accounts and failed or never-synced repositories refresh at startup.
 - `host` and `port` set the listener.
 - `base_path` adds a URL prefix behind a reverse proxy. It cannot start with
   `api`, `healthz`, or `livez`, which Forge serves at the root.
@@ -633,14 +634,20 @@ proxy and use HTTPS origins for federation.
 
 ### MCP companion
 
-Enable the daemon's optional loopback MCP listener with:
+The companion is on by default on Forge's own port when `host` is a loopback IP,
+`mcp.enabled` and `mcp.port` are omitted, and Forge isn't an execution worker.
+Loopback IP hosts include `127.0.0.1`; other hosts, such as `0.0.0.0` or a
+tailnet IP, require `enabled = true`. To turn it off:
 
 ```toml
 [mcp]
-enabled = true
-# port = 8092 # defaults to the main backend port plus one
-diff_cache_mb = 128
+enabled = false
 ```
+
+With `enabled = true` and no `port`, MCP also uses Forge's own port. Set `port`
+for a separate loopback listener. A saved `port` with `enabled` omitted keeps MCP
+off. Older versions dropped explicit
+false values on save; set `enabled = false` again to preserve an old opt-out.
 
 The sessionless Streamable HTTP endpoint is
 `http://127.0.0.1:<resolved-port>/mcp`. Authentication follows

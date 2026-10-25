@@ -5,37 +5,48 @@ running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.
 
-## Enable the companion
+## On by default
 
-Add this section to `~/.kenn/forge/config.toml`:
+With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own
+port when `host` is a loopback IP, such as `127.0.0.1` or `::1`, and Forge
+isn't an execution worker. Other hosts, such as `0.0.0.0` or a tailnet IP,
+require `enabled = true`. With the default backend port, the endpoint is:
+
+```text
+http://127.0.0.1:8091/mcp
+```
+
+To turn it off, save this in `~/.kenn/forge/config.toml`:
 
 ```toml
 [mcp]
-enabled = true
-# port = 8092 # defaults to the main backend port plus one
+enabled = false
 ```
 
-Set `port` to the backend port to serve the companion at `/mcp` on the main
-loopback listener instead of a second port. It keeps the same loopback and
-authentication rules.
+With `enabled = true` and no `port`, the companion also uses Forge's own port.
+For a separate loopback listener, set `port`. A saved `port` with `enabled`
+omitted keeps the companion off.
 
-Restart the daemon after changing either setting:
+Older versions dropped `enabled = false` when saving. Configurations with no
+`enabled` key and no MCP port start serving `/mcp` after upgrade when the default
+applies, so set `enabled = false` to keep it off.
+
+Restart the daemon after changing MCP enablement or its listener port:
 
 ```sh
 kenn-forge daemon restart
 ```
 
-With the default backend port, the sessionless Streamable HTTP endpoint is:
+Loopback MCP follows `[api].require_auth`, same as the HTTP API.
+When authentication is enabled, send the daemon bearer token.
+Runtime discovery publishes the resolved MCP listener and URL, and
+`kenn-forge daemon status --json` shows both the listener address and the token
+file path.
 
-```text
-http://127.0.0.1:8092/mcp
-```
-
-The listener is loopback-only. It follows `[api].require_auth`: when API
-authentication is enabled, send the daemon bearer token; when it is disabled,
-the MCP endpoint does not require a token. Runtime discovery publishes the
-resolved MCP listener and URL, and `kenn-forge daemon status --json` shows both
-the listener address and the token file path.
+While MCP is enabled, `/mcp` on the main listener also accepts daemon bearer
+holders and, with `[api.tailscale_serve]`, allowlisted Serve users. `/api/ping`
+reports `mcp_url` on the origin the caller used, so a client that reaches Forge
+through Tailscale Serve discovers the Serve URL.
 
 For a machine-readable listener list, run:
 
@@ -59,7 +70,7 @@ server catalog, the shape is typically similar to:
   "mcpServers": {
     "kenn-forge": {
       "type": "http",
-      "url": "http://127.0.0.1:8092/mcp"
+      "url": "http://127.0.0.1:8091/mcp"
     }
   }
 }
@@ -75,7 +86,7 @@ configuration:
   "mcpServers": {
     "kenn-forge": {
       "type": "http",
-      "url": "http://127.0.0.1:8092/mcp",
+      "url": "http://127.0.0.1:8091/mcp",
       "headers": {
         "Authorization": "Bearer ${KENN_FORGE_API_TOKEN}"
       }
@@ -205,9 +216,36 @@ running agent through the same runtime input path as the initial message. It
 does not launch a runtime, resume a handoff, or wait for later agent activity.
 Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 
+## Build worklists
+
+An agent can hand the maintainer a ranked
+[worklist](workflows/worklists.md) of synced pull requests and issues. None of
+these tools call provider APIs.
+
+- `kenn_forge_put_worklist` writes a list with a title, a recipe, and ranked
+  items. Each item can carry a score, section, note, and caveat. Every item
+  must be a pull request or issue Forge has synced; copy its identity from a
+  Forge read. Pass `worklist_id` to replace an existing list, or omit it to
+  create a new one.
+- `kenn_forge_get_worklist` reads a list with its recipe and, for each item,
+  whether it is fresh, changed, or gone since the list was written, what
+  changed, and when the maintainer marked it handled.
+- `kenn_forge_list_worklists` lists worklists, most recently updated first,
+  with their item counts. Pass `include_dismissed` to include dismissed lists.
+- `kenn_forge_dismiss_worklist` hides a list. Writing the list again brings it
+  back.
+- `kenn_forge_clear_worklist_marks` clears every handled mark on a list. Call
+  it only when the maintainer asks.
+- `kenn_forge_import_worklist` creates the list a worklist link carries, as
+  opening the link in Forge does. It accepts a `kenn://` link, an HTTP(S) link
+  to `/worklists/import#v1...`, or the bare `v1...` fragment.
+
+To refresh a list, read its recipe, rerun the searches, and put the whole list
+again. Handled marks survive a rewrite for items that stay on the list.
+
 ## Troubleshooting
 
-If the endpoint is unavailable, confirm `[mcp].enabled = true`, restart the
+If the endpoint is unavailable, check `kenn-forge mcp quickstart`, restart the
 daemon, and inspect daemon status for the resolved listener. A separate MCP
 port must be free at startup.
 

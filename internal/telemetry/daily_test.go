@@ -85,6 +85,7 @@ func setupDailyReporter(t *testing.T, opts Options, now time.Time, handler http.
 	endpoint := httptest.NewServer(handler)
 	t.Cleanup(endpoint.Close)
 	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
+		opts.APIKey = "phc_test"
 		opts.Endpoint = endpoint.URL
 		return posthog.NewReporter(opts, options...)
 	})

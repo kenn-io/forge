@@ -328,8 +328,8 @@ func McpWorklist(worklist worklistapi.WorklistResponse) mcpserver.Worklist {
 				RepoKey: item.Repo.Key, Owner: item.Repo.Owner, Name: item.Repo.Name, Number: item.Number,
 			},
 			Title: item.Title, URL: item.URL, Score: item.Score,
-			Section: item.Section, Note: item.Note, Caveat: item.Caveat, WrittenAt: item.WrittenAt,
-			Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
+			Section: item.Section, Note: item.Note, Caveat: item.Caveat, CaveatLevel: item.CaveatLevel,
+			WrittenAt: item.WrittenAt, Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
 			Changes: mcpserver.WorklistChanges(item.Changes), HandledAt: item.HandledAt,
 		}
 		if item.Live != nil {

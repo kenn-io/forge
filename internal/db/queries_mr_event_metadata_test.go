@@ -13,7 +13,7 @@ func seedMetadataTestMR(t *testing.T, database *DB) (int64, int64, int64) {
 	ctx := t.Context()
 	now := time.Date(2026, 8, 5, 10, 30, 0, 0, time.UTC)
 	repoID := insertTestRepo(t, database, "owner", "repo")
-	mrID, revision, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, &MergeRequest{
+	mrID, _, accepted, err := database.UpsertMergeRequestSnapshotWithLabels(ctx, &MergeRequest{
 		RepoID: repoID, PlatformID: 1, Number: 1, Title: "Synthetic merge request",
 		State: MergeRequestStateOpen, PlatformHeadSHA: "head", PlatformBaseSHA: "base",
 		CreatedAt: now.Add(-time.Hour), UpdatedAt: now, LastActivityAt: now,
@@ -30,7 +30,10 @@ func seedMetadataTestMR(t *testing.T, database *DB) (int64, int64, int64) {
 		CreatedAt:      now,
 		DedupeKey:      "commit-1",
 	}}))
-	return repoID, mrID, revision
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	return repoID, mrID, mr.SnapshotRevision
 }
 
 func assertMetadataTestEvent(t *testing.T, database *DB, mrID int64, wantMetadata string) {
@@ -200,4 +203,17 @@ func TestMarkDetailFetchedEventMetadataUpdates(t *testing.T) {
 	require.NoError(err)
 	assert.True(applied)
 	assertMetadataTestEvent(t, database, mrID, `{"commit_order_key":1,"obsolete":true}`)
+	for _, tc := range []struct{ metadata, author string }{
+		{`{"commit_author":"a"}`, "a"},
+		{`{"commit_author":"b"}`, "b"},
+		{`{}`, ""},
+		{``, ""},
+	} {
+		applied, err = database.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, false, map[string]string{"commit-1": tc.metadata})
+		require.NoError(err)
+		require.True(applied)
+		var author string
+		require.NoError(database.ReadDB().QueryRowContext(ctx, `SELECT commit_author FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'commit-1'`, mrID).Scan(&author))
+		assert.Equal(tc.author, author)
+	}
 }

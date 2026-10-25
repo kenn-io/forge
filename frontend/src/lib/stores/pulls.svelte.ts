@@ -42,7 +42,14 @@ export interface PullSelection {
 
 type PullIdentityRef = ProviderRouteRef;
 
-export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
+export type PullAttributeFilter =
+  | "approved"
+  | "draft"
+  | "ready"
+  | "merge_conflicts"
+  | "failed_ci"
+  | "passed_ci"
+  | "has_workspace";
 
 export interface PullsStoreOptions {
   runtime: AppRuntime;
@@ -702,6 +709,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (filter === "failed_ci") {
       return hasFailedCI(pr);
     }
+    if (filter === "passed_ci") {
+      return hasPassedCI(pr);
+    }
     return pr.workspace !== undefined;
   }
 
@@ -713,6 +723,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
     const parsed = parseCIChecks(pr.CIChecksJSON);
     if (parsed.error !== null) return false;
     return bucketCIChecks(parsed.checks).failed.length > 0;
+  }
+
+  function hasPassedCI(pr: PullRequest): boolean {
+    const status = pr.CIStatus.trim().toLowerCase();
+    if (status !== "" && status !== "success") return false;
+    const parsed = parseCIChecks(pr.CIChecksJSON);
+    if (parsed.error !== null || (status === "" && parsed.checks.length === 0)) return false;
+    const buckets = bucketCIChecks(parsed.checks);
+    return buckets.failed.length === 0 && buckets.pending.length === 0 && buckets.unknown.length === 0;
   }
 
   function matchesKanbanStatusFilters(pr: PullRequest): boolean {

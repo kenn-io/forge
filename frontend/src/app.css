@@ -381,6 +381,11 @@ a:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.markdown-body .markdown-video-duration {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .markdown-body .markdown-video-chevron {
   transition: transform var(--transition-fast) var(--transition-ease, ease);
 }
@@ -412,6 +417,17 @@ a:hover {
   object-fit: contain;
   border-top: var(--border-width) solid var(--border-muted);
   background: var(--bg-inset);
+}
+/* The kit-ui player that replaces the <video> (markdown-video-player.ts)
+   keeps the same fixed frame. */
+.markdown-body .markdown-video-player {
+  border-top: var(--border-width) solid var(--border-muted);
+  border-radius: 0;
+}
+.markdown-body .markdown-video-player video {
+  aspect-ratio: 16 / 9;
+  max-height: 640px;
+  height: auto;
 }
 .markdown-body img {
   max-width: 100%;

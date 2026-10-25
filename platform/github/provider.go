@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/platform"
 )
 

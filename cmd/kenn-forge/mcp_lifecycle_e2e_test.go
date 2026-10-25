@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -37,7 +39,7 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	existing, err := os.ReadFile(cfgPath)
 	require.NoError(err)
 	require.NoError(os.WriteFile(
-		cfgPath, append(existing, []byte("\n[mcp]\nenabled = true\n")...), 0o600,
+		cfgPath, fmt.Appendf(existing, "\n[mcp]\nenabled = true\nport = %d\n", mcpPort), 0o600,
 	))
 
 	serve := procutil.Command(bin, "serve", "--config", cfgPath)
@@ -121,13 +123,12 @@ func TestDaemonServesMCPEndpointThroughLifecycleE2E(t *testing.T) {
 	}
 }
 
-// TestDaemonServesMCPOnSharedBackendPortE2E covers configuring the companion
-// on the backend port: the main listener serves the loopback companion
-// policy at /mcp without a bearer, and discovery reports that endpoint.
+// TestDaemonServesMCPOnSharedBackendPortE2E covers the default companion
+// on the backend port and discovery of that endpoint.
 func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
+	bin := buildForge(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	bin := buildForge(t)
 
 	root := t.TempDir()
 	dataDir := filepath.Join(root, "data")
@@ -135,11 +136,11 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	cfgPath := filepath.Join(root, "config.toml")
 	appPort := reserveFreePort(t)
 	writeMinimalConfig(t, cfgPath, dataDir, appPort)
+	publicHost := net.JoinHostPort("forge.example.test", strconv.Itoa(appPort))
 	existing, err := os.ReadFile(cfgPath)
 	require.NoError(err)
-	require.NoError(os.WriteFile(cfgPath, append(existing, fmt.Appendf(nil,
-		"\n[mcp]\nenabled = true\nport = %d\n", appPort,
-	)...), 0o600))
+	existing = append(fmt.Appendf(nil, "allowed_hosts = [%q]\n", publicHost), existing...)
+	require.NoError(os.WriteFile(cfgPath, existing, 0o600))
 
 	serve := procutil.Command(bin, "serve", "--config", cfgPath)
 	serve.Stdout = os.Stderr
@@ -182,6 +183,22 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	require.NoError(err)
 	assert.False(result.IsError)
 
+	// The public authority uses the main-listener bearer policy even on loopback.
+	token, err := os.ReadFile(runtimelock.AuthTokenPath(dataDir))
+	require.NoError(err)
+	bearerRequest, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+appAddr+"/mcp", strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`,
+	))
+	require.NoError(err)
+	bearerRequest.Host = publicHost
+	bearerRequest.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	bearerRequest.Header.Set("Content-Type", "application/json")
+	bearerRequest.Header.Set("Accept", "application/json, text/event-stream")
+	bearerResponse, err := http.DefaultClient.Do(bearerRequest)
+	require.NoError(err)
+	defer bearerResponse.Body.Close()
+	assert.Equal(http.StatusOK, bearerResponse.StatusCode)
+
 	quickstartOutput, err := procutil.Command(
 		bin, "mcp", "quickstart", "--config", cfgPath, "--json",
 	).Output()
@@ -190,4 +207,15 @@ func TestDaemonServesMCPOnSharedBackendPortE2E(t *testing.T) {
 	require.NoError(json.Unmarshal(quickstartOutput, &connection))
 	assert.True(connection.Active)
 	assert.Equal("http://"+appAddr+"/mcp", connection.Endpoint)
+
+	var ping struct {
+		MCPURL string `json:"mcp_url"`
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+appAddr+"/api/ping", nil)
+	require.NoError(err)
+	response, err := http.DefaultClient.Do(req)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.NoError(json.NewDecoder(response.Body).Decode(&ping))
+	assert.Equal("http://"+appAddr+"/mcp", ping.MCPURL)
 }

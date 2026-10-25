@@ -251,11 +251,17 @@ checks below.
    | Scope | Permission | Access |
    | --- | --- | --- |
    | Repository | Contents | Read and write |
+   | Repository | Workflows | Read and write |
    | Repository | Pull requests | Read and write |
    | Repository | Checks | Read-only |
    | Repository | Commit statuses | Read-only |
    | Repository | Metadata | Read-only (automatic) |
    | Organization | Members | Read-only |
+
+   Workflows lets writable accounts push changes to workflow files. The broker
+   requests it only when the installation has granted **Workflows: write**.
+   On an existing App, add the permission, then have an organization owner
+   accept the updated permissions on the installation.
 
 5. For **Where can this GitHub App be installed?**, choose **Only on this
    account**, then click **Create GitHub App**.
@@ -318,6 +324,8 @@ production repositories. [Contents write can authorize the merge endpoint](https
 omitting Pull requests write does not solve this. Preserve protection against
 force pushes and deletion. Do the initial allow/deny exercises in a disposable
 repository governed by the same rules.
+Workflows write lets the App change CI workflow files on any branch it can push;
+add a file path rule for `.github/workflows/**` if those branches must not change them.
 
 The broker configuration is TOML:
 

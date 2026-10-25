@@ -22,11 +22,12 @@ import (
 )
 
 type viewerIdentityProvider struct {
-	kind      platform.Kind
-	host      string
-	cacheKeys map[string]string
-	logins    map[string]string
-	errs      map[string]error
+	kind       platform.Kind
+	host       string
+	cacheKeys  map[string]string
+	logins     map[string]string
+	errs       map[string]error
+	lookupGate <-chan struct{}
 
 	mu    sync.Mutex
 	calls []string
@@ -38,7 +39,14 @@ func (p *viewerIdentityProvider) Capabilities() platform.Capabilities {
 	return platform.Capabilities{ReadAuthenticatedUser: true}
 }
 
-func (p *viewerIdentityProvider) AuthenticatedUser(_ context.Context, ref platform.RepoRef) (string, error) {
+func (p *viewerIdentityProvider) AuthenticatedUser(ctx context.Context, ref platform.RepoRef) (string, error) {
+	if p.lookupGate != nil {
+		select {
+		case <-p.lookupGate:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.calls = append(p.calls, ref.RepoPath)
@@ -152,9 +160,15 @@ func TestResolveAuthenticatedViewerLoginsRefreshesExpiredCredentialCacheInBackgr
 	}
 	srv.viewerLoginMu.Unlock()
 
+	lookupGate := make(chan struct{})
+	releaseLookup := sync.OnceFunc(func() { close(lookupGate) })
+	t.Cleanup(releaseLookup)
+	provider.lookupGate = lookupGate
+
 	second, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
 	require.NoError(err)
 	require.Equal(first, second)
+	releaseLookup()
 	require.Eventually(func() bool { return provider.callCount() == 2 }, time.Second, 10*time.Millisecond)
 
 	// The provider call returns before the background refresh writes the cache.

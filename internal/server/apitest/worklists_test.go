@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/server/syncevents"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
+	"go.kenn.io/forge/worklist"
 )
 
 func TestAPIWorklistsEmbedListRowsAndReportGoneItems(t *testing.T) {
@@ -38,7 +39,7 @@ func TestAPIWorklistsEmbedListRowsAndReportGoneItems(t *testing.T) {
 	put, err := srv.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
 		Title: "Merge today", Recipe: "open PRs with green CI", CreatedBy: "triage-agent",
 		Items: []mcpserver.WorklistPutItem{
-			{Item: identity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix"},
+			{Item: identity("pr", 42), Score: new(9), Section: "Ready", Note: "small fix", Caveat: "breaks the API", CaveatLevel: worklist.CaveatCritical},
 			{Item: identity("issue", 5), Caveat: "confirm repro"},
 			{Item: identity("pr", 7)},
 		},
@@ -62,7 +63,9 @@ func TestAPIWorklistsEmbedListRowsAndReportGoneItems(t *testing.T) {
 	assert.Equal("abc123", ready.Snapshot.HeadSha)
 	assert.Equal(generated.WorklistItemResponseFreshnessFresh, ready.Freshness)
 	assert.EqualValues(5, got.JSON200.Items[1].Issue.Number)
+	assert.Equal(generated.WorklistItemResponseCaveatLevelCritical, ready.CaveatLevel)
 	assert.Equal("confirm repro", got.JSON200.Items[1].Caveat)
+	assert.Equal(generated.WorklistItemResponseCaveatLevelInfo, got.JSON200.Items[1].CaveatLevel, "a caveat without a level is info")
 	assert.Equal(generated.WorklistItemResponseFreshnessGone, got.JSON200.Items[2].Freshness)
 
 	var raw struct {

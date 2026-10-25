@@ -49,6 +49,7 @@ Rules:
 
 ## Freshness Rules
 
+- Startup restores missing credential gates from the oldest error-free, non-future completion among tracked live repositories with a rate tracker; the run-slot owner applies completion plus interval once, while failed and never-synced repositories bypass the gate on the first startup pass (`internal/github/sync.go::Syncer.liveRepoSyncTimes`, `internal/github/sync.go::Syncer.runOnceWithSlot`).
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
@@ -63,6 +64,9 @@ what "current" means.
   one item.
 - If a PR or issue is marked as detail-fetched, the persisted fields that power
   the user-visible detail view must match that claim.
+- Only the comment sync writes a stored PR's `comment_count`; list passes keep it,
+  because provider list counts are absent or count other notes and worklist
+  snapshots read it (`internal/github/sync.go::Syncer.indexUpsertMR`).
 - A partial GraphQL issue-comment page is observation-only: merge its visible
   and minimized states over stored moderation metadata before REST completion.
   (`internal/github/sync.go::refreshIssueTimeline`)
@@ -120,13 +124,16 @@ For pull requests, that means:
   Active watched-PR sync must use the same persisted pull-request ETag path as
   detail drain (`internal/github/sync.go::syncMRForRepo`,
   `internal/github/sync.go::getPullRequestForDetail`,
-  `internal/github/sync.go::markUnchangedMRDetailFetched`). Manual/API PR
-  refreshes must bypass that PR ETag gate so rerun checks, workflow approval,
-  comments, reviews, and commits can refresh even when GitHub's PR resource is
-  unchanged (`internal/github/sync.go::SyncMR`,
-  `internal/server/itemapi/huma_routes.go::Handlers.SyncPR`). Cadence control is still required
-  because changed PRs correctly fall through to comments, reviews, commits, CI,
-  and workflow approval refreshes.
+  `internal/github/sync.go::markUnchangedMRDetailFetched`). Open PR-page 304s refresh
+  all children: comments, reviews, commits, CI, and workflow approval
+  (`internal/github/sync.go::refreshMRDetailSnapshot`). Background 304s refresh
+  comments, comment moderation metadata, review threads, and pending CI
+  (`internal/github/sync.go::markUnchangedMRDetailFetched`). Merged or closed PRs, a missing parent,
+  stale diff SHAs, or missing local diff commits force a full page fetch
+  that saves the returned ETag for the next poll
+  (`internal/github/sync.go::SyncMROnProviderIfChanged`). Manual refreshes remain
+  unconditional (`internal/github/sync.go::SyncMROnProvider`). Cadence control is
+  still required because child reads spend provider quota.
 - MR snapshot publication reclassifies workspace head-repository trust from the
   stored row. Provider-ID collisions preserve the destination
   MR ID and merge its dependent review data before applying the newest provider
@@ -223,7 +230,8 @@ PR timeline storage is intentionally selective.
   stored rows may predate parent-time realignment. (`internal/server/pullapi/routes.go::withSyntheticMRLifecycleEvents`)
 - Keep the existing event families stable: comments, reviews, commits, force
   pushes, and the currently supported PR system events.
-- GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve a distinct original author in commit metadata, and fall back independently to author identity/time when committer data is absent.
+- GitHub commit events use the committer login/name and committed date as their activity actor/time when present, preserve every known original author in commit metadata even when it matches the actor, and fall back independently to author identity/time when committer data is absent.
+- Event inserts and metadata rewrites cache the original author in `forge_mr_events.commit_author`; Activity reads that column. (`internal/db/queries.go::upsertMREventsTx`, `internal/db/queries.go::updateMREventMetadataTx`)
 - Review comments are UI-aware but are not part of the stored sync model unless
   they can be fetched within the supported timeline path.
 - If bulk sync persists PR system events, detail sync must persist the same
@@ -794,6 +802,10 @@ response never overwrites an App installation pool
 - Normal sync budget waits preserve the last completed repository health and timestamp,
   including earlier failures; mixed cycles must retain the real failure alongside the
   ceiling cause (`internal/github/sync.go::Syncer.syncRepo`).
+- A local budget refusal stops GraphQL retries and logs one wait line per repository.
+  Refused bulk reads preserve list ETags; only refused item work evicts them so
+  closures and timelines recover after refill
+  (`internal/github/sync.go::indexSyncRepo`).
 - List discovery (open PR/issue lists, repo identity resolve) spends the local
   ceiling's essential reserve; optional spend (details, fast-sync, archive
   attempts without a registry reservation)

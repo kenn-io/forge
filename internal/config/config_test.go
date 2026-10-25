@@ -85,35 +85,113 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	return cfg, cfg2
 }
 
-func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
+func TestMCPDefaultConditions(t *testing.T) {
+	workerDir := t.TempDir()
+	worker := fmt.Sprintf(`
+host = "127.0.0.1"
+data_dir = %q
+[api]
+require_auth = true
+[execution_worker]
+enabled = true
+broker_socket = %q
+uid = 1001
+github_user_id = 1234
+commit_name = "Developer A"
+commit_email = "developer-a@example.org"
+`, workerDir, filepath.Join(workerDir, "broker.sock"))
+
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "all defaults", content: "host = \"127.0.0.1\"\nport = 8091\n", want: true},
+		{name: "IPv6 loopback", content: "host = \"::1\"\n", want: true},
+		{name: "network", content: "host = \"192.0.2.10\"\n[api]\nrequire_auth = true\n"},
+		{name: "wildcard", content: "host = \"0.0.0.0\"\n[api]\nrequire_auth = true\n"},
+		{name: "worker", content: worker},
+		{name: "saved port", content: "host = \"127.0.0.1\"\n[mcp]\nport = 9192\n"},
+		{name: "cache override", content: "host = \"127.0.0.1\"\n[mcp]\ndiff_cache_mb = 256\n", want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			cfg, err := Load(writeConfig(t, tt.content))
+			require.NoError(t, err)
+			assert.Equal(tt.want, cfg.MCPEnabled())
+			if tt.want {
+				assert.Equal(cfg.ListenAddr(), cfg.MCPListenAddr())
+				assert.Equal("http://"+cfg.ListenAddr()+"/mcp", cfg.MCPURL())
+				assert.True(cfg.MCPSharesMainListener())
+			}
+		})
+	}
+}
+
+func TestSetMCPEnabled(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		input    MCP
+		want     bool
+		expected *bool
+	}{
+		{"default on stays on", MCP{}, true, nil},
+		{"default on turns off", MCP{}, false, new(false)},
+		{"explicit off stays off", MCP{Enabled: new(false)}, false, new(false)},
+		{"explicit off returns to default", MCP{Enabled: new(false)}, true, nil},
+		{"explicit on stays on", MCP{Enabled: new(true)}, true, new(true)},
+		{"explicit on turns off", MCP{Enabled: new(true)}, false, new(false)},
+		{"saved port stays off", MCP{Port: 9192}, false, new(false)},
+		{"saved port turns on", MCP{Port: 9192}, true, new(true)},
+		{"saved port explicit off turns on", MCP{Enabled: new(false), Port: 9192}, true, new(true)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Host: "127.0.0.1", MCP: tt.input}
+			before := cfg.MCPEnabled()
+			cfg.SetMCPEnabled(tt.want)
+			assert.Equal(t, tt.expected, cfg.MCP.Enabled)
+			assert.Equal(t, tt.want, cfg.MCPEnabled())
+			if tt.input.Enabled != nil {
+				assert.Equal(t, before, *tt.input.Enabled, "startup snapshot pointer must stay unchanged")
+			}
+		})
+	}
+}
+
+func TestExplicitlyEnabledMCPSharesBackendPort(t *testing.T) {
 	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\n"))
 	require.NoError(t, err)
-	assert.Equal(8092, cfg.MCPPort())
-	assert.Equal("127.0.0.1:8092", cfg.MCPListenAddr())
+	assert.Equal(8091, cfg.MCPPort())
+	assert.Equal("127.0.0.1:8091", cfg.MCPListenAddr())
+	assert.True(cfg.MCPSharesMainListener())
 	assert.Equal(int64(128<<20), cfg.MCPDiffCacheBytes())
 }
 
 func TestMCPListenAddrStaysLoopback(t *testing.T) {
 	tests := []struct {
-		host string
-		port string
-		want string
+		host     string
+		port     string
+		basePath string
+		want     string
 	}{
-		{host: "127.0.0.1", want: "127.0.0.1:8092"},
+		{host: "127.0.0.1", want: "127.0.0.1:8091"},
+		{host: "::ffff:127.0.0.1", want: "127.0.0.1:8091"},
 		{host: "::1", port: "9192", want: "[::1]:9192"},
-		{host: "192.0.2.10", want: "127.0.0.1:8092"},
+		{host: "192.0.2.10", want: "127.0.0.1:8091"},
 		{host: "2001:db8::10", port: "9192", want: "127.0.0.1:9192"},
+		{host: "127.0.0.1", port: "8091", basePath: "/forge/", want: "127.0.0.1:8091"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
-			content := fmt.Sprintf("host = %q\nport = 8091\n[mcp]\nenabled = true\n", tt.host)
+			content := fmt.Sprintf("host = %q\nport = 8091\nbase_path = %q\n[mcp]\nenabled = true\n", tt.host, tt.basePath)
 			if tt.port != "" {
 				content += "port = " + tt.port + "\n"
 			}
 			cfg, err := Load(writeConfig(t, content))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, cfg.MCPListenAddr())
+			assert.Equal(t, "http://"+tt.want+strings.TrimSuffix(tt.basePath, "/")+"/mcp", cfg.MCPURL())
 		})
 	}
 }
@@ -128,7 +206,7 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 		{name: "loopback same port", host: "127.0.0.1", mcpPort: "8091", want: true},
 		{name: "ipv6 loopback same port", host: "::1", mcpPort: "8091", want: true},
 		{name: "ipv4 wildcard same port", host: "0.0.0.0", mcpPort: "8091", want: true},
-		{name: "loopback default port", host: "127.0.0.1", want: false},
+		{name: "loopback default port", host: "127.0.0.1", want: true},
 		{name: "loopback distinct port", host: "127.0.0.1", mcpPort: "9192", want: false},
 		// The companion binds 127.0.0.1, which these main listeners do not cover.
 		{name: "interface same port", host: "192.0.2.10", mcpPort: "8091", want: false},
@@ -148,15 +226,17 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 }
 
 func TestMCPConfigRoundTrip(t *testing.T) {
-	require := require.New(t)
-	cfg, err := Load(writeConfig(t, ""))
-	require.NoError(err)
-	cfg.MCP = MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(cfg.Save(path))
-	reloaded, err := Load(path)
-	require.NoError(err)
-	assert.Equal(t, MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}, reloaded.MCP)
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			cfg, saved := roundTripConfigString(t, fmt.Sprintf("host = \"127.0.0.1\"\n[mcp]\nenabled = %t\nport = 9192\ndiff_cache_mb = 256\n", enabled))
+			assert.Equal(t, enabled, cfg.MCPEnabled())
+			assert.Equal(t, MCP{Enabled: new(enabled), Port: 9192, DiffCacheMB: 256}, saved.MCP)
+			if !enabled {
+				assert.Empty(t, saved.MCPListenAddr())
+				assert.Empty(t, saved.MCPURL())
+			}
+		})
+	}
 }
 
 func TestMCPConfigValidation(t *testing.T) {
@@ -165,11 +245,6 @@ func TestMCPConfigValidation(t *testing.T) {
 		content string
 		wantErr string
 	}{
-		{
-			name:    "default port overflows",
-			content: "host = \"127.0.0.1\"\nport = 65535\n[mcp]\nenabled = true\n",
-			wantErr: "MCP port",
-		},
 		{
 			name:    "explicit port below range",
 			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = -1\n",

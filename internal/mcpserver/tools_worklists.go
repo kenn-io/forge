@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"net/url"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -21,6 +23,10 @@ type putWorklistInput struct {
 
 type worklistIDInput struct {
 	WorklistID int64 `json:"worklist_id"`
+}
+
+type importWorklistInput struct {
+	Link string `json:"link" jsonschema:"a worklist link: kenn://kenn-forge/worklists/import#v1..., an http(s) URL ending in /worklists/import#v1..., or the v1... fragment alone"`
 }
 
 type listWorklistsInput struct {
@@ -72,6 +78,15 @@ func (s *Server) registerWorklistTools() {
 		Description: "Clear every handled mark on a worklist. Call it only when the maintainer asks; " +
 			"marks are the maintainer's record of what they dealt with. Returns how many marks were cleared.",
 	}, wrapTool(s.clearWorklistMarks))
+	mcp.AddTool(s.mcp, &mcp.Tool{
+		Name: "kenn_forge_import_worklist",
+		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Create the worklist a worklist link carries, as opening the link in Forge does. " +
+			"Pass a kenn:// link, an http(s) link ending in /worklists/import#v1..., or the v1... fragment. " +
+			"Items Forge does not track or has not synced, and repeated items, are skipped and counted in skipped_count. " +
+			"Importing the same link again returns the list it created, restoring it if dismissed. " +
+			"Never calls provider APIs.",
+	}, wrapTool(s.importWorklist))
 }
 
 func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (WorklistPutResult, error) {
@@ -91,6 +106,7 @@ func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (Worklist
 		put.Items = append(put.Items, WorklistPutItem{
 			Item: identity, Score: item.Score,
 			Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	if err := ValidateWorklistPut(put); err != nil {
@@ -131,6 +147,52 @@ func (s *Server) clearWorklistMarks(ctx context.Context, in worklistIDInput) (Wo
 	return s.backend.ClearWorklistMarks(ctx, in.WorklistID)
 }
 
+func (s *Server) importWorklist(ctx context.Context, in importWorklistInput) (WorklistImportResult, error) {
+	fragment, err := worklistLinkFragment(in.Link)
+	if err != nil {
+		return WorklistImportResult{}, worklistFieldError("link", err.Error())
+	}
+	result, err := s.backend.ImportWorklist(ctx, fragment)
+	// The import names the link by the HTTP body field that carries it.
+	if backendErr, ok := errors.AsType[*Error](err); ok && backendErr.Details["field"] == "body.fragment" {
+		renamed := *backendErr
+		renamed.Details = maps.Clone(backendErr.Details)
+		renamed.Details["field"] = "link"
+		return WorklistImportResult{}, &renamed
+	}
+	return result, err
+}
+
+// worklistLinkFragment returns the fragment a worklist link carries after
+// '#'. It accepts a kenn:// link, a Forge import page URL, or the fragment
+// alone; the import decodes and validates the fragment itself.
+func worklistLinkFragment(link string) (string, error) {
+	link = strings.TrimSpace(link)
+	base, fragment, found := strings.Cut(link, "#")
+	switch {
+	case !found && strings.Contains(link, "://"):
+		return "", errors.New("the link carries no worklist after '#'")
+	case !found:
+		fragment = link
+	case base != "" && base != worklist.KennImportURL && !isWorklistImportPage(base):
+		return "", fmt.Errorf("not a worklist link: expected %s#v1..., an http(s) URL ending in %s#v1..., or the v1... fragment",
+			worklist.KennImportURL, worklist.ImportPath)
+	}
+	if fragment == "" {
+		return "", errors.New("the link carries no worklist after '#'")
+	}
+	return fragment, nil
+}
+
+func isWorklistImportPage(raw string) bool {
+	page, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	return (page.Scheme == "http" || page.Scheme == "https") && page.Host != "" &&
+		strings.HasSuffix(page.Path, worklist.ImportPath)
+}
+
 func worklistFieldError(field, message string) *Error {
 	return &Error{
 		Kind: "invalid_request", Code: ErrorCodeValidation, Message: message,
@@ -153,6 +215,7 @@ func ValidateWorklistPut(put WorklistPut) error {
 				Owner: item.Item.Owner, Name: item.Item.Name, Number: item.Item.Number,
 			},
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	if err := list.Validate(); err != nil {

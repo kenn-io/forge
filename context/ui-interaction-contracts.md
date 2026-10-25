@@ -60,6 +60,18 @@ Interactive surfaces must agree on which item is selected.
   lookup. Modifier clicks, middle clicks, and the context menu also get the
   provider URL for an untracked item, since its Forge route has nothing to show
   (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
+- A tracked-repository link whose item Forge cannot resolve (404) leaves for the
+  reference's http(s) provider URL in the current tab; the click was already
+  cancelled and a new tab opened after the lookup would be popup-blocked. Keep the
+  not-found flash only when the reference has no valid provider URL, and the
+  failure flash for other errors. The resolver returns the outcome, and a caller
+  acts on it only while the click is current: the router saw no URL change since
+  the click, even one back to the same URL, and the caller's own selection is
+  unchanged. A replaceState write that keeps the URL is not a change. A workspace
+  view opens a late item on its selection check alone, but leaves or flashes only
+  with an unchanged URL too, because a parked view keeps its workspace
+  (`frontend/src/lib/utils/itemRefHandler.ts::resolveItemReferenceEffect`,
+  `frontend/src/lib/stores/router.svelte.ts::getURLChangeCount`).
 - Modified terminal links open in the client browser, including provider item URLs;
   keep opening synchronous with the gesture, without a daemon lookup
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
@@ -544,6 +556,9 @@ Persisted controls must state their scope clearly.
 - ACP font preferences apply to all harnesses and persist separately from terminal
   preferences; changing either must preserve the other
   (`internal/config/config.go::ACP`).
+- Workspace font controls retain the selected session across workflow, docked, and
+  promoted panes when the toolbar takes focus; app chrome never resizes
+  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::acpZoomActive`).
 - Settings controls persist on change. Do not add a Save button, a dirty draft,
   or a saving state that disables sibling controls; queue saves serially and
   build each payload from the latest persisted values
@@ -563,9 +578,15 @@ Persisted controls must state their scope clearly.
   that answered discovery is shown as text with the address form hidden until
   discovery fails or the user chooses to change it
   (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
-- Rebasing must not hide commit authorship: show the original author and label a
-  distinct committer, while preserving committer-based activity identity and time
+- Rebasing must preserve the stored event actor and time; show the original
+  author and label a distinct committer
   (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
+  Activity commit display identity is separate from the stored actor, so Hide
+  bots follows the actor. GitHub commit display names and text search share
+  each PR event's own original author. Branch rows use the most recently detail-synced
+  PR's author for the exact repository and full SHA, breaking ties by event ID.
+  Other providers keep their existing author names
+  (`internal/db/queries_activity.go::listActivityWithQueryer`).
 - Timeline diff retry suppression must permit a new load after another pane clears
   or replaces the shared diff store; a previous attempt is not permanent availability
   (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).
@@ -977,7 +998,8 @@ Keyboard handlers must have one clear owner for each key press.
   the already-cleared payload as null and would leave its preview painted.
 - Route authority over pane layout (`DetailPaneLayout`'s `routeTabKey` effect) is a
   TRANSITION, not an invariant: it activates the route's pane and drops foreign
-  zooms only when the route names a different pane than last applied. The effect
+  zooms when the route names a different pane or a new comment-link request arrives.
+  Wait for the conversation to be visible before completing its comment jump. The effect
   also tracks `tabs`, whose identity changes as a consequence of a zoom itself;
   re-asserting on every change silently undid Expand Terminal and Maximize.
 - The pane controls popover is portalled to `<body>`. The leaf's action container is

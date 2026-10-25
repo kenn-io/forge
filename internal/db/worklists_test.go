@@ -36,7 +36,7 @@ func TestPutWorklistCreatesListWithRecordedItemState(t *testing.T) {
 		WorkspaceID: "ws-1", Now: writtenAt,
 		Items: []WorklistItemParams{
 			{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7, Score: new(8), Section: "Ready", Note: "small fix"},
-			{RepoID: repoID, ItemType: ItemTypeIssue, ItemNumber: 9, Section: "Triage", Caveat: "needs repro"},
+			{RepoID: repoID, ItemType: ItemTypeIssue, ItemNumber: 9, Section: "Triage", Caveat: "needs repro", CaveatLevel: "warning"},
 		},
 	})
 
@@ -77,6 +77,7 @@ func TestPutWorklistCreatesListWithRecordedItemState(t *testing.T) {
 	assert.Equal(1, issue.Position)
 	assert.Nil(issue.Score)
 	assert.Equal("needs repro", issue.Caveat)
+	assert.Equal("warning", issue.CaveatLevel)
 	assert.Equal("Crash on start", issue.Title)
 	assert.Equal(WorklistItemState{State: "open", LastActivityAt: new(baseTime())}, issue.Snapshot)
 	assert.Equal(WorklistFresh, issue.Freshness)

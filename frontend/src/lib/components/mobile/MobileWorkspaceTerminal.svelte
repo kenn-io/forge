@@ -17,6 +17,7 @@
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import SpaceIcon from "@lucide/svelte/icons/space";
   import SquareIcon from "@lucide/svelte/icons/square";
+  import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import { Deferred, Effect, Option, Stream } from "effect";
   import { tick, untrack } from "svelte";
   import type { RuntimeSession, TerminalSettings as TerminalSettingsType } from "../../api/types.js";
@@ -74,6 +75,8 @@
     mobileWorkspaceIdentity,
     mobileWorkspaceLinkedItem,
   } from "./mobile-workspace-detail.js";
+  import { deleteMobileWorkspace } from "./mobile-workspace-delete.js";
+  import { mobileWorkspaceDisplayName } from "./mobile-workspace-list.js";
   import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
   import { sortLaunchTargets } from "../terminal/launchTargets.js";
   import {
@@ -132,6 +135,9 @@
   let stoppingSession = $state<string | null>(null);
   let retryingSetup = $state(false);
   let stopSession = $state.raw<RuntimeSession | null>(null);
+  let deleteConfirmOpen = $state(false);
+  let deleteForce = $state(false);
+  let deletingWorkspace = $state(false);
   let launchSheetOpen = $state(false);
   let terminalOptionsOpen = $state(false);
   let terminalOptionsSaving = $state(false);
@@ -742,6 +748,57 @@
     );
   }
 
+  function promptDeleteWorkspace(): void {
+    if (!usableWorkspace || deletingWorkspace) return;
+    terminalOptionsOpen = false;
+    deleteForce = false;
+    deleteConfirmOpen = true;
+  }
+
+  function closeDeleteConfirmation(): void {
+    if (deletingWorkspace) return;
+    deleteConfirmOpen = false;
+    deleteForce = false;
+  }
+
+  // A successful delete publishes the deletion, which replaces this route
+  // with the workspace list.
+  function confirmDeleteWorkspace(): void {
+    const current = usableWorkspace;
+    if (!current || deletingWorkspace) return;
+    const force = deleteForce;
+    deletingWorkspace = true;
+    appRuntime.runCommand(
+      deleteMobileWorkspace(current, force).pipe(
+        Effect.tap(() =>
+          Effect.sync(() => {
+            deleteConfirmOpen = false;
+            deleteForce = false;
+          }),
+        ),
+        Effect.ensuring(
+          Effect.sync(() => {
+            deletingWorkspace = false;
+          }),
+        ),
+      ),
+      {
+        operation: "delete mobile workspace",
+        safeContext: { workspaceId: current.id, remote: Boolean(hostKey) },
+        onFailure: (failure) => {
+          const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
+          if (!force && problem?.code === ProblemCodes.worktreeDirty) {
+            deleteForce = true;
+            return;
+          }
+          deleteConfirmOpen = false;
+          deleteForce = false;
+          showFlash(failureMessage(failure, "Delete failed."), { tone: "danger" });
+        },
+      },
+    );
+  }
+
   $effect(() => {
     if (
       workspace?.id !== workspaceId || workspace.fleet_host_key !== hostKey || workspace.status !== "ready" ||
@@ -822,6 +879,8 @@
     terminalOptionsSaving = false;
     terminalSettingsDialogOpen = false;
     retryingSetup = false;
+    deleteConfirmOpen = false;
+    deleteForce = false;
     releaseOwnedSessions();
 
     const execution = untrack(() =>
@@ -1156,6 +1215,20 @@
         </div>
       {/if}
 
+      {#if usableWorkspace}
+        <div class="mobile-terminal-options-sheet__danger">
+          <button
+            type="button"
+            disabled={terminalOptionsSaving || deletingWorkspace || stoppingSession !== null || launchingTarget !== null}
+            onclick={promptDeleteWorkspace}
+          >
+            <Trash2Icon size="17" strokeWidth="2" aria-hidden="true" />
+            Delete workspace…
+          </button>
+          <small>Removes the worktree and every session in this workspace.</small>
+        </div>
+      {/if}
+
       {#if !selectedChat}
       <section class="mobile-terminal-options-sheet__settings" aria-labelledby="mobile-terminal-settings-heading">
         <h3 id="mobile-terminal-settings-heading">Appearance and behavior</h3>
@@ -1215,6 +1288,22 @@
   frameId="mobile-workspace-stop-terminal"
   onCancel={() => (stopSession = null)}
   onConfirm={stopSelectedSession}
+/>
+
+<ConfirmDialog
+  open={deleteConfirmOpen}
+  title={deleteForce ? "Force delete workspace?" : "Delete workspace?"}
+  message={workspace ? `Delete workspace "${mobileWorkspaceDisplayName(workspace)}"?` : ""}
+  hint={deleteForce
+    ? "This discards uncommitted changes and removes the managed worktree and runtime sessions."
+    : "This removes its managed worktree and runtime sessions."}
+  confirmLabel={deleteForce ? "Force delete workspace" : "Delete workspace"}
+  pendingLabel="Deleting…"
+  busy={deletingWorkspace}
+  tone="danger"
+  frameId="mobile-workspace-terminal-delete"
+  onCancel={closeDeleteConfirmation}
+  onConfirm={confirmDeleteWorkspace}
 />
 
 <style>

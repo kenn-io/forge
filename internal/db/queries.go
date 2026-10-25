@@ -1892,17 +1892,35 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 // UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC.
 // When a duplicate dedupe key is seen again, the conflict path refreshes
 // mutable fields so edited events and legacy local-offset timestamps are
-// repaired during normal sync.
+// repaired during normal sync. The call advances each parent's snapshot_revision
+// so in-flight syncs that read the provider earlier cannot overwrite these events.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertMREventsTx(ctx, tx, events)
+		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.MergeRequestID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_merge_requests", parentIDs)
 	})
 }
 
-// updateMREventMetadataTx rewrites only metadata_json for the matching event
+func advanceEventParentRevisionsTx(ctx context.Context, tx *sql.Tx, table string, parentIDs map[int64]struct{}) error {
+	for id := range parentIDs {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE %s SET snapshot_revision = snapshot_revision + 1 WHERE id = ?`, table), id); err != nil {
+			return fmt.Errorf("advance event parent revision: %w", err)
+		}
+	}
+	return nil
+}
+
+// updateMREventMetadataTx rewrites metadata_json and its cached commit author for the matching event
 // dedupe keys. Derived-state writers (commit liveness) ride this inside the
 // same revision-guarded transaction as the rest of their round's snapshot, so
 // a stale round can never land metadata and newer full-row event fields are
@@ -1918,8 +1936,8 @@ func updateMREventMetadataTx(
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 		UPDATE forge_mr_events
-		SET metadata_json = ?
-		WHERE merge_request_id = ? AND dedupe_key = ?`)
+		SET metadata_json = ?1, commit_author = `+mrEventCommitAuthorSQL("event_type", "?1")+`
+		WHERE merge_request_id = ?2 AND dedupe_key = ?3`)
 	if err != nil {
 		return fmt.Errorf("prepare update mr event metadata: %w", err)
 	}
@@ -1937,6 +1955,12 @@ func updateMREventMetadataTx(
 	return nil
 }
 
+func mrEventCommitAuthorSQL(eventType, metadata string) string {
+	return fmt.Sprintf(`CASE WHEN %s = 'commit' AND json_valid(%s)
+		AND json_type(%s, '$.commit_author') = 'text'
+		THEN json_extract(%s, '$.commit_author') ELSE '' END`, eventType, metadata, metadata, metadata)
+}
+
 func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1944,8 +1968,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -1961,6 +1985,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
+			    commit_author = excluded.commit_author,
 			    created_at    = excluded.created_at,
 			    direct_url    = COALESCE(NULLIF(excluded.direct_url, ''), direct_url),
 			    -- Events without a thread id come from provider responses
@@ -3539,13 +3564,22 @@ func (d *DB) UpdateIssueDetailFetched(
 
 // UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
 // UTC. Duplicate keys refresh mutable fields so edited events and older local
-// timestamp encodings are repaired during normal sync.
+// timestamp encodings are repaired during normal sync. The call advances each
+// parent's snapshot_revision so in-flight syncs that read the provider earlier
+// cannot overwrite these events.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertIssueEventsTx(ctx, tx, events)
+		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.IssueID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_issues", parentIDs)
 	})
 }
 

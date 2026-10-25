@@ -584,18 +584,10 @@ function sessionWebSockets(page: Page, workspaceId: string) {
 }
 
 test.describe("inline workspace pane continuity", () => {
-  test.describe.configure({ mode: "serial", timeout: lockedWorkspaceTestTimeoutMs });
+  test.describe.configure({ timeout: lockedWorkspaceTestTimeoutMs });
 
-  // These tests share one page (serial mode) and the pane layout persists, so a
-  // test that closes or maximizes the workspace pane would hand that arrangement
-  // to the next one. Reset it on every document load.
   test.beforeEach(async ({ page }) => {
     trackTerminalReadiness(page);
-    await page.addInitScript(() => {
-      for (const surface of ["prs", "issues", "activity"]) {
-        localStorage.removeItem(`kenn-forge-pane-layout-v1:${surface}`);
-      }
-    });
   });
 
   test("a dock resize grows both split terminals and their PTY rows", async ({ page }) => {

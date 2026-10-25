@@ -1,18 +1,19 @@
 # syntax=docker/dockerfile:1
-ARG BUN_IMAGE=oven/bun:1.4.3@sha256:ec06c3b6cea04192ae6770c434f668ca41d343ad19fa6472216c7b48be39c598
+ARG BUN_IMAGE=oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS bun
-FROM --platform=$BUILDPLATFORM node:24.21.0-bookworm-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:24.22.1-bookworm-slim AS frontend
 WORKDIR /src
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 ENV UV_THREADPOOL_SIZE=2 RAYON_NUM_THREADS=2
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN bun install --frozen-lockfile \
     && node scripts/build-frontend.mjs \
     && cd packages/github-app-ui && node ../../node_modules/vite-plus/bin/vp build --logLevel warn
 
-FROM --platform=$BUILDPLATFORM golang:1.27.2-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm AS build
 WORKDIR /src
 # "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
 ENV CGO_ENABLED=0 GOFLAGS=-p=2 GOMAXPROCS=2 GOPROXY="https://proxy.golang.org|direct"
@@ -33,6 +34,7 @@ RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git openssh-client tmux \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20250419~deb12u2 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 forge \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/sh forge

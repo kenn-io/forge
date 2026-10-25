@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -84,7 +85,12 @@ func TestACPStdioHelper(t *testing.T) {
 	var promptID jsontext.Value
 	elicitationOffered := false
 	model, effort := "fast", "low"
+	mode := "agent"
 	configResponse := func(id jsontext.Value) {
+		if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"mode","name":"Mode","type":"select","currentValue":%q,"options":[{"value":"agent","name":"Agent"},{"value":"agent-full-access","name":"Full access"},{"value":"read-only","name":"Read-only"}]}]}}`+"\n", id, mode)
+			return
+		}
 		if os.Getenv("KENN_FORGE_ACP_MODEL_DEPENDENT") == "1" {
 			options := fmt.Sprintf(`[{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]`, model)
 			if model == "deep" {
@@ -113,6 +119,10 @@ func TestACPStdioHelper(t *testing.T) {
 			}
 			if os.Getenv("KENN_FORGE_ACP_BAD_VERSION") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
+				continue
+			}
+			if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","version":"fixture"},"agentCapabilities":{"loadSession":true}}}`+"\n", message.ID)
 				continue
 			}
 			var params struct {
@@ -180,6 +190,12 @@ func TestACPStdioHelper(t *testing.T) {
 			switch params.ConfigID {
 			case "model":
 				model, effort = params.Value, "low"
+			case "mode":
+				if os.Getenv("KENN_FORGE_ACP_REJECT_MODE") == "1" {
+					fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"mode rejected"}}`+"\n", message.ID)
+					continue
+				}
+				mode = params.Value
 			case "effort":
 				effort = params.Value
 			default:
@@ -1157,4 +1173,91 @@ func TestObservedACPReportsOnlyPromptsAndReplies(t *testing.T) {
 	}
 	require.NoError(t, chat.Prompt("go", ACPSender{}))
 	assert.Equal(t, 4, typed)
+}
+
+func codexACPFixtureCommand(t *testing.T) []string {
+	t.Helper()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	data, err := os.ReadFile(executable)
+	require.NoError(t, err)
+	name := "codex-acp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	adapter := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(adapter, data, 0o700))
+	return []string{adapter, "-test.run=^TestACPStdioHelper$"}
+}
+
+func TestCodexACPRestoresMode(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_CODEX", "1")
+	t.Setenv("INITIAL_AGENT_MODE", "")
+	previous := codexEffectiveAccess
+	t.Cleanup(func() { codexEffectiveAccess = previous })
+	command := codexACPFixtureCommand(t)
+	for _, tc := range []struct {
+		name, savedMode, mode, notice string
+		probe, reject, reload, fatal  bool
+	}{
+		{name: "saved offered mode wins", savedMode: "read-only", mode: "read-only"},
+		{name: "unoffered saved mode derives", savedMode: "removed", mode: "agent-full-access", probe: true},
+		{name: "native reload derives", mode: "agent-full-access", probe: true, reload: true},
+		{name: "derived setting failure keeps chat", mode: "agent", probe: true, reject: true, notice: "mode rejected"},
+		{name: "saved setting failure is fatal", savedMode: "read-only", reject: true, fatal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "")
+			if tc.reject {
+				t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "1")
+			}
+			calls := 0
+			worktree := t.TempDir()
+			codexEffectiveAccess = func(_ context.Context, probeCommand, env []string, cwd string, _ map[string]any) (string, string, error) {
+				calls++
+				if tc.name == "native reload derives" {
+					require.NotEmpty(t, probeCommand)
+					assert.Equal(command[0], probeCommand[0])
+					assert.Equal(worktree, cwd)
+					assert.Subset(env, []string{"KENN_FORGE_LOCALRUNTIME_HELPER=1", "KENN_FORGE_ACP_FIXTURE=1", "KENN_FORGE_ACP_CODEX=1", "INITIAL_AGENT_MODE="})
+				}
+				return "dangerFullAccess", "never", nil
+			}
+			manager := NewManager(Options{ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+			if tc.savedMode != "" {
+				_, err := manager.acpConfigValues("chat", map[string]string{"mode": tc.savedMode})
+				require.NoError(t, err)
+			}
+			var saved *acpSavedSession
+			if tc.reload {
+				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
+			}
+			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved)
+			if tc.probe {
+				assert.Equal(1, calls)
+			} else {
+				assert.Zero(calls)
+			}
+			if tc.fatal {
+				require.ErrorContains(t, err, "restore ACP setting mode")
+				return
+			}
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+			state := publishedACPState(t, agent)
+			assert.Equal(tc.mode, state.ConfigOptions[0].CurrentValue)
+			if tc.notice != "" {
+				require.Len(t, state.Notices, 1)
+				assert.Contains(state.Notices[0], tc.notice)
+			} else {
+				assert.Empty(state.Notices)
+			}
+			values, err := manager.acpConfigValues("chat", nil)
+			require.NoError(t, err)
+			assert.Equal(tc.savedMode, values["mode"])
+		})
+	}
 }

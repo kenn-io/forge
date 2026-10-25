@@ -111,7 +111,7 @@ func loadMCPQuickstart(
 	}
 	if _, err := os.Stat(runtimelock.LockPath(cfg.DataDir)); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return stoppedMCPQuickstart(cfg.MCP.Enabled, configPath), nil
+			return stoppedMCPQuickstart(cfg.MCPEnabled(), configPath), nil
 		}
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: inspect daemon lock: %w", err)
 	}
@@ -120,7 +120,7 @@ func loadMCPQuickstart(
 		return mcpQuickstartInfo{}, fmt.Errorf("mcp quickstart: read daemon status: %w", err)
 	}
 	if !status.Running {
-		return stoppedMCPQuickstart(cfg.MCP.Enabled, configPath), nil
+		return stoppedMCPQuickstart(cfg.MCPEnabled(), configPath), nil
 	}
 	if status.Metadata == nil {
 		return mcpQuickstartInfo{}, fmt.Errorf(

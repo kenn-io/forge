@@ -11,6 +11,8 @@ set -euo pipefail
 #   ROBOREV_REF   - git ref to build (default: main)
 #   ROBOREV_PORT  - host port for daemon (default: 17373)
 #   SKIP_BUILD    - set to 1 to skip frontend/server build
+#   PLAYWRIGHT_SKIP_SYSTEM_DEPS - set to 1 when Chromium's system packages
+#                   are already installed (CI restores them from a cache)
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ROBOREV_REF="${ROBOREV_REF:-main}"
@@ -107,7 +109,12 @@ docker compose --env-file "$ENV_FILE" exec -T roborev sh -eu -c '
 
 # 6. Install Playwright browsers if needed
 echo "--- install playwright ---"
-cd "$REPO_ROOT/frontend" && node node_modules/.bin/playwright install --with-deps chromium
+cd "$REPO_ROOT/frontend"
+if [ "${PLAYWRIGHT_SKIP_SYSTEM_DEPS:-}" = "1" ]; then
+  node node_modules/.bin/playwright install chromium
+else
+  node node_modules/.bin/playwright install --with-deps chromium
+fi
 
 # 7. Run tests — pass env file path so helpers can read it
 echo "--- run tests ---"

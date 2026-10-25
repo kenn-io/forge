@@ -3,7 +3,7 @@ package github
 import (
 	"context"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 )
 
 // collectPages centralizes the standard go-github pagination loop for list

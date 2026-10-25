@@ -9,7 +9,10 @@
   import PencilIcon from "@lucide/svelte/icons/pencil";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
   import XIcon from "@lucide/svelte/icons/x";
-  import { onDestroy, untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
+  import { Effect } from "effect";
+  import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { getCommentNavigation } from "../../stores/router.svelte.js";
   import { slide } from "svelte/transition";
   import type { IssueEvent, PREvent } from "../../api/types.js";
   import type {
@@ -59,6 +62,7 @@
   import type { RepositoryKey } from "../../api/repository-key.js";
 
   interface Props {
+    visible?: boolean;
     events: Array<PREvent | IssueEvent>;
     orderingEvents?: Array<PREvent | IssueEvent> | undefined;
     provider?: string | undefined;
@@ -109,6 +113,7 @@
   }
 
   const {
+    visible = true,
     events,
     orderingEvents = events,
     provider,
@@ -746,7 +751,22 @@
     return collapseObsoleteCommitEntries(entries, "");
   }
 
-  const displayEvents = $derived(collapseLifecycleTransitions(events));
+  const commentNavigation = $derived(getCommentNavigation({ provider, platformHost, repoPath, number, itemType }));
+  const targetComment = $derived(orderingEvents.find((event) => {
+    const prefix = event.EventType === "issue_comment" ? "issuecomment-"
+      : event.EventType === "review_comment" ? "discussion_r"
+      : event.EventType === "review" ? "pullrequestreview-" : null;
+    return prefix !== null && event.PlatformID != null &&
+      `${prefix}${event.PlatformID}` === commentNavigation?.commentAnchor;
+  }));
+  // Reveal filtered targets in their original position in the discussion.
+  const displayEvents = $derived.by(() => {
+    if (!targetComment || events.some((event) => event.ID === targetComment.ID)) {
+      return collapseLifecycleTransitions(events);
+    }
+    const visibleIDs = new Set([targetComment.ID, ...events.map((event) => event.ID)]);
+    return collapseLifecycleTransitions(orderingEvents.filter((event) => visibleIDs.has(event.ID)));
+  });
   const displayOrderingEvents = $derived(collapseLifecycleTransitions(orderingEvents));
   const timelineEntries = $derived(buildTimelineEntries(displayEvents, displayOrderingEvents));
   const compactTimelineEntries = $derived(buildCompactTimelineEntries(displayEvents, displayOrderingEvents));
@@ -756,8 +776,12 @@
   const progressiveMount = createProgressiveMountController({ batchSize: 25 });
   let mountedEntryCount = $state(0);
   let fullTimelineRequested = $state(false);
-  const mountedTimelineEntries = $derived(renderedTimelineEntries.slice(0, mountedEntryCount));
-  const unmountedEntryCount = $derived(renderedTimelineEntries.length - mountedEntryCount);
+  const targetEntryIndex = $derived(renderedTimelineEntries.findIndex((entry) =>
+    entry.event.ID === targetComment?.ID || entry.replies.some((reply) => reply.ID === targetComment?.ID),
+  ));
+  const visibleEntryCount = $derived(Math.max(mountedEntryCount, targetEntryIndex + 1));
+  const mountedTimelineEntries = $derived(renderedTimelineEntries.slice(0, visibleEntryCount));
+  const unmountedEntryCount = $derived(renderedTimelineEntries.length - visibleEntryCount);
   const timelineMountKey = $derived(
     `${itemIdentity}\u0000${activityViewMode}\u0000${timelineOrder}\u0000${filtered}\u0000${filterScope}\u0000${initialEntryLimit}`,
   );
@@ -777,6 +801,49 @@
       fullTimelineRequested = false;
       mountedEntryCount = Math.min(initialEntryLimit, entryCount);
     });
+  });
+
+  let timelineElement: HTMLDivElement | undefined = $state();
+  let missingCommentElement: HTMLParagraphElement | undefined = $state();
+  let completedCommentID: number | undefined;
+  let completedCommentNavigation: ReturnType<typeof getCommentNavigation> = null;
+  $effect(() => {
+    const navigation = commentNavigation;
+    const target = targetComment;
+    const entry = renderedTimelineEntries[targetEntryIndex];
+    const element = timelineElement;
+    const missing = missingCommentElement;
+    if (!visible || !navigation || (!element && !missing) ||
+        (navigation === completedCommentNavigation && target?.ID === completedCommentID)) return;
+    const execution = untrack(() => runtime.runCommand(
+      Effect.sync(() => {
+        if (!target || !entry) return;
+        // Reveal once for this navigation; subsequent toggles and refreshes
+        // keep the user's normal expansion state.
+        expandedCompactRows = [...new Set([...expandedCompactRows, entry.key])];
+        expandedProviderHiddenComments = [...new Set([
+          ...expandedProviderHiddenComments, target.ID, entry.event.ID,
+        ])];
+        if (entry.replies.some((reply) => reply.ID === target.ID)) {
+          collapsedThreads = collapsedThreads.filter((id) => id !== entryThreadID(entry));
+        }
+      }).pipe(
+        Effect.andThen(Effect.promise(() => tick())),
+        Effect.andThen(nextAnimationFrame),
+        Effect.andThen(Effect.sync(() => {
+          const comment = target
+            ? element?.querySelector<HTMLElement>(`[data-comment-id="${target.ID}"]`)
+            : missing;
+          if (!comment) return;
+          comment.focus({ preventScroll: true });
+          comment.scrollIntoView({ block: "start" });
+          completedCommentNavigation = navigation;
+          completedCommentID = target?.ID;
+        })),
+      ),
+      { operation: "navigate to comment", safeContext: {}, onFailure: () => {} },
+    ));
+    return () => execution.interrupt();
   });
 
   function loadFullTimeline(): void {
@@ -1888,7 +1955,11 @@
 	{/if}
 {/snippet}
 
-{#if events.length === 0}
+{#if commentNavigation && !targetComment}
+  <p role="status" tabindex="-1" bind:this={missingCommentElement}>Comment not found in this discussion.</p>
+{/if}
+
+{#if displayEvents.length === 0}
   <p class="empty">{filtered ? "No activity matches the current filters" : "No activity yet"}</p>
 {:else}
   {#if onApplySuggestion !== undefined && eligibleBatchedSuggestions.length > 0}
@@ -1907,7 +1978,7 @@
       </div>
     </Card>
   {/if}
-  <div class="event-timeline">
+  <div class="event-timeline" bind:this={timelineElement}>
     <Timeline ariaLabel="Item activity">
       {#each mountedTimelineEntries as entry (entry.key)}
       {@const event = entry.event}
@@ -1957,6 +2028,7 @@
         tone={eventTimelineTone(event.EventType)}
         class={activityViewMode === "compact" || isCompactEvent(event.EventType) ? "event--compact" : ""}
       >
+        <div data-comment-id={event.ID} tabindex="-1" class:comment-target={event.ID === targetComment?.ID}>
         {#if activityViewMode === "compact"}
           {@const compactContext = compactEventContext(event, entry.reviewThread)}
           {@const compactSummary = compactEventSummary(event, entry.reviewThread)}
@@ -2189,6 +2261,9 @@
                     {@const replyHiddenState = providerHiddenState(reply)}
                     <li
                       class="thread-reply"
+                      data-comment-id={reply.ID}
+                      tabindex="-1"
+                      class:comment-target={reply.ID === targetComment?.ID}
                       class:thread-reply--first={index === 0}
                       class:thread-reply--last={index === entry.replies.length - 1}
                     >
@@ -2223,6 +2298,7 @@
             {/if}
           </CommentCard>
         {/if}
+        </div>
       </TimelineItem>
       {/if}
       {/each}
@@ -2267,6 +2343,12 @@
 {/if}
 
 <style>
+  .comment-target {
+    scroll-margin-block-start: 1rem;
+    outline: 2px solid var(--focus-ring, var(--accent-blue));
+    outline-offset: 2px;
+  }
+
   .empty {
     font-size: var(--font-size-root);
     color: var(--text-muted);

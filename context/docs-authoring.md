@@ -46,12 +46,16 @@ screenshots, or the Zensical site.
   plus `/docs/<page>.md`; index as `/docs/index.md`, so relative links resolve
   from the page's own directory) listed in the hand-maintained
   `docs/llms.txt`, and the build fails when any half or listing is missing —
-  a new page must be added to the file, nav, allowlist, and `llms.txt`.
-  (`scripts/build-docs.mjs::verifySiteRoot`)
+  a new page must be added to the file, nav, `publishedFiles`, `llms.txt`,
+  and `.vercelignore`. Local builds read the whole checkout, so only a script
+  test catches a page Vercel never receives. (`scripts/build-docs.mjs::verifySiteRoot`,
+  `scripts/build-docs.test.mjs`)
 - User-facing workflow screenshots are generated only by `make docs-screenshots`
   and must not be tracked on the main branch. Publish one complete current set
   at the root of the orphan `docs-assets` branch, then review its full commit
-  SHA through `scripts/docs-assets.ref`; docs builds validate and materialize
+  SHA through `scripts/docs-assets.ref`. Publish each set as a fast-forward
+  child of the branch tip; released docs pin earlier SHAs, so never force-push
+  them away. Docs builds validate and materialize
   only that pinned set into the ignored `docs/assets/generated/` cache.
   Playwright captures in `docs/screenshots/` use the real seeded e2e backend,
   not mocked API fixtures or a developer daemon. (`scripts/sync-docs-assets.sh`)

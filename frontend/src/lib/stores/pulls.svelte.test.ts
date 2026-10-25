@@ -443,6 +443,34 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([4]);
   });
 
+  it("filters pull requests to green CI, excluding failed, running, and unreported CI", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", {
+          CIChecksJSON: JSON.stringify([
+            { name: "test", status: "completed", conclusion: "success" },
+            { name: "docs", status: "completed", conclusion: "skipped" },
+          ]),
+        }),
+        pull(2, "web", "2026-05-20T14:00:00Z", { CIStatus: "failure" }),
+        pull(3, "worker", "2026-05-20T13:00:00Z", {
+          CIStatus: "pending",
+          CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
+        }),
+        pull(4, "api", "2026-05-20T12:00:00Z", { CIStatus: "", CIChecksJSON: "[]" }),
+        pull(5, "web", "2026-05-20T11:00:00Z", {
+          CIStatus: "",
+          CIChecksJSON: JSON.stringify([{ name: "build", status: "completed", conclusion: "success" }]),
+        }),
+      ]),
+    });
+
+    await loadPulls(store);
+    store.toggleAttributeFilter("passed_ci");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 5]);
+  });
+
   it("keeps server OR matches when combining involvement and PR attributes", async () => {
     const viewerPull = pull(1, "api", "2026-05-20T15:00:00Z", { IsDraft: true });
     const failingPull = pull(2, "api", "2026-05-20T14:00:00Z", { CIStatus: "failure" });

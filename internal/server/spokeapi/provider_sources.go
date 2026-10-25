@@ -957,14 +957,18 @@ func (s *HubProviderSource) PutWorklist(
 		if item.Score != nil {
 			score = new(int64(*item.Score))
 		}
-		items = append(items, generated.FederationWorklistPutItem{
+		wire := generated.FederationWorklistPutItem{
 			Item: generated.FederationWorkflowItemIdentity{
 				Type: item.Item.Type, Provider: item.Item.Provider, PlatformHost: item.Item.PlatformHost,
 				PlatformRepoID: wireRepoID(item.Item.RepoKey), BitbucketRepositoryUUID: wireRepoUUID(item.Item.RepoKey),
 				Owner: item.Item.Owner, Name: item.Item.Name, Number: int64(item.Item.Number),
 			},
 			Score: score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
-		})
+		}
+		if item.CaveatLevel != "" {
+			wire.CaveatLevel = new(generated.FederationWorklistPutItemCaveatLevel(item.CaveatLevel))
+		}
+		items = append(items, wire)
 	}
 	body := generated.FederationPutWorklistBody{
 		Title: put.Title, Recipe: put.Recipe, CreatedBy: put.CreatedBy,
@@ -980,6 +984,22 @@ func (s *HubProviderSource) PutWorklist(
 	var response mcpserver.WorklistPutResult
 	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
 		return mcpserver.WorklistPutResult{}, err
+	}
+	return response, nil
+}
+
+// ImportWorklist imports a worklist link on the hub, as the hub's import
+// page does.
+func (s *HubProviderSource) ImportWorklist(
+	ctx context.Context, fragment string,
+) (worklistapi.WorklistImportResponse, error) {
+	httpRequest, err := generated.NewImportWorklistRequest(ctx, "/api/v1", &generated.ImportWorklistRequestOptions{Body: &generated.ImportWorklistBody{Fragment: fragment}})
+	if err != nil {
+		return worklistapi.WorklistImportResponse{}, err
+	}
+	var response worklistapi.WorklistImportResponse
+	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
+		return worklistapi.WorklistImportResponse{}, err
 	}
 	return response, nil
 }

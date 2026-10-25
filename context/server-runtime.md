@@ -35,8 +35,8 @@
 - Browser screens, visits, and core actions share kit-ui's daily permission gate;
   quiet pauses visit timing until a later UTC day checks permission again;
   preserve accrued time, and expire pending core actions with their UTC day.
-  Stored core action claims keep only each key's last UTC day and are cleared on
-  a `disabled` reply, like kit-ui's screen claims
+  Core actions use kit-ui's `reportDaily` claims, which a `disabled` reply
+  clears with the screen claims
   (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
 - Core action telemetry uses the same Kit daily claims: `pr_viewed` per provider
   and `workspace_opened` per workspace type, once per installation and UTC day.
@@ -53,8 +53,9 @@
 - Launch flashes count only when the document is visible at failure time;
   telemetry preserves their existing presentation
   (`frontend/src/lib/stores/workspace-quick-actions.ts::runWorkspaceQuickAction`).
-- Outcomes wait through permission checks and backoff;
-  posted failures aren't replayed (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
+- Outcomes go through kit-ui's `reportVisit`: they wait through permission checks,
+  and kit-ui drops those reported during backoff; posted failures aren't replayed
+  (`frontend/src/lib/app/telemetry.ts::startRuntimeTelemetry`).
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects
   unknown screens
   (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
@@ -123,6 +124,9 @@ and the root event stream.
   (`internal/devbox/broker.go::validateRepositoryGrants`)
 - Repository names can be reused; stale broker token scope gets one refresh with full admission
   checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)
+- Writable broker tokens request Workflows write only when the installation grants it;
+  cached tokens must match the requested permissions. Read-only tokens stay unchanged.
+  (`internal/devbox/broker.go::Broker.credential`)
 - The broker authenticates Unix peer UIDs and keeps personal GitHub credentials off workers.
   Human commit identity and the App push actor are distinct; GitHub rulesets enforce
   protected-branch restrictions. (`internal/devbox/broker.go`)

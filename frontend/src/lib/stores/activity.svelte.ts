@@ -795,7 +795,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       return {
         ...retainedEvent,
         ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
-        item_author: subject.item_author ?? "",
+        item_author: subject.item_author || item.item_author || "",
         item_last_activity_at: subject.activity_at,
         item_state: item.activity_type === "notification" ? item.item_state : subject.item_state,
         item_title: subject.item_title,

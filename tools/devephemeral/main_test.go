@@ -71,80 +71,115 @@ func TestPrepareEphemeralConfigOverridesPortAndDataDir(t *testing.T) {
 	assert.Equal(sourceDataDir, source.DataDir)
 }
 
-func TestPrepareEphemeralConfigMovesEnabledMCPListenerOffTheSourcePort(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.toml")
-	workDir := filepath.Join(dir, "run")
-	require.NoError(os.MkdirAll(workDir, 0o700))
+func TestPrepareEphemeralConfigSharesDefaultMCPListener(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		mcp           config.MCP
+		mcpPortSet    bool
+		requestedPort int
+		expectedPort  int
+	}{
+		{name: "shared default", expectedPort: 39101},
+		{name: "explicit flag", mcpPortSet: true, requestedPort: 39103, expectedPort: 39103},
+		{name: "explicit zero flag", mcpPortSet: true},
+		{name: "source port free port", mcp: config.MCP{Enabled: new(true), Port: 6661}},
+		{name: "disabled", mcp: config.MCP{Enabled: new(false)}, mcpPortSet: true, requestedPort: 39103},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			dir := t.TempDir()
+			sourcePath := filepath.Join(dir, "source.toml")
+			workDir := filepath.Join(dir, "run")
+			require.NoError(os.MkdirAll(workDir, 0o700))
 
-	source := config.Config{
-		SyncInterval:        "5m",
-		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
-		DefaultPlatformHost: "github.com",
-		Host:                "127.0.0.1",
-		Port:                8091,
-		DataDir:             filepath.Join(dir, "source-data"),
-		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
-		MCP:                 config.MCP{Enabled: true, Port: 6661},
+			source := config.Config{
+				SyncInterval:        "5m",
+				GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
+				DefaultPlatformHost: "github.com",
+				Host:                "127.0.0.1",
+				Port:                8091,
+				DataDir:             filepath.Join(dir, "source-data"),
+				Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+				MCP:                 tc.mcp,
+			}
+			require.NoError(source.Save(sourcePath))
+
+			prepared, err := prepareEphemeralConfig(ephemeralOptions{
+				sourceConfigPath: sourcePath,
+				workDir:          workDir,
+				backendPort:      39101,
+				frontendPort:     39102,
+				mcpPort:          tc.requestedPort,
+				mcpPortSet:       tc.mcpPortSet,
+				freshDB:          true,
+			})
+			require.NoError(err)
+
+			reloaded, err := config.Load(prepared.configPath)
+			require.NoError(err)
+			switch {
+			case tc.mcp.Enabled != nil && !*tc.mcp.Enabled:
+				assert.Equal(new(false), reloaded.MCP.Enabled)
+				assert.Zero(reloaded.MCP.Port)
+				assert.Zero(prepared.mcpPort)
+				assert.Empty(prepared.mcpURL)
+			case tc.mcp.Enabled == nil && !tc.mcpPortSet:
+				assert.Nil(reloaded.MCP.Enabled)
+				assert.Zero(reloaded.MCP.Port)
+				assert.Equal(tc.expectedPort, prepared.mcpPort)
+			default:
+				assert.Equal(new(true), reloaded.MCP.Enabled)
+				if tc.expectedPort != 0 {
+					assert.Equal(tc.expectedPort, reloaded.MCP.Port)
+				} else {
+					assert.Positive(reloaded.MCP.Port)
+					assert.NotEqual(tc.mcp.Port, reloaded.MCP.Port)
+					assert.NotEqual(39101, reloaded.MCP.Port)
+					assert.NotEqual(39102, reloaded.MCP.Port)
+				}
+				assert.Equal(reloaded.MCP.Port, prepared.mcpPort)
+			}
+			assert.Equal(reloaded.MCPURL(), prepared.mcpURL)
+		})
 	}
-	require.NoError(source.Save(sourcePath))
-
-	prepared, err := prepareEphemeralConfig(ephemeralOptions{
-		sourceConfigPath: sourcePath,
-		workDir:          workDir,
-		backendPort:      39101,
-		frontendPort:     39102,
-		mcpPort:          39103,
-		freshDB:          true,
-	})
-	require.NoError(err)
-
-	reloaded, err := config.Load(prepared.configPath)
-	require.NoError(err)
-	assert.True(reloaded.MCP.Enabled)
-	assert.Equal(39103, reloaded.MCP.Port)
-	assert.Equal("127.0.0.1:39103", reloaded.MCPListenAddr())
-	assert.Equal(39103, prepared.mcpPort)
-	assert.Equal("http://127.0.0.1:39103", prepared.mcpURL)
 }
 
-func TestPrepareEphemeralConfigLeavesDisabledMCPAlone(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	sourcePath := filepath.Join(dir, "source.toml")
-	workDir := filepath.Join(dir, "run")
-	require.NoError(os.MkdirAll(workDir, 0o700))
-
-	source := config.Config{
-		SyncInterval:        "5m",
-		GitHubTokenEnv:      "KENN_FORGE_GITHUB_TOKEN",
-		DefaultPlatformHost: "github.com",
-		Host:                "127.0.0.1",
-		Port:                8091,
-		DataDir:             filepath.Join(dir, "source-data"),
-		Activity:            config.Activity{ViewMode: "threaded", TimeRange: "7d"},
+func TestSelectFreePortSkipsReservedPorts(t *testing.T) {
+	for _, failNext := range []bool{false, true} {
+		t.Run(fmt.Sprintf("allocation error=%t", failNext), func(t *testing.T) {
+			require := require.New(t)
+			listen := func() (net.Listener, error) {
+				return (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+			}
+			reserved, err := listen()
+			require.NoError(err)
+			t.Cleanup(func() { _ = reserved.Close() })
+			reservedPort := reserved.Addr().(*net.TCPAddr).Port
+			allocationErr := errors.New("listen failed")
+			first := true
+			selected, err := selectFreePort([]int{reservedPort}, func() (net.Listener, error) {
+				if first {
+					first = false
+					return reserved, nil
+				}
+				if failNext {
+					return nil, allocationErr
+				}
+				return listen()
+			})
+			if failNext {
+				require.ErrorIs(err, allocationErr)
+			} else {
+				require.NoError(err)
+				assert.NotEqual(t, reservedPort, selected)
+			}
+			// Even a rejected candidate must be released on success and failure.
+			reopened, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", reserved.Addr().String())
+			require.NoError(err)
+			require.NoError(reopened.Close())
+		})
 	}
-	require.NoError(source.Save(sourcePath))
-
-	prepared, err := prepareEphemeralConfig(ephemeralOptions{
-		sourceConfigPath: sourcePath,
-		workDir:          workDir,
-		backendPort:      39101,
-		frontendPort:     39102,
-		mcpPort:          39103,
-		freshDB:          true,
-	})
-	require.NoError(err)
-
-	reloaded, err := config.Load(prepared.configPath)
-	require.NoError(err)
-	assert.False(reloaded.MCP.Enabled)
-	assert.Empty(reloaded.MCPListenAddr())
-	assert.Equal(0, prepared.mcpPort)
-	assert.Empty(prepared.mcpURL)
 }
 
 func TestRequireDistinctPortsRejectsAnyCollision(t *testing.T) {
@@ -380,7 +415,6 @@ func TestBuildCommandSpecsWiresEphemeralEnvironment(t *testing.T) {
 	assert.Equal("./scripts/dev-stack-backend.sh", specs.backend.name)
 	assert.Contains(specs.backend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
 	assert.Contains(specs.backend.env, "KENN_FORGE_LOG_FILE=/tmp/kenn-forge-dev/logs/backend-dev.log")
-	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=0")
 	assert.Equal("./scripts/frontend-dev.sh", specs.frontend.name)
 	assert.Equal([]string{"--port", "39302", "--host", "127.0.0.1"}, specs.frontend.args)
 	assert.Contains(specs.frontend.env, "KENN_FORGE_CONFIG=/tmp/kenn-forge-dev/config.toml")
@@ -500,7 +534,7 @@ exec "$FORGE_TEST_BIN" "$@"
 			"-backend-port", "0", "-frontend-port", "0",
 		})
 	}()
-	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"))
+	status := waitForStatusFile(t, filepath.Join(root, "run", "dev-ephemeral.json"), errCh)
 	require.Eventually(func() bool {
 		req, requestErr := http.NewRequestWithContext(
 			t.Context(), http.MethodGet, status.BackendURL+"/api/v1/repos", nil,
@@ -534,20 +568,6 @@ exec "$FORGE_TEST_BIN" "$@"
 	case <-time.After(5 * time.Second):
 		require.Fail("timed out waiting for dev-ephemeral shutdown")
 	}
-}
-
-func TestBuildCommandSpecsPreservesExplicitTelemetrySetting(t *testing.T) {
-	assert := assert.New(t)
-	t.Setenv("TELEMETRY_ENABLED", "1")
-
-	specs := buildCommandSpecs(ephemeralRun{
-		configPath:   "/tmp/kenn-forge-dev/config.toml",
-		backendURL:   "http://127.0.0.1:39301",
-		frontendPort: 39302,
-		logDir:       "/tmp/kenn-forge-dev/logs",
-	}, false, nil)
-
-	assert.Contains(specs.backend.env, "TELEMETRY_ENABLED=1")
 }
 
 func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
@@ -766,7 +786,7 @@ func TestRunWaitsForStopLockBeforeStartingReplacementStack(t *testing.T) {
 	require.NoError(release())
 	lockReleased = true
 
-	status := waitForStatusFile(t, statusPath)
+	status := waitForStatusFile(t, statusPath, errCh)
 	assert.NotEqual(oldBackend.Process.Pid, status.BackendPID)
 	assert.NotEqual(oldFrontend.Process.Pid, status.FrontendPID)
 	assert.Equal("http://127.0.0.1:39511", status.BackendURL)
@@ -1014,7 +1034,7 @@ func TestRunWritesStatusAndReusesLiveDefaultStack(t *testing.T) {
 	}()
 
 	statusPath := filepath.Join(workDir, "dev-ephemeral.json")
-	status := waitForStatusFile(t, statusPath)
+	status := waitForStatusFile(t, statusPath, errCh)
 	assert.NotZero(status.PID)
 	assert.NotZero(status.BackendPID)
 	assert.NotZero(status.FrontendPID)
@@ -1102,7 +1122,7 @@ func waitForCommandExit(t *testing.T, cmd *exec.Cmd, waitCh <-chan error) {
 	}
 }
 
-func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
+func waitForStatusFile(t *testing.T, path string, errCh <-chan error) ephemeralStatus {
 	t.Helper()
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -1112,6 +1132,9 @@ func waitForStatusFile(t *testing.T, path string) ephemeralStatus {
 			return status
 		}
 		select {
+		case err := <-errCh:
+			require.Failf(t, "dev stack exited before publishing status", "error: %v", err)
+			return ephemeralStatus{}
 		case <-deadline:
 			require.Failf(t, "timed out waiting for status file", "path: %s", path)
 			return ephemeralStatus{}

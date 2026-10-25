@@ -59,10 +59,14 @@ never `node_id`) as a JSON integer, and Bitbucket Cloud sets
 
 Responses contain `card`, with null meaning not applicable. A card has
 `status` (`neutral`, `pending`, `success`, `warning`, `error`) and `summary`.
-Optional fields are `markdown`, `result_head_sha`, `actions`, and
-`refresh_after_seconds`. Each action has `id`, `label`, and optional
-`disabled_reason` and `input`. An `input` object, with optional `placeholder`,
-makes the card collect nonblank text before submitting; drafts survive PR
+Optional fields are `markdown`, `result_head_sha`, `actions`,
+`refresh_after_seconds`, and `recommendation`. A `recommendation` has a
+`verdict` of `Merge` or `Hold` and a nonblank `reason` of at most 512 bytes;
+the card shows it above Details as advice that changes no merge rule or
+action (`internal/externalcontext/runner.go::decodeResult`). Each action has
+`id`, `label`, and optional `disabled_reason` and `input`. An `input` object,
+with optional `placeholder`, makes the card collect nonblank text before
+submitting; drafts survive PR
 navigation and head changes and clear only after the action succeeds. Action
 responses use the same envelope. Preserve the nullable card in generated
 schemas and clients

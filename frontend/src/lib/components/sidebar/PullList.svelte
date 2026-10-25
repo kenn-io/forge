@@ -64,6 +64,7 @@
     { value: "draft", label: "Draft" },
     { value: "ready", label: "Ready for review" },
     { value: "merge_conflicts", label: "Merge conflicts" },
+    { value: "passed_ci", label: "Passing CI" },
     { value: "failed_ci", label: "Failed CI" },
   ];
   const kanbanFilterOptions: {

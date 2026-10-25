@@ -7,8 +7,14 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   repos: vi.fn(),
   navigate: vi.fn(),
+  navigateToURL: vi.fn(),
   showFlash: vi.fn(),
 }));
+
+vi.mock("./pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./pageNavigation.js")>();
+  return { ...actual, navigateToURL: mocks.navigateToURL };
+});
 
 vi.mock("../api/runtime.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/runtime.js")>();
@@ -20,14 +26,18 @@ vi.mock("../api/runtime.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../stores/router.svelte.js", () => ({
-  navigate: mocks.navigate,
-  buildItemRoute: vi.fn((ref) =>
-    ref.itemType === "pr"
-      ? `/pulls/${ref.provider}/${ref.repoPath}/${ref.number}`
-      : `/issues/${ref.provider}/${ref.repoPath}/${ref.number}`,
-  ),
-}));
+vi.mock("../stores/router.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../stores/router.svelte.js")>();
+  return {
+    ...actual,
+    navigate: mocks.navigate,
+    buildItemRoute: vi.fn((ref) =>
+      ref.itemType === "pr"
+        ? `/pulls/${ref.provider}/${ref.repoPath}/${ref.number}`
+        : `/issues/${ref.provider}/${ref.repoPath}/${ref.number}`,
+    ),
+  };
+});
 
 vi.mock("../stores/flash.svelte.js", () => ({
   showFlash: mocks.showFlash,
@@ -109,6 +119,7 @@ describe("itemRefHandler", () => {
     mocks.post.mockReset();
     mocks.repos.mockReset();
     mocks.navigate.mockReset();
+    mocks.navigateToURL.mockReset();
     mocks.showFlash.mockReset();
   });
 
@@ -374,5 +385,138 @@ describe("itemRefHandler", () => {
       tone: "danger",
     });
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+  const unsyncedForgejoPull = {
+    "data-provider": "forgejo",
+    "data-platform-host": "forge.example.com",
+    "data-owner": "acme",
+    "data-name": "widgets",
+    "data-repo-path": "acme/widgets",
+    "data-number": "12",
+  };
+
+  async function problemResponse(status: number, code: "notFound" | "upstreamError"): Promise<never> {
+    const { GeneratedProblemResponse } = await import("../api/runtime.js");
+    const problem = { status, code, title: "Problem", detail: "problem" };
+    throw new GeneratedProblemResponse(problem, Response.json(problem, { status }));
+  }
+
+  it("opens the provider page when a tracked repository has not synced the item", async () => {
+    mocks.post.mockImplementation(() => problemResponse(404, "notFound"));
+
+    const click = await clickItemRef({
+      ...unsyncedForgejoPull,
+      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
+    });
+
+    expect(click.captured).toBe(true);
+    expect(mocks.navigateToURL).toHaveBeenCalledWith("https://forge.example.com/acme/widgets/pulls/12");
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+    expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["without a provider URL", {}],
+    ["with a non-http provider URL", { "data-external-url": "javascript:alert(1)" }],
+  ])("keeps the not-found flash for an unsynced item %s", async (_label, extra) => {
+    mocks.post.mockImplementation(() => problemResponse(404, "notFound"));
+
+    await clickItemRef({ ...unsyncedForgejoPull, ...extra });
+
+    expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widgets#12 not found.", { tone: "danger" });
+    expect(mocks.navigateToURL).not.toHaveBeenCalled();
+  });
+
+  // Clicks a Forgejo link from /?selected=pr:12, changes the URL to each of
+  // laterURLs while the lookup is pending, then lets the lookup finish.
+  async function clickWithDelayedLookup(
+    laterURLs: readonly string[],
+    outcome:
+      | { status: 404; code: "notFound"; externalUrl?: string }
+      | { status: 200; body: { repo_tracked: boolean; item_type: string } },
+  ): Promise<void> {
+    const { initItemRefHandler } = await import("./itemRefHandler.js");
+    const runtime = makeAppRuntime(
+      makeGeneratedClient({ RepositoriesService: { listRepos: mocks.repos, resolveRepoItemOnHost: mocks.post } }),
+    );
+    const lookupStarted = Promise.withResolvers<void>();
+    const releaseLookup = Promise.withResolvers<void>();
+    let lookupSettled = false;
+    mocks.post.mockImplementation(async () => {
+      lookupStarted.resolve();
+      await releaseLookup.promise;
+      lookupSettled = true;
+      return outcome.status === 200 ? outcome.body : problemResponse(outcome.status, outcome.code);
+    });
+    const originURL = window.location.pathname + window.location.search;
+    window.history.pushState(null, "", "/?selected=pr:12");
+    const cleanup = initItemRefHandler(runtime, undefined, document);
+    await vi.waitFor(() => expect(mocks.repos).toHaveBeenCalled());
+    const anchor = document.createElement("a");
+    anchor.className = "item-ref";
+    anchor.href = "/pulls/forgejo/acme/widgets/12";
+    const attributes: Record<string, string> = { ...unsyncedForgejoPull };
+    if ("externalUrl" in outcome && outcome.externalUrl) attributes["data-external-url"] = outcome.externalUrl;
+    for (const [name, value] of Object.entries(attributes)) anchor.setAttribute(name, value);
+    document.body.appendChild(anchor);
+    try {
+      anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+      await lookupStarted.promise;
+      for (const url of laterURLs) window.history.replaceState(null, "", url);
+      releaseLookup.resolve();
+      await vi.waitFor(() => expect(lookupSettled).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    } finally {
+      window.history.pushState(null, "", originURL);
+      cleanup();
+      await Effect.runPromise(runtime.disposeEffect);
+    }
+  }
+
+  it.each([
+    ["Activity rewrites the same URL", ["/?selected=pr:12"], true],
+    ["the user moved to another page", ["/settings"], false],
+    ["the user left and came back to the same page", ["/settings", "/?selected=pr:12"], false],
+  ])("opens the provider page for a late 404 when %s", async (_label, laterURLs, opens) => {
+    const externalUrl = "https://forge.example.com/acme/widgets/pulls/12";
+    await clickWithDelayedLookup(laterURLs, { status: 404, code: "notFound", externalUrl });
+
+    if (opens) expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl);
+    else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["the user stays on the page", [], true],
+    ["the user moved to another page", ["/settings"], false],
+  ])("opens a late resolved item when %s", async (_label, laterURLs, opens) => {
+    await clickWithDelayedLookup(laterURLs, { status: 200, body: { repo_tracked: true, item_type: "pr" } });
+
+    if (opens) expect(mocks.navigate).toHaveBeenCalledWith("/pulls/forgejo/acme/widgets/12");
+    else expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it("shows the not-found flash for a late lookup only while the user stays on the page", async () => {
+    const notFound = { status: 404, code: "notFound" } as const;
+    await clickWithDelayedLookup([], notFound);
+    expect(mocks.showFlash).toHaveBeenCalledWith("Item acme/widgets#12 not found.", { tone: "danger" });
+
+    mocks.showFlash.mockReset();
+    await clickWithDelayedLookup(["/settings"], notFound);
+    expect(mocks.showFlash).not.toHaveBeenCalled();
+  });
+
+  it("keeps the failure flash when the resolver fails for another reason", async () => {
+    mocks.post.mockImplementation(() => problemResponse(502, "upstreamError"));
+
+    await clickItemRef({
+      ...unsyncedForgejoPull,
+      "data-external-url": "https://forge.example.com/acme/widgets/pulls/12",
+    });
+
+    expect(mocks.showFlash).toHaveBeenCalledWith("Could not open acme/widgets#12. Try again.", {
+      tone: "danger",
+    });
+    expect(mocks.navigateToURL).not.toHaveBeenCalled();
   });
 });

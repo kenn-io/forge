@@ -17,6 +17,11 @@ Start in **Activity** to find new comments, reviews, and state changes. Open
 The list shows review state, CI, branch information, and repository context.
 Select an item to open its description, timeline, actions, and diff.
 
+Use **Passing CI** in the list filters to find pull requests whose checks
+passed with none failed or still running, or **Failed CI** for the ones with a
+failed check. A pull request with
+no reported CI matches neither.
+
 Use local workflow statuses when you need a personal queue such as "needs my
 review" or "waiting for author." These statuses stay in Forge and do not
 change labels or project fields at the provider.
@@ -32,7 +37,11 @@ Unsupported actions remain visible but unavailable.
 
 Videos attached to descriptions, comments, and review comments play inline
 where the provider plays them. For private repositories, Forge loads them with
-your provider credential.
+your provider credential. To watch one larger without leaving the page, use
+the expand button in the video's controls, next to full screen. Playback
+continues in the larger view, and picks up inline from there when you close
+it. The speed button sets the playback speed, and Forge remembers it for the
+next videos you open.
 
 In **Files**, select a line to draft an inline comment. When the provider
 supports native multiline ranges, you can also select a contiguous range.

@@ -1,4 +1,5 @@
-// Package codexhooks reuses reviewed Codex hooks between repository worktrees.
+// Package codexhooks reuses reviewed Codex hooks between repository worktrees
+// and probes Codex's effective workspace access with an ephemeral thread.
 package codexhooks
 
 import (
@@ -12,8 +13,8 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 )
 
-// Codex owns hook hashing and config edits. Use its local stdio API without
-// starting an agent thread or connecting to the user's running app server.
+// Codex owns hook hashing, config edits, and access resolution. Use its local
+// stdio API for hook approvals and ephemeral access probes.
 // https://developers.openai.com/codex/app-server
 type client struct {
 	input  io.Writer
@@ -21,15 +22,16 @@ type client struct {
 	id     int
 }
 
-func startClient(ctx context.Context, executable string, options []string, cwd string) (*client, func(), error) {
+func startClient(ctx context.Context, executable string, options, env []string, cwd string) (*client, func(), error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	release, err := procutil.TryAcquire(ctx, "Codex hook approvals")
+	release, err := procutil.TryAcquire(ctx, "Codex app-server")
 	if err != nil {
 		cancel()
 		return nil, nil, err
 	}
 	cmd := procutil.CommandContext(ctx, executable, append(options, "app-server", "--stdio")...)
 	cmd.Dir = cwd
+	cmd.Env = env
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		cancel()

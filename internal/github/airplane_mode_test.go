@@ -7,8 +7,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 )
 
 func TestAirplaneModeSkipsScheduledSyncButAllowsManualSync(t *testing.T) {
@@ -68,6 +69,49 @@ func TestAirplaneModePausesAndResumesArchive(t *testing.T) {
 
 func TestAirplaneModeDropsQueuedAutomaticSyncAndKeepsManualScope(t *testing.T) {
 	t.Parallel()
+
+	t.Run("airplane mode drops queued startup retries", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			d := openTestDB(t)
+			repos := []RepoRef{
+				{Owner: "acme", Name: "selected", PlatformHost: "github.com"},
+				{Owner: "acme", Name: "failed", PlatformHost: "github.com"},
+			}
+			for _, repo := range repos {
+				id, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+				require.NoError(t, err)
+				lastError := ""
+				if repo.Name == "failed" {
+					lastError = "provider unavailable"
+				}
+				require.NoError(t, d.UpdateRepoSyncCompleted(t.Context(), id, time.Now().Add(-5*time.Minute), lastError))
+			}
+			listed := make(chan string, 10)
+			releaseManual := make(chan struct{})
+			client := &mockClient{listOpenPRsFn: func(ctx context.Context, _, name string) ([]*gh.PullRequest, error) {
+				listed <- name
+				if name == "selected" {
+					select {
+					case <-releaseManual:
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
+				}
+				return nil, nil
+			}}
+			s := NewSyncer(map[string]Client{"github.com": client}, d, nil, repos, time.Hour,
+				map[string]*RateTracker{"github.com": NewRateTracker(d, "github.com", "host", "rest")}, nil)
+			defer s.Stop()
+			require.True(t, s.TriggerRunForRepos(t.Context(), repos[:1]))
+			require.Equal(t, "selected", <-listed)
+			s.Start(t.Context())
+			synctest.Wait()
+			s.SetAirplaneMode(true)
+			close(releaseManual)
+			synctest.Wait()
+			require.Empty(t, listed, "airplane mode drops the queued startup retry")
+		})
+	})
 
 	for _, queuedManual := range []bool{false, true} {
 		t.Run(map[bool]string{false: "automatic", true: "manual"}[queuedManual], func(t *testing.T) {

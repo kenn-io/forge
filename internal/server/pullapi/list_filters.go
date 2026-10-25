@@ -26,25 +26,67 @@ func matchesPullAttributes(pr db.MergeRequest, attributes []string) bool {
 				return true
 			}
 		case "failed_ci":
-			switch strings.ToLower(strings.TrimSpace(pr.CIStatus)) {
-			case "failure", "failed", "error":
+			if hasFailedCI(pr) {
 				return true
 			}
-			checks, err := decodeCIChecks(pr.CIChecksJSON)
-			if err != nil {
-				continue
-			}
-			for _, check := range checks {
-				switch check.Status {
-				case "in_progress", "queued", "pending", "waiting":
-					continue
-				}
-				switch check.Conclusion {
-				case "failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure":
-					return true
-				}
+		case "passed_ci":
+			if hasPassedCI(pr) {
+				return true
 			}
 		}
+	}
+	return false
+}
+
+func hasFailedCI(pr db.MergeRequest) bool {
+	switch strings.ToLower(strings.TrimSpace(pr.CIStatus)) {
+	case "failure", "failed", "error":
+		return true
+	}
+	checks, err := decodeCIChecks(pr.CIChecksJSON)
+	if err != nil {
+		return false
+	}
+	for _, check := range checks {
+		if ciCheckIsPending(check) {
+			continue
+		}
+		switch check.Conclusion {
+		case "failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure":
+			return true
+		}
+	}
+	return false
+}
+
+// hasPassedCI reports green CI: a successful aggregate status (or, without
+// one, at least one check) and no check that is still running or did not pass.
+func hasPassedCI(pr db.MergeRequest) bool {
+	status := strings.ToLower(strings.TrimSpace(pr.CIStatus))
+	if status != "" && status != "success" {
+		return false
+	}
+	checks, err := decodeCIChecks(pr.CIChecksJSON)
+	if err != nil || (status == "" && len(checks) == 0) {
+		return false
+	}
+	for _, check := range checks {
+		if ciCheckIsPending(check) {
+			return false
+		}
+		switch check.Conclusion {
+		case "success", "skipped", "neutral":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func ciCheckIsPending(check db.CICheck) bool {
+	switch check.Status {
+	case "in_progress", "queued", "pending", "waiting":
+		return true
 	}
 	return false
 }

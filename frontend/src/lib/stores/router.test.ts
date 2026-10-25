@@ -3,6 +3,7 @@ import {
   navigate,
   replaceUrl,
   getRoute,
+  getCommentNavigation,
   getDetailTab,
   isDiffView,
   getSelectedPRFromRoute,
@@ -12,6 +13,7 @@ import {
   forgetWorkspaceRoute,
   buildMobileWorkspaceRoute,
   buildMobileWorkspaceItemRoute,
+  getURLChangeCount,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -604,5 +606,54 @@ describe("router /worklists routes", () => {
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
     navigate("/worklists/abc");
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+  });
+});
+
+describe("comment navigation", () => {
+  it.each([
+    ["/pulls/gh/acme/widgets/42", "pull"],
+    ["/issues/gh/acme/widgets/42", "issue"],
+    ["/focus/pulls/gh/acme/widgets/42", "pull"],
+    ["/focus/issues/gh/acme/widgets/42", "issue"],
+  ] as const)("recognizes GitHub comment targets through %s", (path, itemType) => {
+    navigate(`${path}#issuecomment-123`);
+    expect(getCommentNavigation({ ...prRef, itemType })?.commentAnchor).toBe("issuecomment-123");
+  });
+
+  it("preserves targets for selected items and creates a request for every navigation", () => {
+    const item = { ...prRef, itemType: "pull" as const };
+    const path = "/host/github.com/pulls/github/acme/widgets/42#issuecomment-123";
+    navigate(path);
+    const first = getCommentNavigation(item);
+    expect(first?.commentAnchor).toBe("issuecomment-123");
+    navigate(path);
+    expect(getCommentNavigation(item)).not.toBe(first);
+    expect(getCommentNavigation({ ...item, number: 43 })).toBeNull();
+    expect(getCommentNavigation({ ...item, platformHost: "code.example" })).toBeNull();
+    expect(getCommentNavigation({ ...item, itemType: "issue" })).toBeNull();
+    navigate("/host/github.com/pulls/github/acme/widgets/42/files#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
+    navigate("/pulls#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
+  });
+});
+
+describe("router URL change count", () => {
+  it.each([
+    ["navigate", () => navigate("/settings")],
+    ["replaceUrl", () => replaceUrl("/?selected=pr:1")],
+    ["a direct history.replaceState", () => window.history.replaceState(null, "", "/?range=7d")],
+    ["browser back or forward", () => window.dispatchEvent(new PopStateEvent("popstate"))],
+  ])("advances on a URL change made by %s", (_label, change) => {
+    const before = getURLChangeCount();
+    change();
+    expect(getURLChangeCount()).toBeGreaterThan(before);
+  });
+
+  it("does not advance when history.replaceState leaves the URL unchanged", () => {
+    navigate("/?range=7d");
+    const before = getURLChangeCount();
+    window.history.replaceState(null, "", "/?range=7d");
+    expect(getURLChangeCount()).toBe(before);
   });
 });

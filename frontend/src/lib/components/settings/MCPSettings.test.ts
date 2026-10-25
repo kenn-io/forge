@@ -82,6 +82,14 @@ describe("MCPSettings", () => {
     expect(updates[1]).toEqual({ enabled: false, port: 0, diff_cache_mb: 0 });
   });
 
+  it("shows unset numeric overrides as blank rather than zero", () => {
+    renderMCPSettings(mcpSettings({ enabled: true, port: 0, diff_cache_mb: 0 }));
+
+    expect((screen.getByLabelText(/Port/) as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText(/Diff cache/) as HTMLInputElement).value).toBe("");
+    expect(screen.getByRole("button", { name: "Save MCP companion" })).toHaveProperty("disabled", true);
+  });
+
   it("shows the active endpoint and a token-safe client configuration", () => {
     renderMCPSettings(
       mcpSettings({

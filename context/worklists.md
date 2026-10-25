@@ -11,8 +11,13 @@ through.
   dismisses, marks items handled, and acts on worklists, and opening a link
   stores the list it carries, but the UI never edits or reorders items.
 - The agent owns judgment. Each item carries a rank, a 1 to 10 importance
-  score, a section, a note, and a caveat. Readiness is a section, not part of
-  the score.
+  score, a section, a note, and a caveat with a level. Readiness is a section,
+  not part of the score.
+- A caveat's level is info, warning, or critical; an unset level stores as
+  info, so only a concern the agent raises on purpose looks alarming. Lists
+  written before levels existed read as info
+  (`internal/server/mcp_backend_worklists.go::mcpBackend.putWorklistLocal`,
+  `internal/db/migrations/000074_worklist_caveat_level.up.sql`).
 - Each worklist carries a recipe: the criteria in plain text and the searches
   the agent ran. Forge stores and shows the recipe but never evaluates it.
 - Forge owns facts. When an agent writes an item, Forge records what the item
@@ -111,7 +116,8 @@ stateDiagram-v2
   (`internal/db/migrations/000070_worklists.up.sql`).
 - A put validates the whole list before writing: title 1 to 200 characters
   after trimming, recipe up to 10,000, 1 to 200 unique items, score null or 1
-  to 10, section up to 80, note and caveat up to 4,000
+  to 10, section up to 80, note and caveat up to 4,000, caveat level unset,
+  info, warning, or critical
   (`internal/mcpserver/tools_worklists.go::ValidateWorklistPut`).
 - A put is one transaction. Every item must resolve to a tracked repository
   and a visible synced pull request or issue; one miss rejects the list with a
@@ -179,6 +185,7 @@ stateDiagram-v2
   an agent rewrites the list, or its items go away, the link still opens it.
 - A copied link carries the title, recipe, author, and items with each
   repository's current route; never handled marks, snapshots, or stable IDs.
+  It names a caveat level only when it is above the default info.
   The server builds it: browsers cannot reproduce Go's DEFLATE. An inactive
   repository refuses the link, since another repository may hold its route
   (`internal/server/worklistapi/link.go::Handler.LinkService`).
@@ -190,6 +197,9 @@ stateDiagram-v2
   (`internal/server/worklistapi/import.go::Handler.importableRepos`). A link
   with no usable item and no earlier worklist creates nothing; the page shows
   why.
+- MCP imports a link, URL, or bare fragment on the hub through the import
+  page's service, so validation, dedupe, skips, and counts match
+  (`internal/server/worklistapi/import.go::Handler.ImportService`).
 
 ## UI
 
@@ -237,7 +247,10 @@ stateDiagram-v2
   (`frontend/src/lib/views/WorklistView.svelte::stepFromHidden`).
 - Each row shows the score, the title, `owner/name#number` with the pull
   request's `+/-` line counts (omitted when the provider reports none), the
-  note and caveat, the changes since, and live status from the embedded row. Rows show
+  note and caveat, the changes since, and live status from the embedded row. An
+  info caveat is muted text; a warning is amber and a critical one red, and
+  only those two announce their level to screen readers
+  (`frontend/src/lib/components/worklists/WorklistCaveatIcon.svelte`). Rows show
   the same labels and status icons as the pull request and issue lists, from
   the same shared component, so the two cannot drift; past a width cap the
   icons wrap, and rows never overflow the rail at its minimum width

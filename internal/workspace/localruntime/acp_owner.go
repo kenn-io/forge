@@ -371,7 +371,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 35*time.Second+codexACPInitialModeTimeout)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()

@@ -20,6 +20,7 @@ nav = [
     {"Review pull requests" = "workflows/code-reviewer.md"},
     {"Browse repositories" = "workflows/repositories.md"},
     {"Work in local sessions" = "workflows/workspaces.md"},
+    {"Work through worklists" = "workflows/worklists.md"},
     {"Read and edit Docs" = "workflows/docs.md"},
   ]},
   {"Devboxes" = "devboxes.md"},

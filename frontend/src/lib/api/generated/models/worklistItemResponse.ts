@@ -5,12 +5,14 @@ import type { IssueResponse } from "./issueResponse.ts";
 import type { MergeRequestResponse } from "./mergeRequestResponse.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
 import type { WorklistChangesResponse } from "./worklistChangesResponse.ts";
+import type { WorklistItemResponseCaveatLevel } from "./worklistItemResponseCaveatLevel.ts";
 import type { WorklistItemResponseFreshness } from "./worklistItemResponseFreshness.ts";
 import type { WorklistItemResponseItemType } from "./worklistItemResponseItemType.ts";
 import type { WorklistItemStateResponse } from "./worklistItemStateResponse.ts";
 
 export interface WorklistItemResponse {
   caveat: string;
+  caveat_level: WorklistItemResponseCaveatLevel;
   changes: WorklistChangesResponse;
   freshness: WorklistItemResponseFreshness;
   /**

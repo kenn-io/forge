@@ -162,6 +162,7 @@
   }
 
   interface Props {
+    visible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -177,6 +178,7 @@
   }
 
   const {
+    visible = true,
     owner,
     name,
     number,
@@ -1605,6 +1607,7 @@
         </div>
         {#if issues.getIssueDetailLoaded()}
           <EventTimeline
+            {visible}
             events={detail.events ?? []}
             {provider}
             {platformHost}

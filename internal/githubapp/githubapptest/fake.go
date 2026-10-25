@@ -5,6 +5,7 @@
 package githubapptest
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -101,7 +102,10 @@ func NewFake() *Fake {
 	return f
 }
 
-func (f *Fake) Close() { f.srv.Close() }
+func (f *Fake) Close() {
+	// httptest.Server.Close also closes the shared default transport's idle connections.
+	_ = f.srv.Config.Shutdown(context.Background())
+}
 
 // URL is the fake's base; use it as both web base and host source.
 func (f *Fake) URL() string { return f.srv.URL }

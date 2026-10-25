@@ -486,7 +486,7 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 		response := WorklistItemResponse{
 			Position: item.Position, Repo: repos[item.RepoID], ItemType: item.ItemType,
 			Number: item.ItemNumber, Title: item.Title, URL: item.URL, Score: item.Score,
-			Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			Section: item.Section, Note: item.Note, Caveat: item.Caveat, CaveatLevel: item.CaveatLevel,
 			WrittenAt: formatTime(item.WrittenAt), Snapshot: stateResponse(item.Snapshot),
 			Freshness: string(item.Freshness), Changes: changesResponse(item.Changes),
 			HandledAt: formatTimePtr(item.HandledAt),

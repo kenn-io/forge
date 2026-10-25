@@ -1,6 +1,6 @@
 module go.kenn.io/forge
 
-go 1.27.0
+go 1.27.3
 
 require (
 	code.gitea.io/sdk/gitea v0.25.1
@@ -11,7 +11,7 @@ require (
 	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.15
-	github.com/creack/pty/v2 v2.0.1
+	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/danielgtaylor/shorthand/v2 v2.4.0
 	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.3
@@ -20,7 +20,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-migrate/migrate/v4 v4.20.1
-	github.com/google/go-github/v92 v92.0.0
+	github.com/google/go-github/v93 v93.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
@@ -38,9 +38,9 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
 	github.com/yuin/goldmark/v2 v2.1.6
-	gitlab.com/gitlab-org/api/client-go/v3 v3.23.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.25.0
 	go.kenn.io/kata v0.18.0
-	go.kenn.io/kit v0.39.0
+	go.kenn.io/kit v0.43.0
 	go.kenn.io/kwt v0.9.4-0.20261015163017-a92affa6b55e
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
@@ -86,7 +86,6 @@ require (
 	github.com/containerd/ttrpc v1.2.8 // indirect
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
-	github.com/creack/pty v1.1.24 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/danielgtaylor/mexpr v1.10.1 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
@@ -100,7 +99,7 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.11.1 // indirect
+	github.com/ebitengine/purego v0.11.2 // indirect
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
@@ -190,7 +189,7 @@ require (
 	github.com/pjbgf/sha1cd v0.7.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/posthog/posthog-go v1.34.0 // indirect
+	github.com/posthog/posthog-go v1.35.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
@@ -261,10 +260,10 @@ require (
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/time v0.16.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/grpc v1.84.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect

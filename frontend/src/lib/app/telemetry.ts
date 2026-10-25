@@ -1,9 +1,4 @@
-import {
-  startBrowserTelemetry,
-  type BrowserTelemetryOptions,
-  type TelemetryReceipt,
-  type VisitEvent,
-} from "@kenn-io/kit-ui/utils/browser-telemetry";
+import { startBrowserTelemetry, type BrowserTelemetryOptions } from "@kenn-io/kit-ui/utils/browser-telemetry";
 import { getCaptureTelemetryEventUrl } from "../api/generated/system/system.js";
 import { orvalRequest } from "../api/runtime.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
@@ -72,68 +67,10 @@ type CoreAction =
 
 export type Outcome = { event: "search_empty" } | { event: "error_shown"; kind: CoreAction["event"] };
 
-const today = () => new Date().toISOString().slice(0, 10);
-const coreKey = (action: VisitEvent) =>
+const coreKey = (action: CoreAction) =>
   action.event === "pr_viewed"
-    ? `pr_viewed:${String(action.properties.provider)}`
-    : action.event === "workspace_opened"
-      ? `workspace_opened:${String(action.properties.item_type)}`
-      : undefined;
-
-/**
- * Keeps the last UTC day a 202 receipt confirmed each core action. Tabs racing at
- * midnight can overwrite each other's day, costing one send the daemon deduplicates.
- * Blocked storage reads as unclaimed and drops writes, leaving the page-local guard.
- */
-function actionClaims(storageKey: string) {
-  const prefix = `${storageKey}.actions.v1.`;
-  const item = (key: string) => prefix + encodeURIComponent(key);
-  const has = (key: string, day: string) => {
-    try {
-      return localStorage.getItem(item(key)) === day;
-    } catch {
-      return false;
-    }
-  };
-  const add = (key: string, day: string) => {
-    try {
-      localStorage.setItem(item(key), day);
-    } catch {
-      /* The page-local guard still holds this claim. */
-    }
-  };
-  // Opting out drops these claims, like kit-ui drops stored screen names.
-  const forget = () => {
-    try {
-      for (const stored of Object.keys(localStorage)) if (stored.startsWith(prefix)) localStorage.removeItem(stored);
-    } catch {
-      /* Blocked storage holds no claims to drop. */
-    }
-  };
-  return { has, add, forget };
-}
-
-const replyStatus = (data: unknown) =>
-  data !== null && typeof data === "object" && "status" in data ? data.status : undefined;
-
-/** Hands a 202 receipt's body to `read` once the gate reads it, even when the body is unreadable. */
-function observeReceipt(response: TelemetryReceipt, read: (data: unknown) => void): TelemetryReceipt {
-  if ("data" in response) {
-    read(response.data);
-    return response;
-  }
-  return {
-    status: response.status,
-    json: async () => {
-      let data: unknown;
-      try {
-        return (data = await response.json());
-      } finally {
-        read(data);
-      }
-    },
-  };
-}
+    ? `pr_viewed:${action.properties.provider}`
+    : `workspace_opened:${action.properties.item_type}`;
 
 /** Posts through the daemon client, aborting a stalled request or receipt body after 8 seconds. */
 const postReceipt: BrowserTelemetryOptions["post"] = async (route, event, visitOptions) => {
@@ -180,92 +117,30 @@ export function startRuntimeTelemetry(
   runtime: AppRuntime,
   options: Partial<Pick<BrowserTelemetryOptions, "storageKey" | "post">> = {},
 ) {
-  const reportedDay = new Map<string, string>();
-  const pending = new Map<string | VisitEvent, { action: VisitEvent; day: string }>();
-  let retry: ReturnType<typeof setTimeout> | undefined;
-  let quiet = true;
-  const storageKey = options.storageKey ?? "kit-ui.app-opened.web";
-  const stored = actionClaims(storageKey);
-  const post = options.post ?? postReceipt;
+  // Kit UI holds visits until the permission check and sends each daily key once per UTC day.
   const reporter = startBrowserTelemetry({
     route: getCaptureTelemetryEventUrl(),
     surface: "web",
-    ...options,
-    storageKey,
-    post: async (route, event, visitOptions) => {
-      const key = coreKey(event);
-      const day = today();
-      pending.delete(key ?? event);
-      if (key) {
-        reportedDay.set(key, day);
-      }
-      const release = () => {
-        if (key && reportedDay.get(key) === day) reportedDay.delete(key);
-      };
-      try {
-        const response = await post(route, event, visitOptions);
-        if (response.status < 200 || response.status >= 300) release();
-        if (response.status !== 202) return response;
-        // Actions dropped during backoff resend once the gate has applied this receipt.
-        return observeReceipt(response, (data) => {
-          const status = replyStatus(data);
-          if (status === "disabled") {
-            stored.forget();
-            pending.clear();
-          } else if (key && (status === "queued" || status === "skipped")) stored.add(key, day);
-          setTimeout(flush, 0);
-        });
-      } catch (error) {
-        release();
-        throw error;
-      }
-    },
-  });
-  // Pending actions stay queued until posted; the post wrapper removes them.
-  const claimed = (key: string) => reportedDay.get(key) === today() || stored.has(key, today());
-  const send = (action: VisitEvent) => {
-    const key = coreKey(action);
-    if (key && claimed(key)) return void pending.delete(key);
-    reporter.reportVisit(action);
-  };
-  const flush = () => {
-    clearTimeout(retry);
-    retry = undefined;
-    for (const [key, { action, day }] of pending) {
-      if (day === today()) send(action);
-      else pending.delete(key);
-    }
-    // Kit drops visits during backoff and only wakes its own pending daily events.
-    if (!quiet && pending.size > 0) retry = setTimeout(flush, 1_000);
-  };
-  const unsubscribe = reporter.onQuietChange((value) => {
-    quiet = value;
-    if (quiet) clearTimeout(retry);
-    if (!value) flush();
+    storageKey: options.storageKey ?? "kit-ui.app-opened.web",
+    post: options.post ?? postReceipt,
   });
   reporters.set(runtime, {
     reportScreen: (screen) => reporter.reportScreen(screen),
-    reportOutcome: (outcome) => {
-      const visit: VisitEvent = {
+    reportOutcome: (outcome) =>
+      reporter.reportVisit({
         event: outcome.event,
         properties: { surface: "web", ...(outcome.event === "error_shown" ? { kind: outcome.kind } : {}) },
-      };
-      pending.set(visit, { action: visit, day: today() });
-      flush();
-    },
-    reportAction: (action) => {
-      const visit = { event: action.event, properties: { ...action.properties, surface: "web" } };
-      pending.set(coreKey(action)!, { action: visit, day: today() });
-      send(visit);
-    },
+      }),
+    reportAction: (action) =>
+      reporter.reportDaily(coreKey(action), {
+        event: action.event,
+        properties: { ...action.properties, surface: "web" },
+      }),
   });
   return {
     ...reporter,
     stop: () => {
       reporters.delete(runtime);
-      clearTimeout(retry);
-      pending.clear();
-      unsubscribe();
       reporter.stop();
     },
   };

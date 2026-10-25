@@ -81,7 +81,10 @@ Worklists:
 - When asked for a queue of PRs and issues to work through, write it with
   `kenn_forge_put_worklist`. Items go in rank order. Put readiness in
   `section`, importance from 1 to 10 in `score`, the reason in `note`, and
-  what to check before acting in `caveat`.
+  anything else the maintainer should see in `caveat`. Set `caveat_level` to
+  `warning` only for something to check before acting, and to `critical`
+  only for a risk that should stop them; leave it unset otherwise, and the
+  caveat shows as quiet info.
 - Include a `recipe`: the criteria in plain text and the searches you ran.
   Forge stores and shows it but never evaluates it.
 - Every item must be a PR or issue Forge has synced. Copy identities from

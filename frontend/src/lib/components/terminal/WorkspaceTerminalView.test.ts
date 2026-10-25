@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
+  mockSetACPSettings: vi.fn(),
   quickActions: [] as QuickAction[],
   mockTerminalInstances: [] as Array<{
     buffer: { active: { baseY: number; type: "normal" | "alternate" } };
@@ -60,6 +61,7 @@ const mocks = vi.hoisted(() => ({
     options: Record<string, unknown>;
   }>,
   mockUpdateSettings: vi.fn(),
+  navigateToURL: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   runtime: undefined as unknown as OwnedAppRuntime,
   selectWorkspace: vi.fn(),
@@ -178,6 +180,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getQuickActions: () => mocks.quickActions,
         getACPSettings: () => ({ font_family: "", font_size: 13 }),
+        setACPSettings: mocks.mockSetACPSettings,
         getConfiguredRepos: () => [],
         getModeVisibility: () => ({
           activity: true,
@@ -279,6 +282,11 @@ vi.mock("../../api/workspace-runtime.js", () => ({
 vi.mock("../../stores/flash.svelte.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../stores/flash.svelte.js")>();
   return { ...actual, showFlash: mocks.showFlash.mockImplementation(actual.showFlash) };
+});
+
+vi.mock("../../utils/pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/pageNavigation.js")>();
+  return { ...actual, navigateToURL: mocks.navigateToURL };
 });
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
@@ -774,9 +782,11 @@ describe("WorkspaceTerminalView", () => {
     mocks.terminalWrite.mockReset();
     mocks.mockTerminalInstances.length = 0;
     mocks.mockSetTerminalSettings.mockReset();
+    mocks.mockSetACPSettings.mockReset();
     mocks.mockUpdateSettings.mockReset();
-    mocks.mockUpdateSettings.mockImplementation(async ({ terminal }) => ({
+    mocks.mockUpdateSettings.mockImplementation(async ({ terminal, acp }) => ({
       terminal,
+      acp: acp ? { font_family: "", font_size: 13, ...acp } : undefined,
     }));
 
     vi.stubGlobal(
@@ -1124,6 +1134,89 @@ describe("WorkspaceTerminalView", () => {
       }
     },
   );
+
+  it.each([
+    ...(["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
+      (laterAction) => (["provider page", "not found"] as const).map((outcome) => [laterAction, outcome] as const),
+    ),
+    ["workspace switch", "network failure"] as const,
+    ["no superseding action", "network failure"] as const,
+  ])("presents a late lookup result only while its workspace remains current: %s, %s", async (laterAction, outcome) => {
+    const externalUrl = outcome === "provider page" ? "https://github.com/acme/widget/issues/7" : undefined;
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    mocks.navigateToURL.mockReset();
+    const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+    const resolveStarted = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    onTestFinished(() => releaseResolution.resolve());
+    let resolveSettled = false;
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/workspaces/ws-1" || path === "/api/v1/workspaces/ws-2")
+        return Response.json({ ...workspaceResponse, id: path.split("/").at(-1), repo });
+      if (path === "/api/v1/repos")
+        return Response.json([
+          { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+        ]);
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+        resolveStarted.resolve();
+        await releaseResolution.promise;
+        resolveSettled = true;
+        if (outcome === "network failure") throw new TypeError("Failed to fetch");
+        return Response.json(
+          { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+          { status: 404 },
+        );
+      }
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await screen.findByRole("button", { name: "Search PRs and issues" });
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    link.textContent = "Related issue";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+      ...(externalUrl ? { externalUrl } : {}),
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await resolveStarted.promise;
+    if (laterAction === "workspace switch") {
+      await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
+    } else if (laterAction === "route change") {
+      navigate("/settings");
+    } else if (laterAction === "route round trip") {
+      navigate("/settings");
+      navigate("/terminal/ws-1");
+    } else if (laterAction === "unmount") {
+      view.unmount();
+    }
+    releaseResolution.resolve();
+    await waitFor(() => expect(resolveSettled).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const current = laterAction === "no superseding action";
+    const message = {
+      "provider page": undefined,
+      "not found": "Item acme/widget#7 not found.",
+      "network failure": "Could not reach Forge to open acme/widget#7. Try again.",
+    }[outcome];
+    if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
+    else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+    if (current && message)
+      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith(message, { tone: "danger" }));
+    expect(mocks.showFlash.mock.calls.map(([text]) => text)).toEqual(current && message ? [message] : []);
+  });
 
   it.each(["another link", "unmount"])("reports an accepted target save failure after %s", async (laterAction) => {
     const previousPath = window.location.pathname + window.location.search + window.location.hash;
@@ -1489,6 +1582,89 @@ describe("WorkspaceTerminalView", () => {
       });
     });
     expect(mocks.mockSetTerminalSettings).toHaveBeenCalledWith(expect.objectContaining({ font_size: 15 }));
+  });
+
+  describe.each(["workflow", "dock", "promoted"] as const)("font zoom selection in the %s pane", (region) => {
+    it.each(["acp", "plain_shell"] as const)(
+      "retains the selected %s session when the toolbar receives focus",
+      async (kind) => {
+        const workflowSession = { ...runningSession, kind: kind === "acp" ? "agent" : "acp" };
+        const selectedSession = {
+          ...reviewerSession,
+          kind,
+          display_region: region === "workflow" ? "workflow" : "terminal",
+        };
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          launch_targets: [],
+          sessions: [workflowSession, selectedSession],
+        });
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          region === "workflow"
+            ? persistedTwoSessionWorkflowLayout(workflowSession.key, selectedSession.key)
+            : JSON.stringify({ ...JSON.parse(persistedTerminalLayout("tabs")), open: true }),
+        );
+        if (region === "promoted") claimForPrs();
+        render(WorkspaceTerminalView, {
+          props: { workspaceId: "ws-1", paneSurface: region === "promoted" ? "prs" : undefined },
+        });
+        if (region === "promoted") render(WorkspacePaneControls);
+        await screen.findByRole("tab", { name: /Helper/ });
+        const workflowPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]')!;
+        await fireEvent.focusIn(workflowPane);
+
+        let selectedPane: HTMLElement | undefined;
+        if (region === "promoted") {
+          const layout = getPaneLayoutStore("prs");
+          noteWorkspacePaneRendered("prs");
+          const paneKey = sessionPaneKey("ws-1", undefined, selectedSession.key);
+          expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+          layout.notePaneRender({
+            activeInputTabKey: paneKey,
+            editableTabs: ["workspace", paneKey],
+            onScreenTabs: ["workspace", paneKey],
+            flattened: false,
+            soloChromeTabs: [],
+          });
+          flushSync();
+          // The surface releases input ownership when focus moves to its toolbar.
+          layout.notePaneRender({ ...layout.paneRender()!, activeInputTabKey: null });
+          flushSync();
+          const controls = screen.getByRole("button", { name: "Workspace controls" });
+          controls.focus();
+          await fireEvent.click(controls);
+        } else {
+          selectedPane =
+            region === "workflow"
+              ? document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!
+              : await screen.findByRole("group", { name: "Reviewer split drop targets" });
+          await fireEvent.focusIn(selectedPane);
+        }
+
+        const target = kind === "acp" ? "ACP" : "terminal";
+        const increase = screen.getByRole("button", { name: `Increase ${target} font size` });
+        if (selectedPane) await fireEvent.focusOut(selectedPane, { relatedTarget: increase });
+        increase.focus();
+        await fireEvent.click(increase);
+        await waitFor(() =>
+          expect(mocks.mockUpdateSettings).toHaveBeenCalledWith(
+            kind === "acp" ? { acp: { font_size: 14 } } : { terminal: expect.objectContaining({ font_size: 15 }) },
+          ),
+        );
+        await waitFor(() =>
+          expect(kind === "acp" ? mocks.mockSetACPSettings : mocks.mockSetTerminalSettings).toHaveBeenCalledWith(
+            expect.objectContaining({ font_size: kind === "acp" ? 14 : 15 }),
+          ),
+        );
+        expect(kind === "acp" ? mocks.mockSetTerminalSettings : mocks.mockSetACPSettings).not.toHaveBeenCalled();
+
+        // Returning to the workflow must replace the retained dock/pane selection.
+        await fireEvent.focusIn(workflowPane);
+        expect(
+          screen.getByRole("group", { name: kind === "acp" ? "Terminal font size" : "ACP font size" }),
+        ).toBeTruthy();
+      },
+    );
   });
 
   it.each([

@@ -76,6 +76,12 @@ back to TOML.
 - When zero is meaningful, represent the saved value as optional so TOML `omitempty` cannot turn explicit zero into an unset default; the round-trip test must cover zero (`internal/config/config.go::Terminal`).
 - Whole-file settings mutations must hold `configReloadMu` before `cfgMu` while applying and saving changes, or the watcher can restore a stale snapshot between writes (`internal/server/settings_handlers.go::updateSettings`).
 - Partial settings request objects must use pointer fields and merge only fields that were present; reusing persisted value structs collapses omission into zero values (`internal/server/spokeapi/settings_handlers.go::McpSettingsUpdate`).
+- Omitted `mcp.enabled` defaults on only for loopback-IP non-workers without a saved port;
+  explicit false must survive saves, since older omitted opt-outs cannot be recovered
+  (`internal/config/config.go::Config.MCPEnabled`).
+- Settings resolves the requested or prior effective MCP enable choice after merging port
+  and cache changes, so clearing a port preserves an opt-out
+  (`internal/server/settings_handlers.go::Server.commitLocalSettings`).
 - `modes.actions` is false by default and controls presentation only; provider
   workflow HTTP access remains available (`internal/config/config.go::ModeVisibility`).
 - Disabling Actions releases demand and removes both its top-level mode and PR

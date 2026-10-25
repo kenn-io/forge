@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,7 +20,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	"github.com/cenkalti/backoff/v7"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -42,11 +44,6 @@ func TestMain(m *testing.M) {
 	if code, ok := testtmux.CommandWrapperExitCode(); ok {
 		os.Exit(code)
 	}
-	if os.Getenv("TELEMETRY_ENABLED") == "" {
-		if err := os.Setenv("TELEMETRY_ENABLED", "0"); err != nil {
-			panic(err)
-		}
-	}
 	runtimeDir, err := os.MkdirTemp("", "kenn-forge-test-home-")
 	if err != nil {
 		panic(err)
@@ -54,8 +51,20 @@ func TestMain(m *testing.M) {
 	if err := os.Setenv("KENN_FORGE_HOME", runtimeDir); err != nil {
 		panic(err)
 	}
+	forgeBuildDir = filepath.Join(runtimeDir, "binaries")
+	if err := os.Mkdir(forgeBuildDir, 0o700); err != nil {
+		panic(err)
+	}
 	code := m.Run()
-	if err := os.RemoveAll(runtimeDir); err != nil {
+	// Windows can briefly keep daemon executables locked after process exit.
+	_, err = backoff.Retry(context.Background(), func() (struct{}, error) {
+		err := os.RemoveAll(runtimeDir)
+		if err != nil && (runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission)) {
+			return struct{}{}, backoff.Permanent(err)
+		}
+		return struct{}{}, err
+	}, backoff.WithBackOff(backoff.NewConstantBackOff(10*time.Millisecond)), backoff.WithMaxElapsedTime(2*time.Second))
+	if err != nil {
 		panic(err)
 	}
 	os.Exit(code)
@@ -282,9 +291,9 @@ func TestMCPStartupHandlerStaysUnavailableUntilFullServerSwap(t *testing.T) {
 }
 
 func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *testing.T) {
-	primaryPort, defaultMCPPort := reserveAdjacentPorts(t)
+	primaryPort := reserveFreePort(t)
 	explicitMCPPort := reserveFreePort(t)
-	for explicitMCPPort == primaryPort || explicitMCPPort == defaultMCPPort {
+	for explicitMCPPort == primaryPort {
 		explicitMCPPort = reserveFreePort(t)
 	}
 
@@ -295,21 +304,19 @@ func TestBindDaemonListenersOwnsOptionalMCPPortAndClosesPrimaryOnFailure(t *test
 		wantMCPPort int
 		wantErr     string
 	}{
-		{name: "disabled"},
+		{name: "disabled", mcp: config.MCP{Enabled: new(false)}},
+		// A blank port shares the main listener rather than binding another.
+		{name: "default port", mcp: config.MCP{Enabled: new(true)}},
 		{
-			name: "default next port", mcp: config.MCP{Enabled: true},
-			wantMCPPort: defaultMCPPort,
-		},
-		{
-			name: "explicit port", mcp: config.MCP{Enabled: true, Port: explicitMCPPort},
+			name: "explicit port", mcp: config.MCP{Enabled: new(true), Port: explicitMCPPort},
 			wantMCPPort: explicitMCPPort,
 		},
 		{
-			name: "occupied port", mcp: config.MCP{Enabled: true, Port: explicitMCPPort},
+			name: "occupied port", mcp: config.MCP{Enabled: new(true), Port: explicitMCPPort},
 			occupiedMCP: true, wantErr: "MCP",
 		},
 		// The main listener serves /mcp itself instead of a colliding bind.
-		{name: "backend port", mcp: config.MCP{Enabled: true, Port: primaryPort}},
+		{name: "backend port", mcp: config.MCP{Enabled: new(true), Port: primaryPort}},
 	}
 
 	for _, tt := range tests {

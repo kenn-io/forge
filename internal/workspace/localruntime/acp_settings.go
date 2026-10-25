@@ -119,9 +119,16 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if err != nil {
 		return nil, err
 	}
+	remaining := maps.Clone(values)
+	if remaining == nil {
+		remaining = make(map[string]string)
+	}
+	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, values["mode"])
+	if derivedMode != "" {
+		remaining["mode"] = derivedMode
+	}
 	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	remaining := maps.Clone(values)
 	for len(remaining) > 0 {
 		a.mu.Lock()
 		options := slices.Clone(a.state.ConfigOptions)
@@ -148,6 +155,13 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 				break
 			}
 			if err := a.setConfig(restoreCtx, option.ID, value); err != nil {
+				if option.ID == "mode" && derivedMode != "" {
+					a.mu.Lock()
+					a.state.Notices = append(a.state.Notices, fmt.Sprintf("Forge couldn't set Codex's resolved mode, so this chat uses codex-acp's default mode: %v", err))
+					a.changedLocked()
+					a.mu.Unlock()
+					break
+				}
 				_ = a.Stop(context.Background())
 				return nil, fmt.Errorf("restore ACP setting %s: %w", option.ID, err)
 			}

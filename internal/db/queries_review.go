@@ -436,22 +436,24 @@ func (d *DB) SetMRReviewThreadResolved(
 	resolved bool,
 	resolvedAt *time.Time,
 ) error {
-	res, err := d.execContext(ctx, `
+	return d.Tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `
 		UPDATE forge_mr_review_threads
 		SET resolved = ?, resolved_at = ?, updated_at = ?
 		WHERE merge_request_id = ? AND id = ?`,
-		resolved, nullableReviewTime(resolvedAt), time.Now().UTC().Format(time.RFC3339),
-		mrID, threadID,
-	)
-	if err != nil {
-		return fmt.Errorf("set mr review thread resolved: %w", err)
-	}
-	if n, err := res.RowsAffected(); err != nil {
-		return fmt.Errorf("get resolved review thread count: %w", err)
-	} else if n == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
+			resolved, nullableReviewTime(resolvedAt), time.Now().UTC().Format(time.RFC3339),
+			mrID, threadID,
+		)
+		if err != nil {
+			return fmt.Errorf("set mr review thread resolved: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("get resolved review thread count: %w", err)
+		} else if n == 0 {
+			return sql.ErrNoRows
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_merge_requests", map[int64]struct{}{mrID: {}})
+	})
 }
 
 func scanMRReviewThread(row scanner) (MRReviewThread, error) {

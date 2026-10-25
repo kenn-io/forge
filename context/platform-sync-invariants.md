@@ -386,6 +386,7 @@ registry helpers return typed errors for missing providers or capabilities.
 - Background and watched GitHub detail syncs may use the persisted PR ETag; a
   normal 304 marks detail fetched and may refresh pending CI. Explicit
   `SyncMROnProvider` refreshes bypass the PR ETag.
+- PR-page polls also use the PR ETag; first-open hydration saves it for the next poll.
 - The UI only exposes apply actions when the thread head matches a known
   current PR head; stale or unknown heads disable actions, and stale batched
   suggestions must not reach batch submit while staying removable. A suggestion
@@ -416,7 +417,7 @@ registry helpers return typed errors for missing providers or capabilities.
   only metadata writer. A branch that skips the write leaves default_branch
   empty forever, which silently degrades the worktree diff sampler to a bare
   HEAD diff (0/0 sidebar stats).
-- Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Complete comments and inline review sets replace; submitted reviews remain additive. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
+- Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Local event writes and thread resolution changes advance that revision atomically so older syncs cannot overwrite them. Complete comments and inline review sets replace; submitted reviews remain additive. Bulk GitHub sync captures revisions before provider reads and defers conflicting comment lists to detail sync. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
 - Merge-request assignee omission remains unknown; only a provider-confirmed empty set counts as unassigned, so incomplete snapshots cannot claim that an item has no owner. (`internal/platformdb/persist.go::MarshalUserNamesJSON`, `internal/db/queries_assignees.go::unassignedCondition`)
 - This distinction carries onto the API: `assignees`/`requested_reviewers` are `omitzero` `[]string` fields, so a never-reported list is an absent JSON key and a confirmed-empty list serializes as `[]`; callers must not collapse the two. (`internal/db/queries.go::parseUserNamesJSON`)
 
@@ -577,13 +578,13 @@ Rendered markdown plays video only where the provider itself plays it:
 | Bitbucket | None | Removed |
 
 Markdown without a repository keeps raw `<video>` tags. Every player gets
-`controls`, `preload="none"`, and no `autoplay`, and fills the content width
-in a fixed 16:9 frame so first play never resizes it
+`preload="none"` and no `autoplay`, and fills the content width in a fixed
+16:9 frame so first play never resizes it
 (`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`,
 `frontend/src/app.css`). A player that cannot load becomes a short notice
-linking to the original attachment; without preload, that happens only after
-the reader presses play. Each player sits in its own frame element so the
-swap never disturbs the nodes the markdown host inserted
+linking to the original attachment. The player loads nothing before play, so
+that happens only after the reader presses play. Each player sits in its own
+frame element so the swap never disturbs the nodes the markdown host inserted
 (`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
 The frame opens with a `<button aria-expanded>` header that collapses the
 player; it names the file from the source as written, before the media route
@@ -591,6 +592,22 @@ rewrites it, or says "Video". Frame content stays phrasing-level: a block
 element such as `<details>` splits the paragraph an inline GitLab video sits
 in when `{@html}` parses it again
 (`frontend/src/lib/utils/markdown-video-toggle.ts::initMarkdownVideoToggle`).
+
+After rendering, kit-ui's `VideoPlayer` replaces each `<video>` in its frame,
+with the same sources
+(`frontend/src/lib/utils/markdown-video-player.ts::initMarkdownVideoPlayers`).
+The browser's built-in controls cannot take an extra button, so the player
+draws its own bar: its expand control, beside full screen, opens kit-ui's
+`MediaViewer`, and full screen stays for readers who want the whole screen.
+Players join the page gallery with images and diagrams:
+
+- Opening pauses every inline player in the gallery; a player resumes only
+  if the viewer closes while showing it playing, and always takes back the
+  viewer's position.
+- A collapsed player hides its bar, expand control included, and collapsing
+  pauses it. The error notice replaces the whole player.
+- A re-render replaces the markup; the old players are unmounted and the new
+  `<video>` elements get players of their own.
 
 - GitHub and GitLab declare `read_markdown_media`; their video loads through
   `GET .../markdown-media?source=` on default and host routes with the
@@ -621,8 +638,30 @@ in when `{@html}` parses it again
   `internal/server/server.go::Server.Shutdown`).
 - Players use `preload="none"`: Firefox reads ahead on every preloaded player,
   so a few idle videos would hold every HTTP/1.1 connection the browser allows
-  to the daemon and stall the app
+  to the daemon and stall the app; with `preload="metadata"`, Firefox and
+  WebKit download whole files
   (`frontend/src/lib/utils/markdown.ts::normalizePlayer`).
+- Each player that comes into view gets its length in the header and its first
+  frame as its poster from a detached copy of the player, one copy at a time
+  for the whole page. The copy reads with `preload="auto"` (WebKit reaches no
+  frame with `metadata`) until `loadeddata` or 15 seconds, then drops every
+  source and calls `load()`, which ends its requests in every browser. The
+  copy stays outside the document so its load errors never reach the fallback
+  notice. Collapsed players wait until expanded, a player scrolled out of
+  view before its turn waits to return, started players are left alone, and
+  results are kept per source for the session so a body that renders again
+  shows them at once. Previews apply to the rendered `<video>` and to the
+  kit-ui player's own, which copies the rendered poster when it replaces it.
+  A source on another origin without CORS taints the canvas, so those players
+  show only their length
+  (`frontend/src/lib/utils/markdown-video-preview.ts::observeMarkdownVideoPreviews`).
+- A media stream whose client leaves a write unread for 15 seconds ends.
+  Browsers stop reading a buffered video and can keep that connection open
+  indefinitely; Chromium's media cache does so for some preview copies and
+  for paused players. They ask again with a byte range when they need more,
+  so the cost is a reconnect. net/http flushes buffered output after the
+  handler returns, so the copy re-arms the deadline once the upstream ends
+  (`internal/server/httpapi/stream.go::CopyStream`).
 - GitLab images and videos share one upload rule: `uploads/...`,
   `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the
   platform host, and only uploads on that host reach the proxy

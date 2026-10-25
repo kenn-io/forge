@@ -33,9 +33,10 @@
 - Durable ACP owners retain their injected MCP address across daemon restarts;
   reattachment updates the daemon URL and credential behind that address
   (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy.Bind`).
-- The companion uses an optional daemon-owned listener enabled by
-  `[mcp].enabled`; an omitted or zero port uses the backend port plus one, while
-  a nonzero port overrides it (`internal/config/config.go::Config.MCPPort`).
+- With port omitted, enabled MCP uses the backend port; an explicit port is the
+  only way to get a separate listener (`internal/config/config.go::Config.MCPPort`).
+  Omitted enablement defaults on only for loopback-IP non-workers
+  (`internal/config/config.go::Config.mcpDefaultOn`).
   When that port is the backend port and the main listener already accepts the
   companion's loopback address, the main listener serves `/mcp` at the base path
   instead of binding a colliding socket. Direct loopback requests get the
@@ -45,8 +46,12 @@
   `internal/server/mcp_tailnet.go::Server.isDirectLocalMCPRequest`).
 - The listener is startup-bound and loopback-only: it binds `127.0.0.1` when
   the main `host` is not loopback (`internal/config/config.go::Config.MCPListenAddr`).
-  Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`;
-  changing listener settings requires a restart
+  Discovery publishes `mcp_listen_addr` and `/api/ping` publishes `mcp_url`.
+  When the main listener serves `/mcp`, ping answers a non-loopback authority
+  with `/mcp` on that caller's origin, using `https` for TLS or a Serve-forwarded
+  scheme, because host apps require the endpoint to match the origin they used
+  (`internal/server/daemon_ping.go::Server.advertisedMCPURL`). Changing listener
+  settings requires a restart
   (`cmd/kenn-forge/main.go::bindDaemonListeners`,
   `internal/server/daemon_ping.go::Server.daemonPing`).
 - Settings exposes the saved MCP listener/cache configuration separately from
@@ -68,7 +73,7 @@
 - While MCP is enabled, the main listener also serves `/mcp` to requests with
   the daemon bearer, regardless of `[api].require_auth`, and, with
   `[api.tailscale_serve]` enabled, to allowlisted Serve users without a bearer
-  (`internal/server/mcp_tailnet.go::Server.serveMCP`). Both pass the
+  (`cmd/kenn-forge/main.go::runWithTelemetry`, `internal/server/mcp_tailnet.go::Server.serveMCP`). Both pass the
   main listener's host check first. The identity header is ambient, so a
   request whose Origin names another authority is rejected. Serve reaches the
   loopback listener with the public Host, so this path uses the SDK handler
@@ -81,6 +86,9 @@
   workflow state use the hub; clone, workspace, runtime, and
   agent-session tools stay local, and hub outages remain typed
   (`internal/mcpserver/backend.go::NewFederatedBackend`).
+- Execution workers have no hub; repository, pull request, and issue reads
+  (list, detail, diff, stack) return `serviceUnavailable`
+  (`internal/server/mcp_backend.go::mcpBackend.ListRepositories`, `internal/server/mcp_backend.go::mcpBackend.localPulls`, `internal/server/mcp_backend.go::mcpBackend.localIssues`).
 - Every MCP repository and item reference carries provider-verified `platform_repo_id`;
   local tools resolve it to the active repository's current route, including after renames
   (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
@@ -99,10 +107,11 @@
   (`internal/server/mcp_backend.go::mcpBackend.ListWorkflowStates`,
   `internal/server/mcp_backend.go::mcpBackend.SetWorkflowState`).
 - Worklists are hub-owned like workflow state. MCP is the only author: put
-  replaces a whole list and dismiss hides it; there is no item-level edit.
+  replaces a whole list, import creates one from a worklist link as the
+  import page does, and dismiss hides it; there is no item-level edit.
   Handled marks belong to the maintainer, who sets them over HTTP; MCP can
   only clear every mark on a list, when the maintainer asks. Generated apps
-  may read worklists but never put, dismiss, or clear them
+  may read worklists but never put, import, dismiss, or clear them
   (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`,
   `internal/mcpserver/apps.go::CallAppTool`).
 - Worklist puts validate locally before any backend call and record the ACP

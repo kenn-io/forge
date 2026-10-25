@@ -73,13 +73,18 @@ func (h *Handler) LinkService(ctx context.Context, id int64) (WorklistLinkRespon
 			repo = h.resolver.Ref(*active.Row())
 			repos[item.RepoID] = repo
 		}
-		list.Items = append(list.Items, worklist.Item{
+		entry := worklist.Item{
 			Item: worklist.ItemRef{
 				Type: item.ItemType, Provider: repo.Provider, PlatformHost: repo.PlatformHost,
 				Owner: repo.Owner, Name: repo.Name, Number: item.ItemNumber,
 			},
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
-		})
+		}
+		// Info is the default, so a link carries only a raised level.
+		if level := worklist.CaveatLevel(item.CaveatLevel); level != worklist.CaveatInfo {
+			entry.CaveatLevel = level
+		}
+		list.Items = append(list.Items, entry)
 	}
 	link, err := worklist.KennLink(list)
 	if errors.Is(err, worklist.ErrTooLarge) {

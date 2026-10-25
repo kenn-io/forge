@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { getCommentNavigation } from "../stores/router.svelte.js";
   import type { Snippet } from "svelte";
   import { untrack } from "svelte";
   import { getNavigate, getSidebar, getStores } from "../context.js";
@@ -95,6 +96,9 @@
   });
   const selectedPR = $derived(
     routeSelection ? { ...routeSelection, repositoryKey: selectedRepositoryKey } : null,
+  );
+  const commentNavigation = $derived(
+    selectedPR ? getCommentNavigation({ ...selectedPR, itemType: "pull" }) : null,
   );
   const paneLayoutStore = getPaneLayoutStore("prs");
   const paneLayout = $derived<PaneLayoutStore | null>(detailPresentation === "panes" ? paneLayoutStore : null);
@@ -300,6 +304,7 @@
         tablistLabel="Pull request detail panes"
         leafLabel="Pull request detail pane group"
         routeTabKey={detailTab}
+        routeNavigation={commentNavigation}
         onSelectTab={handlePaneSelect}
         onFocusPane={handlePaneFocus}
         paneLeafExtras={workspacePaneControls ? workspaceLeafExtras : undefined}

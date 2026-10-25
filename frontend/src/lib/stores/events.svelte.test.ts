@@ -457,23 +457,6 @@ describe("createEventsStore connection lifecycle", () => {
     expect(instances[1]?.closed).toBe(false);
   });
 
-  it("resumes from the last accepted event after an owner handoff", async () => {
-    const onDataChanged = vi.fn(() => Effect.void);
-    const store = createEventsStore({ onDataChanged });
-    const firstExecution = start(store);
-    const first = await awaitSource();
-    emit(first, "open", {});
-    emit(first, "data_changed", { data: "{}" }, "17");
-    await vi.waitFor(() => expect(onDataChanged).toHaveBeenCalledOnce());
-
-    firstExecution.interrupt();
-    await vi.waitFor(() => expect(first.closed).toBe(true));
-    start(store);
-    const second = await awaitSource(1);
-
-    expect(second.url).toBe("/api/v1/events?since=17");
-  });
-
   it("resumes from the runtime checkpoint when the store is recreated", async () => {
     const onDataChanged = vi.fn(() => Effect.void);
     const firstStore = createEventsStore({ onDataChanged });

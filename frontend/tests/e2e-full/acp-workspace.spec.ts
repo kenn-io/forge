@@ -125,12 +125,30 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     expect(launched.status(), await launched.text()).toBe(200);
     const session = await launched.json();
     expect(session.kind).toBe("acp");
+    expect((await api.put("/api/v1/settings", { data: { acp: { font_size: 20 } } })).status()).toBe(200);
+    const terminalAppearance = (await (await api.get("/api/v1/settings")).json()).terminal;
     await page.goto(`${origin}/terminal/${workspace.id}`);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
     expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
     await page.getByRole("tab", { name: /Workspace Chat/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
+    const composer = chat.getByRole("textbox", { name: "Message agent" });
+    const zoom = page.getByRole("group", { name: "ACP font size" });
+    const appFontSize = await page.locator("body").evaluate((element) => getComputedStyle(element).fontSize);
+    await expect(zoom.getByRole("button", { name: "Reset ACP font size" })).toHaveText("20px");
+    await zoom.getByRole("button", { name: "Increase ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "21px");
+    await expect(chat.getByRole("button", { name: "Model: Fast" })).toHaveCSS("font-size", "19.3846px");
+    await page.reload();
+    await expect(composer).toHaveCSS("font-size", "21px");
+    await page.screenshot({ path: testInfo.outputPath("acp-toolbar-font-size.png") });
+    await zoom.getByRole("button", { name: "Decrease ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "20px");
+    await zoom.getByRole("button", { name: "Reset ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "13px");
+    await expect(page.locator("body")).toHaveCSS("font-size", appFontSize);
+    expect((await (await api.get("/api/v1/settings")).json()).terminal).toEqual(terminalAppearance);
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Interrupt tool call");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(chat.getByRole("alert")).toContainText("Tool call interrupted");
@@ -380,13 +398,18 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect
       .poll(async () => JSON.stringify(await (await api.get(`/api/v1/workspaces/${workspace.id}/targets`)).json()))
       .toContain('"title":"Add CLI flag parser"');
-    const modifiedTab = page.context().waitForEvent("page");
+    const modifiedURL = `${origin}/pulls/github/acme/tools/1`;
+    const modifiedRequested = new Promise<void>((resolve) => {
+      void page.context().route(modifiedURL, (route) => {
+        resolve();
+        return route.fulfill({ contentType: "text/html", body: "Pull request destination" });
+      });
+    });
     await prLink.click({ modifiers: ["ControlOrMeta"] });
-    const modified = await modifiedTab;
-    await expect(modified).toHaveURL(`${origin}/pulls/github/acme/tools/1`);
-    await modified.close();
-    // Playwright reports no URL for this cross-origin tab, so the routed
-    // request is the evidence of where it went.
+    await modifiedRequested;
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+    // Chromium can omit the page event for a middle-clicked cross-origin tab.
+    // Observe its navigation request and keep the original page in Forge.
     const upstreamURL = "https://github.com/example-org/library/issues/3";
     const upstreamRequested = new Promise<void>((resolve) => {
       void page.context().route(upstreamURL, (route) => {
@@ -394,12 +417,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
         return route.fulfill({ contentType: "text/html", body: "Upstream destination" });
       });
     });
-    const upstreamTab = page.context().waitForEvent("page");
     await conversation.getByRole("link", { name: "an upstream issue" }).click({ button: "middle" });
-    const upstream = await upstreamTab;
     await upstreamRequested;
     await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
-    await upstream.close();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);

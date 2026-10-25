@@ -1,8 +1,6 @@
 name: CI
 
-# The PR dispatcher always calls the main-pinned workflow. That workflow
-# independently routes same-repository jobs to the managed public fleet
-# and fork jobs to GitHub-hosted runners.
+# Run the workflow from the same commit so PR checks exercise workflow changes.
 on:
   pull_request:
 
@@ -16,4 +14,4 @@ permissions:
 
 jobs:
   run:
-    uses: kenn-io/forge/.github/workflows/ci.yml@main
+    uses: ./.github/workflows/ci.yml

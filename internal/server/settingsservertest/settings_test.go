@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -316,7 +316,7 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	assert := assert.New(t)
 	srv, _, cfgPath, _ := servertest.SetupTestServerWithConfig(t)
 
-	mcp := config.MCP{Enabled: true, Port: 9092, DiffCacheMB: 256}
+	mcp := config.MCP{Enabled: new(true), Port: 9092, DiffCacheMB: 256}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{MCP: &spokeapi.McpSettingsUpdate{
 		Enabled: new(true), Port: new(9092), DiffCacheMB: new(256),
 	}})
@@ -326,7 +326,7 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	var resp spokeapi.SettingsResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
 	assert.Equal(config.MCP{
-		Enabled:     resp.MCP.Enabled,
+		Enabled:     new(resp.MCP.Enabled),
 		Port:        resp.MCP.Port,
 		DiffCacheMB: resp.MCP.DiffCacheMB,
 	}, mcp)
@@ -336,6 +336,53 @@ func TestHandleUpdateSettingsPersistsMCPAndReportsRestartRequired(t *testing.T) 
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
 	assert.Equal(mcp, reloaded.MCP)
+}
+
+func TestHandleUpdateSettingsMCPPortChanges(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tt := range []struct {
+		name    string
+		initial string
+		update  spokeapi.McpSettingsUpdate
+		stored  config.MCP
+		enabled bool
+	}{
+		{
+			name:    "default on selects port without enabled",
+			update:  spokeapi.McpSettingsUpdate{Port: new(9192)},
+			stored:  config.MCP{Enabled: new(true), Port: 9192},
+			enabled: true,
+		},
+		{
+			name:    "clear legacy port without enabled preserves off",
+			initial: "[mcp]\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Port: new(0)},
+			stored:  config.MCP{Enabled: new(false)},
+		},
+		{
+			name:    "check and clear disabled port returns to shared default",
+			initial: "[mcp]\nenabled = false\nport = 9192\n",
+			update:  spokeapi.McpSettingsUpdate{Enabled: new(true), Port: new(0)},
+			stored:  config.MCP{},
+			enabled: true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			srv, _, cfgPath, _ := servertest.SetupTestServerWithConfigContent(t,
+				"host = \"127.0.0.1\"\nport = 8091\n"+tt.initial, &serverfake.MockGH{})
+			rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
+				MCP: &tt.update,
+			})
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			var response spokeapi.SettingsResponse
+			require.NoError(t, json.NewDecoder(rr.Body).Decode(&response))
+			assert.Equal(tt.enabled, response.MCP.Enabled)
+			reloaded, err := config.Load(cfgPath)
+			require.NoError(t, err)
+			assert.Equal(tt.stored, reloaded.MCP)
+		})
+	}
 }
 
 func TestHandleUpdateSettingsMergesMCPFields(t *testing.T) {
@@ -377,7 +424,7 @@ diff_cache_mb = 256
 
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(err)
-	assert.Equal(config.MCP{Enabled: true, DiffCacheMB: 256}, reloaded.MCP)
+	assert.Equal(config.MCP{Enabled: new(true), DiffCacheMB: 256}, reloaded.MCP)
 }
 
 func TestHandleUpdateSettingsPersistsRoborevManagedCloneInit(t *testing.T) {

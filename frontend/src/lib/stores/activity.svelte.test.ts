@@ -3249,7 +3249,10 @@ describe("activity polling recovery", () => {
     vi.useRealTimers();
   });
 
-  it("reconciles retained item events from stable authoritative parent identities", async () => {
+  it.each([
+    ["updated", "current-parent-author", "current-parent-author"],
+    ["missing", undefined, "old-parent-author"],
+  ])("reconciles retained item events with parent author %s", async (_label, parentAuthor, expectedAuthor) => {
     const now = new Date().toISOString();
     const retained = {
       id: "pre:7",
@@ -3288,7 +3291,7 @@ describe("activity polling recovery", () => {
     } as ActivityItem;
     const renamed = {
       activity_at: now,
-      item_author: "current-parent-author",
+      item_author: parentAuthor,
       item_number: 7,
       item_state: "merged",
       item_title: "Current title",
@@ -3359,7 +3362,7 @@ describe("activity polling recovery", () => {
       expect.objectContaining({
         activity_url: retained.activity_url,
         author: "event-author",
-        item_author: "current-parent-author",
+        item_author: expectedAuthor,
         item_state: "merged",
         item_title: "Current title",
         item_url: "https://github.com/acme/widgets-renamed/pull/7",

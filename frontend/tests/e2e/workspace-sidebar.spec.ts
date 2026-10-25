@@ -170,7 +170,7 @@ type RuntimeSession = {
   workspace_id: string;
   target_key: string;
   label: string;
-  kind: RuntimeTarget["kind"];
+  kind: RuntimeTarget["kind"] | "acp";
   status: "starting" | "running" | "exited" | "error";
   created_at: string;
 };
@@ -621,8 +621,11 @@ async function setupTerminalMocks(
   return { runtime };
 }
 
-async function installControllableTerminalWebSockets(page: import("@playwright/test").Page): Promise<void> {
-  await page.addInitScript(() => {
+async function installControllableTerminalWebSockets(
+  page: import("@playwright/test").Page,
+  opts?: { acpState?: Record<string, unknown> },
+): Promise<void> {
+  await page.addInitScript((acpState) => {
     class ControllableTerminalWebSocket extends EventTarget {
       static CONNECTING = 0;
       static OPEN = 1;
@@ -650,7 +653,12 @@ async function installControllableTerminalWebSockets(page: import("@playwright/t
           const opened = new Event("open");
           this.dispatchEvent(opened);
           this.onopen?.(opened);
-          this.emitControl({ type: "replay_ready" });
+          // ACP chat sockets open with a chat state snapshot instead of terminal replay.
+          if (new URL(this.url).searchParams.get("protocol") === "acp") {
+            if (acpState) this.emitControl(acpState);
+          } else {
+            this.emitControl({ type: "replay_ready" });
+          }
         });
       }
 
@@ -675,7 +683,7 @@ async function installControllableTerminalWebSockets(page: import("@playwright/t
       value: [] as ControllableTerminalWebSocket[],
     });
     window.WebSocket = ControllableTerminalWebSocket as unknown as typeof WebSocket;
-  });
+  }, opts?.acpState);
 }
 
 async function emitTerminalControl(
@@ -1182,6 +1190,71 @@ test("phone offers the durable workspace terminal when no runtime session is lau
   await page.getByRole("button", { name: "Terminal options" }).click();
   await expect(page.getByRole("button", { name: /Stop terminal/ })).toHaveCount(0);
 });
+
+const acpChatSession: RuntimeSession = {
+  key: "ws-123:chat",
+  workspace_id: "ws-123",
+  target_key: "codex-acp",
+  label: "Workspace Chat",
+  kind: "acp",
+  status: "running",
+  created_at: "2026-04-10T12:00:00Z",
+};
+
+const acpChatState = {
+  messages: [
+    { id: "entry-0", previousId: "", version: 1, role: "user", text: "Add retry handling to the sync client." },
+    {
+      id: "entry-1",
+      previousId: "entry-0",
+      version: 1,
+      role: "assistant",
+      text: "Added a bounded retry with backoff and a test for the give-up path.",
+    },
+  ],
+  configOptions: [],
+  configuring: false,
+  messageOffset: 0,
+  messageCount: 2,
+  messageCursor: 2,
+  lastMessageId: "entry-1",
+  permissions: [],
+  busy: false,
+  connected: true,
+  error: "",
+};
+
+for (const { session, options } of [
+  { session: "terminal", options: "Terminal options" },
+  { session: "chat", options: "Chat options" },
+] as const) {
+  test(`phone deletes the open workspace from its ${session} options`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installControllableTerminalWebSockets(page, session === "chat" ? { acpState: acpChatState } : undefined);
+    await setupTerminalMocks(
+      page,
+      session === "chat" ? { runtime: { ...workspaceRuntime, sessions: [acpChatSession] } } : undefined,
+    );
+
+    await page.goto("/m/workspaces/local/ws-123");
+    if (session === "chat") {
+      await expect(
+        page.getByLabel("Assistant").getByText("Added a bounded retry with backoff and a test for the give-up path."),
+      ).toBeVisible();
+    }
+    await page.getByRole("button", { name: options }).click();
+    await page.getByRole("dialog", { name: options }).getByRole("button", { name: "Delete workspace…" }).click();
+    const confirmation = page.getByRole("dialog", { name: "Delete workspace?" });
+    await expect(confirmation).toBeVisible();
+
+    const deleted = page.waitForRequest(
+      (request) => request.method() === "DELETE" && new URL(request.url()).pathname === "/api/v1/workspaces/ws-123",
+    );
+    await confirmation.getByRole("button", { name: "Delete workspace", exact: true }).click();
+    await deleted;
+    await expect(page).toHaveURL(/\/m\/workspaces$/);
+  });
+}
 
 test("phone keeps the durable workspace terminal available when runtime discovery fails", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

@@ -32,29 +32,37 @@ type importWorklistInput struct {
 	Body ImportWorklistBody
 }
 
-// importWorklist creates the list a link's fragment carries, or returns the
-// list an earlier import of the same list made. Items this Forge does not
-// track or has not synced, and repeats of an earlier item, are skipped rather
-// than rejecting the list.
 func (h *Handler) importWorklist(
 	ctx context.Context, input *importWorklistInput,
 ) (*httpapi.BodyOutput[WorklistImportResponse], error) {
-	list, err := worklist.ParseFragment(input.Body.Fragment)
+	response, err := h.ImportService(ctx, input.Body.Fragment)
+	if err != nil {
+		return nil, err
+	}
+	return &httpapi.BodyOutput[WorklistImportResponse]{Body: response}, nil
+}
+
+// ImportService creates the list a link's fragment carries, or returns the
+// list an earlier import of the same list made. Items this Forge does not
+// track or has not synced, and repeats of an earlier item, are skipped rather
+// than rejecting the list. The import page and MCP both import through it.
+func (h *Handler) ImportService(ctx context.Context, fragment string) (WorklistImportResponse, error) {
+	list, err := worklist.ParseFragment(fragment)
 	if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
-		return nil, httpapi.Validation("body.fragment", fmt.Sprintf("the link's %s", fieldErr.Error()))
+		return WorklistImportResponse{}, httpapi.Validation("body.fragment", fmt.Sprintf("the link's %s", fieldErr.Error()))
 	}
 	if err != nil {
-		return nil, httpapi.Validation("body.fragment", err.Error())
+		return WorklistImportResponse{}, httpapi.Validation("body.fragment", err.Error())
 	}
 	repos, err := h.importableRepos(ctx, list)
 	if err != nil {
-		return nil, err
+		return WorklistImportResponse{}, err
 	}
 	// Two links carrying the same list are the same link, however their
 	// producers compressed it.
 	encoded, err := json.Marshal(list)
 	if err != nil {
-		return nil, httpapi.Internal("encode worklist link key failed")
+		return WorklistImportResponse{}, httpapi.Internal("encode worklist link key failed")
 	}
 	put := mcpserver.WorklistPut{
 		Title: strings.TrimSpace(list.Title), Recipe: list.Recipe, CreatedBy: strings.TrimSpace(list.CreatedBy),
@@ -71,30 +79,31 @@ func (h *Handler) importWorklist(
 				RepoKey: identity.Key, Owner: repos[i].Owner, Name: repos[i].Name, Number: item.Item.Number,
 			},
 			Score: item.Score, Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: item.CaveatLevel,
 		})
 	}
 	var worklistID int64
 	if len(put.Items) > 0 {
 		result, err := h.put(ctx, put)
 		if err != nil {
-			return nil, err
+			return WorklistImportResponse{}, err
 		}
 		worklistID = result.WorklistID
 	} else {
 		// A list made from this link stays reachable after its items go away.
 		reopened, err := h.db.ReopenLinkedWorklist(ctx, put.LinkKey)
 		if errors.Is(err, db.ErrWorklistNotFound) {
-			return nil, httpapi.Validation("body.fragment", "no item in the link is a pull request or issue this Forge tracks")
+			return WorklistImportResponse{}, httpapi.Validation("body.fragment", "no item in the link is a pull request or issue this Forge tracks")
 		}
 		if err != nil {
-			return nil, httpapi.Internal("reopen linked worklist failed")
+			return WorklistImportResponse{}, httpapi.Internal("reopen linked worklist failed")
 		}
 		h.PublishChanged(reopened.ID)
 		worklistID = reopened.ID
 	}
-	return &httpapi.BodyOutput[WorklistImportResponse]{Body: WorklistImportResponse{
+	return WorklistImportResponse{
 		WorklistID: worklistID, ItemCount: len(put.Items), SkippedCount: len(list.Items) - len(put.Items),
-	}}, nil
+	}, nil
 }
 
 // importableRepos returns, per item, the tracked repository it names, or nil

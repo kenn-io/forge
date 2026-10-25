@@ -80,6 +80,9 @@ modal-frame and layer stacking, and that the flow opens and closes
 The same applies to Go kit: telemetry tests cover only the install identity
 and event routing Forge hands kit, not kit's property stamping, filtering,
 install-age tagging, or env opt-out (`internal/telemetry/telemetry_kit_test.go`).
+Only release builds, which set kit's PostHog project key at link time, send
+telemetry, so tests and dev stacks need no telemetry opt-out
+(`internal/telemetry/telemetry.go::NewReporter`).
 For kwt, drive Forge entry points such as checkout creation, refresh, and
 cleanup; do not call kwt scope or repository methods with hand-built requests
 to re-test its locking, claiming, base-sync, or error classification
@@ -201,6 +204,9 @@ through hand-written frontend data.
 - Drain asynchronous Playwright route handlers before page teardown; background refreshes
   can outlive passing assertions. Use `unrouteAll({ behavior: "wait" })` to retain callback errors
   (`frontend/tests/e2e-full/mobile-routes.spec.ts:11`).
+- Mock Playwright covers ACP chat UI too: the fake session socket answers an ACP connection with a
+  chat-state snapshot, so chat-surface checks need not wait for the real-backend suite
+  (`frontend/tests/e2e/workspace-sidebar.spec.ts::installControllableTerminalWebSockets`).
 
 A UI regression can be sufficiently covered by a backend/server test for the
 real runtime path plus a component or Vitest browser test for presentation. Do
@@ -254,8 +260,8 @@ and materialize `node_modules` from the lockfile before invoking baked `vp`
 Vite+ owns its bundled test-tool versions; update direct Vite/Vitest pins only
 alongside a Vite+ toolchain upgrade, never through independent Renovate updates;
 Renovate tracks the `vite` alias as `@voidzero-dev/vite-plus-core` (`renovate.json:31`).
-Frontend unit tests use the runner's 14 guaranteed cores; the previous single-worker
-cap was for the retired memory-constrained runner (`frontend/vite.config.ts::resolveUnitTestWorkers`).
+Set frontend CI concurrency for the selected runner; do not treat the fallback
+worker count as its budget (`frontend/vite.config.ts::resolveUnitTestWorkers`).
 Run CI Vitest unit and browser projects separately: their worker limits differ,
 which Vitest rejects in the same execution group
 (`frontend/vite.config.ts::resolveBrowserTestWorkers`).
@@ -273,7 +279,9 @@ Mock Playwright shares one Vite dev server, so cap CI workers at seven;
 higher worker counts starve navigation and reload requests into false 30-second
 timeouts (`frontend/playwright.config.ts::ciWorkers`).
 
-Non-container Vite+ jobs cache only Bun downloads with an exact OS, architecture, lockfile, and workspace-manifest key; do not use prefix restores, because stale package caches can poison a lockfile-correct install (`.github/workflows/ci.yml::build`).
+Bun caches, in containers and on hosts, use exact keys; prefix restores can poison a lockfile-correct install and, once resaved, accumulate every package version ever seen (`.github/workflows/ci.yml::build`).
+Only `main` saves CI caches; pull-request caches are visible to that pull request alone yet evict `main`'s from the 10 GB budget (`.github/workflows/ci.yml::lint`).
+Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get` or Playwright `--with-deps`, whose mirror fetches can stall for tens of minutes (`.github/workflows/ci.yml::e2e-roborev`).
 
 Timezone-sensitive Vitest tests must not mutate `process.env.TZ` after workers
 start; launch the test process with `TZ` or stub the locale formatter instead
@@ -285,6 +293,9 @@ sources. The Playwright runner must prepare those assets and build one run-owned
 cleanup targets the server instead of a `go run` wrapper. An explicit binary remains
 externally owned
 and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+
+Run every full-stack shard for both Chromium and Firefox; the GitHub App setup
+suite runs once alongside Chromium (`.github/workflows/ci.yml::e2e`).
 
 - E2E provider decorators must embed concrete fixtures rather than base interfaces;
   narrowing erases optional capability interfaces (`cmd/e2e-server/main_test.go::TestE2EWorkflowClientExercisesProviderWorkflowContract`).
@@ -303,9 +314,14 @@ and must not be rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.t
   `git fast-import` (`internal/testutil/diff_repo.go::appendSeededPR1Commits`).
 - Markdown video browser tests use a committed synthetic VP9 WebM clip, which
   every Playwright browser decodes, on a dedicated e2e server; the clip's extra
-  seeded items would change other specs' lists
+  seeded items, and the gallery of attachments it appends to the description
+  of `acme/widgets#1`, would change other specs' pages
   (`frontend/tests/e2e-full/markdown-video.spec.ts`,
-  `cmd/e2e-server/markdown_video.go::markdownVideoContentType`).
+  `cmd/e2e-server/markdown_video.go::markdownVideoContentType`). A larger
+  clip with `-markdown-video-interrupt` cuts responses at 64 KiB boundaries,
+  the size browsers cache in whole 32 KiB blocks; cutting the 24 KB clip
+  leaves nothing the browser can decode. Browser-tier specs that need a load
+  to hold use the `/__browser-test/never-responds` route (`frontend/vite.config.ts`).
 
 Playwright regressions that require a non-loopback listener must be opt-in only
 in the isolated CI container; local runs must skip before binding because the
@@ -474,10 +490,11 @@ slow packages. CI also writes race timing JSON and summarizes slow packages and
 tests in the `go test -race` job summaries. When a PR regresses race runtime, use
 the CI timing artifacts rather than guessing from local timings alone.
 
-Keep race shards exhaustive: server descendants in `server`, CLI/DB/GitHub in
-`core`, and everything else in `rest`, including the server root. Namespace uses
-`core` and combined `server-rest` jobs; GitHub keeps the three groups separate.
-Rebalance from per-shard timing artifacts (`.github/workflows/ci.yml::race`).
+Keep Go shards exhaustive: server descendants in `server`, CLI/DB/GitHub in
+`core`, and everything else in `rest`, including the server root. Race jobs split
+each group into two disjoint parts. Run live GraphQL and integration suites once
+in the ordinary `core` job. Rebalance from per-shard timing artifacts
+(`.github/workflows/ci.yml::test_go`, `.github/workflows/ci.yml::race`).
 
 New full-stack server tests should default to `t.Parallel()` when they build
 their own `t.TempDir` filesystem, SQLite fixture, provider fake, and server

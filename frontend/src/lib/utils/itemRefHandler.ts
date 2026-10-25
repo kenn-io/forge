@@ -10,9 +10,10 @@ import {
 import { RepositoryReads } from "../api/repository-reads.js";
 import type { RepoCatalog } from "../api/types.js";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
-import { navigate, buildItemRoute, type RoutableItemRef } from "../stores/router.svelte.js";
+import { navigate, buildItemRoute, getURLChangeCount, type RoutableItemRef } from "../stores/router.svelte.js";
 import { showFlash } from "../stores/flash.svelte.js";
 import { parseKnownProviderItemURL, type ProviderContext, type ResolvableItemReference } from "./item-reference.js";
+import { navigateToURL } from "./pageNavigation.js";
 
 function safeExternalURL(raw: string | undefined): string | null {
   if (!raw) return null;
@@ -38,51 +39,77 @@ function findAnchor(target: EventTarget | null): HTMLAnchorElement | null {
   return null;
 }
 
-export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(function* (ref: ResolvableItemReference) {
-  const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
-  const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
-    const routeRef = { provider, platformHost, owner, name, repoPath };
-    // GitLab and Bitbucket number issues and pull requests separately.
-    const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
-    const itemTypeHint = separateNumbers ? itemType : undefined;
-    const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
-    return providerUsesHostRoute(routeRef)
-      ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
-          signal,
-        })
-      : client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
-          signal,
-        });
-  }).pipe(
-    Effect.map((data) => ({ data }) as const),
-    Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
-  );
-  return yield* Effect.sync(() => {
-    if ("problem" in result) {
-      if (result.problem.status === 404) {
-        showFlash(`Item ${owner}/${name}#${number} not found.`, { tone: "danger" });
-      } else {
-        showFlash(`Failed to resolve ${owner}/${name}#${number}. Try again later.`, { tone: "danger" });
+// A reference resolves to an in-app item, to its provider page when Forge has
+// not synced the item, or to a message saying why it cannot open. Callers
+// decide whether the result is still current before acting on it.
+export type ItemReferenceResolution =
+  | { readonly kind: "item"; readonly item: RoutableItemRef }
+  | { readonly kind: "providerPage"; readonly url: string }
+  | { readonly kind: "unresolved"; readonly message: string };
+
+export const resolveItemReferenceEffect = Effect.fn("resolveItemReference")(
+  function* (ref: ResolvableItemReference) {
+    const { provider, platformHost, owner, name, repoPath, number, itemType } = ref;
+    const result = yield* executeGeneratedApiRequest("resolve item reference", (client, signal) => {
+      const routeRef = { provider, platformHost, owner, name, repoPath };
+      // GitLab and Bitbucket number issues and pull requests separately.
+      const separateNumbers = ["gitlab", "bitbucket"].includes(canonicalProvider(provider));
+      const itemTypeHint = separateNumbers ? itemType : undefined;
+      const query = itemTypeHint === undefined ? undefined : { item_type: itemTypeHint };
+      return providerUsesHostRoute(routeRef)
+        ? client.RepositoriesService.resolveRepoItemOnHost({ ...providerHostRouteParams(routeRef), number }, query, {
+            signal,
+          })
+        : client.RepositoriesService.resolveRepoItem({ ...providerRouteParams(routeRef), number }, query, {
+            signal,
+          });
+    }).pipe(
+      Effect.map((data) => ({ data }) as const),
+      Effect.catchTag("ApiProblemError", ({ problem }) => Effect.succeed({ problem } as const)),
+    );
+    return yield* Effect.sync((): ItemReferenceResolution => {
+      if ("problem" in result) {
+        const providerURL = safeExternalURL(ref.externalUrl);
+        if (result.problem.status === 404 && providerURL) {
+          return { kind: "providerPage", url: providerURL };
+        }
+        return {
+          kind: "unresolved",
+          message:
+            result.problem.status === 404
+              ? `Item ${owner}/${name}#${number} not found.`
+              : `Could not open ${owner}/${name}#${number}. Try again.`,
+        };
       }
-      return;
-    }
 
-    if (!result.data.repo_tracked) {
-      showFlash(`${owner}/${name} is not tracked. Add it in Settings to navigate here.`, { tone: "danger" });
-      return;
-    }
+      if (!result.data.repo_tracked) {
+        return { kind: "unresolved", message: `${owner}/${name} is not tracked. Add it in Settings to navigate here.` };
+      }
 
-    return {
-      itemType: result.data.item_type === "pr" ? "pr" : "issue",
-      provider,
-      platformHost,
-      owner,
-      name,
-      repoPath,
-      number,
-    } satisfies RoutableItemRef;
-  });
-});
+      return {
+        kind: "item",
+        item: {
+          itemType: result.data.item_type === "pr" ? "pr" : "issue",
+          provider,
+          platformHost,
+          owner,
+          name,
+          repoPath,
+          number,
+        },
+      };
+    });
+  },
+  (effect, ref) =>
+    effect.pipe(
+      Effect.catchTag("TransientTransportError", () =>
+        Effect.succeed<ItemReferenceResolution>({
+          kind: "unresolved",
+          message: `Could not reach Forge to open ${ref.owner}/${ref.name}#${ref.number}. Try again.`,
+        }),
+      ),
+    ),
+);
 
 // Resolves an item reference through the repo resolve endpoint and either
 // navigates to the internal item route or reports that tracking has changed.
@@ -91,11 +118,19 @@ export function resolveItemReference(
   ref: ResolvableItemReference,
   onNavigate: (ref: RoutableItemRef) => void = (item) => navigate(buildItemRoute(item)),
 ): AppExecution<void, unknown> {
+  const urlChangesAtClick = getURLChangeCount();
+  // The user has moved on once the URL changed, even back to the same value.
+  const stillCurrent = () => getURLChangeCount() === urlChangesAtClick;
   return runtime.runCommand(
     resolveItemReferenceEffect(ref).pipe(
-      Effect.tap((item) =>
+      Effect.tap((resolution) =>
         Effect.sync(() => {
-          if (item) onNavigate(item);
+          if (!stillCurrent()) return;
+          if (resolution.kind === "item") onNavigate(resolution.item);
+          // The click was cancelled before the lookup, so the provider page
+          // opens in this tab; browsers block a tab opened after an await.
+          else if (resolution.kind === "providerPage") navigateToURL(resolution.url);
+          else showFlash(resolution.message, { tone: "danger" });
         }),
       ),
       Effect.asVoid,
@@ -110,7 +145,8 @@ export function resolveItemReference(
         number: ref.number.toString(),
       },
       onFailure: () => {
-        showFlash("Failed to resolve item reference. Check your connection.", { tone: "danger" });
+        if (stillCurrent())
+          showFlash(`Could not open ${ref.owner}/${ref.name}#${ref.number}. Try again.`, { tone: "danger" });
       },
     },
   );

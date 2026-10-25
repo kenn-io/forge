@@ -17,7 +17,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"go.kenn.io/forge/internal/db"
@@ -40,7 +40,7 @@ const (
 )
 
 type listPullsInput struct {
-	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
 	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string `query:"state"`
@@ -408,7 +408,7 @@ func (s *Handler) listPullsRouteCore(
 		attributes = strings.Split(input.Attributes, ",")
 		for _, attribute := range attributes {
 			switch attribute {
-			case "approved", "draft", "ready", "merge_conflicts", "failed_ci":
+			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}

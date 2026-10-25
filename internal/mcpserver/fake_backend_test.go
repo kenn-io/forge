@@ -29,6 +29,7 @@ type fakeBackend struct {
 	putWorklistFn                func(context.Context, WorklistPut) (WorklistPutResult, error)
 	getWorklistFn                func(context.Context, int64) (Worklist, error)
 	listWorklistsFn              func(context.Context, bool) ([]WorklistSummary, error)
+	semanticSearchFn             func(context.Context, SemanticSearchQuery) (SemanticSearchResult, error)
 	dismissWorklistFn            func(context.Context, int64) (WorklistDismissal, error)
 	clearWorklistMarksFn         func(context.Context, int64) (WorklistMarksCleared, error)
 	importWorklistFn             func(context.Context, string) (WorklistImportResult, error)
@@ -74,6 +75,13 @@ func (b *fakeBackend) ListWorklists(ctx context.Context, includeDismissed bool) 
 		return b.listWorklistsFn(ctx, includeDismissed)
 	}
 	return nil, nil
+}
+
+func (b *fakeBackend) SemanticSearch(ctx context.Context, query SemanticSearchQuery) (SemanticSearchResult, error) {
+	if b.semanticSearchFn != nil {
+		return b.semanticSearchFn(ctx, query)
+	}
+	return SemanticSearchResult{}, nil
 }
 
 func (b *fakeBackend) DismissWorklist(ctx context.Context, id int64) (WorklistDismissal, error) {

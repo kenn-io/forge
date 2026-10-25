@@ -11002,6 +11002,31 @@ func (o *GetHostRuntimeSessionAttachSpecRequestOptions) GetHeader() (map[string]
 	return nil, nil
 }
 
+// SemanticSearchRequestOptions is the options needed to make a request to SemanticSearch.
+type SemanticSearchRequestOptions struct {
+	Query *SemanticSearchQuery
+}
+
+// GetPathParams returns the path params as a map.
+func (o *SemanticSearchRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *SemanticSearchRequestOptions) GetQuery() (map[string]any, error) {
+	return paramcodec.Map(o.Query)
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *SemanticSearchRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *SemanticSearchRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // UpdateSettingsRequestOptions is the options needed to make a request to UpdateSettings.
 type UpdateSettingsRequestOptions struct {
 	Body *UpdateSettingsBody
@@ -13353,6 +13378,8 @@ type ClientInterface interface {
 	LaunchHostRuntimeSessionWithResponse(ctx context.Context, options *LaunchHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*LaunchHostRuntimeSessionResp, error)
 	StopHostRuntimeSessionWithResponse(ctx context.Context, options *StopHostRuntimeSessionRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StopHostRuntimeSessionResp, error)
 	GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResp, error)
+	SemanticSearchWithResponse(ctx context.Context, options *SemanticSearchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SemanticSearchResp, error)
+	GetSemanticSearchStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSemanticSearchStatusResp, error)
 	GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error)
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
 	ProbeAcpOptionsWithResponse(ctx context.Context, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ProbeAcpOptionsResp, error)
@@ -37252,6 +37279,149 @@ func (c *Client) GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context
 	}
 }
 
+// SemanticSearch Search pull requests and issues by meaning
+func (c *Client) SemanticSearchWithResponse(ctx context.Context, options *SemanticSearchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SemanticSearchResp, error) {
+	var err error
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"q":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":      {Style: "form", Explode: &[]bool{false}[0]},
+		"state":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/semantic-search",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/semantic-search")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &SemanticSearchResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(SemanticSearchErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(SemanticSearchResponseJSON)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SemanticSearchResponseJSON",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(SemanticSearchErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "SemanticSearchErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetSemanticSearchStatus Get semantic search index status
+func (c *Client) GetSemanticSearchStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSemanticSearchStatusResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/semantic-search/status",
+		Method:     "GET",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/semantic-search/status")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetSemanticSearchStatusResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetSemanticSearchStatusErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetSemanticSearchStatusResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSemanticSearchStatusResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetSemanticSearchStatusErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetSemanticSearchStatusErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetSettings Get settings
 func (c *Client) GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error) {
 	var err error
@@ -48133,6 +48303,43 @@ func (c *Client) GetHostRuntimeSessionAttachSpecRaw(ctx context.Context, httpCli
 	return httpClient.Do(req)
 }
 
+// SemanticSearchRaw returns an unread response. The caller must close its body.
+func (c *Client) SemanticSearchRaw(ctx context.Context, httpClient *http.Client, options *SemanticSearchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"q":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":      {Style: "form", Explode: &[]bool{false}[0]},
+		"state":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/semantic-search",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetSemanticSearchStatusRaw returns an unread response. The caller must close its body.
+func (c *Client) GetSemanticSearchStatusRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/semantic-search/status",
+		Method:     "GET",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetSettingsRaw returns an unread response. The caller must close its body.
 func (c *Client) GetSettingsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55732,6 +55939,45 @@ func NewGetHostRuntimeSessionAttachSpecRequest(ctx context.Context, baseURL stri
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewSemanticSearchRequest constructs a typed request for a caller-owned transport.
+func NewSemanticSearchRequest(ctx context.Context, baseURL string, options *SemanticSearchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"item_type": {Style: "form", Explode: &[]bool{false}[0]},
+		"limit":     {Style: "form", Explode: &[]bool{false}[0]},
+		"q":         {Style: "form", Explode: &[]bool{false}[0]},
+		"repo":      {Style: "form", Explode: &[]bool{false}[0]},
+		"state":     {Style: "form", Explode: &[]bool{false}[0]},
+	}
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:    c.apiClient.GetBaseURL() + "/semantic-search",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetSemanticSearchStatusRequest constructs a typed request for a caller-owned transport.
+func NewGetSemanticSearchStatusRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/semantic-search/status",
+		Method:     "GET",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetSettingsRequest constructs a typed request for a caller-owned transport.
 func NewGetSettingsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -57359,6 +57605,21 @@ const (
 	RelayActivityTargetWorkflowRuns      RelayActivityTarget = "workflow_runs"
 )
 
+type SemanticSearchItemResponseItemType string
+
+const (
+	SemanticSearchItemResponseItemTypeIssue SemanticSearchItemResponseItemType = "issue"
+	SemanticSearchItemResponseItemTypePr    SemanticSearchItemResponseItemType = "pr"
+)
+
+// SemanticSearchMatchResponseKind description is the item's title and body; comment is one of its comments or reviews.
+type SemanticSearchMatchResponseKind string
+
+const (
+	SemanticSearchMatchResponseKindComment     SemanticSearchMatchResponseKind = "comment"
+	SemanticSearchMatchResponseKindDescription SemanticSearchMatchResponseKind = "description"
+)
+
 type SyncStatusLastErrorCode string
 
 const (
@@ -57623,6 +57884,23 @@ type ResolveRepoItemQueryItemType string
 const (
 	ResolveRepoItemQueryItemTypeIssue ResolveRepoItemQueryItemType = "issue"
 	ResolveRepoItemQueryItemTypePr    ResolveRepoItemQueryItemType = "pr"
+)
+
+// SemanticSearchQueryItemType Restrict to pull requests or issues; omit for both.
+type SemanticSearchQueryItemType string
+
+const (
+	SemanticSearchQueryItemTypeIssue SemanticSearchQueryItemType = "issue"
+	SemanticSearchQueryItemTypePr    SemanticSearchQueryItemType = "pr"
+)
+
+// SemanticSearchQueryState closed includes merged pull requests.
+type SemanticSearchQueryState string
+
+const (
+	SemanticSearchQueryStateAll    SemanticSearchQueryState = "all"
+	SemanticSearchQueryStateClosed SemanticSearchQueryState = "closed"
+	SemanticSearchQueryStateOpen   SemanticSearchQueryState = "open"
 )
 
 type UnsetStarredQueryItemType string
@@ -60748,6 +61026,21 @@ type ResolveRepoItemQuery struct {
 	ItemType *ResolveRepoItemQueryItemType `json:"item_type,omitempty"`
 }
 
+type SemanticSearchQuery struct {
+	// Q Natural-language description of what to find.
+	Q string `json:"q"`
+
+	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+	Repo *string `json:"repo,omitempty"`
+
+	// ItemType Restrict to pull requests or issues; omit for both.
+	ItemType *SemanticSearchQueryItemType `json:"item_type,omitempty"`
+
+	// State closed includes merged pull requests.
+	State *SemanticSearchQueryState `json:"state,omitempty"`
+	Limit *int64                    `json:"limit,omitempty"`
+}
+
 type GetSnapshotQuery struct {
 	// IncludePeers Include the federation aggregate projected for this spoke.
 	IncludePeers *bool `json:"include_peers,omitempty"`
@@ -62169,6 +62462,14 @@ type StopHostRuntimeSessionErrorResponse = ProblemError
 type GetHostRuntimeSessionAttachSpecResponse = RuntimeAttachSpecResponse
 
 type GetHostRuntimeSessionAttachSpecErrorResponse = ProblemError
+
+type SemanticSearchResponseJSON = SemanticSearchResponse
+
+type SemanticSearchErrorResponse = ProblemError
+
+type GetSemanticSearchStatusResponse = SemanticSearchStatusResponse
+
+type GetSemanticSearchStatusErrorResponse = ProblemError
 
 type GetSettingsResponse = SettingsResponse
 
@@ -65632,6 +65933,24 @@ type GetHostRuntimeSessionAttachSpecResp struct {
 	Error                             *GetHostRuntimeSessionAttachSpecErrorResponse
 	JSON200                           *GetHostRuntimeSessionAttachSpecResponse
 	ApplicationProblemPlusJSONDefault *GetHostRuntimeSessionAttachSpecErrorResponse
+}
+
+type SemanticSearchResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *SemanticSearchErrorResponse
+	JSON200                           *SemanticSearchResponseJSON
+	ApplicationProblemPlusJSONDefault *SemanticSearchErrorResponse
+}
+
+type GetSemanticSearchStatusResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetSemanticSearchStatusErrorResponse
+	JSON200                           *GetSemanticSearchStatusResponse
+	ApplicationProblemPlusJSONDefault *GetSemanticSearchStatusErrorResponse
 }
 
 type GetSettingsResp struct {
@@ -70087,6 +70406,67 @@ type SealSpokePreparationInputBody struct {
 	PreparationDigest    string  `json:"preparation_digest"`
 	ProtocolVersion      int64   `json:"protocol_version"`
 	ReceiptsDigest       string  `json:"receipts_digest"`
+}
+
+type SemanticSearchItemResponse struct {
+	// Issue Issue list row; null for a pull request.
+	Issue    *IssueResponse                     `json:"issue"`
+	ItemType SemanticSearchItemResponseItemType `json:"item_type"`
+	Match    SemanticSearchMatchResponse        `json:"match"`
+	Number   int64                              `json:"number"`
+
+	// Pull Pull request list row; null for an issue.
+	Pull *MergeRequestResponse `json:"pull"`
+	Repo RepoRefResponse       `json:"repo"`
+
+	// Score Cosine similarity between the query and the matched text; higher is closer. Compare scores only within one response.
+	Score float32 `json:"score"`
+	Title string  `json:"title"`
+	URL   string  `json:"url"`
+}
+
+type SemanticSearchMatchResponse struct {
+	// CommentID Forge's ID for the matched comment; omitted for a description match.
+	CommentID *int64 `json:"comment_id,omitempty"`
+
+	// Excerpt Start of the matched passage, whitespace collapsed.
+	Excerpt string `json:"excerpt"`
+
+	// Kind description is the item's title and body; comment is one of its comments or reviews.
+	Kind SemanticSearchMatchResponseKind `json:"kind"`
+}
+
+type SemanticSearchResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string                      `json:"$schema,omitempty"`
+	Items  []SemanticSearchItemResponse `json:"items"`
+
+	// Ready False while the index is still embedding; results then cover only the documents embedded so far.
+	Ready bool `json:"ready"`
+}
+
+type SemanticSearchStatusResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Backlog Documents still waiting to be embedded.
+	Backlog int64 `json:"backlog"`
+
+	// Embedded Documents searchable under the configured model.
+	Embedded int64 `json:"embedded"`
+
+	// Enabled Whether an [embeddings] endpoint is configured on the provider owner.
+	Enabled       bool       `json:"enabled"`
+	LastError     string     `json:"last_error"`
+	LastErrorAt   *time.Time `json:"last_error_at"`
+	LastSuccessAt *time.Time `json:"last_success_at"`
+	Model         string     `json:"model"`
+
+	// Ready Every document is embedded or skipped for the configured model.
+	Ready bool `json:"ready"`
+
+	// Skipped Documents with nothing to embed, or that the endpoint refused.
+	Skipped int64 `json:"skipped"`
 }
 
 type SessionInfo struct {

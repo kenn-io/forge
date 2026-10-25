@@ -441,6 +441,36 @@ enabled, the endpoint must use loopback HTTP (`127.0.0.1`, `localhost`, or
 See [Integrations](integrations.md#review-roborev-jobs) for the Reviews panel
 workflow.
 
+## Semantic search
+
+Forge can embed pull request and issue titles, descriptions, and comments so
+agents can find work by meaning instead of keywords, for example when building
+a worklist about "flaky CI" or looking for duplicates of a bug. Code and diffs
+are never embedded. It is off until you point Forge at an OpenAI-compatible
+embeddings endpoint, such as a local Ollama:
+
+```toml
+[embeddings]
+base_url = "http://127.0.0.1:11434/v1"
+model = "nomic-embed-text"
+dims = 768
+document_prefix = "search_document: "
+query_prefix = "search_query: "
+```
+
+`base_url`, `model`, and `dims` are required together. For a hosted provider,
+set `api_key` to the key itself or to `{ env = "NAME" }` or
+`{ file = "PATH" }`. Plaintext HTTP is accepted only for loopback unless
+`trust_private_network = true`. Optional `batch_size`, `timeout_seconds`,
+`request_dimensions`, `input_type_mode`, `model_context_tokens`, and
+`max_batch_tokens` tune requests for endpoints that need it.
+
+The Forge that syncs providers builds the index in `semantic.db` under
+`data_dir` after each sync and serves searches for its whole fleet. Changing
+`[embeddings]` requires a restart. A new model or prefix re-embeds everything;
+searches return partial results until the backfill finishes. The index is
+derived data: deleting `semantic.db` only costs a rebuild.
+
 ## Workspace agents
 
 Forge detects built-in agents on `PATH`. Add or override an agent with:

@@ -9744,6 +9744,144 @@ components:
         - drained_ack_generation
         - preparation_digest
       type: object
+    SemanticSearchItemResponse:
+      additionalProperties: false
+      properties:
+        issue:
+          anyOf:
+            - $ref: "#/components/schemas/IssueResponse"
+            - type: "null"
+          description: Issue list row; null for a pull request.
+        item_type:
+          enum:
+            - pr
+            - issue
+          type: string
+        match:
+          $ref: "#/components/schemas/SemanticSearchMatchResponse"
+        number:
+          format: int64
+          type: integer
+        pull:
+          anyOf:
+            - $ref: "#/components/schemas/MergeRequestResponse"
+            - type: "null"
+          description: Pull request list row; null for an issue.
+        repo:
+          $ref: "#/components/schemas/RepoRefResponse"
+        score:
+          description: Cosine similarity between the query and the matched text; higher is closer. Compare scores only within one response.
+          format: float
+          type: number
+        title:
+          type: string
+        url:
+          type: string
+      required:
+        - repo
+        - item_type
+        - number
+        - title
+        - url
+        - score
+        - match
+        - pull
+        - issue
+      type: object
+    SemanticSearchMatchResponse:
+      additionalProperties: false
+      properties:
+        comment_id:
+          description: Forge's ID for the matched comment; omitted for a description match.
+          format: int64
+          type: integer
+        excerpt:
+          description: Start of the matched passage, whitespace collapsed.
+          type: string
+        kind:
+          description: description is the item's title and body; comment is one of its comments or reviews.
+          enum:
+            - description
+            - comment
+          type: string
+      required:
+        - kind
+        - excerpt
+      type: object
+    SemanticSearchResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SemanticSearchResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/SemanticSearchItemResponse"
+          type: array
+        ready:
+          description: False while the index is still embedding; results then cover only the documents embedded so far.
+          type: boolean
+      required:
+        - ready
+        - items
+      type: object
+    SemanticSearchStatusResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SemanticSearchStatusResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        backlog:
+          description: Documents still waiting to be embedded.
+          format: int64
+          type: integer
+        embedded:
+          description: Documents searchable under the configured model.
+          format: int64
+          type: integer
+        enabled:
+          description: Whether an [embeddings] endpoint is configured on the provider owner.
+          type: boolean
+        last_error:
+          type: string
+        last_error_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        last_success_at:
+          format: date-time
+          type:
+            - string
+            - "null"
+        model:
+          type: string
+        ready:
+          description: Every document is embedded or skipped for the configured model.
+          type: boolean
+        skipped:
+          description: Documents with nothing to embed, or that the endpoint refused.
+          format: int64
+          type: integer
+      required:
+        - enabled
+        - model
+        - ready
+        - embedded
+        - skipped
+        - backlog
+        - last_success_at
+        - last_error
+        - last_error_at
+      type: object
     SessionInfo:
       additionalProperties: false
       properties:
@@ -28414,6 +28552,94 @@ paths:
       summary: Get host runtime session attach spec
       tags:
         - Runtime
+  /semantic-search:
+    get:
+      description: Ranks pull requests and issues by how closely their titles, descriptions, and comments match the query. Requires an [embeddings] endpoint on the provider owner.
+      operationId: semantic-search
+      parameters:
+        - description: Natural-language description of what to find.
+          explode: false
+          in: query
+          name: q
+          required: true
+          schema:
+            description: Natural-language description of what to find.
+            maxLength: 2000
+            minLength: 1
+            type: string
+        - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+          explode: false
+          in: query
+          name: repo
+          schema:
+            description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
+            type: string
+        - description: Restrict to pull requests or issues; omit for both.
+          explode: false
+          in: query
+          name: item_type
+          schema:
+            description: Restrict to pull requests or issues; omit for both.
+            enum:
+              - pr
+              - issue
+            type: string
+        - description: closed includes merged pull requests.
+          explode: false
+          in: query
+          name: state
+          schema:
+            default: all
+            description: closed includes merged pull requests.
+            enum:
+              - open
+              - closed
+              - all
+            type: string
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 20
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SemanticSearchResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Search pull requests and issues by meaning
+      tags:
+        - Search
+  /semantic-search/status:
+    get:
+      operationId: get-semantic-search-status
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SemanticSearchStatusResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get semantic search index status
+      tags:
+        - Search
   /settings:
     get:
       operationId: get-settings

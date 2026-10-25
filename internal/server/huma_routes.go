@@ -82,6 +82,7 @@ func (s *Server) registerAPI(api huma.API) {
 	s.providerapi.RegisterProviderRepoAPI(api)
 	s.workflowAPI.Register(api)
 	s.worklistAPI.Register(api)
+	s.semanticAPI.Register(api)
 	s.repoBrowserAPI.Register(api)
 	s.fleetAPI.Register(api)
 	s.registerSpokePreparationAPI(api)

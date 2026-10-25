@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kit/embedconfig"
 )
 
 // configChangedEvent is the payload broadcast on the SSE "config.changed"
@@ -90,6 +91,10 @@ type StartupConfigSnapshot struct {
 	Hub             *fleetHubStartupBinding
 	RequireAuth     bool
 	TailscaleServe  config.TailscaleServeAPI
+
+	// Embeddings builds the semantic index's encoder and resolves its API
+	// key once at startup.
+	Embeddings embedconfig.Embedder
 }
 
 type fleetHubStartupBinding struct {
@@ -130,6 +135,7 @@ func SnapshotStartupConfig(cfg *config.Config) StartupConfigSnapshot {
 		GitHubArchiveCredentialRoutes:   githubArchiveCredentialRoutes(cfg),
 		GitHubAppSplitHosts:             githubAppSplitHosts(cfg),
 		RoborevEndpoint:                 cfg.RoborevEndpoint(),
+		Embeddings:                      cfg.Embeddings,
 	}
 	snap.Tmux.Command = slices.Clone(cfg.Tmux.Command)
 	if cfg.Tmux.AgentSessions != nil {

@@ -40,6 +40,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/archiveapi"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -63,6 +64,7 @@ import (
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
+	"go.kenn.io/forge/internal/server/semanticapi"
 	"go.kenn.io/forge/internal/server/settingsapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/statuslog"
@@ -122,6 +124,9 @@ type ServerOptions struct {
 	TokenSources                       *tokenauth.SourceSet
 	Archive                            archive.Controller
 	DocsRegistry                       *docs.Registry
+	// SemanticSearch is the provider owner's embedding index. Nil disables
+	// semantic search on this node; a spoke forwards searches to its hub.
+	SemanticSearch *semantic.Indexer
 	// TerminalClipboard overrides native clipboard integration in tests.
 	TerminalClipboard systemclipboard.Writer
 	// HostCheck overrides the Host validation middleware options.
@@ -214,6 +219,7 @@ type Server struct {
 	issueAPI               *issueapi.Handler
 	workflowAPI            *workflowapi.Handler
 	worklistAPI            *worklistapi.Handler
+	semanticAPI            *semanticapi.Handler
 	pullLifecycle          streamapi.PullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	providerSource         *spokeapi.HubProviderSource
@@ -1038,6 +1044,15 @@ func newServer(
 				}
 				return result, nil
 			},
+		})
+		var semanticProviderSource semanticapi.ProviderSource
+		if s.providerSource != nil {
+			semanticProviderSource = s.providerSource
+		}
+		s.semanticAPI = semanticapi.New(semanticapi.Deps{
+			DB: database, Resolver: repoResolver, Pulls: s.pullAPI, Issues: s.issueAPI,
+			FilterRepos: s.filterTrackedRepos, Indexer: options.SemanticSearch,
+			ProviderSource: semanticProviderSource,
 		})
 		s.pullLifecycle = s.pullAPI
 	}

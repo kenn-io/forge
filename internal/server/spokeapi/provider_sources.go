@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/semanticapi"
 	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
@@ -1015,6 +1016,25 @@ func (s *HubProviderSource) GetWorklist(
 	var response worklistapi.WorklistResponse
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return worklistapi.WorklistResponse{}, err
+	}
+	return response, nil
+}
+
+func (s *HubProviderSource) SemanticSearch(
+	ctx context.Context, req semanticapi.SearchRequest,
+) (semanticapi.SemanticSearchResponse, error) {
+	httpRequest, err := generated.NewSemanticSearchRequest(ctx, "/api/v1", &generated.SemanticSearchRequestOptions{Query: &generated.SemanticSearchQuery{
+		Q: req.Query, Repo: optionalProviderQuery(req.Repo),
+		ItemType: optionalProviderQuery(generated.SemanticSearchQueryItemType(req.ItemType)),
+		State:    optionalProviderQuery(generated.SemanticSearchQueryState(req.State)),
+		Limit:    optionalProviderQuery(int64(req.Limit)),
+	}})
+	if err != nil {
+		return semanticapi.SemanticSearchResponse{}, err
+	}
+	var response semanticapi.SemanticSearchResponse
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
+		return semanticapi.SemanticSearchResponse{}, err
 	}
 	return response, nil
 }

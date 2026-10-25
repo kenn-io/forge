@@ -28,6 +28,7 @@ type ProviderBackend interface {
 	DismissWorklist(context.Context, int64) (WorklistDismissal, error)
 	ClearWorklistMarks(context.Context, int64) (WorklistMarksCleared, error)
 	ImportWorklist(context.Context, string) (WorklistImportResult, error)
+	SemanticSearch(context.Context, SemanticSearchQuery) (SemanticSearchResult, error)
 }
 
 // LocalBackend owns data and execution that belong to the connected node.
@@ -150,6 +151,40 @@ type ItemListQuery struct {
 	Text       string
 	Limit      int
 	Offset     int
+}
+
+// SemanticSearchQuery asks the provider owner's embedding index for items
+// whose descriptions or comments are closest in meaning to Query. State is
+// open, closed (including merged), or all; empty means all.
+type SemanticSearchQuery struct {
+	Query      string
+	Repository RepositoryIdentity
+	ItemType   string
+	State      string
+	Limit      int
+}
+
+// SemanticSearchResult ranks items best first. Ready is false while the
+// index is still embedding, so results cover only part of the corpus.
+type SemanticSearchResult struct {
+	Ready bool
+	Items []SemanticSearchItem
+}
+
+// SemanticSearchItem is one ranked item and the text that ranked it.
+// MatchKind is description or comment; CommentID is set for a comment.
+type SemanticSearchItem struct {
+	Repository RepositoryIdentity
+	ItemType   string
+	Number     int
+	Title      string
+	URL        string
+	State      string
+	Author     string
+	Score      float32
+	MatchKind  string
+	CommentID  int64
+	Excerpt    string
 }
 
 type WorkspaceRef struct {

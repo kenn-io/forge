@@ -3620,7 +3620,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
-	repoResolutions := make(map[string]*directSyncRepoResolution)
+	repoResolutions := make(repoResolutionCache)
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -3670,11 +3670,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		providerAttempted := false
-		key := detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)
-		if repoResolutions[key] == nil {
-			repoResolutions[key] = &directSyncRepoResolution{}
-		}
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions[key])
+		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -10734,9 +10730,7 @@ func (s *Syncer) drainDetailQueue(
 
 	// Track which hosts are exhausted so we skip quickly.
 	exhausted := make(map[string]bool)
-	verifiedRepos := make(map[string]RepoRef)
-	verifiedRepoIDs := make(map[string]int64)
-	rejectedRepos := make(map[string]bool)
+	repoResolutions := make(repoResolutionCache)
 
 	for i := range queue {
 		if ctx.Err() != nil {
@@ -10806,40 +10800,24 @@ func (s *Syncer) drainDetailQueue(
 			exhausted[bucket] = true
 			continue
 		}
-		repoKey := detailRepoKey(repoPlatform(repo), host, qi.RepoOwner, qi.RepoName)
-		if rejectedRepos[repoKey] {
+		resolution := repoResolutions.resolve(ctx, s, repo)
+		if resolution.err != nil {
 			probe.abandon()
+			slog.Warn("detail drain: verify repo identity failed",
+				"repo", qi.RepoOwner+"/"+qi.RepoName,
+				"err", resolution.err,
+			)
 			continue
 		}
-		repoID, verified := verifiedRepoIDs[repoKey]
-		if verified {
-			repo = verifiedRepos[repoKey]
-		} else {
-			resolvedRepo, resolvedRepoID, resolveErr := s.reconcileRepoForDirectSync(ctx, repo)
-			if resolveErr != nil {
-				probe.abandon()
-				rejectedRepos[repoKey] = true
-				slog.Warn("detail drain: verify repo identity failed",
-					"repo", qi.RepoOwner+"/"+qi.RepoName,
-					"err", resolveErr,
-				)
-				continue
-			}
-			repo = resolvedRepo
-			repoID = resolvedRepoID
-			verifiedRepos[repoKey] = repo
-			verifiedRepoIDs[repoKey] = repoID
-		}
+		repo, repoID := resolution.repo, resolution.repoID
 		if repo.Archived {
 			// Identity verification just discovered the archived flip;
 			// the publication already dropped the repo from live sync.
 			probe.abandon()
-			rejectedRepos[repoKey] = true
 			continue
 		}
 		if repoID == 0 {
 			probe.abandon()
-			rejectedRepos[repoKey] = true
 			slog.Warn("detail drain: verified repo has no database identity",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 			)
@@ -11268,7 +11246,7 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 	ctx context.Context,
 	mr WatchedMR,
 	providerAttempted *bool,
-	resolution *directSyncRepoResolution,
+	resolutions repoResolutionCache,
 ) error {
 	kind := watchedMRPlatform(mr)
 	repo, ok := s.trackedRepoByIdentity(
@@ -11281,8 +11259,11 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
+	if repo.Archived {
+		return nil
+	}
 	return s.syncMRForRepoResolved(
-		ctx, repo, mr.Number, mrDetailBackground, providerAttempted, nil, nil, nil, nil, resolution,
+		ctx, repo, mr.Number, mrDetailBackground, providerAttempted, nil, nil, nil, nil, resolutions,
 	)
 }
 
@@ -11437,10 +11418,23 @@ func (s *Syncer) canUseConditionalPRDetail(ctx context.Context, repo RepoRef, ex
 }
 
 type directSyncRepoResolution struct {
-	repo      RepoRef
-	repoID    int64
-	err       error
-	attempted bool
+	repo   RepoRef
+	repoID int64
+	err    error
+}
+
+type repoResolutionCache map[string]directSyncRepoResolution
+
+func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRef) directSyncRepoResolution {
+	key := detailRepoKey(repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name)
+	resolution, ok := c[key]
+	if !ok {
+		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
+		if c != nil {
+			c[key] = resolution
+		}
+	}
+	return resolution
 }
 
 func (s *Syncer) syncMRForRepoResolved(
@@ -11453,7 +11447,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	fetchedEvidence *mergeRequestFetchEvidence,
 	lifecyclePersisted *bool,
 	expectedRepoID *int64,
-	resolution *directSyncRepoResolution,
+	resolutions repoResolutionCache,
 ) (retErr error) {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
@@ -11480,13 +11474,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	if resolution == nil {
-		resolution = &directSyncRepoResolution{}
-	}
-	if !resolution.attempted {
-		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
-		resolution.attempted = true
-	}
+	resolution := resolutions.resolve(ctx, s, repo)
 	resolvedRef, repoID, err := resolution.repo, resolution.repoID, resolution.err
 	if err != nil {
 		return err

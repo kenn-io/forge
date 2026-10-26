@@ -11446,6 +11446,53 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	assert.True(tracked[0].Archived)
 }
 
+func TestSyncWatchedMRsSkipsRepoArchivedBetweenPRs(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	archived := false
+	repoCalls := 0
+	var detailNumbers []int
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			repoCalls++
+			id := testRepoID(owner, name)
+			return &gh.Repository{
+				ID: &id, Name: &name, Owner: &gh.User{Login: &owner}, Archived: new(archived),
+			}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			detailNumbers = append(detailNumbers, number)
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
+	syncer.SetOnMRSynced(func(_ string, _ string, mr *db.MergeRequest) {
+		if mr.Number == 7 {
+			// Interleave a full-sync observation after the first watched PR.
+			archived = true
+			require.NoError(t, syncer.syncRepo(t.Context(), syncer.TrackedRepos()[0]))
+			require.True(t, syncer.TrackedRepos()[0].Archived)
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(2, repoCalls, "one watched lookup and one full-sync observation")
+	assert.Equal([]int{7}, detailNumbers)
+	first, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 7)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.NotNil(first.DetailFetchedAt)
+	later, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 8)
+	require.NoError(t, err)
+	assert.Nil(later, "later watched PR must remain unfetched after full sync publishes archival")
+}
+
 func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

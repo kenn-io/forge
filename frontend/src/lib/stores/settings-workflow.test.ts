@@ -679,6 +679,48 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
     }),
   );
 
+  for (const restricted of [false, true]) {
+    it.effect(`recognizes saved agent settings with server field order: ${restricted}`, () =>
+      Effect.gen(function* () {
+        const original = makeSettings();
+        const requested = {
+          protocol: "acp" as const,
+          key: "chat",
+          label: "Chat",
+          command: ["chat-agent"],
+          enabled: true,
+          disable_forge_tools: restricted,
+        };
+        // Go's response starts with the optional restriction and omits false.
+        const saved = {
+          ...original,
+          agents: [
+            {
+              ...(restricted ? { disable_forge_tools: true } : {}),
+              protocol: "acp" as const,
+              key: "chat",
+              label: "Chat",
+              command: ["chat-agent"],
+              enabled: true,
+            },
+          ],
+        };
+        let committed = false;
+        vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input, init);
+          if (request.method === "PUT") {
+            committed = true;
+            return Promise.reject(new TypeError("response lost after commit"));
+          }
+          return Promise.resolve(Response.json(committed ? saved : original));
+        });
+        const workflow = yield* SettingsWorkflow;
+        const result = yield* workflow.persist(() => ({ agents: [requested] }));
+        assert.deepStrictEqual(result.agents, saved.agents);
+      }),
+    );
+  }
+
   it.effect("returns authoritative detail settings after a save response is lost", () =>
     Effect.gen(function* () {
       const original = makeSettings();

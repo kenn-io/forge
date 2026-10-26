@@ -1,6 +1,7 @@
 import { Context, Data, Effect, Layer, Option, Ref } from "effect";
 import type {
   AddRepoInputBody,
+  Agent,
   BulkAddRepoRequest,
   FleetSettingsResponse,
   RepoPreset as GeneratedRepoPreset,
@@ -222,13 +223,24 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizedAgents(agents: Agent[]): Agent[] {
+  return agents.map((agent) => ({
+    key: agent.key,
+    label: agent.label,
+    command: agent.command ?? [],
+    protocol: agent.protocol ?? "terminal",
+    enabled: agent.enabled ?? true,
+    disable_forge_tools: agent.disable_forge_tools ?? false,
+  }));
+}
+
 function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSettingsRequest): boolean {
   return (
     (request.acp === undefined ||
       Object.entries(request.acp).every(([key, value]) => settings.acp[key as keyof typeof settings.acp] === value)) &&
     (request.airplane_mode === undefined || settings.airplane_mode === request.airplane_mode) &&
     (request.activity === undefined || sameValue(settings.activity, request.activity)) &&
-    (request.agents === undefined || sameValue(settings.agents, request.agents)) &&
+    (request.agents === undefined || sameValue(normalizedAgents(settings.agents), normalizedAgents(request.agents))) &&
     (request.detail === undefined || sameValue(settings.detail, request.detail)) &&
     (request.issues === undefined || sameValue(settings.issues, request.issues)) &&
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&

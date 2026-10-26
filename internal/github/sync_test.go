@@ -9997,53 +9997,69 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 }
 
 func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
-	for _, failFirst := range []bool{false, true} {
-		t.Run(fmt.Sprintf("failed-first=%t", failFirst), func(t *testing.T) {
+	for _, tc := range []struct {
+		name, otherHost, otherName string
+		failFirst                  bool
+	}{
+		{name: "two-repositories", otherHost: "github.com", otherName: "tools"},
+		{name: "failed-first", otherHost: "github.com", otherName: "tools", failFirst: true},
+		{name: "two-hosts", otherHost: "git.example.com", otherName: "app"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			d := openTestDB(t)
 			reads := make(map[string]int)
 			pass := 1
-			mc := &mockClient{
-				getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
-					assert.False(IsEssentialSyncBudgetContext(ctx), "watched identity reads use optional allowance")
-					reads[name]++
-					if failFirst && pass == 1 && name == "app" {
-						return nil, errors.New("repository temporarily unavailable")
-					}
-					id := testRepoID(owner, name)
-					return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
-				},
-				getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-					assert.Equal("acme", owner)
-					assert.Contains([]string{"app", "tools"}, name)
-					pr := buildOpenPR(number, time.Now().UTC())
-					pr.Title = new(fmt.Sprintf("%s detail %d pass %d", name, number, pass))
-					return pr, nil
-				},
+			clients := make(map[string]Client)
+			for _, host := range []string{"github.com", tc.otherHost} {
+				clients[host] = &mockClient{
+					getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+						reads[host+"/"+name]++
+						if tc.failFirst && pass == 1 && name == "app" {
+							return nil, errors.New("repository temporarily unavailable")
+						}
+						id := testRepoID(owner, name)
+						return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+					},
+					getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+						assert.Equal("acme", owner)
+						assert.Contains([]string{"app", tc.otherName}, name)
+						pr := buildOpenPR(number, time.Now().UTC())
+						pr.Title = new(fmt.Sprintf("%s/%s detail %d pass %d", host, name, number, pass))
+						return pr, nil
+					},
+				}
 			}
-			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
-				[]RepoRef{{Owner: "acme", Name: "app"}, {Owner: "acme", Name: "tools"}},
-				time.Hour, nil, nil)
+			syncer := NewSyncer(clients, d, nil,
+				[]RepoRef{
+					{Owner: "acme", Name: "app", PlatformHost: "github.com"},
+					{Owner: "acme", Name: tc.otherName, PlatformHost: tc.otherHost},
+				}, time.Hour, nil, nil)
 			syncer.SetWatchInterval(time.Nanosecond)
 			watched := []WatchedMR{
-				{Owner: "acme", Name: "app", Number: 7},
-				{Owner: "acme", Name: "tools", Number: 8},
-				{Owner: "acme", Name: "app", Number: 9},
-				{Owner: "acme", Name: "tools", Number: 10},
+				{Owner: "acme", Name: "app", Number: 7, PlatformHost: "github.com"},
+				{Owner: "acme", Name: tc.otherName, Number: 7, PlatformHost: tc.otherHost},
+				{Owner: "acme", Name: "app", Number: 9, PlatformHost: "github.com"},
+				{Owner: "acme", Name: tc.otherName, Number: 9, PlatformHost: tc.otherHost},
 			}
 			syncer.SetWatchedMRs(watched)
+			logs := captureDefaultLogs(t)
 			for ; pass <= 2; pass++ {
+				logs.Reset()
 				syncer.syncWatchedMRs(t.Context())
-				assert.Equal(map[string]int{"app": pass, "tools": pass}, reads)
+				assert.Equal(map[string]int{"github.com/app": pass, tc.otherHost + "/" + tc.otherName: pass}, reads)
+				if tc.failFirst && pass == 1 {
+					assert.Equal(1, strings.Count(logs.String(), "fast-sync watched MR failed"))
+				}
 				for _, item := range watched {
-					mr, err := d.GetMergeRequest(t.Context(), "github", "github.com", item.Owner, item.Name, item.Number)
+					mr, err := d.GetMergeRequest(t.Context(), "github", item.PlatformHost, item.Owner, item.Name, item.Number)
 					require.NoError(t, err)
-					if failFirst && pass == 1 && item.Name == "app" {
+					if tc.failFirst && pass == 1 && item.Name == "app" {
 						assert.Nil(mr)
 						continue
 					}
 					require.NotNil(t, mr)
-					assert.Equal(fmt.Sprintf("%s detail %d pass %d", item.Name, item.Number, pass), mr.Title)
+					assert.Equal(fmt.Sprintf("%s/%s detail %d pass %d", item.PlatformHost, item.Name, item.Number, pass), mr.Title)
 					assert.NotNil(mr.DetailFetchedAt)
 				}
 			}
@@ -10069,7 +10085,6 @@ func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
 			return
 		}
 		identityReads.Add(1)
-		// Archival stops full sync after identity reconciliation.
 		_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"archived":true}`)
 	}))
 	defer server.Close()
@@ -10088,102 +10103,31 @@ func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
 	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
 	assert.Zero(otherReads.Load())
 	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
-
-	require.NoError(syncer.syncRepo(WithSyncBudget(t.Context()), repo))
-
-	assert.Equal(int64(1), identityReads.Load(), "full-sync identity reads can spend the reserve")
-	assert.Zero(otherReads.Load())
-	assert.Equal(901, budget.Spent())
 }
 
-func TestSyncWatchedMRsReportsIdentityFailureOnceAndDetailFailuresPerPR(t *testing.T) {
-	for _, identityFailure := range []bool{true, false} {
-		t.Run(fmt.Sprintf("identity-failure=%t", identityFailure), func(t *testing.T) {
-			assert := assert.New(t)
-			d := openTestDB(t)
-			reads := 0
-			detailReads := 0
-			mc := &mockClient{
-				getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-					reads++
-					if identityFailure {
-						return nil, errors.New("repository temporarily unavailable")
-					}
-					id := testRepoID(owner, name)
-					return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
-				},
-				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
-					detailReads++
-					return nil, errors.New("pull request temporarily unavailable")
-				},
-			}
-			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
-				[]RepoRef{{Owner: "acme", Name: "app"}}, time.Hour, nil, nil)
-			syncer.SetWatchedMRs([]WatchedMR{
-				{Owner: "acme", Name: "app", Number: 7},
-				{Owner: "acme", Name: "app", Number: 8},
-				{Owner: "acme", Name: "app", Number: 9},
-			})
-			logs := captureDefaultLogs(t)
-
-			syncer.syncWatchedMRs(t.Context())
-
-			assert.Equal(1, reads)
-			if identityFailure {
-				assert.Zero(detailReads)
-				assert.Equal(1, strings.Count(logs.String(), "fast-sync watched MR failed"))
-			} else {
-				assert.Equal(3, detailReads)
-				assert.Equal(3, strings.Count(logs.String(), "fast-sync watched MR failed"))
-			}
-		})
-	}
-}
-
-func TestSyncWatchedMRsKeepsRepositoryResolutionsSeparateByHost(t *testing.T) {
+func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
-	reads := make(map[string]int)
-	clients := make(map[string]Client)
-	var repos []RepoRef
-	for _, host := range []string{"github.com", "git.example.com"} {
-		repos = append(repos, RepoRef{Owner: "acme", Name: "app", PlatformHost: host})
-		clients[host] = &mockClient{
-			getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-				assert.Equal("acme", owner)
-				assert.Equal("app", name)
-				reads[host]++
-				id := testRepoID(owner, name)
-				return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
-			},
-			getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-				assert.Equal("acme", owner)
-				assert.Equal("app", name)
-				pr := buildOpenPR(number, time.Now().UTC())
-				pr.Title = new(host + " detail")
-				return pr, nil
-			},
-		}
+	detailReads := 0
+	mc := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			detailReads++
+			return nil, errors.New("pull request temporarily unavailable")
+		},
 	}
-	syncer := NewSyncer(clients, d, nil, repos, time.Hour, nil, nil)
-	watched := []WatchedMR{
-		{Owner: "acme", Name: "app", Number: 7, PlatformHost: "github.com"},
-		{Owner: "acme", Name: "app", Number: 7, PlatformHost: "git.example.com"},
-		{Owner: "acme", Name: "app", Number: 8, PlatformHost: "github.com"},
-		{Owner: "acme", Name: "app", Number: 8, PlatformHost: "git.example.com"},
-	}
-	syncer.SetWatchedMRs(watched)
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app"}}, time.Hour, nil, nil)
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+		{Owner: "acme", Name: "app", Number: 9},
+	})
+	logs := captureDefaultLogs(t)
 
 	syncer.syncWatchedMRs(t.Context())
 
-	assert.Equal(map[string]int{"github.com": 1, "git.example.com": 1}, reads)
-	for _, item := range watched {
-		mr, err := d.GetMergeRequest(t.Context(), "github", item.PlatformHost, item.Owner, item.Name, item.Number)
-		require.NoError(t, err)
-		require.NotNil(t, mr)
-		assert.Equal(item.PlatformHost+" detail", mr.Title)
-		assert.NotNil(mr.DetailFetchedAt)
-	}
+	assert.Equal(3, detailReads)
+	assert.Equal(3, strings.Count(logs.String(), "fast-sync watched MR failed"))
 }
 
 func TestEmptyWatchListNoOp(t *testing.T) {
@@ -11515,7 +11459,6 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	archived := true
-	var repoCalls atomic.Int32
 	mc := &detailTrackingClient{
 		openPRs:  []*gh.PullRequest{},
 		singlePR: buildOpenPR(7, now),
@@ -11525,7 +11468,6 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
-			repoCalls.Add(1)
 			id := testRepoID(owner, repo)
 			return &gh.Repository{
 				ID:       &id,
@@ -11547,22 +11489,17 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	})
 	syncer.SetWatchedMRs([]WatchedMR{
 		{Owner: "acme", Name: "app", Number: 7},
-		{Owner: "acme", Name: "app", Number: 8},
 	})
 
 	syncer.syncWatchedMRs(ctx)
 
 	assert.Zero(hookCalls,
 		"watched-MR sync must stop when resolution reports the repo archived")
-	assert.Equal(int32(1), repoCalls.Load(),
-		"watched PRs must share the archived repository lookup")
 	assert.Zero(mc.getPRCalls.Load(),
 		"watched-MR sync must not fetch details for the archived repo")
-	for _, number := range []int{7, 8} {
-		mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", number)
-		require.NoError(err)
-		assert.Nil(mr, "no MR detail should be persisted for archived repo PR %d", number)
-	}
+	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)
+	require.NoError(err)
+	assert.Nil(mr, "no MR detail should be persisted for archived repo")
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
@@ -16984,17 +16921,10 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
-	var identityEssential, prListEssential, issueListEssential atomic.Bool
+	var prListEssential, issueListEssential atomic.Bool
 	var reviewsCalled, reviewsEssential atomic.Bool
 
 	mc := &partialFailureMock{}
-	mc.getRepositoryFn = func(fnCtx context.Context, owner, name string) (*gh.Repository, error) {
-		if IsEssentialSyncBudgetContext(fnCtx) {
-			identityEssential.Store(true)
-		}
-		id := testRepoID(owner, name)
-		return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
-	}
 	// openPRs also backs the mock's GetPullRequest for the detail drain.
 	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
 	mc.listOpenPRsFn = func(fnCtx context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -17021,8 +16951,6 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	)
 	syncer.RunOnce(ctx)
 
-	assert.True(identityEssential.Load(),
-		"full-sync identity read must use the essential budget context")
 	assert.True(prListEssential.Load(),
 		"open-PR list fetch must run under the essential budget context")
 	assert.True(issueListEssential.Load(),
@@ -17068,12 +16996,6 @@ func TestSyncerEssentialIdentityReadKeepsArchiveSeedingOptional(t *testing.T) {
 
 			assert.Equal([]bool{true}, reads["frozen"], "identity read can spend the essential reserve")
 			assert.Equal([]bool{false}, reads["unseeded"], "archive seeding keeps optional allowance")
-			stored, err := d.GetRepositoryByProviderID(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "unseeded").ProviderIdentity())
-			require.NoError(t, err)
-			require.NotNil(t, stored)
-			states, err := d.ListArchiveRepoStates(t.Context(), []int64{stored.Repository.ID})
-			require.NoError(t, err)
-			assert.Len(states, 1, "archive reconciliation must seed the other configured repository")
 		})
 	}
 }

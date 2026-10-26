@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import type { ProblemError } from "../../src/lib/api/generated/models/index.js";
 import type { ResolveRepoOutputBody } from "../../src/lib/api/roborev/generated/models/index.js";
 import { createMockApiHandler } from "../../src/test/mockApiFetch.js";
-import { mockApi } from "./support/mockApi";
+import { mockApi, mockSettings } from "./support/mockApi";
 
 type ProblemBody = ProblemError;
 
@@ -5493,6 +5493,122 @@ test.describe("workspace list sorting", () => {
 
     await rows.filter({ hasText: "Oldest without activity" }).click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "Delete 3 workspaces..." })).toBeVisible();
+  });
+
+  test("runs a quick action, stops sessions, and pulls across selected workspaces", async ({ page }) => {
+    const requests: string[] = [];
+    await page.route("**/api/v1/settings", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...mockSettings,
+          quick_actions: [{ label: "Review", agent: "codex", prompt: "Review this change" }],
+          launch_targets: [
+            { key: "codex", label: "Codex", kind: "agent", source: "builtin", command: ["codex"], available: true },
+          ],
+        }),
+      });
+    });
+    await page.route(/\/api\/v1\/workspaces\/ws-[a-z]+\/runtime(\/.*)?$/, async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      const workspaceId = path.split("/")[4]!;
+      if (request.method() === "GET" && path.endsWith("/runtime")) {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            launch_targets: [],
+            sessions: [
+              {
+                key: `${workspaceId}-agent`,
+                kind: "agent",
+                label: "Codex",
+                target_key: "codex",
+                workspace_id: workspaceId,
+                status: "running",
+                display_region: "workflow",
+                created_at: "2026-05-12T12:00:00Z",
+              },
+            ],
+          }),
+        });
+        return;
+      }
+      requests.push(`${request.method()} ${path}`);
+      if (request.method() === "DELETE") {
+        await route.fulfill({ status: 204 });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          session: { key: `${workspaceId}-review`, target_key: "codex" },
+          initial_message: { state: "delivered", target_key: "codex", message_bytes: 18 },
+        }),
+      });
+    });
+    await page.goto("/workspaces");
+    const rows = page.locator(".workspace-list-sidebar .ws-row");
+    await expect(rows).toHaveCount(3);
+    const selectAll = async () => {
+      await rows.filter({ hasText: "Newest created" }).click({ modifiers: ["Shift"] });
+      await rows.filter({ hasText: "Most recently active" }).click({ modifiers: ["Shift"] });
+      await rows.filter({ hasText: "Oldest without activity" }).click({ button: "right" });
+    };
+
+    await selectAll();
+    await page.getByRole("menuitem", { name: /Review in 3 workspaces/ }).click();
+    const runDialog = page.getByRole("dialog", { name: 'Run "Review" in 3 workspaces?' });
+    await runDialog.getByRole("button", { name: "Run in 3 workspaces" }).click();
+    await expect(page.getByText('Started "Review" in 3 workspaces.')).toBeVisible();
+    expect(requests.toSorted()).toEqual([
+      "POST /api/v1/workspaces/ws-mid/runtime/agent-handoffs",
+      "POST /api/v1/workspaces/ws-new/runtime/agent-handoffs",
+      "POST /api/v1/workspaces/ws-old/runtime/agent-handoffs",
+    ]);
+
+    requests.length = 0;
+    await selectAll();
+    await page.getByRole("menuitem", { name: "Stop sessions in 3 workspaces..." }).click();
+    const stopDialog = page.getByRole("dialog", { name: "Stop sessions in 3 workspaces?" });
+    await stopDialog.getByRole("button", { name: "Stop sessions in 3 workspaces" }).click();
+    await expect(page.getByText("Stopped 3 sessions in 3 workspaces.")).toBeVisible();
+    expect(requests.toSorted()).toEqual([
+      "DELETE /api/v1/workspaces/ws-mid/runtime/sessions/ws-mid-agent",
+      "DELETE /api/v1/workspaces/ws-new/runtime/sessions/ws-new-agent",
+      "DELETE /api/v1/workspaces/ws-old/runtime/sessions/ws-old-agent",
+    ]);
+    await expect(rows).toHaveCount(3);
+
+    await page.route(/\/api\/v1\/workspaces\/ws-[a-z]+\/pull$/, async (route) => {
+      const workspaceId = new URL(route.request().url()).pathname.split("/")[4];
+      if (workspaceId === "ws-mid") {
+        await route.fulfill({
+          status: 409,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            code: "conflict",
+            detail: "worktree branch is already in sync",
+            details: { reason: "in_sync" },
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: workspaceId }) });
+    });
+    await selectAll();
+    await page.getByRole("menuitem", { name: "Pull remote changes in 3 workspaces" }).click();
+    await expect(page.getByText("Pulled 2 of 3 workspaces; 1 already up to date.")).toBeVisible();
   });
 
   test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {

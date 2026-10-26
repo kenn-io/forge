@@ -61,7 +61,7 @@ describe("problemCapability", () => {
 
 describe("problemConflictReason", () => {
   it("returns the stable conflict reasons from details.reason", () => {
-    for (const reason of ["stale_state", "head_unknown", "not_open", "head_repo_unknown"] as const) {
+    for (const reason of ["stale_state", "head_unknown", "not_open", "head_repo_unknown", "in_sync"] as const) {
       expect(
         problemConflictReason({
           code: ProblemCodes.conflict,

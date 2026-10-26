@@ -94,3 +94,20 @@ func TestWorkspacePullBranchRouteRejectsDirtyWorktree(t *testing.T) {
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.New(t).Equal(httpapi.CodeWorktreeDirty, problem.Code)
 }
+
+func TestWorkspacePullBranchRouteMarksUpToDateBranchInSync(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	client, srv := fixture.client, fixture.server
+	ws := createReadyWorkspace(t, t.Context(), client)
+
+	rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1/workspaces/"+ws.ID+"/pull", nil)
+
+	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
+	var problem httpapi.ProblemError
+	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
+	assert.Equal(httpapi.CodeConflict, problem.Code)
+	assert.Equal("in_sync", problem.Details["reason"])
+}

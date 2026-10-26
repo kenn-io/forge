@@ -74,7 +74,6 @@ func (b *SyncBudget) refundKind(window BudgetWindow, n int, kind SyncSpendKind) 
 	if window != b.window {
 		return
 	}
-	n = min(n, b.spentByKind[kind])
 	b.spent -= n
 	b.spentByKind[kind] -= n
 }

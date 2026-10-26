@@ -666,18 +666,8 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
-	payload, err := io.ReadAll(resp.Body)
-	require.NoError(err)
-	var raw struct {
-		LocalCeilings map[string]struct {
-			SpentByKind map[string]int `json:"spent_by_kind"`
-		} `json:"local_ceilings"`
-	}
-	require.NoError(json.Unmarshal(payload, &raw))
-	assert.Equal(map[string]int{"discovery": 0, "watched_pr_refresh": 0, "detail": 2701, "archive": 0}, raw.LocalCeilings["github.com"].SpentByKind)
-	assert.Equal(map[string]int{"discovery": 4, "watched_pr_refresh": 0, "detail": 0, "archive": 0}, raw.LocalCeilings["github:github.com:user:7"].SpentByKind)
 	var body itemapi.RateLimitsResponse
-	require.NoError(json.Unmarshal(payload, &body))
+	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
 
 	app, ok := body.ProviderPools["github:github.com:installation:42"]
 	require.True(ok)
@@ -694,6 +684,8 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	assert.Equal(2701, ceiling.Spent)
 	assert.Equal(300, ceiling.Remaining)
 	assert.Equal(expectedCeilingResetAt, ceiling.ResetAt)
+	assert.Equal(itemapi.LocalSyncSpendByKind{Detail: 2701}, ceiling.SpentByKind)
+	assert.Equal(itemapi.LocalSyncSpendByKind{Discovery: 4}, body.LocalCeilings["github:github.com:user:7"].SpentByKind)
 }
 
 func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {

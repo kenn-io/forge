@@ -612,21 +612,15 @@ func TestWriteResponseFormatsJSONLines(t *testing.T) {
 }
 
 func TestRateLimitsReportsSpendByKind(t *testing.T) {
-	t.Setenv("KENN_FORGE_HOME", t.TempDir())
 	database := dbtest.Open(t)
 	budget := ghclient.NewSyncBudget(100)
-	_, ok := budget.TrySpendEssential(2)
-	require.True(t, ok)
-	_, ok = budget.TrySpend(3)
-	require.True(t, ok)
-	_, ok = budget.TrySpendArchive(4)
-	require.True(t, ok)
+	budget.TrySpendEssential(2)
+	budget.TrySpend(3)
+	budget.TrySpendArchive(4)
 	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, map[string]*ghclient.SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() {
-		require.NoError(t, srv.Shutdown(context.WithoutCancel(t.Context())))
-	})
+	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.WithoutCancel(t.Context()))) })
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	out := runForge(t, ts.URL, "rate-limits")

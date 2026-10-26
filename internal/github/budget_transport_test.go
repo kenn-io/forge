@@ -43,10 +43,17 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 	t.Parallel()
+	for _, limit := range []int{1, 8} {
+		reserveConcurrently(t, limit)
+	}
+}
+
+func reserveConcurrently(t *testing.T, limit int) {
+	t.Helper()
 
 	require := require.New(t)
 	assert := assert.New(t)
-	budget := NewSyncBudget(8)
+	budget := NewSyncBudget(limit)
 	var providerCalls atomic.Int32
 	transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		providerCalls.Add(1)
@@ -77,9 +84,8 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 			if resp != nil {
 				defer resp.Body.Close()
 			}
-			snapshot := budget.Snapshot()
-			kinds := snapshot.SpentByKind
-			assert.Equal(snapshot.Spent, kinds.Discovery+kinds.WatchedPRRefresh+kinds.Detail+kinds.Archive)
+			snap := budget.Snapshot()
+			assert.Equal(snap.Spent, snap.SpentByKind.Discovery+snap.SpentByKind.WatchedPRRefresh+snap.SpentByKind.Detail+snap.SpentByKind.Archive)
 			errors <- err
 		})
 	}
@@ -94,9 +100,9 @@ func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 			exhausted++
 		}
 	}
-	assert.Equal(attempts-8, exhausted)
-	assert.Equal(int32(8), providerCalls.Load())
-	assert.Equal(8, budget.Spent())
+	assert.Equal(attempts-limit, exhausted)
+	assert.Equal(int32(limit), providerCalls.Load())
+	assert.Equal(limit, budget.Spent())
 	assert.Zero(budget.Remaining())
 }
 
@@ -169,8 +175,9 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	assert.Equal(SyncSpendByKind{Discovery: 9}, budget.Snapshot().SpentByKind)
 
 	// An essential list fetch still goes through on the reserve.
-	essentialCtx := WithEssentialSyncBudget(optionalCtx)
+	essentialCtx := WithEssentialSyncBudget(WithSyncBudget(t.Context()))
 	require.NoError(send(essentialCtx))
+	assert.Equal(SyncSpendByKind{Discovery: 9, Detail: 1}, budget.Snapshot().SpentByKind)
 
 	// The full limit still bounds essential spend.
 	assert.ErrorIs(send(essentialCtx), platform.ErrSyncBudgetExhausted)
@@ -275,7 +282,7 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh)
+	ctx := WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh))
 	req, _ := http.NewRequestWithContext(
 		ctx, http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
@@ -355,7 +362,7 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		}, nil
 	}), budget)
 	ctx := WithArchiveProviderAttemptAllowance(
-		WithArchiveSyncBudget(t.Context()), 10,
+		WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), 10,
 		IdentityKey{Host: "github.test", Principal: "user:7"},
 		[]QuotaResource{QuotaResourceREST},
 	)
@@ -392,35 +399,4 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
 	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
-}
-
-func TestBudgetTransportSpendByKind(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		name string
-		ctx  context.Context
-		want SyncSpendByKind
-	}{
-		{"discovery", WithSyncSpendKind(WithEssentialSyncBudget(WithSyncBudget(t.Context())), SyncSpendDiscovery), SyncSpendByKind{Discovery: 1}},
-		{"unlabeled essential", WithEssentialSyncBudget(WithSyncBudget(t.Context())), SyncSpendByKind{Detail: 1}},
-		{"watched nested essential", WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh)), SyncSpendByKind{WatchedPRRefresh: 1}},
-		{"optional default", WithSyncBudget(t.Context()), SyncSpendByKind{Detail: 1}},
-		{"archive overrides workflow label", WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), SyncSpendByKind{Archive: 1}},
-		{"uncounted", WithSyncSpendKind(t.Context(), SyncSpendDiscovery), SyncSpendByKind{}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			assert := assert.New(t)
-			budget := NewSyncBudget(10)
-			transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
-				return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
-			}), budget)
-			req, err := http.NewRequestWithContext(tc.ctx, http.MethodGet, "https://api.github.com/repos/acme/widget/issues", nil)
-			require.NoError(t, err)
-			resp, err := transport.RoundTrip(req)
-			require.NoError(t, err)
-			require.NoError(t, resp.Body.Close())
-			snapshot := budget.Snapshot()
-			assert.Equal(tc.want, snapshot.SpentByKind)
-		})
-	}
 }

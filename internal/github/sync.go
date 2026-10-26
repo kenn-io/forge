@@ -6420,7 +6420,7 @@ func (s *Syncer) indexSyncRepo(
 				s.markRepoFailed(repo, failMR)
 				// The queue read does not depend on the pull list, so a
 				// failing list must not freeze queue state.
-				s.refreshQueuedPullRequests(ctx, repo, repoID)
+				s.refreshQueuedPullRequests(detailCtx, repo, repoID)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
@@ -6525,7 +6525,7 @@ func (s *Syncer) indexSyncRepo(
 	// partial pull failure still observes the queue.
 	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
 		disabledScope&failMR == 0 {
-		s.refreshQueuedPullRequests(ctx, repo, repoID)
+		s.refreshQueuedPullRequests(detailCtx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.
@@ -6879,7 +6879,7 @@ func (s *Syncer) reconcileMergedActorEvents(
 		})
 	}
 	for _, candidate := range missing {
-		changed, err := s.backfillMergedActorEvent(ctx, repo, repoID, candidate.Number)
+		changed, err := s.backfillMergedActorEvent(WithSyncSpendKind(ctx, SyncSpendDetail), repo, repoID, candidate.Number)
 		if err != nil {
 			logSyncFailure(ctx, slog.LevelWarn, "backfill merged actor failed", err,
 				"repo", repo.Owner+"/"+repo.Name,

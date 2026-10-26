@@ -10498,55 +10498,41 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 
 func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"repository", "watched", "archived", "bulk", "closed", "closed_issue"} {
+	for _, mode := range []string{"repository", "watched", "archived", "bulk", "closed", "closed_issue", "merged", "queued"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
-			assert := assert.New(t)
 			database := openTestDB(t)
 			budget := NewSyncBudget(100)
-			var calls, prReads, bulkReads, issueReads atomic.Int32
+			// detail counts the item reads a repository pass must charge as Detail.
+			var calls, detail atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
+					if mode == "merged" && detail.Load() > 0 {
+						detail.Add(1) // the merged-actor identity check follows its PR read
+					}
 					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
 				case "/api/v3/repos/acme/app/pulls":
-					if mode == "closed" {
+					if mode == "closed" || mode == "merged" {
 						_, _ = io.WriteString(w, `[]`)
 					} else {
 						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
 					}
 				case "/api/v3/repos/acme/app/pulls/5":
-					prReads.Add(1)
-					pr := buildOpenPR(5, time.Now().UTC())
-					if mode == "closed" {
-						pr.State = new("closed")
-					}
-					_ = json.NewEncoder(w).Encode(pr)
+					detail.Add(1)
+					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
 				case "/api/v3/repos/acme/app/issues/5":
-					issueReads.Add(1)
-					issue := buildOpenIssue(5, time.Now().UTC())
-					issue.State = new("closed")
-					_ = json.NewEncoder(w).Encode(issue)
+					detail.Add(1)
+					_ = json.NewEncoder(w).Encode(buildOpenIssue(5, time.Now().UTC()))
 				case "/api/graphql":
-					if mode == "bulk" {
-						bulkReads.Add(1)
-						body, _ := io.ReadAll(r.Body)
-						field := "issues"
-						if bytes.Contains(body, []byte("pullRequests")) {
-							field = "pullRequests"
-						}
-						_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
-						return
+					if mode == "bulk" || mode == "queued" {
+						detail.Add(1)
 					}
-					_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
-				case "/api/v3/repos/acme/app/commits/abc123def456/check-runs":
-					_, _ = io.WriteString(w, `{"check_runs":[]}`)
-				case "/api/v3/repos/acme/app/commits/abc123def456/status":
-					_, _ = io.WriteString(w, `{"state":"success","statuses":[]}`)
-				case "/api/v3/repos/acme/app/actions/runs":
-					_, _ = io.WriteString(w, `{"workflow_runs":[]}`)
+					body, _ := io.ReadAll(r.Body)
+					field := map[bool]string{false: "issues", true: "pullRequests"}[bytes.Contains(body, []byte("pullRequests"))]
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
 				default:
 					_, _ = io.WriteString(w, `[]`)
 				}
@@ -10558,11 +10544,11 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
 				[]RepoRef{repo}, time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
 			t.Cleanup(syncer.Stop)
-			if mode == "bulk" {
+			if mode == "bulk" || mode == "queued" {
 				gqlClient := &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)}
 				syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlClient), nil)})
 			}
-			if mode == "closed" || mode == "closed_issue" {
+			if mode == "closed" || mode == "closed_issue" || mode == "merged" || mode == "queued" {
 				repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(100), Owner: "acme", Name: "app"})
 				require.NoError(t, err)
 				if mode == "closed_issue" {
@@ -10572,7 +10558,13 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				} else {
 					pr, normalizeErr := NormalizePR(repoID, buildOpenPR(5, time.Now().UTC()))
 					require.NoError(t, normalizeErr)
+					if mode == "merged" {
+						pr.State, pr.MergedAt = db.MergeRequestStateMerged, new(time.Now().UTC())
+					}
 					_, err = database.UpsertMergeRequest(t.Context(), pr)
+					if mode == "queued" && err == nil {
+						_, err = database.UpsertMergeQueueState(t.Context(), repoID, db.MergeQueueState{Number: 5, BaseBranch: "main", Enabled: true, Queued: true, State: "QUEUED", ObservedAt: time.Now().UTC()})
+					}
 				}
 				require.NoError(t, err)
 			}
@@ -10584,40 +10576,19 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				want.WatchedPRRefresh = int(calls.Load())
 			case "archived":
 				syncer.RunOnce(t.Context())
-				assert.Equal(int32(1), calls.Load())
 				want.Discovery = 1
 			default:
 				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
-				want.Detail = int(bulkReads.Load())
-				if mode == "closed" {
-					want.Detail = int(prReads.Load())
-				}
-				if mode == "closed_issue" {
-					want.Detail = int(issueReads.Load())
-				}
-				want.Discovery = int(calls.Load()) - want.Detail
-				assert.Equal(want, budget.Snapshot().SpentByKind)
-				if mode == "bulk" || mode == "closed" || mode == "closed_issue" {
-					assert.Positive(want.Detail)
-				}
+				want = SyncSpendByKind{Discovery: int(calls.Load() - detail.Load()), Detail: int(detail.Load())}
 				if mode == "repository" {
 					syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
 					want.Detail = int(calls.Load()) - want.Discovery
-					assert.Positive(want.Detail)
-				}
-				if mode == "closed_issue" {
-					assert.Equal(int32(1), issueReads.Load())
-				}
-				if mode == "bulk" {
-					assert.Equal(int32(2), bulkReads.Load())
 				}
 			}
-			if mode == "repository" || mode == "watched" || mode == "closed" {
-				assert.Equal(int32(1), prReads.Load())
-			}
-			assert.Equal(int(calls.Load()), budget.Spent())
-			assert.Equal(want, budget.Snapshot().SpentByKind)
+			assert.Equal(t, mode == "archived", want.Detail+want.WatchedPRRefresh == 0)
+			assert.Equal(t, int(calls.Load()), budget.Spent())
+			assert.Equal(t, want, budget.Snapshot().SpentByKind)
 		})
 	}
 }

@@ -810,7 +810,7 @@ response never overwrites an App installation pool
   (`internal/github/sync.go::indexSyncRepo`).
 - List discovery (open PR/issue lists), full-sync identity reads, and archived
   preflight identity reads spend the local ceiling's essential reserve. Direct
-  detail and notification identity reads keep optional allowance, as does archive
+  detail and notification identity reads use optional allowance, as does archive
   lifecycle reconciliation, including repository reads it seeds. Optional spend
   (details, fast-sync, archive attempts without a registry reservation)
   stops at limit minus reserve so it can never starve discovery

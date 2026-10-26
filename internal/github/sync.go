@@ -3670,6 +3670,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		providerAttempted := false
+		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
 		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
@@ -3686,12 +3687,14 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			if disabled {
 				continue
 			}
-			slog.Warn("fast-sync watched MR failed",
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-				"err", err,
-			)
+			if cachedResolution.err == nil || !errors.Is(err, cachedResolution.err) {
+				slog.Warn("fast-sync watched MR failed",
+					"owner", mr.Owner,
+					"name", mr.Name,
+					"number", mr.Number,
+					"err", err,
+				)
+			}
 			if _, ok := errors.AsType[*DiffSyncError](err); ok {
 				syncedAny = true
 			}

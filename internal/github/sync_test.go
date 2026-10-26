@@ -2623,7 +2623,8 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	var notificationCalls atomic.Int32
 	client := &mockClient{
 		budget: budget,
-		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
+			assert.False(IsEssentialSyncBudgetContext(ctx), "notification identity reads use optional allowance")
 			identityCalls.Add(1)
 			return &gh.Repository{
 				ID: new(testRepoID("acme", "widget")), Name: &name,
@@ -10045,6 +10046,50 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 					assert.Equal(fmt.Sprintf("%s detail %d pass %d", item.Name, item.Number, pass), mr.Title)
 					assert.NotNil(mr.DetailFetchedAt)
 				}
+			}
+		})
+	}
+}
+
+func TestSyncWatchedMRsReportsIdentityFailureOnceAndDetailFailuresPerPR(t *testing.T) {
+	for _, identityFailure := range []bool{true, false} {
+		t.Run(fmt.Sprintf("identity-failure=%t", identityFailure), func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			reads := 0
+			detailReads := 0
+			mc := &mockClient{
+				getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+					reads++
+					if identityFailure {
+						return nil, errors.New("repository temporarily unavailable")
+					}
+					id := testRepoID(owner, name)
+					return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+				},
+				getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+					detailReads++
+					return nil, errors.New("pull request temporarily unavailable")
+				},
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+				[]RepoRef{{Owner: "acme", Name: "app"}}, time.Hour, nil, nil)
+			syncer.SetWatchedMRs([]WatchedMR{
+				{Owner: "acme", Name: "app", Number: 7},
+				{Owner: "acme", Name: "app", Number: 8},
+				{Owner: "acme", Name: "app", Number: 9},
+			})
+			logs := captureDefaultLogs(t)
+
+			syncer.syncWatchedMRs(t.Context())
+
+			assert.Equal(1, reads)
+			if identityFailure {
+				assert.Zero(detailReads)
+				assert.Equal(1, strings.Count(logs.String(), "fast-sync watched MR failed"))
+			} else {
+				assert.Equal(3, detailReads)
+				assert.Equal(3, strings.Count(logs.String(), "fast-sync watched MR failed"))
 			}
 		})
 	}

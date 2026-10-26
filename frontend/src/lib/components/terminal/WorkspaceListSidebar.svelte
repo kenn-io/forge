@@ -2025,6 +2025,8 @@
     gap: var(--space-4);
     padding: var(--sidebar-row-padding, 10px 12px);
     border-bottom: 1px solid var(--sidebar-list-border-muted, var(--border-muted));
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 3px solid transparent;
     background: var(--sidebar-row-bg, var(--bg-surface));
     cursor: pointer;

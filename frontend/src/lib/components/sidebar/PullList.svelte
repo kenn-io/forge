@@ -934,6 +934,8 @@
   }
 
   .pull-list :global(.list-body--diff-focus .diff-files-wrap) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 3px solid var(--accent-blue);
   }
 

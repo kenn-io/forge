@@ -196,7 +196,7 @@ func TestSyncBudgetArchiveAdmissionRequiresPlausibleReset(t *testing.T) {
 	assert.False(budget.CanSpendArchive(1, now, nil, 20))
 }
 
-func TestSyncBudgetResetClearsArchiveSpend(t *testing.T) {
+func TestSyncBudgetResetClearsSpendByKind(t *testing.T) {
 	t.Parallel()
 
 	budget := NewSyncBudget(100)

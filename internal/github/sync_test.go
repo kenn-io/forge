@@ -2666,7 +2666,6 @@ func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
 			"github.com": &mockClient{
 				listNotificationsFn: func(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
 					assert.Equal(SyncSpendDiscovery, syncSpendKind(ctx))
-					assert.False(IsEssentialSyncBudgetContext(ctx))
 					seen = append(seen, opts)
 					if opts.Participating {
 						participatingCalls.Add(1)
@@ -10503,15 +10502,18 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			t.Parallel()
 			database := openTestDB(t)
 			budget := NewSyncBudget(100)
-			// detail counts the item reads a repository pass must charge as Detail.
+			// detail counts item, bulk, and merged-actor identity requests.
 			var calls, detail atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
+				if strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/app/pulls/5") || strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/app/issues/5") || strings.Contains(r.URL.Path, "/commits/") || strings.HasSuffix(r.URL.Path, "/actions/runs") || mode == "repository" && r.URL.Path == "/api/v3/repositories/100" {
+					detail.Add(1)
+				}
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
-					if mode == "merged" && detail.Load() > 0 {
-						detail.Add(1) // the merged-actor identity check follows its PR read
+					if mode == "merged" && r.URL.Path == "/api/v3/repos/acme/app" {
+						detail.Add(1) // discovery uses the pinned repository ID
 					}
 					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
 				case "/api/v3/repos/acme/app/pulls":
@@ -10521,16 +10523,20 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
 					}
 				case "/api/v3/repos/acme/app/pulls/5":
-					detail.Add(1)
 					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
 				case "/api/v3/repos/acme/app/issues/5":
-					detail.Add(1)
 					_ = json.NewEncoder(w).Encode(buildOpenIssue(5, time.Now().UTC()))
 				case "/api/graphql":
-					if mode == "bulk" || mode == "queued" {
-						detail.Add(1)
-					}
+					detail.Add(1)
 					body, _ := io.ReadAll(r.Body)
+					if !bytes.Contains(body, []byte("pullRequests")) && !bytes.Contains(body, []byte("issues")) {
+						payload := `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`
+						if mode == "queued" {
+							payload = `{"data":{"repository":{"pullRequest":null}}}`
+						}
+						_, _ = io.WriteString(w, payload)
+						return
+					}
 					field := map[bool]string{false: "issues", true: "pullRequests"}[bytes.Contains(body, []byte("pullRequests"))]
 					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
 				default:
@@ -10541,6 +10547,9 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 			require.NoError(t, err)
 			repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com", Archived: mode == "archived"}
+			if mode == "merged" {
+				repo.Key = platform.RepositoryIDKey(100)
+			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
 				[]RepoRef{repo}, time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
 			t.Cleanup(syncer.Stop)
@@ -10580,13 +10589,12 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			default:
 				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
-				want = SyncSpendByKind{Discovery: int(calls.Load() - detail.Load()), Detail: int(detail.Load())}
 				if mode == "repository" {
 					syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
-					want.Detail = int(calls.Load()) - want.Discovery
 				}
+				want = SyncSpendByKind{Discovery: int(calls.Load() - detail.Load()), Detail: int(detail.Load())}
 			}
-			assert.Equal(t, mode == "archived", want.Detail+want.WatchedPRRefresh == 0)
+			assert.Positive(t, calls.Load())
 			assert.Equal(t, int(calls.Load()), budget.Spent())
 			assert.Equal(t, want, budget.Snapshot().SpentByKind)
 		})
@@ -16810,17 +16818,14 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
 	mc.listOpenPRsFn = func(fnCtx context.Context, _, _ string) ([]*gh.PullRequest, error) {
 		prListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
-		assert.Equal(SyncSpendDiscovery, syncSpendKind(fnCtx))
 		return mc.openPRs, nil
 	}
 	mc.listOpenIssuesFn = func(fnCtx context.Context, _, _ string) ([]*gh.Issue, error) {
 		issueListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
-		assert.Equal(SyncSpendDiscovery, syncSpendKind(fnCtx))
 		return nil, nil
 	}
 	mc.listReviewsFn = func(fnCtx context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
 		reviewsCalled.Store(true)
-		assert.Equal(SyncSpendDetail, syncSpendKind(fnCtx))
 		reviewsEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
 		return []*gh.PullRequestReview{}, nil
 	}

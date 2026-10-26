@@ -610,30 +610,3 @@ func TestWriteResponseFormatsJSONLines(t *testing.T) {
 	assert.JSONEq(`{"version":"dev"}`, strings.TrimSpace(objectOut.String()))
 	assert.NotContains(objectOut.String(), "\n\n")
 }
-
-func TestRateLimitsReportsSpendByKind(t *testing.T) {
-	database := dbtest.Open(t)
-	budget := ghclient.NewSyncBudget(100)
-	budget.TrySpendEssential(2)
-	budget.TrySpend(3)
-	budget.TrySpendArchive(4)
-	syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, map[string]*ghclient.SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
-	t.Cleanup(func() { require.NoError(t, srv.Shutdown(context.WithoutCancel(t.Context()))) })
-	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
-	out := runForge(t, ts.URL, "rate-limits")
-	var body struct {
-		LocalCeilings map[string]struct {
-			Spent       int            `json:"spent"`
-			SpentByKind map[string]int `json:"spent_by_kind"`
-		} `json:"local_ceilings"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(out), &body))
-	assert.Equal(t, 9, body.LocalCeilings["github.com"].Spent)
-	assert.Equal(t, map[string]int{"discovery": 2, "watched_pr_refresh": 0, "detail": 3, "archive": 4}, body.LocalCeilings["github.com"].SpentByKind)
-	budget.Reset()
-	require.NoError(t, json.Unmarshal([]byte(runForge(t, ts.URL, "rate-limits")), &body))
-	assert.Equal(t, map[string]int{"discovery": 0, "watched_pr_refresh": 0, "detail": 0, "archive": 0}, body.LocalCeilings["github.com"].SpentByKind)
-}

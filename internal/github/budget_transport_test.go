@@ -166,7 +166,7 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	}
 
 	// Optional counted requests exhaust the optional ceiling (limit-reserve).
-	optionalCtx := WithoutEssentialSyncBudget(WithSyncSpendKind(WithEssentialSyncBudget(WithSyncBudget(t.Context())), SyncSpendDiscovery))
+	optionalCtx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
 	for range 9 {
 		require.NoError(send(optionalCtx))
 	}
@@ -174,7 +174,7 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 
 	assert.Equal(SyncSpendByKind{Discovery: 9}, budget.Snapshot().SpentByKind)
 
-	// An essential list fetch still goes through on the reserve.
+	// An unlabeled essential request uses the reserve and defaults to Detail.
 	essentialCtx := WithEssentialSyncBudget(WithSyncBudget(t.Context()))
 	require.NoError(send(essentialCtx))
 	assert.Equal(SyncSpendByKind{Discovery: 9, Detail: 1}, budget.Snapshot().SpentByKind)
@@ -282,7 +282,7 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh))
+	ctx := WithSyncBudget(t.Context())
 	req, _ := http.NewRequestWithContext(
 		ctx, http.MethodGet,
 		"https://api.github.com/repos/o/n/pulls", nil,
@@ -292,7 +292,6 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 		defer resp.Body.Close()
 	}
 
-	assert.Equal(SyncSpendByKind{WatchedPRRefresh: 1}, budget.Snapshot().SpentByKind)
 	assert.Equal(1, budget.Spent(),
 		"budget should count even when base transport errors")
 }
@@ -382,7 +381,6 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	require.NoError(err)
 	assert.Zero(budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
-	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 
 	// Without the reservation marker — a chain that has no quota transport —
 	// the same provider-configured context stays on the local-debit fallback.

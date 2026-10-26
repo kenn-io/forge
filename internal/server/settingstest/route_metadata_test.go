@@ -31,6 +31,7 @@ var allowedAPITags = map[string]struct{}{
 	"Repositories":     {},
 	"Roborev":          {},
 	"Runtime":          {},
+	"Search":           {},
 	"Settings":         {},
 	"Stacks":           {},
 	"Sync":             {},

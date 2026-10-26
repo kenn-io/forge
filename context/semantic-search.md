@@ -18,6 +18,9 @@ the semantic search API and MCP tool.
 - PR and issue title plus body, and comment, review, and review-comment bodies
   from active repositories, never code, diffs, or commits
   (`internal/db/queries_semantic.go`).
+- Comment sources must include the `comment` event type: Bitbucket persists
+  conversation comments under it, not `issue_comment`
+  (`internal/db/queries_semantic.go`).
 - A comment embeds its body alone, so renaming an item does not re-embed its
   comments (`internal/semantic/mirror.go::documentContent`).
 - Bump `recipe` whenever the embedded text or chunk window changes, or stored
@@ -30,6 +33,9 @@ the semantic search API and MCP tool.
   database (`internal/semantic/index.go`).
 - Only a text change bumps a document's revision; state-only changes must not,
   or every sync re-embeds the corpus (`internal/semantic/mirror.go::Index.SyncMirror`).
+- Passes start at least a minute apart, wakes included; every sync completion
+  wakes the indexer, and each pass rereads every description and comment
+  (`internal/semantic/indexer.go::schedulePasses`).
 - Skip a document only when the endpoint refuses that input; any other encode
   failure aborts the pass so an outage never stamps the corpus as skipped
   (`internal/semantic/indexer.go::inputRejected`).

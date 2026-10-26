@@ -39,7 +39,8 @@ type SemanticSource struct {
 // Only active repositories and items still present upstream are included,
 // matching what the pull request, issue, and activity lists show. Comments
 // are conversation and review prose; commits, pushes, and other timeline
-// events are not embedded.
+// events are not embedded. Bitbucket persists its conversation comments as
+// "comment" rather than "issue_comment".
 var semanticSourceQueries = map[SemanticSourceKind]string{
 	SemanticSourcePull: `
 		SELECT m.id, m.repo_id, 'pr', m.number, m.state, m.title, m.body
@@ -75,7 +76,7 @@ var semanticSourceQueries = map[SemanticSourceKind]string{
 		JOIN forge_merge_requests m ON m.id = e.merge_request_id
 		JOIN forge_repos r ON r.id = m.repo_id AND r.lifecycle_state = 'active'
 		WHERE e.id > ?
-		  AND e.event_type IN ('issue_comment', 'review', 'review_comment')
+		  AND e.event_type IN ('issue_comment', 'comment', 'review', 'review_comment')
 		  AND trim(e.body, char(32, 9, 10, 13)) <> ''
 		  AND NOT EXISTS (
 		      SELECT 1 FROM forge_archive_items ai
@@ -92,7 +93,7 @@ var semanticSourceQueries = map[SemanticSourceKind]string{
 		JOIN forge_issues i ON i.id = e.issue_id
 		JOIN forge_repos r ON r.id = i.repo_id AND r.lifecycle_state = 'active'
 		WHERE e.id > ?
-		  AND e.event_type = 'issue_comment'
+		  AND e.event_type IN ('issue_comment', 'comment')
 		  AND trim(e.body, char(32, 9, 10, 13)) <> ''
 		  AND NOT EXISTS (
 		      SELECT 1 FROM forge_archive_items ai

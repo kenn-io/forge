@@ -41,11 +41,16 @@ type Indexer struct {
 	status Status
 }
 
+// minRefreshGap keeps frequent syncs from rereading every description and
+// comment more than once a minute.
+const minRefreshGap = time.Minute
+
 // NewIndexer binds an open index to an encoder and the Forge database.
-// Run refreshes it every interval and whenever Wake is called.
+// Run refreshes it every interval and whenever Wake is called, but never
+// starts passes less than a minute apart.
 func NewIndexer(index *Index, encoder *Encoder, source SourceReader, interval time.Duration) *Indexer {
 	return &Indexer{
-		index: index, encoder: encoder, source: source, interval: interval,
+		index: index, encoder: encoder, source: source, interval: max(interval, minRefreshGap),
 		wake:   make(chan struct{}, 1),
 		status: Status{Model: encoder.Model()},
 	}
@@ -73,17 +78,37 @@ func (x *Indexer) Status() Status {
 // next tick or wake; the endpoint client already retries transient errors
 // within a pass.
 func (x *Indexer) Run(ctx context.Context) {
-	ticker := time.NewTicker(x.interval)
-	defer ticker.Stop()
-	for {
+	schedulePasses(ctx, x.interval, x.wake, func() {
 		if err := x.Refresh(ctx); err != nil && ctx.Err() == nil {
 			slog.Warn("semantic index refresh failed", "err", err)
 		}
+	})
+}
+
+// schedulePasses runs pass now, then after every tick or wake until ctx
+// ends. Passes start at least minRefreshGap apart: a trigger that arrives
+// sooner waits out the gap, and the next pass answers every wake that
+// arrived before it started.
+func schedulePasses(ctx context.Context, interval time.Duration, wake chan struct{}, pass func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-wake:
+		default:
+		}
+		started := time.Now()
+		pass()
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-		case <-x.wake:
+		case <-wake:
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(started.Add(minRefreshGap))):
 		}
 	}
 }

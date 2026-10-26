@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -247,4 +248,42 @@ func TestOpenRebuildsSidecarWithUnknownSchemaVersion(t *testing.T) {
 	reopened := f.indexer(t, "test-model")
 	_, err = reopened.Search(t.Context(), Query{Text: "cache", Limit: 5})
 	require.ErrorIs(t, err, ErrNotReady, "a rebuilt sidecar starts empty")
+}
+
+func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		x := &Indexer{wake: make(chan struct{}, 1)}
+		start := time.Now()
+		var passes []time.Duration
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		go schedulePasses(ctx, time.Hour, x.wake, func() {
+			passes = append(passes, time.Since(start))
+		})
+
+		synctest.Wait()
+		assert.Equal([]time.Duration{0}, passes, "the first pass starts immediately")
+
+		for range 5 {
+			time.Sleep(10 * time.Second)
+			x.Wake()
+			synctest.Wait()
+		}
+		assert.Equal([]time.Duration{0}, passes, "wakes inside the gap wait it out")
+
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		assert.Equal([]time.Duration{0, time.Minute}, passes,
+			"one pass answers every wake that arrived during the gap")
+
+		time.Sleep(10 * time.Minute)
+		synctest.Wait()
+		assert.Len(passes, 2, "coalesced wakes leave no pass behind")
+
+		x.Wake()
+		synctest.Wait()
+		assert.Equal([]time.Duration{0, time.Minute, 11 * time.Minute}, passes,
+			"a wake after the gap starts a pass immediately")
+	})
 }
